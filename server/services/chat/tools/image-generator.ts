@@ -15,12 +15,14 @@ function getClient(): GoogleGenAI {
   return genaiClient;
 }
 
-// Cast to any to avoid strict enum typing issues with the Gemini SDK
+// Cast to any to avoid strict enum typing issues with the Gemini SDK.
+// Previously OFF across the board — see gemini-media-analyzer.ts for why
+// that's the wrong posture on a children's clinical platform.
 const SAFETY_SETTINGS: any[] = [
-  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
 ];
 
 export interface ImageGenerationInput {

@@ -17,12 +17,17 @@ function getClient(): GoogleGenAI {
   return genaiClient;
 }
 
-// Safety settings — disabled for AAC use case (images of children, clinical environments)
+// Safety settings — Gemini default thresholds.
+// Clinical descriptions, medication names, and seizure
+// content are all under HARM_CATEGORY_DANGEROUS_CONTENT but Google's
+// "BLOCK_MEDIUM_AND_ABOVE" baseline rarely fires on legitimate clinical
+// language. If specific false positives recur, raise the threshold for
+// just that category.
 const SAFETY_SETTINGS = [
-  { category: "HARM_CATEGORY_HARASSMENT" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_HATE_SPEECH" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as const, threshold: "OFF" as const },
+  { category: "HARM_CATEGORY_HARASSMENT" as const, threshold: "BLOCK_MEDIUM_AND_ABOVE" as const },
+  { category: "HARM_CATEGORY_HATE_SPEECH" as const, threshold: "BLOCK_MEDIUM_AND_ABOVE" as const },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as const, threshold: "BLOCK_MEDIUM_AND_ABOVE" as const },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as const, threshold: "BLOCK_MEDIUM_AND_ABOVE" as const },
 ];
 
 export interface MediaAnalysisInput {

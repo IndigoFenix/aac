@@ -1,6 +1,7 @@
 // server/services/dual-agent/monitor-agent.ts
 // Monitor Agent for thorough processing, memory management, and database access
 
+import { randomBytes } from "crypto";
 import { onMessage } from "../sessionService";
 import type { ChatMessage, ParsedBoardData, ChatPersona } from "@shared/schema";
 import type {
@@ -228,6 +229,16 @@ export class MonitorAgent {
         console.warn("[MonitorAgent] Failed to load calendar events for startup:", err);
       }
 
+      // Per-call random nonce for the [ENHANCED_PROMPT-NONCE]…[/ENHANCED_PROMPT-NONCE]
+      // delimiters. Without this, a malicious persona text (which gets
+      // concatenated into the prompt below) containing a literal
+      // [/ENHANCED_PROMPT] could close the LLM's output early and seize
+      // control of the resulting AAC system prompt — the nonce makes the
+      // closing tag unguessable from inside user content.
+      const enhancedNonce = randomBytes(8).toString("hex");
+      const enhancedOpen = `[ENHANCED_PROMPT-${enhancedNonce}]`;
+      const enhancedClose = `[/ENHANCED_PROMPT-${enhancedNonce}]`;
+
       // ── Build the LLM prompt ──
       const tzLine = this.timezone
         ? `\n## User Local Time\nTime zone: ${this.timezone}\nCurrent local time: ${formatLocalDateTime(new Date(), this.timezone)}\nWhen referencing events, speak in this local time.\n`
@@ -256,7 +267,7 @@ Update the AAC prompt to reflect the student's current data and context.
 If the current prompt is already adequate and no updates are needed, return it unchanged.
 
 ## Output Format
-Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.`;
+Output ONLY the enhanced prompt between ${enhancedOpen} and ${enhancedClose} tags. Use those exact strings (with the nonce). Emit nothing outside the tags.`;
 
       // ── Single LLM call — no tools ──
       const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
@@ -284,7 +295,10 @@ Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT]
       );
 
       const responseText = response.content || '';
-      const promptMatch = responseText.match(/\[ENHANCED_PROMPT\]([\s\S]*?)\[\/ENHANCED_PROMPT\]/);
+      const tagPattern = new RegExp(
+        `\\[ENHANCED_PROMPT-${enhancedNonce}\\]([\\s\\S]*?)\\[/ENHANCED_PROMPT-${enhancedNonce}\\]`,
+      );
+      const promptMatch = responseText.match(tagPattern);
       const enhancedPrompt = promptMatch?.[1]?.trim();
 
       if (enhancedPrompt) {

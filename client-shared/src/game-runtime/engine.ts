@@ -51,6 +51,7 @@ export function initState(def: GameDefinition): RuntimeState {
     pendingAiInstructions: [],
     gameOver: false,
     uidSeq: 0,
+    placedSeq: 0,
   };
   for (const b of def.buttons) {
     state.buttons[b.id] = { enabled: b.enabledByDefault ?? false };
@@ -115,6 +116,7 @@ function spawnEntity(
     state: "_default",
     counters,
     overrides: { ...(spec.overrides ?? {}) },
+    placedSeq: ++state.placedSeq,
   };
 
   if (spec.state && spec.state !== "_default") {
@@ -241,6 +243,7 @@ function handleMove(ctx: TickCtx, movingUid: string, to: GridCoord) {
   const from: GridCoord = [...self.position] as GridCoord;
   if (self.containerUid) self.containerUid = undefined;
   self.position = [...to] as GridCoord;
+  self.placedSeq = ++ctx.state.placedSeq;
   ctx.events.push({ type: "entityMoved", uid: self.uid, from, to });
   fireEvent(ctx, self, { type: "onMoved" });
 }
@@ -258,6 +261,7 @@ function handleDropIntoContainer(ctx: TickCtx, movingUid: string, containerUid: 
   }
   self.containerUid = containerUid;
   self.position = [...container.position] as GridCoord;
+  self.placedSeq = ++ctx.state.placedSeq;
   fireEvent(ctx, self, { type: "onMoved" });
 }
 
@@ -322,6 +326,7 @@ function handleAiCreate(
     state: "_default",
     counters: {},
     overrides: filtered,
+    placedSeq: 0,
   };
   ctx.state.entities[tempUid] = tmp;
   const ok = canDropAt(ctx.def, ctx.state, tmp, action.position);

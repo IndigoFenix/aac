@@ -8,12 +8,14 @@ export async function sendEmail(mailOptions: {
 }, service: string = 'gmail', auth: {
     user: string;
     pass: string;
-} | null) {
-    if (!auth) {
-        auth = {
-            user: process.env.EMAIL_USER!,
-            pass: process.env.EMAIL_PASSWORD!,
-        };
+}) {
+    // SMTP creds must be supplied by the caller. The previous behavior fell
+    // back to process.env.EMAIL_USER/EMAIL_PASSWORD — i.e. the platform's
+    // own outbound mailer — so a prompt-injected agent could phish from
+    // Aivota's branded sender with full DKIM/SPF alignment. No silent
+    // fallback; refuse if auth is missing.
+    if (!auth || !auth.user || !auth.pass) {
+        throw new Error("sendEmail: SMTP credentials required (per-agent mail config missing)");
     }
     // Create a transporter object using the default SMTP transport
     const transporter = nodemailer.createTransport({

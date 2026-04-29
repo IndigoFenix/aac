@@ -21,6 +21,7 @@ import {
   type AgentMemoryFieldObjectWithDB,
   type DBOperationContext,
 } from "../chat/memory-types";
+import type { AccessCtx } from "../sharing/visibility";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -39,6 +40,25 @@ async function getStudentMemoryField(
   const studentId = ctx.all.studentId;
   if (!studentId) {
     console.warn(`[student-memory-schema] No studentId in context for ${fieldId}`);
+    return undefined;
+  }
+
+  // Fail-closed when the visibility ctx is missing. The schema-layer gate
+  // (sessionService) only filters Student_* fields out for institute
+  // principals lacking a monitor_note share; with accessCtx=undefined that
+  // gate silently no-ops, so without this defense-in-depth check anyone with
+  // a studentId — but no resolved institute or student principal — could
+  // dump chatMemory (Student_Notes, Student_People, etc.) by hitting the
+  // chat API with the studentId in the body.
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  if (!accessCtx) {
+    console.warn(`[student-memory-schema] No accessCtx for ${fieldId} on student ${studentId} — refusing read`);
+    return undefined;
+  }
+  // For student principals, only the bound student is readable — defense
+  // against any future code path that lets the AI vary studentId per call.
+  if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
+    console.warn(`[student-memory-schema] Student ctx mismatch (${accessCtx.studentId} vs ${studentId}) — refusing read`);
     return undefined;
   }
 

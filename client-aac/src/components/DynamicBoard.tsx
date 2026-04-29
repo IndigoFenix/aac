@@ -514,12 +514,24 @@ export default function DynamicBoard({
     const renderLoadingOverlay = (emoji: string, halfSize = false) => (
       <span style={{ ...emojiStyle, ...(halfSize ? { fontSize: `calc(${iconFontSize} * 0.5)` } : {}), position: "relative" as const, display: "inline-block" }}>
         {emoji}
+        {/* Solid-blue spinner on a white circular backdrop. The previous
+         * 10x10 / 50%-alpha / top:-2 right:-6 placement was clipped by the
+         * parent button's overflow-hidden and blended into many button
+         * background colors, making it effectively invisible. */}
         <span style={{
-          position: "absolute", top: -2, right: -6, width: 10, height: 10, borderRadius: "50%",
-          border: "2px solid rgba(59,130,246,0.5)", borderTopColor: "transparent",
-          display: "inline-block",
-          animation: "dynamic-board-spin 1s linear infinite",
-        }} />
+          position: "absolute", top: 0, right: 0,
+          width: 16, height: 16, borderRadius: "50%",
+          backgroundColor: "#ffffff",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.15)",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <span style={{
+            width: 12, height: 12, borderRadius: "50%",
+            border: "2px solid rgb(59,130,246)", borderTopColor: "transparent",
+            display: "inline-block",
+            animation: "dynamic-board-spin 1s linear infinite",
+          }} />
+        </span>
       </span>
     );
 

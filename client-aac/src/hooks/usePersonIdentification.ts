@@ -33,6 +33,17 @@ export interface IdentifiedPerson {
 export interface UnknownFaceDescriptor {
   descriptor: number[];
   boundingBox?: { x: number; y: number; w: number; h: number };
+  cameraRole?: "user" | "environment" | "unknown";
+  cameraLabel?: string;
+}
+
+export interface IdentifySourceOptions {
+  /** Distinct key per camera so multiple cameras don't overwrite each other */
+  sourceKey?: string;
+  cameraRole?: "user" | "environment" | "unknown";
+  cameraLabel?: string;
+  /** Set true only for the primary user-facing source; gates `currentIdentification` and face-image caching. */
+  updateCurrent?: boolean;
 }
 
 export interface IdentificationResult {
@@ -237,9 +248,9 @@ export interface UsePersonIdentificationReturn {
   currentIdentification: IdentificationResult | null;
 
   // Methods
-  identifyFromVideo: (video: HTMLVideoElement) => Promise<IdentificationResult | null>;
-  identifyFromImage: (image: HTMLImageElement) => Promise<IdentificationResult | null>;
-  identifyFromCanvas: (canvas: HTMLCanvasElement) => Promise<IdentificationResult | null>;
+  identifyFromVideo: (video: HTMLVideoElement, options?: IdentifySourceOptions) => Promise<IdentificationResult | null>;
+  identifyFromImage: (image: HTMLImageElement, options?: IdentifySourceOptions) => Promise<IdentificationResult | null>;
+  identifyFromCanvas: (canvas: HTMLCanvasElement, options?: IdentifySourceOptions) => Promise<IdentificationResult | null>;
   refreshKnownPeople: () => Promise<void>;
   clearCache: () => void;
 
@@ -266,8 +277,10 @@ export function usePersonIdentification(
   const knownPeopleRef = useRef<KnownPerson[]>([]);
   const identificationCacheRef = useRef<Map<string, CachedIdentification>>(new Map());
   const lastKnownPeopleFetchRef = useRef<number>(0);
-  const pendingIdentificationRef = useRef<boolean>(false);
-  const unmatchedDescriptorsRef = useRef<UnknownFaceDescriptor[]>([]);
+  // One pending flag per source so cameras don't block each other
+  const pendingIdentificationRef = useRef<Map<string, boolean>>(new Map());
+  // Descriptors keyed by source — last successful detection per camera
+  const unmatchedDescriptorsRef = useRef<Map<string, UnknownFaceDescriptor>>(new Map());
   const faceImageQualityRef = useRef<Map<string, number>>(new Map());
 
   // ==========================================================================
@@ -431,14 +444,20 @@ export function usePersonIdentification(
 
   const identifyFromElement = useCallback(
     async (
-      element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
+      element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+      options?: IdentifySourceOptions,
     ): Promise<IdentificationResult | null> => {
-      if (!isReady || pendingIdentificationRef.current) {
+      const sourceKey = options?.sourceKey ?? "default";
+      const cameraRole = options?.cameraRole;
+      const cameraLabel = options?.cameraLabel;
+      const updateCurrent = options?.updateCurrent ?? true;
+
+      if (!isReady || pendingIdentificationRef.current.get(sourceKey)) {
         return null;
       }
 
-      // Non-blocking: don't wait if already processing
-      pendingIdentificationRef.current = true;
+      // Non-blocking per-source: don't wait if this source is already processing
+      pendingIdentificationRef.current.set(sourceKey, true);
 
       try {
         const faceapi = (window as any).faceapi;
@@ -454,23 +473,30 @@ export function usePersonIdentification(
           .withFaceDescriptor();
 
         if (!detection) {
+          // Clear stale descriptor for this source so empty cameras don't keep
+          // sending old data after the person leaves the frame.
+          unmatchedDescriptorsRef.current.delete(sourceKey);
           return null;
         }
 
         const result = matchFaceToKnownPeople(detection.descriptor);
-        setCurrentIdentification(result);
+        if (updateCurrent) {
+          setCurrentIdentification(result);
+        }
 
         // Always surface the detected descriptor so the server can run its own
         // (authoritative) database match. The local match above is kept only
         // for client-side face-image caching; the server is the source of
         // truth for the AI.
         const box = detection.detection.box;
-        unmatchedDescriptorsRef.current = [{
+        unmatchedDescriptorsRef.current.set(sourceKey, {
           descriptor: Array.from(detection.descriptor),
           boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
-        }];
+          cameraRole,
+          cameraLabel,
+        });
 
-        if (result.identified) {
+        if (updateCurrent && result.identified) {
           // Auto-capture face image for contacts (client-side cache only)
           if (result.person?.type === "contact") {
             const contactId = result.person.id;
@@ -504,29 +530,29 @@ export function usePersonIdentification(
         console.error("[PersonID] Detection error:", err);
         return null;
       } finally {
-        pendingIdentificationRef.current = false;
+        pendingIdentificationRef.current.set(sourceKey, false);
       }
     },
     [isReady, matchFaceToKnownPeople]
   );
 
   const identifyFromVideo = useCallback(
-    async (video: HTMLVideoElement): Promise<IdentificationResult | null> => {
-      return identifyFromElement(video);
+    async (video: HTMLVideoElement, options?: IdentifySourceOptions): Promise<IdentificationResult | null> => {
+      return identifyFromElement(video, options);
     },
     [identifyFromElement]
   );
 
   const identifyFromImage = useCallback(
-    async (image: HTMLImageElement): Promise<IdentificationResult | null> => {
-      return identifyFromElement(image);
+    async (image: HTMLImageElement, options?: IdentifySourceOptions): Promise<IdentificationResult | null> => {
+      return identifyFromElement(image, options);
     },
     [identifyFromElement]
   );
 
   const identifyFromCanvas = useCallback(
-    async (canvas: HTMLCanvasElement): Promise<IdentificationResult | null> => {
-      return identifyFromElement(canvas);
+    async (canvas: HTMLCanvasElement, options?: IdentifySourceOptions): Promise<IdentificationResult | null> => {
+      return identifyFromElement(canvas, options);
     },
     [identifyFromElement]
   );
@@ -534,11 +560,11 @@ export function usePersonIdentification(
   const clearCache = useCallback(() => {
     identificationCacheRef.current.clear();
     setCurrentIdentification(null);
-    unmatchedDescriptorsRef.current = [];
+    unmatchedDescriptorsRef.current.clear();
   }, []);
 
   const getUnmatchedDescriptors = useCallback((): UnknownFaceDescriptor[] => {
-    return unmatchedDescriptorsRef.current;
+    return Array.from(unmatchedDescriptorsRef.current.values());
   }, []);
 
   return {

@@ -72,6 +72,34 @@ import {
     }
     return result;
   }
+
+  /**
+   * Enrollment is exposed to the AI write-only for `idNumber`: it can be set
+   * via add/update, but on read the actual value is replaced with "[REDACTED]"
+   * (or left null/undefined when unset) so the AI cannot see existing student
+   * ID numbers — yet still knows whether one is on file, so it does not ask
+   * for a value that is already stored.
+   */
+  function toEnrollmentMemoryValue(record: any): any {
+    const v = toMemoryValue(record);
+    if (!v) return v;
+    if (v.idNumber !== null && v.idNumber !== undefined && v.idNumber !== "") {
+      v.idNumber = "[REDACTED]";
+    }
+    return v;
+  }
+
+  /**
+   * The AI sees "[REDACTED]" on read for write-only ID fields. If it echoes
+   * that placeholder back as a write, drop it so we never overwrite a real
+   * stored value with the placeholder string. `undefined` means "leave alone".
+   */
+  function sanitizeIdNumberInput(input: unknown): string | undefined {
+    if (input === null || input === undefined) return undefined;
+    if (typeof input !== "string") return undefined;
+    if (input === "[REDACTED]") return undefined;
+    return input;
+  }
   
   /**
    * Get the requesting user ID from context
@@ -340,18 +368,18 @@ import {
       const paged = result.students.slice(offset, offset + limit);
       const items = paged.map(({ student, enrollment }) => ({
         student: toMemoryValue(student),
-        enrollment: toMemoryValue(enrollment),
+        enrollment: toEnrollmentMemoryValue(enrollment),
       }));
-      
+
       const keys = paged.map(({ student }) => student.id);
-  
+
       return {
         items,
         total: result.students.length,
         keys,
       };
     },
-  
+
     add: async (ctx, value, options) => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
@@ -363,13 +391,17 @@ import {
         throw new Error("studentId required - provide as 'key' parameter or in value.studentId");
       }
 
+      // idNumber may be nested under enrollment when the AI mirrors the read shape.
+      // "[REDACTED]" is the placeholder we hand back on reads — ignore it on writes
+      // so the AI never accidentally overwrites a real id with the placeholder.
+      const idNumber = sanitizeIdNumberInput(value.idNumber ?? value?.enrollment?.idNumber);
       const result = await instituteService.assignStudentToInstitute(
         instituteId,
         studentId,
         userId,
         {
           enrollmentDate: value.enrollmentDate,
-          idNumber: value.idNumber,
+          idNumber,
           grade: value.grade,
         }
       );
@@ -394,7 +426,7 @@ import {
 
       return {
         student: student ? toMemoryValue(student) : undefined,
-        enrollment: toMemoryValue(result.enrollment),
+        enrollment: toEnrollmentMemoryValue(result.enrollment),
       };
     },
 
@@ -403,10 +435,12 @@ import {
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
 
+      const idNumber = sanitizeIdNumberInput(value.idNumber ?? value?.enrollment?.idNumber);
+      const grade = value.grade ?? value?.enrollment?.grade;
       const result = await instituteService.updateStudentEnrollment(
         instituteId,
         String(key),
-        { idNumber: value.idNumber, grade: value.grade },
+        { idNumber, grade },
         userId
       );
 
@@ -425,7 +459,7 @@ import {
         isAiInitiated: true,
       });
 
-      return { enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined };
+      return { enrollment: result.enrollment ? toEnrollmentMemoryValue(result.enrollment) : undefined };
     },
 
     delete: async (ctx, key) => {
@@ -457,9 +491,9 @@ import {
   
     fromDB: (record) => ({
       student: record?.student ? toMemoryValue(record.student) : undefined,
-      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+      enrollment: record?.enrollment ? toEnrollmentMemoryValue(record.enrollment) : undefined,
     }),
-  
+
     extractChildContext: (value, key) => ({
       // Use value.student.id if available, otherwise use the key as fallback
       studentId: value?.student?.id || (typeof key === 'string' ? key : undefined),
@@ -1306,18 +1340,18 @@ import {
       const paged = result.institutes.slice(offset, offset + limit);
       const items = paged.map(({ institute, enrollment }) => ({
         institute: toMemoryValue(institute),
-        enrollment: toMemoryValue(enrollment),
+        enrollment: toEnrollmentMemoryValue(enrollment),
       }));
-  
+
       return {
         items,
         total: result.institutes.length,
       };
     },
-  
+
     fromDB: (record) => ({
       institute: record?.institute ? toMemoryValue(record.institute) : undefined,
-      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+      enrollment: record?.enrollment ? toEnrollmentMemoryValue(record.enrollment) : undefined,
     }),
   
     getDBKey: (value) => value?.institute?.id || value?.enrollment?.instituteId,
@@ -1621,7 +1655,7 @@ import {
             type: "string",
             enum: ["pre_k", "k", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "special_ed", "adult_ed"],
           },
-          idNumber: { id: "idNumber", type: "string", description: "Student ID number within the institute" },
+          idNumber: { id: "idNumber", type: "string", description: "WRITE-ONLY: student ID number within the institute. On read this is shown as \"[REDACTED]\" when an ID is on file (otherwise null) — you can tell whether one exists, but never the actual digits. You MAY set/update this when enrolling or updating a student. Do NOT ask the student or user to provide an ID number — only record one if it has been provided proactively by an authorized adult. Never echo the literal string \"[REDACTED]\" as a write — it is treated as a no-op." },
           isActive: { id: "isActive", type: "boolean" },
         },
       },
@@ -2301,6 +2335,12 @@ import {
   - Students can be enrolled in multiple clinics simultaneously
   - Classrooms are only available for institutes of type "school"
   - Only institute admins can invite new members or remove existing ones
+
+  **Privacy — ID numbers**
+  - Never ask a student, parent, guardian, or any user to tell you their personal ID number, national ID, passport number, or any other private identification number.
+  - If an authorized adult proactively supplies a student's institutional ID number (e.g. during enrollment), you MAY record it via the enrollment.idNumber field — but you cannot read it back afterward, and you must not repeat it aloud or in chat.
+  - On read, idNumber appears as "[REDACTED]" when one is on file. Treat that as "an ID is already stored" — do not ask for a replacement, and never write back the literal "[REDACTED]" string.
+  - Treat ID numbers as write-only data: capture when given, never request, never reveal.
   `;
   
   // ============================================================================

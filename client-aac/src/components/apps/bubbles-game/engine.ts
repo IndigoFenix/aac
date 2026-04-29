@@ -5,29 +5,20 @@ import type { Bubble, Difficulty, GameState, TouchResult } from './types';
 export const POP_WINDOW_MS = 200;     // expansion window after initial touch
 export const GROWTH_RATE_PX_PER_S = 80; // grow-in speed for in-place spawns
 export const RATE_WINDOW_MS = 10_000;  // rolling window for rate stats
-export const DIFFICULTY_ADJUST_MS = 4000; // how often difficulty retunes
-export const MAX_BUBBLES = 20;
 export const NUDGE_INTERVAL_MS = 500;
 
-export const INITIAL_DIFFICULTY: Difficulty = {
-  avgSize: 80,
-  avgSpeed: 60,
-  randomness: 0.2,
-  specialChance: 0.05,
-  spawnInterval: 1600,
-};
+/** Hard ceiling on simultaneous bubbles, even when avgSize is tiny. */
+const ABSOLUTE_MAX_BUBBLES = 20;
+const ABSOLUTE_MIN_BUBBLES = 3;
+/** Tuned so default avgSize ≈ 100 yields ~10 bubbles on screen. */
+const BUBBLE_BUDGET = 1000;
 
-const DIFF_MIN: Difficulty = {
-  avgSize: 50,
-  avgSpeed: 25,
-  randomness: 0.1,
-  specialChance: 0.03,
-  spawnInterval: 900,
-};
+export const INITIAL_LEVEL = 40;
+const MAX_LEVEL_FOR_PARAMS = 150; // params plateau here; score keeps growing
 
-const DIFF_MAX: Difficulty = {
+const EASY_DIFF: Difficulty = {
   avgSize: 140,
-  avgSpeed: 40,
+  avgSpeed: 35,
   randomness: 0.05,
   specialChance: 0.02,
   spawnInterval: 2400,
@@ -41,6 +32,30 @@ const HARD_DIFF: Difficulty = {
   spawnInterval: 700,
 };
 
+export const INITIAL_DIFFICULTY: Difficulty = difficultyFromLevel(INITIAL_LEVEL);
+
+/** Maximum simultaneous bubbles for a given average size. */
+export function maxBubblesForSize(avgSize: number): number {
+  const cap = Math.round(BUBBLE_BUDGET / Math.max(20, avgSize));
+  return Math.max(ABSOLUTE_MIN_BUBBLES, Math.min(ABSOLUTE_MAX_BUBBLES, cap));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Map a continuous difficultyLevel onto the per-bubble Difficulty params. */
+export function difficultyFromLevel(level: number): Difficulty {
+  const t = Math.max(0, Math.min(1, level / MAX_LEVEL_FOR_PARAMS));
+  return {
+    avgSize: lerp(EASY_DIFF.avgSize, HARD_DIFF.avgSize, t),
+    avgSpeed: lerp(EASY_DIFF.avgSpeed, HARD_DIFF.avgSpeed, t),
+    randomness: lerp(EASY_DIFF.randomness, HARD_DIFF.randomness, t),
+    specialChance: lerp(EASY_DIFF.specialChance, HARD_DIFF.specialChance, t),
+    spawnInterval: lerp(EASY_DIFF.spawnInterval, HARD_DIFF.spawnInterval, t),
+  };
+}
+
 function rand(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
@@ -53,7 +68,8 @@ export function createGameState(width: number, height: number): GameState {
   return {
     bubbles: [],
     stats: {
-      score: 0,
+      score: Math.floor(INITIAL_LEVEL),
+      difficultyLevel: INITIAL_LEVEL,
       popped: 0,
       missed: 0,
       mistouches: 0,
@@ -79,7 +95,7 @@ export function resizeGame(state: GameState, width: number, height: number): voi
 }
 
 function spawnBubble(state: GameState, now: number): void {
-  const { difficulty, score } = state.stats;
+  const { difficulty } = state.stats;
   const size = difficulty.avgSize * rand(0.7, 1.3);
   const speed = difficulty.avgSpeed * rand(0.6, 1.4);
   const special = Math.random() < difficulty.specialChance;
@@ -140,8 +156,6 @@ function spawnBubble(state: GameState, now: number): void {
   });
 
   state.lastSpawnTime = now;
-  // keep score referenced so linter doesn't complain on destructure
-  void score;
 }
 
 function pruneWindow(times: number[], now: number): number {
@@ -163,59 +177,41 @@ function updateStats(state: GameState, now: number): void {
   state.stats.popRate = pops / (RATE_WINDOW_MS / 1000);
 }
 
-function lerpDifficulty(t: number): Difficulty {
-  // t in [-1, +1]. -1 = easy (DIFF_MAX), 0 = INITIAL, +1 = hard (HARD_DIFF)
-  const clamp = Math.max(-1, Math.min(1, t));
-  const base = INITIAL_DIFFICULTY;
-  const target = clamp >= 0 ? HARD_DIFF : DIFF_MAX;
-  const k = Math.abs(clamp);
-  const blend = (a: number, b: number) => a + (b - a) * k;
-  const result: Difficulty = {
-    avgSize: blend(base.avgSize, target.avgSize),
-    avgSpeed: blend(base.avgSpeed, target.avgSpeed),
-    randomness: blend(base.randomness, target.randomness),
-    specialChance: blend(base.specialChance, target.specialChance),
-    spawnInterval: blend(base.spawnInterval, target.spawnInterval),
-  };
-  // Enforce hard bounds
-  result.avgSize = Math.max(DIFF_MIN.avgSize, Math.min(DIFF_MAX.avgSize, result.avgSize));
-  result.avgSpeed = Math.max(DIFF_MIN.avgSpeed, Math.min(HARD_DIFF.avgSpeed, result.avgSpeed));
-  return result;
-}
+/** Target pop rate (pops/sec) above which difficulty trends upward. */
+const TARGET_POP_RATE = 0.7;
+/** Target success rate above which difficulty trends upward. */
+const TARGET_SUCCESS_RATE = 0.6;
+/** Per-second weight on the (popRate - target) signal. */
+const POP_RATE_GAIN = 0.9;
+/** Per-second weight on the (successRate - target) signal. */
+const ACCURACY_GAIN = 1.4;
 
-/** Adjust difficulty based on recent pop rate and success rate. */
-function adjustDifficulty(state: GameState, now: number): void {
-  if (now - state.lastDifficultyAdjust < DIFFICULTY_ADJUST_MS) return;
-  state.lastDifficultyAdjust = now;
-
+/** Continuously drift difficultyLevel based on recent pops and accuracy. */
+function adjustDifficulty(state: GameState, dt: number): void {
   const { popRate, successRate } = state.stats;
-  // Target: pop rate around 0.3-1.0/sec with high success rate.
-  // Over 1.0/sec and >70% success → harder. Under 0.2/sec or <40% success → easier.
-  let t = 0;
-  if (popRate > 1.0 && successRate > 0.7) t = 0.6;
-  else if (popRate > 0.5 && successRate > 0.6) t = 0.3;
-  else if (popRate < 0.2 || successRate < 0.4) t = -0.6;
-  else if (popRate < 0.4 && successRate < 0.6) t = -0.3;
+  // Need at least some attempts before we trust the signal — otherwise an
+  // empty window reads as 100% success and the level would creep up while idle.
+  const attempts = state.recentPops.length + state.recentMisses.length;
+  const confidence = Math.min(1, attempts / 3);
 
-  // Blend toward new difficulty slowly from current
-  const target = lerpDifficulty(t);
-  const cur = state.stats.difficulty;
-  const blend = 0.3;
-  cur.avgSize += (target.avgSize - cur.avgSize) * blend;
-  cur.avgSpeed += (target.avgSpeed - cur.avgSpeed) * blend;
-  cur.randomness += (target.randomness - cur.randomness) * blend;
-  cur.specialChance += (target.specialChance - cur.specialChance) * blend;
-  cur.spawnInterval += (target.spawnInterval - cur.spawnInterval) * blend;
+  const popPush = (popRate - TARGET_POP_RATE) * POP_RATE_GAIN;
+  const accPush = (successRate - TARGET_SUCCESS_RATE) * ACCURACY_GAIN;
+  const drift = (popPush + accPush) * confidence;
+
+  state.stats.difficultyLevel = Math.max(0, state.stats.difficultyLevel + drift * dt);
+  state.stats.score = Math.floor(state.stats.difficultyLevel);
+  state.stats.difficulty = difficultyFromLevel(state.stats.difficultyLevel);
 }
 
 /** Advance the game one tick. dt is seconds since last tick. */
 export function tick(state: GameState, dt: number, now: number): void {
   const { difficulty } = state.stats;
 
-  // Spawn
+  // Spawn — cap depends on bubble size so big bubbles don't fill the screen
+  const maxBubbles = maxBubblesForSize(difficulty.avgSize);
   if (
     now - state.lastSpawnTime >= difficulty.spawnInterval &&
-    state.bubbles.length < MAX_BUBBLES
+    state.bubbles.length < maxBubbles
   ) {
     spawnBubble(state, now);
   }
@@ -233,8 +229,6 @@ export function tick(state: GameState, dt: number, now: number): void {
 
     // Expire pending touch window → pop
     if (b.pendingTouchTime !== undefined && now - b.pendingTouchTime >= POP_WINDOW_MS) {
-      // Pop this bubble now
-      state.stats.score += b.special ? 3 : 1;
       state.stats.popped += 1;
       state.recentPops.push(now);
       continue; // drop bubble
@@ -276,7 +270,7 @@ export function tick(state: GameState, dt: number, now: number): void {
 
   // Stats + difficulty
   updateStats(state, now);
-  adjustDifficulty(state, now);
+  adjustDifficulty(state, dt);
 }
 
 /**
@@ -333,7 +327,6 @@ export function handleTouch(state: GameState, x: number, y: number, now: number)
   if (hitBubble.damaged) {
     // Pop immediately
     state.bubbles = state.bubbles.filter(b => b.id !== hitBubble!.id);
-    state.stats.score += hitBubble.special ? 3 : 1;
     state.stats.popped += 1;
     state.recentPops.push(now);
     return { hit: true, popped: true, damaged: false, bubble: hitBubble };
@@ -346,7 +339,8 @@ export function handleTouch(state: GameState, x: number, y: number, now: number)
 
 export function resetGame(state: GameState): void {
   state.bubbles = [];
-  state.stats.score = 0;
+  state.stats.score = Math.floor(INITIAL_LEVEL);
+  state.stats.difficultyLevel = INITIAL_LEVEL;
   state.stats.popped = 0;
   state.stats.missed = 0;
   state.stats.mistouches = 0;

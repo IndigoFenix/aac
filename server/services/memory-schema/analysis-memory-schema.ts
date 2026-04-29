@@ -49,9 +49,15 @@ interface AnalysisFullRow extends AnalysisSummaryRow {
 
 function buildWhere(studentId: string, filters?: ListFilters, accessCtx?: AccessCtx) {
   const conds: any[] = [eq(deepAnalyses.studentId, studentId)];
-  if (accessCtx) {
-    conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
+  // Fail-closed: without a visibility ctx the AI must not read PHI. Caller is
+  // expected to have plumbed accessCtx through baseContext (sessionService /
+  // deepAnalysisService); a missing one is a programming error and should
+  // surface as zero results rather than every-institute reads.
+  if (!accessCtx) {
+    conds.push(sql`FALSE`);
+    return and(...conds);
   }
+  conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
   if (filters?.dateFrom) {
     const d = new Date(filters.dateFrom);
     if (!Number.isNaN(d.getTime())) conds.push(gte(deepAnalyses.createdAt, d));
@@ -120,11 +126,11 @@ async function getAnalysis(
   const studentId = ctx.all.studentId;
   if (!studentId) return undefined;
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  // Fail-closed — see buildWhere for rationale.
+  if (!accessCtx) return undefined;
 
   const conds: any[] = [eq(deepAnalyses.id, String(key)), eq(deepAnalyses.studentId, studentId)];
-  if (accessCtx) {
-    conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
-  }
+  conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
 
   const [row] = await db
     .select()

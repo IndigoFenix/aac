@@ -26,6 +26,12 @@ export interface EntityInstance {
   containerUid?: string;
   /** Per-instance property overrides (from room def + state overrideProps merged in). */
   overrides: Partial<Record<OverridableProp, unknown>>;
+  /**
+   * Monotonic sequence value bumped each time the entity is spawned or
+   * successfully moved. Used as the tie-breaker in the render-order sort so
+   * the most-recently-placed entity sits on top within its layer.
+   */
+  placedSeq: number;
 }
 
 export type Turn = "player" | "ai";
@@ -57,6 +63,8 @@ export interface RuntimeState {
   gameOver: boolean;
   /** Monotonic counter used to generate unique uids. */
   uidSeq: number;
+  /** Monotonic counter incremented on every spawn and successful move. */
+  placedSeq: number;
 }
 
 // ---------------------------------------------------------------------------

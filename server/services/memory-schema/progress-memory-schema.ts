@@ -299,14 +299,18 @@ const programOps: MemoryDBOperations<Program> = {
     const studentId = ctx.all.studentId;
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) throw new Error("studentId required for program query");
+    // Fail-closed — without an accessCtx the AI must not read PHI. The
+    // parent-program read is the gate every child op (goals/objectives/
+    // baselines/services/meetings) inherits from, so a missing visibility
+    // ctx here would expose all program children regardless of institute.
+    if (!accessCtx) return undefined;
 
-    // Get current/working program (active or draft) — gated by visibility when
-    // accessCtx is set. Children of programs (goals, services, etc.) inherit
-    // visibility through this read; the root-only ownership model means once
-    // the parent is filtered, child queries don't need to re-filter.
-    const visibility = accessCtx
-      ? withInstituteVisibility(programs, accessCtx, "program")
-      : sql`TRUE`;
+    // Get current/working program (active or draft) — gated by visibility
+    // through withInstituteVisibility. Children of programs (goals, services,
+    // etc.) inherit visibility through this read; the root-only ownership
+    // model means once the parent is filtered, child queries don't need to
+    // re-filter.
+    const visibility = withInstituteVisibility(programs, accessCtx, "program");
 
     const [activeProgram] = await db
       .select()

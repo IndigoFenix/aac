@@ -5883,3 +5883,179 @@
 [2026-04-21T13:17:20.885Z] [resolveImageKeys] Resolving 1 keys: rocket_taking_off (format=internal, useUnapproved=true)
 [2026-04-21T13:17:21.048Z] [resolveImageKeys] Resolved "rocket_taking_off" → __SYMBOL__:de3f69f3-a0c7-41b9-82ba-35b032bba232
 [2026-04-21T13:17:21.050Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-29T14:15:03.533Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:15:03.534Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:15:03.691Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:15:03.692Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:15:47.625Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:15:47.626Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:20:05.975Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:20:05.976Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:20:06.145Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:20:06.147Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:20:06.326Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:20:06.327Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:20:45.952Z] [resolveImageKeys] Resolving 8 keys: person_raising_hand, person_with_bandage, person_using_toilet, person_eating, person_drinking, person_sweating, person_shivering, person_calling (format=internal, useUnapproved=true)
+[2026-04-29T14:20:46.230Z] [resolveImageKeys] No symbol found for "person_raising_hand"
+[2026-04-29T14:20:46.395Z] [resolveImageKeys] No symbol found for "person_with_bandage"
+[2026-04-29T14:20:46.664Z] [resolveImageKeys] No symbol found for "person_using_toilet"
+[2026-04-29T14:20:46.845Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-04-29T14:20:47.010Z] [resolveImageKeys] Resolved "person_drinking" → __SYMBOL__:b67525a6-07d3-4c1b-8e57-d952c9cd67f5
+[2026-04-29T14:20:47.294Z] [resolveImageKeys] No symbol found for "person_sweating"
+[2026-04-29T14:20:47.464Z] [resolveImageKeys] No symbol found for "person_shivering"
+[2026-04-29T14:20:47.630Z] [resolveImageKeys] No symbol found for "person_calling"
+[2026-04-29T14:20:47.631Z] [resolveImageKeys] Done. Resolved 2, unresolved 6: person_raising_hand, person_with_bandage, person_using_toilet, person_sweating, person_shivering, person_calling
+[2026-04-29T14:20:47.632Z] [queueGeneration] Queuing 6 keys: person_raising_hand, person_with_bandage, person_using_toilet, person_sweating, person_shivering, person_calling (hasCallback=true)
+[2026-04-29T14:20:47.843Z] [processQueue] Generating "person_calling"...
+[2026-04-29T14:21:13.618Z] [COST] imageKey="person_calling" | refinement: gemini/gemini-2.5-flash in=727 out=108 | image: openai/gpt-image-1 in=114 out=272
+[2026-04-29T14:21:13.619Z] [processQueue] Generated "person_calling" → ea19ffee-8ae8-407f-b1c3-3579310d0d4f (1 total)
+[2026-04-29T14:21:13.619Z] [processQueue] FULL REFINED PROMPT for "person_calling": A simple, bold AAC symbol icon of a generic human figure, facing forward, holding a black rectangular cell phone with a white screen to their ear with one hand. The figure has a large head, small black dot eyes, and a small curved mouth. The figure is wearing a simple blue shirt. Bold black outlines define all shapes. The image uses flat, solid colors: blue for the shirt, light skin tone for the figure, black for the phone, and white for the phone screen. The figure is centered on a transparent background.
+[2026-04-29T14:21:17.783Z] [processQueue] Generating "person_shivering"...
+[2026-04-29T14:21:35.218Z] [resolveImageKeys] Resolving 5 keys: person_putting_on_jacket, person_wearing_sweater, person_under_blanket, thermostat, person_talking (format=internal, useUnapproved=true)
+[2026-04-29T14:21:35.384Z] [resolveImageKeys] No symbol found for "person_putting_on_jacket"
+[2026-04-29T14:21:35.550Z] [resolveImageKeys] No symbol found for "person_wearing_sweater"
+[2026-04-29T14:21:35.716Z] [resolveImageKeys] No symbol found for "person_under_blanket"
+[2026-04-29T14:21:35.882Z] [resolveImageKeys] No symbol found for "thermostat"
+[2026-04-29T14:21:36.047Z] [resolveImageKeys] No symbol found for "person_talking"
+[2026-04-29T14:21:36.048Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: person_putting_on_jacket, person_wearing_sweater, person_under_blanket, thermostat, person_talking
+[2026-04-29T14:21:36.048Z] [queueGeneration] Queuing 5 keys: person_putting_on_jacket, person_wearing_sweater, person_under_blanket, thermostat, person_talking (hasCallback=true)
+[2026-04-29T14:21:41.475Z] [COST] imageKey="person_shivering" | refinement: gemini/gemini-2.5-flash in=727 out=91 | image: openai/gpt-image-1 in=100 out=272
+[2026-04-29T14:21:41.475Z] [processQueue] Generated "person_shivering" → d188045e-00c9-4893-86c6-b98fbf2a3764 (2 total)
+[2026-04-29T14:21:41.476Z] [processQueue] FULL REFINED PROMPT for "person_shivering": A simple, bold AAC symbol icon of a person shivering. The generic human figure is centered, facing forward, with arms wrapped around their body and knees slightly bent, indicating cold. Simple motion lines radiate outwards from the figure to emphasize the shivering action. The figure has simple dots for eyes and a small curve for a mouth, conveying discomfort. The illustration uses flat, solid colors with bold black outlines on a transparent background, suitable for small-size recognition.
+[2026-04-29T14:21:45.642Z] [processQueue] Generating "person_talking"...
+[2026-04-29T14:22:03.458Z] [COST] imageKey="person_talking" | refinement: gemini/gemini-2.5-flash in=727 out=95 | image: openai/gpt-image-1 in=101 out=272
+[2026-04-29T14:22:03.458Z] [processQueue] Generated "person_talking" → de69b9d9-a830-48ab-a227-28b9c1a91c8f (3 total)
+[2026-04-29T14:22:03.459Z] [processQueue] FULL REFINED PROMPT for "person_talking": A simple, bold AAC symbol icon of a generic human figure from the chest up, facing forward. The figure has a large head, small dot eyes, and a simple open curve for the mouth, indicating speech. Two curved lines emanate from the mouth area, symbolizing sound or speech. The figure has no hair and wears a simple, collarless shirt. The illustration uses flat, solid colors with bold black outlines on a transparent background, suitable for small-size recognition.
+[2026-04-29T14:22:07.650Z] [processQueue] Generating "thermostat"...
+[2026-04-29T14:22:28.092Z] [COST] imageKey="thermostat" | refinement: gemini/gemini-2.5-flash in=726 out=88 | image: openai/gpt-image-1 in=93 out=272
+[2026-04-29T14:22:28.093Z] [processQueue] Generated "thermostat" → 46956640-acba-477f-b03f-358a2b056716 (4 total)
+[2026-04-29T14:22:28.095Z] [processQueue] FULL REFINED PROMPT for "thermostat": A simple, bold illustration of a square digital thermostat with a black outline. The thermostat is light gray with a dark gray rectangular screen in the center. The screen displays a single large, bold number "72" in black. Below the screen, there are two simple circular buttons: a red "up" arrow button on the left and a blue "down" arrow button on the right. The thermostat is centered on a transparent background.
+[2026-04-29T14:22:32.299Z] [processQueue] Generating "person_under_blanket"...
+[2026-04-29T14:23:04.610Z] [COST] imageKey="person_under_blanket" | refinement: gemini/gemini-2.5-flash in=728 out=86 | image: openai/gpt-image-1 in=91 out=272
+[2026-04-29T14:23:04.611Z] [processQueue] Generated "person_under_blanket" → 7aec9bba-653a-466f-b755-bac80c83b13b (5 total)
+[2026-04-29T14:23:04.612Z] [processQueue] FULL REFINED PROMPT for "person_under_blanket": A simple, bold AAC symbol icon of a generic human figure sleeping under a blanket. The figure is lying down, mostly covered by a rectangular blanket with a slight ripple to indicate softness. Only the top of the head with simple dot eyes and a small curve for the mouth is visible above the blanket. The blanket is a solid light blue, and the figure's skin is a light peach color, all outlined in thick black.
+[2026-04-29T14:23:08.788Z] [processQueue] Generating "person_wearing_sweater"...
+[2026-04-29T14:23:32.029Z] [COST] imageKey="person_wearing_sweater" | refinement: gemini/gemini-2.5-flash in=728 out=79 | image: openai/gpt-image-1 in=84 out=272
+[2026-04-29T14:23:32.029Z] [processQueue] Generated "person_wearing_sweater" → 9834d88e-50e9-4df9-ac29-724cecf0e28b (6 total)
+[2026-04-29T14:23:32.030Z] [processQueue] FULL REFINED PROMPT for "person_wearing_sweater": A simple, generic human figure with a slightly oversized head and no hair, facing forward. The figure is wearing a long-sleeved sweater with a crew neck. The sweater is a solid, medium blue color. The figure's skin is a light peach color. All shapes have bold black outlines. The image uses flat, solid colors with no gradients or shadows, on a transparent background.
+[2026-04-29T14:23:36.200Z] [processQueue] Generating "person_putting_on_jacket"...
+[2026-04-29T14:24:36.514Z] [COST] imageKey="person_putting_on_jacket" | refinement: gemini/gemini-2.5-flash in=729 out=99 | image: openai/gpt-image-1 in=105 out=272
+[2026-04-29T14:24:36.514Z] [processQueue] Generated "person_putting_on_jacket" → cdb6175d-3b7f-42f3-84cb-befad65b457c (7 total)
+[2026-04-29T14:24:36.515Z] [processQueue] FULL REFINED PROMPT for "person_putting_on_jacket": A simple, bold AAC symbol icon of a generic human figure putting on a jacket. The figure is centered, facing forward, with arms raised and bent, one arm partially inserted into a jacket sleeve. The jacket is open and clearly visible, with the collar and lapels distinct. The figure has a large head, simple dot eyes, and a small curved mouth, with no hair. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows, on a transparent background.
+[2026-04-29T14:24:40.688Z] [processQueue] Generating "person_sweating"...
+[2026-04-29T14:25:24.130Z] [COST] imageKey="person_sweating" | refinement: gemini/gemini-2.5-flash in=727 out=85 | image: openai/gpt-image-1 in=92 out=272
+[2026-04-29T14:25:24.131Z] [processQueue] Generated "person_sweating" → df604dd1-3c0a-4be0-a14c-134806df422a (8 total)
+[2026-04-29T14:25:24.132Z] [processQueue] FULL REFINED PROMPT for "person_sweating": A simple, bold AAC symbol illustration of a generic human figure with a slightly stylized head and body, standing facing forward. The figure has simple dot eyes and a small curved mouth. Beads of sweat are depicted as small blue droplets on the forehead and around the figure's head, with simple motion lines indicating dripping. The illustration uses a limited palette of bold, flat colors with strong black outlines, rendered on a transparent background.
+[2026-04-29T14:25:28.302Z] [processQueue] Generating "person_using_toilet"...
+[2026-04-29T14:26:09.192Z] [COST] imageKey="person_using_toilet" | refinement: gemini/gemini-2.5-flash in=728 out=105 | image: openai/gpt-image-1 in=109 out=272
+[2026-04-29T14:26:09.194Z] [processQueue] Generated "person_using_toilet" → 9aeb932d-2302-4f75-9044-8fe1de2ed9e5 (9 total)
+[2026-04-29T14:26:09.195Z] [processQueue] FULL REFINED PROMPT for "person_using_toilet": A simple, bold AAC symbol icon of a generic human figure sitting on a toilet, viewed from the side. The figure has a large head, small dot eyes, and a simple curved mouth, with no hair. The toilet is white with a black outline, and the figure's clothing is minimal, showing only a simple shirt and pants. The composition is centered, with the figure and toilet filling about 70% of the square canvas, rendered with flat, solid colors and thick black outlines on a transparent background.
+[2026-04-29T14:26:13.379Z] [processQueue] Generating "person_with_bandage"...
+[2026-04-29T14:27:01.762Z] [COST] imageKey="person_with_bandage" | refinement: gemini/gemini-2.5-flash in=728 out=85 | image: openai/gpt-image-1 in=93 out=272
+[2026-04-29T14:27:01.764Z] [processQueue] Generated "person_with_bandage" → 56625d39-ec73-4633-ac0e-09f43b1074ae (10 total)
+[2026-04-29T14:27:01.765Z] [processQueue] FULL REFINED PROMPT for "person_with_bandage": A simple, bold AAC symbol icon of a generic human figure with a bandage. The figure is centered, facing forward, with a large head and simple dot eyes and a small curved mouth. A white rectangular bandage with two small black horizontal lines is clearly visible on the forehead. The figure has no hair. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-04-29T14:27:05.953Z] [processQueue] Generating "person_raising_hand"...
+[2026-04-29T14:27:57.566Z] [COST] imageKey="person_raising_hand" | refinement: gemini/gemini-2.5-flash in=728 out=88 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-29T14:27:57.568Z] [processQueue] Generated "person_raising_hand" → 86f5d5f3-f7a9-40fd-87dd-f9a0e255911f (11 total)
+[2026-04-29T14:27:57.571Z] [processQueue] FULL REFINED PROMPT for "person_raising_hand": A simple, bold AAC symbol icon of a generic human figure raising one hand. The figure is centered, facing forward, with a slightly stylized body and a round head with two simple black dots for eyes and a small curved line for a mouth. One arm is extended upwards, with the hand open and palm facing forward. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows, and is on a transparent background.
+[2026-04-29T14:40:11.978Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:40:11.980Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T14:40:12.159Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T14:40:12.159Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T15:06:37.577Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T15:06:37.578Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T15:06:37.776Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T15:06:37.785Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T15:46:43.295Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T15:46:43.296Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T15:48:15.361Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T15:48:15.362Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T15:48:24.780Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T15:48:24.782Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T16:40:00.215Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T16:40:00.217Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T16:40:26.503Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T16:40:26.504Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T16:40:38.628Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T16:40:38.631Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T17:49:27.858Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T17:49:27.860Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T17:49:32.896Z] [resolveImageKeys] Resolving 1 keys: person_talking (format=internal, useUnapproved=true)
+[2026-04-29T17:49:33.065Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-04-29T17:49:33.067Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-29T17:49:47.976Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T17:49:47.977Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T17:50:30.104Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T17:50:30.106Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T17:50:55.661Z] [resolveImageKeys] Resolving 1 keys: person_doing_homework (format=internal, useUnapproved=true)
+[2026-04-29T17:50:55.857Z] [resolveImageKeys] No symbol found for "person_doing_homework"
+[2026-04-29T17:50:55.858Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_doing_homework
+[2026-04-29T17:50:55.860Z] [queueGeneration] Queuing 1 keys: person_doing_homework (hasCallback=true)
+[2026-04-29T17:50:56.038Z] [processQueue] Generating "person_doing_homework"...
+[2026-04-29T17:51:15.037Z] [COST] imageKey="person_doing_homework" | refinement: gemini/gemini-2.5-flash in=728 out=96 | image: openai/gpt-image-1 in=102 out=272
+[2026-04-29T17:51:15.039Z] [processQueue] Generated "person_doing_homework" → d30df544-7ec7-4ef5-9a70-9e5fe2200a53 (1 total)
+[2026-04-29T17:51:15.040Z] [processQueue] FULL REFINED PROMPT for "person_doing_homework": A simple, bold AAC symbol icon of a generic human figure sitting at a desk, focused on a book or notebook. The figure has a large head, small dot eyes, and a simple curve mouth, with no hair. One hand holds a pencil, poised over the book. The desk and book are depicted with clean, flat shapes and bold black outlines, using a limited palette of saturated colors like blue for the shirt, brown for the desk, and white for the paper.
+[2026-04-29T18:38:39.915Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T18:38:39.916Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T18:38:40.094Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-29T18:38:40.095Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-29T18:38:52.063Z] [resolveImageKeys] Resolving 6 keys: school_building, calendar_date, person_feeling_happy, person_playing_video_game, child_watching_tv, person_drawing (format=internal, useUnapproved=true)
+[2026-04-29T18:38:52.247Z] [resolveImageKeys] No symbol found for "school_building"
+[2026-04-29T18:38:52.414Z] [resolveImageKeys] No symbol found for "calendar_date"
+[2026-04-29T18:38:52.581Z] [resolveImageKeys] No symbol found for "person_feeling_happy"
+[2026-04-29T18:38:52.750Z] [resolveImageKeys] No symbol found for "person_playing_video_game"
+[2026-04-29T18:38:52.918Z] [resolveImageKeys] No symbol found for "child_watching_tv"
+[2026-04-29T18:38:53.085Z] [resolveImageKeys] No symbol found for "person_drawing"
+[2026-04-29T18:38:53.086Z] [resolveImageKeys] Done. Resolved 0, unresolved 6: school_building, calendar_date, person_feeling_happy, person_playing_video_game, child_watching_tv, person_drawing
+[2026-04-29T18:38:53.088Z] [queueGeneration] Queuing 6 keys: school_building, calendar_date, person_feeling_happy, person_playing_video_game, child_watching_tv, person_drawing (hasCallback=true)
+[2026-04-29T18:38:53.263Z] [processQueue] Generating "person_drawing"...
+[2026-04-29T18:39:00.147Z] [resolveImageKeys] Resolving 5 keys: person_feeling_happy, person_feeling_sad, person_yawning, person_celebrating, person_frowning_with_hands_on_face (format=internal, useUnapproved=true)
+[2026-04-29T18:39:00.344Z] [resolveImageKeys] No symbol found for "person_feeling_happy"
+[2026-04-29T18:39:00.520Z] [resolveImageKeys] No symbol found for "person_feeling_sad"
+[2026-04-29T18:39:00.697Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:be8b8208-0cb5-4762-8537-fab62f8139c2
+[2026-04-29T18:39:00.877Z] [resolveImageKeys] No symbol found for "person_celebrating"
+[2026-04-29T18:39:01.054Z] [resolveImageKeys] No symbol found for "person_frowning_with_hands_on_face"
+[2026-04-29T18:39:01.054Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: person_feeling_happy, person_feeling_sad, person_celebrating, person_frowning_with_hands_on_face
+[2026-04-29T18:39:01.055Z] [queueGeneration] Queuing 4 keys: person_feeling_happy, person_feeling_sad, person_celebrating, person_frowning_with_hands_on_face (hasCallback=true)
+[2026-04-29T18:39:08.363Z] [COST] imageKey="person_drawing" | refinement: gemini/gemini-2.5-flash in=727 out=94 | image: openai/gpt-image-1 in=100 out=272
+[2026-04-29T18:39:08.364Z] [processQueue] Generated "person_drawing" → 172bd2e4-58b9-4d0a-ace9-362b3993a8de (1 total)
+[2026-04-29T18:39:08.367Z] [processQueue] FULL REFINED PROMPT for "person_drawing": A simple, bold AAC symbol icon of a generic human figure with a slightly oversized head, facing forward and slightly angled to the right. The figure is holding a dark gray pencil in their right hand, poised over a white sheet of paper that is held in their left hand. The figure has a simple dot for an eye and a small curve for a mouth. The illustration uses flat, solid colors with thick black outlines, no gradients or shadows, on a transparent background.
+[2026-04-29T18:39:12.554Z] [processQueue] Generating "person_frowning_with_hands_on_face"...
+[2026-04-29T18:39:12.956Z] [resolveImageKeys] Resolving 4 keys: person_sleeping, person_in_bed, clock_with_hands, person_tired_face (format=internal, useUnapproved=true)
+[2026-04-29T18:39:13.167Z] [resolveImageKeys] No symbol found for "person_sleeping"
+[2026-04-29T18:39:13.347Z] [resolveImageKeys] No symbol found for "person_in_bed"
+[2026-04-29T18:39:13.525Z] [resolveImageKeys] No symbol found for "clock_with_hands"
+[2026-04-29T18:39:13.702Z] [resolveImageKeys] No symbol found for "person_tired_face"
+[2026-04-29T18:39:13.703Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: person_sleeping, person_in_bed, clock_with_hands, person_tired_face
+[2026-04-29T18:39:13.703Z] [queueGeneration] Queuing 4 keys: person_sleeping, person_in_bed, clock_with_hands, person_tired_face (hasCallback=true)
+[2026-04-29T18:39:31.454Z] [COST] imageKey="person_frowning_with_hands_on_face" | refinement: gemini/gemini-2.5-flash in=731 out=95 | image: openai/gpt-image-1 in=103 out=272
+[2026-04-29T18:39:31.455Z] [processQueue] Generated "person_frowning_with_hands_on_face" → d47324a4-3014-42e2-a8eb-72873e1dd197 (2 total)
+[2026-04-29T18:39:31.456Z] [processQueue] FULL REFINED PROMPT for "person_frowning_with_hands_on_face": A simple, bold AAC symbol icon of a generic human figure with a large head and small body, centered on a transparent background. The figure has a prominent frown, with simple dots for eyes and a downward curved line for the mouth, clearly indicating sadness or unhappiness. Both hands are raised to the face, palms open, covering the cheeks. The illustration uses thick black outlines and flat, solid colors, with no gradients or shadows, ensuring high contrast and readability at small sizes.
+[2026-04-29T18:39:35.627Z] [processQueue] Generating "person_tired_face"...
+[2026-04-29T18:39:55.956Z] [COST] imageKey="person_tired_face" | refinement: gemini/gemini-2.5-flash in=728 out=105 | image: openai/gpt-image-1 in=110 out=272
+[2026-04-29T18:39:55.957Z] [processQueue] Generated "person_tired_face" → ae22135f-05ba-40c8-bb1d-54acbf9c384d (3 total)
+[2026-04-29T18:39:55.958Z] [processQueue] FULL REFINED PROMPT for "person_tired_face": A simple, bold AAC symbol icon of a generic human head with a tired expression, on a transparent background. The head is round with a slightly larger proportion, featuring minimal facial details: two small black dots for eyes, and a small, downward-curved line for the mouth to indicate tiredness. The eyes have two small, downward-curved lines underneath them to suggest bags or weariness. The head has no hair. All shapes have thick black outlines and are filled with flat, solid, light skin tone color.
+[2026-04-29T18:40:00.153Z] [processQueue] Generating "clock_with_hands"...
+[2026-04-29T18:40:21.557Z] [COST] imageKey="clock_with_hands" | refinement: gemini/gemini-2.5-flash in=728 out=82 | image: openai/gpt-image-1 in=87 out=272
+[2026-04-29T18:40:21.558Z] [processQueue] Generated "clock_with_hands" → 2f92ea21-b1eb-4b97-b5ea-2d5332b87716 (4 total)
+[2026-04-29T18:40:21.559Z] [processQueue] FULL REFINED PROMPT for "clock_with_hands": A simple, bold illustration of a round clock face, viewed from the front. The clock has a white face with a thick black outline, and simple black hour and minute hands pointing to approximately 10 and 2. There are no numbers or other markings on the clock face. The icon uses flat, solid colors with bold black outlines, suitable for an AAC communication board, rendered on a transparent background.
+[2026-04-29T18:40:25.735Z] [processQueue] Generating "person_in_bed"...
+[2026-04-29T18:40:42.798Z] [COST] imageKey="person_in_bed" | refinement: gemini/gemini-2.5-flash in=728 out=98 | image: openai/gpt-image-1 in=101 out=272
+[2026-04-29T18:40:42.798Z] [processQueue] Generated "person_in_bed" → 4c226a08-202a-4eb2-94a0-b4e815d6fbfa (5 total)
+[2026-04-29T18:40:42.799Z] [processQueue] FULL REFINED PROMPT for "person_in_bed": A simple, bold AAC symbol icon of a person in bed. The person is a generic, non-gender-specific figure with a large head, small dot eyes, and a small curved mouth, lying flat on their back in a bed. The bed is depicted as a rectangular mattress with a simple headboard and a blanket pulled up to the person's chest. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-04-29T18:40:46.970Z] [processQueue] Generating "person_sleeping"...
+[2026-04-29T18:41:03.163Z] [COST] imageKey="person_sleeping" | refinement: gemini/gemini-2.5-flash in=727 out=95 | image: openai/gpt-image-1 in=99 out=272
+[2026-04-29T18:41:03.164Z] [processQueue] Generated "person_sleeping" → 1eac4335-a085-4f14-ba78-8db55decdc4d (6 total)
+[2026-04-29T18:41:03.164Z] [processQueue] FULL REFINED PROMPT for "person_sleeping": A simple, bold AAC symbol icon of a person sleeping. The figure is a generic human, lying on their side with eyes closed, a small curve for the mouth, and no hair. A thought bubble with three small "Z"s floats above their head, indicating sleep. The figure is centered, outlined in thick black, and filled with flat, solid colors: light peach for skin, medium blue for clothing, and white for the thought bubble and Z's.
+[2026-04-29T18:41:07.325Z] [processQueue] Generating "person_celebrating"...
+[2026-04-29T18:41:25.053Z] [COST] imageKey="person_celebrating" | refinement: gemini/gemini-2.5-flash in=727 out=77 | image: openai/gpt-image-1 in=83 out=272
+[2026-04-29T18:41:25.054Z] [processQueue] Generated "person_celebrating" → 826e9d75-1fc1-4dea-aa64-2d97508eeea1 (7 total)
+[2026-04-29T18:41:25.055Z] [processQueue] FULL REFINED PROMPT for "person_celebrating": A simple, bold AAC symbol icon of a generic human figure with a slightly oversized head, arms raised in a "V" shape above their head, and a wide, upward-curving smile. The figure is centered, outlined in thick black, and filled with a single solid color. Two small, simple curved lines emanate from each side of the head, indicating celebratory motion.
+[2026-04-29T18:41:29.228Z] [processQueue] Generating "person_feeling_sad"...
+[2026-04-29T18:41:43.108Z] [COST] imageKey="person_feeling_sad" | refinement: gemini/gemini-2.5-flash in=728 out=94 | image: openai/gpt-image-1 in=97 out=272
+[2026-04-29T18:41:43.109Z] [processQueue] Generated "person_feeling_sad" → 3764d5f3-e719-4351-b996-dbce0b49d1ba (8 total)
+[2026-04-29T18:41:43.110Z] [processQueue] FULL REFINED PROMPT for "person_feeling_sad": A simple, generic human figure with a large head and small body, centered on a transparent background. The figure has a round head with two small black dots for eyes and a downward-curved mouth to indicate sadness. The figure's body is a simple rectangle, with two short, stick-like arms hanging down. The figure is colored in a solid, medium blue, with a bold black outline around all shapes. No hair, clothing, or additional details.
+[2026-04-29T18:41:47.288Z] [processQueue] Generating "person_feeling_happy"...
+[2026-04-29T18:42:06.593Z] [COST] imageKey="person_feeling_happy" | refinement: gemini/gemini-2.5-flash in=728 out=87 | image: openai/gpt-image-1 in=93 out=272
+[2026-04-29T18:42:06.594Z] [processQueue] Generated "person_feeling_happy" → 862e0e49-b4cb-498c-8ebe-d9ab8711be9f (9 total)
+[2026-04-29T18:42:06.595Z] [processQueue] FULL REFINED PROMPT for "person_feeling_happy": A simple, bold AAC symbol icon of a generic human figure with a large, round head and a smaller body, centered on a transparent background. The figure has a wide, upward-curving smile and two small, round eyes, conveying happiness. Its arms are raised slightly outwards with hands open, and its body is slightly tilted, indicating joy. The illustration uses flat, solid colors with thick black outlines, no gradients or shadows.

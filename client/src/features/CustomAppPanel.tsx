@@ -1,13 +1,16 @@
 // src/features/CustomAppPanel.tsx
 //
-// Clinician panel for custom apps (games). Lets the clinician:
-//   - List their saved apps and load one into the editor
-//   - See the definition being built/edited by the AI (via Context_CustomApp)
-//   - Preview it via the shared GameRuntime
-//   - Save to the database (POST /api/custom-apps or PATCH /api/custom-apps/:id)
-//   - Assign to / unassign from the active student
+// Clinician panel for custom apps (games). The panel is now a full editor:
+//   - 3-pane layout (left: object/room/button lists, center: object editor or
+//     room canvas, right: contextual inspector that falls through to room and
+//     then app properties when nothing finer is selected)
+//   - Play mode swaps the body for the shared GameRuntime
+//
+// The AI also edits the underlying GameDefinition through the Zustand store
+// (Context_CustomApp), so anything the editor changes is visible to the AI
+// and vice versa.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useCustomAppStore } from "@/store/custom-app-store";
@@ -18,10 +21,15 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Loader2, Save, Trash2, UserCheck, UserPlus } from "lucide-react";
+import { Loader2, Play, Save, Square, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { GameRuntime } from "@client-shared/game-runtime";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
 import type { CustomApp } from "@shared/schema";
+import { LeftRail } from "./custom-app/LeftRail";
+import { RightRail } from "./custom-app/RightRail";
+import { RoomEditor } from "./custom-app/RoomEditor";
+import { ObjectEditor } from "./custom-app/ObjectEditor";
+import { editorReducer, initialEditorState } from "./custom-app/editor-state";
 
 interface CustomAppPanelProps {
   isOpen?: boolean;
@@ -50,6 +58,7 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     reset,
   } = useCustomAppStore();
 
+  const [editor, dispatchEditor] = useReducer(editorReducer, initialEditorState);
   const [saving, setSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
@@ -113,6 +122,7 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
       setDefinition(app.definition as never, { markDirty: false });
       setDbId(app.id);
       markClean();
+      dispatchEditor({ type: "selectNone" });
     } catch (err) {
       toast({ title: t("customApps.loadError"), description: String(err), variant: "destructive" });
     }
@@ -139,8 +149,6 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
         definition,
         isGenerated: true,
       };
-      // Scope to the currently-selected institute so students in that institute
-      // can discover the app through the AAC-settings assignment UI.
       if (currentInstitute?.id) body.instituteId = currentInstitute.id;
       if (dbId) {
         const res = await apiRequest("PATCH", `/api/custom-apps/${dbId}`, body);
@@ -175,9 +183,8 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     } finally {
       setSaving(false);
     }
-  }, [definition, dbId, markClean, setDbId, t, toast, upsertAppMeta]);
+  }, [definition, dbId, markClean, setDbId, t, toast, upsertAppMeta, currentInstitute?.id]);
 
-  // --- Delete
   const handleDelete = useCallback(async () => {
     if (!dbId) return;
     if (!confirm(t("customApps.confirmDelete"))) return;
@@ -186,13 +193,13 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
       if (!res.ok) throw new Error("Delete failed");
       removeAppMeta(dbId);
       reset();
+      dispatchEditor({ type: "selectNone" });
       toast({ title: t("customApps.deleted") });
     } catch (err) {
       toast({ title: t("customApps.deleteError"), description: String(err), variant: "destructive" });
     }
   }, [dbId, removeAppMeta, reset, t, toast]);
 
-  // --- Assignment toggle
   const toggleAssignment = useCallback(async () => {
     if (!dbId || !student?.id) return;
     setAssigning(true);
@@ -232,11 +239,32 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     toast,
   ]);
 
-  // --- New blank definition
   const handleNew = useCallback(() => {
     if (isDirty && !confirm(t("customApps.discardUnsavedPrompt"))) return;
     reset();
+    dispatchEditor({ type: "selectNone" });
   }, [isDirty, reset, t]);
+
+  // ---- Derived values for the body
+  const selectedClass = useMemo(() => {
+    if (!definition || editor.selection.kind !== "class") return null;
+    return definition.classes.find((c) => c.id === editor.selection.classId) ?? null;
+  }, [definition, editor.selection]);
+
+  const selectedRoom = useMemo(() => {
+    if (!definition) return null;
+    if (editor.selection.kind === "room") {
+      return definition.rooms.find((r) => r.id === editor.selection.roomId) ?? null;
+    }
+    if (editor.selection.kind === "entity") {
+      return definition.rooms.find((r) => r.id === editor.selection.roomId) ?? null;
+    }
+    return null;
+  }, [definition, editor.selection]);
+
+  const selectedEntityIndex = editor.selection.kind === "entity" ? editor.selection.index : null;
+
+  const inPlay = editor.mode === "play" && definition !== null && validation.ok;
 
   // ------------------------------------------------------------------ Render
   return (
@@ -270,6 +298,26 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
         </select>
 
         <div className="flex-1" />
+
+        {definition && (
+          inPlay ? (
+            <Button variant="outline" size="sm" onClick={() => dispatchEditor({ type: "exitPlay" })}>
+              <Square className="w-4 h-4 mr-1" />
+              {t("customApps.stop")}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => dispatchEditor({ type: "enterPlay" })}
+              disabled={!validation.ok}
+              title={validation.ok ? "" : t("customApps.fixErrorsToPlay")}
+            >
+              <Play className="w-4 h-4 mr-1" />
+              {t("customApps.play")}
+            </Button>
+          )
+        )}
 
         {dbId && (
           <>
@@ -328,27 +376,52 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
       )}
 
       {/* Body */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {!definition ? (
           <EmptyState isDark={isDark} />
+        ) : inPlay ? (
+          <div key={editor.playSession} className="h-full overflow-auto">
+            <GameRuntime def={definition} onExit={() => dispatchEditor({ type: "exitPlay" })} />
+          </div>
         ) : (
-          <div className="p-4">
-            <div className="mb-3 text-sm opacity-80">
-              <strong>{definition.label}</strong>
-              {definition.description ? ` — ${definition.description}` : null}
+          <div className="flex h-full">
+            <LeftRail
+              definition={definition}
+              selection={editor.selection}
+              placementClassId={editor.placementClassId}
+              dispatch={dispatchEditor}
+              isDark={isDark}
+            />
+            <div className="flex-1 min-w-0 overflow-hidden">
+              {selectedClass ? (
+                <ObjectEditor
+                  cls={selectedClass}
+                  definition={definition}
+                  onDeleted={() => dispatchEditor({ type: "selectNone" })}
+                  onRenamed={(newId) => dispatchEditor({ type: "selectClass", classId: newId })}
+                  onClose={() => dispatchEditor({ type: "selectNone" })}
+                  isDark={isDark}
+                />
+              ) : selectedRoom ? (
+                <RoomEditor
+                  room={selectedRoom}
+                  definition={definition}
+                  selectedEntityIndex={selectedEntityIndex}
+                  placementClassId={editor.placementClassId}
+                  stickyPlacement={editor.stickyPlacement}
+                  dispatch={dispatchEditor}
+                  isDark={isDark}
+                />
+              ) : (
+                <CenterPlaceholder isDark={isDark} />
+              )}
             </div>
-            {validation.ok ? (
-              <GameRuntime def={definition} />
-            ) : (
-              <pre
-                className={cn(
-                  "text-xs p-3 rounded border overflow-auto max-h-[400px]",
-                  isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200",
-                )}
-              >
-                {JSON.stringify(definition, null, 2)}
-              </pre>
-            )}
+            <RightRail
+              definition={definition}
+              selection={editor.selection}
+              dispatch={dispatchEditor}
+              isDark={isDark}
+            />
           </div>
         )}
       </div>
@@ -369,6 +442,20 @@ function EmptyState({ isDark }: { isDark: boolean }) {
         <h3 className="text-lg font-medium mb-2">{t("customApps.emptyTitle")}</h3>
         <p className="text-sm">{t("customApps.emptyDescription")}</p>
       </div>
+    </div>
+  );
+}
+
+function CenterPlaceholder({ isDark }: { isDark: boolean }) {
+  const { t } = useLanguage();
+  return (
+    <div
+      className={cn(
+        "h-full flex items-center justify-center text-center p-8",
+        isDark ? "text-slate-500" : "text-gray-500",
+      )}
+    >
+      <p className="text-sm max-w-sm">{t("customApps.centerPlaceholder")}</p>
     </div>
   );
 }

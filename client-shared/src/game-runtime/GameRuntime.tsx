@@ -11,15 +11,25 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   ButtonDef,
-  ClassDef,
   GameDefinition,
   GridCoord,
   Layer,
-  OverridableProp,
 } from "@shared/custom-app-types";
 import { dispatch, drainPendingAiInstructions, initState } from "./engine";
-import type { EngineAction, EngineEvent, EntityInstance, RuntimeState } from "./engine-types";
-import { getClass, getEntitiesAtCell, getRoom, isSolid, isTile, sortStackBottomToTop, getContainedEntities } from "./selectors";
+import type { EngineAction, EngineEvent, RuntimeState } from "./engine-types";
+import {
+  findTopmostMatching,
+  getClass,
+  getEntitiesAtCell,
+  getRoom,
+  isClickable,
+  isMovable,
+  isSolid,
+  isTile,
+  sortStackBottomToTop,
+  getContainedEntities,
+} from "./selectors";
+import { EntityVisual, resolveColor, resolveLabel } from "./entity-visual";
 
 const LAYER_ORDER: Layer[] = ["background", "entity", "overlay"];
 
@@ -108,14 +118,16 @@ export function GameRuntime({
   const [inventoryFor, setInventoryFor] = useState<string | null>(null);
 
   const handleCellClick = (cell: GridCoord) => {
-    // Click fires on the topmost entity at the cell.
-    const stack = sortStackBottomToTop(def, getEntitiesAtCell(def, state, cell));
-    const top = stack[stack.length - 1];
-    if (!top) return;
-    const topCls = getClass(def, top.classId);
-    // Opening a container opens the inventory modal; still fire onClick too.
-    if (topCls.maxCapacity !== undefined) setInventoryFor(top.uid);
-    sendAction({ type: "click", targetUid: top.uid });
+    // Walk top-down for the first entity that actually responds to clicks
+    // (has onClick interactions or is a container). Falls back to the
+    // topmost entity if nothing is clickable.
+    const target =
+      findTopmostMatching(def, state, cell, (e) => isClickable(def, e)) ??
+      sortStackBottomToTop(def, getEntitiesAtCell(def, state, cell)).at(-1);
+    if (!target) return;
+    const targetCls = getClass(def, target.classId);
+    if (targetCls.maxCapacity !== undefined) setInventoryFor(target.uid);
+    sendAction({ type: "click", targetUid: target.uid });
   };
 
   const handleDrop = (cell: GridCoord) => {
@@ -206,8 +218,11 @@ export function GameRuntime({
               cellSize={cellSize}
               dragging={dragging}
               setDragging={setDragging}
+              setHoverCell={setHoverCell}
               resolveImage={resolveImage}
               onDropOnContainer={handleDropOnContainer}
+              onDropOnCell={handleDrop}
+              onCellClick={handleCellClick}
             />
           ))}
         </div>
@@ -248,8 +263,11 @@ function LayerGroup({
   cellSize,
   dragging,
   setDragging,
+  setHoverCell,
   resolveImage,
   onDropOnContainer,
+  onDropOnCell,
+  onCellClick,
 }: {
   layerName: Layer;
   state: RuntimeState;
@@ -257,8 +275,11 @@ function LayerGroup({
   cellSize: number;
   dragging: string | null;
   setDragging: (uid: string | null) => void;
+  setHoverCell: (cell: GridCoord | null) => void;
   resolveImage?: (ref: string) => string | undefined;
   onDropOnContainer: (uid: string) => void;
+  onDropOnCell: (cell: GridCoord) => void;
+  onCellClick: (cell: GridCoord) => void;
 }) {
   const entities = Object.values(state.entities).filter((e) => {
     if (e.containerUid) return false;
@@ -275,31 +296,54 @@ function LayerGroup({
         if (hidden) return null;
         const [w, h] = cls.size ?? [1, 1];
         const isContainer = cls.maxCapacity !== undefined;
-        const movable = (e.overrides.movable ?? cls.movable) === true;
+        // Per-cell capability checks: the topmost entity div catches the
+        // mouse, then we walk down through everything at this cell to find
+        // the first valid target. This means a non-movable entity sitting
+        // on top of a movable one doesn't block the drag.
+        const dragTarget = findTopmostMatching(def, state, e.position, (x) => isMovable(def, x));
+        const canDragHere = dragTarget !== undefined;
         return (
           <div
             key={e.uid}
-            draggable={movable}
+            data-entity-uid={e.uid}
+            draggable={canDragHere}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onCellClick([e.position[0], e.position[1]]);
+            }}
             onDragStart={(ev) => {
-              if (!movable) {
+              if (!dragTarget) {
                 ev.preventDefault();
                 return;
               }
               ev.dataTransfer.effectAllowed = "move";
-              ev.dataTransfer.setData("text/plain", e.uid);
-              setDragging(e.uid);
+              ev.dataTransfer.setData("text/plain", dragTarget.uid);
+              const targetDiv = ev.currentTarget.parentElement?.querySelector<HTMLDivElement>(
+                `[data-entity-uid="${dragTarget.uid}"]`,
+              ) ?? ev.currentTarget;
+              const targetCls = getClass(def, dragTarget.classId);
+              setEntityDragImage(ev, targetDiv, resolveColor(dragTarget, targetCls, "tileColor"));
+              setDragging(dragTarget.uid);
             }}
             onDragEnd={() => setDragging(null)}
             onDragOver={(ev) => {
-              if (isContainer && dragging && dragging !== e.uid) {
-                ev.preventDefault();
-              }
+              // Always preventDefault while a drag is active so the entity
+              // div can accept the drop. Without this, dropping on top of a
+              // non-container entity would be silently rejected by the
+              // browser (and never reach the cell underneath, which is a
+              // sibling element, not a parent).
+              if (!dragging || dragging === e.uid) return;
+              ev.preventDefault();
+              setHoverCell([e.position[0], e.position[1]]);
             }}
             onDrop={(ev) => {
-              if (isContainer && dragging && dragging !== e.uid) {
-                ev.preventDefault();
-                ev.stopPropagation();
+              if (!dragging || dragging === e.uid) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (isContainer) {
                 onDropOnContainer(e.uid);
+              } else {
+                onDropOnCell([e.position[0], e.position[1]]);
               }
             }}
             style={{
@@ -316,55 +360,19 @@ function LayerGroup({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              cursor: movable ? "grab" : "pointer",
+              cursor: canDragHere ? "grab" : "pointer",
               pointerEvents: "auto",
             }}
             title={resolveLabel(e, cls) ?? cls.id}
           >
-            <EntityVisual entity={e} cls={cls} resolveImage={resolveImage} />
+            <span data-drag-preview style={{ display: "inline-flex", lineHeight: 1 }}>
+              <EntityVisual entity={e} cls={cls} resolveImage={resolveImage} />
+            </span>
           </div>
         );
       })}
     </>
   );
-}
-
-function EntityVisual({
-  entity,
-  cls,
-  resolveImage,
-}: {
-  entity: EntityInstance;
-  cls: ClassDef;
-  resolveImage?: (ref: string) => string | undefined;
-}) {
-  const symbolPath = (entity.overrides.symbolPath as string | undefined) ?? cls.symbolPath;
-  const iconRef = (entity.overrides.iconRef as string | undefined) ?? cls.iconRef;
-  const imageColor = resolveColor(entity, cls, "imageColor");
-  const char = (entity.overrides.char as string | undefined) ?? cls.char;
-  const label = resolveLabel(entity, cls);
-
-  // Priority: symbolPath (predefined) → resolved (via parent's resolveImage hook) → iconRef/char → label
-  if (symbolPath) {
-    const resolved = resolveImage?.(symbolPath) ?? symbolPath;
-    return (
-      <img
-        src={resolved}
-        alt={label ?? cls.id}
-        style={{ maxWidth: "80%", maxHeight: "80%" }}
-      />
-    );
-  }
-  if (iconRef) {
-    return <span style={{ fontSize: 24, color: imageColor ?? "#e2e8f0" }}>{iconRef}</span>;
-  }
-  if (char) {
-    return <span style={{ fontSize: 24, color: imageColor ?? "#e2e8f0" }}>{char}</span>;
-  }
-  if (label) {
-    return <span style={{ color: imageColor ?? "#e2e8f0" }}>{label}</span>;
-  }
-  return null;
 }
 
 function SidebarButton({
@@ -495,20 +503,40 @@ function InventoryModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function resolveColor(entity: EntityInstance, cls: ClassDef, prop: "tileColor" | "imageColor"): string | undefined {
-  const v = (entity.overrides as Record<string, unknown>)[prop] ?? (cls as unknown as Record<string, unknown>)[prop];
-  return typeof v === "string" ? v : undefined;
-}
-
-function resolveLabel(entity: EntityInstance, cls: ClassDef): string | undefined {
-  const v = (entity.overrides.label as string | undefined) ?? cls.label;
-  return typeof v === "string" ? v : undefined;
-}
-
 // Silence unused-imports warnings (these helpers may be used by future features).
 void isTile;
 void isSolid;
+
+/**
+ * Replace the browser's default drag image (a screenshot of the dragged
+ * element, including the tile background) with just the icon. If the entity
+ * has no icon at all, fall back to a small colored square matching the
+ * tileColor; if it has neither, leave the default in place.
+ */
+function setEntityDragImage(
+  ev: React.DragEvent<HTMLDivElement>,
+  entityDiv: HTMLDivElement,
+  tileColor: string | undefined,
+): void {
+  const preview = entityDiv.querySelector<HTMLElement>("[data-drag-preview]");
+  if (preview && preview.firstElementChild) {
+    const rect = preview.getBoundingClientRect();
+    ev.dataTransfer.setDragImage(preview, rect.width / 2, rect.height / 2);
+    return;
+  }
+  if (tileColor) {
+    const square = document.createElement("div");
+    Object.assign(square.style, {
+      width: "32px",
+      height: "32px",
+      background: tileColor,
+      position: "absolute",
+      top: "-9999px",
+      left: "-9999px",
+    } satisfies Partial<CSSStyleDeclaration>);
+    document.body.appendChild(square);
+    ev.dataTransfer.setDragImage(square, 16, 16);
+    // Defer removal so the browser has captured the image.
+    setTimeout(() => square.remove(), 0);
+  }
+}

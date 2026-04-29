@@ -1091,6 +1091,35 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     ...(isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE),
     memoryFields: [...(isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE).memoryFields],
   };
+
+  // Defense in depth: refuse to construct an agent that has BOTH outbound
+  // network tools (sendEmail / webSearch / mapTools / fdaLookup-with-search /
+  // spawn) AND read access to PHI-bearing memory fields (Student_*,
+  // Context_Reports, Context_Program, Context_MedicalInfo, Context_Incidents).
+  //
+  // A successful prompt-injection in any AI surface needs both data + an
+  // exfiltration channel to leak PHI. By refusing the combination, even if
+  // injection succeeds, there is nowhere for the data to go. This guard runs
+  // at template-materialization time so any future edit to AGENT_TEMPLATE_BASE
+  // — or any other code path that mints a template — gets caught immediately
+  // rather than shipping a silent foot-gun.
+  const PHI_MEMORY_PREFIXES = ["Student_", "Context_Reports", "Context_Program", "Context_MedicalInfo", "Context_Incidents", "Context_FunctionalInfo", "Context_EducationalInfo"];
+  const hasPhiAccess = template.memoryFields.some(f =>
+    PHI_MEMORY_PREFIXES.some(p => f.id?.startsWith(p)),
+  );
+  const tools = (template as any).tools || {};
+  const outboundTools = [];
+  if (tools.email?.enabled) outboundTools.push("email");
+  if (tools.webSearch?.enabled) outboundTools.push("webSearch");
+  if (tools.mapTools?.enabled) outboundTools.push("mapTools");
+  if (tools.spawn?.enabled) outboundTools.push("spawn");
+  if (tools.rooms?.enabled) outboundTools.push("rooms");
+  if (hasPhiAccess && outboundTools.length > 0) {
+    throw new Error(
+      `Refusing to construct agent: PHI memory access combined with outbound tools (${outboundTools.join(", ")}). ` +
+      `These must be on separate agents — see the security audit on prompt-injection-driven exfiltration.`,
+    );
+  }
   // Select core prompt based on conversation persona (loaded from database)
   let personaResult: PersonaPromptResult = { prompt: '', persona: null };
   if (isAACFeature) {
@@ -1261,12 +1290,17 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // shape. Per-field-access logging would be too noisy and isn't needed at
   // this granularity.
   let masterFieldsForClinician = MASTER_MEMORY_FIELDS;
+  // When false (and we're a clinician without monitor_note share), Student_*
+  // chatMemory keys are stripped from BOTH the schema (next block) and the
+  // memoryValues dumped to the API response (later, post-buildMemoryValues).
+  let allowStudentChatMemoryDump = true;
   if (!isAACFeature && context.student && accessCtx?.kind === "institute") {
     const allowMonitorNotes = await canAccessMonitorNotes(accessCtx, context.student.id);
     if (!allowMonitorNotes) {
       masterFieldsForClinician = MASTER_MEMORY_FIELDS.filter(
         (f) => !STUDENT_CHAT_MEMORY_FIELD_IDS.has(f.id),
       );
+      allowStudentChatMemoryDump = false;
     } else {
       activityLogService.log({
         userId: accessCtx.userId,
@@ -1279,6 +1313,15 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
         details: { viaShare: true, dataset: "chatMemory" },
       });
     }
+  } else if (!isAACFeature && context.student && accessCtx?.kind !== "student" && accessCtx?.kind !== "admin") {
+    // No usable accessCtx (clinician forgot instituteId, or family escalation
+    // didn't apply): drop the Student_* surface entirely. Without this the
+    // chatMemory dump path leaks Student_Notes / Student_People / etc. for
+    // any studentId the requester names.
+    masterFieldsForClinician = MASTER_MEMORY_FIELDS.filter(
+      (f) => !STUDENT_CHAT_MEMORY_FIELD_IDS.has(f.id),
+    );
+    allowStudentChatMemoryDump = false;
   }
 
   // Create the unified manager
@@ -1396,6 +1439,18 @@ Example button with custom symbol:
 
   // Build memory values from context
   let memoryValues = buildMemoryValues(context);
+
+  // Strip Student_* chat-memory keys from the dumped values when the requester
+  // is a clinician without monitor_note share (or no usable accessCtx). Without
+  // this the chatMemory column lands in the API response's mergedMemoryValues
+  // even when the schema gate already removed those fields from the AI's view.
+  if (!allowStudentChatMemoryDump) {
+    for (const key of Object.keys(memoryValues)) {
+      if (STUDENT_CHAT_MEMORY_FIELD_IDS.has(key)) {
+        delete memoryValues[key];
+      }
+    }
+  }
   console.log('[DEBUG] After buildMemoryValues:');
   console.log('  - context.student?.chatMemory:', JSON.stringify(context.student?.chatMemory));
   console.log('  - memoryValues keys:', Object.keys(memoryValues));

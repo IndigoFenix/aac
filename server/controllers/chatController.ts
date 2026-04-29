@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { FeatureType, onMessage, type CurrentImage } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
+import { studentService } from "../services/studentService";
+import { instituteService } from "../services/instituteService";
 
 // Validation schemas
 // Message content can be a string or an object with text, formSchema, formValues
@@ -81,6 +83,25 @@ export class ChatController {
       let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType, timezone } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
+      }
+
+      // Verify the authenticated user has access to any subjects supplied in
+      // the request body. Without this check, an authenticated user could
+      // post any studentId / instituteId UUID and the AI would load that
+      // subject's PHI into its context (and into the response's memoryValues).
+      if (studentId) {
+        const access = await studentService.verifyStudentAccess(studentId, userId, instituteId);
+        if (!access.hasAccess) {
+          res.status(403).json({ error: "error:FORBIDDEN_STUDENT" });
+          return;
+        }
+      }
+      if (instituteId) {
+        const { isMember } = await instituteService.verifyMembership(instituteId, userId);
+        if (!isMember) {
+          res.status(403).json({ error: "error:FORBIDDEN_INSTITUTE" });
+          return;
+        }
       }
 
       // Handle uploaded image via multer (single image from legacy path)

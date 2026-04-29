@@ -42,7 +42,7 @@ Use the scripts/validate-i18n.ts to check for this after editing translation fil
 
 ## Testing
 At the end of each minor task, check to see if we have a testing suite set up for that part of the system. If not, create one. If so, test it.
-Run a full npm test after completing major tasks.
+Run a full npm test after completing major tasks that touch a large part of the system.
 The npm test does not call the real LLM - we use a mock LLM for this instead.
 Don't run test:llm or test:ai without being instructed to.
 

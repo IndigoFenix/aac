@@ -41,7 +41,10 @@ export interface Bubble {
 }
 
 export interface GameStats {
+  /** Current score — equals floor(difficultyLevel). */
   score: number;
+  /** Continuous difficulty scalar that drifts with performance. */
+  difficultyLevel: number;
   popped: number;
   /** Bubbles that drifted off-screen without being popped */
   missed: number;

@@ -185,7 +185,7 @@ class SmsService {
    * the OTP hash + expiry; this only delivers the code.
    */
   async sendOtp(to: string, code: string): Promise<SmsSendResult> {
-    const body = `Your CliniAACian verification code is ${code}. It expires in 10 minutes. Do not share this code.`;
+    const body = `Your Aivota CliniAACian verification code is ${code}. It expires in 10 minutes. Do not share this code.`;
     return this.provider.send({ to, body, category: "otp" });
   }
 

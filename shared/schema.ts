@@ -1393,7 +1393,22 @@ export interface ToolsParams {
   webSearch?: { enabled?: boolean; contextSize?: number };
   fdaLookup?: { enabled?: boolean; };
   voiceChat?: { enabled?: boolean; voice?: string };
-  email?: { enabled?: boolean; address?: string; service?: string; username?: string; password?: string };
+  email?: {
+    enabled?: boolean;
+    address?: string;
+    service?: string;
+    username?: string;
+    password?: string;
+    /**
+     * Hard allowlist of recipient addresses the AI is permitted to email.
+     * The tool refuses any `to` not in this list. Without this constraint a
+     * prompt-injection vulnerability becomes a direct PHI exfiltration sink.
+     * Per-address (case-insensitive); use `allowedDomains` for whole-domain.
+     */
+    allowedRecipients?: string[];
+    /** Domain-level allowlist (case-insensitive, no leading "@"). */
+    allowedDomains?: string[];
+  };
   mapTools?: { enabled?: boolean };
   rooms?: { enabled?: boolean };
   spawn?: { enabled?: boolean };

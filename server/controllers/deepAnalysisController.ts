@@ -11,6 +11,7 @@ import {
 } from "../services/deepAnalysisService";
 import { activityLogService } from "../services/activityLogService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { studentService } from "../services/studentService";
 
 const createSchema = z.object({
   studentId: z.string().min(1),
@@ -23,10 +24,27 @@ export class DeepAnalysisController {
     try {
       const body = createSchema.parse(req.body);
       const userId = req.user!.id;
+
+      // Verify the user actually has access to the student before kicking
+      // off a deep-analysis run; the run reads PHI across every institute
+      // that has data on the student.
+      const access = await studentService.verifyStudentAccess(body.studentId, userId);
+      if (!access.hasAccess) {
+        res.status(403).json({ error: "error:FORBIDDEN_STUDENT" });
+        return;
+      }
+
+      // Capture the selected institute from the query so runDeepAnalysis can
+      // rebuild a properly scoped visibility context (vs. reading every
+      // institute's data on this student).
+      const instituteId =
+        typeof req.query.instituteId === "string" ? req.query.instituteId : undefined;
+
       const { id } = await createDeepAnalysis({
         studentId: body.studentId,
         createdByUserId: userId,
         specialInstructions: body.specialInstructions,
+        instituteId,
       });
 
       res.status(201).json({ id });
@@ -53,8 +71,23 @@ export class DeepAnalysisController {
         res.status(404).json({ error: "Not found" });
         return;
       }
+      const userId = req.user!.id;
       const ctx = await buildClinicianCtx(req, baseline.studentId);
-      const row = ctx ? await getDeepAnalysis(req.params.id, ctx) : baseline;
+      // If the caller has no usable institute context, fall back to a direct
+      // student-access check rather than serving the unfiltered baseline.
+      // The previous behavior (`ctx ? get(id, ctx) : baseline`) returned the
+      // analysis row to anyone who knew its id once they failed the ctx
+      // build (e.g., by omitting ?instituteId).
+      if (!ctx) {
+        const access = await studentService.verifyStudentAccess(baseline.studentId, userId);
+        if (!access.hasAccess) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        res.json(baseline);
+        return;
+      }
+      const row = await getDeepAnalysis(req.params.id, ctx);
       if (!row) {
         res.status(403).json({ error: "Access denied" });
         return;

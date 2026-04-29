@@ -433,11 +433,25 @@ export class ChatContextManager {
     let program: Program | undefined;
 
     if (this.context.programId) {
-      const [p] = await db
-        .select()
-        .from(programs)
-        .where(eq(programs.id, this.context.programId));
-      program = p;
+      // Gate the explicit programId lookup through visibility AND verify the
+      // program actually belongs to the student in scope. Previously the
+      // featureContext.progress.programId was loaded by id alone, which let
+      // any caller pivot the AI's program-children context (goals,
+      // objectives, baselines, profileDomains, etc.) to a foreign program
+      // since the child ops trust ctx.all.programId without re-checking.
+      const ctx = this.context.accessCtx;
+      if (ctx) {
+        const [p] = await db
+          .select()
+          .from(programs)
+          .where(and(
+            eq(programs.id, this.context.programId),
+            eq(programs.studentId, this.context.studentId),
+            withInstituteVisibility(programs, ctx, "program"),
+          ));
+        program = p;
+      }
+      // No accessCtx — refuse rather than fall through to a no-filter read.
     } else {
       const [activeProgram] = await db
         .select()

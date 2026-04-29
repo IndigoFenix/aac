@@ -39,7 +39,13 @@ async function rejectCrossInstituteWrite(
   incident: { id: string; instituteId: string | null; studentId: string },
 ) {
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
-  if (!accessCtx || accessCtx.kind !== "institute") return;
+  // Fail-closed: a missing accessCtx is now a programming error after the
+  // controller-side membership check + sessionService accessCtx plumbing
+  // were added. Refuse rather than silently allow writes.
+  if (!accessCtx) {
+    throw new Error("Cannot modify an incident without a resolved access context");
+  }
+  if (accessCtx.kind !== "institute") return;
   const allowed = await canWriteObject(
     accessCtx,
     "incident",
@@ -57,6 +63,10 @@ const incidentOps: MemoryDBOperations<Incident> = {
     const studentId = ctx.all.studentId as string | undefined;
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) return { items: [], total: 0, keys: [] };
+    // Fail-closed — incidentRepository.listByStudent fall-through with no
+    // accessCtx returns rows from every institute that recorded an incident
+    // for this student.
+    if (!accessCtx) return { items: [], total: 0, keys: [] };
 
     const items = await incidentRepository.listByStudent(studentId, { offset, limit }, accessCtx);
     // Total count for pagination — repo doesn't return total separately, so we
@@ -72,6 +82,8 @@ const incidentOps: MemoryDBOperations<Incident> = {
 
   get: async (ctx, key) => {
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    // Fail-closed — see list above.
+    if (!accessCtx) return undefined;
     const row = await incidentRepository.getById(String(key), accessCtx);
     return row ? toMemoryValue(row) : undefined;
   },

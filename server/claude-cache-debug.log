@@ -7271,3 +7271,3911 @@ USAGE: {"input_tokens":419,"cache_creation_input_tokens":14597,"cache_read_input
 }
 ────────────────────────────────────────────────────────────────────────────────
 USAGE: {"input_tokens":493,"cache_creation_input_tokens":0,"cache_read_input_tokens":14597,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":155,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:14:55.317Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-1487c6e819095343] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":633,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":352,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:15:59.639Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication l\nASSISTANT: Hi Gal! Welcome back. I've added a 'Play' button to the board if you're interested in doing something fun.\nASSISTANT: [CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in a brightly lit room with white walls and a window. [new_location: Living Area] Gal's device is in a room that appears to be a living area or common space.\nUSER: [TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] Hi, Gal.</untrusted-b888a44032327d4e>\nASSISTANT: [CONTEXT] [new_person: Man with glasses] A man with glasses and a blue striped shirt has entered the view and greeted Gal.\nUSER: [TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] How are you doing today?</untrusted-b888a44032327d4e>\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Hungry, Play]\nASSISTANT: [SYSTEM — Board changes: Removed: Play]\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+[2026-04-29T14:16:00.413Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42396 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I've added a 'Play' button to the board if you're interested in doing something fun.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in a brightly lit room with white walls and a window. [new_location: Living Area] Gal's device is in a room that appears to be a living area or common space."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] Hi, Gal.</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[CONTEXT] [new_person: Man with glasses] A man with glasses and a blue striped shirt has entered the view and greeted Gal."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] How are you doing today?</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Hungry, Play]\n[SYSTEM — Board changes: Removed: Play]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I've added a 'Play' button to the board if you're interested in doing something fun.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in a brightly lit room with white walls and a window. [new_location: Living Area] Gal's device is in a room that appears to be a living area or common space."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] Hi, Gal.</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[CONTEXT] [new_person: Man with glasses] A man with glasses and a blue striped shirt has entered the view and greeted Gal."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] How are you doing today?</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Hungry, Play]\n[SYSTEM — Board changes: Removed: Play]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1478,"cache_creation_input_tokens":12678,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12678,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:16:01.924Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42360 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I've added a 'Play' button to the board if you're interested in doing something fun.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in a brightly lit room with white walls and a window. [new_location: Living Area] Gal's device is in a room that appears to be a living area or common space."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] Hi, Gal.</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[CONTEXT] [new_person: Man with glasses] A man with glasses and a blue striped shirt has entered the view and greeted Gal."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] How are you doing today?</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Hungry, Play]\n[SYSTEM — Board changes: Removed: Play]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I've added a 'Play' button to the board if you're interested in doing something fun.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in a brightly lit room with white walls and a window. [new_location: Living Area] Gal's device is in a room that appears to be a living area or common space."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] Hi, Gal.</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[CONTEXT] [new_person: Man with glasses] A man with glasses and a blue striped shirt has entered the view and greeted Gal."
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] <untrusted-b888a44032327d4e>[Unknown male] How are you doing today?</untrusted-b888a44032327d4e>"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Hungry, Play]\n[SYSTEM — Board changes: Removed: Play]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01TW4wvCe5pZqHr9qg967xvo",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01TW4wvCe5pZqHr9qg967xvo",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1423,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":183,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:16:05.138Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-93a92574abd5b34a] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1661,"cache_creation_input_tokens":12620,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12620,"ephemeral_1h_input_tokens":0},"output_tokens":239,"service_tier":"standard","inference_geo":"not_available"}
+USAGE: {"input_tokens":635,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":334,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:16:57.833Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication l\nASSISTANT: Hi Gal! How are you today? Is there anything you'd like to talk about or do?\nASSISTANT: [CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Room] The device is in a room resembling a home or classroom setting.\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+[2026-04-29T14:16:58.654Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42254 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you today? Is there anything you'd like to talk about or do?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Room] The device is in a room resembling a home or classroom setting."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you today? Is there anything you'd like to talk about or do?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Room] The device is in a room resembling a home or classroom setting."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1098,"cache_creation_input_tokens":12708,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12708,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:16:59.889Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42218 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you today? Is there anything you'd like to talk about or do?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Room] The device is in a room resembling a home or classroom setting."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you today? Is there anything you'd like to talk about or do?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Room] The device is in a room resembling a home or classroom setting."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01A3bwcBackrPNtAWNxAE73c",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01A3bwcBackrPNtAWNxAE73c",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1228,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":165,"service_tier":"standard","inference_geo":"not_available"}
+USAGE: {"input_tokens":1281,"cache_creation_input_tokens":12600,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12600,"ephemeral_1h_input_tokens":0},"output_tokens":139,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:19:58.139Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-b27d86a743947870] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":633,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":333,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:21:55.448Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42297 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1162,"cache_creation_input_tokens":12709,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12709,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:21:56.681Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42261 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01FpMMpEjRyVvp32VD6zfdpv",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01FpMMpEjRyVvp32VD6zfdpv",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1345,"cache_creation_input_tokens":12501,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12501,"ephemeral_1h_input_tokens":0},"output_tokens":96,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:21:58.284Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42481 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! Welcome back. I see you're in Classroom A. How are you today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Classroom A] A classroom environment with tables and chairs."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Help\n[BUTTON PRESS] Cold"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am cold\nLet me check what's available."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01FpMMpEjRyVvp32VD6zfdpv",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01FpMMpEjRyVvp32VD6zfdpv",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01DxsMFNXdYNeMKRxz8nhBCV",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "add",
+                "path": "/Student_Notes",
+                "value": "Session 2026-04-29: Gal pressed 'Help' and 'Cold' buttons. Expressed that he is cold. Brief session with minimal interaction."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01DxsMFNXdYNeMKRxz8nhBCV",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"add\",\"ok\":true}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1485,"cache_creation_input_tokens":12785,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12785,"ephemeral_1h_input_tokens":0},"output_tokens":160,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:40:03.798Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2390 chars] ...MPT-939471625b80d390] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":673,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":313,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:40:30.429Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42212 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! I've added some buttons to help you talk about snacks, drinks, and things to do.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] A residential living room or common area."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! I've added some buttons to help you talk about snacks, drinks, and things to do.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] A residential living room or common area."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1094,"cache_creation_input_tokens":12641,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12641,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T14:40:32.015Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42176 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! I've added some buttons to help you talk about snacks, drinks, and things to do.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] A residential living room or common area."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! I've added some buttons to help you talk about snacks, drinks, and things to do.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] A residential living room or common area."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01PEzJ9ihdtEt4ZuNVoFtYjL",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01PEzJ9ihdtEt4ZuNVoFtYjL",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1277,"cache_creation_input_tokens":12533,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12533,"ephemeral_1h_input_tokens":0},"output_tokens":146,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T15:06:29.861Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-b0df566dd0d949c7] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":637,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":320,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T15:46:34.681Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-20d9b82af8bc8023] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":637,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":313,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T15:47:27.668Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication l\nASSISTANT: Hi Gal! How are you doing today? I see you have your blue cup there.\nASSISTANT: [CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Kitchen] A kitchen area is visible in the background. [new_object: Blue cup] A blue cup is on the table in front of Gal.\nASSISTANT: [CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [other: Daniel Nadel] Daniel Nadel (Father) is now present, so interaction mode is being set to assist.\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+[2026-04-29T15:47:28.441Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42198 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today? I see you have your blue cup there.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Kitchen] A kitchen area is visible in the background. [new_object: Blue cup] A blue cup is on the table in front of Gal.\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [other: Daniel Nadel] Daniel Nadel (Father) is now present, so interaction mode is being set to assist."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today? I see you have your blue cup there.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Kitchen] A kitchen area is visible in the background. [new_object: Blue cup] A blue cup is on the table in front of Gal.\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [other: Daniel Nadel] Daniel Nadel (Father) is now present, so interaction mode is being set to assist."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1236,"cache_creation_input_tokens":12535,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12535,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T15:47:29.764Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42162 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today? I see you have your blue cup there.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Kitchen] A kitchen area is visible in the background. [new_object: Blue cup] A blue cup is on the table in front of Gal.\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [other: Daniel Nadel] Daniel Nadel (Father) is now present, so interaction mode is being set to assist."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today? I see you have your blue cup there.\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Kitchen] A kitchen area is visible in the background. [new_object: Blue cup] A blue cup is on the table in front of Gal.\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [other: Daniel Nadel] Daniel Nadel (Father) is now present, so interaction mode is being set to assist."
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01QebdKXpS683Nazyyx7Y9hD",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01QebdKXpS683Nazyyx7Y9hD",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1300,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":171,"service_tier":"standard","inference_geo":"not_available"}
+USAGE: {"input_tokens":1419,"cache_creation_input_tokens":12527,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12527,"ephemeral_1h_input_tokens":0},"output_tokens":186,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T15:47:55.441Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-0d31a3a1f2121651] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":639,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":340,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T16:39:52.129Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-0762b3dccd413b88] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":635,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":293,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T17:49:19.306Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2253 chars] ...MPT-4e87e1cc1c3a6971] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":641,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":306,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T17:51:28.620Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication l\nASSISTANT: Hi Gal! How are you doing today?\nASSISTANT: [CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] The setting appears to be a home living room. [other: None] No other people, notable objects, or ambient sounds are currently detected.\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Excited, Frustrated, Sick, Confused, Angry]\nUSER: [BUTTON PRESS] Happy\nASSISTANT: [INTERPRET] I am happy\nASSISTANT: [CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [person_identified: Daniel Nadel] Daniel Nadel is present with Gal.\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Play, Talk, Eat, Outside]\nUSER: [BUTTON PRESS] Talk\nASSISTANT: [INTERPRET] I want to talk\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]\nUSER: [BUTTON PRESS] About Tomorrow\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]\nUSER: [BUTTON PRESS] Math Class\nASSISTANT: [INTERPRET] I have Math Class tomorrow\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1474,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":169,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T17:51:32.891Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42209 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] The setting appears to be a home living room. [other: None] No other people, notable objects, or ambient sounds are currently detected.\n[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Excited, Frustrated, Sick, Confused, Angry]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Happy"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am happy\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [person_identified: Daniel Nadel] Daniel Nadel is present with Gal.\n[SYSTEM — Board changes: Board rebuilt: Play, Talk, Eat, Outside]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1359,"cache_creation_input_tokens":12331,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12331,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T17:51:34.307Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42173 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] The setting appears to be a home living room. [other: None] No other people, notable objects, or ambient sounds are currently detected.\n[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Excited, Frustrated, Sick, Confused, Angry]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Happy"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am happy\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [person_identified: Daniel Nadel] Daniel Nadel is present with Gal.\n[SYSTEM — Board changes: Board rebuilt: Play, Talk, Eat, Outside]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01QMjvSreMfmsbjGBBCBBEEo",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01QMjvSreMfmsbjGBBCBBEEo",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1542,"cache_creation_input_tokens":12323,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12323,"ephemeral_1h_input_tokens":0},"output_tokens":127,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T17:51:36.770Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [42549 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "The home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nThe home board \"Home\" is loaded with buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nThe student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs. IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Gal! How are you doing today?\n[CONTEXT] [new_person: Gal Nolan] Gal Nolan is visible in the frame. [new_location: Living Room] The setting appears to be a home living room. [other: None] No other people, notable objects, or ambient sounds are currently detected.\n[SYSTEM — Board changes: Board rebuilt: Happy, Sad, Tired, Excited, Frustrated, Sick, Confused, Angry]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Happy"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I am happy\n[CONTEXT] [new_person: Daniel Nadel] Daniel Nadel (Father) is now visible. [person_identified: Daniel Nadel] Daniel Nadel is present with Gal.\n[SYSTEM — Board changes: Board rebuilt: Play, Talk, Eat, Outside]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I want to talk\n[SYSTEM — Board changes: Board rebuilt: About Dad, About School, About Tomorrow, About Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] About Tomorrow"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Math Class, History Class, Play Outside, See Friends]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Math Class"
+    },
+    {
+      "role": "assistant",
+      "content": "[INTERPRET] I have Math Class tomorrow"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01QMjvSreMfmsbjGBBCBBEEo",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01QMjvSreMfmsbjGBBCBBEEo",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01TifPj8D5bKDTPZAtMExD8p",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "add",
+                "path": "/Student_Notes",
+                "value": "Session (April 29, 8:49 PM): Gal expressed happiness using AAC board. Father Daniel joined during session. Gal engaged with topic navigation — asked about tomorrow's schedule and specifically mentioned Math Class tomorrow at 11:00 AM. Shows engagement with school planning and communication via AAC board."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01TifPj8D5bKDTPZAtMExD8p",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"add\",\"ok\":true}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1717,"cache_creation_input_tokens":12418,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":12418,"ephemeral_1h_input_tokens":0},"output_tokens":233,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-29T18:38:32.161Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are preparing an enhanced prompt for an AAC session with Gal Nolan.\nThe Interactive Agent uses t... [2570 chars] ...MPT-20563d174667f2dc] tags. Use those exact strings (with the nonce). Emit nothing outside the tags.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate the enhanced prompt for this AAC session."
+    }
+  ],
+  "max_tokens": 2048,
+  "temperature": 0.5
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":706,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":366,"service_tier":"standard","inference_geo":"not_available"}

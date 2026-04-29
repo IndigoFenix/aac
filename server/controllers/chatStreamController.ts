@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { onMessageStreaming, onMessageMdStreaming, FeatureType } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
+import { studentService } from "../services/studentService";
+import { instituteService } from "../services/instituteService";
 
 // Validation schema - same as chatController
 // Message content can be a string or an object with text, formSchema, formValues
@@ -64,6 +66,23 @@ export class ChatStreamController {
 
       if (!persona) {
         persona = "assistant";
+      }
+
+      // See chatController.onMessage — same membership check before any
+      // subject-bound LLM context is loaded.
+      if (studentId) {
+        const access = await studentService.verifyStudentAccess(studentId, userId, instituteId);
+        if (!access.hasAccess) {
+          res.status(403).json({ error: "error:FORBIDDEN_STUDENT" });
+          return;
+        }
+      }
+      if (instituteId) {
+        const { isMember } = await instituteService.verifyMembership(instituteId, userId);
+        if (!isMember) {
+          res.status(403).json({ error: "error:FORBIDDEN_INSTITUTE" });
+          return;
+        }
       }
 
       // Set up SSE headers

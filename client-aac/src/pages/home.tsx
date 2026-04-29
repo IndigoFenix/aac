@@ -350,7 +350,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const { speak, isSpeaking } = useTextToSpeech();
   const {
     cameras,
-    isMultiCameraActive,
     getUserCamera,
     getEnvironmentCamera,
     captureFrameFromCamera,
@@ -458,6 +457,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     isReady: isPersonIdReady,
     currentIdentification,
     identifyFromVideo,
+    identifyFromImage,
     knownPeopleCount,
     getUnmatchedDescriptors,
     lastCapturedFaceImage,
@@ -508,47 +508,93 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     return serializeGestureContext(trackedFaces, trackedHands);
   }, [trackedFaces, trackedHands]);
 
-  // Periodic face identification from camera (runs every 2 seconds when ready)
+  // A detached <video> element bound to sharedCameraStream so face-api can
+  // read pixels from it. Only used when no multi-camera entries are enrolled.
+  const sharedVideoElRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
-    if (!isPersonIdReady || !useDualAgent || !isMultiCameraActive) return;
+    if (!sharedCameraStream) {
+      if (sharedVideoElRef.current) {
+        sharedVideoElRef.current.pause();
+        sharedVideoElRef.current.srcObject = null;
+        sharedVideoElRef.current = null;
+      }
+      return;
+    }
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = sharedCameraStream;
+    video.play().catch(err => console.warn("[Tracking] shared video play failed:", err));
+    sharedVideoElRef.current = video;
+    return () => {
+      video.pause();
+      video.srcObject = null;
+      if (sharedVideoElRef.current === video) sharedVideoElRef.current = null;
+    };
+  }, [sharedCameraStream]);
+
+  // Periodic face identification — runs across EVERY active camera (user + environment),
+  // not just a single primary. Drops descriptors after each tick whichever the camera
+  // count is. The user-facing camera additionally drives `currentIdentification` (which
+  // feeds gesture/expression event tracking via useFaceEvents).
+  useEffect(() => {
+    if (!isPersonIdReady || !useDualAgent) return;
 
     const runIdentification = async () => {
-      const userCamera = getUserCamera();
-      if (!userCamera || !captureFrameFromCamera) return;
+      const tasks: Array<Promise<void>> = [];
 
-      try {
-        const frame = await captureFrameFromCamera(userCamera.deviceId);
-        if (frame && frame.size > 0) {
-          // Create an image element from the blob
-          const img = new Image();
-          const url = URL.createObjectURL(frame);
-          img.src = url;
-
-          await new Promise<void>((resolve) => {
-            img.onload = async () => {
-              await identifyFromVideo(img as any); // Works with images too
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            img.onerror = () => {
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-          });
-        }
-      } catch (err) {
-        // Silent fail - identification is non-critical
+      for (const camera of cameras) {
+        if (!camera.isActive || !camera.stream || !captureFrameFromCamera) continue;
+        const sourceKey = `multicam:${camera.deviceId}`;
+        const cameraRole = camera.facing;
+        const cameraLabel = camera.label;
+        const updateCurrent = camera.facing === "user";
+        tasks.push((async () => {
+          try {
+            const frame = await captureFrameFromCamera(camera.deviceId);
+            if (!frame || frame.size === 0) return;
+            const img = new Image();
+            const url = URL.createObjectURL(frame);
+            img.src = url;
+            await new Promise<void>(resolve => {
+              img.onload = async () => {
+                await identifyFromImage(img, { sourceKey, cameraRole, cameraLabel, updateCurrent });
+                URL.revokeObjectURL(url);
+                resolve();
+              };
+              img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+            });
+          } catch {
+            /* identification is non-critical — silent fail */
+          }
+        })());
       }
+
+      // Fall back to sharedCameraStream when no multi-cam entries are enrolled
+      if (cameras.length === 0 && sharedVideoElRef.current) {
+        const video = sharedVideoElRef.current;
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+          tasks.push(
+            (async () => {
+              await identifyFromVideo(video, {
+                sourceKey: "shared",
+                cameraRole: "user",
+                cameraLabel: "shared camera",
+                updateCurrent: true,
+              });
+            })(),
+          );
+        }
+      }
+
+      if (tasks.length === 0) return;
+      await Promise.all(tasks);
     };
 
-    // Run identification every 2 seconds (fast enough for context, slow enough for performance)
     const interval = setInterval(runIdentification, 2000);
-
-    // Run once immediately
     runIdentification();
-
     return () => clearInterval(interval);
-  }, [isPersonIdReady, useDualAgent, isMultiCameraActive, getUserCamera, captureFrameFromCamera, identifyFromVideo]);
+  }, [isPersonIdReady, useDualAgent, cameras, captureFrameFromCamera, identifyFromImage, identifyFromVideo]);
 
   // Initialize gesture handling
   useGestures({
@@ -617,57 +663,71 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       if (isStandbyMode) return; // Don't check if in standby mode
 
       try {
-        // Check camera status first - multi-camera system
-        setIsCameraBlocked(!isMultiCameraActive || !!globalError || !getUserCamera());
-        
-        // Only do person detection if multi-camera is working and we have a user camera
-        const userCamera = getUserCamera();
-        if (isMultiCameraActive && userCamera && captureFrameFromCamera) {
-          try {
-            console.log('Attempting camera capture for person detection...');
-            const frame = await captureFrameFromCamera(userCamera.deviceId);
-            console.log('Camera capture result:', frame ? `${frame.size} bytes` : 'null');
-            
-            if (frame && frame.size > 5000) { // Valid frame check
-              const formData = new FormData();
-              formData.append('image', frame, 'frame.jpg');
-              formData.append('expectedAge', userProfile?.age?.toString() || '46');
-              formData.append('expectedGender', userProfile?.gender || 'male');
-              formData.append('cameraType', 'user'); // Integrated camera for main user detection
+        // Camera blocked when there's a global error or no usable stream at all
+        const hasAnyCamera = cameras.some(c => c.isActive && c.stream) || !!sharedCameraStream;
+        setIsCameraBlocked(!hasAnyCamera || !!globalError);
 
-              console.log('Sending person detection request...');
-              const personResponse = await fetchWithAuth(`/api/aac/detect-person`, {
-                method: 'POST',
-                body: formData,
-              });
-              
-              if (personResponse.ok) {
-                const personData = await personResponse.json();
-                console.log('Person detection result:', personData);
-                setAnyPersonPresent(personData.personPresent || false);
-                setIsMainUserPresent(personData.isMainUser || false);
-              } else {
-                console.log('Person detection API error:', personResponse.status, await personResponse.text());
+        if (!hasAnyCamera) {
+          setAnyPersonPresent(false);
+          setIsMainUserPresent(false);
+          return;
+        }
+
+        // Run person detection on every active camera. anyPersonPresent is OR'd
+        // across all cameras (someone in the environment view counts); only the
+        // user-facing camera drives isMainUserPresent (standby gate).
+        const detectFromBlob = async (
+          frame: Blob,
+          cameraType: "user" | "environment" | "unknown",
+        ): Promise<{ personPresent: boolean; isMainUser: boolean } | null> => {
+          if (frame.size <= 5000) return null;
+          const formData = new FormData();
+          formData.append("image", frame, "frame.jpg");
+          formData.append("expectedAge", userProfile?.age?.toString() || "46");
+          formData.append("expectedGender", userProfile?.gender || "male");
+          formData.append("cameraType", cameraType);
+          const resp = await fetchWithAuth("/api/aac/detect-person", { method: "POST", body: formData });
+          if (!resp.ok) {
+            console.log("Person detection API error:", resp.status, await resp.text());
+            return null;
+          }
+          return resp.json();
+        };
+
+        const results = await Promise.all(
+          cameras
+            .filter(c => c.isActive && c.stream && captureFrameFromCamera)
+            .map(async camera => {
+              try {
+                const frame = await captureFrameFromCamera(camera.deviceId);
+                if (!frame) return null;
+                const detection = await detectFromBlob(frame, camera.facing);
+                return detection ? { camera, detection } : null;
+              } catch (err) {
+                console.log(`Person detection failed for ${camera.label}:`, err);
+                return null;
               }
-            } else {
-              console.log('Invalid frame captured, size:', frame?.size || 0);
-              // If frame capture fails, assume no person present to trigger standby
-              setAnyPersonPresent(false);
-              setIsMainUserPresent(false);
-            }
-          } catch (detectionError) {
-            console.log('Person detection in status check failed:', detectionError);
-            // If detection fails completely, assume no person present
+            }),
+        );
+
+        const successful = results.filter((r): r is NonNullable<typeof r> => r !== null);
+        if (successful.length === 0) {
+          // No multi-cam detections succeeded. If we only have sharedCameraStream
+          // (no enrolled multi-cam entries), assume the user is present rather
+          // than dropping into standby — the face mirror is working off it.
+          if (cameras.length === 0 && sharedCameraStream) {
+            setAnyPersonPresent(true);
+            setIsMainUserPresent(true);
+          } else {
             setAnyPersonPresent(false);
             setIsMainUserPresent(false);
           }
         } else {
-          console.log('Multi-camera not active or user camera not available');
-          setIsCameraBlocked(true);
-          setAnyPersonPresent(false);
-          setIsMainUserPresent(false);
+          const anyPresent = successful.some(r => r.detection.personPresent);
+          const userResult = successful.find(r => r.camera.facing === "user");
+          setAnyPersonPresent(anyPresent);
+          setIsMainUserPresent(userResult?.detection.isMainUser ?? false);
         }
-        
       } catch (error) {
         console.error('Status check failed:', error);
         setIsCameraBlocked(true);
@@ -687,7 +747,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     checkStatus(); // Initial check
 
     return () => clearInterval(interval);
-  }, [isStandbyMode, isMultiCameraActive, globalError, captureFrameFromCamera, getUserCamera, userProfile, DISABLE_PERIODIC_DETECTION]);
+  }, [isStandbyMode, cameras, sharedCameraStream, globalError, captureFrameFromCamera, userProfile, DISABLE_PERIODIC_DETECTION]);
 
   // Show gesture hints briefly (touch devices only)
   useEffect(() => {
@@ -942,8 +1002,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         return;
       }
 
-      // If we have camera functionality, use it for presence detection
-      if (isMultiCameraActive && getUserCamera()) {
+      // If we have any usable camera, use it for presence detection
+      const hasAnyCamera = cameras.some(c => c.isActive && c.stream) || !!sharedCameraStream;
+      if (hasAnyCamera) {
         // Initial check after delay
         const timer = setTimeout(checkCameraAndStartConversation, 3000);
 
@@ -966,7 +1027,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         }
       }
     }
-  }, [studentId, captureFrameFromCamera, getUserCamera, userProfile, DISABLE_PERIODIC_DETECTION]);
+  }, [studentId, captureFrameFromCamera, cameras, sharedCameraStream, userProfile, DISABLE_PERIODIC_DETECTION]);
 
   // Real presence detection is handled in checkStatus above
 

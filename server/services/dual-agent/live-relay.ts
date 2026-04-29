@@ -6,6 +6,9 @@
 import type { IncomingMessage } from "http";
 import { randomBytes } from "crypto";
 import { WebSocket, WebSocketServer } from "ws";
+import type { User } from "@shared/schema";
+import { authenticateUpgrade } from "../realtime/ws-auth";
+import { studentService } from "../studentService";
 import type {
   LiveProvider,
   LiveProviderCallbacks,
@@ -173,7 +176,7 @@ export type ClientMessage =
   | { type: "board_state"; data: any }
   | { type: "set_mode"; mode: AACInteractionMode }
   | { type: "set_response_mode"; mode: AACResponseMode }
-  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> }
+  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string }> }
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
@@ -242,6 +245,10 @@ export interface IdentifiedFaceWire {
   confidence: number;
   /** Bounding box from the client detection, if provided. */
   boundingBox?: { x: number; y: number; w: number; h: number };
+  /** Which camera saw this face — "user" = facing the student (gesture-tracked), "environment" = elsewhere. */
+  cameraRole?: "user" | "environment" | "unknown";
+  /** Human-readable camera label (for debug). */
+  cameraLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,8 +410,14 @@ export class LiveRelay {
   private rejectionCooldownUntil = 0;
   private static readonly REJECTION_COOLDOWN_MS = 15_000;
 
-  constructor(ws: WebSocket) {
+  // The authenticated user driving this WebSocket. Established at upgrade time
+  // by setupLiveWebSocket; trusted as the source of truth for userId. Any
+  // userId in the client's `initialize` message is ignored.
+  private readonly authedUser: User;
+
+  constructor(ws: WebSocket, authedUser: User) {
     this.ws = ws;
+    this.authedUser = authedUser;
 
     ws.on("message", (raw) => {
       try {
@@ -895,6 +908,12 @@ export class LiveRelay {
             }).catch(console.error);
           }
 
+          // Board-exit `label` and `instruction` are clinician-set control
+          // signals — the AI is *supposed* to act on them (e.g. "[INTERACT]"
+          // tells it to switch modes). Wrapping them as untrusted made the
+          // model refuse legitimate directives. Defense against malicious
+          // board content belongs at write-time sanitization of these fields,
+          // not at read-time tagging here.
           const exitInstruction = msg.instruction
             ? `Board exited. The user pressed "${msg.label}". ${msg.instruction}`
             : `Board exited. The user pressed "${msg.label}". Use rebuild_board() to create a new board for the current context.`;
@@ -921,6 +940,10 @@ export class LiveRelay {
               .filter((l: string) => l);
           }
           this.lastBoardUpdateTime = Date.now();
+          // Board state is a control signal — the AI references existing
+          // button labels via add_buttons / rebuild_board / press_button.
+          // Wrapping it would force the model to treat its own working set
+          // as untrusted, breaking those tools.
           this.provider!.sendContextInjection(`[CURRENT BOARD STATE]\n${JSON.stringify(msg.data)}`);
           break;
         }
@@ -1016,8 +1039,34 @@ export class LiveRelay {
 
   private async handleInitialize(msg: Extract<ClientMessage, { type: "initialize" }>): Promise<void> {
     this.setState("initializing");
+
+    // Authoritative userId comes from the upgrade-time auth check, never from
+    // the client message. This closes the path where an authenticated user
+    // forged a different userId to inherit another user's license tier or
+    // studentId-bound state.
+    this.userId = this.authedUser.id;
+
+    // Verify the authenticated user has access to the requested student via
+    // any of: direct userStudent link, family-institute membership, or
+    // school/clinic admin. Refuse the session otherwise — without this check,
+    // anyone authenticated who knows a student UUID could open an AAC
+    // session and pull PHI through the live model and monitor.
+    if (!msg.studentId) {
+      this.send({ type: "error", data: "MISSING_STUDENT_ID" });
+      this.ws.close(1008, "missing studentId");
+      return;
+    }
+    const access = await studentService.verifyStudentAccess(msg.studentId, this.authedUser.id);
+    if (!access.hasAccess) {
+      console.warn(
+        `[LiveRelay] Access denied: user=${this.authedUser.id} requested studentId=${msg.studentId}`,
+      );
+      this.send({ type: "error", data: "FORBIDDEN_STUDENT" });
+      this.ws.close(1008, "forbidden");
+      return;
+    }
+
     this.studentId = msg.studentId;
-    if (msg.userId) this.userId = msg.userId;
     this.interactionMode = msg.interactionMode || "interact";
     this.responseMode = msg.responseMode || "fast";
     this.debugMode = msg.debugMode || false;
@@ -1289,11 +1338,17 @@ export class LiveRelay {
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
       const contextScan = ` IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model.`;
+      // Greeting must be presence-conditional — the student may not be in
+      // front of the camera at session start (a caregiver may be setting up,
+      // or no one may be there yet). Greeting unconditionally would make the
+      // AI address whoever happens to be visible as if they were the student.
+      const presenceCheck =
+        ` Before greeting, check [PEOPLE PRESENT]: if it tags a face as [THE STUDENT], greet them; if it shows someone else without [THE STUDENT], stay silent (STANDBY); if no faces are listed, stay silent.`;
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `The home board "${this.homeBoardData?.name || "Home"}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.${imageHint}${personaHint}${contextScan}`
-        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}${contextScan}`;
+        ? `The home board "${this.homeBoardData?.name || "Home"}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. Use your judgment based on who is present.${presenceCheck} Do NOT change the board until the user presses a button.${imageHint}${personaHint}${contextScan}`
+        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Wait for a button press before changing the board.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -1405,11 +1460,11 @@ The user pressed "More" — they can't find the button they need on the current 
     const currentLabels = this.sessionCache?.state?.boardButtonLabels?.join(", ") || "none";
     const prompt = singleSentence
       ? `[BUTTON PRESS] ${buttonList}
-The student said: "${singleSentence}". Respond to what the student said.
+A button was pressed: "${singleSentence}". Treat this as a user statement and respond accordingly.
 CURRENT MAIN BOARD: ${currentLabels}
 You MUST call rebuild_board() with new buttons that respond to this choice. Also use add_context_button() if you notice something relevant in the environment.`
       : `[BUTTON PRESS] ${buttonList}
-The user pressed the above button(s). Interpret this as a user message and respond accordingly.
+The user pressed the above button(s). Interpret this as a user statement and respond accordingly.
 CURRENT MAIN BOARD: ${currentLabels}
 You MUST call rebuild_board() with new buttons that respond to this. Also use add_context_button() if you notice something relevant in the environment.`;
 
@@ -3172,6 +3227,8 @@ When creating or referencing calendar events, interpret and speak in this local 
           relationship: m.relationship,
           confidence: m.confidence,
           boundingBox: d.boundingBox,
+          cameraRole: d.cameraRole,
+          cameraLabel: d.cameraLabel,
         };
       }
       unknownCounter += 1;
@@ -3181,6 +3238,8 @@ When creating or referencing calendar events, interpret and speak in this local 
         name: `Unknown #${unknownCounter}`,
         confidence: 0,
         boundingBox: d.boundingBox,
+        cameraRole: d.cameraRole,
+        cameraLabel: d.cameraLabel,
       };
     });
 
@@ -3211,13 +3270,31 @@ When creating or referencing calendar events, interpret and speak in this local 
   private buildPeoplePresentContext(): string {
     if (!this.currentIdentifiedFaces.length) return "";
     if (Date.now() - this.currentIdentifiedFacesAt > LiveRelay.IDENTIFIED_FACES_TTL_MS) return "";
+    // Camera-role suffix tells the AI whether the person is in front of the
+    // student (gesture-tracked) or seen on an environment camera elsewhere.
+    const cameraSuffix = (role?: string): string => {
+      if (role === "user") return " — in front of student";
+      if (role === "environment") return " — environment camera";
+      return "";
+    };
+    // Explicit student tag: face-match returns entityType="student" when the
+    // visible face matches the bound student. Marking it inline lets the
+    // prompt require positive identification — without this, the model can
+    // mistake a visible non-student (parent, sibling, clinician) for the
+    // student and address them as if they were the primary user.
     const lines = this.currentIdentifiedFaces.map(f => {
-      if (!f.matched) return `- ${f.name} (no database match)`;
+      const where = cameraSuffix(f.cameraRole);
+      if (!f.matched) return `- ${f.name} (no database match)${where}`;
       const conf = (f.confidence * 100).toFixed(0);
       const rel = f.relationship ? `, ${f.relationship}` : "";
-      return `- ${f.name}${rel} — ${conf}% confidence`;
+      const tag = f.entityType === "student" ? " [THE STUDENT]" : "";
+      return `- ${f.name}${rel} — ${conf}% confidence${where}${tag}`;
     });
-    return `[PEOPLE PRESENT]\n${lines.join("\n")}`;
+    const sawStudent = this.currentIdentifiedFaces.some(f => f.matched && f.entityType === "student");
+    const presenceLine = sawStudent
+      ? ""
+      : `\n(NOTE: the student is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
+    return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}`;
   }
 
   // -------------------------------------------------------------------------
@@ -3406,6 +3483,17 @@ export function setupLiveWebSocket(server: import("http").Server): void {
     // Only handle /ws/live path
     if (url.pathname !== "/ws/live") return;
 
+    // Authenticate at the upgrade boundary. Without this check anyone on the
+    // internet who guesses or harvests a student UUID can open a session and
+    // exfiltrate PHI through the live model; the per-student authorization
+    // check inside handleInitialize relies on having an authenticated user.
+    const user = await authenticateUpgrade(req);
+    if (!user) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     // ?test=1 routes to the minimal pass-through relay (no tools, no system
     // prompt, no state machine — used to isolate Gemini behavior from our
     // production middleware).
@@ -3413,12 +3501,12 @@ export function setupLiveWebSocket(server: import("http").Server): void {
 
     wss.handleUpgrade(req, socket as any, head as any, async (ws) => {
       if (useMinimal) {
-        console.log("[LiveRelay] New MINIMAL WebSocket connection (test mode)");
+        console.log(`[LiveRelay] New MINIMAL WebSocket connection (test mode) user=${user.id}`);
         const { MinimalLiveRelay } = await import("./minimal-live-relay");
         new MinimalLiveRelay(ws as any);
       } else {
-        console.log("[LiveRelay] New WebSocket connection");
-        new LiveRelay(ws);
+        console.log(`[LiveRelay] New WebSocket connection user=${user.id}`);
+        new LiveRelay(ws, user);
       }
     });
   });

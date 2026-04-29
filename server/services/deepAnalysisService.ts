@@ -24,6 +24,7 @@ import {
   withInstituteVisibility,
   type AccessCtx,
 } from "./sharing/visibility";
+import { buildSessionAccessCtx } from "./sharing/sessionCtx";
 import {
   recordShareDerivedView,
   recordShareDerivedViewSingle,
@@ -217,6 +218,13 @@ export interface CreateDeepAnalysisInput {
   studentId: string;
   createdByUserId: string;
   specialInstructions?: string;
+  /**
+   * Owning institute at create time. Persisted on the row so runDeepAnalysis
+   * can rebuild the visibility context — without this the run reads PHI
+   * across every institute that has data on the student, regardless of
+   * the creator's actual permissions.
+   */
+  instituteId?: string;
 }
 
 export async function createDeepAnalysis(input: CreateDeepAnalysisInput): Promise<{ id: string }> {
@@ -234,6 +242,7 @@ export async function createDeepAnalysis(input: CreateDeepAnalysisInput): Promis
     .values({
       studentId: input.studentId,
       createdByUserId: input.createdByUserId,
+      instituteId: input.instituteId ?? null,
       model: cfg.model,
       specialInstructions: input.specialInstructions || null,
       status: "pending",
@@ -317,7 +326,20 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
   const memoryValues = (scratch.memoryValues ?? {}) as Record<string, unknown>;
   const memoryState: MemoryState = scratch.memoryState ?? { visible: [], page: {} };
   const loadState: MemoryLoadState = createMemoryLoadState();
-  const baseContext = { studentId: row.studentId, userId: row.createdByUserId };
+  // Rebuild the visibility context from the persisted (studentId, userId,
+  // instituteId) tuple. Memory-schema reads consult ctx.all.accessCtx; without
+  // this every gate downstream silently no-ops and the agent reads PHI across
+  // every institute that holds data for the student.
+  const accessCtx = await buildSessionAccessCtx({
+    userId: row.createdByUserId,
+    studentId: row.studentId,
+    instituteId: row.instituteId ?? undefined,
+  });
+  const baseContext = {
+    studentId: row.studentId,
+    userId: row.createdByUserId,
+    accessCtx,
+  };
 
   // Claude-format messages. On first call, seed with the initial user request.
   const messages: any[] = Array.isArray(row.messages) ? [...(row.messages as any[])] : [];

@@ -282,23 +282,19 @@ async function getCurrentMedicalRecord(
   instituteId?: string,
   accessCtx?: AccessCtx,
 ): Promise<MedicalRecord | undefined> {
+  // Fail-closed when no visibility ctx — caller must plumb accessCtx through
+  // baseContext. Without this, the read fell through to a no-institute filter
+  // and exposed every institute's draft records on the student.
+  if (!accessCtx) return undefined;
   const statusGate = or(
     eq(medicalRecords.status, "draft"),
     eq(medicalRecords.status, "pending_review"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(medicalRecords.studentId, studentId),
-        withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
-        statusGate,
-      )
-    : instituteId
-      ? and(
-          eq(medicalRecords.studentId, studentId),
-          eq(medicalRecords.instituteId, instituteId),
-          statusGate,
-        )
-      : and(eq(medicalRecords.studentId, studentId), statusGate);
+  const whereClause = and(
+    eq(medicalRecords.studentId, studentId),
+    withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
+    statusGate,
+  );
 
   const [record] = await db
     .select()
@@ -463,23 +459,17 @@ const archivedMedicalRecordsListOp = async (
 
   if (!studentId) throw new Error("studentId required for archived medical records query");
 
+  // Fail-closed — see getCurrentMedicalRecord.
+  if (!accessCtx) return { items: [], total: 0 };
   const archivedGate = or(
     eq(medicalRecords.status, "final"),
     eq(medicalRecords.status, "superseded"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(medicalRecords.studentId, studentId),
-        withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
-        archivedGate,
-      )
-    : instituteId
-      ? and(
-          eq(medicalRecords.studentId, studentId),
-          eq(medicalRecords.instituteId, instituteId),
-          archivedGate,
-        )
-      : and(eq(medicalRecords.studentId, studentId), archivedGate);
+  const whereClause = and(
+    eq(medicalRecords.studentId, studentId),
+    withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
+    archivedGate,
+  );
 
   const items = await db
     .select()
@@ -517,17 +507,17 @@ async function getCurrentFunctionalReport(
   studentId: string,
   accessCtx?: AccessCtx,
 ): Promise<FunctionalReport | undefined> {
+  // Fail-closed — see getCurrentMedicalRecord for rationale.
+  if (!accessCtx) return undefined;
   const statusGate = or(
     eq(functionalReports.status, "draft"),
     eq(functionalReports.status, "pending_review"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(functionalReports.studentId, studentId),
-        withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
-        statusGate,
-      )
-    : and(eq(functionalReports.studentId, studentId), statusGate);
+  const whereClause = and(
+    eq(functionalReports.studentId, studentId),
+    withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
+    statusGate,
+  );
 
   const [report] = await db
     .select()
@@ -671,17 +661,17 @@ const archivedFunctionalReportsListOp = async (
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for archived functional reports query");
 
+  // Fail-closed — see getCurrentMedicalRecord.
+  if (!accessCtx) return { items: [], total: 0 };
   const archivedGate = or(
     eq(functionalReports.status, "final"),
     eq(functionalReports.status, "superseded"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(functionalReports.studentId, studentId),
-        withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
-        archivedGate,
-      )
-    : and(eq(functionalReports.studentId, studentId), archivedGate);
+  const whereClause = and(
+    eq(functionalReports.studentId, studentId),
+    withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
+    archivedGate,
+  );
 
   const items = await db
     .select()
@@ -719,17 +709,17 @@ async function getCurrentEducationalReport(
   studentId: string,
   accessCtx?: AccessCtx,
 ): Promise<EducationalReport | undefined> {
+  // Fail-closed — see getCurrentMedicalRecord for rationale.
+  if (!accessCtx) return undefined;
   const statusGate = or(
     eq(educationalReports.status, "draft"),
     eq(educationalReports.status, "pending_review"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(educationalReports.studentId, studentId),
-        withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
-        statusGate,
-      )
-    : and(eq(educationalReports.studentId, studentId), statusGate);
+  const whereClause = and(
+    eq(educationalReports.studentId, studentId),
+    withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
+    statusGate,
+  );
 
   const [report] = await db
     .select()
@@ -875,17 +865,17 @@ const archivedEducationalReportsListOp = async (
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for archived educational reports query");
 
+  // Fail-closed — see getCurrentMedicalRecord.
+  if (!accessCtx) return { items: [], total: 0 };
   const archivedGate = or(
     eq(educationalReports.status, "final"),
     eq(educationalReports.status, "superseded"),
   );
-  const whereClause = accessCtx
-    ? and(
-        eq(educationalReports.studentId, studentId),
-        withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
-        archivedGate,
-      )
-    : and(eq(educationalReports.studentId, studentId), archivedGate);
+  const whereClause = and(
+    eq(educationalReports.studentId, studentId),
+    withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
+    archivedGate,
+  );
 
   const items = await db
     .select()

@@ -105,7 +105,9 @@ export function sortStackBottomToTop(
     const ta = isTile(def, a) ? 0 : 1;
     const tb = isTile(def, b) ? 0 : 1;
     if (ta !== tb) return ta - tb;
-    return 0;
+    // Within the same layer/tile bucket, the most-recently-placed entity
+    // sits on top. placedSeq is bumped on spawn and on successful move.
+    return a.placedSeq - b.placedSeq;
   });
 }
 
@@ -116,6 +118,40 @@ export function topmostAtCell(
 ): EntityInstance | undefined {
   const stack = sortStackBottomToTop(def, getEntitiesAtCell(def, state, cell));
   return stack[stack.length - 1];
+}
+
+/** True if the entity reacts to clicks (has onClick interactions or is a container). */
+export function isClickable(def: GameDefinition, entity: EntityInstance): boolean {
+  const cls = getClass(def, entity.classId);
+  if (cls.maxCapacity !== undefined) return true;
+  return (cls.interactions ?? []).some((i) =>
+    i.triggers.events.some((ev) => ev.type === "onClick"),
+  );
+}
+
+/** True if the entity can be moved by the player (movable, possibly via override). */
+export function isMovable(def: GameDefinition, entity: EntityInstance): boolean {
+  const v = getProp(def, entity, "movable");
+  return typeof v === "boolean" ? v : false;
+}
+
+/**
+ * Walk entities at `cell` from top to bottom and return the first one that
+ * passes `predicate`. Used by the runtime's click and drag handlers so a
+ * non-clickable / non-movable entity sitting on top doesn't block actions
+ * targeting an entity beneath it.
+ */
+export function findTopmostMatching(
+  def: GameDefinition,
+  state: RuntimeState,
+  cell: GridCoord,
+  predicate: (e: EntityInstance) => boolean,
+): EntityInstance | undefined {
+  const stack = sortStackBottomToTop(def, getEntitiesAtCell(def, state, cell));
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (predicate(stack[i])) return stack[i];
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,9 +314,10 @@ export function canDropAt(
     }
   }
 
-  // dropRules check: the cell must match at least one rule.
-  if (!cls.dropRules || cls.dropRules.length === 0) return false;
+  // No dropRules → permissive: solid/tile/bounds checks above are the only gates.
+  if (!cls.dropRules || cls.dropRules.length === 0) return true;
 
+  // dropRules check: the cell must match at least one rule.
   for (const rule of cls.dropRules) {
     if (rule.type === "sameCell") {
       const here = getEntitiesAtCell(def, state, cell).filter((e) => e.uid !== entity.uid);

@@ -9,3 +9,5 @@ export type {
   TickResult,
   Turn,
 } from "./engine-types";
+export { EntityVisual, resolveColor, resolveLabel } from "./entity-visual";
+export type { EntityVisualProps, ResolveImage } from "./entity-visual";

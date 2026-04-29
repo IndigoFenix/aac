@@ -22,6 +22,8 @@ import {
   type AgentMemoryFieldArrayWithDB,
   type DBOperationContext,
 } from "../chat/memory-types";
+import { studentService } from "../studentService";
+import type { AccessCtx } from "../sharing/visibility";
 
 // ============================================================================
 // DB HELPERS
@@ -43,6 +45,29 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
   const studentId = ctx.all.studentId;
   if (!studentId) return updates;
 
+  // Authorize the writer. Without this gate, an authenticated user with no
+  // relationship to the student could rewrite Context_AACPrompt or any
+  // chatAgentPrompt for any student UUID — a persistent prompt-injection
+  // landing in that student's AAC live model. The check mirrors the
+  // controller-level boundary; we re-verify here as defense-in-depth so the
+  // schema is safe even if some future caller reaches it without an
+  // upstream gate (e.g. a script, a fork, or a not-yet-wired feature).
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  const userId = ctx.all.userId as string | undefined;
+  if (accessCtx?.kind === "admin") {
+    // Admin principal — allowed.
+  } else if (accessCtx?.kind === "student" && accessCtx.studentId === studentId) {
+    // The AAC student themselves modifying their own settings — allowed.
+  } else if (accessCtx?.kind === "institute" && userId) {
+    // Clinician principal — verify they actually have access to this student.
+    const access = await studentService.verifyStudentAccess(studentId, userId, accessCtx.instituteId);
+    if (!access.hasAccess) {
+      throw new Error("Cannot write AAC settings: no access to student");
+    }
+  } else {
+    throw new Error("Cannot write AAC settings without a resolved access context");
+  }
+
   // Filter to only known columns — prevent writing id/studentId/timestamps
   const WRITABLE_COLUMNS = new Set([
     "aiName", "interpretationLevel", "startupMode",
@@ -60,6 +85,33 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
   const filtered: Record<string, any> = {};
   for (const [k, v] of Object.entries(updates)) {
     if (WRITABLE_COLUMNS.has(k)) filtered[k] = v;
+  }
+
+  // Sanitize the chatAgentPrompt persona on write. The persona is concatenated
+  // raw into the AAC live + monitor system prompts under "# CUSTOM
+  // INSTRUCTIONS"; without this the field is a clinician-controllable prompt
+  // injection slot. We strip the framing tokens the live + monitor pipelines
+  // use as control delimiters (so a malicious persona can't fake them) and
+  // cap the length. Leave the rest of the text as-is — clinicians are
+  // supposed to be able to customize the AI's tone.
+  if (typeof filtered.chatAgentPrompt === "string") {
+    let p = filtered.chatAgentPrompt;
+    const FRAMING_TOKENS = [
+      "[CONTEXT]", "[/CONTEXT]",
+      "[UPDATE_PROMPT]", "[/UPDATE_PROMPT]",
+      "[BOARD]", "[/BOARD]",
+      "[ENHANCED_PROMPT]", "[/ENHANCED_PROMPT]",
+      "[CALL_MONITOR]", "[INTERPRET]", "[/INTERPRET]",
+      "[TRANSCRIPT]", "[PEOPLE PRESENT]", "[BUTTON PRESS]",
+      "[SYSTEM]", "[/SYSTEM]",
+    ];
+    for (const tok of FRAMING_TOKENS) {
+      p = p.split(tok).join(tok.replace(/\[/g, "(").replace(/\]/g, ")"));
+    }
+    // Hard cap to keep injection bandwidth small; 8 KB is well above any
+    // legitimate clinician persona.
+    if (p.length > 8000) p = p.slice(0, 8000);
+    filtered.chatAgentPrompt = p;
   }
 
   if (Object.keys(filtered).length === 0) return updates;

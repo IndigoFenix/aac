@@ -82,6 +82,14 @@ async function listSessions(
 ): Promise<ListResult<SessionSummaryRow>> {
   const studentId = ctx.all.studentId;
   if (!studentId) return { items: [], total: 0, keys: [] };
+  // Fail-closed when no visibility ctx — chat session logs contain full
+  // message histories (PHI when discussing a clinical case). Caller must
+  // plumb accessCtx; see analysis-memory-schema for parallel rationale.
+  const accessCtx = ctx.all.accessCtx as import("../sharing/visibility").AccessCtx | undefined;
+  if (!accessCtx) return { items: [], total: 0, keys: [] };
+  if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
+    return { items: [], total: 0, keys: [] };
+  }
 
   const where = buildWhere(studentId, isAAC, filters);
 
@@ -127,6 +135,10 @@ async function getSession(
 ): Promise<SessionFullRow | undefined> {
   const studentId = ctx.all.studentId;
   if (!studentId) return undefined;
+  // Fail-closed — see listSessions.
+  const accessCtx = ctx.all.accessCtx as import("../sharing/visibility").AccessCtx | undefined;
+  if (!accessCtx) return undefined;
+  if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) return undefined;
 
   const [row] = await db
     .select()

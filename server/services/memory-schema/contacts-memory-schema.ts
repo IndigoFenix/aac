@@ -32,6 +32,7 @@ import {
   type AgentMemoryFieldObjectWithDB,
   type MemoryDBOperations,
 } from "../chat/memory-types";
+import type { AccessCtx } from "../sharing/visibility";
 import {
   createContact,
   updateContact,
@@ -162,6 +163,16 @@ const studentContactsOps: MemoryDBOperations<ContactMemoryValue> = {
   list: async (ctx, { offset, limit }) => {
     const studentId = ctx.all.studentId;
     if (!studentId) throw new Error("studentId required for Student_Contacts");
+
+    // Defense-in-depth: refuse the read when the requester has no resolved
+    // visibility ctx. Controllers verify student access before this runs, but
+    // a cross-student read here would expose phone, email, biometric
+    // descriptors, and identifying features.
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    if (!accessCtx) return { items: [], total: 0, keys: [] };
+    if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
+      return { items: [], total: 0, keys: [] };
+    }
 
     const rows = await db
       .select()

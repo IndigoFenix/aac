@@ -4,9 +4,20 @@
 // previewed. The AI edits the underlying GameDefinition via manageMemory
 // (Context_CustomApp); this store is the client-side mirror of that state
 // plus DB association.
+//
+// The granular mutators below (upsertClass, addRoomEntity, etc.) are the
+// editor's surface for changes — each one funnels through `mutateDefinition`
+// which marks the store dirty so the Save button enables.
 
 import { create } from "zustand";
-import type { GameDefinition } from "@shared/custom-app-types";
+import type {
+  ButtonDef,
+  ClassDef,
+  GameDefinition,
+  RoomDef,
+  RoomEntityInstance,
+} from "@shared/custom-app-types";
+import { applyClassRename } from "@/features/custom-app/helpers";
 
 interface CustomAppMeta {
   id: string;           // DB id
@@ -34,6 +45,32 @@ interface CustomAppState {
   upsertAppMeta: (meta: CustomAppMeta) => void;
   removeAppMeta: (id: string) => void;
   reset: () => void;
+
+  // -- Granular editor mutators (all mark dirty)
+  mutateDefinition: (updater: (def: GameDefinition) => GameDefinition) => void;
+  setAppMeta: (patch: Partial<Pick<GameDefinition,
+    "label" | "description" | "aiInstructions" | "iconRef" | "imageKey" |
+    "symbolPath" | "turnBased" | "startRoom"
+  >>) => void;
+  upsertClass: (cls: ClassDef) => void;
+  /** Rename a class id; if `cascade` is true, all references are rewritten. */
+  renameClass: (oldId: string, newId: string, cascade: boolean) => void;
+  deleteClass: (classId: string) => void;
+  upsertRoom: (room: RoomDef) => void;
+  deleteRoom: (roomId: string) => void;
+  addRoomEntity: (roomId: string, entity: RoomEntityInstance) => void;
+  updateRoomEntity: (roomId: string, index: number, patch: Partial<RoomEntityInstance>) => void;
+  deleteRoomEntity: (roomId: string, index: number) => void;
+  upsertButton: (btn: ButtonDef) => void;
+  deleteButton: (buttonId: string) => void;
+}
+
+function upsertById<T extends { id: string }>(arr: T[], item: T): T[] {
+  const i = arr.findIndex((x) => x.id === item.id);
+  if (i < 0) return [...arr, item];
+  const next = arr.slice();
+  next[i] = item;
+  return next;
 }
 
 export const useCustomAppStore = create<CustomAppState>((set) => ({
@@ -66,4 +103,131 @@ export const useCustomAppStore = create<CustomAppState>((set) => ({
   removeAppMeta: (id) => set((s) => ({ apps: s.apps.filter((a) => a.id !== id) })),
 
   reset: () => set({ definition: null, dbId: null, isDirty: false }),
+
+  // -------------------------------------------------------------- mutators
+
+  mutateDefinition: (updater) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return { definition: updater(s.definition), isDirty: true };
+    }),
+
+  setAppMeta: (patch) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return { definition: { ...s.definition, ...patch }, isDirty: true };
+    }),
+
+  upsertClass: (cls) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return {
+        definition: { ...s.definition, classes: upsertById(s.definition.classes, cls) },
+        isDirty: true,
+      };
+    }),
+
+  renameClass: (oldId, newId, cascade) =>
+    set((s) => {
+      if (!s.definition || oldId === newId) return {};
+      if (cascade) {
+        return { definition: applyClassRename(s.definition, oldId, newId), isDirty: true };
+      }
+      // Non-cascading rename: only the class's own id changes. References stay
+      // pointing at the now-missing oldId (the validator will surface this).
+      const classes = s.definition.classes.map((c) =>
+        c.id === oldId ? { ...c, id: newId } : c,
+      );
+      return { definition: { ...s.definition, classes }, isDirty: true };
+    }),
+
+  deleteClass: (classId) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return {
+        definition: {
+          ...s.definition,
+          classes: s.definition.classes.filter((c) => c.id !== classId),
+        },
+        isDirty: true,
+      };
+    }),
+
+  upsertRoom: (room) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return {
+        definition: { ...s.definition, rooms: upsertById(s.definition.rooms, room) },
+        isDirty: true,
+      };
+    }),
+
+  deleteRoom: (roomId) =>
+    set((s) => {
+      if (!s.definition) return {};
+      const rooms = s.definition.rooms.filter((r) => r.id !== roomId);
+      // Keep startRoom valid if we just deleted it.
+      const startRoom =
+        s.definition.startRoom === roomId
+          ? rooms[0]?.id ?? s.definition.startRoom
+          : s.definition.startRoom;
+      return { definition: { ...s.definition, rooms, startRoom }, isDirty: true };
+    }),
+
+  addRoomEntity: (roomId, entity) =>
+    set((s) => {
+      if (!s.definition) return {};
+      const rooms = s.definition.rooms.map((r) =>
+        r.id === roomId
+          ? { ...r, entities: [...(r.entities ?? []), entity] }
+          : r,
+      );
+      return { definition: { ...s.definition, rooms }, isDirty: true };
+    }),
+
+  updateRoomEntity: (roomId, index, patch) =>
+    set((s) => {
+      if (!s.definition) return {};
+      const rooms = s.definition.rooms.map((r) => {
+        if (r.id !== roomId) return r;
+        const list = (r.entities ?? []).slice();
+        if (!list[index]) return r;
+        list[index] = { ...list[index], ...patch };
+        return { ...r, entities: list };
+      });
+      return { definition: { ...s.definition, rooms }, isDirty: true };
+    }),
+
+  deleteRoomEntity: (roomId, index) =>
+    set((s) => {
+      if (!s.definition) return {};
+      const rooms = s.definition.rooms.map((r) => {
+        if (r.id !== roomId) return r;
+        const list = (r.entities ?? []).slice();
+        list.splice(index, 1);
+        return { ...r, entities: list };
+      });
+      return { definition: { ...s.definition, rooms }, isDirty: true };
+    }),
+
+  upsertButton: (btn) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return {
+        definition: { ...s.definition, buttons: upsertById(s.definition.buttons, btn) },
+        isDirty: true,
+      };
+    }),
+
+  deleteButton: (buttonId) =>
+    set((s) => {
+      if (!s.definition) return {};
+      return {
+        definition: {
+          ...s.definition,
+          buttons: s.definition.buttons.filter((b) => b.id !== buttonId),
+        },
+        isDirty: true,
+      };
+    }),
 }));
