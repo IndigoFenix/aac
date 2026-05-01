@@ -133,14 +133,10 @@ export const yue: Translations = {
     selectionTimeout: "選擇超時",
     eyegazeTip: "喺任何符號上面停留 {seconds} 秒就可以自動選擇",
 
-    chatAgentBehavior: "傾偈助手行為",
     enableChatGPT5: "啟用 ChatGPT 5",
     chatGPT5Hint: "覆蓋所有 AI 功能嚟用 ChatGPT 5，唔理其他模型設定",
     chatGPT5Description: "啟用之後：對話、視覺分析、符號、語音同音訊全部用 ChatGPT 5",
     agentConversationStyle: "助手對話風格",
-    agentPromptPlaceholder: "輸入傾偈助手嘅行為指令...",
-    resetToDefault: "重設為預設",
-    defaultConversationBehavior: "預設對話行為",
 
     apps: "應用",
     appsDescription: "啟用或停用 AAC 對話期間可用嘅附加應用",
@@ -185,17 +181,9 @@ export const yue: Translations = {
     localTtsDesc: "用瀏覽器內置嘅語音合成代替伺服器生成嘅音訊。適合網路較慢嘅情況。",
     elevenlabsTitle: "ElevenLabs 語音",
     elevenlabsDesc: "輸入你自己嘅 ElevenLabs API 密鑰同語音 ID 嚟攞高質素語音合成。設定之後會覆蓋所有其他語音設定。",
-    elevenlabsApiKey: "ElevenLabs API 密鑰",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "學生語音 ID",
     elevenlabsAiVoiceId: "AI 語音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "載入緊語音...",
-    elevenlabsNoVoices: "搵唔到語音",
-    elevenlabsInvalidKey: "API 密鑰無效",
-    elevenlabsSelectVoice: "揀語音",
-    elevenlabsTestVoice: "測試語音",
-    elevenlabsTestPhrase: "你好，我係你嘅語音助手",
 
     buttonSize: "按鈕大小",
     buttonSizeExtraLarge: "超大圖示，最少文字",
@@ -237,8 +225,6 @@ export const yue: Translations = {
     inputSourceCursorHint: "配合 Tobii、其他控制游標嘅眼動追蹤器或者頭部追蹤裝置使用。唔使校準。",
     inputSourceConnected: "已連接",
     inputSourceNotDetected: "偵測唔到",
-
-    systemPrompt: "系統提示",
 
     restartSession: "重新開始對話",
     restartSessionHint: "結束目前對話並重新開始",

@@ -2340,6 +2340,8 @@ export const ar = {
     allowReadReportsDesc: "عند التعطيل، لا يمكن للذكاء الاصطناعي عرض السجلات الطبية أو التعليمية أو الوظيفية",
     allowNotes: "السماح بالملاحظات",
     allowNotesDesc: "عند التعطيل، لا يمكن للذكاء الاصطناعي قراءة أو كتابة ملاحظات الجلسة (لا يتم تخزين ذاكرة خارج سجلات الرسائل)",
+    shareMonitorNotesWithInstitute: "مشاركة ملاحظات AAC مع مؤسستي",
+    shareMonitorNotesWithInstituteDesc: "عند التفعيل، يرى الأخصائيون في هذه المؤسسة الملاحظات المسجلة خلال جلسات AAC (الاهتمامات والتفضيلات والملاحظات). قم بالتعطيل لطلب منح مشاركة صريح.",
     // Symbol generation
     symbolGeneration: "إنشاء الرموز",
     symbolGenerationDesc: "إنشاء صور رموز لأزرار AAC تلقائياً باستخدام الذكاء الاصطناعي",
@@ -2677,6 +2679,7 @@ export const ar = {
   landing: {
     nav: {
       login: "بوابة العملاء",
+      languageLabel: "اختر اللغة",
     },
     hero: {
       tagline: "الحل: منصة ذات ركيزتين",
@@ -2774,6 +2777,20 @@ export const ar = {
       accessibility: "إمكانية الوصول",
       aiPolicy: "سياسة الذكاء الاصطناعي",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "تحدث معنا",
+      greeting: "مرحبًا! أنا هنا لمساعدتك في التعرف على Aivota. ما الذي تود معرفته؟",
+      placeholder: "اكتب رسالتك...",
+      send: "إرسال",
+      close: "إغلاق",
+      openLabel: "فتح الدردشة",
+      disclaimer: "مساعد ذكاء اصطناعي. قد تُراجع المحادثات لتحسين خدمتنا.",
+      errorIdentify: "تعذر الاتصال. يرجى المحاولة مرة أخرى.",
+      errorSend: "تعذر إرسال رسالتك. يرجى المحاولة مرة أخرى.",
+      errorRateLimited: "أنت ترسل الرسائل بسرعة كبيرة. يرجى الانتظار قليلاً.",
+      errorBlocked: "الدردشة غير متاحة في هذه الجلسة.",
+      thinking: "يفكر…",
     },
   },
 

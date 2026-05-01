@@ -133,14 +133,10 @@ export const pt: Translations = {
     selectionTimeout: "Tempo de sele\u00e7\u00e3o",
     eyegazeTip: "Passe o olhar sobre qualquer s\u00edmbolo por {seconds} segundos para selecion\u00e1-lo automaticamente",
 
-    chatAgentBehavior: "Comportamento do agente de chat",
     enableChatGPT5: "Habilitar ChatGPT 5",
     chatGPT5Hint: "Substituir todos os recursos de IA para usar ChatGPT 5 independentemente de outras configura\u00e7\u00f5es de modelo",
     chatGPT5Description: "Quando habilitado: Conversa\u00e7\u00e3o, An\u00e1lise Visual, S\u00edmbolos, Voz e \u00c1udio usar\u00e3o ChatGPT 5",
     agentConversationStyle: "Estilo de conversa\u00e7\u00e3o do agente",
-    agentPromptPlaceholder: "Digite as instru\u00e7\u00f5es de comportamento do agente de chat...",
-    resetToDefault: "Redefinir para padr\u00e3o",
-    defaultConversationBehavior: "Comportamento de conversa\u00e7\u00e3o padr\u00e3o",
 
     apps: "Aplicativos",
     appsDescription: "Habilitar ou desabilitar aplicativos complementares dispon\u00edveis durante sess\u00f5es AAC",
@@ -185,17 +181,9 @@ export const pt: Translations = {
     localTtsDesc: "Usar a s\u00edntese de fala integrada do navegador em vez de \u00e1udio gerado pelo servidor. \u00datil para conex\u00f5es lentas.",
     elevenlabsTitle: "Voz ElevenLabs",
     elevenlabsDesc: "Digite sua pr\u00f3pria chave API do ElevenLabs e IDs de voz para TTS de alta qualidade. Substitui todas as outras configura\u00e7\u00f5es de voz quando configurado.",
-    elevenlabsApiKey: "Chave API do ElevenLabs",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "ID de voz do estudante",
     elevenlabsAiVoiceId: "ID de voz da IA",
     elevenlabsVoiceIdPlaceholder: "ex. 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "Carregando vozes...",
-    elevenlabsNoVoices: "Nenhuma voz encontrada",
-    elevenlabsInvalidKey: "Chave API inv\u00e1lida",
-    elevenlabsSelectVoice: "Selecionar uma voz",
-    elevenlabsTestVoice: "Testar voz",
-    elevenlabsTestPhrase: "Ol\u00e1, eu sou seu assistente de voz",
 
     buttonSize: "Tamanho dos bot\u00f5es",
     buttonSizeExtraLarge: "\u00cdcones extra grandes, texto m\u00ednimo",
@@ -237,8 +225,6 @@ export const pt: Translations = {
     inputSourceCursorHint: "Usar com Tobii, outros rastreadores oculares que controlam o cursor, ou dispositivos de rastreamento de cabe\u00e7a. Sem necessidade de calibra\u00e7\u00e3o.",
     inputSourceConnected: "conectado",
     inputSourceNotDetected: "n\u00e3o detectado",
-
-    systemPrompt: "Prompt do sistema",
 
     restartSession: "Reiniciar sess\u00e3o",
     restartSessionHint: "Encerrar a sess\u00e3o atual e come\u00e7ar novamente",

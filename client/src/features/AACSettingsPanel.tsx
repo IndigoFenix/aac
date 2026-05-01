@@ -90,6 +90,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowReadProgress, setAllowReadProgress] = useState(true);
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
+  const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
   const [generateSymbols, setGenerateSymbols] = useState(false);
   const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
@@ -193,6 +194,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
+      setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
@@ -232,6 +234,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
+      const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
       const originalGenerateSymbols = aac?.generateSymbols ?? false;
       const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
@@ -263,6 +266,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
         allowNotes !== originalAllowNotes ||
+        shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
         generateSymbols !== originalGenerateSymbols ||
         useApprovedSymbols !== originalUseApprovedSymbols ||
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
@@ -275,7 +279,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -299,6 +303,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
+      shareMonitorNotesWithInstitute: boolean;
       generateSymbols: boolean;
       useApprovedSymbols: boolean;
       useUnapprovedSymbols: boolean;
@@ -351,6 +356,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadProgress,
       allowReadReports,
       allowNotes,
+      shareMonitorNotesWithInstitute,
       generateSymbols,
       useApprovedSymbols,
       useUnapprovedSymbols,
@@ -389,6 +395,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
+      setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
@@ -1130,6 +1137,20 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Switch
                   checked={allowNotes}
                   onCheckedChange={setAllowNotes}
+                />
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.shareMonitorNotesWithInstitute')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.shareMonitorNotesWithInstituteDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={shareMonitorNotesWithInstitute}
+                  onCheckedChange={setShareMonitorNotesWithInstitute}
                 />
               </div>
             </CardContent>

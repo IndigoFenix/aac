@@ -112,22 +112,40 @@
   gap: 0.75rem;
 }
 
-.landing-lang-toggle {
-  padding: 0.4rem 0.75rem;
+.landing-lang-select {
+  padding: 0.4rem 2rem 0.4rem 0.75rem;
   font-size: 0.85rem;
   font-weight: 600;
   border: 1.5px solid var(--lp-primary);
   border-radius: 8px;
-  background: transparent;
+  background-color: transparent;
   color: var(--lp-primary);
   cursor: pointer;
   transition: var(--lp-transition);
   font-family: 'Inter', system-ui, sans-serif;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 12px;
 }
 
-.landing-lang-toggle:hover {
-  background: var(--lp-primary);
+.landing-lang-select:hover {
+  background-color: var(--lp-primary);
   color: #fff;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.landing-lang-select option {
+  background: #fff;
+  color: #111;
+}
+
+[dir="rtl"] .landing-lang-select {
+  padding: 0.4rem 0.75rem 0.4rem 2rem;
+  background-position: left 0.6rem center;
 }
 
 .landing-logo {
@@ -495,5 +513,329 @@
 
   .landing-founder-callout {
     text-align: start;
+  }
+}
+
+/* ============================================================
+   CRM Landing-Page Chat Widget
+   ============================================================ */
+
+.crm-widget {
+  position: fixed;
+  bottom: 1.5rem;
+  inset-inline-end: 1.5rem;
+  z-index: 100;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.crm-widget-launcher {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--lp-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(26, 43, 76, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.crm-widget-launcher:hover {
+  background: var(--lp-primary-light);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(26, 43, 76, 0.32);
+}
+
+.crm-widget-panel {
+  width: min(380px, calc(100vw - 2rem));
+  height: min(560px, calc(100vh - 3rem));
+  background: #fff;
+  border-radius: var(--lp-radius-lg);
+  box-shadow: var(--lp-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(26, 43, 76, 0.08);
+}
+
+.crm-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  background: var(--lp-primary);
+  color: #fff;
+}
+
+.crm-widget-title {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.crm-widget-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 6px;
+  opacity: 0.85;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.crm-widget-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.crm-widget-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--lp-bg-alt);
+}
+
+.crm-widget-greeting {
+  align-self: flex-start;
+  background: #fff;
+  color: var(--lp-text-muted);
+  padding: 0.75rem 1rem;
+  border-radius: var(--lp-radius);
+  font-size: 0.9rem;
+  border: 1px solid rgba(26, 43, 76, 0.06);
+  max-width: 90%;
+}
+
+.crm-widget-message {
+  padding: 0.7rem 0.95rem;
+  border-radius: var(--lp-radius);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-width: 85%;
+}
+
+.crm-widget-message-user {
+  align-self: flex-end;
+  background: var(--lp-primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.landing[dir="rtl"] .crm-widget-message-user,
+.crm-widget-rtl .crm-widget-message-user {
+  border-bottom-right-radius: var(--lp-radius);
+  border-bottom-left-radius: 4px;
+}
+
+.crm-widget-message-assistant {
+  align-self: flex-start;
+  background: #fff;
+  color: var(--lp-text);
+  border: 1px solid rgba(26, 43, 76, 0.08);
+  border-bottom-left-radius: 4px;
+}
+
+.landing[dir="rtl"] .crm-widget-message-assistant,
+.crm-widget-rtl .crm-widget-message-assistant {
+  border-bottom-left-radius: var(--lp-radius);
+  border-bottom-right-radius: 4px;
+}
+
+.crm-widget-message-typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0.85rem 1rem;
+}
+
+.crm-widget-message-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lp-text-muted);
+  animation: crm-typing 1.2s infinite ease-in-out;
+}
+
+.crm-widget-message-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.crm-widget-message-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes crm-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+.crm-widget-error {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-top: 1px solid #fee2e2;
+}
+
+.crm-widget-input-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid rgba(26, 43, 76, 0.08);
+  background: #fff;
+}
+
+.crm-widget-input {
+  flex: 1;
+  border: 1px solid rgba(26, 43, 76, 0.15);
+  border-radius: var(--lp-radius);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.92rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.crm-widget-input:focus {
+  border-color: var(--lp-primary);
+}
+
+.crm-widget-send {
+  background: var(--lp-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--lp-radius);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.crm-widget-send:hover:not(:disabled) {
+  background: var(--lp-primary-light);
+}
+
+.crm-widget-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.crm-widget-disclaimer {
+  padding: 0.5rem 1rem 0.75rem;
+  font-size: 0.7rem;
+  color: var(--lp-text-muted);
+  text-align: center;
+  background: #fff;
+}
+
+/* Markdown content inside an assistant bubble. The bubble already sets font-size,
+   color, padding, max-width, etc — these rules just tame stock element margins
+   so paragraphs / lists / code don't blow out the layout. */
+.crm-widget-message-md {
+  /* Keep wrapping for long URLs / words. */
+  overflow-wrap: anywhere;
+}
+
+.crm-widget-message-md > *:first-child { margin-top: 0; }
+.crm-widget-message-md > *:last-child { margin-bottom: 0; }
+
+.crm-widget-message-md p {
+  margin: 0 0 0.5rem 0;
+}
+
+.crm-widget-message-md ul,
+.crm-widget-message-md ol {
+  margin: 0 0 0.5rem 0;
+  padding-inline-start: 1.25rem;
+}
+
+.crm-widget-message-md li {
+  margin: 0.15rem 0;
+}
+
+.crm-widget-message-md h1,
+.crm-widget-message-md h2,
+.crm-widget-message-md h3,
+.crm-widget-message-md h4 {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+  line-height: 1.3;
+}
+.crm-widget-message-md h1 { font-size: 1.05rem; }
+.crm-widget-message-md h2 { font-size: 1.0rem; }
+.crm-widget-message-md h3,
+.crm-widget-message-md h4 { font-size: 0.95rem; }
+
+.crm-widget-message-md strong { font-weight: 600; }
+.crm-widget-message-md em { font-style: italic; }
+
+.crm-widget-message-md a {
+  color: var(--lp-primary);
+  text-decoration: underline;
+}
+
+.crm-widget-message-md code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: rgba(26, 43, 76, 0.08);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.crm-widget-message-md pre {
+  background: rgba(26, 43, 76, 0.06);
+  border: 1px solid rgba(26, 43, 76, 0.1);
+  border-radius: 6px;
+  padding: 0.6rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.crm-widget-message-md pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.crm-widget-message-md blockquote {
+  margin: 0.4rem 0;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 3px solid rgba(26, 43, 76, 0.2);
+  color: var(--lp-text-muted);
+}
+
+/* ============================================================
+   Page compression while the chat panel is open
+   ============================================================
+   Reserve horizontal space for the panel so it doesn't sit on top of
+   landing content. Logical padding-inline-end works for both LTR and RTL
+   because the launcher uses inset-inline-end (right in LTR, left in RTL).
+   Mobile keeps the panel as an overlay — at narrow widths there's nothing
+   to push, and the panel itself is sized to min(380px, calc(100vw - 2rem)). */
+
+body {
+  transition: padding-inline-end 0.25s ease;
+}
+
+@media (min-width: 900px) {
+  body.crm-chat-open {
+    /* panel width (380) + launcher offset (1.5rem) + breathing room (1rem) */
+    padding-inline-end: calc(380px + 2.5rem);
   }
 }

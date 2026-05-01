@@ -2340,6 +2340,8 @@ export const zh = {
     allowReadReportsDesc: "禁用时，AI 无法查看医疗、教育或功能记录",
     allowNotes: "允许笔记",
     allowNotesDesc: "禁用时，AI 无法读取或写入会话笔记（消息日志外不存储记忆）",
+    shareMonitorNotesWithInstitute: "与我的机构共享 AAC 笔记",
+    shareMonitorNotesWithInstituteDesc: "启用时，本机构的临床医生可以查看 AAC 会话期间记录的笔记（兴趣、偏好、观察）。禁用以要求显式的共享授权。",
     // Symbol generation
     symbolGeneration: "符号生成",
     symbolGenerationDesc: "使用 AI 为 AAC 按钮自动生成图标图片",
@@ -2677,6 +2679,7 @@ export const zh = {
   landing: {
     nav: {
       login: "客户门户",
+      languageLabel: "选择语言",
     },
     hero: {
       tagline: "解决方案：双支柱平台",
@@ -2774,6 +2777,20 @@ export const zh = {
       accessibility: "无障碍",
       aiPolicy: "AI 政策",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "联系我们",
+      greeting: "您好！我可以帮您了解 Aivota。您想了解什么？",
+      placeholder: "请输入消息...",
+      send: "发送",
+      close: "关闭",
+      openLabel: "打开聊天",
+      disclaimer: "AI 助手。对话可能会被审查以改进我们的服务。",
+      errorIdentify: "无法连接。请重试。",
+      errorSend: "无法发送消息。请重试。",
+      errorRateLimited: "您发送消息过于频繁。请稍候。",
+      errorBlocked: "此会话不支持聊天。",
+      thinking: "正在思考…",
     },
   },
 

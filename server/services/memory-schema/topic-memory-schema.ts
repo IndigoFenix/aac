@@ -58,6 +58,10 @@ function toMemoryValue(topic: any): any {
 /**
  * Topics operations (MAP) - active topics keyed by title
  * READ-ONLY: AI cannot create, update, or delete topics
+ *
+ * The CRM landing-page agent passes `crmAccessibleOnly: true` in its base
+ * context so anonymous visitors only see topics the admin has explicitly
+ * exposed. Other agents (clinician, AAC) see all active topics.
  */
 const topicsOps: MemoryDBOperations<any> = {
   /**
@@ -66,8 +70,9 @@ const topicsOps: MemoryDBOperations<any> = {
   list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
     // Get parentId from context (null for root-level)
     const parentId = ctx.all.topicId ?? null;
+    const crmAccessibleOnly = ctx.all.crmAccessibleOnly === true;
 
-    const result = await topicService.getActiveTopicsByParentId(parentId);
+    const result = await topicService.getActiveTopicsByParentId(parentId, { crmAccessibleOnly });
 
     if (!result.success || !result.topics) {
       throw new Error(result.error || "Failed to get topics");
@@ -93,9 +98,10 @@ const topicsOps: MemoryDBOperations<any> = {
   get: async (ctx, key) => {
     const keyStr = String(key);
     const parentId = ctx.all.topicId ?? null;
+    const crmAccessibleOnly = ctx.all.crmAccessibleOnly === true;
 
     // Get topics at this level and find by title
-    const result = await topicService.getActiveTopicsByParentId(parentId);
+    const result = await topicService.getActiveTopicsByParentId(parentId, { crmAccessibleOnly });
     if (!result.success || !result.topics) {
       return undefined;
     }

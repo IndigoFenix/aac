@@ -2,9 +2,39 @@ import type { Request, Response } from "express";
 import { adminService, userService, creditService } from "../services";
 import { mfaService } from "../services/mfaService";
 import { activityLogService } from "../services/activityLogService";
-import { userRepository, interpretationRepository, settingsRepository, instituteRepository } from "../repositories";
+import { userRepository, interpretationRepository, settingsRepository, instituteRepository, crmRepository } from "../repositories";
+import { chatRepository } from "../repositories/chatRepository";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
 import { MODEL_OPTIONS, USE_CASES, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
+import { CRM_DEFAULT_SYSTEM_PROMPT } from "../services/crmChat/prompts";
+import type { CrmPotentialCustomer } from "@shared/schema";
+
+/**
+ * Flatten a CRM customer for the admin UI: surface the Customer_* memory
+ * fields as top-level properties so the page doesn't need to know about the
+ * memory key prefix. The raw memory blob is also returned for completeness
+ * (admins occasionally want to see the unstructured notes array etc.).
+ */
+function serializeCrmCustomer(c: CrmPotentialCustomer) {
+  const memory = (c.chatMemory as Record<string, any>) ?? {};
+  return {
+    id: c.id,
+    countryCode: c.countryCode,
+    region: c.region,
+    isBlocked: c.isBlocked,
+    firstSeenAt: c.firstSeenAt,
+    lastSeenAt: c.lastSeenAt,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    firstName: memory.Customer_FirstName ?? null,
+    lastName: memory.Customer_LastName ?? null,
+    email: memory.Customer_Email ?? null,
+    organization: memory.Customer_Organization ?? null,
+    role: memory.Customer_Role ?? null,
+    scratchpad: typeof memory.Customer_Scratchpad === "string" ? memory.Customer_Scratchpad : null,
+    memory,
+  };
+}
 
 export class AdminController {
   // Dashboard
@@ -459,6 +489,176 @@ export class AdminController {
     } catch (error: any) {
       console.error("Error updating LLM configs:", error);
       res.status(500).json({ success: false, message: "Failed to update LLM configs" });
+    }
+  }
+
+  // CRM landing-page chat settings
+  async getCrmChatSettings(req: Request, res: Response): Promise<void> {
+    try {
+      const [enabled, override] = await Promise.all([
+        settingsRepository.getCrmChatEnabled(),
+        settingsRepository.getCrmChatSystemPromptOverride(),
+      ]);
+      res.json({
+        success: true,
+        enabled,
+        // The textarea shows the active prompt. Empty override → default.
+        systemPrompt: override && override.length > 0 ? override : CRM_DEFAULT_SYSTEM_PROMPT,
+        usingDefault: !override || override.length === 0,
+        defaultSystemPrompt: CRM_DEFAULT_SYSTEM_PROMPT,
+      });
+    } catch (error: any) {
+      console.error("Error fetching CRM chat settings:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch CRM chat settings" });
+    }
+  }
+
+  async updateCrmChatSettings(req: Request, res: Response): Promise<void> {
+    try {
+      const { enabled, systemPrompt, useDefault } = req.body as {
+        enabled?: boolean;
+        systemPrompt?: string;
+        useDefault?: boolean;
+      };
+
+      if (typeof enabled === "boolean") {
+        await settingsRepository.setCrmChatEnabled(enabled);
+      }
+
+      if (useDefault === true) {
+        await settingsRepository.setCrmChatSystemPromptOverride(null);
+      } else if (typeof systemPrompt === "string") {
+        // Empty string also resets to default — matches the existing settings convention.
+        await settingsRepository.setCrmChatSystemPromptOverride(
+          systemPrompt.trim().length === 0 ? null : systemPrompt
+        );
+      }
+
+      const [nowEnabled, override] = await Promise.all([
+        settingsRepository.getCrmChatEnabled(),
+        settingsRepository.getCrmChatSystemPromptOverride(),
+      ]);
+      res.json({
+        success: true,
+        enabled: nowEnabled,
+        systemPrompt: override && override.length > 0 ? override : CRM_DEFAULT_SYSTEM_PROMPT,
+        usingDefault: !override || override.length === 0,
+        defaultSystemPrompt: CRM_DEFAULT_SYSTEM_PROMPT,
+      });
+    } catch (error: any) {
+      console.error("Error updating CRM chat settings:", error);
+      res.status(500).json({ success: false, message: "Failed to update CRM chat settings" });
+    }
+  }
+
+  // CRM customer admin — list / detail / update / delete
+  async listCrmCustomers(req: Request, res: Response): Promise<void> {
+    try {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "")) || 25, 1), 100);
+      const offset = Math.max(parseInt(String(req.query.offset ?? "")) || 0, 0);
+      const country = typeof req.query.country === "string" && req.query.country.length > 0
+        ? req.query.country
+        : undefined;
+      const search = typeof req.query.search === "string" && req.query.search.length > 0
+        ? req.query.search
+        : undefined;
+      let blocked: boolean | undefined;
+      if (req.query.blocked === "true") blocked = true;
+      else if (req.query.blocked === "false") blocked = false;
+
+      const opts = { limit, offset, country, blocked, search };
+      const [customers, total] = await Promise.all([
+        crmRepository.listCustomersAdmin(opts),
+        crmRepository.listCustomersAdminCount({ country, blocked, search }),
+      ]);
+
+      res.json({
+        success: true,
+        data: customers.map(serializeCrmCustomer),
+        pagination: { total, limit, offset, hasMore: offset + limit < total },
+      });
+    } catch (error: any) {
+      console.error("Error listing CRM customers:", error);
+      res.status(500).json({ success: false, message: "Failed to list CRM customers" });
+    }
+  }
+
+  async getCrmCustomer(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const customer = await crmRepository.getCustomerById(id);
+      if (!customer) {
+        res.status(404).json({ success: false, message: "Customer not found" });
+        return;
+      }
+      const sessions = await crmRepository.listSessionsForCustomer(id);
+      res.json({
+        success: true,
+        customer: serializeCrmCustomer(customer),
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          status: s.status,
+          started: s.started,
+          lastUpdate: s.lastUpdate,
+          creditsUsed: s.creditsUsed,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error fetching CRM customer:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch CRM customer" });
+    }
+  }
+
+  async updateCrmCustomer(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { isBlocked, memory } = req.body ?? {};
+      const patch: { isBlocked?: boolean; memory?: Record<string, any> } = {};
+      if (typeof isBlocked === "boolean") patch.isBlocked = isBlocked;
+      if (memory && typeof memory === "object" && !Array.isArray(memory)) {
+        patch.memory = memory as Record<string, any>;
+      }
+      const customer = await crmRepository.updateCustomer(id, patch);
+      if (!customer) {
+        res.status(404).json({ success: false, message: "Customer not found" });
+        return;
+      }
+      res.json({ success: true, customer: serializeCrmCustomer(customer) });
+    } catch (error: any) {
+      console.error("Error updating CRM customer:", error);
+      res.status(500).json({ success: false, message: "Failed to update CRM customer" });
+    }
+  }
+
+  async deleteCrmCustomer(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const existing = await crmRepository.getCustomerById(id);
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Customer not found" });
+        return;
+      }
+      await crmRepository.deleteCustomer(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting CRM customer:", error);
+      res.status(500).json({ success: false, message: "Failed to delete CRM customer" });
+    }
+  }
+
+  async getCrmSessionLog(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      // Reuse the chat-session log getter — CRM sessions live in chat_sessions.
+      const log = await chatRepository.getSessionLog(id);
+      if (!log) {
+        res.status(404).json({ success: false, message: "Session not found" });
+        return;
+      }
+      res.json({ success: true, data: log });
+    } catch (error: any) {
+      console.error("Error fetching CRM session log:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch session log" });
     }
   }
 

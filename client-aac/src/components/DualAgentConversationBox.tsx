@@ -37,10 +37,12 @@ import mouthNeutral from "@assets/axolotl-mouth-neutral.png";
 import mouthHappyOpen from "@assets/axolotl-mouth-happy-open.png";
 import mouthSadOpen from "@assets/axolotl-mouth-sad-open.png";
 import mouthNeutralOpen from "@assets/axolotl-mouth-neutral-open.png";
-// Sleep image
+// Sleep / rest images
 import avatarSleep from "@assets/axolotl-sleep.png";
+import avatarRest from "@assets/axolotl-rest.png";
 // Cave images (sleep toggle)
 import caveEmpty from "@assets/axolotl-cave-empty.png";
+import caveRest from "@assets/axolotl-cave-rest.png";
 import caveSleep from "@assets/axolotl-cave-sleep.png";
 // Error image
 import avatarError from "@assets/axolotl-error.png";
@@ -51,6 +53,7 @@ import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
@@ -263,24 +266,30 @@ export function DualAgentConversationBox({
     return () => clearTimeout(timer);
   }, [isPlaying, avatarDwellSuppressed]);
 
-  // Avatar click: send an attention message in interact mode.
-  // (When in silent mode the avatar is hidden and the cave handles waking.)
+  const attentiveness = useCameraAttentivenessOptional();
+
+  // Avatar click: send an attention message in interact mode, and always-wake
+  // the sleep system regardless of state. Eyegaze dwell vs touch vs click are
+  // distinguished for the message text and the always-wake trigger source.
   const handleAvatarClick = useCallback((e: React.MouseEvent) => {
+    const isEyegaze = dwellMode === 'eyegaze';
+    attentiveness?.triggerAlwaysWake(isEyegaze ? 'avatarEyegaze' : 'avatarTap');
+
     if (interactionMode === 'silent' || !isInitialized) return;
-    // Determine input method: eyegaze dwell triggers .click() programmatically
-    if (dwellMode === 'eyegaze') {
-      // Eyegaze dwell completed — triggers a new turn (suppression handled at the
-      // data-dwell attribute level so this only fires once the grace period ends).
+    if (isEyegaze) {
       sendMessage("[system: the user is looking at you]");
     } else if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'touch') {
       sendMessage("[system: the user touched you]");
     } else {
       sendMessage("[system: the user clicked you]");
     }
-  }, [interactionMode, isInitialized, dwellMode, sendMessage]);
+  }, [interactionMode, isInitialized, dwellMode, sendMessage, attentiveness]);
 
   // Cave click: toggles sleep mode. Sleeping → wake & greet. Awake → sleep & stop audio.
+  // Either direction is a clear user-initiated engagement event, so it always-wakes
+  // the sleep system as well (counts as an avatar tap).
   const handleCaveClick = useCallback(() => {
+    attentiveness?.triggerAlwaysWake('avatarTap');
     if (interactionMode === 'silent') {
       setInteractionMode('interact');
       if (isInitialized) {
@@ -290,7 +299,7 @@ export function DualAgentConversationBox({
       setInteractionMode('silent');
       stopAudio();
     }
-  }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio]);
+  }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio, attentiveness]);
 
   // Determine if avatar should show asleep (full cave sleep — user-controlled only)
   const isAsleep = interactionMode === 'silent';
@@ -298,6 +307,18 @@ export function DualAgentConversationBox({
   const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
   // Mouth is open when audio is playing and volume exceeds threshold
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
+
+  // Sleep system → sprite mapping. Cave variants are used in Silent Mode;
+  // avatar variants are used in non-Silent Mode. See planning-docs/aac-sleep-system-plan.md.
+  const sleepState = attentiveness?.sleepState;
+  const isSleepingState = sleepState === 'hibernation' || sleepState === 'asleep';
+  const isRestingState = sleepState === 'resting' || sleepState === 'waking';
+  const caveSrc = isSleepingState ? caveSleep : isRestingState ? caveRest : caveEmpty;
+  const restOrSleepBody = isSleepingState
+    ? avatarSleep
+    : isRestingState
+    ? avatarRest
+    : null;
 
   if (!isVisible) return null;
 
@@ -323,8 +344,8 @@ export function DualAgentConversationBox({
               title={isAsleep ? "Wake up (switch to interact mode)" : "Sleep (switch to silent mode)"}
             >
               <img
-                src={isAsleep ? caveSleep : caveEmpty}
-                alt={isAsleep ? "Cave (sleeping)" : "Cave (empty)"}
+                src={isAsleep ? caveSrc : caveEmpty}
+                alt={isAsleep ? `Cave (${sleepState ?? 'silent'})` : "Cave (empty)"}
                 className="w-full h-full object-contain"
               />
               {/* Mode-change indicator — flashes briefly when AI changes mode */}
@@ -357,8 +378,11 @@ export function DualAgentConversationBox({
                   />
                 ) : (
                   <img
-                    src={isAssistMode && emote === "neutral" ? avatarSleep : (AVATAR_BODY[emote] || AVATAR_BODY.happy)}
-                    alt={`Avatar (${emote})`}
+                    src={
+                      restOrSleepBody
+                      ?? (isAssistMode && emote === "neutral" ? avatarSleep : (AVATAR_BODY[emote] || AVATAR_BODY.happy))
+                    }
+                    alt={`Avatar (${sleepState ?? emote})`}
                     className="w-full h-full object-contain"
                   />
                 )}

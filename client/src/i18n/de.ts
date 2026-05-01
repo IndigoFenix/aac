@@ -2340,6 +2340,8 @@ export const de = {
     allowReadReportsDesc: "Wenn deaktiviert, kann die KI keine medizinischen, pädagogischen oder funktionalen Akten einsehen",
     allowNotes: "Notizen erlauben",
     allowNotesDesc: "Wenn deaktiviert, kann die KI keine Sitzungsnotizen lesen oder schreiben (kein Speicher außerhalb der Nachrichtenprotokolle)",
+    shareMonitorNotesWithInstitute: "AAC-Notizen mit meiner Einrichtung teilen",
+    shareMonitorNotesWithInstituteDesc: "Wenn aktiviert, sehen Kliniker dieser Einrichtung die während AAC-Sitzungen aufgezeichneten Notizen (Interessen, Vorlieben, Beobachtungen). Deaktivieren, um eine ausdrückliche Freigabe zu verlangen.",
     // Symbol generation
     symbolGeneration: "Symbolgenerierung",
     symbolGenerationDesc: "Automatisch Symbolbilder für AAC-Schaltflächen mit KI generieren",
@@ -2677,6 +2679,7 @@ export const de = {
   landing: {
     nav: {
       login: "Kundenportal",
+      languageLabel: "Sprache auswählen",
     },
     hero: {
       tagline: "Die Lösung: Eine Zwei-Säulen-Plattform",
@@ -2774,6 +2777,20 @@ export const de = {
       accessibility: "Barrierefreiheit",
       aiPolicy: "KI-Richtlinie",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "Schreiben Sie uns",
+      greeting: "Hallo! Ich helfe Ihnen gerne, Aivota kennenzulernen. Worüber möchten Sie mehr erfahren?",
+      placeholder: "Nachricht eingeben...",
+      send: "Senden",
+      close: "Schließen",
+      openLabel: "Chat öffnen",
+      disclaimer: "KI-Assistent. Konversationen können zur Verbesserung unseres Dienstes überprüft werden.",
+      errorIdentify: "Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      errorSend: "Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es erneut.",
+      errorRateLimited: "Sie senden zu schnell Nachrichten. Bitte warten Sie einen Moment.",
+      errorBlocked: "Der Chat ist für diese Sitzung nicht verfügbar.",
+      thinking: "Denkt nach…",
     },
   },
 

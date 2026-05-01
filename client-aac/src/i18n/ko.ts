@@ -133,14 +133,10 @@ export const ko: Translations = {
     selectionTimeout: "선택 시간 제한",
     eyegazeTip: "기호 위에 {seconds}초 동안 머물면 자동으로 선택됩니다",
 
-    chatAgentBehavior: "채팅 에이전트 동작",
     enableChatGPT5: "ChatGPT 5 활성화",
     chatGPT5Hint: "다른 모델 설정에 관계없이 모든 AI 기능을 ChatGPT 5로 재정의합니다",
     chatGPT5Description: "활성화 시: 대화, 시각 분석, 기호, 음성, 오디오 모두 ChatGPT 5를 사용합니다",
     agentConversationStyle: "에이전트 대화 스타일",
-    agentPromptPlaceholder: "채팅 에이전트의 동작 지침을 입력하세요...",
-    resetToDefault: "기본값으로 재설정",
-    defaultConversationBehavior: "기본 대화 동작",
 
     apps: "앱",
     appsDescription: "AAC 세션 중 사용 가능한 추가 앱을 활성화하거나 비활성화합니다",
@@ -185,17 +181,9 @@ export const ko: Translations = {
     localTtsDesc: "서버 생성 오디오 대신 브라우저 내장 음성 합성을 사용합니다. 느린 연결에 유용합니다.",
     elevenlabsTitle: "ElevenLabs 음성",
     elevenlabsDesc: "고품질 TTS를 위해 ElevenLabs API 키와 음성 ID를 입력하세요. 설정 시 다른 모든 음성 설정을 재정의합니다.",
-    elevenlabsApiKey: "ElevenLabs API 키",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "학생 음성 ID",
     elevenlabsAiVoiceId: "AI 음성 ID",
     elevenlabsVoiceIdPlaceholder: "예: 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "음성 로딩 중...",
-    elevenlabsNoVoices: "음성을 찾을 수 없습니다",
-    elevenlabsInvalidKey: "유효하지 않은 API 키",
-    elevenlabsSelectVoice: "음성 선택",
-    elevenlabsTestVoice: "음성 테스트",
-    elevenlabsTestPhrase: "안녕하세요, 저는 여러분의 음성 도우미입니다",
 
     buttonSize: "버튼 크기",
     buttonSizeExtraLarge: "초대형 아이콘, 최소 텍스트",
@@ -237,8 +225,6 @@ export const ko: Translations = {
     inputSourceCursorHint: "Tobii, 커서를 제어하는 다른 시선 추적기 또는 머리 추적 장치와 함께 사용하세요. 보정이 필요하지 않습니다.",
     inputSourceConnected: "연결됨",
     inputSourceNotDetected: "감지되지 않음",
-
-    systemPrompt: "시스템 프롬프트",
 
     restartSession: "세션 다시 시작",
     restartSessionHint: "현재 세션을 종료하고 새로 시작합니다",

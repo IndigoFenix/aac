@@ -41,6 +41,7 @@ export function TopicForm({ open, onClose, topic, parentId }: TopicFormProps) {
     title: '',
     content: '',
     active: true,
+    crmAccessible: false,
   });
 
   // Reset form when dialog opens/closes or topic changes
@@ -51,12 +52,14 @@ export function TopicForm({ open, onClose, topic, parentId }: TopicFormProps) {
           title: topic.title,
           content: topic.content,
           active: topic.active,
+          crmAccessible: topic.crmAccessible ?? false,
         });
       } else {
         setFormData({
           title: '',
           content: '',
           active: true,
+          crmAccessible: false,
         });
       }
     }
@@ -167,6 +170,26 @@ export function TopicForm({ open, onClose, topic, parentId }: TopicFormProps) {
             </Label>
             <span className="text-xs text-muted-foreground">
               (Inactive topics are hidden from users and AI)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="crmAccessible"
+              checked={formData.crmAccessible}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  crmAccessible: checked === true,
+                }))
+              }
+              data-testid="topic-form-crm-accessible"
+            />
+            <Label htmlFor="crmAccessible" className="cursor-pointer">
+              CRM Accessible
+            </Label>
+            <span className="text-xs text-muted-foreground">
+              (Exposes this topic to the public landing-page chatbot)
             </span>
           </div>
 

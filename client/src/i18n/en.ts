@@ -2340,6 +2340,8 @@ export const en = {
     allowReadReportsDesc: "When disabled, the AI cannot view medical, educational, or functional records",
     allowNotes: "Allow Notes",
     allowNotesDesc: "When disabled, the AI cannot read or write session notes (no memory stored outside message logs)",
+    shareMonitorNotesWithInstitute: "Share AAC Notes with My Institute",
+    shareMonitorNotesWithInstituteDesc: "When enabled, clinicians at this institute see notes recorded during AAC sessions (interests, preferences, observations). Disable to require an explicit share grant.",
     // Symbol generation
     symbolGeneration: "Symbol Generation",
     symbolGenerationDesc: "Automatically generate icon images for AAC buttons using AI",
@@ -2679,6 +2681,7 @@ export const en = {
   landing: {
     nav: {
       login: "Customer Portal",
+      languageLabel: "Select language",
     },
     hero: {
       tagline: "The Solution: A Two-Pillar Platform",
@@ -2776,6 +2779,20 @@ export const en = {
       accessibility: "Accessibility",
       aiPolicy: "AI Policy",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "Chat with us",
+      greeting: "Hi! I'm here to help you learn about Aivota. What would you like to know?",
+      placeholder: "Type your message...",
+      send: "Send",
+      close: "Close",
+      openLabel: "Open chat",
+      disclaimer: "AI assistant. Conversations may be reviewed to improve our service.",
+      errorIdentify: "Couldn't connect. Please try again.",
+      errorSend: "Couldn't send your message. Please try again.",
+      errorRateLimited: "You're sending messages too fast. Please wait a moment.",
+      errorBlocked: "Chat is unavailable for this session.",
+      thinking: "Thinking…",
     },
   },
 

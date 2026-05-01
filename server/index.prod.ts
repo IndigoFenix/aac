@@ -6,6 +6,7 @@ import cors from "cors";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { pool } from "./db";
+import { serveStaticWithLocaleLanding } from "./landing-static";
 
 const app = express();
 
@@ -160,13 +161,8 @@ async function startServer(): Promise<void> {
       });
     }
 
-    // Serve main client
-    app.use(express.static(distPath));
-
-    // SPA fallback for main client
-    app.use("*", (_req, res) => {
-      res.sendFile(path.resolve(distPath, "index.html"));
-    });
+    // Serve main client (with prerendered per-locale landing pages)
+    serveStaticWithLocaleLanding(app, distPath);
 
     const port = process.env.PORT || 5000;
     server.listen({ port: Number(port), host: "0.0.0.0" }, () => {

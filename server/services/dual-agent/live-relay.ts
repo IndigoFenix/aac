@@ -164,7 +164,7 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 /** Messages from client → server */
 export type ClientMessage =
   | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
-  | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string }    // base64 JPEG
+  | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
@@ -225,6 +225,8 @@ export type ServerMessage =
   | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
   | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
+  | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
+  | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
   | { type: "complete"; data?: any };
 
 /** Public wire format for an identified face (server → client). */
@@ -761,11 +763,14 @@ export class LiveRelay {
             : "";
           const peopleContext = this.buildPeoplePresentContext();
           const peopleNote = peopleContext ? `\n${peopleContext}` : "";
-          this.provider!.sendFrameWithPrompt(
-            msg.data,
-            `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${peopleNote}${gestureNote}`,
-            extraImages,
-          );
+          // Sleep system: wake-from-Asleep gets a different prompt that asks
+          // the AI to evaluate whether the wake was a real re-engagement or a
+          // false alarm (in which case it should call report_false_wake).
+          const isWakeCheck = msg.triggerReason === "wake_check";
+          const prompt = isWakeCheck
+            ? `[wake check] The session was Asleep. Local engagement signals just crossed the wake threshold — recent buffered audio and visual context are attached. Evaluate: is the user actually re-engaging with the device, or is this a false alarm (background TV, an unrelated adult talking, a passing pet, etc.)? If false alarm, call report_false_wake() with a brief reason and stay silent. Otherwise, respond naturally to the user.${peopleNote}${gestureNote}`
+            : `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${peopleNote}${gestureNote}`;
+          this.provider!.sendFrameWithPrompt(msg.data, prompt, extraImages);
           break;
         }
 
@@ -914,9 +919,14 @@ export class LiveRelay {
           // model refuse legitimate directives. Defense against malicious
           // board content belongs at write-time sanitization of these fields,
           // not at read-time tagging here.
+          //
+          // [ACTION REQUIRED] prefix is necessary because the system prompt's
+          // "stay silent unless..." guidance was making the model emit empty
+          // turns for these directives — they are NOT scene updates, they're
+          // user actions that demand a board change.
           const exitInstruction = msg.instruction
-            ? `Board exited. The user pressed "${msg.label}". ${msg.instruction}`
-            : `Board exited. The user pressed "${msg.label}". Use rebuild_board() to create a new board for the current context.`;
+            ? `[ACTION REQUIRED] The user pressed the "${msg.label}" home button. You MUST respond this turn by calling rebuild_board() (or set_board() if a custom board fits) to follow this instruction: ${msg.instruction}`
+            : `[ACTION REQUIRED] The user pressed the "${msg.label}" home button. You MUST respond this turn by calling rebuild_board() to create a new board for the current context.`;
           this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
         }
@@ -2106,6 +2116,25 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         return { id: call.id, name, response: { output: "ok" } };
       }
 
+      case "sleep": {
+        logLiveSession("SLEEP TOOL", "AI requested transition to Asleep");
+        this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
+        return { id: call.id, name, response: { output: "session marked asleep" } };
+      }
+
+      case "end_session": {
+        logLiveSession("END_SESSION TOOL", "AI requested transition to Hibernation");
+        this.send({ type: "sleep_state_change", data: { state: "hibernation", source: "ai" } });
+        return { id: call.id, name, response: { output: "session ended" } };
+      }
+
+      case "report_false_wake": {
+        const reason = (args.reason as string) || "unspecified";
+        logLiveSession("FALSE_WAKE TOOL", `reason: ${reason}`);
+        this.send({ type: "false_wake_report", data: { reason } });
+        return { id: call.id, name, response: { output: "false wake noted" } };
+      }
+
       default:
         console.warn(`[LiveRelay] Unknown tool call: ${name}`);
         return { id: call.id, name, response: { error: `Unknown tool: ${name}` } };
@@ -2281,17 +2310,25 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       const hadOutput = this.directAudioChunks.length > 0 || this.turnAccum.speakText.trim().length > 0 || this.turnAccum.boardChanged;
 
       // RESPONSE_REJECTED with zero output = proactiveAudio decided not to
-      // respond. This is normal "nothing to say" behavior, NOT a safety block.
+      // respond, OR safety filter rejection. We retry ONCE in case it was a
+      // proactive-audio swallow; if the retry also gets rejected, the content
+      // is genuinely being filtered and re-sending will get the same result.
+      // Clear pendingRetryPrompt before resending so a second rejection falls
+      // through to cooldown rather than looping.
       if (reason === "RESPONSE_REJECTED" && !hadOutput) {
-        // If a user prompt is pending, retry it
         if (this.pendingRetryPrompt && this.provider) {
-          logLiveSession("RETRY PROMPT", "RESPONSE_REJECTED after user prompt — resending");
+          const promptToRetry = this.pendingRetryPrompt;
+          this.pendingRetryPrompt = null;  // bound retries to one
+          logLiveSession("RETRY PROMPT", "RESPONSE_REJECTED after user prompt — resending once");
           this.setState("awaiting_turn");
-          this.provider.sendMessage(this.pendingRetryPrompt, "user");
+          this.provider.sendMessage(promptToRetry, "user");
           return;
         }
-        logLiveSession("PROACTIVE_SKIP", `RESPONSE_REJECTED with no output — model chose not to respond`);
+        logLiveSession("PROACTIVE_SKIP", `RESPONSE_REJECTED with no output — model chose not to respond (or content filter); cooling down`);
         this.debugRetryCount = 0;
+        // Cooldown so the next frame_grid / scene update doesn't immediately
+        // re-trigger the same content path and burn another rejection cycle.
+        this.rejectionCooldownUntil = Date.now() + LiveRelay.REJECTION_COOLDOWN_MS;
         this.setState("idle");
         return;
       }
@@ -2326,10 +2363,13 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       const hasDirectAudio = this.useDirectAudio && this.directAudioChunks.length > 0;
       if (!hasDirectAudio) {
         // If a user prompt is pending, the model was swallowed by a
-        // proactive-audio empty turn. Retry the prompt.
+        // proactive-audio empty turn. Retry the prompt — once. Clear the
+        // pending prompt before resending so a second empty turn doesn't loop.
         if (this.pendingRetryPrompt && this.provider) {
-          logLiveSession("RETRY PROMPT", "Empty turn after user prompt — resending");
-          this.provider.sendMessage(this.pendingRetryPrompt, "user");
+          const promptToRetry = this.pendingRetryPrompt;
+          this.pendingRetryPrompt = null;
+          logLiveSession("RETRY PROMPT", "Empty turn after user prompt — resending once");
+          this.provider.sendMessage(promptToRetry, "user");
           return;  // stay in awaiting_turn
         }
         this.setState("idle");

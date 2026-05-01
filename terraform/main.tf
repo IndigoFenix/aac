@@ -3,8 +3,11 @@
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.5.0"
-  
+  # Floor at 1.10 so the CLI ships the GPG trust root that accepts HashiCorp's
+  # current provider signing keys. 1.6.x and earlier reject re-signed providers
+  # with "openpgp: key expired".
+  required_version = ">= 1.10.0"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -17,6 +20,10 @@ terraform {
     time = {
       source  = "hashicorp/time"
       version = "~> 0.9"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
     }
   }
 

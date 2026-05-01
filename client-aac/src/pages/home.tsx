@@ -37,6 +37,7 @@ import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
 import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
+import { FaceEngagementSignalFeed, MouseEyegazeSignalFeed } from "@/components/SleepSignalFeeds";
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
@@ -1146,6 +1147,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <AccessibilityProvider settings={userProfile?.aacSettings?.accessibility}>
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
+    <FaceEngagementSignalFeed rawFaces={rawFaces} />
+    <MouseEyegazeSignalFeed />
     <EyeTrackingDwellProvider
       mode={!eyegazeSettings.enabled ? "off" : rawFaces.length === 0 ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
       dwellTimeMs={eyegazeSettings.timeout}

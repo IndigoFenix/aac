@@ -131,14 +131,10 @@ export const en = {
     selectionTimeout: "Selection Timeout",
     eyegazeTip: "Hover over any symbol for {seconds} seconds to select it automatically",
 
-    chatAgentBehavior: "Chat Agent Behavior",
     enableChatGPT5: "Enable ChatGPT 5",
     chatGPT5Hint: "Override all AI features to use ChatGPT 5 regardless of other model settings",
     chatGPT5Description: "When enabled: Conversation, Visual Analysis, Symbols, Voice, and Audio will all use ChatGPT 5",
     agentConversationStyle: "Agent Conversation Style",
-    agentPromptPlaceholder: "Enter the chat agent's behavior instructions...",
-    resetToDefault: "Reset to Default",
-    defaultConversationBehavior: "Default conversation behavior",
 
     apps: "Apps",
     appsDescription: "Enable or disable add-on apps available during AAC sessions",
@@ -183,17 +179,9 @@ export const en = {
     localTtsDesc: "Use the browser's built-in speech synthesis instead of server-generated audio. Useful for slow connections.",
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
-    elevenlabsApiKey: "ElevenLabs API Key",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "Student Voice ID",
     elevenlabsAiVoiceId: "AI Voice ID",
     elevenlabsVoiceIdPlaceholder: "e.g. 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "Loading voices...",
-    elevenlabsNoVoices: "No voices found",
-    elevenlabsInvalidKey: "Invalid API key",
-    elevenlabsSelectVoice: "Select a voice",
-    elevenlabsTestVoice: "Test voice",
-    elevenlabsTestPhrase: "Hello, I am your voice assistant",
 
     buttonSize: "Button Size",
     buttonSizeExtraLarge: "Extra large icons, minimal text",
@@ -235,8 +223,6 @@ export const en = {
     inputSourceCursorHint: "Use with Tobii, other eye trackers that control the cursor, or head-tracking devices. No calibration needed.",
     inputSourceConnected: "connected",
     inputSourceNotDetected: "not detected",
-
-    systemPrompt: "System Prompt",
 
     restartSession: "Restart Session",
     restartSessionHint: "End current session and start fresh",

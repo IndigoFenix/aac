@@ -485,6 +485,12 @@ export const aacSettings = pgTable("aac_settings", {
   allowReadProgress: boolean("allow_read_progress").default(true).notNull(),
   allowReadReports: boolean("allow_read_reports").default(true).notNull(),
   allowNotes: boolean("allow_notes").default(true).notNull(),
+  // Whether the student's owning institute auto-passes the monitor_note gate
+  // and sees AAC-recorded chatMemory (Student_Notes / People / Interests /
+  // CommunicationStyle / Preferences) without an explicit standing share.
+  // Cross-institute access still requires a monitor_note standing share
+  // regardless of this flag.
+  shareMonitorNotesWithInstitute: boolean("share_monitor_notes_with_institute").default(true).notNull(),
 
   // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
   appConfig: jsonb("app_config").default({}),
@@ -1522,6 +1528,9 @@ export const chatSessions = pgTable("chat_sessions", {
   // Cross-schema FKs: institutes.id and institute_users.id live in schema.ts — constraints enforced via migration
   instituteId: varchar("institute_id"),
   instituteUserId: varchar("institute_user_id"),
+  // Cross-schema FK: crm_potential_customers.id lives in schema.ts. When set,
+  // this is a CRM landing-page chat session — userId/studentId/instituteId are null.
+  crmPotentialCustomerId: varchar("crm_potential_customer_id"),
 
   // Chat mode determines which agent template to use
   chatMode: varchar("chat_mode").notNull().default("chat"),
@@ -1563,6 +1572,7 @@ export const chatSessions = pgTable("chat_sessions", {
   index("idx_chat_sessions_status").on(table.status),
   index("idx_chat_sessions_chat_mode_created").on(table.chatMode, table.createdAt),
   index("idx_chat_sessions_student_importance").on(table.studentId, table.importance, table.createdAt),
+  index("idx_chat_sessions_crm_customer").on(table.crmPotentialCustomerId),
   // GIN trigram index for title/summary is added via raw SQL in the generated migration
   // (Drizzle doesn't emit expression-based GIN indexes reliably).
 ]);

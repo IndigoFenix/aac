@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { School, Stethoscope, Hospital, Microscope, Home } from "lucide-react";
-import { useLanguage } from "@/contexts/LanguageContext";
+import { useLanguage, SUPPORTED_LANGUAGES, type LanguageCode } from "@/contexts/LanguageContext";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import logo from "@assets/aivota_icon.png";
 import raz from "@assets/landing-page/raz.png";
 import opher from "@assets/landing-page/opher.png";
 import screenshot from "@assets/landing-page/screenshot.png";
 import boardMakerDemo from "@assets/landing-page/demo-screens/board-maker-demo.png";
+import { CrmChatWidget } from "./CrmChatWidget";
 import "./landing-page.css";
 
 const VERTICAL_SEGMENTS = [
@@ -35,6 +36,14 @@ const ROLE_OPTIONS = [
 export default function LandingPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const { t, isRTL, language, setLanguage } = useLanguage();
+  const [, setLocation] = useLocation();
+
+  const handleLanguageChange = (code: LanguageCode) => {
+    setLanguage(code);
+    // Keep URL in sync with locale so canonical/SEO state matches what's visible
+    // and a refresh lands on the prerendered HTML for that language.
+    setLocation(code === "en" ? "/" : `/${code}`);
+  };
 
   const [form, setForm] = useState({
     firstName: "",
@@ -94,12 +103,18 @@ export default function LandingPage() {
             aivota
           </a>
           <div className="landing-header-actions">
-            <button
-              className="landing-lang-toggle"
-              onClick={() => setLanguage(language === "en" ? "he" : "en")}
+            <select
+              className="landing-lang-select"
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value as LanguageCode)}
+              aria-label={t("landing.nav.languageLabel")}
             >
-              {language === "en" ? "עב" : "EN"}
-            </button>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.nativeName}
+                </option>
+              ))}
+            </select>
             <a href="/login" className="landing-btn landing-btn-sm">
               {t("landing.nav.login")}
             </a>
@@ -329,6 +344,8 @@ export default function LandingPage() {
           {t("landing.footer.rights")}
         </p>
       </footer>
+
+      <CrmChatWidget />
     </div>
   );
 }

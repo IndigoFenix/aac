@@ -17,7 +17,7 @@ We are using the dynamic button system to generate AAC boards in real time.
 The chat uses the live-relay system with Gemini, combined with a monitor agent that periodically evaluates the conversation, records notes, and provides guidance. The monitor agent can read personal information about the student such as goals, objectives, and medical information, but cannot directly edit it except for the low-security memory features such as notes.
 
 ## AAC Settings
-All AAC settings should be able to be managed from both the Clinician client and the AAC client.
+All AAC settings should be able to be managed from both the Clinician client and the AAC client, except for those related to security, which should not be selectable from the AAC client.
 
 ## Database strategy
 We update the database schema using npm run db:generate, followed by db:migrate.

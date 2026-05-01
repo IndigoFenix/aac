@@ -2340,6 +2340,8 @@ export const he = {
     allowReadReportsDesc: "כאשר מושבת, הבינה המלאכותית לא תוכל לצפות בתיקים רפואיים, חינוכיים או תפקודיים",
     allowNotes: "אפשר הערות",
     allowNotesDesc: "כאשר מושבת, הבינה המלאכותית לא תוכל לקרוא או לכתוב הערות מפגש (לא נשמר זיכרון מחוץ ליומני הודעות)",
+    shareMonitorNotesWithInstitute: "שתף הערות AAC עם המוסד שלי",
+    shareMonitorNotesWithInstituteDesc: "כאשר מופעל, קלינאים במוסד זה רואים הערות שנרשמו במהלך מפגשי AAC (תחומי עניין, העדפות, תצפיות). השבת כדי לדרוש הענקת שיתוף מפורשת.",
     // Symbol generation
     symbolGeneration: "יצירת סמלים",
     symbolGenerationDesc: "יצירת תמונות סמלים אוטומטית עבור כפתורי AAC באמצעות בינה מלאכותית",
@@ -2679,6 +2681,7 @@ export const he = {
   landing: {
     nav: {
       login: "אזור אישי",
+      languageLabel: "בחר שפה",
     },
     hero: {
       tagline: "הפתרון: פלטפורמה שמבוססת על שני מרכיבים מרכזיים",
@@ -2776,6 +2779,20 @@ export const he = {
       accessibility: "הצהרת נגישות",
       aiPolicy: "מדיניות AI",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "דברו איתנו",
+      greeting: "שלום! אני כאן כדי לעזור לכם להכיר את Aivota. מה תרצו לדעת?",
+      placeholder: "הקלידו את ההודעה...",
+      send: "שלח",
+      close: "סגור",
+      openLabel: "פתח צ'אט",
+      disclaimer: "עוזר AI. שיחות עשויות להיבדק לצורך שיפור השירות.",
+      errorIdentify: "לא ניתן להתחבר. נסו שוב.",
+      errorSend: "לא ניתן לשלוח את ההודעה. נסו שוב.",
+      errorRateLimited: "אתם שולחים הודעות מהר מדי. המתינו רגע.",
+      errorBlocked: "הצ'אט אינו זמין בסשן הזה.",
+      thinking: "חושב…",
     },
   },
 

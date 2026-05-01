@@ -6059,3 +6059,35 @@
 [2026-04-29T18:42:06.593Z] [COST] imageKey="person_feeling_happy" | refinement: gemini/gemini-2.5-flash in=728 out=87 | image: openai/gpt-image-1 in=93 out=272
 [2026-04-29T18:42:06.594Z] [processQueue] Generated "person_feeling_happy" → 862e0e49-b4cb-498c-8ebe-d9ab8711be9f (9 total)
 [2026-04-29T18:42:06.595Z] [processQueue] FULL REFINED PROMPT for "person_feeling_happy": A simple, bold AAC symbol icon of a generic human figure with a large, round head and a smaller body, centered on a transparent background. The figure has a wide, upward-curving smile and two small, round eyes, conveying happiness. Its arms are raised slightly outwards with hands open, and its body is slightly tilted, indicating joy. The illustration uses flat, solid colors with thick black outlines, no gradients or shadows.
+[2026-05-01T13:47:46.081Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T13:47:46.082Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T13:48:01.299Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T13:48:01.300Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T13:48:36.135Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T13:48:36.136Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T14:40:51.360Z] [resolveImageKeys] Resolving 1 keys: toy_car (format=internal, useUnapproved=true)
+[2026-05-01T14:40:51.550Z] [resolveImageKeys] No symbol found for "toy_car"
+[2026-05-01T14:40:51.551Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: toy_car
+[2026-05-01T14:40:51.553Z] [queueGeneration] Queuing 1 keys: toy_car (hasCallback=true)
+[2026-05-01T14:40:51.724Z] [processQueue] Generating "toy_car"...
+[2026-05-01T14:41:02.933Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T14:41:02.938Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T14:41:22.227Z] [resolveImageKeys] Resolving 1 keys: child_looking_bored (format=internal, useUnapproved=true)
+[2026-05-01T14:41:22.442Z] [resolveImageKeys] No symbol found for "child_looking_bored"
+[2026-05-01T14:41:22.443Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: child_looking_bored
+[2026-05-01T14:41:22.444Z] [queueGeneration] Queuing 1 keys: child_looking_bored (hasCallback=true)
+[2026-05-01T14:41:36.450Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T14:41:36.451Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T14:41:44.130Z] [COST] imageKey="toy_car" | refinement: gemini/gemini-2.5-flash in=727 out=82 | image: openai/gpt-image-1 in=87 out=272
+[2026-05-01T14:41:44.131Z] [processQueue] Generated "toy_car" → c70f3382-144f-40c5-9527-9ac9adf97baa (1 total)
+[2026-05-01T14:41:44.131Z] [processQueue] FULL REFINED PROMPT for "toy_car": A simple, bold illustration of a toy car, viewed from the side. The car has a rectangular body, four round wheels, and a small, rounded cabin area. It is rendered with a thick black outline and flat, solid colors: a bright red body, black wheels, and a light blue window. The toy car is centered on a transparent background, filling about 75% of the canvas.
+[2026-05-01T14:41:48.308Z] [processQueue] Generating "child_looking_bored"...
+[2026-05-01T14:41:53.393Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T14:41:53.394Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T14:42:01.342Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T14:42:01.343Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-01T14:42:05.294Z] [COST] imageKey="child_looking_bored" | refinement: gemini/gemini-2.5-flash in=728 out=94 | image: openai/gpt-image-1 in=101 out=272
+[2026-05-01T14:42:05.295Z] [processQueue] Generated "child_looking_bored" → 24654fa7-8ce5-470e-9882-a968f7d33160 (2 total)
+[2026-05-01T14:42:05.297Z] [processQueue] FULL REFINED PROMPT for "child_looking_bored": A simple, bold AAC symbol icon of a generic child figure, centered and facing forward, with a large head and small body. The child has a flat, neutral expression with simple dot eyes and a straight line for a mouth, conveying boredom. Their shoulders are slightly slumped, and their arms hang loosely at their sides. The illustration uses a limited palette of solid, saturated colors with thick black outlines, rendered on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-01T14:42:20.927Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-01T14:42:20.928Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

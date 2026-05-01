@@ -2340,6 +2340,8 @@ export const ko = {
     allowReadReportsDesc: "비활성화 시 AI는 의료, 교육 또는 기능 기록을 볼 수 없습니다",
     allowNotes: "메모 허용",
     allowNotesDesc: "비활성화 시 AI는 세션 메모를 읽거나 쓸 수 없습니다 (메시지 로그 외에 저장되는 기억 없음)",
+    shareMonitorNotesWithInstitute: "내 기관과 AAC 메모 공유",
+    shareMonitorNotesWithInstituteDesc: "활성화하면 이 기관의 임상의가 AAC 세션 중 기록된 메모(관심사, 선호도, 관찰)를 볼 수 있습니다. 명시적인 공유 권한을 요구하려면 비활성화하세요.",
     // Symbol generation
     symbolGeneration: "기호 생성",
     symbolGenerationDesc: "AI를 사용하여 AAC 버튼에 아이콘 이미지를 자동 생성합니다",
@@ -2677,6 +2679,7 @@ export const ko = {
   landing: {
     nav: {
       login: "고객 포털",
+      languageLabel: "언어 선택",
     },
     hero: {
       tagline: "솔루션: 두 가지 축 플랫폼",
@@ -2774,6 +2777,20 @@ export const ko = {
       accessibility: "접근성",
       aiPolicy: "AI 정책",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "문의하기",
+      greeting: "안녕하세요! Aivota에 대해 알려드리기 위해 도와드리고 있습니다. 무엇이 궁금하신가요?",
+      placeholder: "메시지를 입력하세요...",
+      send: "보내기",
+      close: "닫기",
+      openLabel: "채팅 열기",
+      disclaimer: "AI 어시스턴트입니다. 서비스 개선을 위해 대화가 검토될 수 있습니다.",
+      errorIdentify: "연결할 수 없습니다. 다시 시도해 주세요.",
+      errorSend: "메시지를 보낼 수 없습니다. 다시 시도해 주세요.",
+      errorRateLimited: "메시지를 너무 빠르게 보내고 있습니다. 잠시 기다려 주세요.",
+      errorBlocked: "이 세션에서는 채팅을 사용할 수 없습니다.",
+      thinking: "생각 중…",
     },
   },
 

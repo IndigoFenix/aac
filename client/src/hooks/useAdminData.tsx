@@ -30,6 +30,7 @@ export interface Topic {
   parentId: string | null;
   content: string;
   active: boolean;
+  crmAccessible: boolean;
   createdAt: string;
   updatedAt: string;
   children?: Topic[];
@@ -97,6 +98,7 @@ export interface CreateTopicData {
   parentId?: string | null;
   content?: string;
   active?: boolean;
+  crmAccessible?: boolean;
 }
 
 export interface UpdateTopicData {
@@ -104,6 +106,7 @@ export interface UpdateTopicData {
   parentId?: string | null;
   content?: string;
   active?: boolean;
+  crmAccessible?: boolean;
 }
 
 // =============================================================================
@@ -352,6 +355,172 @@ export function useLLMConfigMutations() {
   });
 
   return { updateConfigs };
+}
+
+// =============================================================================
+// CRM CHAT SETTINGS HOOKS
+// =============================================================================
+
+export interface CrmChatSettings {
+  enabled: boolean;
+  systemPrompt: string;
+  usingDefault: boolean;
+  defaultSystemPrompt: string;
+}
+
+export function useCrmChatSettings() {
+  return useQuery({
+    queryKey: ['/api/admin/crm/settings'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/admin/crm/settings');
+      const data = await res.json();
+      return data as { success: boolean } & CrmChatSettings;
+    },
+  });
+}
+
+export function useCrmChatSettingsMutations() {
+  const queryClient = useQueryClient();
+
+  const updateSettings = useMutation({
+    mutationFn: async (
+      patch: { enabled?: boolean; systemPrompt?: string; useDefault?: boolean }
+    ) => {
+      const res = await apiRequest('PUT', '/api/admin/crm/settings', patch);
+      const result = await res.json();
+      return result as { success: boolean } & CrmChatSettings;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/crm/settings'] });
+    },
+  });
+
+  return { updateSettings };
+}
+
+// =============================================================================
+// CRM CUSTOMER HOOKS
+// =============================================================================
+
+export interface CrmCustomer {
+  id: string;
+  countryCode: string | null;
+  region: string | null;
+  isBlocked: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  organization: string | null;
+  role: string | null;
+  scratchpad: string | null;
+  memory: Record<string, any>;
+}
+
+export interface CrmCustomerSession {
+  id: string;
+  status: string;
+  started: string;
+  lastUpdate: string;
+  creditsUsed: number;
+}
+
+export interface CrmCustomerListFilters {
+  search?: string;
+  country?: string;
+  blocked?: 'true' | 'false';
+  limit?: number;
+  offset?: number;
+}
+
+export function useCrmCustomers(filters: CrmCustomerListFilters = {}) {
+  return useQuery({
+    queryKey: ['/api/admin/crm/customers', filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.search) params.set('search', filters.search);
+      if (filters.country) params.set('country', filters.country);
+      if (filters.blocked) params.set('blocked', filters.blocked);
+      if (filters.limit != null) params.set('limit', String(filters.limit));
+      if (filters.offset != null) params.set('offset', String(filters.offset));
+      const url = `/api/admin/crm/customers${params.toString() ? `?${params}` : ''}`;
+      const res = await apiRequest('GET', url);
+      const data = await res.json();
+      return data as {
+        success: boolean;
+        data: CrmCustomer[];
+        pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+      };
+    },
+  });
+}
+
+export function useCrmCustomer(id: string | undefined) {
+  return useQuery({
+    enabled: !!id,
+    queryKey: ['/api/admin/crm/customers', id],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/admin/crm/customers/${id}`);
+      const data = await res.json();
+      return data as {
+        success: boolean;
+        customer: CrmCustomer;
+        sessions: CrmCustomerSession[];
+      };
+    },
+  });
+}
+
+export function useCrmSessionLog(sessionId: string | undefined) {
+  return useQuery({
+    enabled: !!sessionId,
+    queryKey: ['/api/admin/crm/sessions', sessionId, 'log'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/admin/crm/sessions/${sessionId}/log`);
+      const data = await res.json();
+      return data as {
+        success: boolean;
+        data: Array<{
+          role: 'user' | 'assistant' | 'system' | 'tool';
+          content?: string | { text?: string; html?: string; md?: string };
+          timestamp?: number;
+          toolCalls?: any[];
+          toolCallId?: string;
+        }>;
+      };
+    },
+  });
+}
+
+export function useCrmCustomerMutations() {
+  const queryClient = useQueryClient();
+
+  const updateCustomer = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: { isBlocked?: boolean; memory?: Record<string, any> } }) => {
+      const res = await apiRequest('PATCH', `/api/admin/crm/customers/${id}`, patch);
+      const result = await res.json();
+      return result as { success: boolean; customer: CrmCustomer };
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/crm/customers'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/crm/customers', vars.id] });
+    },
+  });
+
+  const deleteCustomer = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('DELETE', `/api/admin/crm/customers/${id}`);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/crm/customers'] });
+    },
+  });
+
+  return { updateCustomer, deleteCustomer };
 }
 
 // =============================================================================

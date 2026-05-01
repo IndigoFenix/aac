@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
+import { serveStaticWithLocaleLanding } from "./landing-static";
 
 const app = express();
 app.use(express.json({ limit: '100mb' }));
@@ -89,12 +90,7 @@ app.get('/health', (_req, res) => {
       throw new Error(`Could not find the build directory: ${distPath}`);
     }
 
-    app.use(express.static(distPath));
-
-    // SPA fallback - serve index.html for all unmatched routes
-    app.use("*", (_req, res) => {
-      res.sendFile(path.resolve(distPath, "index.html"));
-    });
+    serveStaticWithLocaleLanding(app, distPath);
   }
 
   const port = 5000;

@@ -52,30 +52,28 @@ export class TopicRepository {
   }
 
   /**
-   * Get active topics by parent ID (null for root-level topics)
+   * Get active topics by parent ID (null for root-level topics).
+   * When `crmAccessibleOnly` is true, restricts to topics flagged for the
+   * public CRM landing-page chat — used to avoid leaking internal library
+   * content to anonymous visitors.
    */
-  async getActiveTopicsByParentId(parentId: string | null): Promise<LibraryTopic[]> {
+  async getActiveTopicsByParentId(
+    parentId: string | null,
+    options: { crmAccessibleOnly?: boolean } = {},
+  ): Promise<LibraryTopic[]> {
+    const conditions = [eq(topics.active, true)];
     if (parentId === null) {
-      return await db
-        .select()
-        .from(topics)
-        .where(
-          and(
-            isNull(topics.parentId),
-            eq(topics.active, true)
-          )
-        )
-        .orderBy(topics.title);
+      conditions.push(isNull(topics.parentId));
+    } else {
+      conditions.push(eq(topics.parentId, parentId));
+    }
+    if (options.crmAccessibleOnly) {
+      conditions.push(eq(topics.crmAccessible, true));
     }
     return await db
       .select()
       .from(topics)
-      .where(
-        and(
-          eq(topics.parentId, parentId),
-          eq(topics.active, true)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(topics.title);
   }
 

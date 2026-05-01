@@ -92,6 +92,29 @@ export class SettingsRepository {
     // Temporarily disabled
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // CRM Landing-Page Chat
+  // ──────────────────────────────────────────────────────────────────
+
+  async getCrmChatEnabled(): Promise<boolean> {
+    const raw = await this.getSetting("crm_chat_enabled", "false");
+    return raw === "true";
+  }
+
+  async setCrmChatEnabled(enabled: boolean): Promise<void> {
+    await this.updateSetting("crm_chat_enabled", enabled ? "true" : "false");
+  }
+
+  /** Returns the admin override if set, otherwise null. Callers fall back to CRM_DEFAULT_SYSTEM_PROMPT. */
+  async getCrmChatSystemPromptOverride(): Promise<string | null> {
+    return await this.getSetting("crm_chat_system_prompt");
+  }
+
+  async setCrmChatSystemPromptOverride(prompt: string | null): Promise<void> {
+    // Empty string or null clears the override (falls back to default).
+    await this.updateSetting("crm_chat_system_prompt", prompt ?? "");
+  }
+
   // Password reset token operations
   async createPasswordResetToken(
     token: InsertPasswordResetToken

@@ -79,7 +79,18 @@ import React, {
   }: LanguageProviderProps) => {
     const [language, setLanguageState] = useState<LanguageCode>(() => {
       if (typeof window !== 'undefined') {
-        // Check localStorage first
+        // URL path takes priority — for SEO-prerendered locale pages (/en, /he, /es, ...).
+        // First path segment must exactly match a supported locale code.
+        const firstSegment = window.location.pathname.split('/').filter(Boolean)[0];
+        if (firstSegment && SUPPORTED_LANGUAGES.some(l => l.code === firstSegment)) {
+          return firstSegment as LanguageCode;
+        }
+        // ?lang=xx query param — used by the prerender crawler.
+        const queryLang = new URLSearchParams(window.location.search).get('lang') as LanguageCode | null;
+        if (queryLang && SUPPORTED_LANGUAGES.some(l => l.code === queryLang)) {
+          return queryLang;
+        }
+        // Check localStorage next
         const stored = localStorage.getItem('aac-language') as LanguageCode;
         if (stored && SUPPORTED_LANGUAGES.some(l => l.code === stored)) {
           return stored;

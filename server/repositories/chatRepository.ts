@@ -233,7 +233,11 @@ export class ChatRepository {
   // ============================================================================
 
   async getSessionsAdmin(opts: ChatAdminSessionFilters) {
-    const conditions = [isNull(chatSessions.deletedAt), ne(chatSessions.chatMode, "aac")];
+    const conditions = [
+      isNull(chatSessions.deletedAt),
+      ne(chatSessions.chatMode, "aac"),
+      isNull(chatSessions.crmPotentialCustomerId),
+    ];
     if (opts.userId) {
       conditions.push(eq(chatSessions.userId, opts.userId));
     }
@@ -269,7 +273,11 @@ export class ChatRepository {
   }
 
   async getSessionsAdminCount(opts: ChatAdminSessionFilters): Promise<number> {
-    const conditions = [isNull(chatSessions.deletedAt), ne(chatSessions.chatMode, "aac")];
+    const conditions = [
+      isNull(chatSessions.deletedAt),
+      ne(chatSessions.chatMode, "aac"),
+      isNull(chatSessions.crmPotentialCustomerId),
+    ];
     if (opts.userId) {
       conditions.push(eq(chatSessions.userId, opts.userId));
     }

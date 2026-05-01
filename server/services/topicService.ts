@@ -103,13 +103,16 @@ export class TopicService {
   }
 
   /**
-   * Get active topics by parent ID (for AI/user view)
+   * Get active topics by parent ID (for AI/user view).
+   * Pass { crmAccessibleOnly: true } from the public landing-page chat agent
+   * so internal library content doesn't leak to anonymous visitors.
    */
   async getActiveTopicsByParentId(
-    parentId: string | null
+    parentId: string | null,
+    options: { crmAccessibleOnly?: boolean } = {},
   ): Promise<{ success: boolean; topics?: LibraryTopic[]; error?: string }> {
     try {
-      const topics = await topicRepository.getActiveTopicsByParentId(parentId);
+      const topics = await topicRepository.getActiveTopicsByParentId(parentId, options);
       return { success: true, topics };
     } catch (error: any) {
       console.error("Error getting active topics:", error);

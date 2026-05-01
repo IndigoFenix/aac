@@ -184,26 +184,43 @@ resource "aws_cloudfront_function" "aac_spa_rewrite" {
 }
 
 # CloudFront Function for landing page redirect
-# Redirects non-landing-page routes from root domain to app subdomain
+# - Lets per-locale landing paths (/he, /es, ...) hit S3 and rewrites them to
+#   their prerendered index.html so SEO bots see localized content.
+# - Allows the legal/policy pages.
+# - Redirects everything else to app.${var.domain_name} (the SPA).
 resource "aws_cloudfront_function" "landing_redirect" {
   count   = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
   name    = "${local.name_prefix}-landing-redirect"
   runtime = "cloudfront-js-2.0"
-  comment = "Redirect non-landing-page routes to app subdomain"
+  comment = "Route landing/locale paths to S3, redirect SPA paths to app subdomain"
 
   code = <<-EOF
     function handler(event) {
       var request = event.request;
       var uri = request.uri;
+      // Static asset (has file extension) — pass through to S3 unchanged.
       if (uri.match(/\.\w+$/)) {
         return request;
       }
+      // Public/legal pages stay on the root domain.
       var allowed = ['/', '/index.html', '/terms-of-service', '/privacy-policy', '/cookie-policy', '/accessibility', '/ai-policy'];
       for (var i = 0; i < allowed.length; i++) {
         if (uri === allowed[i]) {
           return request;
         }
       }
+      // Per-locale prerendered landing pages: /he, /he/, /es, /es/, ...
+      // Mirrors SUPPORTED_LANGUAGES in client/src/i18n/index.ts (minus 'en',
+      // which is at /). Keep this list in sync when adding/removing languages.
+      var locales = ['he', 'es', 'pt', 'fr', 'ru', 'de', 'ar', 'zh', 'yue', 'ko'];
+      for (var j = 0; j < locales.length; j++) {
+        var prefix = '/' + locales[j];
+        if (uri === prefix || uri === prefix + '/') {
+          request.uri = prefix + '/index.html';
+          return request;
+        }
+      }
+      // Everything else (login, app routes) → SPA on the app subdomain.
       return {
         statusCode: 302,
         statusDescription: 'Found',

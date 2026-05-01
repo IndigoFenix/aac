@@ -33,7 +33,23 @@ import {
   FREQUENCY_INTERVALS,
   RESOLUTION_SETTINGS,
   MOTION_THRESHOLDS,
+  SleepState,
+  EngagementSignalKind,
+  AlwaysWakeTrigger,
+  EngagementScore,
+  ENGAGEMENT_WEIGHTS,
+  DECAY_HALF_LIFE_MS,
+  SLEEP_THRESHOLDS,
+  FALSE_WAKE_DAMPENING,
+  ENGAGEMENT_SAMPLE_HZ,
 } from '@/lib/cameraAttentivenessTypes';
+import {
+  decayAndScore,
+  pushedContribution,
+  nextSleepState,
+  bumpedMultiplier,
+  decayedMultiplier,
+} from '@/lib/sleepSystemLogic';
 
 interface CameraAttentivenessContextType {
   /** Current state of the attentiveness system */
@@ -71,6 +87,26 @@ interface CameraAttentivenessContextType {
 
   /** Capture a frame immediately at specified resolution */
   captureNow: (resolution?: CaptureResolution) => Promise<CapturedFrame | null>;
+
+  // ---- Sleep system (see planning-docs/aac-sleep-system-plan.md) ----
+
+  /** Current sleep state. */
+  sleepState: SleepState;
+
+  /** Current engagement score (0-1) with per-signal contribution breakdown. */
+  engagementScore: EngagementScore;
+
+  /** Push a continuous-weight signal. Each push raises the contribution toward `weight × intensity`; decays exponentially toward 0 in the absence of further pushes. */
+  pushSignal: (kind: EngagementSignalKind, intensity: number) => void;
+
+  /** Force-wake regardless of score (avatar tap, AAC button press, eyegaze-on-avatar). Bypasses thresholds and dampening. */
+  triggerAlwaysWake: (trigger: AlwaysWakeTrigger) => void;
+
+  /** AI reports a false wake. Bumps wake thresholds upward, auto-decays back to baseline. */
+  reportFalseWake: (reason: string) => void;
+
+  /** Imperative state setter — used by AI tools (`sleep`, `end_session`) and external transitions like session-init. */
+  setSleepState: (state: SleepState) => void;
 }
 
 const CameraAttentivenessContext = createContext<CameraAttentivenessContextType | undefined>(
@@ -110,6 +146,30 @@ export function CameraAttentivenessProvider({
 
   // Ref for monitoringTick to use in interval without causing effect re-runs
   const monitoringTickRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  // -------------------------------------------------------------------------
+  // Sleep system state machine
+  //
+  // Phase 1: state and score are computed and exposed, but no consumer reacts
+  // to them yet — existing live-session behavior is unchanged. Phase 2 wires
+  // data-flow gates against `sleepState`. See planning-docs/aac-sleep-system-plan.md.
+  // -------------------------------------------------------------------------
+
+  const [sleepState, setSleepStateImpl] = useState<SleepState>('hibernation');
+  const [engagementScore, setEngagementScore] = useState<EngagementScore>({ value: 0, contributions: {} });
+
+  // Mutable score is held in refs and only published into React state at the
+  // sample cadence. This avoids re-rendering on every signal push.
+  const scoreRef = useRef(0);
+  const contributionsRef = useRef<Partial<Record<EngagementSignalKind, number>>>({});
+  const sleepStateRef = useRef<SleepState>('hibernation');
+  const scoreLastTickRef = useRef(Date.now());
+
+  // False-wake threshold dampening — multiplier ≥ 1 applied to wake thresholds.
+  // Decays exponentially back toward 1.0 after each false-wake report.
+  const wakeThresholdMultRef = useRef(1.0);
+
+  sleepStateRef.current = sleepState;
 
   // Create hidden video and canvas elements
   useEffect(() => {
@@ -282,6 +342,14 @@ export function CameraAttentivenessProvider({
         }
 
         previousFrameDataRef.current = currentFrameData;
+
+        // Auto-feed motion as an engagement signal. Motion levels are typically
+        // very small (0.02-0.10), so amplify into a useful 0-1 intensity range.
+        contributionsRef.current.motion = pushedContribution(
+          contributionsRef.current.motion,
+          ENGAGEMENT_WEIGHTS.motion,
+          Math.min(1, motionLevel * 10),
+        );
 
         const now = Date.now();
         const wasAwake = currentState.isAwake;
@@ -511,6 +579,84 @@ export function CameraAttentivenessProvider({
     };
   }, [stop]);
 
+  // -------------------------------------------------------------------------
+  // Sleep system: engagement loop, signal pushers, state transitions
+  // -------------------------------------------------------------------------
+
+  const pushSignal = useCallback((kind: EngagementSignalKind, intensity: number) => {
+    contributionsRef.current[kind] = pushedContribution(
+      contributionsRef.current[kind],
+      ENGAGEMENT_WEIGHTS[kind],
+      intensity,
+    );
+  }, []);
+
+  const triggerAlwaysWake = useCallback((trigger: AlwaysWakeTrigger) => {
+    console.log(`[SleepSystem] always-wake triggered: ${trigger}`);
+    scoreRef.current = 1;
+    contributionsRef.current = { ...contributionsRef.current };
+    if (sleepStateRef.current !== 'awake') {
+      sleepStateRef.current = 'awake';
+      setSleepStateImpl('awake');
+    }
+  }, []);
+
+  const reportFalseWake = useCallback((reason: string) => {
+    const newMult = bumpedMultiplier(
+      wakeThresholdMultRef.current,
+      FALSE_WAKE_DAMPENING.bumpFactor,
+      SLEEP_THRESHOLDS.wakeup,
+      FALSE_WAKE_DAMPENING.maxThreshold,
+    );
+    console.log(`[SleepSystem] report_false_wake: "${reason}" — wake threshold mult ${wakeThresholdMultRef.current.toFixed(2)} → ${newMult.toFixed(2)}`);
+    wakeThresholdMultRef.current = newMult;
+  }, []);
+
+  const setSleepState = useCallback((next: SleepState) => {
+    if (next === sleepStateRef.current) return;
+    console.log(`[SleepSystem] external setSleepState: ${sleepStateRef.current} → ${next}`);
+    sleepStateRef.current = next;
+    setSleepStateImpl(next);
+  }, []);
+
+  // 10 Hz engagement-score producer. Decays contributions, recomputes score,
+  // applies hysteresis-gated state transitions. Hibernation is sticky — only
+  // triggerAlwaysWake (or external setSleepState) leaves it.
+  useEffect(() => {
+    scoreLastTickRef.current = Date.now();
+    const tickIntervalMs = 1000 / ENGAGEMENT_SAMPLE_HZ;
+    const id = setInterval(() => {
+      const now = Date.now();
+      const dt = now - scoreLastTickRef.current;
+      scoreLastTickRef.current = now;
+
+      const { contributions, score } = decayAndScore(
+        contributionsRef.current,
+        dt,
+        DECAY_HALF_LIFE_MS,
+      );
+      contributionsRef.current = contributions;
+      scoreRef.current = score;
+
+      wakeThresholdMultRef.current = decayedMultiplier(
+        wakeThresholdMultRef.current,
+        dt,
+        FALSE_WAKE_DAMPENING.decayHalfLifeMs,
+      );
+
+      setEngagementScore({ value: score, contributions: { ...contributions } });
+
+      const cur = sleepStateRef.current;
+      const next = nextSleepState(cur, score, SLEEP_THRESHOLDS, wakeThresholdMultRef.current);
+      if (next !== cur) {
+        console.log(`[SleepSystem] ${cur} → ${next} (score=${score.toFixed(2)})`);
+        sleepStateRef.current = next;
+        setSleepStateImpl(next);
+      }
+    }, tickIntervalMs);
+    return () => clearInterval(id);
+  }, []);
+
   const value: CameraAttentivenessContextType = useMemo(() => ({
     state,
     start,
@@ -524,7 +670,13 @@ export function CameraAttentivenessProvider({
     onMotionStateChange,
     getLastFrame,
     captureNow,
-  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow]);
+    sleepState,
+    engagementScore,
+    pushSignal,
+    triggerAlwaysWake,
+    reportFalseWake,
+    setSleepState,
+  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow, sleepState, engagementScore, pushSignal, triggerAlwaysWake, reportFalseWake, setSleepState]);
 
   return (
     <CameraAttentivenessContext.Provider value={value}>

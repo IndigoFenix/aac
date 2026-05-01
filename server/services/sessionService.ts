@@ -1295,13 +1295,15 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // memoryValues dumped to the API response (later, post-buildMemoryValues).
   let allowStudentChatMemoryDump = true;
   if (!isAACFeature && context.student && accessCtx?.kind === "institute") {
-    const allowMonitorNotes = await canAccessMonitorNotes(accessCtx, context.student.id);
-    if (!allowMonitorNotes) {
+    const monitorAccess = await canAccessMonitorNotes(accessCtx, context.student.id);
+    if (!monitorAccess.allowed) {
       masterFieldsForClinician = MASTER_MEMORY_FIELDS.filter(
         (f) => !STUDENT_CHAT_MEMORY_FIELD_IDS.has(f.id),
       );
       allowStudentChatMemoryDump = false;
-    } else {
+    } else if (monitorAccess.via === "share") {
+      // Only log share-derived (cross-institute) views — owned reads are not
+      // logged, parallel to recordShareDerivedView elsewhere.
       activityLogService.log({
         userId: accessCtx.userId,
         instituteId: accessCtx.instituteId,

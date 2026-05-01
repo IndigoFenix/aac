@@ -36,6 +36,7 @@ import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
 import { AdminDashboard } from "./pages/AdminDashboard";
 import LandingPage from "./components/landing-page/LandingPage";
+import { SUPPORTED_LANGUAGES } from "@/i18n";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -285,6 +286,16 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/crm/customers/:customerId">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/crm">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin">
         <SystemAdminRoute>
           <AdminDashboard />
@@ -294,7 +305,13 @@ function Router() {
       {/* Authenticated home (chat/dashboard) */}
       <Route path="/home" component={ProtectedDashboard} />
 
-      {/* Landing page for unauthenticated users, redirects to /home if logged in */}
+      {/* Landing page for unauthenticated users, redirects to /home if logged in.
+          Per-locale paths (/he, /es, ...) serve the same landing component — the
+          locale is read from the URL by LanguageProvider. These match the prerendered
+          SEO pages on the server. */}
+      {SUPPORTED_LANGUAGES.filter(l => l.code !== "en").map(lang => (
+        <Route key={lang.code} path={`/${lang.code}`} component={LandingPage} />
+      ))}
       <Route path="/" component={LandingPage} />
 
       {/* 404 fallback */}

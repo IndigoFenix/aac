@@ -509,11 +509,16 @@ export const topics = pgTable("topics", {
   parentId: varchar("parent_id").references((): AnyPgColumn => topics.id), // Self-referencing for hierarchy
   content: text("content").notNull().default(''), // Plain text content for AI consumption
   active: boolean("active").default(true).notNull(),
+  // When true, the topic is exposed to the public CRM landing-page chat agent
+  // in addition to the regular clinician/AAC agents. Defaults to false: most
+  // library content is internal and shouldn't leak to anonymous visitors.
+  crmAccessible: boolean("crm_accessible").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_topics_parent_id").on(table.parentId),
   index("idx_topics_active").on(table.active),
+  index("idx_topics_crm_accessible").on(table.crmAccessible),
   uniqueIndex("idx_topics_title_parent").on(table.title, table.parentId), // Title unique per parent
 ]);
 
@@ -1867,6 +1872,41 @@ export const insertContactInquirySchema = createInsertSchema(contactInquiries).p
 
 export type ContactInquiry = typeof contactInquiries.$inferSelect;
 export type InsertContactInquiry = z.infer<typeof insertContactInquirySchema>;
+
+// =============================================================================
+// CRM POTENTIAL CUSTOMERS (landing-page chat visitors)
+// =============================================================================
+// Anonymous landing-page chat visitors. No FK to users — these are unauthenticated
+// leads. Identified across visits by ip_hash (sha256(salt + ip)) and a
+// localStorage-issued client id (returned at first visit, sent on subsequent
+// requests). Customer-supplied details (name, email, organization, role, notes)
+// live inside chat_memory under Customer_* keys, written by the AI through the
+// memory tool — same pattern as users.chat_memory with User_* keys.
+export const crmPotentialCustomers = pgTable("crm_potential_customers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ipHash: text("ip_hash").notNull(),
+  countryCode: varchar("country_code", { length: 2 }),
+  region: text("region"),
+  chatMemory: jsonb("chat_memory").notNull().default({}),
+  isBlocked: boolean("is_blocked").notNull().default(false),
+  firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_crm_potential_customers_ip_hash").on(table.ipHash),
+  index("idx_crm_potential_customers_last_seen_at").on(table.lastSeenAt),
+  index("idx_crm_potential_customers_is_blocked").on(table.isBlocked),
+]);
+
+export const insertCrmPotentialCustomerSchema = createInsertSchema(crmPotentialCustomers).pick({
+  ipHash: true,
+  countryCode: true,
+  region: true,
+});
+
+export type CrmPotentialCustomer = typeof crmPotentialCustomers.$inferSelect;
+export type InsertCrmPotentialCustomer = z.infer<typeof insertCrmPotentialCustomerSchema>;
 
 // =============================================================================
 // PUBLIC TABLES — Calendar

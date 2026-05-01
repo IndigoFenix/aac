@@ -133,14 +133,10 @@ export const zh: Translations = {
     selectionTimeout: "选择超时",
     eyegazeTip: "在任何符号上悬停 {seconds} 秒即可自动选择",
 
-    chatAgentBehavior: "聊天助手行为",
     enableChatGPT5: "启用 ChatGPT 5",
     chatGPT5Hint: "覆盖所有 AI 功能以使用 ChatGPT 5，不受其他模型设置影响",
     chatGPT5Description: "启用后：对话、视觉分析、符号、语音和音频均使用 ChatGPT 5",
     agentConversationStyle: "助手对话风格",
-    agentPromptPlaceholder: "输入聊天助手的行为指令...",
-    resetToDefault: "重置为默认",
-    defaultConversationBehavior: "默认对话行为",
 
     apps: "应用",
     appsDescription: "启用或禁用 AAC 会话期间可用的附加应用",
@@ -185,17 +181,9 @@ export const zh: Translations = {
     localTtsDesc: "使用浏览器内置的语音合成代替服务器生成的音频。适用于网络较慢的情况。",
     elevenlabsTitle: "ElevenLabs 语音",
     elevenlabsDesc: "输入您自己的 ElevenLabs API 密钥和语音 ID 以获取高质量语音合成。设置后将覆盖所有其他语音设置。",
-    elevenlabsApiKey: "ElevenLabs API 密钥",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "学生语音 ID",
     elevenlabsAiVoiceId: "AI 语音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "正在加载语音...",
-    elevenlabsNoVoices: "未找到语音",
-    elevenlabsInvalidKey: "API 密钥无效",
-    elevenlabsSelectVoice: "选择语音",
-    elevenlabsTestVoice: "测试语音",
-    elevenlabsTestPhrase: "你好，我是你的语音助手",
 
     buttonSize: "按钮大小",
     buttonSizeExtraLarge: "超大图标，最少文字",
@@ -237,8 +225,6 @@ export const zh: Translations = {
     inputSourceCursorHint: "与 Tobii、其他控制光标的眼动追踪器或头部追踪设备配合使用。无需校准。",
     inputSourceConnected: "已连接",
     inputSourceNotDetected: "未检测到",
-
-    systemPrompt: "系统提示",
 
     restartSession: "重启会话",
     restartSessionHint: "结束当前会话并重新开始",

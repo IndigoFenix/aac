@@ -11,6 +11,8 @@
 import { and, eq, gt, isNotNull, isNull, inArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import {
+  aacSettings,
+  instituteStudents,
   objectShares,
   programs,
   standingShares,
@@ -274,22 +276,59 @@ export async function canWriteObject(
  *     {@link withIncidentVisibility}).
  *
  * There is no dedicated table backing `monitor_note`; it labels a category of
- * AAC-observed data exposed to the clinician AI only with explicit consent.
+ * AAC-observed data exposed to the clinician AI.
  *
  * Used at session boundary in `sessionService.getMessageManager` to decide
  * whether to expose `Student_*` chat-memory fields to the clinician AI. AAC
  * mode never calls this (student principal always sees its own data).
  *
- * Student/admin principals always pass; institute principals require an
- * active standing share covering `monitor_note` for the student.
+ * Pass conditions:
+ *   - `admin` / `student` principals always pass.
+ *   - `institute` principal whose institute owns the student passes by default.
+ *     The student/family can opt out by setting
+ *     `aacSettings.shareMonitorNotesWithInstitute` to false, in which case
+ *     even the owning institute needs an explicit standing share.
+ *   - Otherwise, an active `monitor_note` standing share targeting the
+ *     institute is required (the cross-institute path).
  */
+export type MonitorNotesAccess =
+  | { allowed: false }
+  | { allowed: true; via: "admin" | "student" | "ownership" | "share" };
+
 export async function canAccessMonitorNotes(
   ctx: AccessCtx,
   studentId: string,
-): Promise<boolean> {
-  if (ctx.kind === "admin") return true;
-  if (ctx.kind === "student") return ctx.studentId === studentId;
-  // institute principal
+): Promise<MonitorNotesAccess> {
+  if (ctx.kind === "admin") return { allowed: true, via: "admin" };
+  if (ctx.kind === "student") {
+    return ctx.studentId === studentId
+      ? { allowed: true, via: "student" }
+      : { allowed: false };
+  }
+  // institute principal — owning-institute auto-pass when not opted out
+  const [link] = await db
+    .select({ id: instituteStudents.id })
+    .from(instituteStudents)
+    .where(
+      and(
+        eq(instituteStudents.instituteId, ctx.instituteId),
+        eq(instituteStudents.studentId, studentId),
+        eq(instituteStudents.isActive, true),
+      ),
+    )
+    .limit(1);
+  if (link) {
+    const [settings] = await db
+      .select({ shareMonitorNotesWithInstitute: aacSettings.shareMonitorNotesWithInstitute })
+      .from(aacSettings)
+      .where(eq(aacSettings.studentId, studentId))
+      .limit(1);
+    // Default true (matches column default) — missing row counts as opted in.
+    if (!settings || settings.shareMonitorNotesWithInstitute) {
+      return { allowed: true, via: "ownership" };
+    }
+  }
+  // Cross-institute path (or owning institute that opted out): standing share.
   const [row] = await db
     .select({ id: standingShares.id })
     .from(standingShares)
@@ -302,7 +341,7 @@ export async function canAccessMonitorNotes(
       ),
     )
     .limit(1);
-  return Boolean(row);
+  return row ? { allowed: true, via: "share" } : { allowed: false };
 }
 
 /**

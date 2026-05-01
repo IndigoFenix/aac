@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2, Accessibility } from "lucide-react";
+import { X, User, Save, Volume2, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Accessibility } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
@@ -35,14 +34,6 @@ interface UserSettingsProps {
   onRestartSession?: () => void;
 }
 
-const DEFAULT_AAC_PROMPT = `You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.
-You should:
-- Respond in a friendly, supportive manner
-- Keep responses concise and clear
-- Help expand on the user's symbol selections to form complete thoughts
-- Ask clarifying questions when needed
-- Be patient and encouraging`;
-
 export default function UserSettings({
   isOpen,
   onClose,
@@ -70,7 +61,6 @@ export default function UserSettings({
   const [geminiStudentVoice, setGeminiStudentVoice] = useState("");
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
-  const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
   const [aiVoicePitch, setAiVoicePitch] = useState(0);
@@ -86,35 +76,10 @@ export default function UserSettings({
     },
   });
 
-  // Fetch ElevenLabs voices when API key is present
-  const [debouncedApiKey, setDebouncedApiKey] = useState("");
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => {
-    clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => setDebouncedApiKey(elevenlabsApiKey.trim()), 600);
-    return () => clearTimeout(debounceTimerRef.current);
-  }, [elevenlabsApiKey]);
-
-  const { data: elevenlabsVoices, isLoading: elevenlabsLoading, isError: elevenlabsError } = useQuery({
-    queryKey: ['/api/voices/elevenlabs-list', debouncedApiKey],
-    queryFn: async () => {
-      const res = await apiRequest('POST', '/api/voices/elevenlabs-list', { apiKey: debouncedApiKey });
-      const data = await res.json();
-      return data.voices as Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }>;
-    },
-    enabled: debouncedApiKey.length > 0,
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
-
   // Board settings
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
-
-  // Chat agent
-  const [chatAgentPrompt, setChatAgentPrompt] = useState("");
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
 
   // Eyegaze (stored in DB)
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
@@ -134,49 +99,6 @@ export default function UserSettings({
   // Show restart confirmation dialog
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
-  // Voice preview state
-  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  const previewVoice = useCallback(async (voiceId: string) => {
-    if (!voiceId || !debouncedApiKey) return;
-    if (previewingVoice) return;
-    setPreviewingVoice(voiceId);
-    try {
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-        method: "POST",
-        headers: {
-          "xi-api-key": debouncedApiKey,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text: t("settings.elevenlabsTestPhrase"),
-          model_id: "eleven_multilingual_v2",
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-        }),
-      });
-      if (!res.ok) throw new Error(`ElevenLabs error ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      previewAudioRef.current = audio;
-      audio.onended = () => {
-        setPreviewingVoice(null);
-        URL.revokeObjectURL(url);
-        previewAudioRef.current = null;
-      };
-      audio.onerror = () => {
-        setPreviewingVoice(null);
-        URL.revokeObjectURL(url);
-        previewAudioRef.current = null;
-      };
-      await audio.play();
-    } catch {
-      setPreviewingVoice(null);
-    }
-  }, [debouncedApiKey, previewingVoice, t]);
-
   // Load from student profile (AAC settings are nested under aacSettings)
   useEffect(() => {
     if (userProfile) {
@@ -188,7 +110,6 @@ export default function UserSettings({
       setGeminiStudentVoice(aac?.geminiStudentVoice || "");
       setUseLocalTts(aac?.useLocalTts ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
-      setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || "");
       setAiVoicePitch(aac?.aiVoicePitch ?? 0);
@@ -196,7 +117,6 @@ export default function UserSettings({
       const itr = aac?.iconTextRatio ?? 3;
       const il = aac?.interpretationLevel ?? 2;
       const sm = aac?.startupMode ?? 0;
-      const cap = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
       const ee = aac?.eyegazeEnabled ?? false;
       const et = aac?.eyegazeTimeout ?? 2000;
       const ep = aac?.eyegazeProvider ?? "auto";
@@ -204,7 +124,6 @@ export default function UserSettings({
       setIconTextRatio(itr);
       setInterpretationLevel(il);
       setStartupMode(sm);
-      setChatAgentPrompt(cap);
       setEyegazeEnabled(ee);
       setEyegazeTimeout(et);
       setEyegazeProvider(ep);
@@ -216,7 +135,7 @@ export default function UserSettings({
       setAccessEnhancedFocus(acc.enhancedFocusIndicator ?? false);
 
       // Store saved values for dirty detection
-      savedValuesRef.current = { il, sm, cap };
+      savedValuesRef.current = { il, sm };
       setNeedsRestart(false);
     }
   }, [userProfile]);
@@ -231,8 +150,7 @@ export default function UserSettings({
     const saved = savedValuesRef.current;
     return (
       interpretationLevel !== saved.il ||
-      startupMode !== saved.sm ||
-      chatAgentPrompt !== saved.cap
+      startupMode !== saved.sm
     );
   };
 
@@ -263,7 +181,6 @@ export default function UserSettings({
       savedValuesRef.current = {
         il: interpretationLevel,
         sm: startupMode,
-        cap: chatAgentPrompt,
       };
       setNeedsRestart(false);
     },
@@ -295,7 +212,6 @@ export default function UserSettings({
       geminiStudentVoice: geminiStudentVoice || undefined,
       useLocalTts,
       elevenlabsEnabled,
-      elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       aiVoicePitch,
@@ -303,7 +219,6 @@ export default function UserSettings({
       iconTextRatio,
       interpretationLevel,
       startupMode,
-      chatAgentPrompt: chatAgentPrompt.trim() || undefined,
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
@@ -324,7 +239,6 @@ export default function UserSettings({
     setGeminiAiVoice("");
     setGeminiStudentVoice("");
     setUseLocalTts(false);
-    setElevenlabsApiKey("");
     setElevenlabsAiVoiceId("");
     setElevenlabsStudentVoiceId("");
     setAiVoicePitch(0);
@@ -332,7 +246,6 @@ export default function UserSettings({
     setIconTextRatio(3);
     setInterpretationLevel(2);
     setStartupMode(0);
-    setChatAgentPrompt(DEFAULT_AAC_PROMPT);
     setEyegazeEnabled(false);
     setEyegazeTimeout(2000);
     setEyegazeProvider("auto");
@@ -678,144 +591,33 @@ export default function UserSettings({
                       <Label className="text-sm font-semibold">{t("settings.elevenlabsTitle")}</Label>
                       <p className="text-xs text-gray-500">{t("settings.elevenlabsDesc")}</p>
                     </div>
-                    {(elevenlabsApiKey.trim() || elevenlabsAiVoiceId.trim() || elevenlabsStudentVoiceId.trim()) && (
+                    {(elevenlabsAiVoiceId.trim() || elevenlabsStudentVoiceId.trim()) && (
                       <Switch checked={elevenlabsEnabled} onCheckedChange={setElevenlabsEnabled} />
                     )}
                   </div>
 
                   <div className={`space-y-3 ${!elevenlabsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsApiKey")}</Label>
-                    <input
-                      type="password"
-                      value={elevenlabsApiKey}
-                      onChange={(e) => setElevenlabsApiKey(e.target.value)}
-                      placeholder={t("settings.elevenlabsApiKeyPlaceholder")}
-                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
-                    />
-                  </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
+                      <input
+                        type="text"
+                        value={elevenlabsStudentVoiceId}
+                        onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                        placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                        className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                      />
+                    </div>
 
-                  {elevenlabsError && debouncedApiKey && (
-                    <p className="text-xs text-red-500">{t("settings.elevenlabsInvalidKey")}</p>
-                  )}
-
-                  {debouncedApiKey && !elevenlabsError && (
-                    <>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
-                        {elevenlabsLoading ? (
-                          <p className="text-xs text-gray-400">{t("settings.elevenlabsLoadingVoices")}</p>
-                        ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
-                          <div className="flex gap-2 items-center">
-                            <Select
-                              value={elevenlabsStudentVoiceId || "_none"}
-                              onValueChange={(v) => setElevenlabsStudentVoiceId(v === "_none" ? "" : v)}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder={t("settings.elevenlabsSelectVoice")} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="_none">{t("settings.elevenlabsSelectVoice")}</SelectItem>
-                                {elevenlabsVoices.map((v) => (
-                                  <SelectItem key={v.voice_id} value={v.voice_id}>
-                                    {v.name} {v.category ? `(${v.category})` : ""}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {elevenlabsStudentVoiceId && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => previewVoice(elevenlabsStudentVoiceId)}
-                                disabled={!!previewingVoice}
-                                title={t("settings.elevenlabsTestVoice")}
-                                className="shrink-0 h-8 w-8 p-0"
-                              >
-                                {previewingVoice === elevenlabsStudentVoiceId ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Play className="w-4 h-4" />
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400">{t("settings.elevenlabsNoVoices")}</p>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
-                        {elevenlabsLoading ? (
-                          <p className="text-xs text-gray-400">{t("settings.elevenlabsLoadingVoices")}</p>
-                        ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
-                          <div className="flex gap-2 items-center">
-                            <Select
-                              value={elevenlabsAiVoiceId || "_none"}
-                              onValueChange={(v) => setElevenlabsAiVoiceId(v === "_none" ? "" : v)}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder={t("settings.elevenlabsSelectVoice")} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="_none">{t("settings.elevenlabsSelectVoice")}</SelectItem>
-                                {elevenlabsVoices.map((v) => (
-                                  <SelectItem key={v.voice_id} value={v.voice_id}>
-                                    {v.name} {v.category ? `(${v.category})` : ""}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {elevenlabsAiVoiceId && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => previewVoice(elevenlabsAiVoiceId)}
-                                disabled={!!previewingVoice}
-                                title={t("settings.elevenlabsTestVoice")}
-                                className="shrink-0 h-8 w-8 p-0"
-                              >
-                                {previewingVoice === elevenlabsAiVoiceId ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Play className="w-4 h-4" />
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400">{t("settings.elevenlabsNoVoices")}</p>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {!debouncedApiKey && (
-                    <>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
-                        <input
-                          type="text"
-                          value={elevenlabsStudentVoiceId}
-                          onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                          placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
-                          className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
-                        <input
-                          type="text"
-                          value={elevenlabsAiVoiceId}
-                          onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
-                          placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
-                          className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
-                        />
-                      </div>
-                    </>
-                  )}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
+                      <input
+                        type="text"
+                        value={elevenlabsAiVoiceId}
+                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                        placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                        className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1015,50 +817,6 @@ export default function UserSettings({
                         {isCalibrating ? t("calibration.calibrating") : isCalibrated ? t("calibration.recalibrate") : t("calibration.calibrate")}
                       </Button>
                     )}
-                  </div>
-                )}
-              </div>
-
-              {/* Chat Agent Behavior */}
-              <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  {t("settings.chatAgentBehavior")}
-                </h3>
-
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">{t("settings.systemPrompt")}</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsEditingPrompt(!isEditingPrompt)}
-                  >
-                    {isEditingPrompt ? t("common.cancel") : t("common.edit")}
-                  </Button>
-                </div>
-
-                {isEditingPrompt ? (
-                  <div className="space-y-3">
-                    <Textarea
-                      value={chatAgentPrompt}
-                      onChange={(e) => setChatAgentPrompt(e.target.value)}
-                      placeholder={t("settings.agentPromptPlaceholder")}
-                      className="min-h-[120px] text-sm"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setChatAgentPrompt(DEFAULT_AAC_PROMPT)}
-                    >
-                      <RotateCcw className="w-3 h-3 mr-1" />
-                      {t("settings.resetToDefault")}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
-                    <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
-                      {chatAgentPrompt || t("settings.defaultConversationBehavior")}
-                    </p>
                   </div>
                 )}
               </div>

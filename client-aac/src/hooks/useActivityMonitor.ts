@@ -15,6 +15,7 @@ import { FrameRingBuffer, type BufferedFrame } from "@/lib/frameRingBuffer";
 import { composeFrameGrid, composeDualCameraGrid, type ComposedGrid } from "@/lib/composeFrameGrid";
 import { AudioActivityMonitor, type AudioActivityState } from "@/lib/audioActivityMonitor";
 import { AudioRingBuffer, type PcmChunkCallback } from "@/lib/audioRingBuffer";
+import type { DataFlowConfig } from "@/lib/sleepSystemLogic";
 
 export interface ActivityMonitorConfig {
   /** Frames per second to capture (default: 4) */
@@ -71,6 +72,8 @@ export interface ActivityMonitorResult {
   lastTriggerReason: string | null;
   /** Ring buffer sample count */
   ringBufferSamples: number;
+  /** Imperatively fire a detection trigger now (used for Asleep → Awake wake-context bundle). */
+  triggerNow: (reason: string) => void;
 }
 
 interface UseActivityMonitorParams {
@@ -87,6 +90,13 @@ interface UseActivityMonitorParams {
   /** Optional: callback for real-time PCM audio streaming (e.g., to Gemini Live API) */
   onPcmChunk?: PcmChunkCallback;
   options?: Partial<ActivityMonitorConfig>;
+  /**
+   * Optional ref to the current sleep-system data-flow config. When provided,
+   * the monitor reads heartbeat interval, attached-audio duration, grid size,
+   * and motion-trigger enabled from this ref on each tick. Static config values
+   * are used when the ref is undefined or its current is null.
+   */
+  flowConfigRef?: { readonly current: DataFlowConfig | null };
 }
 
 export function useActivityMonitor({
@@ -99,6 +109,7 @@ export function useActivityMonitor({
   onTrigger,
   onPcmChunk,
   options,
+  flowConfigRef,
 }: UseActivityMonitorParams): ActivityMonitorResult {
   const config = { ...DEFAULT_CONFIG, ...options };
   const [result, setResult] = useState<ActivityMonitorResult>({
@@ -111,6 +122,7 @@ export function useActivityMonitor({
     lastSpeechBoundary: null,
     lastTriggerReason: null,
     ringBufferSamples: 0,
+    triggerNow: () => { /* placeholder until effect runs */ },
   });
 
   // Stable refs to avoid re-running effects
@@ -166,6 +178,13 @@ export function useActivityMonitor({
   const fireTrigger = useCallback(async (reason: string) => {
     const now = Date.now();
     const cfg = configRef.current;
+    const flow = flowConfigRef?.current ?? null;
+
+    // Sleep-system overrides: grid dims and attached-audio duration are taken
+    // from the live data-flow config when provided. Fall back to static cfg.
+    const gridCols = flow?.gridCols && flow.gridCols > 0 ? flow.gridCols : cfg.gridCols;
+    const gridRows = flow?.gridRows && flow.gridRows > 0 ? flow.gridRows : cfg.gridRows;
+    const attachedAudioMs = flow ? flow.heartbeatAudioMs : cfg.heartbeatAudioMs;
 
     // If a trigger is already in flight, queue this one and return
     if (inFlightRef.current) {
@@ -189,23 +208,23 @@ export function useActivityMonitor({
       const sinceTimestamp = lastSendTimestampRef.current || 0;
       let frames = buffer.getSince(sinceTimestamp);
       if (frames.length === 0) {
-        frames = buffer.getRecent(cfg.gridCols * cfg.gridRows);
+        frames = buffer.getRecent(gridCols * gridRows);
       }
       try {
         // If env buffer has frames, compose dual-camera grid
         if (envBuffer && envBuffer.length > 0) {
           let envFrames = envBuffer.getSince(sinceTimestamp);
           if (envFrames.length === 0) {
-            envFrames = envBuffer.getRecent(cfg.gridCols * cfg.gridRows);
+            envFrames = envBuffer.getRecent(gridCols * gridRows);
           }
           grid = await composeDualCameraGrid(frames, envFrames, {
-            gridCols: cfg.gridCols,
-            gridRows: cfg.gridRows,
+            gridCols,
+            gridRows,
           });
         } else {
           grid = await composeFrameGrid(frames, {
-            gridCols: cfg.gridCols,
-            gridRows: cfg.gridRows,
+            gridCols,
+            gridRows,
           });
         }
       } catch (err) {
@@ -228,12 +247,12 @@ export function useActivityMonitor({
           audioClip = ringBuf.extractWav(start, end);
         }
         // Fallback: if boundary was already consumed or expired, grab recent audio
-        if (!audioClip) {
-          audioClip = ringBuf.extractRecentWav(cfg.heartbeatAudioMs);
+        if (!audioClip && attachedAudioMs > 0) {
+          audioClip = ringBuf.extractRecentWav(attachedAudioMs);
         }
-      } else if (reason === "heartbeat") {
-        // Heartbeat: grab recent ambient audio
-        audioClip = ringBuf.extractRecentWav(cfg.heartbeatAudioMs);
+      } else if (reason === "heartbeat" && attachedAudioMs > 0) {
+        // Heartbeat: grab recent ambient audio (skip in states where attachedAudioMs=0)
+        audioClip = ringBuf.extractRecentWav(attachedAudioMs);
       }
       // "motion settled" / "env motion settled": no audio (null)
     }
@@ -383,6 +402,7 @@ export function useActivityMonitor({
       const now = Date.now();
       const audio = audioStateRef.current;
       const timeSinceLastSend = now - lastSendAtRef.current;
+      const flow = flowConfigRef?.current ?? null;
 
       // Guard: don't trigger too frequently
       if (timeSinceLastSend < cfg.minIntervalMs) return;
@@ -402,32 +422,43 @@ export function useActivityMonitor({
         return;
       }
 
-      // Trigger 2: User camera motion settled (only if video enabled)
-      if (
-        videoEnabled &&
-        highMotionDetectedRef.current &&
-        lastHighMotionRef.current > 0 &&
-        now - lastHighMotionRef.current >= cfg.activitySettleMs
-      ) {
-        fireTrigger("motion settled");
-        return;
+      // Sleep-system gate: when bufferLocally or motion-trigger disabled, skip
+      // motion-settled and heartbeat triggers (Asleep / Hibernation).
+      const motionEnabled = flow ? flow.motionTriggerEnabled : true;
+      const sendsAllowed = flow ? !flow.bufferLocally : true;
+
+      if (motionEnabled && sendsAllowed) {
+        // Trigger 2: User camera motion settled (only if video enabled)
+        if (
+          videoEnabled &&
+          highMotionDetectedRef.current &&
+          lastHighMotionRef.current > 0 &&
+          now - lastHighMotionRef.current >= cfg.activitySettleMs
+        ) {
+          fireTrigger("motion settled");
+          return;
+        }
+
+        // Trigger 2b: Env camera motion settled (only if video enabled)
+        if (
+          videoEnabled &&
+          highMotionEnvDetectedRef.current &&
+          lastHighMotionEnvRef.current > 0 &&
+          now - lastHighMotionEnvRef.current >= cfg.activitySettleMs
+        ) {
+          fireTrigger("env motion settled");
+          return;
+        }
       }
 
-      // Trigger 2b: Env camera motion settled (only if video enabled)
-      if (
-        videoEnabled &&
-        highMotionEnvDetectedRef.current &&
-        lastHighMotionEnvRef.current > 0 &&
-        now - lastHighMotionEnvRef.current >= cfg.activitySettleMs
-      ) {
-        fireTrigger("env motion settled");
-        return;
-      }
-
-      // Trigger 3: Heartbeat — max silence
-      if (timeSinceLastSend >= cfg.maxSilenceMs) {
-        fireTrigger("heartbeat");
-        return;
+      // Trigger 3: Heartbeat — max silence. Live config can override interval
+      // or disable heartbeat entirely (heartbeatMs === null in Resting-deep+).
+      if (sendsAllowed) {
+        const heartbeatMs = flow ? flow.heartbeatMs : cfg.maxSilenceMs;
+        if (heartbeatMs !== null && timeSinceLastSend >= heartbeatMs) {
+          fireTrigger("heartbeat");
+          return;
+        }
       }
     }, 500);
 
@@ -447,9 +478,16 @@ export function useActivityMonitor({
       envFrameBufferRef.current = null;
       inFlightRef.current = false;
       pendingTriggerRef.current = null;
-      setResult({ isActive: false, isSpeaking: false, energyLevel: 0, frameCount: 0, lastSendAt: null, speechMethod: 'none', lastSpeechBoundary: null, lastTriggerReason: null, ringBufferSamples: 0 });
+      setResult({ isActive: false, isSpeaking: false, energyLevel: 0, frameCount: 0, lastSendAt: null, speechMethod: 'none', lastSpeechBoundary: null, lastTriggerReason: null, ringBufferSamples: 0, triggerNow: () => { /* placeholder */ } });
     };
   }, [enabled, videoEnabled, audioEnabled, micStream, fireTrigger]);
 
-  return result;
+  // Stable external trigger — used by the sleep system on Asleep → Awake to
+  // immediately bundle buffered context into a wake message instead of waiting
+  // for the next motion-settled or heartbeat trigger.
+  const triggerNow = useCallback((reason: string) => {
+    fireTrigger(reason);
+  }, [fireTrigger]);
+
+  return { ...result, triggerNow };
 }

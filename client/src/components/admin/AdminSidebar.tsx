@@ -20,13 +20,14 @@ import {
   LogOut,
   Sparkles,
   Image as ImageIcon,
+  MessageCircle,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols' | 'crm';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -105,6 +106,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Public Symbols',
       section: 'public-symbols' as AdminSection,
       testId: 'admin-nav-public-symbols',
+    },
+    {
+      icon: MessageCircle,
+      label: 'CRM Chat',
+      section: 'crm' as AdminSection,
+      testId: 'admin-nav-crm',
     },
   ];
 

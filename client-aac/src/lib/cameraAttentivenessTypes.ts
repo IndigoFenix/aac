@@ -134,3 +134,101 @@ export type FrameCapturedCallback = (frame: CapturedFrame) => void;
  * Callback for when motion state changes
  */
 export type MotionStateCallback = (isAwake: boolean, motionLevel: number) => void;
+
+// =============================================================================
+// SLEEP SYSTEM
+// See planning-docs/aac-sleep-system-plan.md for the full design.
+// =============================================================================
+
+/**
+ * Sleep system state — gates how aggressively the system reduces data flow to save tokens.
+ */
+export type SleepState =
+  | 'hibernation'
+  | 'waking'
+  | 'awake'
+  | 'resting'
+  | 'asleep';
+
+/**
+ * Continuous-weight engagement signals fed into the score combiner.
+ * v1 wires motion, voice, face, buttonPress. Others are stubs for v2.
+ */
+export type EngagementSignalKind =
+  | 'motion'
+  | 'voice'
+  | 'noise'
+  | 'face'
+  | 'mouseEyegaze'
+  | 'buttonPress';
+
+/**
+ * Discrete events that force-wake regardless of score (bypass thresholds and dampening).
+ */
+export type AlwaysWakeTrigger =
+  | 'avatarTap'
+  | 'avatarEyegaze'
+  | 'aacButtonPress'
+  | 'sustainedFace';
+
+/**
+ * Default per-signal weights. Each contributes (weight × intensity) to the score.
+ * Score decays exponentially toward 0 in the absence of input.
+ */
+export const ENGAGEMENT_WEIGHTS: Record<EngagementSignalKind, number> = {
+  motion: 0.15,
+  voice: 0.40,
+  noise: 0.10,
+  face: 0.45,
+  mouseEyegaze: 0.50,
+  buttonPress: 0.80,
+};
+
+/** Score halves every DECAY_HALF_LIFE_MS without input. */
+export const DECAY_HALF_LIFE_MS = 8000;
+
+/**
+ * Sleep state thresholds (engagement score in [0, 1]).
+ * Invariant: sleep < rest < engaged < wakeup.
+ * Defaults are placeholders pending tuning via the debug panel.
+ */
+export const SLEEP_THRESHOLDS = {
+  /** Awake → Resting */
+  rest: 0.30,
+  /** Resting → Awake (lower than wakeup — Resting is "warmer" than Asleep) */
+  engaged: 0.45,
+  /** Resting → Asleep */
+  sleep: 0.15,
+  /** Asleep → Awake (high — needs strong signal) */
+  wakeup: 0.65,
+};
+
+/**
+ * Resting sub-tier boundaries. Within Resting, the score determines how aggressively
+ * data flow is throttled. See per-state data flow table in the planning doc.
+ */
+export const RESTING_TIERS = {
+  /** Below this within Resting → tighten further (heartbeat off, VAD-gated PCM, smaller grid) */
+  deepBoundary: 0.30,
+};
+
+/**
+ * False-wake dampening: when AI calls report_false_wake, multiply wake thresholds
+ * by bumpFactor (capped at maxThreshold). Threshold decays back to baseline.
+ */
+export const FALSE_WAKE_DAMPENING = {
+  bumpFactor: 1.15,
+  maxThreshold: 0.95,
+  decayHalfLifeMs: 5 * 60 * 1000,
+};
+
+/** Sampling cadence for the engagement-score producer. */
+export const ENGAGEMENT_SAMPLE_HZ = 10;
+
+/**
+ * Engagement score with per-signal contribution breakdown for debugging/tuning.
+ */
+export interface EngagementScore {
+  value: number;
+  contributions: Partial<Record<EngagementSignalKind, number>>;
+}

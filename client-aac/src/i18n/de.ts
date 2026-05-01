@@ -133,14 +133,10 @@ export const de: Translations = {
     selectionTimeout: "Auswahl-Timeout",
     eyegazeTip: "Verweilen Sie {seconds} Sekunden auf einem Symbol, um es automatisch auszuw\u00e4hlen",
 
-    chatAgentBehavior: "Chat-Agent-Verhalten",
     enableChatGPT5: "ChatGPT 5 aktivieren",
     chatGPT5Hint: "Alle KI-Funktionen auf ChatGPT 5 umstellen, unabh\u00e4ngig von anderen Modelleinstellungen",
     chatGPT5Description: "Wenn aktiviert: Konversation, visuelle Analyse, Symbole, Stimme und Audio verwenden alle ChatGPT 5",
     agentConversationStyle: "Agent-Gespr\u00e4chsstil",
-    agentPromptPlaceholder: "Verhaltensanweisungen f\u00fcr den Chat-Agent eingeben...",
-    resetToDefault: "Auf Standard zur\u00fccksetzen",
-    defaultConversationBehavior: "Standard-Gespr\u00e4chsverhalten",
 
     apps: "Apps",
     appsDescription: "Zusatz-Apps f\u00fcr AAC-Sitzungen aktivieren oder deaktivieren",
@@ -185,17 +181,9 @@ export const de: Translations = {
     localTtsDesc: "Die integrierte Sprachsynthese des Browsers anstelle von servergeneriertem Audio verwenden. N\u00fctzlich bei langsamen Verbindungen.",
     elevenlabsTitle: "ElevenLabs-Stimme",
     elevenlabsDesc: "Geben Sie Ihren eigenen ElevenLabs-API-Schl\u00fcssel und Stimm-IDs f\u00fcr hochwertige TTS ein. \u00dcberschreibt alle anderen Stimmeinstellungen, wenn festgelegt.",
-    elevenlabsApiKey: "ElevenLabs-API-Schl\u00fcssel",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "Sch\u00fclerstimme-ID",
     elevenlabsAiVoiceId: "KI-Stimme-ID",
     elevenlabsVoiceIdPlaceholder: "z.B. 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "Stimmen werden geladen...",
-    elevenlabsNoVoices: "Keine Stimmen gefunden",
-    elevenlabsInvalidKey: "Ung\u00fcltiger API-Schl\u00fcssel",
-    elevenlabsSelectVoice: "Stimme ausw\u00e4hlen",
-    elevenlabsTestVoice: "Stimme testen",
-    elevenlabsTestPhrase: "Hallo, ich bin Ihr Sprachassistent",
 
     buttonSize: "Tastengr\u00f6\u00dfe",
     buttonSizeExtraLarge: "Extra gro\u00dfe Symbole, minimaler Text",
@@ -237,8 +225,6 @@ export const de: Translations = {
     inputSourceCursorHint: "Verwenden Sie es mit Tobii, anderen Blicksteuerungen, die den Cursor steuern, oder Kopfsteuerungsger\u00e4ten. Keine Kalibrierung erforderlich.",
     inputSourceConnected: "verbunden",
     inputSourceNotDetected: "nicht erkannt",
-
-    systemPrompt: "System-Prompt",
 
     restartSession: "Sitzung neu starten",
     restartSessionHint: "Aktuelle Sitzung beenden und neu beginnen",

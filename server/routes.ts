@@ -30,7 +30,8 @@ import {
   classroomController,
   sessionHistoryController,
   shareInviteController,
-  consentController
+  consentController,
+  crmChatController,
 } from "./controllers";
 
 import {
@@ -121,6 +122,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= CONTACT FORM (public) =============
   app.post("/api/contact", (req, res) => contactController.submit(req, res));
+
+  // ============= CRM LANDING-PAGE CHAT (public, anonymous) =============
+  app.get("/api/crm-chat/config", (req, res) => crmChatController.getConfig(req, res));
+  app.post("/api/crm-chat/identify", (req, res) => crmChatController.identify(req, res));
+  app.post("/api/crm-chat/message", (req, res) => crmChatController.sendMessage(req, res));
+  app.post("/api/crm-chat/message-stream", (req, res) => crmChatController.sendMessageStream(req, res));
 
   // ============= AUTH ROUTES =============
   app.post("/auth/register", (req, res) => authController.register(req, res));
@@ -1481,6 +1488,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.put("/api/admin/settings/llm_configs", requireAuth, requireSystemAdmin, (req, res) =>
     adminController.updateLLMConfigs(req, res)
+  );
+
+  // CRM landing-page chat settings (also before /api/admin/settings/:key)
+  app.get("/api/admin/crm/settings", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.getCrmChatSettings(req, res)
+  );
+  app.put("/api/admin/crm/settings", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.updateCrmChatSettings(req, res)
+  );
+
+  // CRM customer admin
+  app.get("/api/admin/crm/customers", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.listCrmCustomers(req, res)
+  );
+  app.get("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.getCrmCustomer(req, res)
+  );
+  app.patch("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.updateCrmCustomer(req, res)
+  );
+  app.delete("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.deleteCrmCustomer(req, res)
+  );
+  app.get("/api/admin/crm/sessions/:id/log", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.getCrmSessionLog(req, res)
   );
 
   // Settings

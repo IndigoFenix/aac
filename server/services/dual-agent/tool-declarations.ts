@@ -364,6 +364,41 @@ const SET_INTERACTION_MODE: FunctionDeclaration = {
   },
 };
 
+// Sleep system tools — let the AI manage its own engagement level.
+// See planning-docs/aac-sleep-system-plan.md.
+const SLEEP: FunctionDeclaration = {
+  name: "sleep",
+  description: `Mark the session as Asleep — user is not present but might return. Call when the user has stepped away or appears disengaged for an extended period. While Asleep the system stops sending mic audio and image data, saving tokens. The session resumes automatically when activity is detected. Do NOT call sleep() if the user is actively engaged.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+const END_SESSION: FunctionDeclaration = {
+  name: "end_session",
+  description: `End the current session. The session enters Hibernation. No further audio or video is captured until the user explicitly re-engages (avatar tap, AAC button press, or sustained eye contact). Use only when you're confident the conversation is complete and the user has fully disengaged.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+const REPORT_FALSE_WAKE: FunctionDeclaration = {
+  name: "report_false_wake",
+  description: `Tell the system the most recent wake from Asleep was a false alarm (e.g. background TV, an unrelated adult talking, a passing pet). The system will require a stronger signal to wake again, decaying back to baseline over ~10 minutes. Call this INSTEAD OF responding when you receive a wake-context bundle and judge it not to be the user re-engaging.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Brief description of what triggered the false wake (e.g. 'TV in background', 'adult voice not student')." },
+    },
+    required: ["reason"],
+  },
+};
+
 // Debug message — used by the system when a turn is rejected. The model calls
 // this to tell us what it was trying to do, bypassing the audio safety filter
 // that would otherwise RESPONSE_REJECT the explanation itself.
@@ -434,6 +469,9 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(ASK_YES_NO);
   declarations.push(buildRequestFocusTool(config));
   declarations.push(SET_INTERACTION_MODE);
+  declarations.push(SLEEP);
+  declarations.push(END_SESSION);
+  declarations.push(REPORT_FALSE_WAKE);
   declarations.push(DEBUG_MESSAGE);
 
   return [{ functionDeclarations: declarations }];

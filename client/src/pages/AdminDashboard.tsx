@@ -16,14 +16,17 @@ import { ActivityLog } from '@/components/admin/ActivityLog';
 import { IdentityProviderList } from '@/components/admin/IdentityProviderList';
 import { DeepAnalysisAdmin } from '@/components/admin/DeepAnalysisAdmin';
 import { PublicSymbolsAdmin } from '@/components/admin/PublicSymbolsAdmin';
+import { CrmAdminPage } from '@/components/admin/CrmAdminPage';
+import { CrmCustomerDetail } from '@/components/admin/CrmCustomerDetail';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols' | 'crm';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
   const [, params] = useRoute('/admin/library/:topicId');
+  const [, crmCustomerParams] = useRoute('/admin/crm/customers/:customerId');
   const { direction } = useLanguage();
 
   // Determine active section from URL
@@ -38,6 +41,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/activity-log')) return 'activity-log';
     if (location.startsWith('/admin/deep-analyses')) return 'deep-analyses';
     if (location.startsWith('/admin/public-symbols')) return 'public-symbols';
+    if (location.startsWith('/admin/crm')) return 'crm';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -73,6 +77,8 @@ export function AdminDashboard() {
       navigate('/admin/deep-analyses');
     } else if (section === 'public-symbols') {
       navigate('/admin/public-symbols');
+    } else if (section === 'crm') {
+      navigate('/admin/crm');
     }
   };
 
@@ -125,6 +131,13 @@ export function AdminDashboard() {
 
     if (activeSection === 'public-symbols') {
       return <PublicSymbolsAdmin />;
+    }
+
+    if (activeSection === 'crm') {
+      if (crmCustomerParams?.customerId) {
+        return <CrmCustomerDetail customerId={crmCustomerParams.customerId} />;
+      }
+      return <CrmAdminPage />;
     }
 
     return null;

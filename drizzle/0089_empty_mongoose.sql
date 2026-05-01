@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "share_monitor_notes_with_institute" boolean DEFAULT true NOT NULL;

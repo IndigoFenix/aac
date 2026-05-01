@@ -56,7 +56,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "useLocalTts", "iconTextRatio",
   "usePcsSymbols", "signLanguageReading", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
-  "allowReadProgress", "allowReadReports", "allowNotes",
+  "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "permittedYoutubeChannels",
   "accessibility",

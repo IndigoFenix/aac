@@ -6,7 +6,7 @@
 // ──────────────────────────────────────────────────────────────────
 
 export type LLMProviderKey = "openai" | "gemini" | "claude";
-export type UseCaseKey = "clinician" | "aac_chat" | "aac_moderator" | "deep_analysis";
+export type UseCaseKey = "clinician" | "aac_chat" | "aac_moderator" | "deep_analysis" | "crm_chat";
 
 export interface ModelOption {
   provider: LLMProviderKey;
@@ -101,6 +101,15 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
     requiresTools: true,
     requiresStreaming: false,
     requiresStructuredOutput: false,
+  },
+  crm_chat: {
+    label: "CRM Landing-Page Chat",
+    description: "Anonymous landing-page assistant for potential customers. Cheap model recommended.",
+    defaultProvider: "openai",
+    defaultModel: "gpt-4o-mini",
+    requiresTools: true,
+    requiresStreaming: false,
+    requiresStructuredOutput: true,
   },
 };
 
@@ -257,6 +266,7 @@ export const SETTING_KEYS: Record<UseCaseKey, string> = {
   aac_chat: "llm_aac_chat",
   aac_moderator: "llm_aac_moderator",
   deep_analysis: "llm_deep_analysis",
+  crm_chat: "llm_crm_chat",
 };
 
 // ──────────────────────────────────────────────────────────────────

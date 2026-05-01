@@ -465,6 +465,26 @@ export default function UnifiedDebugPanel({
                   </div>
                 )}
 
+                {/* Sleep system: state + engagement score + per-signal contributions */}
+                {attentiveness && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded text-[11px] space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span>Sleep:</span>
+                      <strong>{attentiveness.sleepState}</strong>
+                      <span className="text-gray-400">|</span>
+                      <span>Score: <strong>{(attentiveness.engagementScore.value * 100).toFixed(0)}%</strong></span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                      {Object.entries(attentiveness.engagementScore.contributions).map(([k, v]) => (
+                        <span key={k}>{k}: {((v ?? 0) * 100).toFixed(0)}%</span>
+                      ))}
+                      {Object.keys(attentiveness.engagementScore.contributions).length === 0 && (
+                        <span className="italic">no active signals</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Face tracking controls */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

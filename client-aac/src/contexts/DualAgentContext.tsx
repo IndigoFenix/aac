@@ -7,6 +7,9 @@ import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useActivityMonitor } from "@/hooks/useActivityMonitor";
+import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
+import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
+import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData } from "@shared/schema";
 
@@ -300,6 +303,24 @@ function DualAgentProviderInner({
     ));
   }, []);
 
+  // Stable refs so the callback identity passed to useLiveSession doesn't change
+  // when the engagement context re-renders (the score producer ticks at 10 Hz).
+  const attentivenessRef = useRef(attentiveness);
+  attentivenessRef.current = attentiveness;
+
+  const handleSleepStateChange = useCallback(
+    (state: import("@/lib/cameraAttentivenessTypes").SleepState, source: "ai" | "system") => {
+      console.log(`[DualAgentContext] AI sleep state change → ${state} (source=${source})`);
+      attentivenessRef.current?.setSleepState(state);
+    },
+    [],
+  );
+
+  const handleFalseWakeReport = useCallback((reason: string) => {
+    console.log(`[DualAgentContext] AI report_false_wake: "${reason}"`);
+    attentivenessRef.current?.reportFalseWake(reason);
+  }, []);
+
   const liveAgent = useLiveSession({
     studentId,
     language,
@@ -316,6 +337,8 @@ function DualAgentProviderInner({
     onUnloadBoard: handleUnloadBoard,
     onAiButtonPress: handleAiButtonPress,
     onSymbolUpdate: handleSymbolUpdate,
+    onSleepStateChange: handleSleepStateChange,
+    onFalseWakeReport: handleFalseWakeReport,
     autoPlayAudio: true,
     pitchByTag,
     debugMode,
@@ -386,17 +409,45 @@ function DualAgentProviderInner({
   const pcmGatedCountRef = useRef(0);
   const [pcmDebug, setPcmDebug] = useState({ audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 });
 
+  // Sleep system data-flow gating for PCM (and downstream consumers).
+  // Refs are updated on every state/score change; handlePcmChunk reads them
+  // synchronously without re-creating the callback (avoids churn on the
+  // 10 Hz score producer).
+  const flowRef = useRef<DataFlowConfig>(dataFlowForState("awake", 0));
+  const contributionsRef = useRef<Partial<Record<EngagementSignalKind, number>>>({});
+  useEffect(() => {
+    if (!attentiveness) return;
+    flowRef.current = dataFlowForState(
+      attentiveness.sleepState,
+      attentiveness.engagementScore.value,
+    );
+    contributionsRef.current = attentiveness.engagementScore.contributions;
+  }, [attentiveness, attentiveness?.sleepState, attentiveness?.engagementScore]);
+
   const handlePcmChunk = useCallback((int16Base64: string) => {
-    // Block all audio when paused
     if (liveAgent.paused) return;
-    // PCM gating disabled — relying on Gemini echo awareness prompt instead.
-    // Keeping counters for debug visibility.
+
+    const flow = flowRef.current;
+    if (flow.pcmMode === "off") {
+      // Asleep / Hibernation — drop. (Asleep buffer is added in T12.)
+      pcmGatedCountRef.current++;
+      return;
+    }
+    if (flow.pcmMode === "vad-gated") {
+      // Resting-deep — only forward if a meaningful voice contribution is active.
+      const voice = contributionsRef.current.voice ?? 0;
+      if (voice < 0.05) {
+        pcmGatedCountRef.current++;
+        return;
+      }
+    }
+
+    // continuous: existing behavior — count-only echo gate, always send.
     if (liveAgent.isBusyRef?.current) {
       pcmGatedCountRef.current++;
     } else {
       pcmSentCountRef.current++;
     }
-    // Always send — let Gemini handle echo recognition
     sendPcmAudioRef.current?.(int16Base64);
   }, [liveAgent.isBusyRef, liveAgent.paused]);
 
@@ -426,7 +477,44 @@ function DualAgentProviderInner({
     // In Live mode, audio goes via continuous PCM — frame grids are decoupled
     // from speech activity. Only motion settle + heartbeat trigger frame sends.
     options: { speechTriggerEnabled: false },
+    // Sleep-system data-flow config: heartbeat interval, attached audio,
+    // grid size, motion-trigger gating all read from this ref per-tick.
+    flowConfigRef: flowRef,
   });
+
+  // Voice + noise engagement signals for the sleep system. Independent of
+  // activityMonitor (which feeds the activity-driven detection pipeline).
+  // Both are computed from the same FFT analyzer for efficiency.
+  const pushVoiceSignal = useCallback((intensity: number) => {
+    attentiveness?.pushSignal("voice", intensity);
+  }, [attentiveness]);
+  const pushNoiseSignal = useCallback((intensity: number) => {
+    attentiveness?.pushSignal("noise", intensity);
+  }, [attentiveness]);
+  const aiPlayingRef = liveAgent.isBusyRef ?? { current: false };
+  useVoiceEngagementSignal({
+    enabled: !!attentiveness && liveAgent.voiceEnabled && liveAgent.isInitialized && !!liveAgent.sessionId && !liveAgent.paused,
+    micStream,
+    isAiPlayingRef: aiPlayingRef,
+    push: pushVoiceSignal,
+    pushNoise: pushNoiseSignal,
+  });
+
+  // Wake-context bundle: on Asleep → Awake transition, immediately fire a
+  // detection trigger so the AI sees what triggered the wake. The recent
+  // buffered frames + audio are still in the ring buffers (Phase 2 keeps
+  // capture running while sends are gated).
+  const prevSleepStateRef = useRef(attentiveness?.sleepState ?? "awake");
+  useEffect(() => {
+    if (!attentiveness) return;
+    const prev = prevSleepStateRef.current;
+    const next = attentiveness.sleepState;
+    if (prev === "asleep" && next === "awake") {
+      console.log("[DualAgentContext] Asleep → Awake — firing wake_check trigger");
+      activityMonitor.triggerNow("wake_check");
+    }
+    prevSleepStateRef.current = next;
+  }, [attentiveness, attentiveness?.sleepState, activityMonitor]);
 
   // Stabilize sendMessage identity — use refs so the callback doesn't change on every render
   const liveAgentSendRef = useRef(liveAgent.sendMessage);
@@ -457,6 +545,19 @@ function DualAgentProviderInner({
   const stopVoiceRecording = useCallback(async () => {
     await liveAgentSendVoiceRef.current(currentBoardRef.current || undefined);
   }, []);
+
+  // Wrap interpretButtons so AAC button presses force-wake the sleep system
+  // before delegating to the live session. Per the planning doc, AAC button
+  // presses are an always-wake trigger that bypasses thresholds and dampening.
+  const liveAgentInterpretRef = useRef(liveAgent.interpretButtons);
+  liveAgentInterpretRef.current = liveAgent.interpretButtons;
+  const interpretButtons = useCallback(
+    async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
+      attentiveness?.triggerAlwaysWake("aacButtonPress");
+      await liveAgentInterpretRef.current(recentButtons, sentences, board);
+    },
+    [attentiveness],
+  );
 
   const setOnBoardUpdate = useCallback(
     (callback: ((board: ParsedBoardData) => void) | null) => {
@@ -495,6 +596,7 @@ function DualAgentProviderInner({
       sendMessage={sendMessage}
       sendContextOnly={sendContextOnly}
       sendBoardExit={liveAgent.sendBoardExit}
+      interpretButtons={interpretButtons}
       stopVoiceRecording={stopVoiceRecording}
       registerAppCanvasCapture={registerAppCanvasCapture}
       getFaceImage={getFaceImageProp ?? (() => null)}
@@ -526,6 +628,7 @@ interface ProviderShellProps {
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
   sendBoardExit: (label: string, instruction: string) => void;
+  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
   getFaceImage: (contactId: string) => string | null;
@@ -561,6 +664,7 @@ function ProviderShell({
   sendMessage,
   sendContextOnly,
   sendBoardExit,
+  interpretButtons,
   stopVoiceRecording,
   registerAppCanvasCapture,
   getFaceImage,
@@ -605,7 +709,7 @@ function ProviderShell({
     sendMessage,
     sendContextOnly,
     sendBoardExit,
-    interpretButtons: agent.interpretButtons,
+    interpretButtons,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,
     cancelVoiceRecording: agent.cancelRecording,

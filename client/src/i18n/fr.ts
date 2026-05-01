@@ -2340,6 +2340,8 @@ export const fr = {
     allowReadReportsDesc: "Quand désactivé, l'IA ne peut pas voir les dossiers médicaux, éducatifs ou fonctionnels",
     allowNotes: "Autoriser les notes",
     allowNotesDesc: "Quand désactivé, l'IA ne peut ni lire ni écrire de notes de session (aucune mémoire stockée en dehors des journaux de messages)",
+    shareMonitorNotesWithInstitute: "Partager les notes AAC avec mon institution",
+    shareMonitorNotesWithInstituteDesc: "Quand activé, les cliniciens de cette institution voient les notes enregistrées pendant les sessions AAC (intérêts, préférences, observations). Désactiver pour exiger un partage explicite.",
     // Symbol generation
     symbolGeneration: "Génération de symboles",
     symbolGenerationDesc: "Générer automatiquement des images d'icônes pour les boutons AAC avec l'IA",
@@ -2677,6 +2679,7 @@ export const fr = {
   landing: {
     nav: {
       login: "Portail client",
+      languageLabel: "Choisir la langue",
     },
     hero: {
       tagline: "La solution : une plateforme à deux piliers",
@@ -2774,6 +2777,20 @@ export const fr = {
       accessibility: "Accessibilité",
       aiPolicy: "Politique IA",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "Discutons",
+      greeting: "Bonjour ! Je suis là pour vous aider à découvrir Aivota. Que souhaitez-vous savoir ?",
+      placeholder: "Tapez votre message...",
+      send: "Envoyer",
+      close: "Fermer",
+      openLabel: "Ouvrir le chat",
+      disclaimer: "Assistant IA. Les conversations peuvent être revues pour améliorer notre service.",
+      errorIdentify: "Impossible de se connecter. Veuillez réessayer.",
+      errorSend: "Impossible d'envoyer votre message. Veuillez réessayer.",
+      errorRateLimited: "Vous envoyez des messages trop rapidement. Veuillez patienter un instant.",
+      errorBlocked: "Le chat n'est pas disponible pour cette session.",
+      thinking: "Réfléchit…",
     },
   },
 

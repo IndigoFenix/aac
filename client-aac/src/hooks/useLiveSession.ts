@@ -60,6 +60,10 @@ export interface UseLiveSessionOptions {
   captureHighResFrame?: () => Promise<Blob | null>;
   /** Function to get serialized gesture/expression context (face + hand events) */
   getGestureContext?: () => string | null;
+  /** AI invoked sleep / end_session — caller routes to the engagement state machine. */
+  onSleepStateChange?: (state: import("@/lib/cameraAttentivenessTypes").SleepState, source: "ai" | "system") => void;
+  /** AI invoked report_false_wake — caller bumps wake threshold dampening. */
+  onFalseWakeReport?: (reason: string) => void;
 }
 
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
@@ -79,6 +83,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     debugMode = false,
     captureFrame,
     captureHighResFrame,
+    onSleepStateChange,
+    onFalseWakeReport,
   } = options;
   const { user, isLoading: isAuthLoading } = useAuth();
   // Stable ref so ws.onopen always reads the latest user
@@ -90,6 +96,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   captureFrameRef.current = captureFrame;
   const captureHighResFrameRef = useRef(captureHighResFrame);
   captureHighResFrameRef.current = captureHighResFrame;
+  const onSleepStateChangeRef = useRef(onSleepStateChange);
+  onSleepStateChangeRef.current = onSleepStateChange;
+  const onFalseWakeReportRef = useRef(onFalseWakeReport);
+  onFalseWakeReportRef.current = onFalseWakeReport;
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
@@ -494,6 +504,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: msg.data.source, at: Date.now() });
           break;
 
+        case "sleep_state_change":
+          // AI invoked sleep() or end_session() — route to the engagement state machine.
+          if (msg.data?.state) {
+            onSleepStateChangeRef.current?.(msg.data.state, msg.data.source ?? "ai");
+          }
+          break;
+
+        case "false_wake_report":
+          // AI invoked report_false_wake() — bump wake threshold dampening.
+          if (typeof msg.data?.reason === "string") {
+            onFalseWakeReportRef.current?.(msg.data.reason);
+          }
+          break;
+
         case "video_play":
           setActiveApp({ appId: "youtube", appData: msg.data });
           break;
@@ -866,6 +890,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         data: base64,
         timestamps: grid.timestamps,
         ...(gestureContext ? { gestureContext } : {}),
+        ...(triggerReason ? { triggerReason } : {}),
       });
     };
     reader.readAsDataURL(grid.blob);

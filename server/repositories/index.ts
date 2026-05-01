@@ -18,3 +18,4 @@ export { licenseRepository, LicenseRepository } from "./licenseRepository";
 export { calendarRepository, CalendarRepository } from "./calendarRepository";
 export { incidentRepository, IncidentRepository } from "./incidentRepository";
 export { shareInviteRepository, ShareInviteRepository } from "./shareInviteRepository";
+export { crmRepository, CrmRepository } from "./crmRepository";

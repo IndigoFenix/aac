@@ -22,3 +22,4 @@ export { calendarController } from "./calendarController";
 export { deepAnalysisController, DeepAnalysisController } from "./deepAnalysisController";
 export { shareInviteController, ShareInviteController } from "./shareInviteController";
 export { consentController } from "./consentController";
+export { crmChatController, CrmChatController } from "./crmChatController";

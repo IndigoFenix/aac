@@ -2340,6 +2340,8 @@ export const es = {
     allowReadReportsDesc: "Cuando está deshabilitado, la IA no puede ver registros médicos, educativos o funcionales",
     allowNotes: "Permitir notas",
     allowNotesDesc: "Cuando está deshabilitado, la IA no puede leer ni escribir notas de sesión (sin memoria almacenada fuera de los registros de mensajes)",
+    shareMonitorNotesWithInstitute: "Compartir notas AAC con mi institución",
+    shareMonitorNotesWithInstituteDesc: "Cuando está activado, los clínicos de esta institución ven las notas registradas durante las sesiones AAC (intereses, preferencias, observaciones). Desactivar para requerir un permiso de compartido explícito.",
     // Symbol generation
     symbolGeneration: "Generación de símbolos",
     symbolGenerationDesc: "Generar automáticamente imágenes de iconos para botones AAC usando IA",
@@ -2677,6 +2679,7 @@ export const es = {
   landing: {
     nav: {
       login: "Portal de clientes",
+      languageLabel: "Seleccionar idioma",
     },
     hero: {
       tagline: "La solución: una plataforma de dos pilares",
@@ -2774,6 +2777,20 @@ export const es = {
       accessibility: "Accesibilidad",
       aiPolicy: "Política de IA",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "Habla con nosotros",
+      greeting: "¡Hola! Estoy aquí para ayudarte a conocer Aivota. ¿Qué te gustaría saber?",
+      placeholder: "Escribe tu mensaje...",
+      send: "Enviar",
+      close: "Cerrar",
+      openLabel: "Abrir chat",
+      disclaimer: "Asistente de IA. Las conversaciones pueden ser revisadas para mejorar nuestro servicio.",
+      errorIdentify: "No se pudo conectar. Inténtalo de nuevo.",
+      errorSend: "No se pudo enviar tu mensaje. Inténtalo de nuevo.",
+      errorRateLimited: "Estás enviando mensajes demasiado rápido. Espera un momento.",
+      errorBlocked: "El chat no está disponible en esta sesión.",
+      thinking: "Pensando…",
     },
   },
 

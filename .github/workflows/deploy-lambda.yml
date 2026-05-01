@@ -77,7 +77,10 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
+          # 1.6.0 ships an old trust root that doesn't accept providers re-signed
+          # with HashiCorp's newer keys, producing "openpgp: key expired". 1.10+
+          # has the refreshed trust store.
+          terraform_version: 1.10.5
           terraform_wrapper: false
 
       - name: Ensure Terraform state backend exists
@@ -221,10 +224,13 @@ jobs:
       - name: Build frontend (main + AAC)
         run: |
           npm run build:client
+          npm run prerender:landing
           npm run build:client-aac
         env:
           NODE_ENV: production
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.VITE_STRIPE_PUBLIC_KEY }}
+          # Canonical/sitemap URLs for the prerendered landing pages.
+          PRERENDER_ORIGIN: https://aivota.ai
 
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
@@ -302,17 +308,46 @@ jobs:
           echo "Deploying to bucket: $BUCKET"
 
           # === Main client (/) ===
-          # Sync all files except index.html and JSON
+          # Bulk-sync hashed assets with year-long immutable caching. Exclude
+          # files we'll re-upload below with weaker cache headers (HTML and
+          # SEO files change with every deploy, JSON shouldn't be frozen).
           aws s3 sync dist/public/ s3://$BUCKET/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "index.html" \
+            --exclude "*/index.html" \
             --exclude "*.json" \
+            --exclude "sitemap.xml" \
+            --exclude "robots.txt" \
             --exclude "aac/*"
 
-          # Upload index.html with no-cache
+          # Root + per-locale prerendered landing pages — no-cache so language
+          # tweaks roll out on the next deploy without a manual invalidation.
           aws s3 cp dist/public/index.html s3://$BUCKET/index.html \
             --cache-control "no-cache, no-store, must-revalidate"
+          for d in dist/public/*/; do
+            locale="$(basename "$d")"
+            # Skip non-locale subdirectories that happen to live under /public/.
+            if [ "$locale" = "aac" ] || [ "$locale" = "assets" ]; then
+              continue
+            fi
+            if [ -f "${d}index.html" ]; then
+              aws s3 cp "${d}index.html" "s3://$BUCKET/$locale/index.html" \
+                --cache-control "no-cache, no-store, must-revalidate"
+            fi
+          done
+
+          # SEO files — short cache so search engines pick up updates promptly.
+          if [ -f dist/public/sitemap.xml ]; then
+            aws s3 cp dist/public/sitemap.xml s3://$BUCKET/sitemap.xml \
+              --cache-control "public, max-age=3600" \
+              --content-type "application/xml"
+          fi
+          if [ -f dist/public/robots.txt ]; then
+            aws s3 cp dist/public/robots.txt s3://$BUCKET/robots.txt \
+              --cache-control "public, max-age=3600" \
+              --content-type "text/plain"
+          fi
 
           # Upload JSON files with short cache
           for f in $(find dist/public -name "*.json" -type f 2>/dev/null); do

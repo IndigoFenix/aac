@@ -2340,6 +2340,8 @@ export const yue = {
     allowReadReportsDesc: "停用嗰陣，AI 睇唔到醫療、教育或功能紀錄",
     allowNotes: "允許筆記",
     allowNotesDesc: "停用嗰陣，AI 讀唔到或寫唔到工作階段筆記（訊息記錄以外唔會儲存記憶）",
+    shareMonitorNotesWithInstitute: "同我嘅機構分享 AAC 筆記",
+    shareMonitorNotesWithInstituteDesc: "啟用嗰陣，本機構嘅臨床人員可以睇到 AAC 工作階段期間記低嘅筆記（興趣、偏好、觀察）。停用就要明確嘅分享授權先得。",
     // Symbol generation
     symbolGeneration: "符號生成",
     symbolGenerationDesc: "用 AI 為 AAC 按鈕自動生成圖示圖片",
@@ -2677,6 +2679,7 @@ export const yue = {
   landing: {
     nav: {
       login: "客戶入口",
+      languageLabel: "選擇語言",
     },
     hero: {
       tagline: "解決方案：雙支柱平台",
@@ -2774,6 +2777,20 @@ export const yue = {
       accessibility: "無障礙",
       aiPolicy: "AI 政策",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
+    },
+    crm: {
+      header: "同我哋傾下",
+      greeting: "你好！我喺度幫你了解 Aivota。你想知啲咩？",
+      placeholder: "請輸入訊息...",
+      send: "傳送",
+      close: "關閉",
+      openLabel: "開啟對話",
+      disclaimer: "AI 助手。對話可能會被檢視以改善我哋嘅服務。",
+      errorIdentify: "無法連接。請再試一次。",
+      errorSend: "無法傳送訊息。請再試一次。",
+      errorRateLimited: "你發送訊息太快。請等一陣。",
+      errorBlocked: "此會話無法使用對話。",
+      thinking: "諗緊…",
     },
   },
 

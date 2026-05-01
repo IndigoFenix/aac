@@ -133,14 +133,10 @@ export const fr: Translations = {
     selectionTimeout: "D\u00e9lai de s\u00e9lection",
     eyegazeTip: "Passez le regard sur n'importe quel symbole pendant {seconds} secondes pour le s\u00e9lectionner automatiquement",
 
-    chatAgentBehavior: "Comportement de l'agent de chat",
     enableChatGPT5: "Activer ChatGPT 5",
     chatGPT5Hint: "Remplacer toutes les fonctionnalit\u00e9s IA pour utiliser ChatGPT 5 ind\u00e9pendamment des autres param\u00e8tres de mod\u00e8le",
     chatGPT5Description: "Lorsqu'activ\u00e9 : Conversation, Analyse Visuelle, Symboles, Voix et Audio utiliseront tous ChatGPT 5",
     agentConversationStyle: "Style de conversation de l'agent",
-    agentPromptPlaceholder: "Entrez les instructions de comportement de l'agent de chat...",
-    resetToDefault: "R\u00e9initialiser par d\u00e9faut",
-    defaultConversationBehavior: "Comportement de conversation par d\u00e9faut",
 
     apps: "Applications",
     appsDescription: "Activer ou d\u00e9sactiver les applications compl\u00e9mentaires disponibles pendant les sessions AAC",
@@ -185,17 +181,9 @@ export const fr: Translations = {
     localTtsDesc: "Utiliser la synth\u00e8se vocale int\u00e9gr\u00e9e du navigateur au lieu de l'audio g\u00e9n\u00e9r\u00e9 par le serveur. Utile pour les connexions lentes.",
     elevenlabsTitle: "Voix ElevenLabs",
     elevenlabsDesc: "Entrez votre propre cl\u00e9 API ElevenLabs et les ID de voix pour un TTS de haute qualit\u00e9. Remplace tous les autres param\u00e8tres de voix lorsque configur\u00e9.",
-    elevenlabsApiKey: "Cl\u00e9 API ElevenLabs",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "ID de voix de l'\u00e9l\u00e8ve",
     elevenlabsAiVoiceId: "ID de voix de l'IA",
     elevenlabsVoiceIdPlaceholder: "ex. 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "Chargement des voix...",
-    elevenlabsNoVoices: "Aucune voix trouv\u00e9e",
-    elevenlabsInvalidKey: "Cl\u00e9 API invalide",
-    elevenlabsSelectVoice: "S\u00e9lectionner une voix",
-    elevenlabsTestVoice: "Tester la voix",
-    elevenlabsTestPhrase: "Bonjour, je suis votre assistant vocal",
 
     buttonSize: "Taille des boutons",
     buttonSizeExtraLarge: "Ic\u00f4nes tr\u00e8s grandes, texte minimal",
@@ -237,8 +225,6 @@ export const fr: Translations = {
     inputSourceCursorHint: "Utiliser avec Tobii, d'autres suivis oculaires qui contr\u00f4lent le curseur, ou des dispositifs de suivi de la t\u00eate. Aucune calibration n\u00e9cessaire.",
     inputSourceConnected: "connect\u00e9",
     inputSourceNotDetected: "non d\u00e9tect\u00e9",
-
-    systemPrompt: "Prompt syst\u00e8me",
 
     restartSession: "Red\u00e9marrer la session",
     restartSessionHint: "Terminer la session en cours et recommencer",

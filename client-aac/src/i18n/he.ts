@@ -133,14 +133,10 @@ export const he: Translations = {
     selectionTimeout: "זמן בחירה",
     eyegazeTip: "רחף מעל כל סמל למשך {seconds} שניות לבחירה אוטומטית",
 
-    chatAgentBehavior: "התנהגות סוכן השיחה",
     enableChatGPT5: "הפעל ChatGPT 5",
     chatGPT5Hint: "עקוף את כל תכונות הבינה המלאכותית לשימוש ב-ChatGPT 5 ללא קשר להגדרות מודל אחרות",
     chatGPT5Description: "כשמופעל: שיחה, ניתוח חזותי, סמלים, קול ושמע ישתמשו כולם ב-ChatGPT 5",
     agentConversationStyle: "סגנון שיחת הסוכן",
-    agentPromptPlaceholder: "הכנס הוראות התנהגות לסוכן השיחה...",
-    resetToDefault: "איפוס לברירת מחדל",
-    defaultConversationBehavior: "התנהגות שיחה ברירת מחדל",
 
     apps: "אפליקציות",
     appsDescription: "הפעל או השבת אפליקציות נוספות הזמינות במהלך מפגשי AAC",
@@ -185,17 +181,9 @@ export const he: Translations = {
     localTtsDesc: "שימוש בסינתזת דיבור מובנית בדפדפן במקום שמע מהשרת. שימושי עבור חיבורים איטיים.",
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
-    elevenlabsApiKey: "מפתח API של ElevenLabs",
-    elevenlabsApiKeyPlaceholder: "sk_...",
     elevenlabsStudentVoiceId: "מזהה קול התלמיד",
     elevenlabsAiVoiceId: "מזהה קול הבינה המלאכותית",
     elevenlabsVoiceIdPlaceholder: "לדוגמה 21m00Tcm4TlvDq8ikWAM",
-    elevenlabsLoadingVoices: "טוען קולות...",
-    elevenlabsNoVoices: "לא נמצאו קולות",
-    elevenlabsInvalidKey: "מפתח API לא תקין",
-    elevenlabsSelectVoice: "בחר קול",
-    elevenlabsTestVoice: "בדוק קול",
-    elevenlabsTestPhrase: "שלום, אני עוזר הקול שלך",
 
     buttonSize: "גודל כפתורים",
     buttonSizeExtraLarge: "אייקונים גדולים מאוד, טקסט מינימלי",
@@ -237,8 +225,6 @@ export const he: Translations = {
     inputSourceCursorHint: "לשימוש עם Tobii, עוקבי עיניים אחרים השולטים בסמן, או מכשירי מעקב ראש. אין צורך בכיול.",
     inputSourceConnected: "מחובר",
     inputSourceNotDetected: "לא זוהה",
-
-    systemPrompt: "הוראות מערכת",
 
     restartSession: "הפעל מחדש",
     restartSessionHint: "סיים את המפגש הנוכחי והתחל מחדש",
