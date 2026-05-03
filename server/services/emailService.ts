@@ -53,7 +53,11 @@ class EmailService {
   private fromAddress: string;
 
   constructor() {
-    this.fromAddress = "cs@aivota.ai";
+    // Gmail SMTP rewrites the From header to the authenticated user unless the
+    // address is configured as a verified "Send mail as" alias in that account.
+    // SMTP_FROM lets ops override per-environment; SMTP_USER is the safe default
+    // since it's always an accepted From for the authenticated identity.
+    this.fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER || "cs@aivota.ai";
     this.initialize();
   }
 

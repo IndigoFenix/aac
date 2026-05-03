@@ -164,14 +164,19 @@ export class AuthController {
 
       const baseUrl = getBaseUrl(req);
 
-      // Always return success for security reasons (don't reveal if email exists)
+      // Must await before responding: under the Lambda Web Adapter the
+      // invocation is frozen as soon as the HTTP response is committed, so any
+      // post-response work (the SMTP send) gets suspended mid-handshake and
+      // the email never goes out. Awaiting first costs the SMTP latency on the
+      // response but actually delivers the email.
+      await passwordResetService.requestPasswordReset(email, baseUrl);
+
+      // Always return success regardless of outcome — never reveal whether the
+      // email maps to a real account.
       res.json({
         success: true,
         message: "If an account with this email exists, a reset link has been sent",
       });
-
-      // Process in background (already responded to user)
-      await passwordResetService.requestPasswordReset(email, baseUrl);
     } catch (error: any) {
       console.error("Forgot password error:", error);
       // Still return success for security

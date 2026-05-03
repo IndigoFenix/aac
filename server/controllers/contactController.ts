@@ -31,28 +31,32 @@ export class ContactController {
         .values({ ...data, userId: userId || null })
         .returning();
 
-      // Send notification email (fire-and-forget)
+      // Send notification email. Must await before responding: under the
+      // Lambda Web Adapter the invocation is frozen as soon as the HTTP
+      // response is committed, so a fire-and-forget send gets suspended
+      // mid-handshake and the email never goes out.
       const notifyEmail = process.env.CONTACT_NOTIFY_EMAIL;
       if (notifyEmail && emailService.isReady()) {
         const roleLabel = ROLE_LABELS[data.role] || data.role;
         const typeLabel = TYPE_LABELS[data.messageType || "contact"] || data.messageType;
-        emailService.sendEmail({
-          to: notifyEmail,
-          subject: `[${typeLabel}] from ${data.firstName} ${data.lastName}`,
-          text: [
-            `New ${typeLabel}:`,
-            ``,
-            `Name: ${data.firstName} ${data.lastName}`,
-            `Email: ${data.email}`,
-            `Organization: ${data.organization}`,
-            `Role: ${roleLabel}`,
-            data.message ? `Message: ${data.message}` : "",
-            ``,
-            `Submitted: ${new Date().toISOString()}`,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-          html: `
+        try {
+          await emailService.sendEmail({
+            to: notifyEmail,
+            subject: `[${typeLabel}] from ${data.firstName} ${data.lastName}`,
+            text: [
+              `New ${typeLabel}:`,
+              ``,
+              `Name: ${data.firstName} ${data.lastName}`,
+              `Email: ${data.email}`,
+              `Organization: ${data.organization}`,
+              `Role: ${roleLabel}`,
+              data.message ? `Message: ${data.message}` : "",
+              ``,
+              `Submitted: ${new Date().toISOString()}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            html: `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
   <h2 style="color: #2D6A4F;">${typeLabel}</h2>
   <table style="width: 100%; border-collapse: collapse;">
@@ -63,7 +67,12 @@ export class ContactController {
     ${data.message ? `<tr><td style="padding: 8px 0; color: #666; vertical-align: top;">Message</td><td style="padding: 8px 0;">${data.message}</td></tr>` : ""}
   </table>
 </div>`.trim(),
-        }).catch((err) => console.error("Failed to send contact notification:", err));
+          });
+        } catch (err) {
+          // The inquiry is already persisted to the DB, so a failed
+          // notification shouldn't fail the user-facing request.
+          console.error("Failed to send contact notification:", err);
+        }
       }
 
       res.status(201).json({ success: true, id: inquiry.id });
