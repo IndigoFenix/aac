@@ -652,6 +652,13 @@
       "when": 1777792051942,
       "tag": "0092_icy_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1777796158811,
+      "tag": "0093_curious_rumiko_fujikawa",
+      "breakpoints": true
     }
   ]
 }

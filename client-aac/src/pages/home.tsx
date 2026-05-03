@@ -257,7 +257,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Eyegaze dwell settings — stored in DB via student profile
   const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number }>({
-    enabled: false, provider: "auto", timeout: 2000
+    enabled: false, provider: "mouse", timeout: 2000
   });
   // Sync eyegaze settings from userProfile when it loads
   useEffect(() => {
@@ -265,7 +265,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       const aac = userProfile.aacSettings;
       setEyegazeSettings({
         enabled: aac?.eyegazeEnabled ?? false,
-        provider: aac?.eyegazeProvider ?? "auto",
+        provider: aac?.eyegazeProvider ?? "mouse",
         timeout: aac?.eyegazeTimeout ?? 2000,
       });
     }

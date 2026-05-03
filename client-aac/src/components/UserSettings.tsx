@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, LogOut, Sun, Moon, Crosshair, LayoutGrid, Zap, Search, RotateCcw, RefreshCw, Target, Accessibility } from "lucide-react";
+import { X, User, Save, Volume2, LogOut, Sun, Moon, Crosshair, LayoutGrid, Zap, Search, RotateCcw, RefreshCw, Accessibility } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +14,6 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
-import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
 export interface EyegazeSettings {
   enabled: boolean;
@@ -48,7 +47,6 @@ export default function UserSettings({
   const { t, isRTL, direction } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
-  const { startCalibration, isCalibrated, isCalibrating } = useEyeTrackingDwell();
   const queryClient = useQueryClient();
 
   // AI identity
@@ -83,7 +81,7 @@ export default function UserSettings({
   // Eyegaze (stored in DB)
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
-  const [eyegazeProvider, setEyegazeProvider] = useState<EyeGazeProviderType | "auto">("auto");
+  const [eyegazeProvider, setEyegazeProvider] = useState<EyeGazeProviderType | "auto">("mouse");
 
   // Accessibility (stored in DB as JSON blob)
   const [accessFontSize, setAccessFontSize] = useState(100);
@@ -117,7 +115,7 @@ export default function UserSettings({
       const sm = aac?.startupMode ?? 0;
       const ee = aac?.eyegazeEnabled ?? false;
       const et = aac?.eyegazeTimeout ?? 2000;
-      const ep = aac?.eyegazeProvider ?? "auto";
+      const ep = aac?.eyegazeProvider ?? "mouse";
 
       setIconTextRatio(itr);
       setStartupMode(sm);
@@ -703,9 +701,7 @@ export default function UserSettings({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="auto">{t("settings.inputSourceAuto")}</SelectItem>
                           <SelectItem value="mouse">{t("settings.inputSourceCursor")}</SelectItem>
-                          <SelectItem value="camera">{t("settings.inputSourceCamera")}</SelectItem>
                           <SelectItem value="tobii">{t("settings.inputSourceTobii")}</SelectItem>
                           <SelectItem value="eyetech">{t("settings.inputSourceEyetech")}</SelectItem>
                           <SelectItem value="lctech">{t("settings.inputSourceLctech")}</SelectItem>
@@ -744,23 +740,6 @@ export default function UserSettings({
                     <p className="text-xs text-blue-600 dark:text-blue-400">
                       {t("settings.eyegazeTip", { seconds: String(eyegazeTimeout / 1000) })}
                     </p>
-
-                    {/* Recalibrate button — only for camera provider */}
-                    {eyegazeProvider !== "mouse" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          onClose();
-                          setTimeout(() => startCalibration(), 300);
-                        }}
-                        disabled={isCalibrating}
-                        className="w-full flex items-center gap-2"
-                      >
-                        <Target className="w-4 h-4" />
-                        {isCalibrating ? t("calibration.calibrating") : isCalibrated ? t("calibration.recalibrate") : t("calibration.calibrate")}
-                      </Button>
-                    )}
                   </div>
                 )}
               </div>

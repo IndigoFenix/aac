@@ -85,6 +85,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
+  const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
   const [allowReadProgress, setAllowReadProgress] = useState(true);
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
@@ -188,6 +189,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
+      setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -227,6 +229,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
+      const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
@@ -258,6 +261,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
+        eyegazeProvider !== originalEyegazeProvider ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
         allowNotes !== originalAllowNotes ||
@@ -274,7 +278,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -294,6 +298,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
+      eyegazeProvider: string;
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
@@ -346,6 +351,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
+      eyegazeProvider,
       allowReadProgress,
       allowReadReports,
       allowNotes,
@@ -384,6 +390,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
+      setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -945,25 +952,48 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
               {eyegazeEnabled && (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
+                <div className="space-y-4">
+                  <div className="space-y-2">
                     <Label className="text-sm font-medium">
-                      {t('aacSettings.selectionTimeout')}
+                      {t('aacSettings.inputSource')}
                     </Label>
-                    <span className="text-sm text-muted-foreground">{eyegazeTimeout / 1000}s</span>
+                    <Select value={eyegazeProvider} onValueChange={setEyegazeProvider}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mouse">{t('aacSettings.inputSourceCursor')}</SelectItem>
+                        <SelectItem value="tobii">{t('aacSettings.inputSourceTobii')}</SelectItem>
+                        <SelectItem value="eyetech">{t('aacSettings.inputSourceEyetech')}</SelectItem>
+                        <SelectItem value="lctech">{t('aacSettings.inputSourceLctech')}</SelectItem>
+                        <SelectItem value="gazepoint">{t('aacSettings.inputSourceGazepoint')}</SelectItem>
+                        <SelectItem value="webhid">{t('aacSettings.inputSourceWebhid')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {t('aacSettings.inputSourceHint')}
+                    </p>
                   </div>
-                  <Slider
-                    min={1000}
-                    max={10000}
-                    step={500}
-                    value={[eyegazeTimeout]}
-                    onValueChange={(v) => setEyegazeTimeout(v[0])}
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>1s</span>
-                    <span>2s</span>
-                    <span>5s</span>
-                    <span>10s</span>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label className="text-sm font-medium">
+                        {t('aacSettings.selectionTimeout')}
+                      </Label>
+                      <span className="text-sm text-muted-foreground">{eyegazeTimeout / 1000}s</span>
+                    </div>
+                    <Slider
+                      min={1000}
+                      max={10000}
+                      step={500}
+                      value={[eyegazeTimeout]}
+                      onValueChange={(v) => setEyegazeTimeout(v[0])}
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1s</span>
+                      <span>2s</span>
+                      <span>5s</span>
+                      <span>10s</span>
+                    </div>
                   </div>
                 </div>
               )}

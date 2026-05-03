@@ -458,9 +458,9 @@ export const aacSettings = pgTable("aac_settings", {
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference
 
   // Auto-generated symbol settings
-  generateSymbols: boolean("generate_symbols").default(false).notNull(), // Generate symbol images on-the-fly via Gemini
-  useApprovedSymbols: boolean("use_approved_symbols").default(false).notNull(), // Show approved generated symbols on buttons
-  useUnapprovedSymbols: boolean("use_unapproved_symbols").default(false).notNull(), // Also show unapproved (newly generated) symbols
+  generateSymbols: boolean("generate_symbols").default(true).notNull(), // Generate symbol images on-the-fly via Gemini
+  useApprovedSymbols: boolean("use_approved_symbols").default(true).notNull(), // Show approved generated symbols on buttons
+  useUnapprovedSymbols: boolean("use_unapproved_symbols").default(true).notNull(), // Also show unapproved (newly generated) symbols
   dynamicBoardsEnabled: boolean("dynamic_boards_enabled").default(false).notNull(), // AI can generate/edit boards during AAC sessions
 
   // Input settings
