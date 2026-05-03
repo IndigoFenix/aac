@@ -586,7 +586,6 @@ export const zh = {
     locationDeletedDesc: "地点已成功移除",
     locationDeleteFailed: "删除失败",
     locationDeleteFailedDesc: "无法删除地点",
-    // Interpretation
     interpretationSuccess: "沟通已解读",
     interpretationSuccessDesc: "AAC 沟通已成功分析。",
     interpretationFailed: "解读失败",
@@ -2298,19 +2297,6 @@ export const zh = {
     buttonSizeBalanced: "平衡（默认）",
     buttonSizeSmIcon: "较小图标，较大文字",
     buttonSizeMinIcon: "最小图标，超大文字",
-    // Interpretation
-    interpretation: "解读级别",
-    interpretationDesc: "AI 解读{{STUDENT}}意图的积极程度",
-    interpNone: "无",
-    interpMinimal: "最少",
-    interpConservative: "保守",
-    interpCreative: "创意",
-    interpAutonomous: "自主",
-    interpNoneDesc: "不进行解读。AI 管理看板并朗读，但从不解读{{STUDENT}}意图。",
-    interpMinimalDesc: "最少。AI 仅在按钮按下后解读——不包括手势或注视。",
-    interpConservativeDesc: "保守（默认）。解读按钮和明确识别的手势。",
-    interpCreativeDesc: "创意。可能从未知手势和上下文中猜测含义。",
-    interpAutonomousDesc: "自主。AI 在对话中主动为{{STUDENT}}发言。",
     // Startup
     startupMode: "启动模式",
     startupModeDesc: "启动 AAC 会话时加载多少上下文",

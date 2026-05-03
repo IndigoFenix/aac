@@ -586,7 +586,6 @@ export const pt = {
     locationDeletedDesc: "A localização foi removida com sucesso",
     locationDeleteFailed: "Falha na exclusão",
     locationDeleteFailedDesc: "Não foi possível excluir a localização",
-    // Interpretation
     interpretationSuccess: "Comunicação interpretada",
     interpretationSuccessDesc: "A comunicação AAC foi analisada com sucesso.",
     interpretationFailed: "Falha na interpretação",
@@ -2298,19 +2297,6 @@ export const pt = {
     buttonSizeBalanced: "Equilibrado (padrão)",
     buttonSizeSmIcon: "Ícones menores, texto maior",
     buttonSizeMinIcon: "Ícones mínimos, texto extra grande",
-    // Interpretation
-    interpretation: "Nível de interpretação",
-    interpretationDesc: "Quão agressivamente a IA interpreta a intenção do {{STUDENT}}",
-    interpNone: "Nenhum",
-    interpMinimal: "Mínimo",
-    interpConservative: "Conservador",
-    interpCreative: "Criativo",
-    interpAutonomous: "Autônomo",
-    interpNoneDesc: "Sem interpretação. A IA gerencia a prancha e fala, mas nunca interpreta a intenção do {{STUDENT}}.",
-    interpMinimalDesc: "Mínimo. A IA só interpreta após pressionar botões — sem gestos ou rastreamento ocular.",
-    interpConservativeDesc: "Conservador (padrão). Interpreta botões e gestos claramente reconhecidos.",
-    interpCreativeDesc: "Criativo. Pode adivinhar significados de gestos desconhecidos e contexto.",
-    interpAutonomousDesc: "Autônomo. A IA fala pelo {{STUDENT}} proativamente em conversas.",
     // Startup
     startupMode: "Modo de inicialização",
     startupModeDesc: "Quanto contexto carregar ao iniciar uma sessão AAC",

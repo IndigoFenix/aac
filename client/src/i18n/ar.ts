@@ -586,7 +586,6 @@ export const ar = {
     locationDeletedDesc: "تم إزالة الموقع بنجاح",
     locationDeleteFailed: "فشل الحذف",
     locationDeleteFailedDesc: "تعذر حذف الموقع",
-    // Interpretation
     interpretationSuccess: "تم تفسير التواصل",
     interpretationSuccessDesc: "تم تحليل تواصل AAC بنجاح.",
     interpretationFailed: "فشل التفسير",
@@ -2298,19 +2297,6 @@ export const ar = {
     buttonSizeBalanced: "متوازن (افتراضي)",
     buttonSizeSmIcon: "رموز أصغر، نص أكبر",
     buttonSizeMinIcon: "رموز صغيرة جداً، نص كبير جداً",
-    // Interpretation
-    interpretation: "مستوى التفسير",
-    interpretationDesc: "مدى جرأة الذكاء الاصطناعي في تفسير نية {{STUDENT}}",
-    interpNone: "لا شيء",
-    interpMinimal: "أدنى",
-    interpConservative: "محافظ",
-    interpCreative: "إبداعي",
-    interpAutonomous: "مستقل",
-    interpNoneDesc: "لا تفسير. الذكاء الاصطناعي يدير اللوحة ويتحدث، لكن لا يفسر نية {{STUDENT}} أبداً.",
-    interpMinimalDesc: "أدنى. الذكاء الاصطناعي يفسر فقط بعد ضغطات الأزرار — لا إيماءات أو نظرات.",
-    interpConservativeDesc: "محافظ (افتراضي). يفسر الأزرار والإيماءات المعروفة بوضوح.",
-    interpCreativeDesc: "إبداعي. قد يخمّن المعاني من إيماءات غير معروفة والسياق.",
-    interpAutonomousDesc: "مستقل. الذكاء الاصطناعي يتحدث نيابة عن {{STUDENT}} بشكل استباقي في المحادثات.",
     // Startup
     startupMode: "وضع البدء",
     startupModeDesc: "مقدار السياق المطلوب تحميله عند بدء جلسة AAC",

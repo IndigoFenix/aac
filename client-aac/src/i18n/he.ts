@@ -192,17 +192,6 @@ export const he: Translations = {
     buttonSizeSmall: "אייקונים קטנים, טקסט גדול",
     buttonSizeMinimal: "אייקונים מינימליים, טקסט גדול מאוד",
 
-    interpretationLevel: "רמת פרשנות",
-    interpretNone: "ללא",
-    interpretMinimal: "מינימלי",
-    interpretBalanced: "מאוזן",
-    interpretCreative: "יצירתי",
-    interpretAuto: "אוטומטי",
-    interpretDesc0: "הבינה המלאכותית מנהלת את הלוח ומדברת, אך אינה מפרשת כוונות.",
-    interpretDesc1: "הבינה המלאכותית מפרשת רק אחרי לחיצת כפתור.",
-    interpretDesc2: "מפרש כפתורים ומחוות מזוהות בבירור (ברירת מחדל).",
-    interpretDesc3: "עשוי לנחש משמעויות ממחוות לא מוכרות ומהקשר.",
-    interpretDesc4: "הבינה המלאכותית מדברת עבור התלמיד באופן יזום בשיחות.",
 
     startupMode: "מצב הפעלה",
     startupFast: "מהיר",

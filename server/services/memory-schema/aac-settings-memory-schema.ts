@@ -70,7 +70,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 
   // Filter to only known columns — prevent writing id/studentId/timestamps
   const WRITABLE_COLUMNS = new Set([
-    "aiName", "interpretationLevel", "startupMode",
+    "aiName", "startupMode",
     "voiceType", "studentVoiceType", "geminiAiVoice", "geminiStudentVoice",
     "aiVoicePitch", "studentVoicePitch", "useLocalTts",
     "elevenlabsEnabled", "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
@@ -249,12 +249,6 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       type: "string",
       title: "Icon/Text Ratio",
       description: "Icon-to-text size ratio on buttons (1-5, 1=mostly icon, 5=mostly text)",
-    },
-    interpretationLevel: {
-      id: "interpretationLevel",
-      type: "string",
-      title: "Interpretation Level",
-      description: "How much the AI interprets button presses (0=none, 1=minimal, 2=conservative, 3=creative)",
     },
     // Symbols
     usePcsSymbols: {

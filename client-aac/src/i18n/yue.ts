@@ -192,17 +192,6 @@ export const yue: Translations = {
     buttonSizeSmall: "細圖示，大文字",
     buttonSizeMinimal: "最細圖示，超大文字",
 
-    interpretationLevel: "解讀級別",
-    interpretNone: "冇",
-    interpretMinimal: "最低",
-    interpretBalanced: "平衡",
-    interpretCreative: "創意",
-    interpretAuto: "自動",
-    interpretDesc0: "AI 管理面板同朗讀，但從來唔解讀意圖。",
-    interpretDesc1: "AI 只喺撳按鈕之後先解讀。",
-    interpretDesc2: "解讀按鈕同明確識別嘅手勢（預設）。",
-    interpretDesc3: "可能從未知手勢同上下文度猜測含義。",
-    interpretDesc4: "AI 喺對話中主動幫學生講嘢。",
 
     startupMode: "啟動模式",
     startupFast: "快速",

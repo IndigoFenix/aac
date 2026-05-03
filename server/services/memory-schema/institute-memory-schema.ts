@@ -1939,13 +1939,6 @@ import {
       demoScenario: { id: "demoScenario", type: "string", description: "Which demo scenario to use" },
       chatAgentPrompt: { id: "chatAgentPrompt", type: "string", description: "Custom prompt override for AAC agent" },
       modelOverride: { id: "modelOverride", type: "string", description: "AI model override" },
-      interpretationLevel: {
-        id: "interpretationLevel",
-        type: "integer",
-        description: "0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous",
-        minimum: 0,
-        maximum: 4,
-      },
       startupMode: {
         id: "startupMode",
         type: "integer",

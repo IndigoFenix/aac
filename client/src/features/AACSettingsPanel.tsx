@@ -30,7 +30,6 @@ import {
   User,
   Loader2,
   LayoutGrid,
-  Brain,
   Zap,
   Search,
   Crosshair,
@@ -83,7 +82,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [studentVoicePitch, setStudentVoicePitch] = useState(0);
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
-  const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
@@ -187,7 +185,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
-      setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -227,7 +224,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStudentVoicePitch = aac?.studentVoicePitch ?? 0;
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
-      const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
       const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
@@ -259,7 +255,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         studentVoicePitch !== originalStudentVoicePitch ||
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
-        interpretationLevel !== originalInterpretationLevel ||
         startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
@@ -279,7 +274,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -296,7 +291,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch?: number;
       useLocalTts?: boolean;
       iconTextRatio: number;
-      interpretationLevel: number;
       startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
@@ -349,7 +343,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch,
       useLocalTts,
       iconTextRatio,
-      interpretationLevel,
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
@@ -388,7 +381,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
-      setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -879,55 +871,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 {iconTextRatio === 3 && t('aacSettings.buttonSizeBalanced')}
                 {iconTextRatio === 4 && t('aacSettings.buttonSizeSmIcon')}
                 {iconTextRatio === 5 && t('aacSettings.buttonSizeMinIcon')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Interpretation Level */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="w-5 h-5" />
-                {t('aacSettings.interpretation')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.interpretationDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 justify-center flex-wrap">
-                {([
-                  { level: 0, tKey: 'aacSettings.interpNone' as const, short: '0' },
-                  { level: 1, tKey: 'aacSettings.interpMinimal' as const, short: '1' },
-                  { level: 2, tKey: 'aacSettings.interpConservative' as const, short: '2' },
-                  { level: 3, tKey: 'aacSettings.interpCreative' as const, short: '3' },
-                  { level: 4, tKey: 'aacSettings.interpAutonomous' as const, short: '4' },
-                ] as const).map(({ level, tKey, short }) => {
-                  const isActive = interpretationLevel === level;
-                  return (
-                    <button
-                      key={level}
-                      type="button"
-                      onClick={() => setInterpretationLevel(level)}
-                      className={cn(
-                        "flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all min-w-[56px] md:min-w-[70px]",
-                        isActive
-                          ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                          : "border-border hover:border-primary/50 bg-card"
-                      )}
-                    >
-                      <span className="text-lg font-bold">{short}</span>
-                      <span className="text-[10px] font-medium text-muted-foreground">{t(tKey)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                {interpretationLevel === 0 && t('aacSettings.interpNoneDesc')}
-                {interpretationLevel === 1 && t('aacSettings.interpMinimalDesc')}
-                {interpretationLevel === 2 && t('aacSettings.interpConservativeDesc')}
-                {interpretationLevel === 3 && t('aacSettings.interpCreativeDesc')}
-                {interpretationLevel === 4 && t('aacSettings.interpAutonomousDesc')}
               </p>
             </CardContent>
           </Card>

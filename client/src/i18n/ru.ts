@@ -586,7 +586,6 @@ export const ru = {
     locationDeletedDesc: "Местоположение успешно удалено",
     locationDeleteFailed: "Ошибка удаления",
     locationDeleteFailedDesc: "Не удалось удалить местоположение",
-    // Interpretation
     interpretationSuccess: "Коммуникация интерпретирована",
     interpretationSuccessDesc: "AAC-коммуникация успешно проанализирована.",
     interpretationFailed: "Ошибка интерпретации",
@@ -2298,19 +2297,6 @@ export const ru = {
     buttonSizeBalanced: "Сбалансированный (по умолчанию)",
     buttonSizeSmIcon: "Меньшие иконки, крупный текст",
     buttonSizeMinIcon: "Минимальные иконки, очень крупный текст",
-    // Interpretation
-    interpretation: "Уровень интерпретации",
-    interpretationDesc: "Насколько активно ИИ интерпретирует намерения {{STUDENT}}",
-    interpNone: "Нет",
-    interpMinimal: "Минимальный",
-    interpConservative: "Консервативный",
-    interpCreative: "Творческий",
-    interpAutonomous: "Автономный",
-    interpNoneDesc: "Без интерпретации. ИИ управляет доской и говорит, но никогда не интерпретирует намерения {{STUDENT}}.",
-    interpMinimalDesc: "Минимальный. ИИ интерпретирует только после нажатия кнопок — без жестов или взгляда.",
-    interpConservativeDesc: "Консервативный (по умолчанию). Интерпретирует кнопки и чётко распознанные жесты.",
-    interpCreativeDesc: "Творческий. Может угадывать значения неизвестных жестов и контекста.",
-    interpAutonomousDesc: "Автономный. ИИ говорит за {{STUDENT}} проактивно в разговорах.",
     // Startup
     startupMode: "Режим запуска",
     startupModeDesc: "Сколько контекста загружать при запуске сеанса AAC",

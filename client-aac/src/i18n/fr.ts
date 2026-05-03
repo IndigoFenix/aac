@@ -192,17 +192,6 @@ export const fr: Translations = {
     buttonSizeSmall: "Ic\u00f4nes plus petites, texte plus grand",
     buttonSizeMinimal: "Ic\u00f4nes minimales, texte tr\u00e8s grand",
 
-    interpretationLevel: "Niveau d'interpr\u00e9tation",
-    interpretNone: "Aucun",
-    interpretMinimal: "Minimal",
-    interpretBalanced: "\u00c9quilibr\u00e9",
-    interpretCreative: "Cr\u00e9atif",
-    interpretAuto: "Automatique",
-    interpretDesc0: "L'IA g\u00e8re le tableau et parle, mais n'interpr\u00e8te jamais l'intention.",
-    interpretDesc1: "L'IA n'interpr\u00e8te qu'apr\u00e8s les pressions de boutons.",
-    interpretDesc2: "Interpr\u00e8te les boutons et les gestes clairement reconnus (par d\u00e9faut).",
-    interpretDesc3: "Peut deviner les significations de gestes inconnus et du contexte.",
-    interpretDesc4: "L'IA parle pour l'\u00e9l\u00e8ve de mani\u00e8re proactive dans les conversations.",
 
     startupMode: "Mode de d\u00e9marrage",
     startupFast: "Rapide",

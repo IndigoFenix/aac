@@ -586,7 +586,6 @@ export const en = {
     locationDeletedDesc: "The location was removed successfully",
     locationDeleteFailed: "Deletion Failed",
     locationDeleteFailedDesc: "Could not delete location",
-    // Interpretation
     interpretationSuccess: "Communication Interpreted",
     interpretationSuccessDesc: "The AAC communication was analyzed successfully.",
     interpretationFailed: "Interpretation Failed",
@@ -2298,19 +2297,6 @@ export const en = {
     buttonSizeBalanced: "Balanced (default)",
     buttonSizeSmIcon: "Smaller icons, larger text",
     buttonSizeMinIcon: "Minimal icons, extra large text",
-    // Interpretation
-    interpretation: "Interpretation Level",
-    interpretationDesc: "How aggressively the AI interprets the {{STUDENT}}'s intent",
-    interpNone: "None",
-    interpMinimal: "Minimal",
-    interpConservative: "Conservative",
-    interpCreative: "Creative",
-    interpAutonomous: "Autonomous",
-    interpNoneDesc: "No interpretation. AI manages the board and speaks, but never interprets {{STUDENT}} intent.",
-    interpMinimalDesc: "Minimal. AI only interprets after button presses — no gestures or gaze.",
-    interpConservativeDesc: "Conservative (default). Interprets buttons and clearly recognized gestures.",
-    interpCreativeDesc: "Creative. May guess meanings from unknown gestures and context.",
-    interpAutonomousDesc: "Autonomous. AI speaks for the {{STUDENT}} proactively in conversations.",
     // Startup
     startupMode: "Startup Mode",
     startupModeDesc: "How much context to load when starting an AAC session",

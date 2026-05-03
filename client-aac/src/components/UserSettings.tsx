@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Accessibility } from "lucide-react";
+import { X, User, Save, Volume2, LogOut, Sun, Moon, Crosshair, LayoutGrid, Zap, Search, RotateCcw, RefreshCw, Target, Accessibility } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -78,7 +78,6 @@ export default function UserSettings({
 
   // Board settings
   const [iconTextRatio, setIconTextRatio] = useState(3);
-  const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
 
   // Eyegaze (stored in DB)
@@ -115,14 +114,12 @@ export default function UserSettings({
       setAiVoicePitch(aac?.aiVoicePitch ?? 0);
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       const itr = aac?.iconTextRatio ?? 3;
-      const il = aac?.interpretationLevel ?? 2;
       const sm = aac?.startupMode ?? 0;
       const ee = aac?.eyegazeEnabled ?? false;
       const et = aac?.eyegazeTimeout ?? 2000;
       const ep = aac?.eyegazeProvider ?? "auto";
 
       setIconTextRatio(itr);
-      setInterpretationLevel(il);
       setStartupMode(sm);
       setEyegazeEnabled(ee);
       setEyegazeTimeout(et);
@@ -135,7 +132,7 @@ export default function UserSettings({
       setAccessEnhancedFocus(acc.enhancedFocusIndicator ?? false);
 
       // Store saved values for dirty detection
-      savedValuesRef.current = { il, sm };
+      savedValuesRef.current = { sm };
       setNeedsRestart(false);
     }
   }, [userProfile]);
@@ -148,10 +145,7 @@ export default function UserSettings({
   // Check if restart-required settings changed
   const checkRestartNeeded = () => {
     const saved = savedValuesRef.current;
-    return (
-      interpretationLevel !== saved.il ||
-      startupMode !== saved.sm
-    );
+    return startupMode !== saved.sm;
   };
 
   // Update mutation
@@ -179,7 +173,6 @@ export default function UserSettings({
 
       // Update saved values reference
       savedValuesRef.current = {
-        il: interpretationLevel,
         sm: startupMode,
       };
       setNeedsRestart(false);
@@ -217,7 +210,6 @@ export default function UserSettings({
       aiVoicePitch,
       studentVoicePitch,
       iconTextRatio,
-      interpretationLevel,
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
@@ -244,7 +236,6 @@ export default function UserSettings({
     setAiVoicePitch(0);
     setStudentVoicePitch(0);
     setIconTextRatio(3);
-    setInterpretationLevel(2);
     setStartupMode(0);
     setEyegazeEnabled(false);
     setEyegazeTimeout(2000);
@@ -272,22 +263,6 @@ export default function UserSettings({
     t("settings.buttonSizeBalanced"),
     t("settings.buttonSizeSmall"),
     t("settings.buttonSizeMinimal"),
-  ];
-
-  const interpretLevels = [
-    { level: 0, label: t("settings.interpretNone"), short: '0' },
-    { level: 1, label: t("settings.interpretMinimal"), short: '1' },
-    { level: 2, label: t("settings.interpretBalanced"), short: '2' },
-    { level: 3, label: t("settings.interpretCreative"), short: '3' },
-    { level: 4, label: t("settings.interpretAuto"), short: '4' },
-  ];
-
-  const interpretDescs = [
-    t("settings.interpretDesc0"),
-    t("settings.interpretDesc1"),
-    t("settings.interpretDesc2"),
-    t("settings.interpretDesc3"),
-    t("settings.interpretDesc4"),
   ];
 
   return (
@@ -658,37 +633,6 @@ export default function UserSettings({
                 </div>
                 <p className="text-xs text-gray-500 text-center">
                   {buttonSizeDescs[iconTextRatio - 1]}
-                </p>
-              </div>
-
-              {/* Interpretation Level */}
-              <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Brain className="h-5 w-5" />
-                  {t("settings.interpretationLevel")}
-                </h3>
-                <div className="flex gap-2 justify-center">
-                  {interpretLevels.map(({ level, label, short }) => {
-                    const isActive = interpretationLevel === level;
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => setInterpretationLevel(level)}
-                        className={`flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all min-w-[56px] ${
-                          isActive
-                            ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 ring-2 ring-blue-300"
-                            : "border-gray-200 dark:border-gray-600 hover:border-blue-300"
-                        }`}
-                      >
-                        <span className="text-lg font-bold">{short}</span>
-                        <span className="text-[9px] font-medium text-gray-500">{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-gray-500 text-center">
-                  {interpretDescs[interpretationLevel]}
                 </p>
               </div>
 

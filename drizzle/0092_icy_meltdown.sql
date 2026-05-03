@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" DROP COLUMN "interpretation_level";

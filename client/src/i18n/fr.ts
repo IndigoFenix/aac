@@ -586,7 +586,6 @@ export const fr = {
     locationDeletedDesc: "Le lieu a été supprimé avec succès",
     locationDeleteFailed: "Échec de la suppression",
     locationDeleteFailedDesc: "Impossible de supprimer le lieu",
-    // Interpretation
     interpretationSuccess: "Communication interprétée",
     interpretationSuccessDesc: "La communication AAC a été analysée avec succès.",
     interpretationFailed: "Échec de l'interprétation",
@@ -2298,19 +2297,6 @@ export const fr = {
     buttonSizeBalanced: "Équilibré (par défaut)",
     buttonSizeSmIcon: "Icônes plus petites, texte plus grand",
     buttonSizeMinIcon: "Icônes minimales, texte extra grand",
-    // Interpretation
-    interpretation: "Niveau d'interprétation",
-    interpretationDesc: "Avec quelle agressivité l'IA interprète l'intention du {{STUDENT}}",
-    interpNone: "Aucun",
-    interpMinimal: "Minimal",
-    interpConservative: "Conservateur",
-    interpCreative: "Créatif",
-    interpAutonomous: "Autonome",
-    interpNoneDesc: "Aucune interprétation. L'IA gère le tableau et parle, mais n'interprète jamais l'intention du {{STUDENT}}.",
-    interpMinimalDesc: "Minimal. L'IA n'interprète qu'après les pressions de boutons — pas de gestes ni de suivi du regard.",
-    interpConservativeDesc: "Conservateur (par défaut). Interprète les boutons et les gestes clairement reconnus.",
-    interpCreativeDesc: "Créatif. Peut deviner les significations de gestes inconnus et du contexte.",
-    interpAutonomousDesc: "Autonome. L'IA parle pour le {{STUDENT}} de manière proactive dans les conversations.",
     // Startup
     startupMode: "Mode de démarrage",
     startupModeDesc: "Combien de contexte charger au démarrage d'une session AAC",

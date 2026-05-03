@@ -586,7 +586,6 @@ export const de = {
     locationDeletedDesc: "Der Standort wurde erfolgreich entfernt",
     locationDeleteFailed: "Löschung fehlgeschlagen",
     locationDeleteFailedDesc: "Standort konnte nicht gelöscht werden",
-    // Interpretation
     interpretationSuccess: "Kommunikation interpretiert",
     interpretationSuccessDesc: "Die AAC-Kommunikation wurde erfolgreich analysiert.",
     interpretationFailed: "Interpretation fehlgeschlagen",
@@ -2298,19 +2297,6 @@ export const de = {
     buttonSizeBalanced: "Ausgeglichen (Standard)",
     buttonSizeSmIcon: "Kleinere Symbole, größerer Text",
     buttonSizeMinIcon: "Minimale Symbole, extra großer Text",
-    // Interpretation
-    interpretation: "Interpretationsstufe",
-    interpretationDesc: "Wie aggressiv die KI die Absicht des {{STUDENT}} interpretiert",
-    interpNone: "Keine",
-    interpMinimal: "Minimal",
-    interpConservative: "Konservativ",
-    interpCreative: "Kreativ",
-    interpAutonomous: "Autonom",
-    interpNoneDesc: "Keine Interpretation. KI verwaltet die Tafel und spricht, interpretiert aber nie die Absicht des {{STUDENT}}.",
-    interpMinimalDesc: "Minimal. KI interpretiert nur nach Tastendruck -- keine Gesten oder Blicke.",
-    interpConservativeDesc: "Konservativ (Standard). Interpretiert Tasten und klar erkannte Gesten.",
-    interpCreativeDesc: "Kreativ. Kann Bedeutungen aus unbekannten Gesten und Kontext erraten.",
-    interpAutonomousDesc: "Autonom. KI spricht proaktiv für den {{STUDENT}} in Gesprächen.",
     // Startup
     startupMode: "Startmodus",
     startupModeDesc: "Wie viel Kontext beim Starten einer AAC-Sitzung geladen wird",

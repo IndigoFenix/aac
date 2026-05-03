@@ -586,7 +586,6 @@ export const ko = {
     locationDeletedDesc: "위치가 성공적으로 제거되었습니다",
     locationDeleteFailed: "삭제 실패",
     locationDeleteFailedDesc: "위치를 삭제할 수 없습니다",
-    // Interpretation
     interpretationSuccess: "의사소통 해석됨",
     interpretationSuccessDesc: "AAC 의사소통이 성공적으로 분석되었습니다.",
     interpretationFailed: "해석 실패",
@@ -2298,19 +2297,6 @@ export const ko = {
     buttonSizeBalanced: "균형 (기본)",
     buttonSizeSmIcon: "작은 아이콘, 큰 텍스트",
     buttonSizeMinIcon: "최소 아이콘, 매우 큰 텍스트",
-    // Interpretation
-    interpretation: "해석 수준",
-    interpretationDesc: "AI가 {{STUDENT}}의 의도를 얼마나 적극적으로 해석할지 설정합니다",
-    interpNone: "없음",
-    interpMinimal: "최소",
-    interpConservative: "보수적",
-    interpCreative: "창의적",
-    interpAutonomous: "자율적",
-    interpNoneDesc: "해석 없음. AI가 보드를 관리하고 읽지만 {{STUDENT}}의 의도는 해석하지 않습니다.",
-    interpMinimalDesc: "최소. AI는 버튼 누름 후에만 해석합니다 - 제스처나 시선은 해석하지 않습니다.",
-    interpConservativeDesc: "보수적 (기본). 버튼과 명확히 인식된 제스처를 해석합니다.",
-    interpCreativeDesc: "창의적. 알 수 없는 제스처와 맥락에서 의미를 추측할 수 있습니다.",
-    interpAutonomousDesc: "자율적. AI가 대화에서 {{STUDENT}}를 대신하여 능동적으로 말합니다.",
     // Startup
     startupMode: "시작 모드",
     startupModeDesc: "AAC 세션 시작 시 로드할 맥락의 양을 설정합니다",

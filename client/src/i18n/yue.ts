@@ -586,7 +586,6 @@ export const yue = {
     locationDeletedDesc: "地點已成功移除",
     locationDeleteFailed: "刪除失敗",
     locationDeleteFailedDesc: "刪除唔到地點",
-    // Interpretation
     interpretationSuccess: "溝通已解讀",
     interpretationSuccessDesc: "AAC 溝通已成功分析。",
     interpretationFailed: "解讀失敗",
@@ -2298,19 +2297,6 @@ export const yue = {
     buttonSizeBalanced: "平衡（預設）",
     buttonSizeSmIcon: "細啲圖示，大啲文字",
     buttonSizeMinIcon: "最細圖示，超大文字",
-    // Interpretation
-    interpretation: "解讀級別",
-    interpretationDesc: "AI 解讀{{STUDENT}}意圖嘅積極程度",
-    interpNone: "冇",
-    interpMinimal: "最少",
-    interpConservative: "保守",
-    interpCreative: "創意",
-    interpAutonomous: "自主",
-    interpNoneDesc: "唔做解讀。AI 管理板同朗讀，但永遠唔會解讀{{STUDENT}}意圖。",
-    interpMinimalDesc: "最少。AI 只喺撳按鈕之後解讀——唔包括手勢或注視。",
-    interpConservativeDesc: "保守（預設）。解讀按鈕同明確識別嘅手勢。",
-    interpCreativeDesc: "創意。可能從未知手勢同背景資料猜測意思。",
-    interpAutonomousDesc: "自主。AI 喺對話中主動替{{STUDENT}}講嘢。",
     // Startup
     startupMode: "啟動模式",
     startupModeDesc: "啟動 AAC 工作階段嗰陣載入幾多背景資料",

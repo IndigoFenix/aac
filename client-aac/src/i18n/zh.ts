@@ -192,17 +192,6 @@ export const zh: Translations = {
     buttonSizeSmall: "小图标，大文字",
     buttonSizeMinimal: "最小图标，超大文字",
 
-    interpretationLevel: "解读级别",
-    interpretNone: "无",
-    interpretMinimal: "最低",
-    interpretBalanced: "平衡",
-    interpretCreative: "创意",
-    interpretAuto: "自动",
-    interpretDesc0: "AI 管理面板并朗读，但从不解读意图。",
-    interpretDesc1: "AI 仅在按钮按下后进行解读。",
-    interpretDesc2: "解读按钮和明确识别的手势（默认）。",
-    interpretDesc3: "可能从未知手势和上下文中猜测含义。",
-    interpretDesc4: "AI 在对话中主动为学生发言。",
 
     startupMode: "启动模式",
     startupFast: "快速",

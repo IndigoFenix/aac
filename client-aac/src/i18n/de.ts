@@ -192,17 +192,6 @@ export const de: Translations = {
     buttonSizeSmall: "Kleinere Symbole, gr\u00f6\u00dferer Text",
     buttonSizeMinimal: "Minimale Symbole, extra gro\u00dfer Text",
 
-    interpretationLevel: "Interpretationsstufe",
-    interpretNone: "Keine",
-    interpretMinimal: "Minimal",
-    interpretBalanced: "Ausgewogen",
-    interpretCreative: "Kreativ",
-    interpretAuto: "Automatisch",
-    interpretDesc0: "KI verwaltet die Tafel und spricht, interpretiert aber nie die Absicht.",
-    interpretDesc1: "KI interpretiert nur nach Tastendruck.",
-    interpretDesc2: "Interpretiert Tasten und klar erkannte Gesten (Standard).",
-    interpretDesc3: "Kann Bedeutungen aus unbekannten Gesten und Kontext erraten.",
-    interpretDesc4: "KI spricht proaktiv f\u00fcr den Sch\u00fcler in Gespr\u00e4chen.",
 
     startupMode: "Startmodus",
     startupFast: "Schnell",

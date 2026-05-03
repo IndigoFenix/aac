@@ -19,16 +19,6 @@ export type AACInteractionMode = 'interact' | 'silent';
 export type AACResponseMode = 'fast' | 'analyze';
 
 /**
- * Interpretation aggressiveness level (per-student setting).
- * 0: No [INTERPRET] output at all
- * 1: Minimal — only after button presses
- * 2: Conservative — buttons + known gestures (default)
- * 3: Creative — may guess unknown gesture meanings
- * 4: Autonomous — conducts conversations on student's behalf
- */
-export type AACInterpretationLevel = 0 | 1 | 2 | 3 | 4;
-
-/**
  * Confidence level for [INTERPRET] and [TRANSCRIPT] outputs.
  */
 export type AACConfidenceLevel = 'high' | 'medium' | 'low';

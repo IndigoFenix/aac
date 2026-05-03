@@ -192,17 +192,6 @@ export const ko: Translations = {
     buttonSizeSmall: "작은 아이콘, 큰 텍스트",
     buttonSizeMinimal: "최소 아이콘, 초대형 텍스트",
 
-    interpretationLevel: "해석 수준",
-    interpretNone: "없음",
-    interpretMinimal: "최소",
-    interpretBalanced: "균형",
-    interpretCreative: "창의적",
-    interpretAuto: "자동",
-    interpretDesc0: "AI가 보드를 관리하고 말하지만, 의도를 해석하지 않습니다.",
-    interpretDesc1: "AI가 버튼을 누른 후에만 해석합니다.",
-    interpretDesc2: "버튼과 명확히 인식된 제스처를 해석합니다 (기본값).",
-    interpretDesc3: "알 수 없는 제스처와 맥락에서 의미를 추측할 수 있습니다.",
-    interpretDesc4: "AI가 대화 중 학생을 대신하여 적극적으로 말합니다.",
 
     startupMode: "시작 모드",
     startupFast: "빠른 시작",

@@ -586,7 +586,6 @@ export const he = {
     locationDeletedDesc: "המיקום הוסר בהצלחה",
     locationDeleteFailed: "מחיקה נכשלה",
     locationDeleteFailedDesc: "לא ניתן למחוק מיקום",
-    // Interpretation
     interpretationSuccess: "תקשורת פורשה",
     interpretationSuccessDesc: "התקשורת התומכת חלופית נותחה בהצלחה.",
     interpretationFailed: "פרשנות נכשלה",
@@ -2298,19 +2297,6 @@ export const he = {
     buttonSizeBalanced: "מאוזן (ברירת מחדל)",
     buttonSizeSmIcon: "אייקונים קטנים יותר, טקסט גדול יותר",
     buttonSizeMinIcon: "אייקונים מינימליים, טקסט גדול מאוד",
-    // Interpretation
-    interpretation: "רמת פרשנות",
-    interpretationDesc: "עד כמה ה-AI מפרש באגרסיביות את כוונת ה{{STUDENT}}",
-    interpNone: "ללא",
-    interpMinimal: "מינימלי",
-    interpConservative: "שמרני",
-    interpCreative: "יצירתי",
-    interpAutonomous: "אוטונומי",
-    interpNoneDesc: "ללא פרשנות. ה-AI מנהל את הלוח ומדבר, אך לעולם לא מפרש כוונת {{STUDENT}}.",
-    interpMinimalDesc: "מינימלי. ה-AI מפרש רק לאחר לחיצות כפתורים — ללא מחוות או מבט.",
-    interpConservativeDesc: "שמרני (ברירת מחדל). מפרש כפתורים ומחוות שזוהו בבירור.",
-    interpCreativeDesc: "יצירתי. עשוי לנחש משמעויות ממחוות לא מוכרות והקשר.",
-    interpAutonomousDesc: "אוטונומי. ה-AI מדבר בשם ה{{STUDENT}} באופן יזום בשיחות.",
     // Startup
     startupMode: "מצב הפעלה",
     startupModeDesc: "How much context to load when starting an AAC session",

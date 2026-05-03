@@ -190,17 +190,6 @@ export const en = {
     buttonSizeSmall: "Smaller icons, larger text",
     buttonSizeMinimal: "Minimal icons, extra large text",
 
-    interpretationLevel: "Interpretation Level",
-    interpretNone: "None",
-    interpretMinimal: "Minimal",
-    interpretBalanced: "Balanced",
-    interpretCreative: "Creative",
-    interpretAuto: "Auto",
-    interpretDesc0: "AI manages the board and speaks, but never interprets intent.",
-    interpretDesc1: "AI only interprets after button presses.",
-    interpretDesc2: "Interprets buttons and clearly recognized gestures (default).",
-    interpretDesc3: "May guess meanings from unknown gestures and context.",
-    interpretDesc4: "AI speaks for the student proactively in conversations.",
 
     startupMode: "Startup Mode",
     startupFast: "Fast",

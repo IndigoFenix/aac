@@ -428,7 +428,6 @@ export const aacSettings = pgTable("aac_settings", {
   // AI chat behavior
   chatAgentPrompt: text("chat_agent_prompt"), // Custom prompt override for AAC agent
   modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
-  interpretationLevel: integer("interpretation_level").default(2), // 0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous
   startupMode: integer("startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
 
   // Voice settings
