@@ -118,11 +118,21 @@ class EmailService {
 
     try {
       const port = parseInt(SMTP_PORT, 10);
-      const debug = process.env.EMAIL_DEBUG === "true";
+      // Accept any obviously-truthy value so a misformatted "True"/"1"/"yes"
+      // in the platform env editor still turns on debug instead of silently
+      // doing nothing.
+      const debug = ["true", "1", "yes", "on"].includes(
+        (process.env.EMAIL_DEBUG || "").trim().toLowerCase()
+      );
       this.transporter = nodemailer.createTransport({
         host: SMTP_HOST,
         port,
-        secure: port === 465, // true for 465, false for other ports
+        secure: port === 465, // implicit TLS on 465; STARTTLS upgrade elsewhere
+        // For non-secure ports (587 etc.) force the STARTTLS upgrade — without
+        // this nodemailer would technically allow a plaintext fallback if the
+        // server stopped advertising STARTTLS. We never want creds on the wire
+        // unencrypted.
+        requireTLS: port !== 465,
         auth: {
           user: SMTP_USER,
           pass: SMTP_PASS,
@@ -169,12 +179,12 @@ class EmailService {
       const addrs = await dns.lookup(host, { all: true });
       const dnsMs = Date.now() - dnsStart;
       console.log(
-        `Email probe: DNS resolved ${host} → ${addrs.map((a) => a.address).join(",")} in ${dnsMs}ms`
+        `Email service: probe DNS resolved ${host} → ${addrs.map((a) => a.address).join(",")} in ${dnsMs}ms`
       );
 
       const target = addrs[0]?.address;
       if (!target) {
-        console.error(`Email probe: DNS returned no addresses for ${host}`);
+        console.error(`Email service: probe DNS returned no addresses for ${host}`);
         return;
       }
 
@@ -189,11 +199,11 @@ class EmailService {
           if (err) {
             const msg = err instanceof Error ? err.message : String(err);
             console.error(
-              `Email probe: TCP ${label} to ${host}:${port} (${target}) after ${ms}ms — ${msg}`
+              `Email service: probe TCP ${label} to ${host}:${port} (${target}) after ${ms}ms — ${msg}`
             );
           } else {
             console.log(
-              `Email probe: TCP ${label} to ${host}:${port} (${target}) in ${ms}ms`
+              `Email service: probe TCP ${label} to ${host}:${port} (${target}) in ${ms}ms`
             );
           }
           socket.destroy();
@@ -207,7 +217,7 @@ class EmailService {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Email probe: failed in ${Date.now() - t0}ms — ${msg}`);
+      console.error(`Email service: probe failed in ${Date.now() - t0}ms — ${msg}`);
     }
   }
 
