@@ -4,12 +4,18 @@
 import { TOTP, generateSecret, generateURI, verifySync } from "otplib";
 import * as QRCode from "qrcode";
 import crypto from "crypto";
+import path from "path";
+import sharp from "sharp";
 import { mfaRepository } from "../repositories/mfaRepository";
 import { emailService } from "./emailService";
 import type { User } from "@shared/schema";
 
 // Configuration
 const APP_NAME = "Aivota";
+const QR_SIZE = 400;
+const LOGO_PATH = path.join(process.cwd(), "attached_assets/aivota_icon.png");
+// Logo overlay buffer cached after first build (icon is static)
+let cachedLogoOverlay: Buffer | null = null;
 const MFA_TOKEN_EXPIRY_MINUTES = 5;
 const RECOVERY_TOKEN_EXPIRY_MINUTES = 60;
 
@@ -70,6 +76,42 @@ export class MfaService {
   }
 
   /**
+   * Build (and memoize) the Aivota logo overlay sized for the QR center.
+   * White rounded square keeps the QR-side modules readable around the icon.
+   */
+  private async getLogoOverlay(): Promise<Buffer | null> {
+    if (cachedLogoOverlay) return cachedLogoOverlay;
+    try {
+      const iconSize = Math.round(QR_SIZE * 0.20);
+      const bgSize = Math.round(iconSize * 1.25);
+      const cornerRadius = Math.round(bgSize * 0.18);
+
+      const icon = await sharp(LOGO_PATH)
+        .resize(iconSize, iconSize, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
+        .png()
+        .toBuffer();
+
+      const roundedMask = Buffer.from(
+        `<svg width="${bgSize}" height="${bgSize}"><rect x="0" y="0" width="${bgSize}" height="${bgSize}" rx="${cornerRadius}" ry="${cornerRadius}" fill="white"/></svg>`
+      );
+
+      cachedLogoOverlay = await sharp({
+        create: { width: bgSize, height: bgSize, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+      })
+        .composite([
+          { input: roundedMask, blend: "dest-in" },
+          { input: icon, gravity: "center" },
+        ])
+        .png()
+        .toBuffer();
+      return cachedLogoOverlay;
+    } catch (error) {
+      console.error("Failed to build MFA QR logo overlay; falling back to plain QR:", error);
+      return null;
+    }
+  }
+
+  /**
    * Generate a new TOTP secret and QR code for setup
    */
   async generateSetupData(email: string): Promise<MfaSetupData> {
@@ -82,7 +124,20 @@ export class MfaService {
       digits: 6,
       period: 30,
     });
-    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+
+    // High error correction (H ~30%) lets us overlay a center logo without breaking scannability.
+    const qrBuffer = await QRCode.toBuffer(otpauthUrl, {
+      errorCorrectionLevel: "H",
+      width: QR_SIZE,
+      margin: 2,
+    });
+
+    const overlay = await this.getLogoOverlay();
+    const finalBuffer = overlay
+      ? await sharp(qrBuffer).composite([{ input: overlay, gravity: "center" }]).png().toBuffer()
+      : qrBuffer;
+
+    const qrCodeDataUrl = `data:image/png;base64,${finalBuffer.toString("base64")}`;
 
     return {
       secret,

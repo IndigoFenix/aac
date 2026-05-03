@@ -91,14 +91,16 @@ export class AuthController {
         });
       }
 
-      // Check if MFA is enforced but not set up
-      if (user.mfaEnforcedByAdmin && !user.mfaEnabled) {
+      // Check if MFA is enforced but not set up. System admins always require MFA.
+      if ((user.mfaEnforcedByAdmin || user.isSystemAdmin) && !user.mfaEnabled) {
         const mfaToken = mfaService.generateMfaToken(user.id, "mfa_setup");
         return res.json({
           success: true,
           mfaSetupRequired: true,
           mfaToken,
-          message: "MFA setup required by administrator",
+          message: user.isSystemAdmin
+            ? "MFA setup required for system administrators"
+            : "MFA setup required by administrator",
         });
       }
 
@@ -311,8 +313,8 @@ export class AuthController {
         return res.redirect(`/login?mfa_required=true&mfa_token=${encodeURIComponent(mfaToken)}`);
       }
 
-      // Check if MFA is enforced but not set up
-      if (user.mfaEnforcedByAdmin && !user.mfaEnabled) {
+      // Check if MFA is enforced but not set up. System admins always require MFA.
+      if ((user.mfaEnforcedByAdmin || user.isSystemAdmin) && !user.mfaEnabled) {
         const mfaToken = mfaService.generateMfaToken(user.id, "mfa_setup");
         return res.redirect(`/login?mfa_setup_required=true&mfa_token=${encodeURIComponent(mfaToken)}`);
       }
@@ -615,10 +617,12 @@ export class AuthController {
         return;
       }
 
-      if (user.mfaEnforcedByAdmin) {
+      if (user.mfaEnforcedByAdmin || user.isSystemAdmin) {
         res.status(403).json({
           success: false,
-          message: "MFA is enforced by administrator and cannot be disabled",
+          message: user.isSystemAdmin
+            ? "MFA is required for system administrators and cannot be disabled"
+            : "MFA is enforced by administrator and cannot be disabled",
         });
         return;
       }
