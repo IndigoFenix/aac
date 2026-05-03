@@ -126,6 +126,7 @@ export const he = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "If an account exists with this email, we've sent a password reset link.",
+    resetEmailFailed: 'לא ניתן לשלוח את אימייל האיפוס. נסה/י שוב מאוחר יותר או פנה/י לתמיכה.',
     sentTo: 'Sent to',
     checkSpam: "Don't see it? Check your spam folder or try again with a different email.",
     tryDifferentEmail: 'Try a different email',

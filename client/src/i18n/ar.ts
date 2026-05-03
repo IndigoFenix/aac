@@ -126,6 +126,7 @@ export const ar = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "إذا كان هناك حساب مرتبط بهذا البريد الإلكتروني، فقد أرسلنا رابط إعادة تعيين كلمة المرور.",
+    resetEmailFailed: "تعذّر إرسال بريد إعادة التعيين. يُرجى المحاولة لاحقاً أو التواصل مع الدعم.",
     sentTo: 'Sent to',
     checkSpam: "لم تجده؟ تحقق من مجلد الرسائل غير المرغوب فيها أو حاول مرة أخرى ببريد إلكتروني مختلف.",
     tryDifferentEmail: 'Try a different email',

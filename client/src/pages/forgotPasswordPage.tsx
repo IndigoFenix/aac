@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
 import { 
   Mail, 
   Loader2, 
@@ -54,17 +54,27 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await apiRequest('POST', '/auth/forgot-password', {
+      await apiRequest('POST', '/auth/forgot-password', {
         email: email.trim().toLowerCase(),
       });
-
-      const data = await response.json();
-
-      // Always show success (for security - don't reveal if email exists)
       setIsSubmitted(true);
     } catch (error: any) {
-      // Still show success for security
-      setIsSubmitted(true);
+      // The endpoint returns 200 in the user-doesn't-exist and send-succeeded
+      // cases (deliberate, for security), and 502 only when the SMTP send
+      // itself failed. apiRequest() turns 502/503/504 into
+      // ServiceUnavailableError — surface that distinctly so the operator
+      // knows it's a delivery problem, not a generic network failure.
+      const isDeliveryFailure = error instanceof ServiceUnavailableError;
+      toast({
+        title: t('auth.error') || 'Error',
+        description: isDeliveryFailure
+          ? (t('auth.resetEmailFailed') ||
+            'Could not send the reset email. Please try again later or contact support.')
+          : (error?.message ||
+            t('auth.resetEmailFailed') ||
+            'Could not send the reset email. Please try again later.'),
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }

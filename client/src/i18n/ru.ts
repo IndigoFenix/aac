@@ -126,6 +126,7 @@ export const ru = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "Если аккаунт с этим адресом существует, мы отправили ссылку для сброса пароля.",
+    resetEmailFailed: 'Не удалось отправить письмо для сброса. Повторите попытку позже или обратитесь в поддержку.',
     sentTo: 'Sent to',
     checkSpam: "Не видите письмо? Проверьте папку «Спам» или попробуйте другой адрес эл. почты.",
     tryDifferentEmail: 'Try a different email',

@@ -18,7 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
 import { Loader2, ShieldOff, Mail, CheckCircle, AlertTriangle } from 'lucide-react';
 
 export default function MfaRecoveryPage() {
@@ -86,16 +86,25 @@ export default function MfaRecoveryPage() {
 
     setIsRequesting(true);
     try {
-      const response = await apiRequest('POST', '/auth/mfa/recovery/request', {
+      await apiRequest('POST', '/auth/mfa/recovery/request', {
         email: email.trim(),
       });
-      const data = await response.json();
-
-      // Always show success for security (don't reveal if email exists)
       setRequestSent(true);
-    } catch {
-      // Still show success for security
-      setRequestSent(true);
+    } catch (error: any) {
+      // 502/503/504 → ServiceUnavailableError means SMTP delivery failed.
+      // Surface that distinctly; user-existence still stays hidden because
+      // the no-user and send-succeeded paths both return 200.
+      if (error instanceof ServiceUnavailableError) {
+        toast({
+          title: 'Error',
+          description:
+            'Could not send the recovery email. Please try again later or contact support.',
+          variant: 'destructive',
+        });
+      } else {
+        // For other errors (network, unexpected), still hide user existence.
+        setRequestSent(true);
+      }
     } finally {
       setIsRequesting(false);
     }

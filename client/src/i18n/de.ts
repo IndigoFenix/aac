@@ -126,6 +126,7 @@ export const de = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "Wenn ein Konto mit dieser E-Mail existiert, haben wir einen Link zum Zurücksetzen des Passworts gesendet.",
+    resetEmailFailed: 'Die Reset-E-Mail konnte nicht gesendet werden. Bitte versuchen Sie es später erneut oder kontaktieren Sie den Support.',
     sentTo: 'Sent to',
     checkSpam: "Nicht gefunden? Überprüfen Sie Ihren Spam-Ordner oder versuchen Sie es mit einer anderen E-Mail.",
     tryDifferentEmail: 'Try a different email',

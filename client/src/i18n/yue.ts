@@ -126,6 +126,7 @@ export const yue = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "如果呢個電郵有對應嘅帳戶，我哋已經傳送咗密碼重設連結。",
+    resetEmailFailed: '唔可以傳送重設電郵。請遲啲再試，或者聯絡支援。',
     sentTo: 'Sent to',
     checkSpam: "搵唔到？睇吓垃圾郵件資料夾，或者用另一個電郵再試。",
     tryDifferentEmail: 'Try a different email',

@@ -3,6 +3,8 @@
 
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
+import dns from "node:dns/promises";
+import net from "node:net";
 
 interface EmailOptions {
   to: string;
@@ -116,6 +118,7 @@ class EmailService {
 
     try {
       const port = parseInt(SMTP_PORT, 10);
+      const debug = process.env.EMAIL_DEBUG === "true";
       this.transporter = nodemailer.createTransport({
         host: SMTP_HOST,
         port,
@@ -127,6 +130,11 @@ class EmailService {
         connectionTimeout: 10000, // 10s to establish connection
         greetingTimeout: 10000,   // 10s for SMTP greeting
         socketTimeout: 15000,     // 15s for socket inactivity
+        // EMAIL_DEBUG=true emits per-command SMTP traffic to console — invaluable
+        // for diagnosing where a "Connection timeout" actually originates
+        // (DNS, TCP handshake, TLS, AUTH, ...).
+        logger: debug,
+        debug,
       });
 
       // Prevent unhandled error events from crashing the process
@@ -135,9 +143,71 @@ class EmailService {
       });
 
       this.isConfigured = true;
-      console.log("Email service: SMTP configured successfully");
+      console.log(
+        `Email service: SMTP configured (host=${SMTP_HOST} port=${port} user=${SMTP_USER} from=${this.fromAddress} debug=${debug})`
+      );
+
+      // Fire a one-shot reachability probe in the background so we can tell
+      // (post-mortem in CloudWatch) whether failures are at DNS, TCP, or
+      // higher protocol layers. Single attempt — never retried — and we never
+      // throw so the app boots even if the network is unreachable.
+      void this.runReachabilityProbe(SMTP_HOST, port);
     } catch (error) {
       console.error("Email service: Failed to configure SMTP:", error);
+    }
+  }
+
+  /**
+   * One-shot diagnostic: resolve DNS + open a raw TCP socket to the SMTP
+   * host:port. Logs timings and any error. Does NOT speak SMTP — just proves
+   * whether the underlying network path is alive. Run once at boot.
+   */
+  private async runReachabilityProbe(host: string, port: number): Promise<void> {
+    const t0 = Date.now();
+    try {
+      const dnsStart = Date.now();
+      const addrs = await dns.lookup(host, { all: true });
+      const dnsMs = Date.now() - dnsStart;
+      console.log(
+        `Email probe: DNS resolved ${host} → ${addrs.map((a) => a.address).join(",")} in ${dnsMs}ms`
+      );
+
+      const target = addrs[0]?.address;
+      if (!target) {
+        console.error(`Email probe: DNS returned no addresses for ${host}`);
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        const tcpStart = Date.now();
+        const socket = new net.Socket();
+        let settled = false;
+        const finish = (label: string, err?: unknown) => {
+          if (settled) return;
+          settled = true;
+          const ms = Date.now() - tcpStart;
+          if (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+              `Email probe: TCP ${label} to ${host}:${port} (${target}) after ${ms}ms — ${msg}`
+            );
+          } else {
+            console.log(
+              `Email probe: TCP ${label} to ${host}:${port} (${target}) in ${ms}ms`
+            );
+          }
+          socket.destroy();
+          resolve();
+        };
+        socket.setTimeout(10000);
+        socket.once("connect", () => finish("connected"));
+        socket.once("timeout", () => finish("timeout"));
+        socket.once("error", (err) => finish("error", err));
+        socket.connect(port, target);
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Email probe: failed in ${Date.now() - t0}ms — ${msg}`);
     }
   }
 
@@ -172,6 +242,7 @@ class EmailService {
       return { success: false, error: "Email service not configured" };
     }
 
+    const start = Date.now();
     try {
       const result = await this.transporter!.sendMail({
         from: this.fromAddress,
@@ -181,11 +252,21 @@ class EmailService {
         html: options.html,
       });
 
-      console.log(`Email sent successfully to ${options.to}, messageId: ${result.messageId}`);
+      console.log(
+        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${result.messageId}`
+      );
       return { success: true, messageId: result.messageId };
     } catch (error: any) {
+      // Surface the error code/command alongside the message — nodemailer
+      // attaches `code` ("ETIMEDOUT", "ECONNECTION", "EAUTH", ...) and `command`
+      // (the SMTP verb that was in flight) which together pinpoint the phase.
       const errorMsg = error?.message || String(error);
-      console.error(`Email service: Failed to send email to ${options.to}: ${errorMsg}`);
+      const code = error?.code ? ` code=${error.code}` : "";
+      const command = error?.command ? ` command=${error.command}` : "";
+      const responseCode = error?.responseCode ? ` responseCode=${error.responseCode}` : "";
+      console.error(
+        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${code}${command}${responseCode}`
+      );
       return { success: false, error: errorMsg };
     }
   }

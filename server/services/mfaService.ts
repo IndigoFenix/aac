@@ -257,7 +257,7 @@ export class MfaService {
   async requestRecovery(
     email: string,
     baseUrl: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; sendFailed?: boolean; sendError?: string }> {
     try {
       const user = await mfaRepository.getUserByEmail(email);
 
@@ -275,13 +275,21 @@ export class MfaService {
       // Build recovery link
       const recoveryLink = `${baseUrl}/mfa-recovery/${token}`;
 
-      // Send email
-      await this.sendRecoveryEmail({
+      // Send email — sendRecoveryEmail returns {success, error} from
+      // emailService.sendEmail; surface a delivery failure to the caller
+      // (controller) so it can return a non-200 to the operator. The
+      // user-existence side of this still stays silent.
+      const sendResult = await this.sendRecoveryEmail({
         email: user.email,
         firstName: user.firstName || user.fullName || undefined,
         recoveryLink,
         expiresAt,
       });
+
+      if (!sendResult.success) {
+        console.error(`Failed to send MFA recovery email to ${email}:`, sendResult.error);
+        return { success: true, sendFailed: true, sendError: sendResult.error };
+      }
 
       return { success: true };
     } catch (error) {

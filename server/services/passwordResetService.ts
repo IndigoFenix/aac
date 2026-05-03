@@ -9,6 +9,12 @@ import bcrypt from "bcryptjs";
 interface PasswordResetResult {
   success: boolean;
   error?: string;
+  // True iff the user existed AND the SMTP send itself failed. Lets the
+  // caller surface a "delivery failed" error to the operator while still
+  // never revealing whether the email maps to a real account in the
+  // happy / no-user paths.
+  sendFailed?: boolean;
+  sendError?: string;
 }
 
 export class PasswordResetService {
@@ -55,11 +61,10 @@ export class PasswordResetService {
 
       if (!emailResult.success) {
         console.error(`Failed to send password reset email to ${email}:`, emailResult.error);
-        // Don't expose email sending failures to user
-      } else {
-        console.log(`Password reset email sent to ${email}`);
+        return { success: true, sendFailed: true, sendError: emailResult.error };
       }
 
+      console.log(`Password reset email sent to ${email}`);
       return { success: true };
     } catch (error) {
       console.error("Password reset request error:", error);

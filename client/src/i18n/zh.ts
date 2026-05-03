@@ -126,6 +126,7 @@ export const zh = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "如果该邮箱存在对应账户，我们已发送密码重置链接。",
+    resetEmailFailed: '无法发送重置邮件。请稍后再试或联系支持。',
     sentTo: 'Sent to',
     checkSpam: "没看到邮件？请检查垃圾邮件文件夹，或使用其他邮箱重试。",
     tryDifferentEmail: 'Try a different email',

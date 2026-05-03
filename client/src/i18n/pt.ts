@@ -126,6 +126,7 @@ export const pt = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "Se uma conta existe com este e-mail, enviamos um link para redefinir a senha.",
+    resetEmailFailed: 'Não foi possível enviar o e-mail de redefinição. Tente novamente mais tarde ou contate o suporte.',
     sentTo: 'Sent to',
     checkSpam: "Não encontrou? Verifique sua pasta de spam ou tente com outro e-mail.",
     tryDifferentEmail: 'Try a different email',

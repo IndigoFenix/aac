@@ -126,6 +126,7 @@ export const es = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "Si existe una cuenta con este correo, hemos enviado un enlace para restablecer la contraseña.",
+    resetEmailFailed: 'No se pudo enviar el correo de restablecimiento. Inténtalo de nuevo más tarde o contacta con soporte.',
     sentTo: 'Sent to',
     checkSpam: "¿No lo ve? Revise su carpeta de spam o intente con otro correo electrónico.",
     tryDifferentEmail: 'Try a different email',

@@ -169,10 +169,22 @@ export class AuthController {
       // post-response work (the SMTP send) gets suspended mid-handshake and
       // the email never goes out. Awaiting first costs the SMTP latency on the
       // response but actually delivers the email.
-      await passwordResetService.requestPasswordReset(email, baseUrl);
+      const result = await passwordResetService.requestPasswordReset(email, baseUrl);
 
-      // Always return success regardless of outcome — never reveal whether the
-      // email maps to a real account.
+      // The user-existence side stays silent (success either way) — but if
+      // the SMTP send itself failed we surface a 502 so the frontend can
+      // tell the operator something is wrong with delivery instead of
+      // silently lying that the email was sent. Note this leaks "the email
+      // exists" when SMTP is broken; that's the deliberate tradeoff.
+      if (result.sendFailed) {
+        res.status(502).json({
+          success: false,
+          message: "Could not send the reset email. Please try again later or contact support.",
+          error: result.sendError,
+        });
+        return;
+      }
+
       res.json({
         success: true,
         message: "If an account with this email exists, a reset link has been sent",
@@ -767,14 +779,25 @@ export class AuthController {
 
       const baseUrl = getBaseUrl(req);
 
-      // Always return success for security
+      // Must await before responding (Lambda Web Adapter freezes the
+      // invocation at HTTP-response time — same bug as forgotPassword).
+      const result = await mfaService.requestRecovery(email, baseUrl);
+
+      // Surface SMTP delivery failure to the operator (same tradeoff as
+      // forgotPassword); user-existence still stays silent.
+      if (result.sendFailed) {
+        res.status(502).json({
+          success: false,
+          message: "Could not send the recovery email. Please try again later or contact support.",
+          error: result.sendError,
+        });
+        return;
+      }
+
       res.json({
         success: true,
         message: "If an account with MFA exists, a recovery link has been sent",
       });
-
-      // Process in background
-      await mfaService.requestRecovery(email, baseUrl);
     } catch (error: any) {
       console.error("MFA recovery request error:", error);
       res.json({

@@ -126,6 +126,7 @@ export const fr = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "Si un compte existe avec cet e-mail, nous avons envoyé un lien de réinitialisation du mot de passe.",
+    resetEmailFailed: "Impossible d'envoyer l'e-mail de réinitialisation. Veuillez réessayer plus tard ou contacter le support.",
     sentTo: 'Sent to',
     checkSpam: "Vous ne le trouvez pas ? Vérifiez votre dossier spam ou réessayez avec un autre e-mail.",
     tryDifferentEmail: 'Try a different email',

@@ -126,6 +126,7 @@ export const ko = {
     // Check Email (after submission)
     checkEmail: 'Check Your Email',
     resetEmailSent: "해당 이메일로 등록된 계정이 있으면 비밀번호 재설정 링크를 보냈습니다.",
+    resetEmailFailed: '재설정 이메일을 보낼 수 없습니다. 나중에 다시 시도하거나 지원팀에 문의해 주세요.',
     sentTo: 'Sent to',
     checkSpam: "이메일이 보이지 않나요? 스팸 폴더를 확인하거나 다른 이메일로 다시 시도해주세요.",
     tryDifferentEmail: 'Try a different email',
