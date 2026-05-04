@@ -238,6 +238,11 @@ const buttonDefSchema = z.object({
   buttonColor: z.string().optional(),
   effects: z.array(buttonEffectSchema).min(1),
   enabledByDefault: z.boolean().optional(),
+  section: z.enum(["before", "after"]).optional(),
+  row: z.number().int().nonnegative().optional(),
+  col: z.number().int().nonnegative().optional(),
+  rowSpan: z.number().int().positive().optional(),
+  colSpan: z.number().int().positive().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -256,11 +261,14 @@ const roomDefSchema = z.object({
   id: idSchema,
   label: z.string().optional(),
   aiInstructions: z.string().optional(),
-  size: gridSizeSchema,
+  size: gridSizeSchema.optional(),
   defaultTile: z.string().length(1).optional(),
   tiles: z.string().optional(),
   entities: z.array(roomEntityInstanceSchema).optional(),
   buttons: z.array(idSchema).optional(),
+  showBefore: z.boolean().optional(),
+  showGrid: z.boolean().optional(),
+  showAfter: z.boolean().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -420,41 +428,58 @@ function validateCrossRefs(
 
   // -- rooms
   for (const r of def.rooms) {
-    const [w, h] = r.size;
+    const gridShown = r.showGrid !== false;
 
-    if (r.tiles !== undefined) {
-      const lines = r.tiles.split("\n");
-      if (lines.length !== h) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `room "${r.id}" tiles has ${lines.length} rows but size height is ${h}`,
-        });
-      }
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].length !== w) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `room "${r.id}" tiles row ${i} has length ${lines[i].length} but size width is ${w}`,
-          });
-          break;
-        }
-      }
+    if (gridShown && !r.size) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `room "${r.id}" must define \`size\` when \`showGrid\` is not false`,
+      });
+    }
+    if ((r.tiles !== undefined || (r.entities && r.entities.length > 0)) && !r.size) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `room "${r.id}" defines tiles/entities but has no \`size\``,
+      });
     }
 
-    for (const e of r.entities ?? []) {
-      if (!classIds.has(e.classId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `room "${r.id}" entity references unknown class "${e.classId}"`,
-        });
-        continue;
+    if (r.size) {
+      const [w, h] = r.size;
+
+      if (r.tiles !== undefined) {
+        const lines = r.tiles.split("\n");
+        if (lines.length !== h) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `room "${r.id}" tiles has ${lines.length} rows but size height is ${h}`,
+          });
+        }
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].length !== w) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `room "${r.id}" tiles row ${i} has length ${lines[i].length} but size width is ${w}`,
+            });
+            break;
+          }
+        }
       }
-      const [x, y] = e.position;
-      if (x >= w || y >= h) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `room "${r.id}" entity at (${x},${y}) is outside room size ${w}x${h}`,
-        });
+
+      for (const e of r.entities ?? []) {
+        if (!classIds.has(e.classId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `room "${r.id}" entity references unknown class "${e.classId}"`,
+          });
+          continue;
+        }
+        const [x, y] = e.position;
+        if (x >= w || y >= h) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `room "${r.id}" entity at (${x},${y}) is outside room size ${w}x${h}`,
+          });
+        }
       }
     }
 

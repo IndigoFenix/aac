@@ -50,7 +50,8 @@ export function RoomEditor({
 }: RoomEditorProps) {
   const { t } = useLanguage();
   const { addRoomEntity, deleteRoomEntity } = useCustomAppStore();
-  const [w, h] = room.size;
+  const [w, h] = room.size ?? [1, 1];
+  const showGrid = room.showGrid !== false && !!room.size;
   const placementClass = useMemo(
     () => placementClassId ? definition.classes.find((c) => c.id === placementClassId) ?? null : null,
     [placementClassId, definition.classes],
@@ -145,7 +146,19 @@ export function RoomEditor({
         </div>
       )}
 
+      {!showGrid && (
+        <div
+          className={cn(
+            "rounded border px-3 py-2 text-xs italic",
+            isDark ? "border-slate-700 text-slate-400" : "border-gray-300 text-gray-500",
+          )}
+        >
+          {t("customApps.gridlessRoomHint")}
+        </div>
+      )}
+
       {/* Canvas */}
+      {showGrid && (
       <div
         className={cn(
           "relative shrink-0 self-start rounded border",
@@ -252,10 +265,13 @@ export function RoomEditor({
           }),
         )}
       </div>
+      )}
 
-      <div className={cn("text-xs", isDark ? "text-slate-500" : "text-gray-500")}>
-        {t("customApps.canvasHint")}
-      </div>
+      {showGrid && (
+        <div className={cn("text-xs", isDark ? "text-slate-500" : "text-gray-500")}>
+          {t("customApps.canvasHint")}
+        </div>
+      )}
     </div>
   );
 }

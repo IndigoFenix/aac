@@ -196,30 +196,49 @@ If \`other\` is specified and no matching entity is found, the trigger fails sil
 - \`{ type: "endTurn" }\`, \`{ type: "endPlayerTurn" }\`, \`{ type: "endAiTurn" }\` — no-ops if not turn-based
 - \`{ type: "sendAiInstruction", message }\` — one-shot, consumed on the AI's next turn
 
-## Buttons (sidebar)
+## Buttons
 
 \`\`\`
-{ id, label?, iconRef?, imageKey?, symbolPath?, imageColor?, buttonColor?, enabledByDefault?, effects: ButtonEffect[] }
+{
+  id, label?, iconRef?, imageKey?, symbolPath?, imageColor?, buttonColor?,
+  enabledByDefault?, effects: ButtonEffect[],
+  section?: "before" | "after",   // which side of the central grid (default: "before")
+  row?, col?, rowSpan?, colSpan?  // position within the section grid (see below)
+}
 \`\`\`
 
 The \`iconRef\`/\`imageKey\`/\`symbolPath\` trio follows the same rules as Class imagery — always set \`iconRef\` as a fallback.
 
 Button effects are any of the Class effects plus \`{ type: "createEntity", classId, position: [x,y], overrides? }\`.
 
+### Layout
+At play time the screen is divided into up to **three side-by-side sections**: \`before\` buttons | central grid | \`after\` buttons. Each is rendered only if visible in the current room (see Rooms). Buttons live in either the \`before\` or \`after\` section — there are no buttons inside the grid itself.
+
+Two layout modes for sections:
+- **When the central grid is visible** (the common case): each section is a single vertical column of its buttons in array order. \`row\`/\`col\`/\`colSpan\` are ignored. \`rowSpan\` controls a button's relative height (a button with \`rowSpan: 2\` is twice as tall as a default button in the same section).
+- **When the central grid is hidden** (a button-only room): each visible section becomes its own grid. Buttons are placed at \`(row, col)\` and may use \`rowSpan\`/\`colSpan\`. The section's grid is auto-sized to fit the largest \`row + rowSpan\` and \`col + colSpan\` of any button assigned to it.
+
+Defaults: \`section\` defaults to \`"before"\`. \`row\` defaults to the button's array index, \`col\`/\`rowSpan\`/\`colSpan\` default to 0/1/1.
+
 ## Rooms
 
 \`\`\`
 {
   id, label?, aiInstructions?,
-  size: [w, h],
+  size?: [w, h],                            // required when showGrid is not false
   defaultTile?: " ",                        // single character fill
   tiles?: string,                           // optional ASCII diagram. rows === h, each row length === w
   entities?: [{ classId, position, state?, overrides?, counters? }],
-  buttons?: string[]                        // button ids enabled in this room
+  buttons?: string[],                       // button ids enabled in this room
+  showBefore?: boolean,                     // default true
+  showGrid?: boolean,                       // default true; set false for button-only rooms
+  showAfter?: boolean                       // default true
 }
 \`\`\`
 
 Characters in \`tiles\` map to the class with matching \`char\`. Characters equal to \`defaultTile\` are skipped.
+
+A room may be **gridless** (\`showGrid: false\`) when the game is button-driven — in that case omit \`size\`, \`tiles\`, and \`entities\`, and the visible button sections share the screen as their own grids.
 
 ## Evaluation order (what will happen at runtime)
 
@@ -256,6 +275,8 @@ manageMemory({ ops: [{ action: "view", path: "/Context_CustomApp" }] })
 - Give every class a \`label\`, \`iconRef\`, and \`tileColor\` so the game renders legibly even before images exist.
 - When two things should interact, put the interaction on the one that's doing the action (e.g. the \`movable\` entity has the \`onMoved\` trigger, not the receiver).
 - For win conditions, use a counter on a hidden "scoreboard" entity and have the triggering interactions \`incrementCounterOther\` on it.
+- Default buttons to the \`before\` section. Reach for \`after\` only when there is a real reason to split (e.g. tools on one side, navigation on the other).
+- Use \`showGrid: false\` for menu screens, multiple-choice questions, or any room where positional layout doesn't matter — let the buttons fill the screen as their own grid.
 
 When creating or modifying a game, use manageMemory and briefly explain what you changed.`;
 

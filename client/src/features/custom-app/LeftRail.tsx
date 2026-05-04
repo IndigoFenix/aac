@@ -274,7 +274,7 @@ function RoomRow({
   onClick: () => void;
   isDark: boolean;
 }) {
-  const [w, h] = room.size;
+  const sizeLabel = room.size ? `${room.size[0]}×${room.size[1]}` : "—";
   return (
     <Row active={active} onClick={() => onClick()} isDark={isDark} title={room.id}>
       {isStart ? (
@@ -284,7 +284,7 @@ function RoomRow({
       )}
       <span className="flex-1 truncate">{room.label ?? room.id}</span>
       <span className={cn("text-[10px]", isDark ? "text-slate-500" : "text-gray-400")}>
-        {w}×{h}
+        {sizeLabel}
       </span>
     </Row>
   );

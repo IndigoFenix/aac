@@ -192,6 +192,19 @@ export interface ClassDef {
 // Buttons
 // ---------------------------------------------------------------------------
 
+/**
+ * Which side of the central grid a button lives on.
+ * - "before": flanks the grid on the leading side (default)
+ * - "after":  flanks the grid on the trailing side
+ *
+ * When the central grid is hidden in a room, the visible sections behave as
+ * grids themselves — `row`/`col`/`rowSpan`/`colSpan` position the button
+ * inside that section grid. When the central grid is visible, buttons in a
+ * section are stacked vertically in array-index order; only `rowSpan` is
+ * meaningful (controls relative height).
+ */
+export type ButtonSection = "before" | "after";
+
 export interface ButtonDef {
   id: string;
   label?: string;
@@ -202,6 +215,14 @@ export interface ButtonDef {
   buttonColor?: string;
   effects: ButtonEffect[];
   enabledByDefault?: boolean;
+  /** Which flanking section the button lives in. Default: "before". */
+  section?: ButtonSection;
+  /** Grid coordinate within the section grid (only used when the room has no central grid). */
+  row?: number;
+  col?: number;
+  /** Optional spans. `rowSpan` is also honored in vertical-stack mode (relative height). */
+  rowSpan?: number;
+  colSpan?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +243,11 @@ export interface RoomDef {
   id: string;
   label?: string;
   aiInstructions?: string;
-  size: GridSize;
+  /**
+   * Grid size. Required when the central grid is visible (the default).
+   * May be omitted when `showGrid` is false (button-only rooms).
+   */
+  size?: GridSize;
   /** Single character fill for cells that don't resolve to a class in `tiles`. */
   defaultTile?: string;
   /** Optional ASCII room diagram. Dimensions must match `size`. */
@@ -230,6 +255,11 @@ export interface RoomDef {
   entities?: RoomEntityInstance[];
   /** Button ids enabled in this room. Buttons with enabledByDefault may be omitted. */
   buttons?: string[];
+
+  /** Section visibility flags. All default to `true`. */
+  showBefore?: boolean;
+  showGrid?: boolean;
+  showAfter?: boolean;
 }
 
 // ---------------------------------------------------------------------------

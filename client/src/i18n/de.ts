@@ -822,6 +822,18 @@ export const de = {
     matchSelf: "Match self",
     matchOther: "Match other",
     aiInstructionsPlaceholder: "Optional message sent to the AI when this interaction fires",
+    section: "Section",
+    sectionBefore: "Before",
+    sectionAfter: "After",
+    showBefore: "Show before-grid section",
+    showGrid: "Show grid",
+    showAfter: "Show after-grid section",
+    span: "Span",
+    rowSpan: "Row span",
+    colSpan: "Column span",
+    row: "Row",
+    column: "Column",
+    gridlessRoomHint: "This room has no grid; only buttons will appear.",
   },
 
   board: {

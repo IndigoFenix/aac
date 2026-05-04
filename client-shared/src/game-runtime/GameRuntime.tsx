@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   ButtonDef,
+  ButtonSection,
   GameDefinition,
   GridCoord,
   Layer,
@@ -110,7 +111,10 @@ export function GameRuntime({
   }, [apiRef, sendAction, state]);
 
   const room = getRoom(def, state.currentRoomId);
-  const [roomW, roomH] = room.size;
+  const showBefore = room.showBefore !== false;
+  const showGrid = room.showGrid !== false && !!room.size;
+  const showAfter = room.showAfter !== false;
+  const [roomW, roomH] = room.size ?? [1, 1];
 
   // Track drag state so we can validate/drop.
   const [dragging, setDragging] = useState<string | null>(null);
@@ -150,92 +154,94 @@ export function GameRuntime({
 
   // ---------- Rendering ----------
 
-  const cellSize = 64;
   const enabledButtons = def.buttons.filter((b) => state.buttons[b.id]?.enabled);
+  const beforeButtons = enabledButtons.filter((b) => (b.section ?? "before") === "before");
+  const afterButtons = enabledButtons.filter((b) => b.section === "after");
+
+  const renderBefore = showBefore && beforeButtons.length > 0;
+  const renderAfter = showAfter && afterButtons.length > 0;
 
   return (
-    <div className={className} style={{ display: "flex", gap: 12, padding: 12 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {onExit && (
-          <button onClick={onExit} style={{ padding: 6 }}>← Exit</button>
-        )}
-        {state.turnBased && (
-          <div style={{ fontSize: 12 }}>
-            Turn: <strong>{state.turn}</strong>
-          </div>
-        )}
+    <div
+      className={className}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+      }}
+    >
+      {/* Status bar (exit + turn). Only renders when there's something to show. */}
+      {(onExit || state.turnBased) && (
         <div
           style={{
-            position: "relative",
-            width: roomW * cellSize,
-            height: roomH * cellSize,
-            border: "1px solid #444",
-            background: "#1e293b",
-            userSelect: "none",
+            padding: 8,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            flexShrink: 0,
           }}
         >
-          {/* Grid cells (for click/drop targets) */}
-          {Array.from({ length: roomH }).map((_, y) =>
-            Array.from({ length: roomW }).map((_, x) => {
-              const cell: GridCoord = [x, y];
-              const isHover = hoverCell && hoverCell[0] === x && hoverCell[1] === y;
-              return (
-                <div
-                  key={`cell-${x}-${y}`}
-                  onClick={() => handleCellClick(cell)}
-                  onDragOver={(e) => {
-                    if (dragging) {
-                      e.preventDefault();
-                      setHoverCell(cell);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handleDrop(cell);
-                  }}
-                  style={{
-                    position: "absolute",
-                    left: x * cellSize,
-                    top: y * cellSize,
-                    width: cellSize,
-                    height: cellSize,
-                    boxSizing: "border-box",
-                    border: "1px solid #334155",
-                    background: isHover ? "rgba(255,255,255,0.08)" : "transparent",
-                  }}
-                />
-              );
-            }),
+          {onExit && (
+            <button onClick={onExit} style={{ padding: 6 }}>← Exit</button>
           )}
-
-          {/* Entities — grouped by layer for consistent z-order */}
-          {LAYER_ORDER.map((layerName) => (
-            <LayerGroup
-              key={layerName}
-              layerName={layerName}
-              state={state}
-              def={def}
-              cellSize={cellSize}
-              dragging={dragging}
-              setDragging={setDragging}
-              setHoverCell={setHoverCell}
-              resolveImage={resolveImage}
-              onDropOnContainer={handleDropOnContainer}
-              onDropOnCell={handleDrop}
-              onCellClick={handleCellClick}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Sidebar buttons */}
-      {enabledButtons.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 120 }}>
-          {enabledButtons.map((b) => (
-            <SidebarButton key={b.id} button={b} onClick={() => handleButtonClick(b.id)} resolveImage={resolveImage} />
-          ))}
+          {state.turnBased && (
+            <div style={{ fontSize: 12 }}>
+              Turn: <strong>{state.turn}</strong>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Three-section layout: before | grid | after. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          alignItems: "stretch",
+          justifyContent: "center",
+          gap: 8,
+          padding: 8,
+        }}
+      >
+        {renderBefore && (
+          <ButtonSectionView
+            section="before"
+            buttons={beforeButtons}
+            mode={showGrid ? "stack" : "grid"}
+            onButtonClick={handleButtonClick}
+            resolveImage={resolveImage}
+          />
+        )}
+
+        {showGrid && (
+          <GridArea
+            roomW={roomW}
+            roomH={roomH}
+            state={state}
+            def={def}
+            dragging={dragging}
+            setDragging={setDragging}
+            hoverCell={hoverCell}
+            setHoverCell={setHoverCell}
+            resolveImage={resolveImage}
+            onDropOnContainer={handleDropOnContainer}
+            onDropOnCell={handleDrop}
+            onCellClick={handleCellClick}
+          />
+        )}
+
+        {renderAfter && (
+          <ButtonSectionView
+            section="after"
+            buttons={afterButtons}
+            mode={showGrid ? "stack" : "grid"}
+            onButtonClick={handleButtonClick}
+            resolveImage={resolveImage}
+          />
+        )}
+      </div>
 
       {/* Inventory modal */}
       {inventoryFor && state.entities[inventoryFor] && (
@@ -253,6 +259,108 @@ export function GameRuntime({
 }
 
 // ---------------------------------------------------------------------------
+// Grid area — central section. Uses an aspect-ratio container so cells stay
+// square and the grid scales to fill available space without overflowing.
+// ---------------------------------------------------------------------------
+
+function GridArea({
+  roomW,
+  roomH,
+  state,
+  def,
+  dragging,
+  setDragging,
+  hoverCell,
+  setHoverCell,
+  resolveImage,
+  onDropOnContainer,
+  onDropOnCell,
+  onCellClick,
+}: {
+  roomW: number;
+  roomH: number;
+  state: RuntimeState;
+  def: GameDefinition;
+  dragging: string | null;
+  setDragging: (uid: string | null) => void;
+  hoverCell: GridCoord | null;
+  setHoverCell: (cell: GridCoord | null) => void;
+  resolveImage?: (ref: string) => string | undefined;
+  onDropOnContainer: (uid: string) => void;
+  onDropOnCell: (cell: GridCoord) => void;
+  onCellClick: (cell: GridCoord) => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        aspectRatio: `${roomW} / ${roomH}`,
+        height: "100%",
+        maxWidth: "100%",
+        maxHeight: "100%",
+        border: "1px solid #444",
+        background: "#1e293b",
+        userSelect: "none",
+        flex: "0 1 auto",
+      }}
+    >
+      {/* Grid cells (for click/drop targets) */}
+      {Array.from({ length: roomH }).map((_, y) =>
+        Array.from({ length: roomW }).map((_, x) => {
+          const cell: GridCoord = [x, y];
+          const isHover = hoverCell && hoverCell[0] === x && hoverCell[1] === y;
+          return (
+            <div
+              key={`cell-${x}-${y}`}
+              onClick={() => onCellClick(cell)}
+              onDragOver={(e) => {
+                if (dragging) {
+                  e.preventDefault();
+                  setHoverCell(cell);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                onDropOnCell(cell);
+              }}
+              style={{
+                position: "absolute",
+                left: `${(x / roomW) * 100}%`,
+                top: `${(y / roomH) * 100}%`,
+                width: `${100 / roomW}%`,
+                height: `${100 / roomH}%`,
+                boxSizing: "border-box",
+                border: "1px solid #334155",
+                background: isHover ? "rgba(255,255,255,0.08)" : "transparent",
+              }}
+            />
+          );
+        }),
+      )}
+
+      {/* Entities — grouped by layer for consistent z-order */}
+      {LAYER_ORDER.map((layerName) => (
+        <LayerGroup
+          key={layerName}
+          layerName={layerName}
+          state={state}
+          def={def}
+          roomW={roomW}
+          roomH={roomH}
+          dragging={dragging}
+          setDragging={setDragging}
+          setHoverCell={setHoverCell}
+          resolveImage={resolveImage}
+          onDropOnContainer={onDropOnContainer}
+          onDropOnCell={onDropOnCell}
+          onCellClick={onCellClick}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Subcomponents
 // ---------------------------------------------------------------------------
 
@@ -260,7 +368,8 @@ function LayerGroup({
   layerName,
   state,
   def,
-  cellSize,
+  roomW,
+  roomH,
   dragging,
   setDragging,
   setHoverCell,
@@ -272,7 +381,8 @@ function LayerGroup({
   layerName: Layer;
   state: RuntimeState;
   def: GameDefinition;
-  cellSize: number;
+  roomW: number;
+  roomH: number;
   dragging: string | null;
   setDragging: (uid: string | null) => void;
   setHoverCell: (cell: GridCoord | null) => void;
@@ -348,10 +458,10 @@ function LayerGroup({
             }}
             style={{
               position: "absolute",
-              left: e.position[0] * cellSize,
-              top: e.position[1] * cellSize,
-              width: w * cellSize,
-              height: h * cellSize,
+              left: `${(e.position[0] / roomW) * 100}%`,
+              top: `${(e.position[1] / roomH) * 100}%`,
+              width: `${(w / roomW) * 100}%`,
+              height: `${(h / roomH) * 100}%`,
               boxSizing: "border-box",
               border: isContainer ? "2px dashed #94a3b8" : undefined,
               background: resolveColor(e, cls, "tileColor") ?? undefined,
@@ -375,14 +485,107 @@ function LayerGroup({
   );
 }
 
-function SidebarButton({
+/**
+ * One flanking section (before / after the central grid).
+ *
+ * - `stack` mode: vertical column ordered by array index. `rowSpan` controls
+ *    each button's relative height via flex-grow (default 1).
+ * - `grid` mode (used when the central grid is hidden): CSS Grid sized to
+ *    `max(row + rowSpan)` rows × `max(col + colSpan)` cols, with each button
+ *    placed via grid-row/grid-column.
+ */
+function ButtonSectionView({
+  section,
+  buttons,
+  mode,
+  onButtonClick,
+  resolveImage,
+}: {
+  section: ButtonSection;
+  buttons: ButtonDef[];
+  mode: "stack" | "grid";
+  onButtonClick: (id: string) => void;
+  resolveImage?: (ref: string) => string | undefined;
+}) {
+  if (mode === "stack") {
+    return (
+      <div
+        data-button-section={section}
+        style={{
+          flex: 1,
+          minWidth: 80,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        {buttons.map((b) => (
+          <SectionButton
+            key={b.id}
+            button={b}
+            onClick={() => onButtonClick(b.id)}
+            resolveImage={resolveImage}
+            style={{ flex: `${b.rowSpan ?? 1} 0 0`, minHeight: 0 }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Grid mode — auto-size from the buttons' own row/col/spans, defaulting any
+  // missing positions to (row, 0) where row is the array index.
+  let cols = 1;
+  let rows = 0;
+  const placed = buttons.map((b, i) => {
+    const row = b.row ?? i;
+    const col = b.col ?? 0;
+    const rowSpan = b.rowSpan ?? 1;
+    const colSpan = b.colSpan ?? 1;
+    rows = Math.max(rows, row + rowSpan);
+    cols = Math.max(cols, col + colSpan);
+    return { b, row, col, rowSpan, colSpan };
+  });
+  if (rows === 0) rows = 1;
+
+  return (
+    <div
+      data-button-section={section}
+      style={{
+        flex: 1,
+        minWidth: 80,
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateRows: `repeat(${rows}, 1fr)`,
+        gap: 8,
+      }}
+    >
+      {placed.map(({ b, row, col, rowSpan, colSpan }) => (
+        <SectionButton
+          key={b.id}
+          button={b}
+          onClick={() => onButtonClick(b.id)}
+          resolveImage={resolveImage}
+          style={{
+            gridRow: `${row + 1} / span ${rowSpan}`,
+            gridColumn: `${col + 1} / span ${colSpan}`,
+            minHeight: 0,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SectionButton({
   button,
   onClick,
   resolveImage,
+  style,
 }: {
   button: ButtonDef;
   onClick: () => void;
   resolveImage?: (ref: string) => string | undefined;
+  style?: React.CSSProperties;
 }) {
   const symbolPath = button.symbolPath;
   const imageUrl = symbolPath ? (resolveImage?.(symbolPath) ?? symbolPath) : undefined;
@@ -399,15 +602,24 @@ function SidebarButton({
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
+        justifyContent: "center",
         gap: 4,
+        overflow: "hidden",
+        ...style,
       }}
     >
       {imageUrl ? (
-        <img src={imageUrl} alt={button.label ?? button.id} style={{ width: 36, height: 36 }} />
+        <img
+          src={imageUrl}
+          alt={button.label ?? button.id}
+          style={{ maxWidth: "60%", maxHeight: "60%", objectFit: "contain" }}
+        />
       ) : button.iconRef ? (
         <span style={{ fontSize: 28 }}>{button.iconRef}</span>
       ) : null}
-      <span>{button.label ?? button.id}</span>
+      <span style={{ fontSize: 14, textAlign: "center" }}>
+        {button.label ?? button.id}
+      </span>
     </button>
   );
 }

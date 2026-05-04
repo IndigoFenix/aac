@@ -183,11 +183,13 @@ function RoomPropertiesPanel({
   const isStart = definition.startRoom === room.id;
 
   const patch = (p: Partial<RoomDef>) => upsertRoom({ ...room, ...p });
+  const showGrid = room.showGrid !== false;
+  const size = room.size ?? [1, 1];
 
   const handleResize = (w: number, h: number) => {
     const safeW = Math.max(1, Math.min(64, w));
     const safeH = Math.max(1, Math.min(64, h));
-    if (safeW === room.size[0] && safeH === room.size[1]) return;
+    if (safeW === size[0] && safeH === size[1]) return;
     const wouldClip = (room.entities ?? []).some(
       (e) => e.position[0] >= safeW || e.position[1] >= safeH,
     );
@@ -238,35 +240,61 @@ function RoomPropertiesPanel({
             onChange={(e) => patch({ label: e.target.value || undefined })}
           />
         </Field>
-        <Field label={t("customApps.size")}>
-          <div className="flex items-center gap-1">
-            <Input
-              type="number"
-              min={1}
-              max={64}
-              className="w-20"
-              value={room.size[0]}
-              onChange={(e) => handleResize(Number(e.target.value), room.size[1])}
-            />
-            <span>×</span>
-            <Input
-              type="number"
-              min={1}
-              max={64}
-              className="w-20"
-              value={room.size[1]}
-              onChange={(e) => handleResize(room.size[0], Number(e.target.value))}
-            />
-          </div>
-        </Field>
-        <Field label={t("customApps.defaultTile")}>
-          <Input
-            value={room.defaultTile ?? ""}
-            onChange={(e) => patch({ defaultTile: e.target.value.slice(0, 1) || undefined })}
-            maxLength={1}
-            className="w-16"
-          />
-        </Field>
+        <Toggle
+          label={t("customApps.showBefore")}
+          checked={room.showBefore !== false}
+          onChange={(v) => patch({ showBefore: v ? undefined : false })}
+        />
+        <Toggle
+          label={t("customApps.showGrid")}
+          checked={showGrid}
+          onChange={(v) => {
+            // When turning the grid on, ensure size exists.
+            if (v) {
+              patch({ showGrid: undefined, size: room.size ?? [8, 8] });
+            } else {
+              patch({ showGrid: false });
+            }
+          }}
+        />
+        <Toggle
+          label={t("customApps.showAfter")}
+          checked={room.showAfter !== false}
+          onChange={(v) => patch({ showAfter: v ? undefined : false })}
+        />
+        {showGrid && (
+          <>
+            <Field label={t("customApps.size")}>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={1}
+                  max={64}
+                  className="w-20"
+                  value={size[0]}
+                  onChange={(e) => handleResize(Number(e.target.value), size[1])}
+                />
+                <span>×</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={64}
+                  className="w-20"
+                  value={size[1]}
+                  onChange={(e) => handleResize(size[0], Number(e.target.value))}
+                />
+              </div>
+            </Field>
+            <Field label={t("customApps.defaultTile")}>
+              <Input
+                value={room.defaultTile ?? ""}
+                onChange={(e) => patch({ defaultTile: e.target.value.slice(0, 1) || undefined })}
+                maxLength={1}
+                className="w-16"
+              />
+            </Field>
+          </>
+        )}
         <Toggle
           label={t("customApps.startRoomFlag")}
           checked={isStart}
@@ -288,15 +316,17 @@ function RoomPropertiesPanel({
             rows={3}
           />
         </Field>
-        <Field label={t("customApps.tilesAscii")}>
-          <Textarea
-            value={room.tiles ?? ""}
-            onChange={(e) => patch({ tiles: e.target.value || undefined })}
-            rows={Math.min(8, room.size[1])}
-            className={cn("font-mono text-xs", isDark ? "bg-slate-950" : "bg-gray-50")}
-            placeholder={`${room.size[0]}×${room.size[1]} ${t("customApps.tilesPlaceholder")}`}
-          />
-        </Field>
+        {showGrid && (
+          <Field label={t("customApps.tilesAscii")}>
+            <Textarea
+              value={room.tiles ?? ""}
+              onChange={(e) => patch({ tiles: e.target.value || undefined })}
+              rows={Math.min(8, size[1])}
+              className={cn("font-mono text-xs", isDark ? "bg-slate-950" : "bg-gray-50")}
+              placeholder={`${size[0]}×${size[1]} ${t("customApps.tilesPlaceholder")}`}
+            />
+          </Field>
+        )}
       </div>
     </div>
   );
@@ -392,9 +422,10 @@ function EntityInstanceEditor({
     });
   };
 
+  const roomSize = room.size ?? [1, 1];
   const setPosition = (x: number, y: number) => {
-    const safeX = Math.max(0, Math.min(room.size[0] - 1, x));
-    const safeY = Math.max(0, Math.min(room.size[1] - 1, y));
+    const safeX = Math.max(0, Math.min(roomSize[0] - 1, x));
+    const safeY = Math.max(0, Math.min(roomSize[1] - 1, y));
     updateRoomEntity(roomId, index, { position: [safeX, safeY] });
   };
 
@@ -434,7 +465,7 @@ function EntityInstanceEditor({
             <Input
               type="number"
               min={0}
-              max={room.size[0] - 1}
+              max={roomSize[0] - 1}
               className="w-20"
               value={entity.position[0]}
               onChange={(e) => setPosition(Number(e.target.value), entity.position[1])}
@@ -443,7 +474,7 @@ function EntityInstanceEditor({
             <Input
               type="number"
               min={0}
-              max={room.size[1] - 1}
+              max={roomSize[1] - 1}
               className="w-20"
               value={entity.position[1]}
               onChange={(e) => setPosition(entity.position[0], Number(e.target.value))}
@@ -642,6 +673,78 @@ function ButtonEditor({
           checked={!!btn.enabledByDefault}
           onChange={(v) => patch({ enabledByDefault: v || undefined })}
         />
+        <Field label={t("customApps.section")}>
+          <Select
+            value={btn.section ?? "before"}
+            onValueChange={(v) =>
+              patch({ section: v === "after" ? "after" : undefined })
+            }
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="before">{t("customApps.sectionBefore")}</SelectItem>
+              <SelectItem value="after">{t("customApps.sectionAfter")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t("customApps.position")}>
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              min={0}
+              className="w-20"
+              placeholder={t("customApps.row")}
+              value={btn.row ?? ""}
+              onChange={(e) =>
+                patch({
+                  row: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
+                })
+              }
+            />
+            <span>,</span>
+            <Input
+              type="number"
+              min={0}
+              className="w-20"
+              placeholder={t("customApps.column")}
+              value={btn.col ?? ""}
+              onChange={(e) =>
+                patch({
+                  col: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
+                })
+              }
+            />
+          </div>
+        </Field>
+        <Field label={t("customApps.span")}>
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              min={1}
+              className="w-20"
+              placeholder={t("customApps.rowSpan")}
+              value={btn.rowSpan ?? ""}
+              onChange={(e) =>
+                patch({
+                  rowSpan: e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
+                })
+              }
+            />
+            <span>×</span>
+            <Input
+              type="number"
+              min={1}
+              className="w-20"
+              placeholder={t("customApps.colSpan")}
+              value={btn.colSpan ?? ""}
+              onChange={(e) =>
+                patch({
+                  colSpan: e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
+                })
+              }
+            />
+          </div>
+        </Field>
         <Field label={t("customApps.effects")}>
           <EffectsListEditor
             value={btn.effects}
