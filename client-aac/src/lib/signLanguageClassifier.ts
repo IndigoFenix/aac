@@ -1,6 +1,6 @@
 // client-aac/src/lib/signLanguageClassifier.ts
 // Pure JS sign language classifier — no dependencies.
-// Runs a lightweight MLP on MediaPipe hand landmarks to classify ASL/ISL signs.
+// Runs a lightweight MLP on MediaPipe hand landmarks to classify sign-language gestures.
 
 import type { HandLandmark } from "./handGestureTypes";
 
@@ -14,7 +14,7 @@ export interface SignLanguageModelLayer {
 }
 
 export interface SignLanguageModel {
-  locale: string;           // e.g. "asl", "isl"
+  locale: string;           // e.g. "asl", "isr"
   name: string;             // human-readable name
   labels: string[];         // class labels (e.g. ["A", "B", "C", ...])
   inputSize: number;        // expected input vector length (63 for 21 landmarks * 3)

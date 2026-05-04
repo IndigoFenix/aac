@@ -2331,6 +2331,14 @@ export const yue = {
     inputSourceGazepoint: "Gazepoint 眼動追蹤器",
     inputSourceWebhid: "WebHID 裝置",
     inputSourceHint: "用滑鼠游標做測試，或揀控制游標嘅外部眼動追蹤器。",
+    // Sign language
+    signLanguage: "手語識別",
+    signLanguageDesc: "透過鏡頭識別手語動作，每完成一個短語就以陳述形式發送給 AI",
+    signLanguageLabel: "手語",
+    signLanguageNone: "關閉",
+    signLanguageAsl: "美國手語 (ASL)",
+    signLanguageIsr: "以色列手語 (ISR)",
+    signLanguageHint: "啟用後，鏡頭會分類每個偵測到嘅手勢。短暫停頓後，組成嘅短語會以文字陳述形式發送俾 AI。",
     // Chat prompt
     chatBehavior: "對話代理行為",
     chatBehaviorDesc: "自訂 AI 助手點樣回應呢個{{STUDENT}}",

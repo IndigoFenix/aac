@@ -2331,6 +2331,14 @@ export const fr = {
     inputSourceGazepoint: "Eye-tracker Gazepoint",
     inputSourceWebhid: "Périphérique WebHID",
     inputSourceHint: "Utilisez le curseur de la souris pour les tests, ou sélectionnez un eye-tracker externe qui contrôle le curseur.",
+    // Sign language
+    signLanguage: "Reconnaissance de la langue des signes",
+    signLanguageDesc: "Reconnaître les gestes de la langue des signes via la caméra et envoyer chaque phrase complète à l'IA comme déclaration",
+    signLanguageLabel: "Langue des signes",
+    signLanguageNone: "Désactivé",
+    signLanguageAsl: "Langue des signes américaine (ASL)",
+    signLanguageIsr: "Langue des signes israélienne (ISR)",
+    signLanguageHint: "Lorsqu'activé, la caméra classe chaque signe manuel détecté. Après une courte pause, la phrase obtenue est envoyée à l'IA comme une déclaration écrite.",
     // Chat prompt
     chatBehavior: "Comportement de l'agent de chat",
     chatBehaviorDesc: "Personnaliser la façon dont l'assistant IA répond à ce {{STUDENT}}",

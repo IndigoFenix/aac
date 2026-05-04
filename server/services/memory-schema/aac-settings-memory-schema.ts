@@ -77,7 +77,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "iconTextRatio", "usePcsSymbols",
     "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider",
-    "signLanguageReading", "multiCameraMode",
+    "signLanguage", "multiCameraMode",
     "allowReadProgress", "allowReadReports", "allowNotes",
     "appConfig", "chatAgentPrompt",
   ]);
@@ -300,11 +300,11 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       title: "Eyegaze Provider",
       description: "'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'",
     },
-    signLanguageReading: {
-      id: "signLanguageReading",
+    signLanguage: {
+      id: "signLanguage",
       type: "string",
-      title: "Sign Language Reading",
-      description: "Enable sign language detection (true/false)",
+      title: "Sign Language",
+      description: "Sign language code to recognize ('asl', 'isr'); empty/null disables detection",
     },
     multiCameraMode: {
       id: "multiCameraMode",

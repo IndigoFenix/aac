@@ -2331,6 +2331,14 @@ export const he = {
     inputSourceGazepoint: "עוקב עין Gazepoint",
     inputSourceWebhid: "התקן WebHID",
     inputSourceHint: "השתמש בסמן העכבר לבדיקות, או בחר עוקב עין חיצוני השולט בסמן.",
+    // Sign language
+    signLanguage: "זיהוי שפת סימנים",
+    signLanguageDesc: "זהה תנועות שפת סימנים דרך המצלמה ושלח כל ביטוי מושלם ל-AI כהצהרה",
+    signLanguageLabel: "שפת סימנים",
+    signLanguageNone: "כבוי",
+    signLanguageAsl: "שפת סימנים אמריקאית (ASL)",
+    signLanguageIsr: "שפת סימנים ישראלית (ISR)",
+    signLanguageHint: "כשהאפשרות מופעלת, המצלמה מסווגת כל סימן יד שמזוהה. לאחר הפסקה קצרה הביטוי המתקבל נשלח ל-AI כהצהרה מודפסת.",
     // Chat prompt
     chatBehavior: "התנהגות סוכן צ'אט",
     chatBehaviorDesc: "התאם את אופן התגובה של עוזר ה-AI ל{{STUDENT}} זה",

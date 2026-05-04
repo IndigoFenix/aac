@@ -44,6 +44,8 @@ import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
 import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
+import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
+import { isValidSignLanguageCode } from "@/i18n";
 import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
@@ -486,17 +488,37 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     enabled: handGestureEnabled,
   });
 
+  // Sign-language source of truth: AAC settings (clinician-controlled),
+  // falling back to the LanguageContext value (AAC-side override).
+  const settingsSignLanguage = (() => {
+    const v = userProfile?.aacSettings?.signLanguage;
+    return typeof v === "string" && isValidSignLanguageCode(v) ? v : null;
+  })();
+  const activeSignLanguage = settingsSignLanguage ?? signLanguage;
+
   // Sign language classifier: augments raw hands with sign language classifications
   const augmentedHands = useSignLanguageClassifier({
     hands: rawHands,
-    signLanguage,
+    signLanguage: activeSignLanguage,
   });
 
   // Hand gesture event accumulation (derives semantic events from gestures + landmarks)
   const { trackedHands } = useHandGestureEvents({
     hands: augmentedHands,
     enabled: handGestureEnabled,
-    config: signLanguage ? { signLanguageLocale: signLanguage } : undefined,
+    config: activeSignLanguage ? { signLanguageLocale: activeSignLanguage } : undefined,
+  });
+
+  // Buffer recognized signs into a phrase and submit on pause as a user
+  // statement. Only active while the AI session is live and a sign language
+  // is selected — otherwise we'd dispatch with no live agent listening.
+  useSignLanguagePhrase({
+    trackedHands,
+    enabled: !!activeSignLanguage && aiSessionActive,
+    onPhraseComplete: (phrase) => {
+      console.log(`[SignLanguage] Phrase complete: "${phrase}"`);
+      sendMessageFnRef.current?.(phrase);
+    },
   });
 
   // Get current identified person (non-blocking getter for dual-agent)

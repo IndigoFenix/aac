@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
-import axolotlLogo from "@assets/axolotl-logo.png";
+const axolotlLogo = `${import.meta.env.BASE_URL}aac-avatars/axolotl/axolotl-logo.png`;
 
 export default function InitializationLoadingScreen() {
   const {

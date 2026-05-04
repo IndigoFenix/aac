@@ -2331,6 +2331,14 @@ export const ru = {
     inputSourceGazepoint: "Айтрекер Gazepoint",
     inputSourceWebhid: "Устройство WebHID",
     inputSourceHint: "Используйте курсор мыши для тестирования или выберите внешний айтрекер, управляющий курсором.",
+    // Sign language
+    signLanguage: "Распознавание жестового языка",
+    signLanguageDesc: "Распознавать жесты языка через камеру и отправлять каждую завершённую фразу ИИ как высказывание",
+    signLanguageLabel: "Жестовый язык",
+    signLanguageNone: "Выключено",
+    signLanguageAsl: "Американский жестовый язык (ASL)",
+    signLanguageIsr: "Израильский жестовый язык (ISR)",
+    signLanguageHint: "Если включено, камера классифицирует каждый обнаруженный жест. После короткой паузы получившаяся фраза отправляется ИИ как текстовое высказывание.",
     // Chat prompt
     chatBehavior: "Поведение чат-агента",
     chatBehaviorDesc: "Настройте, как ИИ-помощник отвечает этому {{STUDENT}}",

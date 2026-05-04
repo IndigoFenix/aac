@@ -13,7 +13,7 @@ interface HomeButtonDef {
   labels: Record<string, string>;
   icon: string;
   imageKey?: string;
-  /** Static icon path served from /icons/ (overrides emoji when set) */
+  /** Static icon path served from /aac-buttons/main-menu/ (overrides emoji when set) */
   staticIcon?: string;
   /** Instruction sent to the AI when this button is pressed (via exit action text) */
   instruction: string;
@@ -24,14 +24,14 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     id: "home_interact",
     labels: { en: "Interact", he: "דבר איתי" },
     icon: "🗣️",
-    staticIcon: "/icons/ai_talking.png",
+    staticIcon: "/aac-buttons/main-menu/ai_talking.png",
     instruction: "[INTERACT] The user wants to talk to you. Switch to Interaction Mode. Rebuild the board with conversation starters and topics relevant to the student's interests.",
   },
   {
     id: "home_talk",
     labels: { en: "Talk", he: "אני מדבר" },
     icon: "💬",
-    staticIcon: "/icons/human_talking.png",
+    staticIcon: "/aac-buttons/main-menu/human_talking.png",
     instruction: "[ASSIST] The user is talking to someone else. Switch to Assist Mode. Rebuild the board with phrases and responses the student might want to say in a conversation.",
   },
   {
@@ -51,7 +51,7 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     labels: { en: "Feelings", he: "רגשות" },
     icon: "😊",
     imageKey: "feelings",
-    staticIcon: "/icons/feelings.png",
+    staticIcon: "/aac-buttons/main-menu/feelings.png",
     instruction: "[FEELINGS] The user wants to express their feelings. Rebuild the board with emotion buttons (happy, sad, tired, excited, angry, scared, bored, etc.).",
   },
   {
@@ -59,7 +59,7 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     labels: { en: "Help", he: "עזרה" },
     icon: "⚠️",
     imageKey: "person_help",
-    staticIcon: "/icons/person_help.png",
+    staticIcon: "/aac-buttons/main-menu/person_help.png",
     instruction: "[HELP] The user needs help with something. Rebuild the board with common requests: I need help, I'm hurt, I need the bathroom, I'm hungry, I'm thirsty, I'm cold/hot, call someone, etc.",
   },
   {
@@ -74,7 +74,7 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     labels: { en: "I'm thinking about", he: "אני חושב על" },
     icon: "🤔",
     imageKey: "person_thinking",
-    staticIcon: "/icons/person_thinking.png",
+    staticIcon: "/aac-buttons/main-menu/person_thinking.png",
     instruction: "[GUESSING MODE] The user wants help expressing a specific thought. Enter Guessing Mode — start by offering broad categories (Actions, People, Things, Places, Feelings, Time) and narrow down from there.",
   },
 ];

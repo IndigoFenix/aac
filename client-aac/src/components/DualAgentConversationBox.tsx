@@ -25,29 +25,27 @@ import {
   Zap,
   ScanSearch,
 } from "lucide-react";
-// Emotion-based avatar body images
-import avatarHappy from "@assets/axolotl-happy.png";
-import avatarSad from "@assets/axolotl-sad.png";
-import avatarNeutral from "@assets/axolotl-neutral.png";
-// Mouth overlays (closed)
-import mouthHappy from "@assets/axolotl-mouth-happy.png";
-import mouthSad from "@assets/axolotl-mouth-sad.png";
-import mouthNeutral from "@assets/axolotl-mouth-neutral.png";
-// Mouth overlays (open — speaking)
-import mouthHappyOpen from "@assets/axolotl-mouth-happy-open.png";
-import mouthSadOpen from "@assets/axolotl-mouth-sad-open.png";
-import mouthNeutralOpen from "@assets/axolotl-mouth-neutral-open.png";
-// Sleep / rest images
-import avatarSleep from "@assets/axolotl-sleep.png";
-import avatarRest from "@assets/axolotl-rest.png";
-// Cave images (sleep toggle)
-import caveEmpty from "@assets/axolotl-cave-empty.png";
-import caveRest from "@assets/axolotl-cave-rest.png";
-import caveSleep from "@assets/axolotl-cave-sleep.png";
-// Error image
-import avatarError from "@assets/axolotl-error.png";
-// Glasses overlay (focus frame)
-import avatarGlasses from "@assets/axolotl-glasses.png";
+// Axolotl avatar assets are served as static files from
+// client-aac/public/aac-avatars/axolotl/ — keeps stable filenames in dist
+// (no Vite content hashes) and works for both dev (BASE_URL = "/") and
+// production (BASE_URL = "/aac/").
+const AXOLOTL_BASE = `${import.meta.env.BASE_URL}aac-avatars/axolotl`;
+const avatarHappy = `${AXOLOTL_BASE}/axolotl-happy.png`;
+const avatarSad = `${AXOLOTL_BASE}/axolotl-sad.png`;
+const avatarNeutral = `${AXOLOTL_BASE}/axolotl-neutral.png`;
+const mouthHappy = `${AXOLOTL_BASE}/axolotl-mouth-happy.png`;
+const mouthSad = `${AXOLOTL_BASE}/axolotl-mouth-sad.png`;
+const mouthNeutral = `${AXOLOTL_BASE}/axolotl-mouth-neutral.png`;
+const mouthHappyOpen = `${AXOLOTL_BASE}/axolotl-mouth-happy-open.png`;
+const mouthSadOpen = `${AXOLOTL_BASE}/axolotl-mouth-sad-open.png`;
+const mouthNeutralOpen = `${AXOLOTL_BASE}/axolotl-mouth-neutral-open.png`;
+const avatarSleep = `${AXOLOTL_BASE}/axolotl-sleep.png`;
+const avatarRest = `${AXOLOTL_BASE}/axolotl-rest.png`;
+const caveEmpty = `${AXOLOTL_BASE}/axolotl-cave-empty.png`;
+const caveRest = `${AXOLOTL_BASE}/axolotl-cave-rest.png`;
+const caveSleep = `${AXOLOTL_BASE}/axolotl-cave-sleep.png`;
+const avatarError = `${AXOLOTL_BASE}/axolotl-error.png`;
+const avatarGlasses = `${AXOLOTL_BASE}/axolotl-glasses.png`;
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";

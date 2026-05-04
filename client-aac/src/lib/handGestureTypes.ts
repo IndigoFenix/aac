@@ -29,7 +29,7 @@ export interface HandGestureEvent {
   confidence: number; // 0-1
   hand: 'Left' | 'Right';
   signLabel?: string;            // label from custom sign language model
-  signLanguageLocale?: string;   // e.g. 'asl', 'isl'
+  signLanguageLocale?: string;   // e.g. 'asl', 'isr'
 }
 
 // =============================================================================
@@ -97,7 +97,7 @@ export interface HandGestureConfig {
 
   // Sign language model (optional)
   signLanguageModelUrl: string | null;   // URL to .task model file
-  signLanguageLocale: string | null;     // e.g. 'asl', 'isl'
+  signLanguageLocale: string | null;     // e.g. 'asl', 'isr'
 }
 
 export const DEFAULT_HAND_GESTURE_CONFIG: HandGestureConfig = {

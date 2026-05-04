@@ -66,7 +66,9 @@ export function isValidLanguageCode(code: string): code is LanguageCode {
 // SIGN LANGUAGES
 // =============================================================================
 
-export type SignLanguageCode = "asl" | "isl";
+// `isr` is the ISO 639-3 code for Israeli Sign Language. We use it instead of
+// the ambiguous "ISL" (which also denotes Indian / Indonesian Sign Language).
+export type SignLanguageCode = "asl" | "isr";
 
 export interface SignLanguage {
   code: SignLanguageCode;
@@ -76,7 +78,7 @@ export interface SignLanguage {
 
 export const SUPPORTED_SIGN_LANGUAGES: SignLanguage[] = [
   { code: "asl", name: "American Sign Language", nativeName: "ASL" },
-  { code: "isl", name: "Israeli Sign Language", nativeName: "שפת הסימנים" },
+  { code: "isr", name: "Israeli Sign Language", nativeName: "שפת הסימנים" },
 ];
 
 export function isValidSignLanguageCode(code: string): code is SignLanguageCode {

@@ -3237,7 +3237,12 @@ When creating or referencing calendar events, interpret and speak in this local 
    * display, and rate-limit-bumps `recordContactSighting()` for matches.
    */
   private async recognizeFaces(
-    descriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>,
+    descriptors: Array<{
+      descriptor: number[];
+      boundingBox?: { x: number; y: number; w: number; h: number };
+      cameraRole?: "user" | "environment" | "unknown";
+      cameraLabel?: string;
+    }>,
   ): Promise<void> {
     if (!this.studentId) return;
 

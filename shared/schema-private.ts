@@ -464,7 +464,9 @@ export const aacSettings = pgTable("aac_settings", {
   dynamicBoardsEnabled: boolean("dynamic_boards_enabled").default(false).notNull(), // AI can generate/edit boards during AAC sessions
 
   // Input settings
-  signLanguageReading: boolean("sign_language_reading").default(false), // Sign language detection enabled
+  // Sign language code to recognize during AAC sessions ('asl', 'isr', etc.).
+  // Null disables sign language detection.
+  signLanguage: text("sign_language"),
   multiCameraMode: boolean("multi_camera_mode").default(false), // Multi-camera support
 
   // Eyegaze / dwell settings

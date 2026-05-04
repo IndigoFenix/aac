@@ -2331,6 +2331,14 @@ export const es = {
     inputSourceGazepoint: "Rastreador ocular Gazepoint",
     inputSourceWebhid: "Dispositivo WebHID",
     inputSourceHint: "Use el cursor del ratón para pruebas, o seleccione un rastreador ocular externo que controle el cursor.",
+    // Sign language
+    signLanguage: "Reconocimiento de lengua de señas",
+    signLanguageDesc: "Reconoce gestos de lengua de señas desde la cámara y envía cada frase completada a la IA como una declaración",
+    signLanguageLabel: "Lengua de señas",
+    signLanguageNone: "Desactivado",
+    signLanguageAsl: "Lengua de señas americana (ASL)",
+    signLanguageIsr: "Lengua de señas israelí (ISR)",
+    signLanguageHint: "Cuando está activado, la cámara clasifica cada signo manual detectado. Tras una breve pausa, la frase resultante se envía a la IA como una declaración escrita.",
     // Chat prompt
     chatBehavior: "Comportamiento del agente de chat",
     chatBehaviorDesc: "Personalizar cómo el asistente de IA responde a este {{STUDENT}}",

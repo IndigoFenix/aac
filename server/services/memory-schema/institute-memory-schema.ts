@@ -1958,7 +1958,7 @@ import {
         maximum: 5,
       },
       usePcsSymbols: { id: "usePcsSymbols", type: "boolean", description: "Use PCS symbols instead of emoji" },
-      signLanguageReading: { id: "signLanguageReading", type: "boolean", description: "Sign language detection enabled" },
+      signLanguage: { id: "signLanguage", type: "string", description: "Sign language code to recognize ('asl', 'isr'); null/empty disables" },
       multiCameraMode: { id: "multiCameraMode", type: "boolean", description: "Multi-camera support" },
       eyegazeEnabled: { id: "eyegazeEnabled", type: "boolean", description: "Dwell-based symbol selection enabled" },
       eyegazeTimeout: {

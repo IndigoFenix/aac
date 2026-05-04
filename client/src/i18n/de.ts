@@ -2331,6 +2331,14 @@ export const de = {
     inputSourceGazepoint: "Gazepoint Eye-Tracker",
     inputSourceWebhid: "WebHID-Gerät",
     inputSourceHint: "Verwenden Sie den Mauszeiger zum Testen oder wählen Sie einen externen Eye-Tracker, der den Cursor steuert.",
+    // Sign language
+    signLanguage: "Gebärdenspracherkennung",
+    signLanguageDesc: "Gebärdensprache über die Kamera erkennen und jede vollständige Phrase als Aussage an die KI senden",
+    signLanguageLabel: "Gebärdensprache",
+    signLanguageNone: "Aus",
+    signLanguageAsl: "American Sign Language (ASL)",
+    signLanguageIsr: "Israelische Gebärdensprache (ISR)",
+    signLanguageHint: "Wenn aktiviert, klassifiziert die Kamera jede erkannte Handgeste. Nach einer kurzen Pause wird die resultierende Phrase als Textnachricht an die KI gesendet.",
     // Chat prompt
     chatBehavior: "Chat-Agenten-Verhalten",
     chatBehaviorDesc: "Anpassen, wie der KI-Assistent auf diesen {{STUDENT}} reagiert",

@@ -2331,6 +2331,14 @@ export const ko = {
     inputSourceGazepoint: "Gazepoint 시선 추적기",
     inputSourceWebhid: "WebHID 장치",
     inputSourceHint: "테스트용으로 마우스 커서를 사용하거나, 커서를 제어하는 외부 시선 추적기를 선택하세요.",
+    // Sign language
+    signLanguage: "수어 인식",
+    signLanguageDesc: "카메라로 수어 동작을 인식하고 완성된 문구를 진술로 AI에 전송합니다",
+    signLanguageLabel: "수어",
+    signLanguageNone: "꺼짐",
+    signLanguageAsl: "미국 수어 (ASL)",
+    signLanguageIsr: "이스라엘 수어 (ISR)",
+    signLanguageHint: "활성화하면 카메라가 감지된 손 모양을 분류합니다. 잠시 멈춘 후, 완성된 문구가 텍스트 발화로 AI에 전송됩니다.",
     // Chat prompt
     chatBehavior: "채팅 에이전트 동작",
     chatBehaviorDesc: "AI 어시스턴트가 이 {{STUDENT}}에게 어떻게 응답할지 맞춤 설정합니다",

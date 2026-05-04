@@ -2331,6 +2331,14 @@ export const ar = {
     inputSourceGazepoint: "متتبع عين Gazepoint",
     inputSourceWebhid: "جهاز WebHID",
     inputSourceHint: "استخدم مؤشر الفأرة للاختبار، أو اختر متتبع عين خارجي يتحكم في المؤشر.",
+    // Sign language
+    signLanguage: "التعرف على لغة الإشارة",
+    signLanguageDesc: "التعرف على إيماءات لغة الإشارة من خلال الكاميرا وإرسال كل عبارة مكتملة إلى الذكاء الاصطناعي كبيان",
+    signLanguageLabel: "لغة الإشارة",
+    signLanguageNone: "إيقاف",
+    signLanguageAsl: "لغة الإشارة الأمريكية (ASL)",
+    signLanguageIsr: "لغة الإشارة الإسرائيلية (ISR)",
+    signLanguageHint: "عند التفعيل تصنف الكاميرا كل إشارة يد يتم اكتشافها. بعد توقف قصير، تُرسل العبارة الناتجة إلى الذكاء الاصطناعي كنص.",
     // Chat prompt
     chatBehavior: "سلوك وكيل المحادثة",
     chatBehaviorDesc: "تخصيص كيفية استجابة مساعد الذكاء الاصطناعي لهذا {{STUDENT}}",

@@ -193,7 +193,7 @@ def export_model_json(model, labels: list[str], locale: str, output_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Train sign language MLP from image dataset")
     parser.add_argument("--dataset", required=True, help="Path to dataset directory")
-    parser.add_argument("--locale", required=True, help="Sign language locale (e.g. 'asl', 'isl')")
+    parser.add_argument("--locale", required=True, help="Sign language locale (e.g. 'asl', 'isr')")
     parser.add_argument("--output", required=True, help="Output JSON model path")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs (default: 50)")
     args = parser.parse_args()

@@ -2331,6 +2331,14 @@ export const zh = {
     inputSourceGazepoint: "Gazepoint 眼动追踪器",
     inputSourceWebhid: "WebHID 设备",
     inputSourceHint: "使用鼠标光标进行测试，或选择控制光标的外部眼动追踪器。",
+    // Sign language
+    signLanguage: "手语识别",
+    signLanguageDesc: "通过摄像头识别手语动作，每完成一个短语就以陈述形式发送给 AI",
+    signLanguageLabel: "手语",
+    signLanguageNone: "关闭",
+    signLanguageAsl: "美国手语 (ASL)",
+    signLanguageIsr: "以色列手语 (ISR)",
+    signLanguageHint: "启用后，摄像头会分类每个检测到的手势。短暂停顿后，组成的短语会以文字陈述形式发送给 AI。",
     // Chat prompt
     chatBehavior: "聊天代理行为",
     chatBehaviorDesc: "自定义 AI 助手如何回应此{{STUDENT}}",

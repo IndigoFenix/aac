@@ -2331,6 +2331,14 @@ export const en = {
     inputSourceGazepoint: "Gazepoint Eye Tracker",
     inputSourceWebhid: "WebHID Device",
     inputSourceHint: "Use the mouse cursor for testing, or select an external eye tracker that controls the cursor.",
+    // Sign language
+    signLanguage: "Sign Language Recognition",
+    signLanguageDesc: "Recognize sign-language gestures from the camera and submit each completed phrase to the AI as a statement",
+    signLanguageLabel: "Sign Language",
+    signLanguageNone: "Off",
+    signLanguageAsl: "American Sign Language (ASL)",
+    signLanguageIsr: "Israeli Sign Language (ISR)",
+    signLanguageHint: "When enabled, the camera classifies each detected hand sign. After a short pause, the resulting phrase is sent to the AI as a typed statement.",
     // Chat prompt
     chatBehavior: "Chat Agent Behavior",
     chatBehaviorDesc: "Customize how the AI assistant responds to this {{STUDENT}}",
