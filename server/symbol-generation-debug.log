@@ -6091,3 +6091,317 @@
 [2026-05-01T14:42:05.297Z] [processQueue] FULL REFINED PROMPT for "child_looking_bored": A simple, bold AAC symbol icon of a generic child figure, centered and facing forward, with a large head and small body. The child has a flat, neutral expression with simple dot eyes and a straight line for a mouth, conveying boredom. Their shoulders are slightly slumped, and their arms hang loosely at their sides. The illustration uses a limited palette of solid, saturated colors with thick black outlines, rendered on a transparent background, suitable for instant recognition at small sizes.
 [2026-05-01T14:42:20.927Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-05-01T14:42:20.928Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:17:28.264Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:17:28.265Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:17:28.440Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:17:28.441Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:17:28.623Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:17:28.624Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:18:17.945Z] [resolveImageKeys] Resolving 1 keys: person_eating (format=internal, useUnapproved=true)
+[2026-05-05T08:18:18.147Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-05T08:18:18.150Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-05T08:18:35.060Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:18:35.061Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:18:54.567Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:18:54.568Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:19:34.371Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:19:34.373Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:19:44.482Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:19:44.484Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:20:45.033Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:20:45.034Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:21:16.498Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:21:16.500Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:30:47.976Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:30:47.977Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:30:48.133Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:30:48.134Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:30:48.462Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:30:48.468Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:32:10.917Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:32:10.918Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:32:11.078Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:32:11.079Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:32:27.047Z] [resolveImageKeys] Resolving 1 keys: child_playing_with_bubbles (format=internal, useUnapproved=true)
+[2026-05-05T08:32:27.294Z] [resolveImageKeys] Resolved "child_playing_with_bubbles" → __SYMBOL__:f9268c44-1702-4c92-91db-f0977d34d294
+[2026-05-05T08:32:27.294Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-05T08:32:41.556Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:32:41.558Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:33:05.287Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:33:05.288Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:33:18.149Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:33:18.149Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:44:46.599Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:44:46.602Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:44:46.783Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:44:46.784Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:44:46.961Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:44:46.962Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:45:07.332Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:45:07.333Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:45:24.920Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:45:24.921Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:45:42.686Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:45:42.687Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:47:52.316Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:47:52.317Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:47:54.589Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:47:54.590Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:47:58.843Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:47:58.843Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:48:05.388Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:48:05.389Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:48:11.838Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:48:11.839Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T08:48:26.030Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T08:48:26.032Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T10:07:33.689Z] [resolveImageKeys] Resolving 7 keys: school_building, child_reading, person_talking, sun_rising, sun_at_noon, city_at_night, person_eating_sandwich (format=internal, useUnapproved=true)
+[2026-05-05T10:07:33.883Z] [resolveImageKeys] No symbol found for "school_building"
+[2026-05-05T10:07:34.054Z] [resolveImageKeys] No symbol found for "child_reading"
+[2026-05-05T10:07:34.222Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-05T10:07:34.390Z] [resolveImageKeys] No symbol found for "sun_rising"
+[2026-05-05T10:07:34.559Z] [resolveImageKeys] No symbol found for "sun_at_noon"
+[2026-05-05T10:07:34.734Z] [resolveImageKeys] No symbol found for "city_at_night"
+[2026-05-05T10:07:34.904Z] [resolveImageKeys] No symbol found for "person_eating_sandwich"
+[2026-05-05T10:07:34.905Z] [resolveImageKeys] Done. Resolved 1, unresolved 6: school_building, child_reading, sun_rising, sun_at_noon, city_at_night, person_eating_sandwich
+[2026-05-05T10:07:34.907Z] [queueGeneration] Queuing 6 keys: school_building, child_reading, sun_rising, sun_at_noon, city_at_night, person_eating_sandwich (hasCallback=true)
+[2026-05-05T10:07:35.087Z] [processQueue] Generating "person_eating_sandwich"...
+[2026-05-05T10:07:45.930Z] [resolveImageKeys] Resolving 5 keys: calendar, sun_rising, light_bulb, prohibited, person_talking (format=internal, useUnapproved=true)
+[2026-05-05T10:07:46.231Z] [resolveImageKeys] No symbol found for "calendar"
+[2026-05-05T10:07:46.399Z] [resolveImageKeys] No symbol found for "sun_rising"
+[2026-05-05T10:07:46.568Z] [resolveImageKeys] No symbol found for "light_bulb"
+[2026-05-05T10:07:47.011Z] [resolveImageKeys] No symbol found for "prohibited"
+[2026-05-05T10:07:47.302Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-05T10:07:47.303Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: calendar, sun_rising, light_bulb, prohibited
+[2026-05-05T10:07:47.305Z] [queueGeneration] Queuing 4 keys: calendar, sun_rising, light_bulb, prohibited (hasCallback=true)
+[2026-05-05T10:07:49.917Z] [COST] imageKey="person_eating_sandwich" | refinement: gemini/gemini-2.5-flash in=728 out=100 | image: openai/gpt-image-1 in=107 out=272
+[2026-05-05T10:07:49.917Z] [processQueue] Generated "person_eating_sandwich" → 36a36b0f-19e2-4936-8725-31e383cd6654 (1 total)
+[2026-05-05T10:07:49.918Z] [processQueue] FULL REFINED PROMPT for "person_eating_sandwich": A simple, bold AAC symbol icon of a generic human figure eating a sandwich, rendered on a transparent background. The figure is centered, facing forward, with a stylized head and body, and simple dots for eyes and a small curved line for a mouth. The figure holds a triangular sandwich up to its mouth, with a small bite taken out of it. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows. The figure wears a simple, short-sleeved shirt.
+[2026-05-05T10:07:54.097Z] [processQueue] Generating "prohibited"...
+[2026-05-05T10:07:57.721Z] [resolveImageKeys] Resolving 6 keys: person_asking, question_mark, map, thumbs_up, thumbs_down, person_thinking (format=internal, useUnapproved=true)
+[2026-05-05T10:07:57.933Z] [resolveImageKeys] Resolved "person_asking" → __SYMBOL__:2d831d91-573d-48e8-820f-8fa0218f7211
+[2026-05-05T10:07:58.104Z] [resolveImageKeys] No symbol found for "question_mark"
+[2026-05-05T10:07:58.274Z] [resolveImageKeys] No symbol found for "map"
+[2026-05-05T10:07:58.444Z] [resolveImageKeys] No symbol found for "thumbs_up"
+[2026-05-05T10:07:58.615Z] [resolveImageKeys] No symbol found for "thumbs_down"
+[2026-05-05T10:07:58.794Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-05T10:07:58.795Z] [resolveImageKeys] Done. Resolved 2, unresolved 4: question_mark, map, thumbs_up, thumbs_down
+[2026-05-05T10:07:58.796Z] [queueGeneration] Queuing 4 keys: question_mark, map, thumbs_up, thumbs_down (hasCallback=true)
+[2026-05-05T10:08:09.315Z] [COST] imageKey="prohibited" | refinement: gemini/gemini-2.5-flash in=726 out=37 | image: openai/gpt-image-1 in=41 out=272
+[2026-05-05T10:08:09.316Z] [processQueue] Generated "prohibited" → f5c5fa24-220a-42b5-b7a8-d074fc2b5a39 (2 total)
+[2026-05-05T10:08:09.317Z] [processQueue] FULL REFINED PROMPT for "prohibited": A bold, red circle with a thick black outline and a diagonal black line through its center, from top-left to bottom-right. The circle is centered on a transparent background.
+[2026-05-05T10:08:13.504Z] [processQueue] Generating "thumbs_down"...
+[2026-05-05T10:08:27.496Z] [COST] imageKey="thumbs_down" | refinement: gemini/gemini-2.5-flash in=727 out=63 | image: openai/gpt-image-1 in=70 out=272
+[2026-05-05T10:08:27.497Z] [processQueue] Generated "thumbs_down" → b132aa37-1bb9-423e-b55d-e9c72c765dd7 (3 total)
+[2026-05-05T10:08:27.498Z] [processQueue] FULL REFINED PROMPT for "thumbs_down": A simple, bold AAC symbol icon of a single human hand, seen from the front, with the thumb pointing downwards. The hand is centered on a transparent background, with thick black outlines around all shapes. The hand is rendered in a flat, solid peach skin tone, with no gradients, shadows, or highlights.
+[2026-05-05T10:08:31.680Z] [processQueue] Generating "thumbs_up"...
+[2026-05-05T10:08:36.627Z] [resolveImageKeys] Resolving 5 keys: teacher_talking, person_raising_hand, person_raising_hand, group_of_children, girl_face (format=internal, useUnapproved=true)
+[2026-05-05T10:08:36.813Z] [resolveImageKeys] No symbol found for "teacher_talking"
+[2026-05-05T10:08:36.983Z] [resolveImageKeys] Resolved "person_raising_hand" → __SYMBOL__:86f5d5f3-f7a9-40fd-87dd-f9a0e255911f
+[2026-05-05T10:08:37.149Z] [resolveImageKeys] Resolved "person_raising_hand" → __SYMBOL__:86f5d5f3-f7a9-40fd-87dd-f9a0e255911f
+[2026-05-05T10:08:37.315Z] [resolveImageKeys] No symbol found for "group_of_children"
+[2026-05-05T10:08:37.481Z] [resolveImageKeys] No symbol found for "girl_face"
+[2026-05-05T10:08:37.482Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: teacher_talking, group_of_children, girl_face
+[2026-05-05T10:08:37.483Z] [queueGeneration] Queuing 3 keys: teacher_talking, group_of_children, girl_face (hasCallback=true)
+[2026-05-05T10:09:19.595Z] [COST] imageKey="thumbs_up" | refinement: gemini/gemini-2.5-flash in=727 out=79 | image: openai/gpt-image-1 in=87 out=272
+[2026-05-05T10:09:19.596Z] [processQueue] Generated "thumbs_up" → fd52bec7-b8fa-4297-8c4b-93702e025a29 (4 total)
+[2026-05-05T10:09:19.597Z] [processQueue] FULL REFINED PROMPT for "thumbs_up": A simple, bold illustration of a human hand with a slightly stylized proportion, showing only the hand and wrist. The hand is making a "thumbs up" gesture, with the thumb pointing upwards and the other fingers curled into a fist. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows. The hand is centered on a transparent background, instantly recognizable at small sizes.
+[2026-05-05T10:09:23.782Z] [processQueue] Generating "girl_face"...
+[2026-05-05T10:09:25.831Z] [resolveImageKeys] Resolving 5 keys: geometric_shapes, bubbles_game_controller, calendar, question_mark, person_feeling_happy (format=internal, useUnapproved=true)
+[2026-05-05T10:09:26.025Z] [resolveImageKeys] No symbol found for "geometric_shapes"
+[2026-05-05T10:09:26.363Z] [resolveImageKeys] No symbol found for "bubbles_game_controller"
+[2026-05-05T10:09:26.710Z] [resolveImageKeys] No symbol found for "calendar"
+[2026-05-05T10:09:27.050Z] [resolveImageKeys] No symbol found for "question_mark"
+[2026-05-05T10:09:27.495Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-05T10:09:27.496Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: geometric_shapes, bubbles_game_controller, calendar, question_mark
+[2026-05-05T10:09:27.497Z] [queueGeneration] Queuing 4 keys: geometric_shapes, bubbles_game_controller, calendar, question_mark (hasCallback=true)
+[2026-05-05T10:09:35.977Z] [COST] imageKey="girl_face" | refinement: gemini/gemini-2.5-flash in=727 out=90 | image: openai/gpt-image-1 in=92 out=272
+[2026-05-05T10:09:35.979Z] [processQueue] Generated "girl_face" → 1d694f33-f605-4499-bbce-aa7a39e06f8b (5 total)
+[2026-05-05T10:09:35.980Z] [processQueue] FULL REFINED PROMPT for "girl_face": A simple, bold illustration of a girl's face, centered on a transparent background. The face is round with a light skin tone, featuring two small black dots for eyes and a small, upward-curving line for a mouth. She has simple, shoulder-length brown hair with a slight curve, and a small pink bow on the right side of her head. All shapes have thick black outlines and are filled with flat, solid colors.
+[2026-05-05T10:09:40.160Z] [processQueue] Generating "question_mark"...
+[2026-05-05T10:09:58.549Z] [COST] imageKey="question_mark" | refinement: gemini/gemini-2.5-flash in=727 out=47 | image: openai/gpt-image-1 in=52 out=272
+[2026-05-05T10:09:58.551Z] [processQueue] Generated "question_mark" → 175896dc-98f8-4f11-bc8c-d00ea592729d (6 total)
+[2026-05-05T10:09:58.551Z] [processQueue] FULL REFINED PROMPT for "question_mark": A bold, black outlined question mark symbol, centered on a transparent background. The question mark is a solid, bright blue color. It is simple, flat, and instantly recognizable, filling about 75% of the square canvas.
+[2026-05-05T10:10:02.022Z] [resolveImageKeys] Resolving 4 keys: bubbles_game_controller, geometric_shapes, person_feeling_happy, question_mark (format=internal, useUnapproved=true)
+[2026-05-05T10:10:02.217Z] [resolveImageKeys] No symbol found for "bubbles_game_controller"
+[2026-05-05T10:10:02.383Z] [resolveImageKeys] No symbol found for "geometric_shapes"
+[2026-05-05T10:10:02.554Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-05T10:10:02.721Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:175896dc-98f8-4f11-bc8c-d00ea592729d
+[2026-05-05T10:10:02.722Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: bubbles_game_controller, geometric_shapes
+[2026-05-05T10:10:02.724Z] [queueGeneration] Queuing 2 keys: bubbles_game_controller, geometric_shapes (hasCallback=true)
+[2026-05-05T10:10:02.728Z] [processQueue] Generating "calendar"...
+[2026-05-05T10:10:09.097Z] [resolveImageKeys] Resolving 5 keys: person_feeling_happy, person_feeling_sad, person_yawning, person_feeling_excited, person_feeling_frustrated (format=internal, useUnapproved=true)
+[2026-05-05T10:10:09.373Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-05T10:10:09.542Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-05T10:10:09.716Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:be8b8208-0cb5-4762-8537-fab62f8139c2
+[2026-05-05T10:10:09.883Z] [resolveImageKeys] No symbol found for "person_feeling_excited"
+[2026-05-05T10:10:10.054Z] [resolveImageKeys] No symbol found for "person_feeling_frustrated"
+[2026-05-05T10:10:10.056Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: person_feeling_excited, person_feeling_frustrated
+[2026-05-05T10:10:10.056Z] [queueGeneration] Queuing 2 keys: person_feeling_excited, person_feeling_frustrated (hasCallback=true)
+[2026-05-05T10:10:34.045Z] [resolveImageKeys] Resolving 3 keys: bubbles_game_controller, geometric_shapes, person_talking (format=internal, useUnapproved=true)
+[2026-05-05T10:10:34.275Z] [resolveImageKeys] No symbol found for "bubbles_game_controller"
+[2026-05-05T10:10:34.441Z] [resolveImageKeys] No symbol found for "geometric_shapes"
+[2026-05-05T10:10:34.607Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-05T10:10:34.608Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: bubbles_game_controller, geometric_shapes
+[2026-05-05T10:10:34.609Z] [queueGeneration] Queuing 2 keys: bubbles_game_controller, geometric_shapes (hasCallback=true)
+[2026-05-05T10:10:51.556Z] [COST] imageKey="calendar" | refinement: gemini/gemini-2.5-flash in=726 out=82 | image: openai/gpt-image-1 in=87 out=272
+[2026-05-05T10:10:51.558Z] [processQueue] Generated "calendar" → fdde4158-da19-4c92-96b9-ada13b683561 (7 total)
+[2026-05-05T10:10:51.559Z] [processQueue] FULL REFINED PROMPT for "calendar": A simple, bold illustration of a calendar. The calendar is shown from the front, square-shaped, with a light gray background and a dark gray border. It displays a grid of numbers for a month, with the current day highlighted in a contrasting color like light blue. The numbers are simple black digits, and the month name is omitted. The icon has thick black outlines and uses flat, solid colors.
+[2026-05-05T10:10:53.978Z] [resolveImageKeys] Resolving 5 keys: bubbles_game_controller, geometric_shapes, person_feeling_happy, calendar, calendar (format=internal, useUnapproved=true)
+[2026-05-05T10:10:54.172Z] [resolveImageKeys] No symbol found for "bubbles_game_controller"
+[2026-05-05T10:10:54.341Z] [resolveImageKeys] No symbol found for "geometric_shapes"
+[2026-05-05T10:10:54.513Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-05T10:10:54.679Z] [resolveImageKeys] Resolved "calendar" → __SYMBOL__:fdde4158-da19-4c92-96b9-ada13b683561
+[2026-05-05T10:10:54.845Z] [resolveImageKeys] Resolved "calendar" → __SYMBOL__:fdde4158-da19-4c92-96b9-ada13b683561
+[2026-05-05T10:10:54.845Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: bubbles_game_controller, geometric_shapes
+[2026-05-05T10:10:54.846Z] [queueGeneration] Queuing 2 keys: bubbles_game_controller, geometric_shapes (hasCallback=true)
+[2026-05-05T10:10:55.737Z] [processQueue] Generating "geometric_shapes"...
+[2026-05-05T10:11:12.709Z] [COST] imageKey="geometric_shapes" | refinement: gemini/gemini-2.5-flash in=727 out=80 | image: openai/gpt-image-1 in=86 out=272
+[2026-05-05T10:11:12.710Z] [processQueue] Generated "geometric_shapes" → fab4b7ad-9bab-4146-88a7-521c4cbe9575 (8 total)
+[2026-05-05T10:11:12.711Z] [processQueue] FULL REFINED PROMPT for "geometric_shapes": A simple, bold illustration of three basic geometric shapes: a red square, a blue circle, and a yellow triangle. Each shape has a thick black outline and is filled with a flat, solid color. The shapes are arranged slightly overlapping in the center of the frame, with the square at the bottom, the circle overlapping its top right corner, and the triangle overlapping the top left of the circle.
+[2026-05-05T10:11:16.920Z] [processQueue] "geometric_shapes" already exists → fab4b7ad-9bab-4146-88a7-521c4cbe9575
+[2026-05-05T10:11:17.230Z] [resolveImageKeys] Resolving 5 keys: school_building, child_reading, child_playing, person_eating_sandwich, person_sleeping (format=internal, useUnapproved=true)
+[2026-05-05T10:11:17.407Z] [resolveImageKeys] No symbol found for "school_building"
+[2026-05-05T10:11:17.587Z] [resolveImageKeys] No symbol found for "child_reading"
+[2026-05-05T10:11:17.753Z] [resolveImageKeys] Resolved "child_playing" → __SYMBOL__:2c94766a-a952-4c0f-8b32-c95dd855b847
+[2026-05-05T10:11:17.920Z] [resolveImageKeys] Resolved "person_eating_sandwich" → __SYMBOL__:36a36b0f-19e2-4936-8725-31e383cd6654
+[2026-05-05T10:11:18.090Z] [resolveImageKeys] Resolved "person_sleeping" → __SYMBOL__:1eac4335-a085-4f14-ba78-8db55decdc4d
+[2026-05-05T10:11:18.091Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: school_building, child_reading
+[2026-05-05T10:11:18.091Z] [queueGeneration] Queuing 2 keys: school_building, child_reading (hasCallback=true)
+[2026-05-05T10:11:21.096Z] [processQueue] Generating "bubbles_game_controller"...
+[2026-05-05T10:11:36.349Z] [COST] imageKey="bubbles_game_controller" | refinement: gemini/gemini-2.5-flash in=728 out=93 | image: openai/gpt-image-1 in=100 out=272
+[2026-05-05T10:11:36.350Z] [processQueue] Generated "bubbles_game_controller" → e9a7e311-f189-4234-be50-46cb77bd105d (9 total)
+[2026-05-05T10:11:36.350Z] [processQueue] FULL REFINED PROMPT for "bubbles_game_controller": A simple, bold illustration of a classic video game controller, viewed from the front. The controller has a dark gray body with two light gray joysticks, a red circular button on the right, and a blue directional pad on the left. Several light blue, translucent bubbles of various sizes are floating around and partially obscuring the controller, indicating a "bubbles" theme. The entire image has thick black outlines and uses flat, solid colors on a transparent background.
+[2026-05-05T10:11:40.528Z] [processQueue] Generating "child_reading"...
+[2026-05-05T10:30:35.766Z] [resolveImageKeys] Resolving 5 keys: calendar_day, person_talking, person_thinking, youtube_logo, person_drawing (format=internal, useUnapproved=true)
+[2026-05-05T10:30:36.053Z] [resolveImageKeys] No symbol found for "calendar_day"
+[2026-05-05T10:30:36.218Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-05T10:30:36.383Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-05T10:30:36.554Z] [resolveImageKeys] No symbol found for "youtube_logo"
+[2026-05-05T10:30:36.728Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:172bd2e4-58b9-4d0a-ace9-362b3993a8de
+[2026-05-05T10:30:36.729Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: calendar_day, youtube_logo
+[2026-05-05T10:30:36.731Z] [queueGeneration] Queuing 2 keys: calendar_day, youtube_logo (hasCallback=true)
+[2026-05-05T10:30:36.906Z] [processQueue] Generating "youtube_logo"...
+[2026-05-05T10:30:40.358Z] [resolveImageKeys] Resolving 1 keys: man_face (format=internal, useUnapproved=true)
+[2026-05-05T10:30:40.593Z] [resolveImageKeys] No symbol found for "man_face"
+[2026-05-05T10:30:40.594Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: man_face
+[2026-05-05T10:30:40.595Z] [queueGeneration] Queuing 1 keys: man_face (hasCallback=true)
+[2026-05-05T10:30:49.105Z] [resolveImageKeys] Resolving 4 keys: person_question, person_thinking, calendar_day, calendar (format=internal, useUnapproved=true)
+[2026-05-05T10:30:49.458Z] [resolveImageKeys] Resolved "person_question" → __SYMBOL__:35f95fe1-844d-450e-ac10-f77d82022299
+[2026-05-05T10:30:49.760Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-05T10:30:49.951Z] [resolveImageKeys] No symbol found for "calendar_day"
+[2026-05-05T10:30:50.131Z] [resolveImageKeys] Resolved "calendar" → __SYMBOL__:fdde4158-da19-4c92-96b9-ada13b683561
+[2026-05-05T10:30:50.131Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: calendar_day
+[2026-05-05T10:30:50.132Z] [queueGeneration] Queuing 1 keys: calendar_day (hasCallback=true)
+[2026-05-05T10:30:53.690Z] [COST] imageKey="youtube_logo" | refinement: gemini/gemini-2.5-flash in=727 out=69 | image: openai/gpt-image-1 in=76 out=272
+[2026-05-05T10:30:53.691Z] [processQueue] Generated "youtube_logo" → 4567c9ff-6d06-4544-ac84-324581bb4a4b (1 total)
+[2026-05-05T10:30:53.693Z] [processQueue] FULL REFINED PROMPT for "youtube_logo": A bold, flat, solid color illustration of the classic YouTube logo. The logo features a red rounded rectangle with a white play button triangle pointing to the right, centered within the red shape. The entire logo has a thick black outline. The image is on a transparent background, with no text, gradients, shadows, or 3D effects.
+[2026-05-05T10:30:57.876Z] [processQueue] Generating "calendar_day"...
+[2026-05-05T10:31:11.261Z] [COST] imageKey="calendar_day" | refinement: gemini/gemini-2.5-flash in=727 out=104 | image: openai/gpt-image-1 in=109 out=272
+[2026-05-05T10:31:11.262Z] [processQueue] Generated "calendar_day" → bd5fe8db-b2f2-46d9-98b5-4a8cf50d952c (2 total)
+[2026-05-05T10:31:11.263Z] [processQueue] FULL REFINED PROMPT for "calendar_day": A simple, bold illustration of a calendar page icon. The page is a light yellow square with a thick black outline. Centered on the page is a large, bold black number "15" to represent a generic day. The top of the calendar page has a simple, thin black line representing the top edge of the page, and a small black circle at the top center, indicating a hole for hanging. The overall style is flat, solid colors with no gradients or shadows, suitable for an AAC communication board.
+[2026-05-05T10:53:46.775Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T10:53:46.777Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T10:53:55.765Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T10:53:55.766Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:03:29.940Z] [resolveImageKeys] Resolving 2 keys: child_watching_tv, child_playing_with_bubbles (format=internal, useUnapproved=true)
+[2026-05-05T11:03:30.132Z] [resolveImageKeys] Resolved "child_watching_tv" → __SYMBOL__:3596aae3-3105-4545-babe-e655397ead33
+[2026-05-05T11:03:30.303Z] [resolveImageKeys] Resolved "child_playing_with_bubbles" → __SYMBOL__:f9268c44-1702-4c92-91db-f0977d34d294
+[2026-05-05T11:03:30.304Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-05T11:03:40.614Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:03:40.615Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:04:02.183Z] [resolveImageKeys] Resolving 1 keys: child_playing_with_bubbles (format=internal, useUnapproved=true)
+[2026-05-05T11:04:02.395Z] [resolveImageKeys] Resolved "child_playing_with_bubbles" → __SYMBOL__:f9268c44-1702-4c92-91db-f0977d34d294
+[2026-05-05T11:04:02.396Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-05T11:04:14.121Z] [resolveImageKeys] Resolving 1 keys: child_on_playground (format=internal, useUnapproved=true)
+[2026-05-05T11:04:14.447Z] [resolveImageKeys] No symbol found for "child_on_playground"
+[2026-05-05T11:04:14.448Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: child_on_playground
+[2026-05-05T11:04:14.449Z] [queueGeneration] Queuing 1 keys: child_on_playground (hasCallback=true)
+[2026-05-05T11:04:14.623Z] [processQueue] Generating "child_on_playground"...
+[2026-05-05T11:04:31.889Z] [COST] imageKey="child_on_playground" | refinement: gemini/gemini-2.5-flash in=728 out=152 | image: openai/gpt-image-1 in=154 out=272
+[2026-05-05T11:04:31.890Z] [processQueue] Generated "child_on_playground" → e59ae6fb-aaa6-48a9-8b85-c86667e5547e (1 total)
+[2026-05-05T11:04:31.892Z] [processQueue] FULL REFINED PROMPT for "child_on_playground": A simple, bold illustration of a generic child figure on a playground, rendered on a transparent background. The child, with a slightly oversized head and no hair, is depicted mid-action on a swing set, facing left with a joyful expression (dots for eyes, small curve for mouth). The swing seat is a simple rectangle, and the swing chains are straight lines extending upwards to an implied crossbar. The child wears a simple, solid-colored shirt and pants. The illustration uses bold black outlines, flat solid colors (e.g., a primary color for clothing, a contrasting color for the swing), and no gradients or shadows. The child and swing are centered and fill about 70% of the square canvas, instantly recognizable at small sizes.
+[2026-05-05T11:04:55.160Z] [resolveImageKeys] Resolving 4 keys: child_on_swings, child_on_slide, child_climbing, child_running_fast (format=internal, useUnapproved=true)
+[2026-05-05T11:04:55.365Z] [resolveImageKeys] No symbol found for "child_on_swings"
+[2026-05-05T11:04:55.531Z] [resolveImageKeys] No symbol found for "child_on_slide"
+[2026-05-05T11:04:55.692Z] [resolveImageKeys] No symbol found for "child_climbing"
+[2026-05-05T11:04:55.854Z] [resolveImageKeys] No symbol found for "child_running_fast"
+[2026-05-05T11:04:55.855Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: child_on_swings, child_on_slide, child_climbing, child_running_fast
+[2026-05-05T11:04:55.855Z] [queueGeneration] Queuing 4 keys: child_on_swings, child_on_slide, child_climbing, child_running_fast (hasCallback=true)
+[2026-05-05T11:04:56.029Z] [processQueue] Generating "child_running_fast"...
+[2026-05-05T11:05:12.448Z] [COST] imageKey="child_running_fast" | refinement: gemini/gemini-2.5-flash in=728 out=92 | image: openai/gpt-image-1 in=98 out=272
+[2026-05-05T11:05:12.450Z] [processQueue] Generated "child_running_fast" → 40997178-1bf7-4bb4-ac50-4423d5fe1f7f (1 total)
+[2026-05-05T11:05:12.453Z] [processQueue] FULL REFINED PROMPT for "child_running_fast": A simple, bold AAC symbol icon of a child running fast. The child is a generic human figure with a slightly larger head, simple dot eyes, and a small curve for a mouth, with no hair. The child is depicted in mid-stride, leaning forward with arms bent and legs extended, clearly showing motion. Simple motion lines trail behind the child to emphasize speed. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-05T11:05:16.640Z] [processQueue] Generating "child_climbing"...
+[2026-05-05T11:05:33.049Z] [COST] imageKey="child_climbing" | refinement: gemini/gemini-2.5-flash in=727 out=114 | image: openai/gpt-image-1 in=119 out=272
+[2026-05-05T11:05:33.051Z] [processQueue] Generated "child_climbing" → 12bc6d54-38fa-4035-8541-177b9694b60b (2 total)
+[2026-05-05T11:05:33.052Z] [processQueue] FULL REFINED PROMPT for "child_climbing": A simple, bold AAC symbol icon of a child climbing. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain blue shirt and brown pants. The child is depicted mid-climb, with both hands and feet gripping a simple, stylized brown ladder or rock wall, angled upwards. Bold black outlines define all shapes, filled with flat, solid, saturated colors. The image is centered on a transparent background, with minimal detail, designed for instant recognition at small sizes.
+[2026-05-05T11:05:37.230Z] [processQueue] Generating "child_on_slide"...
+[2026-05-05T11:05:55.121Z] [COST] imageKey="child_on_slide" | refinement: gemini/gemini-2.5-flash in=728 out=124 | image: openai/gpt-image-1 in=126 out=272
+[2026-05-05T11:05:55.122Z] [processQueue] Generated "child_on_slide" → a06f0381-1c18-40eb-b1f5-fe5dee1178c7 (3 total)
+[2026-05-05T11:05:55.122Z] [processQueue] FULL REFINED PROMPT for "child_on_slide": A simple, bold AAC symbol icon of a child going down a slide. The child is a generic, non-gender-specific figure with a large head and small body, no hair, and simple dot eyes and a small curved mouth. The child is depicted mid-action, seated on a yellow slide, with simple motion lines indicating downward movement. The slide is shown from a side profile, with a ladder visible at the back. The illustration uses flat, solid colors: blue for the child's shirt, orange for their pants, and yellow for the slide, all with thick black outlines on a transparent background.
+[2026-05-05T11:05:59.310Z] [processQueue] Generating "child_on_swings"...
+[2026-05-05T11:06:16.019Z] [resolveImageKeys] Resolving 4 keys: child_on_swings, child_on_slide, child_climbing, child_running_fast (format=internal, useUnapproved=true)
+[2026-05-05T11:06:16.379Z] [resolveImageKeys] No symbol found for "child_on_swings"
+[2026-05-05T11:06:16.728Z] [resolveImageKeys] Resolved "child_on_slide" → __SYMBOL__:a06f0381-1c18-40eb-b1f5-fe5dee1178c7
+[2026-05-05T11:06:17.070Z] [resolveImageKeys] Resolved "child_climbing" → __SYMBOL__:12bc6d54-38fa-4035-8541-177b9694b60b
+[2026-05-05T11:06:17.425Z] [resolveImageKeys] Resolved "child_running_fast" → __SYMBOL__:40997178-1bf7-4bb4-ac50-4423d5fe1f7f
+[2026-05-05T11:06:17.426Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: child_on_swings
+[2026-05-05T11:06:17.429Z] [queueGeneration] Queuing 1 keys: child_on_swings (hasCallback=true)
+[2026-05-05T11:06:30.047Z] [resolveImageKeys] Resolving 2 keys: child_on_swings, child_climbing (format=internal, useUnapproved=true)
+[2026-05-05T11:06:30.282Z] [resolveImageKeys] No symbol found for "child_on_swings"
+[2026-05-05T11:06:30.452Z] [resolveImageKeys] Resolved "child_climbing" → __SYMBOL__:12bc6d54-38fa-4035-8541-177b9694b60b
+[2026-05-05T11:06:30.453Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: child_on_swings
+[2026-05-05T11:06:30.455Z] [queueGeneration] Queuing 1 keys: child_on_swings (hasCallback=true)
+[2026-05-05T11:06:46.064Z] [COST] imageKey="child_on_swings" | refinement: gemini/gemini-2.5-flash in=728 out=110 | image: openai/gpt-image-1 in=112 out=272
+[2026-05-05T11:06:46.065Z] [processQueue] Generated "child_on_swings" → f67594c3-579d-4599-9bb0-51ec17c678e0 (4 total)
+[2026-05-05T11:06:46.067Z] [processQueue] FULL REFINED PROMPT for "child_on_swings": A simple, bold AAC symbol icon of a child on a swing. The child is a generic figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain t-shirt and shorts. The child is seated on a swing, with the swing seat and chains clearly visible, depicted in mid-air to show motion. The swing chains extend upwards out of view, and the child's body is positioned to suggest forward momentum. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-05T11:06:49.476Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:06:49.476Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:06:50.246Z] [processQueue] "child_on_swings" already exists → f67594c3-579d-4599-9bb0-51ec17c678e0
+[2026-05-05T11:06:54.423Z] [processQueue] "child_on_swings" already exists → f67594c3-579d-4599-9bb0-51ec17c678e0
+[2026-05-05T11:07:00.963Z] [resolveImageKeys] Resolving 2 keys: child_on_swings, child_climbing (format=internal, useUnapproved=true)
+[2026-05-05T11:07:01.163Z] [resolveImageKeys] Resolved "child_on_swings" → __SYMBOL__:f67594c3-579d-4599-9bb0-51ec17c678e0
+[2026-05-05T11:07:01.333Z] [resolveImageKeys] Resolved "child_climbing" → __SYMBOL__:12bc6d54-38fa-4035-8541-177b9694b60b
+[2026-05-05T11:07:01.334Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-05T11:27:22.835Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:27:22.836Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:27:23.057Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:27:23.059Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:28:23.096Z] [resolveImageKeys] Resolving 6 keys: child_on_playground, child_on_slide, child_playing_with_bubbles, child_drawing, child_playing_instrument, child_watching_tv (format=internal, useUnapproved=true)
+[2026-05-05T11:28:23.285Z] [resolveImageKeys] Resolved "child_on_playground" → __SYMBOL__:e59ae6fb-aaa6-48a9-8b85-c86667e5547e
+[2026-05-05T11:28:23.445Z] [resolveImageKeys] Resolved "child_on_slide" → __SYMBOL__:a06f0381-1c18-40eb-b1f5-fe5dee1178c7
+[2026-05-05T11:28:23.604Z] [resolveImageKeys] Resolved "child_playing_with_bubbles" → __SYMBOL__:f9268c44-1702-4c92-91db-f0977d34d294
+[2026-05-05T11:28:23.763Z] [resolveImageKeys] Resolved "child_drawing" → __SYMBOL__:e443f4be-6a39-4dda-84f8-bfcfe14162b8
+[2026-05-05T11:28:23.920Z] [resolveImageKeys] No symbol found for "child_playing_instrument"
+[2026-05-05T11:28:24.077Z] [resolveImageKeys] Resolved "child_watching_tv" → __SYMBOL__:3596aae3-3105-4545-babe-e655397ead33
+[2026-05-05T11:28:24.078Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: child_playing_instrument
+[2026-05-05T11:28:24.079Z] [queueGeneration] Queuing 1 keys: child_playing_instrument (hasCallback=true)
+[2026-05-05T11:28:24.239Z] [processQueue] Generating "child_playing_instrument"...
+[2026-05-05T11:28:38.442Z] [COST] imageKey="child_playing_instrument" | refinement: gemini/gemini-2.5-flash in=728 out=124 | image: openai/gpt-image-1 in=127 out=272
+[2026-05-05T11:28:38.443Z] [processQueue] Generated "child_playing_instrument" → 8db5122f-ed62-4e8a-bdd1-e6c11cd045c8 (1 total)
+[2026-05-05T11:28:38.444Z] [processQueue] FULL REFINED PROMPT for "child_playing_instrument": A simple, bold AAC symbol icon of a child playing a musical instrument. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain blue shirt and brown pants. They are seated and holding a small, red toy drum with a yellow drumstick, clearly in the act of playing it. The drum is shown from a slightly angled front view, and the child's arm is raised with the drumstick poised over the drum. The illustration uses flat, solid colors with thick black outlines and is centered on a transparent background.
+[2026-05-05T11:28:46.056Z] [resolveImageKeys] Resolving 5 keys: child_on_swing, child_on_slide, child_playing_in_sand, child_running, child_playing_with_ball (format=internal, useUnapproved=true)
+[2026-05-05T11:28:46.269Z] [resolveImageKeys] No symbol found for "child_on_swing"
+[2026-05-05T11:28:46.436Z] [resolveImageKeys] Resolved "child_on_slide" → __SYMBOL__:a06f0381-1c18-40eb-b1f5-fe5dee1178c7
+[2026-05-05T11:28:46.602Z] [resolveImageKeys] No symbol found for "child_playing_in_sand"
+[2026-05-05T11:28:46.768Z] [resolveImageKeys] No symbol found for "child_running"
+[2026-05-05T11:28:46.934Z] [resolveImageKeys] No symbol found for "child_playing_with_ball"
+[2026-05-05T11:28:46.935Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: child_on_swing, child_playing_in_sand, child_running, child_playing_with_ball
+[2026-05-05T11:28:46.936Z] [queueGeneration] Queuing 4 keys: child_on_swing, child_playing_in_sand, child_running, child_playing_with_ball (hasCallback=true)
+[2026-05-05T11:28:47.108Z] [processQueue] Generating "child_playing_with_ball"...
+[2026-05-05T11:29:29.874Z] [COST] imageKey="child_playing_with_ball" | refinement: gemini/gemini-2.5-flash in=729 out=131 | image: openai/gpt-image-1 in=132 out=272
+[2026-05-05T11:29:29.875Z] [processQueue] Generated "child_playing_with_ball" → c12cef6f-c11d-41c0-be8c-68d4e94ceb8f (1 total)
+[2026-05-05T11:29:29.876Z] [processQueue] FULL REFINED PROMPT for "child_playing_with_ball": A simple, bold AAC symbol icon of a child playing with a ball. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain t-shirt and shorts. The child is depicted in motion, kicking a red ball with a simple motion line indicating movement. The figure and ball have thick black outlines and are filled with flat, solid colors: the child's skin is a light peach, clothing is bright blue, and the ball is red. The main subject is centered and fills about 70% of the square canvas, on a transparent background.
+[2026-05-05T11:29:34.044Z] [processQueue] Generating "child_running"...
+[2026-05-05T11:29:47.343Z] [COST] imageKey="child_running" | refinement: gemini/gemini-2.5-flash in=727 out=97 | image: openai/gpt-image-1 in=103 out=272
+[2026-05-05T11:29:47.343Z] [processQueue] Generated "child_running" → 676d56d2-c9da-4ae5-962d-6ef3d0ff66f3 (2 total)
+[2026-05-05T11:29:47.344Z] [processQueue] FULL REFINED PROMPT for "child_running": A simple, bold illustration of a generic child figure running, depicted in mid-stride with one leg forward and arms bent, swinging in opposition. The child has a slightly oversized head, simple dot eyes, and a small curved mouth, with no hair. Motion lines emanate from behind the child to indicate movement. The figure is centered, outlined in thick black, and filled with flat, solid colors: a light skin tone for the body and a single bright color for simple clothing.
+[2026-05-05T11:29:51.508Z] [processQueue] Generating "child_playing_in_sand"...
+[2026-05-05T11:30:06.797Z] [COST] imageKey="child_playing_in_sand" | refinement: gemini/gemini-2.5-flash in=729 out=127 | image: openai/gpt-image-1 in=131 out=272
+[2026-05-05T11:30:06.798Z] [processQueue] Generated "child_playing_in_sand" → 4f7ea5e0-2d75-4a1b-956d-84e1e6de2189 (3 total)
+[2026-05-05T11:30:06.799Z] [processQueue] FULL REFINED PROMPT for "child_playing_in_sand": A simple, bold AAC symbol icon of a child playing in sand. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain t-shirt and shorts. The child is seated on the ground, facing forward, with legs extended, using a small red shovel to scoop yellow sand into a blue bucket. The sand is depicted as a flat, light yellow shape beneath the child, with a small pile of sand next to the bucket. The entire illustration has thick black outlines, uses flat solid colors, and is centered on a transparent background.
+[2026-05-05T11:30:10.963Z] [processQueue] Generating "child_on_swing"...
+[2026-05-05T11:30:27.546Z] [COST] imageKey="child_on_swing" | refinement: gemini/gemini-2.5-flash in=728 out=118 | image: openai/gpt-image-1 in=124 out=272
+[2026-05-05T11:30:27.547Z] [processQueue] Generated "child_on_swing" → 25ebb3e2-80d8-4bdd-96c3-fb44b1ea3f06 (4 total)
+[2026-05-05T11:30:27.549Z] [processQueue] FULL REFINED PROMPT for "child_on_swing": A simple, bold illustration of a child on a swing, rendered on a transparent background. The child is a generic human figure with a slightly larger head, simple dot eyes, and a small curved mouth, wearing a plain shirt and shorts. The child is seated on a swing seat, holding onto the ropes, depicted mid-swing with simple motion lines indicating movement. The swing ropes are attached to an unseen frame above. The illustration uses a limited palette of 3-5 flat, solid, saturated colors with bold black outlines around all shapes, ensuring it is instantly recognizable at small sizes.

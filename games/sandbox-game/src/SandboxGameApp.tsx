@@ -1,17 +1,15 @@
 // Sandbox Game — Main app component
-// A grid-based idle farming game designed for AAC interaction
+// A grid-based idle farming game designed for AAC interaction.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { X, FastForward, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import { useGameEngine } from './useGameEngine';
 import GameGrid from './GameGrid';
 import GameToolbar from './GameToolbar';
 import type { ToolId } from './types';
 
-interface SandboxGameAppProps {
-  onClose: () => void;
-  studentId?: string;
-}
+const GAME_ID = 'sandbox-game';
 
 const SKIP_OPTIONS = [
   { label: '1h', ms: 60 * 60 * 1000 },
@@ -20,11 +18,31 @@ const SKIP_OPTIONS = [
   { label: '1d', ms: 24 * 60 * 60 * 1000 },
 ];
 
-export default function SandboxGameApp({ onClose, studentId = 'default' }: SandboxGameAppProps) {
-  const { gameState, doAction, canPlace, skipTime, resetGame } = useGameEngine(studentId);
+export default function SandboxGameApp() {
+  // The engine persists per-student state to localStorage. When embedded the
+  // platform passes a studentDisplayName via init, but we don't currently
+  // identify the student in localStorage — keep using "default" until the
+  // platform decides to expose a stable identifier through the bridge.
+  const [studentKey, setStudentKey] = useState<string>('default');
+  const { gameState, doAction, canPlace, skipTime, resetGame } = useGameEngine(studentKey);
   const [selectedTool, setSelectedTool] = useState<ToolId | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
+
+  useEffect(() => {
+    sendToParent({ type: 'ready', gameId: GAME_ID });
+    const off = onPlatformMessage(msg => {
+      if (msg.type === 'init' && msg.studentDisplayName) {
+        // Use the platform-provided name as a localStorage namespace.
+        setStudentKey(msg.studentDisplayName);
+      }
+      if (msg.type === 'request_close') {
+        sendToParent({ type: 'session_end', reason: 'quit' });
+      }
+    });
+    return () => off();
+  }, []);
 
   const handleCellClick = useCallback((x: number, y: number) => {
     if (!selectedTool) return;
@@ -63,15 +81,17 @@ export default function SandboxGameApp({ onClose, studentId = 'default' }: Sandb
           >
             {showDebug ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-          {/* Close */}
-          <button
-            data-dwell
-            onClick={onClose}
-            className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-transform"
-            aria-label="Close game"
-          >
-            <X size={20} />
-          </button>
+          {/* Close — only meaningful when embedded */}
+          {isEmbedded && (
+            <button
+              data-dwell
+              onClick={() => sendToParent({ type: 'request_close' })}
+              className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-transform"
+              aria-label="Close game"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
       </div>
 

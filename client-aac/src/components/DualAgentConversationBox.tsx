@@ -44,6 +44,7 @@ const avatarRest = `${AXOLOTL_BASE}/axolotl-rest.png`;
 const caveEmpty = `${AXOLOTL_BASE}/axolotl-cave-empty.png`;
 const caveRest = `${AXOLOTL_BASE}/axolotl-cave-rest.png`;
 const caveSleep = `${AXOLOTL_BASE}/axolotl-cave-sleep.png`;
+const caveDefault = `${AXOLOTL_BASE}/axolotl-cave.png`;
 const avatarError = `${AXOLOTL_BASE}/axolotl-error.png`;
 const avatarGlasses = `${AXOLOTL_BASE}/axolotl-glasses.png`;
 import { motion, AnimatePresence } from "framer-motion";
@@ -303,15 +304,20 @@ export function DualAgentConversationBox({
   const isAsleep = interactionMode === 'silent';
   // AI-initiated "assist" mode — less proactive, avatar shows sleep face
   const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
+  // AI-initiated "standby" mode — student not present, avatar shows resting
+  const isStandbyMode = lastModeChange?.mode === 'standby' && lastModeChange.source === 'ai';
   // Mouth is open when audio is playing and volume exceeds threshold
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
 
   // Sleep system → sprite mapping. Cave variants are used in Silent Mode;
   // avatar variants are used in non-Silent Mode. See planning-docs/aac-sleep-system-plan.md.
+  // Standby (AI-determined "no one home") visually maps to the resting indicator.
   const sleepState = attentiveness?.sleepState;
   const isSleepingState = sleepState === 'hibernation' || sleepState === 'asleep';
-  const isRestingState = sleepState === 'resting' || sleepState === 'waking';
-  const caveSrc = isSleepingState ? caveSleep : isRestingState ? caveRest : caveEmpty;
+  const isRestingState = sleepState === 'resting' || sleepState === 'waking' || isStandbyMode;
+  // In Silent Mode the cave is always shown — pick a variant based on the
+  // current sleep/standby state. Default to the closed cave (axolotl-cave).
+  const caveSrc = isSleepingState ? caveSleep : isRestingState ? caveRest : caveDefault;
   const restOrSleepBody = isSleepingState
     ? avatarSleep
     : isRestingState

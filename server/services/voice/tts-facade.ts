@@ -77,11 +77,14 @@ export async function synthesize(
 }
 
 /**
- * Synthesize text as a stream of audio chunks, routing to the correct TTS provider
+ * Synthesize text as a stream of audio chunks, routing to the correct TTS provider.
+ * If `signal` is provided, the persistent Gemini Live session honors it for
+ * mid-stream cancellation — other providers don't currently support cancel.
  */
 export async function* synthesizeStream(
   text: string,
-  voice: ResolvedVoice
+  voice: ResolvedVoice,
+  signal?: AbortSignal,
 ): AsyncGenerator<Buffer> {
   // Student-level ElevenLabs voice (direct voice ID + API key)
   if (voice.elevenlabsVoiceId && voice.elevenlabsApiKey) {
@@ -122,9 +125,10 @@ export async function* synthesizeStream(
   // per-call connection overhead, native Gemini voice quality)
   if (voice.geminiLiveSession) {
     try {
-      yield* voice.geminiLiveSession.synthesizeStream(text);
+      yield* voice.geminiLiveSession.synthesizeStream(text, signal);
       return;
     } catch (error: any) {
+      if (signal?.aborted) return;
       console.error(`[TTSFacade] Gemini Live TTS streaming failed, falling back:`, error.message);
     }
   }

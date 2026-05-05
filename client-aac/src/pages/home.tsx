@@ -30,8 +30,7 @@ import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
-import SandboxGameApp from "@/components/apps/sandbox-game";
-import BubblesGameApp from "@/components/apps/bubbles-game";
+import GameEmbed from "@/components/games/GameEmbed";
 import BrowserApp from "@/components/apps/BrowserApp";
 import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
@@ -196,10 +195,23 @@ function renderAppContent(
     return <SpotifyApp trackId={activeApp.appData?.trackId || ""} title={activeApp.appData?.title || activeApp.appData?.query || "Music"} artist={activeApp.appData?.artist || ""} studentId={studentId} onClose={dismissApp} />;
   }
   if (activeApp.appId === "sandbox_game") {
-    return <SandboxGameApp onClose={dismissApp} studentId={studentId} />;
+    return (
+      <GameEmbed
+        gameId="sandbox-game"
+        src="/games/sandbox-game/"
+        onClose={dismissApp}
+      />
+    );
   }
   if (activeApp.appId === "bubbles_game") {
-    return <BubblesGameApp onClose={dismissApp} studentId={studentId} sendMessageToAi={sendMessageToAi} />;
+    return (
+      <GameEmbed
+        gameId="bubbles-game"
+        src="/games/bubbles-game/"
+        forwardGaze
+        onClose={dismissApp}
+      />
+    );
   }
   if (activeApp.appId === "browser" && activeApp.appData?.url) {
     return (

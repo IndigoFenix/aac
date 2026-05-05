@@ -66,7 +66,6 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     id: "home_apps",
     labels: { en: "Apps", he: "אפליקציות" },
     icon: "📱",
-    imageKey: "tablet_with_apps",
     instruction: "[APPS] The user wants to use apps. Rebuild the board with buttons for each available app (use open_app() to launch them). Include app names and icons.",
   },
   {

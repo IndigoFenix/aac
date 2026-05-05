@@ -7,6 +7,8 @@ export default {
     "./client/src/**/*.{js,jsx,ts,tsx}",
     "./client-aac/index.html",
     "./client-aac/src/**/*.{js,jsx,ts,tsx}",
+    "./games/**/index.html",
+    "./games/**/src/**/*.{js,jsx,ts,tsx}",
   ],
   theme: {
     extend: {

@@ -146,6 +146,7 @@ async function startServer(): Promise<void> {
     // Serve static files (built by Vite)
     const distPath = path.resolve(import.meta.dirname, "public");
     const distPathAac = path.resolve(import.meta.dirname, "public-aac");
+    const distPathGames = path.resolve(import.meta.dirname, "public-games");
 
     if (!fs.existsSync(distPath)) {
       throw new Error(`Build directory not found: ${distPath}`);
@@ -159,6 +160,13 @@ async function startServer(): Promise<void> {
       app.use("/aac/*", (_req, res) => {
         res.sendFile(path.resolve(distPathAac, "index.html"));
       });
+    }
+
+    // Serve games on /games path (if built). Gated by license — see games-static.ts.
+    if (fs.existsSync(distPathGames)) {
+      log("Serving games on /games (license-gated)");
+      const { mountGamesStatic } = await import("./games-static");
+      mountGamesStatic(app, distPathGames);
     }
 
     // Serve main client (with prerendered per-locale landing pages)

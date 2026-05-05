@@ -31,6 +31,8 @@ export interface UseStreamingAudioPlayerReturn {
   play: () => void;
   stop: () => void;
   clear: () => void;
+  /** Clear queued chunks matching a tag, leaving other tags intact. */
+  clearByTag: (tag: string) => void;
 }
 
 export interface UseStreamingAudioPlayerOptions {
@@ -490,6 +492,37 @@ export function useStreamingAudioPlayer(
     console.log("[StreamingAudioPlayer] Queue cleared");
   }, [stop]);
 
+  // Clear only chunks with a matching tag, leaving other-tag chunks queued.
+  // If the currently-playing chunk matches, it is also stopped.
+  const clearByTag = useCallback((tag: string) => {
+    // Drop matching chunks from the queue (revoke their blob URLs first).
+    const remaining: typeof queueRef.current = [];
+    let dropped = 0;
+    for (const entry of queueRef.current) {
+      if (entry.tag === tag) {
+        if (entry.url) URL.revokeObjectURL(entry.url);
+        dropped++;
+      } else {
+        remaining.push(entry);
+      }
+    }
+    queueRef.current = remaining;
+
+    // If the currently-playing chunk is the same tag, stop it so the next
+    // queued (other-tag) chunk can take over.
+    if (currentTag === tag && playingRef.current) {
+      stop();
+      // Auto-resume with whatever non-matching chunks remain.
+      if (queueRef.current.length > 0) {
+        setIsBuffering(true);
+        playNext();
+      }
+    }
+    if (dropped > 0) {
+      console.log(`[StreamingAudioPlayer] Cleared ${dropped} chunk(s) with tag "${tag}"`);
+    }
+  }, [currentTag, stop, playNext]);
+
   return {
     isPlaying,
     isBuffering,
@@ -501,6 +534,7 @@ export function useStreamingAudioPlayer(
     play,
     stop,
     clear,
+    clearByTag,
   };
 }
 

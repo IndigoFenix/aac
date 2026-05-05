@@ -352,12 +352,12 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
 
 const SET_INTERACTION_MODE: FunctionDeclaration = {
   name: "set_interaction_mode",
-  description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention. The avatar will appear sleepy. Use "assist" when the user seems disengaged, busy with something else, is interacting with another person, or is in a situation where proactive speech would be intrusive. Use "interact" to re-engage when the user shows interest.`,
+  description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention; the avatar appears sleepy. Use "assist" when the user is busy with another person or in a situation where proactive speech would be intrusive. "standby" = the student is not present (not visible AND not heard) — don't proactively start conversation or treat the visible person as the student, but still respond to button presses and direct questions and update the board for them; the avatar appears resting. Use "interact" to re-engage when the student shows interest or returns.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
     properties: {
-      mode: { type: "string", enum: ["interact", "assist"], description: "The mode to switch to." },
+      mode: { type: "string", enum: ["interact", "assist", "standby"], description: "The mode to switch to." },
       reason: { type: "string", description: "Brief reason for the mode change." },
     },
     required: ["mode"],

@@ -91,7 +91,7 @@ export interface UseDualAgentReturn {
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
   /** Last mode change — set by AI tool calls or user toggle, used to flash an indicator. */
-  lastModeChange: { mode: 'interact' | 'assist' | 'silent'; reason?: string; source: 'ai' | 'user'; at: number } | null;
+  lastModeChange: { mode: 'interact' | 'assist' | 'silent' | 'standby'; reason?: string; source: 'ai' | 'user'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';

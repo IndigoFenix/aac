@@ -25,6 +25,8 @@ interface PendingRequest {
   resolve: () => void;
   reject: (err: Error) => void;
   onChunk: (wav: Buffer) => void;
+  /** True once the consumer has abandoned this request. Chunks/turnComplete are still consumed from the wire so the session stays in sync, but onChunk is suppressed. */
+  cancelled: boolean;
 }
 
 export interface GeminiLiveTtsOptions {
@@ -217,7 +219,7 @@ export class GeminiLiveTtsSession {
       for (const part of content.modelTurn.parts) {
         const inline = (part as any).inlineData;
         if (inline?.data && typeof inline.mimeType === "string" && inline.mimeType.startsWith("audio/")) {
-          if (active) {
+          if (active && !active.cancelled) {
             const pcm = Buffer.from(inline.data, "base64");
             active.onChunk(pcmToWav(pcm));
           }
@@ -246,7 +248,17 @@ export class GeminiLiveTtsSession {
 
   private pumpQueue(): void {
     if (this.activeRequest) return;
-    const next = this.queue.shift();
+    // Skip any requests that were cancelled while queued — sending an empty
+    // or stale turn to the model produces a refusal response ("I am not
+    // permitted to speak aloud…") because the model has nothing to read.
+    let next: PendingRequest | undefined;
+    while ((next = this.queue.shift())) {
+      if (next.cancelled) {
+        next.resolve();
+        continue;
+      }
+      break;
+    }
     if (!next) return;
     this.activeRequest = next;
     try {
@@ -262,9 +274,21 @@ export class GeminiLiveTtsSession {
   /**
    * Synthesize `text` to audio via the persistent Live session.
    * Yields WAV chunks as they arrive from the model.
+   *
+   * If `signal` is provided and aborted, the consumer stops receiving
+   * chunks and the in-flight request is marked cancelled so the session
+   * drops further chunks on the floor. The model is allowed to finish
+   * its current turn naturally — we never send an empty/cancellation
+   * turn, which would otherwise prompt a verbal refusal.
    */
-  async *synthesizeStream(text: string): AsyncGenerator<Buffer> {
+  async *synthesizeStream(text: string, signal?: AbortSignal): AsyncGenerator<Buffer> {
     if (this.closedIntentionally) throw new Error("TTS session is closed");
+    if (!text || !text.trim()) {
+      // Defensive: never send an empty turn — the model interprets it as
+      // "you asked me to speak with nothing to read" and refuses verbally.
+      throw new Error("synthesizeStream called with empty text");
+    }
+    if (signal?.aborted) throw new Error("aborted");
     await this.readyPromise;
     if (!this.session) throw new Error("TTS session not connected");
 
@@ -275,6 +299,7 @@ export class GeminiLiveTtsSession {
 
     const pending: PendingRequest = {
       text,
+      cancelled: false,
       onChunk: (wav) => {
         chunks.push(wav);
         if (notify) { const n = notify; notify = null; n(); }
@@ -290,6 +315,18 @@ export class GeminiLiveTtsSession {
       },
     };
 
+    const abortHandler = () => {
+      // Mark the pending as cancelled so handleMessage drops further
+      // chunks. We deliberately do NOT remove it from activeRequest /
+      // the queue — the session must still drain the model's current
+      // turn (turnComplete) so the next pumpQueue runs in a clean state.
+      pending.cancelled = true;
+      // Unblock the consumer's await so the for-await loop exits.
+      done = true;
+      if (notify) { const n = notify; notify = null; n(); }
+    };
+    signal?.addEventListener("abort", abortHandler);
+
     if (this.activeRequest) {
       this.queue.push(pending);
     } else {
@@ -301,18 +338,24 @@ export class GeminiLiveTtsSession {
         });
       } catch (err) {
         this.activeRequest = null;
+        signal?.removeEventListener("abort", abortHandler);
         throw err instanceof Error ? err : new Error(String(err));
       }
     }
 
-    while (true) {
-      while (chunks.length > 0) {
-        yield chunks.shift()!;
+    try {
+      while (true) {
+        while (chunks.length > 0) {
+          if (pending.cancelled) return;
+          yield chunks.shift()!;
+        }
+        if (done) break;
+        await new Promise<void>(resolve => { notify = resolve; });
       }
-      if (done) break;
-      await new Promise<void>(resolve => { notify = resolve; });
+      if (error && !pending.cancelled) throw error;
+    } finally {
+      signal?.removeEventListener("abort", abortHandler);
     }
-    if (error) throw error;
   }
 
   close(): void {

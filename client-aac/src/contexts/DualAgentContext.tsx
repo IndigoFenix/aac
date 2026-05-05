@@ -44,7 +44,7 @@ interface DualAgentContextType {
   // Interaction mode
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
-  lastModeChange: { mode: 'interact' | 'assist' | 'silent'; reason?: string; source: 'ai' | 'user'; at: number } | null;
+  lastModeChange: { mode: 'interact' | 'assist' | 'silent' | 'standby'; reason?: string; source: 'ai' | 'user'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -331,6 +331,11 @@ function DualAgentProviderInner({
         // Keep last 4 visible (but store all for potential scroll-back)
         return next.slice(-4);
       });
+    }, []),
+    onContextBoardRemove: useCallback((label: string) => {
+      if (!label) return;
+      const lower = label.toLowerCase();
+      setContextButtons(prev => prev.filter(b => b.label.toLowerCase() !== lower));
     }, []),
     onBoardPatch: handleBoardPatch,
     onSetBoard: handleSetBoard,

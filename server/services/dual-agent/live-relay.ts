@@ -210,6 +210,7 @@ export type ServerMessage =
   | { type: "interpretation_audio"; data: string }     // base64 audio chunk (student voice TTS)
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
+  | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "interpret")
   | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
   | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
@@ -223,6 +224,7 @@ export type ServerMessage =
   | { type: "session_snapshot"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot; config: import("@shared/aac-local-storage").AacLocalStorageConfig }
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
   | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
+  | { type: "context_button_remove"; data: { label: string } } // Remove a button from the context sidebar by label
   | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
@@ -368,6 +370,7 @@ export class LiveRelay {
 
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
+  private studentTtsAbortController: AbortController | null = null;
 
   // Pending prompt — if the model produces an empty turn after a button press
   // or user message, we retry with this prompt (proactiveAudio can swallow
@@ -1353,7 +1356,7 @@ export class LiveRelay {
       // or no one may be there yet). Greeting unconditionally would make the
       // AI address whoever happens to be visible as if they were the student.
       const presenceCheck =
-        ` Before greeting, check [PEOPLE PRESENT]: if it tags a face as [THE STUDENT], greet them; if it shows someone else without [THE STUDENT], stay silent (STANDBY); if no faces are listed, stay silent.`;
+        ` Before greeting, check [PEOPLE PRESENT]: if it tags a face as [THE STUDENT], greet them; if it shows someone else without [THE STUDENT], do not greet them as the student (you are in STANDBY MODE — wait for them to engage); if no faces are listed, stay silent.`;
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
@@ -1488,15 +1491,30 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
 
     // Stream student voice TTS in parallel
     if (singleSentence && this.studentVoice) {
+      // Cancel any in-flight student TTS from a previous press — without this,
+      // overlapping streams interleave on the `interpretation_audio` channel
+      // and the client plays a garbled mix. We send a tag-scoped clear so the
+      // AI's avatar_audio queue is preserved.
+      if (this.studentTtsAbortController) {
+        this.studentTtsAbortController.abort();
+        this.send({ type: "audio_clear_tag", tag: "interpret" });
+      }
+      const controller = new AbortController();
+      this.studentTtsAbortController = controller;
+
       logLiveSession("STUDENT TTS START", `text="${singleSentence}" voice=${JSON.stringify({ fallbackType: this.studentVoice.fallbackType, language: this.studentVoice.language, hasGemini: !!this.studentVoice.geminiVoiceName, hasCustom: !!this.studentVoice.customVoice })}`);
       this.preGenTtsPromise = this.streamTtsWithTimeout(
         singleSentence,
         this.studentVoice,
         "interpretation_audio",
         "Student",
+        15_000,
+        controller.signal,
       ).then(() => {
+        if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
         logLiveSession("STUDENT TTS DONE", `text="${singleSentence}"`);
       }).catch(err => {
+        if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
         logLiveSession("STUDENT TTS ERROR", (err as Error).message);
         console.error("[LiveRelay] Student TTS error:", (err as Error).message);
       });
@@ -1659,10 +1677,21 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
           return { id: call.id, name, response: { error: "No valid button provided" } };
         }
         const btn = ctxButtons[0];
+        const labelLower = btn.label.toLowerCase();
+
+        // Reject collision with main board — same label on both sidebars makes
+        // sentence lookup ambiguous on the client (the press dispatches whichever
+        // button was tapped, but with identical labels users can't tell them apart).
+        if (state?.boardButtonLabels.some(l => l.toLowerCase() === labelLower)) {
+          return { id: call.id, name, response: {
+            error: `A button labeled "${btn.label}" already exists on the main board. Choose a different label for the context sidebar (e.g. add a qualifier).`,
+            main_board_buttons: state.boardButtonLabels.join(", "),
+          }};
+        }
 
         // Deduplicate: if a button with the same label already exists, skip it
         const existingIdx = this.contextButtonLabels.findIndex(
-          l => l.toLowerCase() === btn.label.toLowerCase()
+          l => l.toLowerCase() === labelLower
         );
         if (existingIdx >= 0) {
           return { id: call.id, name, response: {
@@ -1731,6 +1760,22 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         // Add main buttons to the board
         if (mainButtons.length > 0) {
           this.lastBoardUpdateTime = Date.now();
+
+          // Evict any context-sidebar buttons that share a label with the new
+          // main buttons — collision causes ambiguous sentence playback.
+          const newMainLabelsLower = new Set(mainButtons.map(b => b.label.toLowerCase()));
+          const removedFromContext: string[] = [];
+          this.contextButtonLabels = this.contextButtonLabels.filter(label => {
+            if (newMainLabelsLower.has(label.toLowerCase())) {
+              removedFromContext.push(label);
+              return false;
+            }
+            return true;
+          });
+          for (const label of removedFromContext) {
+            this.send({ type: "context_button_remove", data: { label } });
+          }
+
           this.send({ type: "board_patch", data: { add: mainButtons, remove: [] } });
           this.turnAccum.boardChanged = true;
           this.turnAccum.boardAddLabels.push(...mainButtons.map(b => b.label));
@@ -1813,6 +1858,25 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
 
         const unresolvedKeys = await this.resolveExistingSymbols(buttons);
         this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
+
+        // Evict any context-sidebar buttons whose label collides with the new
+        // main board — same-label buttons on both sidebars cause ambiguous
+        // sentence playback when the user taps "the wrong one".
+        const newMainLabelsLower = new Set(buttons.map(b => b.label.toLowerCase()));
+        const removedFromContext: string[] = [];
+        this.contextButtonLabels = this.contextButtonLabels.filter(label => {
+          if (newMainLabelsLower.has(label.toLowerCase())) {
+            removedFromContext.push(label);
+            return false;
+          }
+          return true;
+        });
+        for (const label of removedFromContext) {
+          this.send({ type: "context_button_remove", data: { label } });
+        }
+        if (removedFromContext.length > 0) {
+          logLiveSession("CONTEXT_BUTTON", `Evicted on rebuild (collide with main): ${removedFromContext.join(", ")}`);
+        }
 
         this.lastBoardUpdateTime = Date.now();
         if (wasPrebuiltLoaded) {
@@ -2098,11 +2162,11 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       case "set_interaction_mode": {
         const mode = args.mode as string;
         const reason = (args.reason as string) || "";
-        if (mode !== "interact" && mode !== "assist") {
-          return { id: call.id, name, response: { error: "mode must be 'interact' or 'assist'" } };
+        if (mode !== "interact" && mode !== "assist" && mode !== "standby") {
+          return { id: call.id, name, response: { error: "mode must be 'interact', 'assist', or 'standby'" } };
         }
         logLiveSession("MODE CHANGE (AI)", `→ ${mode} (reason: ${reason})`);
-        // "assist" is a lighter state — AI stays active but less proactive.
+        // "assist" / "standby" are lighter states — AI stays active but less proactive.
         // Don't change interactionMode (that's user-controlled via cave click).
         // Instead, set the avatar emote and notify the client.
         this.send({ type: "interaction_mode_changed", data: { mode, reason, source: "ai" } });
@@ -2739,6 +2803,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     msgType: "avatar_audio" | "interpretation_audio",
     label: string,
     timeoutMs = 15_000,
+    signal?: AbortSignal,
   ): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -2747,12 +2812,14 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
 
     try {
       const streamPromise = (async () => {
-        for await (const chunk of ttsFacade.synthesizeStream(text, voice)) {
+        for await (const chunk of ttsFacade.synthesizeStream(text, voice, signal)) {
+          if (signal?.aborted) return;
           this.send({ type: msgType, data: chunk.toString("base64") } as any);
         }
       })();
       await Promise.race([streamPromise, timeoutPromise]);
     } catch (err) {
+      if (signal?.aborted) return;
       console.error(`[LiveRelay] ${label} TTS failed:`, (err as Error).message);
     } finally {
       if (timer) clearTimeout(timer);

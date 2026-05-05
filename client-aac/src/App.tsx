@@ -3,7 +3,7 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
-import SandboxGameApp from "@/components/apps/sandbox-game";
+import GameEmbed from "@/components/games/GameEmbed";
 import { CameraProvider } from "@/components/CameraProvider";
 import LoginModal from "@/components/LoginModal";
 import StudentSelector from "@/components/StudentSelector";
@@ -27,17 +27,39 @@ interface AuthResponse {
   user: AuthUser | null;
 }
 
+// Path-bypass entry points that load a game iframe instead of the AAC client.
+const GAME_PATH_BYPASS: Record<string, string> = {
+  'sandbox-app': 'sandbox-game',
+  'space-trader-app': 'space-trader',
+  'bubbles-app': 'bubbles-game',
+};
+
+function matchGameRoute(pathname: string): string | null {
+  const trimmed = pathname.replace(/\/$/, '');
+  for (const [suffix, gameId] of Object.entries(GAME_PATH_BYPASS)) {
+    if (trimmed.endsWith(`/${suffix}`)) return gameId;
+  }
+  return null;
+}
+
 function MainApp() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     () => localStorage.getItem('synapse_student_id')
   );
   const { t, isRTL, direction, language } = useLanguage();
 
-  // Direct route: /aac/sandbox-app bypasses auth and AAC system
-  if (window.location.pathname.replace(/\/$/, '').endsWith('/sandbox-app')) {
+  // Direct routes that embed a /games/<id>/ iframe. These bypass auth/student
+  // selection at the AAC-client layer; the games gate handles its own auth.
+  const gameRoute = matchGameRoute(window.location.pathname);
+  if (gameRoute) {
     return (
       <div className="h-screen w-screen">
-        <SandboxGameApp onClose={() => { window.location.href = '/aac'; }} studentId={selectedStudentId || 'guest'} />
+        <GameEmbed
+          gameId={gameRoute}
+          src={`/games/${gameRoute}/`}
+          forwardGaze={gameRoute === 'bubbles-game'}
+          onClose={() => { window.location.href = '/aac'; }}
+        />
       </div>
     );
   }

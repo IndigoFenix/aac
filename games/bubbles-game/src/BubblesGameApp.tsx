@@ -1,14 +1,14 @@
 // Bubbles Game — Main app component.
 // Canvas-based reflex game: pop bubbles by tapping/clicking.
-// - Uses pointer events for multi-touch detection
-// - Uses eye-gaze (when enabled) to detect tracking-without-touching
-//   and nudge the AI to encourage the student
-// - Sends periodic success-rate reports to the AI
+// - Uses pointer events for multi-touch detection.
+// - When embedded, receives gaze position from the platform via the games
+//   bridge (`gaze` PlatformMessage) and uses it to detect tracking-without-
+//   touching, sending an `ai_observation` so the AI can encourage the student.
+// - Sends periodic success-rate observations to the AI through the bridge.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { useEyeTrackingDwell } from '@/contexts/EyeTrackingDwellContext';
-import { useLanguage } from '@/contexts/LanguageContext';
+import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import {
   POP_WINDOW_MS,
   bubbleNearPoint,
@@ -20,13 +20,7 @@ import {
 } from './engine';
 import type { GameStats } from './types';
 
-interface BubblesGameAppProps {
-  onClose: () => void;
-  studentId?: string;
-  /** Send a message/context to the AI (silently — as system context). */
-  sendMessageToAi?: (msg: string) => void;
-}
-
+const GAME_ID = 'bubbles-game';
 const HUD_REFRESH_MS = 400;
 const AI_REPORT_INTERVAL_MS = 45_000;        // periodic success-rate report
 const GAZE_ENCOURAGE_THRESHOLD_MS = 2000;    // dwell on bubble without touch
@@ -44,11 +38,16 @@ interface PopAnim {
   special: boolean;
 }
 
-export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGameAppProps) {
+interface GazeState {
+  x: number;
+  y: number;
+  mode: 'off' | 'eyegaze' | 'mouse';
+}
+
+export default function BubblesGameApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { t, direction } = useLanguage();
-  const { gazePosition, mode: dwellMode } = useEyeTrackingDwell();
+  const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
 
   // Game state lives in a ref so the rAF loop doesn't trigger re-renders.
   const stateRef = useRef(createGameState(1, 1));
@@ -57,15 +56,22 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
   // HUD state (updated periodically)
   const [hudStats, setHudStats] = useState<GameStats>(stateRef.current.stats);
 
-  // Gaze-tracking ref (for rAF access without stale closure)
-  const gazeRef = useRef(gazePosition);
-  gazeRef.current = gazePosition;
-  const dwellModeRef = useRef(dwellMode);
-  dwellModeRef.current = dwellMode;
+  // Gaze state — updated from `gaze` platform messages. iframe-local pixels.
+  const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
 
-  // AI callback ref (stable in rAF)
-  const sendMessageRef = useRef(sendMessageToAi);
-  sendMessageRef.current = sendMessageToAi;
+  // Bridge: announce ready, listen for gaze + close.
+  useEffect(() => {
+    sendToParent({ type: 'ready', gameId: GAME_ID });
+    const off = onPlatformMessage(msg => {
+      if (msg.type === 'gaze') {
+        gazeRef.current = { x: msg.x, y: msg.y, mode: msg.mode };
+      }
+      if (msg.type === 'request_close') {
+        sendToParent({ type: 'session_end', reason: 'quit' });
+      }
+    });
+    return () => off();
+  }, []);
 
   // ── Resize canvas to container ─────────────────────────────────────
   useEffect(() => {
@@ -111,7 +117,7 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
 
     const loop = (time: number) => {
       rafId = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, (time - lastTime) / 1000); // clamp at 50ms
+      const dt = Math.min(0.05, (time - lastTime) / 1000);
       lastTime = time;
 
       const state = stateRef.current;
@@ -121,7 +127,6 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
 
       // ── Draw ──
       ctx.clearRect(0, 0, state.width, state.height);
-      // Background
       const grad = ctx.createLinearGradient(0, 0, 0, state.height);
       grad.addColorStop(0, '#bae6fd');
       grad.addColorStop(1, '#e0f2fe');
@@ -130,14 +135,12 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
 
       // Bubbles
       for (const b of state.bubbles) {
-        // Pending pop scaling: expand up to 1.25x over 200ms
         let drawRadius = b.radius;
         if (b.pendingTouchTime !== undefined) {
           const p = Math.min(1, (now - b.pendingTouchTime) / POP_WINDOW_MS);
           drawRadius = b.radius * (1 + 0.25 * p);
         }
 
-        // Body (radial gradient)
         const bodyGrad = ctx.createRadialGradient(
           b.x - drawRadius * 0.3, b.y - drawRadius * 0.3, drawRadius * 0.1,
           b.x, b.y, drawRadius,
@@ -152,20 +155,17 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
         ctx.arc(b.x, b.y, drawRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Outline (dashed if damaged)
         ctx.lineWidth = 2;
         ctx.strokeStyle = b.damaged ? 'rgba(239, 68, 68, 0.8)' : 'rgba(255, 255, 255, 0.9)';
         if (b.damaged) ctx.setLineDash([6, 4]); else ctx.setLineDash([]);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Highlight
         ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
         ctx.beginPath();
         ctx.arc(b.x - drawRadius * 0.35, b.y - drawRadius * 0.4, drawRadius * 0.18, 0, Math.PI * 2);
         ctx.fill();
 
-        // Sparkle for special bubbles
         if (b.special) {
           const t2 = now / 300;
           for (let i = 0; i < 5; i++) {
@@ -200,10 +200,14 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
       popAnimsRef.current = keptAnims;
 
       // ── Gaze tracking without touch: nudge AI ──
-      if (dwellModeRef.current !== 'off' && gazeRef.current && sendMessageRef.current) {
+      // Coordinates from the bridge are already iframe-local, but the canvas
+      // sits inside the iframe with a (possibly nonzero) bounding rect — so
+      // we still subtract the canvas's offset within the iframe.
+      const gaze = gazeRef.current;
+      if (gaze.mode !== 'off' && gaze.x >= 0) {
         const rect = canvas.getBoundingClientRect();
-        const gx = gazeRef.current.x - rect.left;
-        const gy = gazeRef.current.y - rect.top;
+        const gx = gaze.x - rect.left;
+        const gy = gaze.y - rect.top;
         const nearest = bubbleNearPoint(state, gx, gy, GAZE_HIT_RADIUS_PX);
         const idleSinceTouch = now - state.lastTouchTime > IDLE_AFTER_TOUCH_MS;
 
@@ -214,9 +218,15 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
               now - lastEncourageTime >= GAZE_ENCOURAGE_COOLDOWN_MS
             ) {
               lastEncourageTime = now;
-              sendMessageRef.current(
-                '[system: The student is watching a bubble closely but not reaching out to pop it. Offer gentle encouragement to try touching the screen to pop it.]',
-              );
+              sendToParent({
+                type: 'ai_observation',
+                surface: {
+                  event: 'student_watching_bubble',
+                  hint: 'Student is watching a bubble closely but not reaching out to pop it. Offer gentle encouragement to try touching the screen.',
+                  bubbleHue: nearest.hue,
+                  isSpecial: nearest.special,
+                },
+              } as never);
             }
           } else {
             gazeLockBubbleId = nearest.id;
@@ -235,16 +245,20 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
 
       // ── Periodic AI success report ──
       if (
-        sendMessageRef.current &&
         now - lastReportTime >= AI_REPORT_INTERVAL_MS &&
         state.stats.popped + state.stats.missed > 0
       ) {
         lastReportTime = now;
-        const pct = Math.round(state.stats.successRate * 100);
-        const rate = state.stats.popRate.toFixed(2);
-        sendMessageRef.current(
-          `[system: Bubbles game update — student has popped ${state.stats.popped} bubbles (${pct}% success rate, ${rate}/sec). React briefly and supportively if this warrants it.]`,
-        );
+        sendToParent({
+          type: 'ai_observation',
+          surface: {
+            event: 'periodic_progress',
+            popped: state.stats.popped,
+            missed: state.stats.missed,
+            successRatePct: Math.round(state.stats.successRate * 100),
+            popsPerSec: Number(state.stats.popRate.toFixed(2)),
+          },
+        } as never);
       }
     };
 
@@ -282,32 +296,33 @@ export default function BubblesGameApp({ onClose, sendMessageToAi }: BubblesGame
     <div
       ref={containerRef}
       className="h-full w-full bg-sky-100 flex flex-col overflow-hidden select-none"
-      dir={direction}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-white/70 backdrop-blur border-b border-sky-200 shrink-0">
-        <h1 className="text-lg font-bold text-sky-700">🫧 {t('bubblesGame.title')}</h1>
+        <h1 className="text-lg font-bold text-sky-700">🫧 Bubbles</h1>
         <div className="flex items-center gap-3">
           <div className="text-sm text-sky-800">
-            <span className="font-semibold">{t('bubblesGame.score')}: </span>
+            <span className="font-semibold">Score: </span>
             <span className="tabular-nums">{hudStats.score}</span>
           </div>
           <button
             data-dwell
             onClick={handleReset}
             className="px-3 py-1.5 rounded-lg bg-sky-200 hover:bg-sky-300 text-sky-900 text-sm font-medium active:scale-95 transition-transform"
-            aria-label={t('bubblesGame.reset')}
+            aria-label="Reset"
           >
-            {t('bubblesGame.reset')}
+            Reset
           </button>
-          <button
-            data-dwell
-            onClick={onClose}
-            className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-transform"
-            aria-label={t('bubblesGame.close')}
-          >
-            <X size={20} />
-          </button>
+          {isEmbedded && (
+            <button
+              data-dwell
+              onClick={() => sendToParent({ type: 'request_close' })}
+              className="p-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-transform"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
       </div>
 

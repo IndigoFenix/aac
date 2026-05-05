@@ -44,6 +44,7 @@ export interface UseLiveSessionOptions {
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   onContextBoardUpdate?: (board: ParsedBoardData) => void;
+  onContextBoardRemove?: (label: string) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
   onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
   onUnloadBoard?: () => void;
@@ -72,6 +73,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     language = "en",
     onBoardUpdate,
     onContextBoardUpdate,
+    onContextBoardRemove,
     onBoardPatch,
     onSetBoard,
     onUnloadBoard,
@@ -148,7 +150,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Interaction mode
   const [interactionMode, setInteractionModeState] = useState<"interact" | "silent">("interact");
   // Last mode change — set by AI tool calls or user toggle, used to flash an indicator
-  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "silent"; reason?: string; source: "ai" | "user"; at: number } | null>(null);
+  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "silent" | "standby"; reason?: string; source: "ai" | "user"; at: number } | null>(null);
 
   // Response mode
   const [responseMode, setResponseModeState] = useState<"fast" | "analyze">("fast");
@@ -224,6 +226,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   onBoardUpdateRef.current = onBoardUpdate;
   const onContextBoardUpdateRef = useRef(onContextBoardUpdate);
   onContextBoardUpdateRef.current = onContextBoardUpdate;
+  const onContextBoardRemoveRef = useRef(onContextBoardRemove);
+  onContextBoardRemoveRef.current = onContextBoardRemove;
   const onBoardPatchRef = useRef(onBoardPatch);
   onBoardPatchRef.current = onBoardPatch;
   const onSetBoardRef = useRef(onSetBoard);
@@ -359,6 +363,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           if (localTtsFlushTimerRef.current) { clearTimeout(localTtsFlushTimerRef.current); localTtsFlushTimerRef.current = null; }
           break;
 
+        case "audio_clear_tag":
+          // Targeted clear — e.g. drop a stale student-voice queue without
+          // touching the AI's avatar audio.
+          if (typeof msg.tag === "string") {
+            audioPlayer.clearByTag(msg.tag);
+          }
+          break;
+
         case "transcript":
           setTranscription(msg.data);
           if (msg.confidence) setTranscriptConfidence(msg.confidence);
@@ -375,6 +387,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "context_button_add":
           onContextBoardUpdateRef.current?.(msg.data);
+          break;
+
+        case "context_button_remove":
+          onContextBoardRemoveRef.current?.(msg.data?.label);
           break;
 
         case "board_patch": {
@@ -499,8 +515,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "interaction_mode_changed":
-          // AI changed interaction mode — sync local state and flash indicator
-          setInteractionModeState(msg.data.mode);
+          // AI changed interaction mode — flash indicator. Only sync the
+          // primary `interactionMode` for "interact" / "silent" — the lighter
+          // "assist" / "standby" states are tracked via lastModeChange and
+          // shouldn't override the user-controlled silent/interact toggle.
+          if (msg.data.mode === "interact" || msg.data.mode === "silent") {
+            setInteractionModeState(msg.data.mode);
+          }
           setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: msg.data.source, at: Date.now() });
           break;
 
