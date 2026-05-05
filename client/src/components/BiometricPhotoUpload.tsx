@@ -4,9 +4,14 @@
 //   - User profile (user face)
 //   - StudentContactsPanel (contact face)
 //
-// The client extracts the 128D face embedding via face-api.js before upload,
-// so the server doesn't need its own face detection. Image + embedding are
-// sent together as multipart form-data.
+// Two capture paths:
+//   - File picker → resize-before-detect, auto-crop to face bbox, upload
+//     the cropped JPEG.
+//   - Camera (BiometricCameraDialog) → live preview → snapshot → same
+//     auto-crop pipeline.
+//
+// The cropped image + 128D embedding are sent together as multipart
+// form-data; the server doesn't run face detection.
 
 import { useState, useRef, useEffect } from 'react';
 import { apiUrl } from '@/lib/queryClient';
@@ -16,69 +21,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, Loader2, AlertTriangle, Camera } from 'lucide-react';
-
-// =============================================================================
-// Face-api loader (CDN) — shared across all biometric components.
-// =============================================================================
-
-let faceApiLoaded = false;
-let faceApiPromise: Promise<void> | null = null;
-
-async function loadFaceApi(): Promise<void> {
-  if (faceApiLoaded) return;
-  if (faceApiPromise) return faceApiPromise;
-
-  faceApiPromise = new Promise(async (resolve, reject) => {
-    try {
-      if ((window as any).faceapi) {
-        faceApiLoaded = true;
-        resolve();
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
-      script.async = true;
-      script.onload = async () => {
-        const faceapi = (window as any).faceapi;
-        if (!faceapi) {
-          reject(new Error('face-api.js failed to load'));
-          return;
-        }
-        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
-        await Promise.all([
-          faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-        ]);
-        faceApiLoaded = true;
-        resolve();
-      };
-      script.onerror = () => reject(new Error('Failed to load face-api.js'));
-      document.head.appendChild(script);
-    } catch (error) {
-      reject(error);
-    }
-  });
-
-  return faceApiPromise;
-}
-
-async function extractEmbedding(img: HTMLImageElement): Promise<{ embedding: number[] | null; quality?: number }> {
-  await loadFaceApi();
-  const faceapi = (window as any).faceapi;
-  const detection = await faceapi
-    .detectSingleFace(img)
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-  if (!detection) return { embedding: null };
-  // Quality proxy: detection score (0-1). face-api already gates low-score
-  // detections; anything past the gate is usable.
-  return { embedding: Array.from(detection.descriptor as Float32Array), quality: detection.detection.score };
-}
-
-// =============================================================================
-// Component
-// =============================================================================
+import {
+  loadFaceApi,
+  processBiometricImage,
+  fileToImage,
+  type BiometricProcessResult,
+} from '@/lib/biometricImage';
+import { BiometricCameraDialog } from '@/components/BiometricCameraDialog';
 
 export type BiometricPhotoTarget =
   | { type: 'user'; userId: string }
@@ -97,7 +46,6 @@ interface BiometricPhotoUploadProps {
 
 export function BiometricPhotoUpload({
   target,
-  currentPhotoUrl,
   biometricDataId,
   disabled,
   onUploaded,
@@ -111,6 +59,7 @@ export function BiometricPhotoUpload({
   const [faceApiReady, setFaceApiReady] = useState(false);
   const [faceApiError, setFaceApiError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   useEffect(() => {
     loadFaceApi()
@@ -131,47 +80,14 @@ export function BiometricPhotoUpload({
     return `/api/biometric/students/${target.studentId}/contacts/${target.contactId}/photo`;
   }
 
-  async function handleFile(file: File) {
-    if (!file.type.startsWith('image/')) {
-      toast({ title: t('common.error'), description: t('biometric.fileTypeError'), variant: 'destructive' });
-      return;
-    }
-
+  async function uploadResult(processed: BiometricProcessResult) {
     setUploading(true);
+    setPreview(processed.dataUrl);
     try {
-      // Local preview
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result as string);
-      reader.readAsDataURL(file);
-
-      // Extract 128D embedding client-side
-      const img = document.createElement('img');
-      img.src = URL.createObjectURL(file);
-      await new Promise<void>((res, rej) => {
-        img.onload = () => res();
-        img.onerror = () => rej(new Error('image load failed'));
-      });
-
-      const { embedding, quality } = await extractEmbedding(img);
-      URL.revokeObjectURL(img.src);
-
-      if (!embedding) {
-        toast({
-          title: t('biometric.noFaceDetected'),
-          description: t('biometric.noFaceDetectedHint'),
-          variant: 'destructive',
-        });
-        setPreview(null);
-        return;
-      }
-
-      // Multipart upload. Use raw fetch (via apiUrl for port correctness) so we
-      // can read the response body even on 4xx — apiRequest throws on non-OK
-      // and we lose the structured { code } payload.
       const form = new FormData();
-      form.append('image', file);
-      form.append('embedding', JSON.stringify(embedding));
-      if (quality !== undefined) form.append('quality', String(quality));
+      form.append('image', processed.blob, 'photo.jpg');
+      form.append('embedding', JSON.stringify(processed.embedding));
+      form.append('quality', String(processed.quality));
 
       const response = await fetch(apiUrl(endpointFor(target)), {
         method: 'POST',
@@ -201,8 +117,47 @@ export function BiometricPhotoUpload({
       setPreview(null);
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      toast({ title: t('common.error'), description: t('biometric.fileTypeError'), variant: 'destructive' });
+      return;
+    }
+
+    setUploading(true);
+    let img: HTMLImageElement | null = null;
+    try {
+      img = await fileToImage(file);
+      // Yield to the browser so the spinner paints before face-api blocks
+      // the main thread; without this the upload button looks frozen until
+      // detection completes.
+      await new Promise((r) => setTimeout(r, 0));
+      const processed = await processBiometricImage(img);
+      if (!('blob' in processed)) {
+        toast({
+          title: t('biometric.noFaceDetected'),
+          description: t('biometric.noFaceDetectedHint'),
+          variant: 'destructive',
+        });
+        return;
+      }
+      // Hand off to the shared upload path.
+      await uploadResult(processed);
+    } catch (err: any) {
+      console.error('[BiometricPhotoUpload] processing error:', err);
+      toast({ title: t('common.error'), description: err.message, variant: 'destructive' });
+      setPreview(null);
+    } finally {
+      if (img) URL.revokeObjectURL(img.src);
+      setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  }
+
+  function handleCameraCapture(result: BiometricProcessResult) {
+    void uploadResult(result);
   }
 
   return (
@@ -238,30 +193,47 @@ export function BiometricPhotoUpload({
               if (file) handleFile(file);
             }}
           />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || uploading || !faceApiReady}
-            className="w-fit"
-          >
-            {uploading ? (
-              <Loader2 className="w-4 h-4 me-2 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4 me-2" />
-            )}
-            {uploading
-              ? t('biometric.uploading')
-              : displayedPhoto
-              ? t('biometric.replacePhoto')
-              : t('biometric.uploadPhoto')}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled || uploading || !faceApiReady}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 me-2" />
+              )}
+              {uploading
+                ? t('biometric.uploading')
+                : displayedPhoto
+                ? t('biometric.replacePhoto')
+                : t('biometric.uploadPhoto')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setCameraOpen(true)}
+              disabled={disabled || uploading || !faceApiReady}
+            >
+              <Camera className="w-4 h-4 me-2" />
+              {t('biometric.takePhoto') || 'Take Photo'}
+            </Button>
+          </div>
           {!dense && (
             <p className="text-xs text-muted-foreground">{t('biometric.photoHint')}</p>
           )}
         </div>
       </div>
+
+      <BiometricCameraDialog
+        isOpen={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={handleCameraCapture}
+      />
     </div>
   );
 }

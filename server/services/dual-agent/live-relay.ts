@@ -1239,6 +1239,7 @@ export class LiveRelay {
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
             studentDiagnosis: state.cachedDiagnosis || undefined,
+            studentCommunicationMethod: state.cachedCommunicationMethod || undefined,
             aiName: student.aacSettings?.aiName || undefined,
             knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
             availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
@@ -2197,6 +2198,25 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         logLiveSession("FALSE_WAKE TOOL", `reason: ${reason}`);
         this.send({ type: "false_wake_report", data: { reason } });
         return { id: call.id, name, response: { output: "false wake noted" } };
+      }
+
+      case "private_note": {
+        const note = extractStringArg(args, "note").trim();
+        if (!note) {
+          return { id: call.id, name, response: { error: "note is required" } };
+        }
+        logLiveSession("PRIVATE_NOTE", note);
+        // Persist to pendingMessages so the monitor agent and any future
+        // reconnection sees it as part of the conversation history. It is
+        // never sent to the client, so the user never sees or hears it.
+        if (this.sessionId) {
+          await dualAgentService.addPendingMessage(this.sessionId, {
+            role: "assistant",
+            content: `[PRIVATE_NOTE] ${note}`,
+            timestamp: Date.now(),
+          });
+        }
+        return { id: call.id, name, response: { output: "noted" } };
       }
 
       default:

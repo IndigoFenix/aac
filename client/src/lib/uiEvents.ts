@@ -1,7 +1,7 @@
 // src/lib/uiEvents.ts
 import { useEffect } from "react";
 
-export type UIEventName = "login" | "register" | "settings" | "about" | "privacy" | "terms" | "createStudent" | "editStudent";
+export type UIEventName = "login" | "register" | "settings" | "about" | "privacy" | "terms" | "createStudent" | "editStudent" | "createContact";
 
 export function openUI(name: UIEventName, data?: any) {
   window.dispatchEvent(new CustomEvent(`ui:open:${name}`, { detail: data }));

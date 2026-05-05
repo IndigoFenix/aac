@@ -291,6 +291,7 @@ export const yue: Translations = {
     connected: "已連接",
     disconnected: "已斷開",
     processing: "處理緊...",
+    wakingUp: "醒緊...",
   },
 
   quickActions: {

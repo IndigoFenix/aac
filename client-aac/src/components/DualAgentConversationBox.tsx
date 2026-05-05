@@ -300,8 +300,12 @@ export function DualAgentConversationBox({
     }
   }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio, attentiveness]);
 
-  // Determine if avatar should show asleep (full cave sleep — user-controlled only)
-  const isAsleep = interactionMode === 'silent';
+  // Determine if avatar should show asleep. There are two paths into the cave:
+  // (1) user-toggled silent mode, and (2) no live session — uninitialized or
+  // disconnected. In both cases the cave is shown and the avatar body is
+  // hidden because there's nothing actively running behind it.
+  const noSession = !isInitialized;
+  const isAsleep = interactionMode === 'silent' || noSession;
   // AI-initiated "assist" mode — less proactive, avatar shows sleep face
   const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
   // AI-initiated "standby" mode — student not present, avatar shows resting
@@ -312,9 +316,11 @@ export function DualAgentConversationBox({
   // Sleep system → sprite mapping. Cave variants are used in Silent Mode;
   // avatar variants are used in non-Silent Mode. See planning-docs/aac-sleep-system-plan.md.
   // Standby (AI-determined "no one home") visually maps to the resting indicator.
+  // When there's no live session, force the sleeping variant — the AI is not
+  // running, so the cave/avatar should reflect that, not the last-known sleepState.
   const sleepState = attentiveness?.sleepState;
-  const isSleepingState = sleepState === 'hibernation' || sleepState === 'asleep';
-  const isRestingState = sleepState === 'resting' || sleepState === 'waking' || isStandbyMode;
+  const isSleepingState = noSession || sleepState === 'hibernation' || sleepState === 'asleep';
+  const isRestingState = !noSession && (sleepState === 'resting' || sleepState === 'waking' || isStandbyMode);
   // In Silent Mode the cave is always shown — pick a variant based on the
   // current sleep/standby state. Default to the closed cave (axolotl-cave).
   const caveSrc = isSleepingState ? caveSleep : isRestingState ? caveRest : caveDefault;
@@ -575,7 +581,7 @@ export function DualAgentConversationBox({
                         style={{ animationDelay: "0.2s" }}
                       />
                       <span className="ml-2 text-sm">
-                        {"Processing..."}
+                        {t('status.wakingUp')}
                       </span>
                     </div>
                   ) : reconnecting ? (

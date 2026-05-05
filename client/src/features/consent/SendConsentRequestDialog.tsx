@@ -12,6 +12,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateConsentInvitation } from "@/hooks/useConsentApi";
+import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
+import { openUI } from "@/lib/uiEvents";
 
 import {
   Dialog,
@@ -32,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Copy, Mail, Send, MessageSquare } from "lucide-react";
+import { Copy, Mail, Send, MessageSquare, UserPlus } from "lucide-react";
 
 interface SendConsentRequestDialogProps {
   studentId: string;
@@ -57,6 +59,18 @@ export function SendConsentRequestDialog({
   const { t } = useLanguage();
   const { toast } = useToast();
   const create = useCreateConsentInvitation();
+  const { setActiveFeature } = useFeaturePanel();
+
+  // Jump to the Contacts panel and pop the create-contact modal blank — used
+  // when there's no parent contact to send to yet, or the user needs to add
+  // another. Unlike the consent-wizard "Add me as contact" path, this does
+  // NOT prefill any user-specific fields.
+  function handleAddContact() {
+    onClose();
+    setActiveFeature('contacts');
+    // Defer until the contacts panel mounts and registers its listener.
+    setTimeout(() => openUI('createContact'), 0);
+  }
 
   // Pull contacts for this student.
   const contactsQuery = useQuery<{ success: boolean; contacts: ContactRow[] }>({
@@ -159,6 +173,7 @@ export function SendConsentRequestDialog({
               channel={channel}
               setChannel={setChannel}
               channelAvailable={channelAvailable}
+              onAddContact={handleAddContact}
               t={t}
             />
           )}
@@ -200,6 +215,7 @@ function FormPanel({
   channel,
   setChannel,
   channelAvailable,
+  onAddContact,
   t,
 }: {
   contacts: ContactRow[];
@@ -209,6 +225,7 @@ function FormPanel({
   channel: "email" | "sms" | "manual";
   setChannel: (v: "email" | "sms" | "manual") => void;
   channelAvailable: { email: boolean; sms: boolean; manual: boolean };
+  onAddContact: () => void;
   t: (k: string) => string;
 }) {
   if (isLoading) {
@@ -216,16 +233,28 @@ function FormPanel({
   }
   if (contacts.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {t("consent.send.noContacts") ||
-          "No contacts on file for this student. Add a parent contact in the Contacts tab first."}
-      </p>
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          {t("consent.send.noContacts") ||
+            "No contacts on file for this student. Add a parent contact in the Contacts tab first."}
+        </p>
+        <Button onClick={onAddContact}>
+          <UserPlus className="h-4 w-4 me-2" />
+          {t("consent.send.addContact") || "Add a contact"}
+        </Button>
+      </div>
     );
   }
   return (
     <div className="space-y-4">
       <div>
-        <Label>{t("consent.send.contactLabel") || "Send to"}</Label>
+        <div className="flex items-center justify-between">
+          <Label>{t("consent.send.contactLabel") || "Send to"}</Label>
+          <Button variant="link" size="sm" onClick={onAddContact} className="h-auto p-0">
+            <UserPlus className="h-3 w-3 me-1" />
+            {t("consent.send.addContact") || "Add a contact"}
+          </Button>
+        </div>
         <Select value={contactId} onValueChange={setContactId}>
           <SelectTrigger>
             <SelectValue placeholder={t("consent.send.contactPlaceholder") || "Pick a parent contact"} />

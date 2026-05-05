@@ -291,6 +291,7 @@ export const ko: Translations = {
     connected: "연결됨",
     disconnected: "연결 끊김",
     processing: "처리 중...",
+    wakingUp: "깨어나는 중...",
   },
 
   quickActions: {

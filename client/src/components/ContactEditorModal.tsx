@@ -47,6 +47,8 @@ export interface ContactEditorModalProps {
   studentId: string;
   /** Pass a contact to edit; omit (or null) to create. */
   contact?: StudentContact | null;
+  /** Optional prefill values used only when creating (ignored if `contact` is set). */
+  initialForm?: Partial<FormState>;
 }
 
 interface FormState {
@@ -130,7 +132,7 @@ function currentLinkValue(form: FormState): LinkValue {
   return 'none';
 }
 
-export function ContactEditorModal({ isOpen, onClose, studentId, contact }: ContactEditorModalProps) {
+export function ContactEditorModal({ isOpen, onClose, studentId, contact, initialForm }: ContactEditorModalProps) {
   const { student: selectedStudent } = useStudent();
   const studentCountry = selectedStudent?.id === studentId ? selectedStudent?.country : null;
   const { t, isRTL } = useLanguage();
@@ -142,9 +144,13 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact }: Cont
 
   useEffect(() => {
     if (isOpen) {
-      setForm(contact ? contactToForm(contact) : EMPTY);
+      if (contact) {
+        setForm(contactToForm(contact));
+      } else {
+        setForm({ ...EMPTY, ...(initialForm ?? {}) });
+      }
     }
-  }, [isOpen, contact]);
+  }, [isOpen, contact, initialForm]);
 
   // Load linkable entities for this student's institutes
   const linkablesQuery = useQuery<{ success: boolean; entities: LinkableEntity[] }>({

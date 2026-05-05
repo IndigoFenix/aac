@@ -16,6 +16,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
+import { openUI } from "@/lib/uiEvents";
 import {
   useConsentNotice,
   useConsentWizardContext,
@@ -79,6 +82,8 @@ const STEP_ORDER_WITH_OTP: Step[] = ["identity", "phoneOtp", "guardian", "notice
 export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: ConsentWizardProps) {
   const { t, language } = useLanguage();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { setActiveFeature } = useFeaturePanel();
 
   // Mode resolution: token mode uses the public invitation hooks; session
   // mode uses the authenticated wizard-context hook. Either path produces
@@ -227,6 +232,23 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
   }
 
   if (!ctx?.guardianContact) {
+    // Token-mode users aren't authenticated, so they can't self-add a contact —
+    // hide the shortcut for them.
+    const canAddSelf = !isTokenMode && !!user;
+    const handleAddSelfAsContact = () => {
+      if (!user) return;
+      onClose();
+      setActiveFeature('contacts');
+      // Defer until the contacts panel has mounted and registered its listener.
+      setTimeout(() => {
+        openUI('createContact', {
+          name: user.fullName || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+          contactEmail: user.email ?? '',
+          role: 'parent_guardian',
+          linkedUserId: user.id,
+        });
+      }, 0);
+    };
     return (
       <Dialog open onOpenChange={(o) => !o && onClose()}>
         <DialogContent>
@@ -235,7 +257,12 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
             <DialogDescription>{t("consent.wizard.noGuardianContact")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button onClick={onClose}>{t("common.close")}</Button>
+            <Button variant="outline" onClick={onClose}>{t("common.close")}</Button>
+            {canAddSelf && (
+              <Button onClick={handleAddSelfAsContact}>
+                {t("consent.wizard.addSelfAsContact")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

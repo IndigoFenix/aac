@@ -289,6 +289,7 @@ export const en = {
     connected: "Connected",
     disconnected: "Disconnected",
     processing: "Processing...",
+    wakingUp: "Waking up...",
   },
 
   quickActions: {

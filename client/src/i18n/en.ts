@@ -1054,6 +1054,7 @@ export const en = {
     mfaEnabledDesc: "Two-factor authentication has been enabled for your account.",
     mfaDisabledDesc: "Two-factor authentication has been disabled for your account.",
     mfaDisabled: "MFA Disabled",
+    mfaSetupSuccess: "Two-Factor Authentication Enabled",
   },
 
   // ============================================================================
@@ -2580,6 +2581,7 @@ export const en = {
       toastSignedDescription: "Thank you. The signed consent is now on file.",
       toastErrorTitle: "Could not record consent",
       noGuardianContact: "No guardian contact is set up for this {{student}}. Add yourself as a contact first.",
+      addSelfAsContact: "Add me as a contact",
       noNoticeForCountry: "We don't yet have a localized informed-consent notice for this country. Please contact support.",
       bannerDescription: "This {{student}} has no active informed-consent record. Some features will be blocked until consent is collected.",
       openButton: "Sign consent",
@@ -2669,6 +2671,7 @@ export const en = {
       contactLabel: "Send to",
       contactPlaceholder: "Pick a parent contact",
       noContacts: "No contacts on file for this student. Add a parent contact in the Contacts tab first.",
+      addContact: "Add a contact",
       channelLabel: "Delivery channel",
       channel: {
         email: "Email",
@@ -3161,6 +3164,13 @@ export const en = {
     faceApiError: "Face detection library failed to load",
     fileTypeError: "File must be an image",
     linkedPhotoHint: "Photo comes from the linked user/student record and is managed there.",
+    takePhoto: "Take Photo",
+    cameraHint: "Center your face in the frame, then capture.",
+    cameraError: "Camera Error",
+    cameraErrorDesc: "Could not access the camera. Please check permissions.",
+    capture: "Capture",
+    retake: "Retake",
+    useThisPhoto: "Use this photo",
   },
 
   shares: {

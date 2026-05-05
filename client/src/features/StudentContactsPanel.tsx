@@ -32,6 +32,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { ContactEditorModal } from '@/components/ContactEditorModal';
+import { useUIEvent } from '@/lib/uiEvents';
 
 interface Props {
   isOpen: boolean;
@@ -49,6 +50,15 @@ export function StudentContactsPanel({ isOpen }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingContact, setEditingContact] = useState<StudentContact | null>(null);
   const [creating, setCreating] = useState(false);
+  const [prefillForm, setPrefillForm] = useState<Record<string, any> | null>(null);
+
+  // Listen for cross-component requests to open the create modal with prefilled
+  // values (e.g. consent wizard's "Add me as a contact" shortcut).
+  useUIEvent('createContact', (data?: Record<string, any>) => {
+    setEditingContact(null);
+    setPrefillForm(data ?? null);
+    setCreating(true);
+  });
 
   const studentId = student?.id;
 
@@ -168,7 +178,7 @@ export function StudentContactsPanel({ isOpen }: Props) {
                 {t('contacts.forStudent', { name: student.name || '' })}
               </p>
             </div>
-            <Button className="gap-2 bg-primary text-primary-foreground shadow-md" onClick={() => setCreating(true)}>
+            <Button className="gap-2 bg-primary text-primary-foreground shadow-md" onClick={() => { setPrefillForm(null); setCreating(true); }}>
               <Plus className="w-4 h-4" />
               {t('contacts.add')}
             </Button>
@@ -208,7 +218,7 @@ export function StudentContactsPanel({ isOpen }: Props) {
                 {searchQuery ? t('contacts.noResults') : t('contacts.empty')}
               </p>
               {!searchQuery && (
-                <Button variant="outline" className="mt-4 gap-2" onClick={() => setCreating(true)}>
+                <Button variant="outline" className="mt-4 gap-2" onClick={() => { setPrefillForm(null); setCreating(true); }}>
                   <Plus className="w-4 h-4" />
                   {t('contacts.add')}
                 </Button>
@@ -293,9 +303,11 @@ export function StudentContactsPanel({ isOpen }: Props) {
           onClose={() => {
             setCreating(false);
             setEditingContact(null);
+            setPrefillForm(null);
           }}
           studentId={studentId}
           contact={editingContact}
+          initialForm={creating ? prefillForm ?? undefined : undefined}
         />
       )}
     </div>

@@ -50,6 +50,13 @@ export function buildInteractiveAgentPrompt(params: {
   studentAge?: string;
   studentGender?: string;
   studentDiagnosis?: string;
+  /**
+   * Primary communication method from Student_CommunicationStyle.
+   * Used to gate speaker-identification rules (e.g. a nonverbal student
+   * must never be attributed an audible voice).
+   * Lowercased; expected values include "verbal", "nonverbal", "aac", "mixed".
+   */
+  studentCommunicationMethod?: string;
   aiName?: string;
   knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
   availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
@@ -76,7 +83,7 @@ export function buildInteractiveAgentPrompt(params: {
 }): string {
   const {
     studentName, persona, language, memoryContext, mode,
-    studentAge, studentGender, studentDiagnosis, aiName,
+    studentAge, studentGender, studentDiagnosis, studentCommunicationMethod, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
     permittedYoutubeChannels, youtubeChannelVideos,
@@ -108,7 +115,10 @@ You cannot move or physically interact with the environment on your own. Your on
 Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as physically giving the user an item.
 ${commRules}
 ${silentOverride}
-Language: ${language || 'en'}. All AAC board button labels${useDirectAudio ? 'and spoken dialogue' : ' and speak()'} output must be in this language unless translating for someone.`;
+Language: ${language || 'en'}. All AAC board button labels${useDirectAudio ? 'and spoken dialogue' : ' and speak()'} output must be in this language unless translating for someone.
+
+## SILENT REASONING
+If you want to think out loud about what is happening, what you plan to do, or why you are choosing not to act, call private_note(note) — those notes are saved to your conversation history and visible to the monitor agent, but never spoken or shown to the user. NEVER produce text or audio that begins with "[private note]", "[note]", "[thinking]", or any similar bracketed marker — anything you emit as text or speech reaches the user, even if you label it as private.`;
 
   // ── # GENERAL ──
 
@@ -141,6 +151,23 @@ Do NOT call update_context() if nothing meaningful changed. Do NOT narrate your 
     prompt += `\n\nKnown people: ${knownContacts.map(c => `${c.name}${c.relationship ? ` (${c.relationship})` : ''} [face:${c.id}]`).join(', ')}`;
   }
 
+  // Speaker rules — driven by Student_CommunicationStyle.PrimaryMethod.
+  // "nonverbal" / "aac" → student CANNOT speak; voice MUST never be attributed
+  // to them. "verbal" / "mixed" → student can speak, but voice attribution
+  // still needs positive evidence (known voice match, or visible+speaking).
+  // Anything else (or unset) is treated as unknown — be conservative.
+  const commMethod = (studentCommunicationMethod || "").toLowerCase();
+  const studentCannotSpeak = commMethod === "nonverbal" || commMethod === "aac";
+  const studentCanSpeak = commMethod === "verbal" || commMethod === "mixed";
+  let speechAbilityLine: string;
+  if (studentCannotSpeak) {
+    speechAbilityLine = `**[${studentName}] DOES NOT SPEAK.** Their primary communication method is "${commMethod}" — they communicate via the AAC board, NOT with their voice. Any audible voice you hear in the environment is from someone ELSE — a caregiver, family member, sibling, clinician, or visitor. NEVER transcribe speech with [${studentName}] as the speaker. NEVER treat an audible voice as evidence that [${studentName}] is present. If a voice is heard but no other person is on camera, the speaker is an unseen person (off-camera adult, sibling, TV, etc.) — not the student.`;
+  } else if (studentCanSpeak) {
+    speechAbilityLine = `[${studentName}]'s primary communication method is "${commMethod}" — they may speak aloud. Only attribute a voice to them if you have positive evidence: a known voiceprint match, OR they are visible on camera AND their mouth is moving in sync with the speech. Pitch, age, and gender of the voice MUST be plausible for the student (see "Voice plausibility" below).`;
+  } else {
+    speechAbilityLine = `[${studentName}]'s primary communication method is not on file. Be conservative — only attribute a voice to them when there is direct evidence (a known voiceprint match, or they are visible and speaking on camera).`;
+  }
+
   prompt += `
 
 ## IDENTIFYING SPEAKERS AND PRESENCE
@@ -149,9 +176,18 @@ You are a companion AI for [${studentName}], but [${studentName}] is NOT necessa
 - A face tagged "[THE STUDENT]" in [PEOPLE PRESENT] confirms [${studentName}] is visible — address them as your primary user.
 - If [PEOPLE PRESENT] lists faces but NONE are tagged "[THE STUDENT]", then [${studentName}] is NOT visible. The visible person is someone else — a caregiver, family member, sibling, clinician, or visitor. This puts you in STANDBY MODE (see below). Do NOT speak to them as if they were [${studentName}], and do not greet them as the student. Don't proactively start a conversation, but you should still respond normally to button presses and direct questions.
 - If [PEOPLE PRESENT] is empty (no faces detected at all), the device is unattended. Stay silent. Do not greet, do not narrate, do not change the board.
-- Voice can also identify presence — if you hear [${studentName}]'s voice but they're not on camera, treat them as present. Otherwise treat unidentified voices as other people.
+
+### Voice attribution
+${speechAbilityLine}
+
+The most common speaker mistake is forcing every voice into a known identity. Don't. A voice gives you weaker evidence than a face — handle it accordingly:
+
+- **Default to "Unknown" for any voice you cannot positively identify.** "Unknown" is a valid speaker — use it freely. Do not guess. Do not pick the closest known person just to assign a name.
+- **Voice plausibility check.** Before attributing a voice to a specific person, the voice's apparent age, pitch, and gender MUST be plausible for that person. A deep adult-male voice is NOT a young child. A child's voice is NOT an adult. A female voice is NOT a known adult male, and vice versa. If the voice doesn't match the person's expected profile, it is NOT them — log a new speaker description instead.
+- **Visible-and-speaking is the strongest signal.** If exactly one person is visible AND their mouth is moving in time with the audible speech, that person is almost certainly the speaker. Use this before relying on voiceprint similarity.
+- **Off-camera voices.** If a voice is heard with no plausible visible speaker, the speaker is off-camera. Describe them ("an adult male voice off-camera", "a woman's voice in the next room") rather than guessing a name.
+- **Don't promote temporary descriptions to identities** without new evidence. A speaker tracked as "the person with the deep voice" stays that way until you actually learn their name (someone says it, you see them on camera, etc.).
 - If you cannot tell who is speaking from the data available, you may ask for clarification ONLY if the visible person has addressed you first. Otherwise, stay silent.
-- When transcribing, you may create temporary descriptions for speakers you cannot identify (e.g. "the person with the deep voice") — these track speakers until you can identify them.
 
 ## TRANSCRIBING
 Whenever you hear someone in the environment speak out loud, transcribe it using the transcript() tool.

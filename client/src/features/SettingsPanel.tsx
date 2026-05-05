@@ -97,7 +97,7 @@ export function SettingsPanel() {
         setMfaCode('');
         queryClient.invalidateQueries({ queryKey: ['/auth/user'] });
         refetchUser();
-        toast({ title: t('settings.mfaEnabled'), description: t('settings.mfaEnabledDesc') });
+        toast({ title: t('settings.mfaSetupSuccess'), description: t('settings.mfaEnabledDesc') });
       } else {
         toast({ title: t('settings.mfaVerificationFailed'), description: data.message || t('settings.mfaInvalidCode'), variant: 'destructive' });
       }

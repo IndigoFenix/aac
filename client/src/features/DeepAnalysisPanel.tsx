@@ -131,7 +131,7 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
   if (!student) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground p-8">
-        {t("deepAnalysis.selectStudent").replace("{{STUDENT}}", ts("student"))}
+        {t("deepAnalysis.selectStudent")}
       </div>
     );
   }

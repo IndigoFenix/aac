@@ -291,6 +291,7 @@ export const he: Translations = {
     connected: "מחובר",
     disconnected: "מנותק",
     processing: "מעבד...",
+    wakingUp: "מתעורר...",
   },
 
   quickActions: {

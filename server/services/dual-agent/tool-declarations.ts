@@ -399,6 +399,23 @@ const REPORT_FALSE_WAKE: FunctionDeclaration = {
   },
 };
 
+// Private note — the model's own scratchpad. Recorded into the conversation
+// transcript so the monitor agent and future turns can see the reasoning, but
+// never spoken or displayed to the user. Use this instead of writing
+// "[private note] ..." in text or audio output.
+const PRIVATE_NOTE: FunctionDeclaration = {
+  name: "private_note",
+  description: `Record a silent thought or reasoning note. The note is added to your own conversation history and the monitor agent's view, but is never spoken or shown to the user. Use this whenever you want to think out loud about what is happening, what you plan to do, or why you are choosing not to act — instead of producing text/speech that starts with "[private note]", "[note]", "[thinking]", or similar markers. Keep notes short and specific.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      note: { type: "string", description: "The private thought to record." },
+    },
+    required: ["note"],
+  },
+};
+
 // Debug message — used by the system when a turn is rejected. The model calls
 // this to tell us what it was trying to do, bypassing the audio safety filter
 // that would otherwise RESPONSE_REJECT the explanation itself.
@@ -472,6 +489,7 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(SLEEP);
   declarations.push(END_SESSION);
   declarations.push(REPORT_FALSE_WAKE);
+  declarations.push(PRIVATE_NOTE);
   declarations.push(DEBUG_MESSAGE);
 
   return [{ functionDeclarations: declarations }];

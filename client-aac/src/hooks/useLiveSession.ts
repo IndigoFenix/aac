@@ -321,8 +321,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setSessionId(msg.sessionId);
           setIsInitialized(true);
           isInitializedRef.current = true;
-          // Don't clear isLoading yet — wait until the first board arrives
-          // so the loading screen stays up until the home page is ready.
+          // Session is ready — clear the "waking up" indicator. Previously we
+          // waited for the first board to arrive, but on reconnect there's no
+          // guaranteed first board (the model may not produce one), which left
+          // the UI stuck. The board will render whenever it actually arrives.
+          setIsLoading(false);
           setError(null);
           break;
 
@@ -339,6 +342,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           const cleaned = msg.data.replace(/<[^<>]+>/g, "");
           if (!cleaned.trim()) break;
+          // Drop the entire turn if the model leaks a private-reasoning prefix —
+          // those are the model's own notes (it should be using private_note())
+          // and must not be shown to the user. Match only at the start of a
+          // fresh accumulation so we don't truncate legitimate speech.
+          if (
+            !textAccumRef.current &&
+            /^\s*\[(private\s*note|note|thinking|internal|reasoning|self[\s-]*note)\b/i.test(cleaned)
+          ) {
+            console.log("[useLiveSession] Dropped private-note leak:", cleaned);
+            break;
+          }
           textAccumRef.current += cleaned;
           setCurrentMessage(prev => ({
             id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
@@ -382,7 +396,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "board":
           onBoardUpdateRef.current?.(msg.data);
-          setIsLoading(false);
           break;
 
         case "context_button_add":
@@ -779,6 +792,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           `[useLiveSession] WebSocket closed: code=${event.code} reason=${event.reason} intentional=${wasIntentional} isInitialized=${isInitializedRef.current}`,
         );
         wsRef.current = null;
+        // Always clear the "waking up" spinner on disconnect — initialize() will
+        // re-set it if we auto-reconnect, but we never want to leave the UI
+        // stuck on "waking up" with no live session behind it.
+        setIsLoading(false);
         if (wasIntentional) {
           // clearSession / unmount — do NOT auto-reconnect
           return;

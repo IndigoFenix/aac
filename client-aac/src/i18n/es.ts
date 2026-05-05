@@ -291,6 +291,7 @@ export const es: Translations = {
     connected: "Conectado",
     disconnected: "Desconectado",
     processing: "Procesando...",
+    wakingUp: "Despertando...",
   },
 
   quickActions: {
