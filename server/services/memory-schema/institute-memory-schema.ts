@@ -1857,8 +1857,12 @@ import {
       role: {
         id: "role",
         type: "string",
-        enum: ["owner", "caregiver", "therapist", "teacher", "parent"],
+        enum: ["owner", "caregiver", "therapist", "teacher"],
         default: "caregiver",
+        description:
+          "System-access role granting this user login rights to the student's records. " +
+          "This is NOT a relationship label — to record someone (parent, classmate, sibling, " +
+          "outside therapist, etc.) as a person in the student's life, add a row to /Student_Contacts instead.",
       },
       hasEducationalRights: { id: "hasEducationalRights", type: "boolean", default: true },
       hasMedicalRights: { id: "hasMedicalRights", type: "boolean", default: true },
@@ -2059,7 +2063,13 @@ import {
         id: "users",
         type: "map",
         title: "Linked Users",
-        description: "Users who have access to this student (keyed by userId)",
+        description:
+          "Registered platform users who have system login access to this student's records, " +
+          "keyed by userId. This is an authorization grant, NOT a contact list — only add an " +
+          "entry here if the person already has a user account and needs to sign in to access " +
+          "the student. To record people in the student's life (parents, siblings, classmates, " +
+          "therapists, teachers), use /Student_Contacts instead. If a contact also happens to " +
+          "have a user account, the two are connected by setting linkedUserId on the contact.",
         values: userStudentLinkSchema,
         db: studentUsersOps,
       } as AgentMemoryFieldMapWithDB,

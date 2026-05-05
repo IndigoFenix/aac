@@ -6405,3 +6405,52 @@
 [2026-05-05T11:30:27.546Z] [COST] imageKey="child_on_swing" | refinement: gemini/gemini-2.5-flash in=728 out=118 | image: openai/gpt-image-1 in=124 out=272
 [2026-05-05T11:30:27.547Z] [processQueue] Generated "child_on_swing" → 25ebb3e2-80d8-4bdd-96c3-fb44b1ea3f06 (4 total)
 [2026-05-05T11:30:27.549Z] [processQueue] FULL REFINED PROMPT for "child_on_swing": A simple, bold illustration of a child on a swing, rendered on a transparent background. The child is a generic human figure with a slightly larger head, simple dot eyes, and a small curved mouth, wearing a plain shirt and shorts. The child is seated on a swing seat, holding onto the ropes, depicted mid-swing with simple motion lines indicating movement. The swing ropes are attached to an unseen frame above. The illustration uses a limited palette of 3-5 flat, solid, saturated colors with bold black outlines around all shapes, ensuring it is instantly recognizable at small sizes.
+[2026-05-05T11:55:05.932Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:55:05.933Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:55:35.602Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:55:35.604Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:55:57.216Z] [resolveImageKeys] Resolving 1 keys: child_outside (format=internal, useUnapproved=true)
+[2026-05-05T11:55:57.428Z] [resolveImageKeys] Resolved "child_outside" → __SYMBOL__:1ec9ae69-d7f0-4fda-bf2c-b692ca6a0c62
+[2026-05-05T11:55:57.429Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-05T11:56:15.694Z] [resolveImageKeys] Resolving 1 keys: child_outside (format=internal, useUnapproved=true)
+[2026-05-05T11:56:15.916Z] [resolveImageKeys] Resolved "child_outside" → __SYMBOL__:1ec9ae69-d7f0-4fda-bf2c-b692ca6a0c62
+[2026-05-05T11:56:15.917Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-05T11:56:41.932Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:56:41.933Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:56:46.573Z] [resolveImageKeys] Resolving 2 keys: nonfiction_book, person_reading_comic (format=internal, useUnapproved=true)
+[2026-05-05T11:56:46.774Z] [resolveImageKeys] No symbol found for "nonfiction_book"
+[2026-05-05T11:56:46.943Z] [resolveImageKeys] No symbol found for "person_reading_comic"
+[2026-05-05T11:56:46.944Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: nonfiction_book, person_reading_comic
+[2026-05-05T11:56:46.948Z] [queueGeneration] Queuing 2 keys: nonfiction_book, person_reading_comic (hasCallback=true)
+[2026-05-05T11:56:47.123Z] [processQueue] Generating "person_reading_comic"...
+[2026-05-05T11:57:03.931Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:57:03.932Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:57:04.142Z] [COST] imageKey="person_reading_comic" | refinement: gemini/gemini-2.5-flash in=728 out=112 | image: openai/gpt-image-1 in=119 out=272
+[2026-05-05T11:57:04.143Z] [processQueue] Generated "person_reading_comic" → c1678817-ddb3-4b29-9f2f-d78ff8232e08 (1 total)
+[2026-05-05T11:57:04.144Z] [processQueue] FULL REFINED PROMPT for "person_reading_comic": A simple, bold AAC symbol icon of a generic person sitting and reading a comic book. The person is depicted with a slightly stylized body, a round head, simple dot eyes, and a small curved mouth. They are facing slightly to the side, holding an open comic book in front of them, with their gaze directed towards the book. The comic book is rectangular, open to show two simple panels with minimal, abstract shapes inside. The illustration uses flat, solid colors with bold black outlines, on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-05T11:57:08.357Z] [processQueue] Generating "nonfiction_book"...
+[2026-05-05T11:57:16.519Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-05T11:57:16.519Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-05T11:57:22.748Z] [COST] imageKey="nonfiction_book" | refinement: gemini/gemini-2.5-flash in=727 out=119 | image: openai/gpt-image-1 in=125 out=272
+[2026-05-05T11:57:22.749Z] [processQueue] Generated "nonfiction_book" → 90a5a43c-9116-42ff-8fa8-c6e329cf865e (2 total)
+[2026-05-05T11:57:22.751Z] [processQueue] FULL REFINED PROMPT for "nonfiction_book": A simple, bold illustration of a closed book, viewed from the side with the spine facing the viewer. The book has a rectangular shape with a thick spine and pages indicated by thin horizontal lines on the side opposite the spine. The cover is a solid, dark blue, and the spine is a solid, lighter blue. A small, simple, white square is centered on the front cover, representing a label or title block, with no text. The entire book has a thick black outline. The illustration uses flat, solid colors with no gradients or shadows, suitable for an AAC communication board icon.
+[2026-05-05T11:57:28.062Z] [resolveImageKeys] Resolving 2 keys: futurism, technology (format=internal, useUnapproved=true)
+[2026-05-05T11:57:28.247Z] [resolveImageKeys] No symbol found for "futurism"
+[2026-05-05T11:57:28.417Z] [resolveImageKeys] No symbol found for "technology"
+[2026-05-05T11:57:28.418Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: futurism, technology
+[2026-05-05T11:57:28.420Z] [queueGeneration] Queuing 2 keys: futurism, technology (hasCallback=true)
+[2026-05-05T11:57:28.589Z] [processQueue] Generating "technology"...
+[2026-05-05T11:57:41.547Z] [resolveImageKeys] Resolving 2 keys: futurism, technology (format=internal, useUnapproved=true)
+[2026-05-05T11:57:41.713Z] [resolveImageKeys] No symbol found for "futurism"
+[2026-05-05T11:57:41.878Z] [resolveImageKeys] No symbol found for "technology"
+[2026-05-05T11:57:41.879Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: futurism, technology
+[2026-05-05T11:57:41.881Z] [queueGeneration] Queuing 2 keys: futurism, technology (hasCallback=true)
+[2026-05-05T11:57:43.171Z] [COST] imageKey="technology" | refinement: gemini/gemini-2.5-flash in=726 out=78 | image: openai/gpt-image-1 in=85 out=272
+[2026-05-05T11:57:43.173Z] [processQueue] Generated "technology" → cdc80ba1-6776-4c1d-a5fc-ceef4ae3f370 (1 total)
+[2026-05-05T11:57:43.174Z] [processQueue] FULL REFINED PROMPT for "technology": A simple, bold AAC symbol icon depicting the concept of technology. The main subject is a stylized, generic computer monitor with a screen showing a simple, abstract circuit board pattern. The monitor is centered, facing forward, with a thick black outline. The screen is a light blue, and the circuit board lines are white. The monitor casing is a medium gray. No other details or background.
+[2026-05-05T11:57:47.356Z] [processQueue] "technology" already exists → cdc80ba1-6776-4c1d-a5fc-ceef4ae3f370
+[2026-05-05T11:57:51.542Z] [processQueue] Generating "futurism"...
+[2026-05-05T11:58:08.407Z] [COST] imageKey="futurism" | refinement: gemini/gemini-2.5-flash in=727 out=82 | image: openai/gpt-image-1 in=89 out=272
+[2026-05-05T11:58:08.408Z] [processQueue] Generated "futurism" → 61475946-fb73-444d-9adc-a832768ca974 (2 total)
+[2026-05-05T11:58:08.408Z] [processQueue] FULL REFINED PROMPT for "futurism": A bold, simple AAC symbol icon representing futurism. The image features a stylized, simplified rocket ship launching upwards, leaving a trail of three small, upward-pointing arrows behind it to indicate motion. The rocket is sleek and modern, depicted in a light gray with a dark blue nose cone and fins. It is centered on a transparent background, with thick black outlines around all shapes and flat, solid colors.
+[2026-05-05T11:58:12.581Z] [processQueue] "futurism" already exists → 61475946-fb73-444d-9adc-a832768ca974

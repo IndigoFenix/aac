@@ -376,7 +376,10 @@ export const STUDENT_CONTACTS_FIELD: AgentMemoryFieldMapWithDB = {
   type: "map",
   title: "Student Contacts",
   description:
-    "People in the student's life — parents, classmates, therapists, team members. " +
+    "People in the student's life — parents, siblings, classmates, therapists, teachers, " +
+    "team members. THIS is the right place to record relationships and contacts. Do not use " +
+    "/Context_Students/<id>/users for this — that map is only for granting platform login " +
+    "access to a registered user account, not for recording who someone is to the student. " +
     "Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. " +
     "If the person already exists as a user or student in the system, set linkedUserId " +
     "(for users) or linkedStudentId (for students) on the new contact so their records " +

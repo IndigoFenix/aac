@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { users } from "@shared/schema";
 import {
   type AgentMemoryFieldWithDB,
+  type AgentMemoryFieldObjectWithDB,
   type DBOperationContext,
 } from "../chat/memory-types";
 
@@ -118,6 +119,55 @@ export const USER_LANGUAGE_FIELD: AgentMemoryFieldWithDB = {
   },
 };
 
+/**
+ * User_Profile - Identity of the user currently signed in to the platform.
+ * Read-only — sourced directly from the users table so the AI can refer to
+ * the current user by name, email, and account type without guessing.
+ */
+export const USER_PROFILE_FIELD: AgentMemoryFieldObjectWithDB = {
+  id: "User_Profile",
+  type: "object",
+  title: "Current User",
+  description:
+    "The person currently signed in to the clinician platform. Use this to address the " +
+    "user by name and to know whose account is being acted on (e.g., when adding the " +
+    "current user as a contact or grant — set linkedUserId to User_Profile.id).",
+  opened: true,
+  readOnly: true,
+  properties: {
+    id: { id: "id", type: "string", description: "Authenticated user id" },
+    email: { id: "email", type: "string" },
+    firstName: { id: "firstName", type: "string" },
+    lastName: { id: "lastName", type: "string" },
+    fullName: { id: "fullName", type: "string" },
+    userType: {
+      id: "userType",
+      type: "string",
+      description: "Self-declared role at sign-up (e.g., Caregiver, Teacher, SLP, Parent, admin)",
+    },
+    isSystemAdmin: { id: "isSystemAdmin", type: "boolean" },
+  },
+  db: {
+    read: async (ctx) => {
+      const userId = ctx.all.userId as string | undefined;
+      if (!userId) return {};
+      const [u] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          fullName: users.fullName,
+          userType: users.userType,
+          isSystemAdmin: users.isSystemAdmin,
+        })
+        .from(users)
+        .where(eq(users.id, userId));
+      return u ?? {};
+    },
+  },
+};
+
 // ============================================================================
 // EXPORTS
 // ============================================================================
@@ -126,6 +176,7 @@ export const USER_LANGUAGE_FIELD: AgentMemoryFieldWithDB = {
  * All User_* memory fields with database operations
  */
 export const USER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
+  USER_PROFILE_FIELD,
   USER_AI_PERSONALITY_PREFERENCES_FIELD,
   USER_LANGUAGE_FIELD,
 ];
