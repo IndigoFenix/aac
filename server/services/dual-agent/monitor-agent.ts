@@ -142,8 +142,16 @@ export class MonitorAgent {
     if (memory.Student_Interests) {
       contextParts.push(`Interests: ${memory.Student_Interests}`);
     }
+    const fastCommProfile = typeof (student as any).communicationProfile === "string"
+      ? (student as any).communicationProfile.trim()
+      : "";
+    if (fastCommProfile) {
+      contextParts.push(`Communication profile (clinician-set, authoritative): ${fastCommProfile}`);
+    } else {
+      contextParts.push(`Communication profile: NOT ON FILE — treat any audible voice as belonging to someone other than the student until evidence proves otherwise.`);
+    }
     if (memory.Student_CommunicationStyle) {
-      contextParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
+      contextParts.push(`Communication style (legacy, may be stale): ${JSON.stringify(memory.Student_CommunicationStyle)}`);
     }
     if (memory.Student_Preferences) {
       contextParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
@@ -192,8 +200,20 @@ export class MonitorAgent {
       if (memory.Student_People?.length > 0) {
         studentDataParts.push(`Important people: ${JSON.stringify(memory.Student_People)}`);
       }
+      // Communication profile — clinician-curated free-text column on the
+      // students table. This is the authoritative source for how the student
+      // communicates and gates speaker-attribution rules in the AAC prompt;
+      // surface it explicitly so the enhanced-prompt LLM can quote it.
+      const commProfile = typeof (student as any).communicationProfile === "string"
+        ? (student as any).communicationProfile.trim()
+        : "";
+      if (commProfile) {
+        studentDataParts.push(`Communication profile (clinician-set, authoritative): ${commProfile}`);
+      } else {
+        studentDataParts.push(`Communication profile (clinician-set, authoritative): NOT ON FILE — treat any audible voice as belonging to someone other than the student until evidence proves otherwise.`);
+      }
       if (memory.Student_CommunicationStyle && Object.keys(memory.Student_CommunicationStyle).length > 0) {
-        studentDataParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
+        studentDataParts.push(`Communication style (legacy, may be stale): ${JSON.stringify(memory.Student_CommunicationStyle)}`);
       }
       if (memory.Student_Preferences && Object.keys(memory.Student_Preferences).length > 0) {
         studentDataParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
@@ -258,13 +278,14 @@ ${personaPrompt}
 Update the AAC prompt to reflect the student's current data and context.
 - Preserve the intent and tone of the current prompt
 - Weave in any relevant student data (interests, preferences, important people, communication style)
+- ALWAYS include a clear, specific description of how this student communicates — at minimum, whether they speak aloud at all, and if so what kind of speech they produce (e.g. fluent sentences, single words, vocalizations only, occasional approximations) versus what they rely on the AAC board for. The Interactive Agent uses this to decide when an audible voice could plausibly be the student vs. someone else, so don't omit it and don't be vague. If a "Communication profile (clinician-set, authoritative)" line exists in the Student Data above, use it as the source of truth — quote or paraphrase it directly. If no profile is on file, write that the student's speech ability is not on file and the Interactive Agent should treat any audible voice as belonging to someone else until evidence proves otherwise.
 - Incorporate upcoming events if relevant (e.g. "Today the student has a music therapy session")
 - Be concise — no more than 500 words
-- Skip areas with no data
+- Skip areas with no data, EXCEPT the communication description above, which is required
 - Plain text only, dashes (-) for bullet points
 - You may include instructions for when the Interactive Agent should consult you for more context
 
-If the current prompt is already adequate and no updates are needed, return it unchanged.
+If the current prompt is already adequate and no updates are needed, return it unchanged — but if it lacks the required communication description, add one even if everything else is fine.
 
 ## Output Format
 Output ONLY the enhanced prompt between ${enhancedOpen} and ${enhancedClose} tags. Use those exact strings (with the nonce). Emit nothing outside the tags.`;

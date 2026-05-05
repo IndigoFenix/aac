@@ -393,6 +393,13 @@ export const students = pgTable("students", {
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
 
+  // Stable, clinician-curated description of how this student communicates —
+  // verbal abilities, AAC use, vocalization patterns, etc. Backs the
+  // Student_CommunicationProfile memory field. Stored as a column (not in
+  // chatMemory jsonb) so the AAC monitor agent's session-time mutations to
+  // chatMemory cannot overwrite it.
+  communicationProfile: text("communication_profile"),
+
   // Biometric data — references shared biometric_data table.
   biometricDataId: varchar("biometric_data_id"),
 

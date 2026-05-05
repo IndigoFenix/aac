@@ -2,12 +2,16 @@
  * student-memory-schema.ts
  *
  * Memory field definitions for Student_* fields with database operations.
- * These fields store non-sensitive student information in the student's chatMemory column.
+ * Most of these fields store non-sensitive student information in the
+ * student's chatMemory column. The exception is Student_CommunicationProfile,
+ * which is backed by a dedicated column on the students table so the AAC
+ * monitor's chatMemory mutations cannot overwrite it.
  *
  * Fields included:
  * - Student_People: Important people in the student's life
  * - Student_Interests: Things the student enjoys
- * - Student_CommunicationStyle: How the student communicates
+ * - Student_CommunicationStyle: How the student communicates (legacy structured field, monitor-volatile)
+ * - Student_CommunicationProfile: Stable clinician-curated communication description (column-backed)
  * - Student_Preferences: Activity and reward preferences
  * - Student_Notes: General non-sensitive notes
  */
@@ -246,6 +250,52 @@ export const STUDENT_PREFERENCES_FIELD: AgentMemoryFieldObjectWithDB = {
 };
 
 /**
+ * Student_CommunicationProfile — stable, clinician-curated free-text
+ * description of how the student communicates (verbal abilities, AAC use,
+ * vocalization patterns, etc.).
+ *
+ * Backed by the `students.communication_profile` column, NOT chatMemory.
+ * Stored as a column on purpose: chatMemory is mutable by the AAC monitor
+ * agent during sessions, which makes it volatile. The communication profile
+ * gates speaker-attribution rules (a nonverbal student must never have a
+ * voice transcribed as theirs), so it must not be drift-prone — only the
+ * clinician can change it.
+ */
+async function readStudentCommunicationProfile(ctx: DBOperationContext): Promise<string | undefined> {
+  const studentId = ctx.all.studentId;
+  if (!studentId) return undefined;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  if (!accessCtx) {
+    console.warn(`[student-memory-schema] No accessCtx for Student_CommunicationProfile on ${studentId} — refusing read`);
+    return undefined;
+  }
+  if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
+    console.warn(`[student-memory-schema] Student ctx mismatch for Student_CommunicationProfile — refusing read`);
+    return undefined;
+  }
+  const [row] = await db
+    .select({ communicationProfile: students.communicationProfile })
+    .from(students)
+    .where(eq(students.id, studentId));
+  return row?.communicationProfile ?? undefined;
+}
+
+export const STUDENT_COMMUNICATION_PROFILE_FIELD: AgentMemoryFieldWithDB = {
+  id: "Student_CommunicationProfile",
+  type: "string",
+  title: "Communication Profile",
+  description: "Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student.",
+  opened: true,
+  db: {
+    read: readStudentCommunicationProfile,
+    // Persistence is handled outside the chatMemory batching path —
+    // see sessionService.onUpdateMemoryValues, which routes this field
+    // to the students.communication_profile column.
+    write: async (_ctx, value) => value,
+  },
+};
+
+/**
  * Student_Notes - General non-sensitive notes
  */
 export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
@@ -280,6 +330,7 @@ export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   STUDENT_PEOPLE_FIELD,
   STUDENT_INTERESTS_FIELD,
   STUDENT_COMMUNICATION_STYLE_FIELD,
+  STUDENT_COMMUNICATION_PROFILE_FIELD,
   STUDENT_PREFERENCES_FIELD,
   STUDENT_NOTES_FIELD,
   STUDENT_CUSTOM_APPS_FIELD,

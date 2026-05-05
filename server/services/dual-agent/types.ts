@@ -146,12 +146,6 @@ export interface DualAgentSessionState {
   // Cached diagnosis from medicalRecords table (loaded once per session)
   cachedDiagnosis?: string | null;
 
-  // Cached primary communication method from Student_CommunicationStyle.
-  // Drives speaker-identification rules in the interactive prompt — e.g. a
-  // nonverbal student must NEVER be attributed an audible voice.
-  // Lowercased; one of "verbal" | "nonverbal" | "aac" | "mixed" | string.
-  cachedCommunicationMethod?: string | null;
-
   // Memory context from fast startup (chatMemory fields)
   memoryContext?: string;
 

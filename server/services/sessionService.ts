@@ -1547,6 +1547,26 @@ Example button with custom symbol:
     // Student memory (fields prefixed with Student_)
     if (context.student) {
       const studentMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.STUDENT);
+
+      // Student_CommunicationProfile lives on its own column, NOT in chatMemory.
+      // Pull it out before writing chatMemory so we don't duplicate it, then
+      // persist any change to the dedicated column. The field is column-backed
+      // because the AAC monitor mutates chatMemory frequently and this profile
+      // must be stable.
+      const incomingProfile = studentMemory["Student_CommunicationProfile"];
+      if (Object.prototype.hasOwnProperty.call(studentMemory, "Student_CommunicationProfile")) {
+        delete studentMemory["Student_CommunicationProfile"];
+        const next = typeof incomingProfile === "string" ? incomingProfile : null;
+        const current = (context.student as any).communicationProfile ?? null;
+        if ((next ?? null) !== (current ?? null)) {
+          await db
+            .update(students)
+            .set({ communicationProfile: next, updatedAt: new Date() })
+            .where(eq(students.id, context.student.id));
+          context.student = { ...context.student, communicationProfile: next };
+        }
+      }
+
       const currentMemory = (context.student.chatMemory as Record<string, any>) || {};
       if (Object.keys(studentMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(studentMemory)) {
         await updateStudentMemory(context.student.id, studentMemory);

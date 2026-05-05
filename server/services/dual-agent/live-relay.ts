@@ -1239,7 +1239,6 @@ export class LiveRelay {
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
             studentDiagnosis: state.cachedDiagnosis || undefined,
-            studentCommunicationMethod: state.cachedCommunicationMethod || undefined,
             aiName: student.aacSettings?.aiName || undefined,
             knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
             availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,

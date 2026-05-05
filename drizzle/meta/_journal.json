@@ -666,6 +666,13 @@
       "when": 1777897374987,
       "tag": "0094_clammy_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1778002044088,
+      "tag": "0095_gorgeous_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

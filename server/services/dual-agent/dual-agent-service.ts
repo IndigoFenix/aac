@@ -431,15 +431,6 @@ export class DualAgentService {
       cachedDiagnosis = record?.primaryDiagnosis || null;
     } catch { /* ignore */ }
 
-    // Read primary communication method from chatMemory. Drives the speaker
-    // attribution rules — a nonverbal student must never have a voice
-    // transcribed as theirs.
-    const cachedCommunicationMethod: string | null = (() => {
-      const cs = (monitorAgent.getStudent?.()?.chatMemory as Record<string, any> | undefined)?.Student_CommunicationStyle;
-      const raw = typeof cs?.PrimaryMethod === "string" ? cs.PrimaryMethod.trim().toLowerCase() : "";
-      return raw || null;
-    })();
-
     // Load auto-selectable boards
     let availableBoards: DualAgentSessionState['availableBoards'] = [];
     if (userId) {
@@ -476,7 +467,6 @@ export class DualAgentService {
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
         studentDiagnosis: cachedDiagnosis || undefined,
-        studentCommunicationMethod: cachedCommunicationMethod || undefined,
         aiName: student.aacSettings?.aiName || undefined,
         knownContacts: cachedContacts.length > 0 ? cachedContacts : undefined,
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
@@ -532,7 +522,6 @@ export class DualAgentService {
       cachedSymbols,
       availableBoards,
       cachedDiagnosis,
-      cachedCommunicationMethod,
       memoryContext: initResult.initialContext,
       enhancedPrompt: initResult.enhancedPrompt,
       privacyOptions: monitorAgent.getPrivacyOptions(),
@@ -725,11 +714,6 @@ export class DualAgentService {
           state.cachedDiagnosis = record?.primaryDiagnosis || null;
         } catch { state.cachedDiagnosis = null; }
 
-        // Refresh primary communication method from chatMemory.
-        const csObj = (student.chatMemory as Record<string, any> | undefined)?.Student_CommunicationStyle;
-        const csRaw = typeof csObj?.PrimaryMethod === "string" ? csObj.PrimaryMethod.trim().toLowerCase() : "";
-        state.cachedCommunicationMethod = csRaw || null;
-
         // Load auto-selectable boards
         if (state.userId) {
           try {
@@ -750,7 +734,6 @@ export class DualAgentService {
           studentAge: computeAge(student.birthDate),
           studentGender: student.gender || undefined,
           studentDiagnosis: state.cachedDiagnosis || undefined,
-          studentCommunicationMethod: state.cachedCommunicationMethod || undefined,
           aiName: student.aacSettings?.aiName || undefined,
           knownContacts: state.cachedContacts,
           availableBoards: state.availableBoards,

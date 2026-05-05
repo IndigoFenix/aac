@@ -50,13 +50,6 @@ export function buildInteractiveAgentPrompt(params: {
   studentAge?: string;
   studentGender?: string;
   studentDiagnosis?: string;
-  /**
-   * Primary communication method from Student_CommunicationStyle.
-   * Used to gate speaker-identification rules (e.g. a nonverbal student
-   * must never be attributed an audible voice).
-   * Lowercased; expected values include "verbal", "nonverbal", "aac", "mixed".
-   */
-  studentCommunicationMethod?: string;
   aiName?: string;
   knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
   availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
@@ -83,7 +76,7 @@ export function buildInteractiveAgentPrompt(params: {
 }): string {
   const {
     studentName, persona, language, memoryContext, mode,
-    studentAge, studentGender, studentDiagnosis, studentCommunicationMethod, aiName,
+    studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
     permittedYoutubeChannels, youtubeChannelVideos,
@@ -151,23 +144,6 @@ Do NOT call update_context() if nothing meaningful changed. Do NOT narrate your 
     prompt += `\n\nKnown people: ${knownContacts.map(c => `${c.name}${c.relationship ? ` (${c.relationship})` : ''} [face:${c.id}]`).join(', ')}`;
   }
 
-  // Speaker rules — driven by Student_CommunicationStyle.PrimaryMethod.
-  // "nonverbal" / "aac" → student CANNOT speak; voice MUST never be attributed
-  // to them. "verbal" / "mixed" → student can speak, but voice attribution
-  // still needs positive evidence (known voice match, or visible+speaking).
-  // Anything else (or unset) is treated as unknown — be conservative.
-  const commMethod = (studentCommunicationMethod || "").toLowerCase();
-  const studentCannotSpeak = commMethod === "nonverbal" || commMethod === "aac";
-  const studentCanSpeak = commMethod === "verbal" || commMethod === "mixed";
-  let speechAbilityLine: string;
-  if (studentCannotSpeak) {
-    speechAbilityLine = `**[${studentName}] DOES NOT SPEAK.** Their primary communication method is "${commMethod}" — they communicate via the AAC board, NOT with their voice. Any audible voice you hear in the environment is from someone ELSE — a caregiver, family member, sibling, clinician, or visitor. NEVER transcribe speech with [${studentName}] as the speaker. NEVER treat an audible voice as evidence that [${studentName}] is present. If a voice is heard but no other person is on camera, the speaker is an unseen person (off-camera adult, sibling, TV, etc.) — not the student.`;
-  } else if (studentCanSpeak) {
-    speechAbilityLine = `[${studentName}]'s primary communication method is "${commMethod}" — they may speak aloud. Only attribute a voice to them if you have positive evidence: a known voiceprint match, OR they are visible on camera AND their mouth is moving in sync with the speech. Pitch, age, and gender of the voice MUST be plausible for the student (see "Voice plausibility" below).`;
-  } else {
-    speechAbilityLine = `[${studentName}]'s primary communication method is not on file. Be conservative — only attribute a voice to them when there is direct evidence (a known voiceprint match, or they are visible and speaking on camera).`;
-  }
-
   prompt += `
 
 ## IDENTIFYING SPEAKERS AND PRESENCE
@@ -178,12 +154,13 @@ You are a companion AI for [${studentName}], but [${studentName}] is NOT necessa
 - If [PEOPLE PRESENT] is empty (no faces detected at all), the device is unattended. Stay silent. Do not greet, do not narrate, do not change the board.
 
 ### Voice attribution
-${speechAbilityLine}
+The persona / memory section above describes how [${studentName}] communicates — read it carefully and let it gate every speaker decision below. If it says they are nonverbal, AAC-only, or otherwise cannot produce certain kinds of speech, then voices of that kind are NEVER theirs, no matter how confident the audio looks.
 
 The most common speaker mistake is forcing every voice into a known identity. Don't. A voice gives you weaker evidence than a face — handle it accordingly:
 
 - **Default to "Unknown" for any voice you cannot positively identify.** "Unknown" is a valid speaker — use it freely. Do not guess. Do not pick the closest known person just to assign a name.
 - **Voice plausibility check.** Before attributing a voice to a specific person, the voice's apparent age, pitch, and gender MUST be plausible for that person. A deep adult-male voice is NOT a young child. A child's voice is NOT an adult. A female voice is NOT a known adult male, and vice versa. If the voice doesn't match the person's expected profile, it is NOT them — log a new speaker description instead.
+- **Match the voice to the student's documented communication abilities.** If the persona / memory says [${studentName}] does not speak, never attribute an audible voice to them. If it describes their voice as e.g. limited to single words or vocalizations, don't attribute long fluent sentences to them. When in doubt, attribute to "Unknown" rather than stretching what the documented profile says they can do.
 - **Visible-and-speaking is the strongest signal.** If exactly one person is visible AND their mouth is moving in time with the audible speech, that person is almost certainly the speaker. Use this before relying on voiceprint similarity.
 - **Off-camera voices.** If a voice is heard with no plausible visible speaker, the speaker is off-camera. Describe them ("an adult male voice off-camera", "a woman's voice in the next room") rather than guessing a name.
 - **Don't promote temporary descriptions to identities** without new evidence. A speaker tracked as "the person with the deep voice" stays that way until you actually learn their name (someone says it, you see them on camera, etc.).
