@@ -128,13 +128,35 @@ export async function validateSamlLogoutResponse(
   return loggedOut;
 }
 
-/** Returns SP metadata XML for the IdP onboarding handshake. */
+/** Returns SP metadata XML for the IdP onboarding handshake.
+ *
+ *  Cached per provider: regulators sometimes hit this endpoint repeatedly,
+ *  and the output is fully derived from stable provider fields. We key the
+ *  cache on `provider.updatedAt`, which the repository bumps on every write,
+ *  so an admin edit transparently invalidates the entry. */
+const spMetadataCache = new Map<string, { updatedAtMs: number; xml: string }>();
+
 export async function generateSpMetadata(provider: IdentityProvider): Promise<string> {
+  const updatedAtMs = provider.updatedAt instanceof Date
+    ? provider.updatedAt.getTime()
+    : new Date(provider.updatedAt as unknown as string).getTime();
+  const cached = spMetadataCache.get(provider.id);
+  if (cached && cached.updatedAtMs === updatedAtMs) {
+    return cached.xml;
+  }
   const saml = await buildSamlClient(provider);
   // First arg = decryption cert (we don't decrypt); second = signing cert
   // published in metadata. Library accepts null for either when omitted.
   const signingCert = provider.samlSpCertificate || null;
-  return saml.generateServiceProviderMetadata(null, signingCert);
+  const xml = saml.generateServiceProviderMetadata(null, signingCert);
+  spMetadataCache.set(provider.id, { updatedAtMs, xml });
+  return xml;
+}
+
+/** Test helper / explicit invalidation hook. */
+export function clearSpMetadataCache(providerId?: string): void {
+  if (providerId) spMetadataCache.delete(providerId);
+  else spMetadataCache.clear();
 }
 
 /** Normalize a SAML Profile into the canonical claim shape we use across protocols. */

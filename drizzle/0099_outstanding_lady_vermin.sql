@@ -1,0 +1,1 @@
+ALTER TABLE "identity_providers" ADD COLUMN "auto_provision" boolean DEFAULT false NOT NULL;

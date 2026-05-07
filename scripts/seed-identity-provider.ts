@@ -31,6 +31,9 @@
 //
 // Common env:
 //   IDP_REVERIFICATION_DAYS  — integer or empty for never
+//   IDP_AUTO_PROVISION       — "true" to auto-create new users from this IdP
+//                              (defaults to false). Set to true for IdPs like
+//                              IL MoE Sapakim where users won't pre-register.
 //   IDP_CLAIM_MAPPINGS       — JSON object of canonical → source-key arrays
 //                              e.g. {"externalId":["nameID"],"nationalIdNumber":["teudat_zehut"]}
 
@@ -77,6 +80,7 @@ async function main() {
     protocol,
     instituteIdType: process.env.IDP_INSTITUTE_ID_TYPE || null,
     reverificationDays: envInt("IDP_REVERIFICATION_DAYS"),
+    autoProvision: envBool("IDP_AUTO_PROVISION", false),
     claimMappings,
     isActive: true,
   };

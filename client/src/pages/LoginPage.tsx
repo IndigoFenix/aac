@@ -296,6 +296,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         licenseInvite?: boolean;
         inviteDefaults?: { firstName?: string; lastName?: string; userType?: string } | null;
         existingUser?: { firstName?: string; lastName?: string } | null;
+        mandatedSsoProvider?: { id: string; name: string; protocol: 'oidc' | 'oauth2' | 'saml' } | null;
       };
     },
     enabled: isInviteMode,
@@ -1248,6 +1249,52 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                       <p className="text-xs text-muted-foreground">
                         {t('invite.joiningAs') || 'Joining as'}: {inviteData.invite.role}
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Regime-mandated SSO promotion. When the inviting institute's
+                    license declares a compliance regime that hints at a specific
+                    identity provider (e.g. il_moe → Sapakim), surface that
+                    provider as the recommended sign-in path. The email/password
+                    form below stays available as a fallback. */}
+                {isInviteMode && inviteData?.mandatedSsoProvider && inviteData.institute && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary" />
+                      <p className="font-medium text-sm">
+                        {t('auth.ssoMandatedTitle') || 'Required sign-in'}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {(t('auth.ssoMandatedDesc') || '{institute} requires sign-in via {provider}. Click below to continue.')
+                        .replace('{institute}', inviteData.institute.name)
+                        .replace('{provider}', inviteData.mandatedSsoProvider.name)}
+                    </p>
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={() => {
+                        const provider = inviteData.mandatedSsoProvider!;
+                        // Persist token so post-OAuth callback auto-accepts the invite (see useEffect above).
+                        if (inviteToken) sessionStorage.setItem('pendingInviteToken', inviteToken);
+                        const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                        window.location.href = `/api/identity/link/${provider.id}?returnUrl=${returnUrl}`;
+                      }}
+                      data-testid="button-mandated-sso"
+                    >
+                      <Shield className="w-4 h-4 me-2" />
+                      {(t('auth.ssoLogin') || 'Sign in with {provider}').replace('{provider}', inviteData.mandatedSsoProvider.name)}
+                    </Button>
+                    <div className="relative pt-1">
+                      <div className="absolute inset-0 flex items-center pt-1">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs">
+                        <span className="bg-card px-2 text-muted-foreground">
+                          {t('auth.orUseEmailPassword') || 'Or sign in with email & password'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}

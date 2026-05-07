@@ -64,6 +64,7 @@ interface IdentityProvider {
   claimMappings?: Record<string, unknown>;
   instituteIdType?: string;
   reverificationDays?: number;
+  autoProvision?: boolean;
   isActive: boolean;
   // SAML 2.0 fields
   samlEntityId?: string | null;
@@ -106,6 +107,7 @@ const emptyForm = {
   // Common
   instituteIdType: '',
   reverificationDays: '',
+  autoProvision: false,
   isActive: true,
 };
 
@@ -137,6 +139,7 @@ export function IdentityProviderList() {
         protocol: form.protocol,
         instituteIdType: form.instituteIdType || null,
         reverificationDays: form.reverificationDays ? parseInt(form.reverificationDays) : null,
+        autoProvision: form.autoProvision,
         isActive: form.isActive,
       };
 
@@ -237,6 +240,7 @@ export function IdentityProviderList() {
       samlSpCertificate: provider.samlSpCertificate || '',
       instituteIdType: provider.instituteIdType || '',
       reverificationDays: provider.reverificationDays?.toString() || '',
+      autoProvision: !!provider.autoProvision,
       isActive: provider.isActive,
     });
     setIsFormOpen(true);
@@ -468,6 +472,23 @@ export function IdentityProviderList() {
             <div>
               <Label>{t('admin.identityProviders.reverificationDays')}</Label>
               <Input type="number" value={form.reverificationDays} onChange={(e) => setForm({ ...form, reverificationDays: e.target.value })} placeholder={t('admin.identityProviders.neverPlaceholder')} />
+            </div>
+            <div className="flex items-start gap-3 col-span-full">
+              <input
+                id="provider-auto-provision"
+                type="checkbox"
+                checked={form.autoProvision}
+                onChange={(e) => setForm({ ...form, autoProvision: e.target.checked })}
+                className="mt-1"
+              />
+              <div className="flex-1">
+                <Label htmlFor="provider-auto-provision" className="cursor-pointer">
+                  {t('admin.identityProviders.autoProvision') || 'Auto-provision new users'}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('admin.identityProviders.autoProvisionDesc') || 'When a user authenticates via this IdP and has no Aivota account, create one from the SSO claims and link it. Required for institutional IdPs (e.g. IL MoE Sapakim) where users expect to land already-logged-in.'}
+                </p>
+              </div>
             </div>
           </div>
           <DialogFooter>

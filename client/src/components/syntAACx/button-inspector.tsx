@@ -139,13 +139,14 @@ export function ButtonInspector() {
           />
           {/* Background Color */}
           <div className="flex items-center gap-2">
-            <Label className={cn(
+            <Label htmlFor="cover-background-color" className={cn(
               "text-xs",
               isDark ? "text-slate-400" : "text-gray-600"
             )}>
               {t("board.coverBackground") || "Background"}
             </Label>
             <input
+              id="cover-background-color"
               type="color"
               className="w-8 h-8 rounded border-0 cursor-pointer"
               value={(coverImage?.backgroundColor || "#ffffff").slice(0, 7)}
@@ -330,7 +331,7 @@ export function ButtonInspector() {
 
           {/* Color */}
           <div className="space-y-1.5">
-            <Label className={cn(
+            <Label htmlFor="button-inspector-color" className={cn(
               "text-xs",
               isDark ? "text-slate-400" : "text-gray-600"
             )}>
@@ -338,6 +339,7 @@ export function ButtonInspector() {
             </Label>
             <div className="flex items-center gap-2">
               <input
+                id="button-inspector-color"
                 type="color"
                 value={selectedBtn.color || "#3B82F6"}
                 onChange={(e) => handleUpdate("color", e.target.value)}

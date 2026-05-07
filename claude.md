@@ -49,3 +49,10 @@ Don't run test:llm or test:ai without being instructed to.
 ## General Behaviors
 Use logs whenever needed - preferably logging to a file rather than the console.
 If you try to fix an error and fail, don't hesitate to create a log that will help uncover the issue. The log can always be removed when the issue is fixed.
+
+See docs/INFRASTRUCTURE.md for AWS architecture.
+
+## Security
+See docs/SECURITY_ARCHITECTURE.md for security rules. Follow these principles. 
+
+When considering a change that would require a change in security architecture, check ministry-of-education-approval in planning-docs to check against the high-level principles we must operate under.

@@ -9,7 +9,7 @@ import type { AccessibilityStandard } from "@shared/regime";
 // platform's published coordinator contact; an institute can ship its own
 // build with override values for white-label deployments.
 const COORDINATOR_NAME = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_NAME || "Opher Suhami";
-const COORDINATOR_EMAIL = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_EMAIL || "accessibility@aivota.ai";
+const COORDINATOR_EMAIL = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_EMAIL || "opher@aivota.ai";
 const COORDINATOR_PHONE = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_PHONE || "+972542271326";
 const COORDINATOR_ADDRESS_EN = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_ADDRESS_EN || "4 Bental, Kfar Yona, Israel";
 const COORDINATOR_ADDRESS_HE = import.meta.env.VITE_ACCESSIBILITY_COORDINATOR_ADDRESS_HE || "בנטל 4, כפר יונה, ישראל";

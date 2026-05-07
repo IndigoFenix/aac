@@ -8,6 +8,8 @@ import { insertInstituteSchema } from "@shared/schema";
 import { emailService } from "server/services/emailService";
 import { isInSupportMode, getSupportSession } from "../services/customerSupportService";
 import { licenseService } from "../services/licenseService";
+import { regimeService } from "../services/regimeService";
+import { identityService } from "../services/identityService";
 import { activityLogService } from "../services/activityLogService";
 
 function getBaseUrl(req: Request): string {
@@ -777,6 +779,23 @@ export class InstituteController {
         // Check if the invitee already has an account
         const existingUser = await userService.getUserByEmail(result.invite!.inviteeEmail);
 
+        // Resolve the regime-mandated SSO provider (if any) for this institute,
+        // so the login UI can surface it as the required sign-in path.
+        const mandatedHint = await regimeService.getMandatedIdentityProviderHintForInstitute(
+          result.institute!.id,
+        );
+        let mandatedSsoProvider: { id: string; name: string; protocol: string } | null = null;
+        if (mandatedHint) {
+          const provider = await identityService.getProviderByInstituteIdType(mandatedHint);
+          if (provider) {
+            mandatedSsoProvider = {
+              id: provider.id,
+              name: provider.name,
+              protocol: provider.protocol,
+            };
+          }
+        }
+
         res.json({
           success: true,
           invite: {
@@ -803,6 +822,7 @@ export class InstituteController {
             firstName: existingUser.firstName,
             lastName: existingUser.lastName,
           } : null,
+          mandatedSsoProvider,
         });
         return;
       }

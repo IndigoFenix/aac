@@ -15,7 +15,7 @@
 // Closes the §12 open item in `docs/SECURITY_ARCHITECTURE.md`:
 //   "Auto-prune `activity_logs` per `resolveAuditRetentionDays`."
 
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, notInArray } from "drizzle-orm";
 import { db } from "../db.js";
 import { activityLogs, institutes } from "@shared/schema";
 import {
@@ -24,6 +24,7 @@ import {
   resolveAuditRetentionDays,
 } from "@shared/regime";
 import { regimeService } from "./regimeService.js";
+import { ERASURE_AUDIT_EVENT_TYPES } from "./studentErasureService.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const FALLBACK_INSTITUTE_RETENTION_DAYS = 365;
@@ -50,12 +51,25 @@ export async function runActivityLogRetentionCheck(now: Date = new Date()): Prom
   perInstituteDeleted: number;
   institutesScanned: number;
 }> {
+  // Erasure events are compliance evidence and outlive every retention
+  // window — see studentErasureService.ts. The `as any[]` cast is
+  // because drizzle types `notInArray` against the enum's literal union;
+  // ERASURE_AUDIT_EVENT_TYPES is a subset of that union but TS can't
+  // narrow `readonly string[]` back to it without an explicit assertion.
+  const exempt = [...ERASURE_AUDIT_EVENT_TYPES] as any[];
+
   // 1) Orphan / global rows (instituteId IS NULL).
   const globalDays = strictestKnownRetentionDays();
   const globalCutoff = new Date(now.getTime() - globalDays * ONE_DAY_MS);
   const globalDeletedRows = await db
     .delete(activityLogs)
-    .where(and(isNull(activityLogs.instituteId), lt(activityLogs.createdAt, globalCutoff)))
+    .where(
+      and(
+        isNull(activityLogs.instituteId),
+        lt(activityLogs.createdAt, globalCutoff),
+        notInArray(activityLogs.eventType, exempt),
+      ),
+    )
     .returning({ id: activityLogs.id });
   const globalDeleted = globalDeletedRows.length;
 
@@ -68,7 +82,13 @@ export async function runActivityLogRetentionCheck(now: Date = new Date()): Prom
     const cutoff = new Date(now.getTime() - days * ONE_DAY_MS);
     const deleted = await db
       .delete(activityLogs)
-      .where(and(eq(activityLogs.instituteId, inst.id), lt(activityLogs.createdAt, cutoff)))
+      .where(
+        and(
+          eq(activityLogs.instituteId, inst.id),
+          lt(activityLogs.createdAt, cutoff),
+          notInArray(activityLogs.eventType, exempt),
+        ),
+      )
       .returning({ id: activityLogs.id });
     perInstituteDeleted += deleted.length;
   }

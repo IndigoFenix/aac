@@ -2,6 +2,8 @@ import * as client from "openid-client";
 import memoize from "memoizee";
 import { identityProviderRepository } from "../repositories/identityProviderRepository";
 import { encrypt, decrypt } from "./encryption";
+import { autoProvisionFromProfile as autoProvisionImpl } from "./identity-auto-provision";
+import type { User } from "@shared/schema";
 import {
   applyClaimMapping,
   type ClaimMapping,
@@ -389,6 +391,19 @@ export class IdentityService {
    */
   async unlinkIdentity(userId: string, providerId: string): Promise<boolean> {
     return identityProviderRepository.deleteExternalIdentity(userId, providerId);
+  }
+
+  /**
+   * Auto-provision a new user from a canonical SSO profile and link the
+   * external identity. Implementation lives in `identity-auto-provision.ts`
+   * so it can be unit-tested without pulling the openid-client transitive
+   * deps (which Jest's CJS runtime can't load).
+   */
+  async autoProvisionFromProfile(
+    provider: IdentityProvider,
+    profile: CanonicalProfile,
+  ): Promise<{ user: User; created: boolean }> {
+    return autoProvisionImpl(provider, profile);
   }
 }
 

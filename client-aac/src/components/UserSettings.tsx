@@ -399,8 +399,9 @@ export default function UserSettings({
 
               {/* AI Name */}
               <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <Label className="text-sm font-medium">{t("aacSettings.aiName")}</Label>
+                <Label htmlFor="aac-settings-ai-name" className="text-sm font-medium">{t("aacSettings.aiName")}</Label>
                 <input
+                  id="aac-settings-ai-name"
                   type="text"
                   value={aiName}
                   onChange={(e) => setAiName(e.target.value)}
@@ -572,8 +573,9 @@ export default function UserSettings({
 
                   <div className={`space-y-3 ${!elevenlabsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
+                      <Label htmlFor="aac-settings-el-student-voice-id" className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
                       <input
+                        id="aac-settings-el-student-voice-id"
                         type="text"
                         value={elevenlabsStudentVoiceId}
                         onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
@@ -583,8 +585,9 @@ export default function UserSettings({
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
+                      <Label htmlFor="aac-settings-el-ai-voice-id" className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
                       <input
+                        id="aac-settings-el-ai-voice-id"
                         type="text"
                         value={elevenlabsAiVoiceId}
                         onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}

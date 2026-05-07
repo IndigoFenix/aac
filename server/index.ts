@@ -54,6 +54,12 @@ app.get('/health', (_req, res) => {
   const { scheduleActivityLogRetention } = await import("./services/activityLogRetentionCron");
   scheduleActivityLogRetention();
 
+  // Start the daily right-to-erasure sweep. Hard-deletes students whose
+  // 30-day cancellation window has elapsed. No-op in tests; deferred 90s
+  // after boot to stagger from the retention cron above.
+  const { scheduleStudentErasureSweep } = await import("./services/studentErasureCron");
+  scheduleStudentErasureSweep();
+
   // DEVELOPMENT: Use Vite dev server
   if (process.env.NODE_ENV === "development") {
     // Mount the gated games handler BEFORE the Vite catch-all so /games/*

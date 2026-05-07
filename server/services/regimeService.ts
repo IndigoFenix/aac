@@ -59,6 +59,20 @@ export class RegimeService {
     const slugs = await this.getRegimesForInstitute(instituteId, isSystemAdmin);
     return resolveBreachNotificationHours(slugs);
   }
+
+  /** First non-null `identityProviderHint` declared by any of the institute's
+   *  regimes. Returned as an `instituteIdType` slug (e.g. "il_moe", "uk_dfe")
+   *  so callers can match it against `identity_providers.instituteIdType`. */
+  async getMandatedIdentityProviderHintForInstitute(
+    instituteId: string | undefined,
+    isSystemAdmin = false,
+  ): Promise<string | null> {
+    const bundles = await this.getRegimeBundlesForInstitute(instituteId, isSystemAdmin);
+    for (const b of bundles) {
+      if (b.identityProviderHint) return b.identityProviderHint;
+    }
+    return null;
+  }
 }
 
 export const regimeService = new RegimeService();

@@ -128,6 +128,13 @@ export const identityProviders = pgTable("identity_providers", {
   claimMappings: jsonb("claim_mappings").default({}), // Maps provider claims/attrs to canonical user/institute fields
   instituteIdType: text("institute_id_type"),         // null = global (e.g. Google), 'il_moe' = regime-specific
   reverificationDays: integer("reverification_days"), // null = never re-verify
+  // When true, an SSO callback for an unrecognized externalId auto-creates
+  // a user from the canonical claims (email + given/family name) and links
+  // it. Required for IL MoE (Sapakim) go-live since teachers click an
+  // MoE-portal link expecting to land already-logged-in. When false
+  // (default), the callback returns ?ssoError=no_account so the user has
+  // to register first and then link the SSO provider from settings.
+  autoProvision: boolean("auto_provision").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

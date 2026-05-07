@@ -262,9 +262,10 @@ Access checks key off the **selected** institute, not all institutes the user is
 Schema: `event_type, subject_type1/id1, subject_type2/id2, instituteId, userId, details JSONB, createdAt`.
 
 - **Cross-institute reads:** every share-derived PHI read (cross-institute) fires `view`. Owned reads are not logged.
-- **Share lifecycle:** `created`, `accepted`, `declined`, `revoked` for `studentShareInvites`.
-- **Consent lifecycle:** `signed`, `withdrawn` for `studentConsentRecords`.
-- **Login events:** success, failure, MFA challenge — not in `activity_logs` today; sourced from CloudWatch logs.
+- **Share lifecycle:** `created`, `guardian_approved`, `redeemed`, `accepted`, `declined`, `revoked`, `expired` for `studentShareInvites`; `granted` / `revoked` for `standingShares`.
+- **Consent lifecycle:** `consent_signed`, `consent_revoked`, `consent_re_signed`, `guardian_id_verified`, `minor_threshold_crossed` for `studentConsentRecords`.
+- **Auth events:** `auth_login_success`, `auth_login_failure`, `auth_logout`, `auth_mfa_challenge`, `auth_mfa_success`, `auth_mfa_failure`, `auth_password_reset_requested`, `auth_password_reset_completed`. Logged with IP and user-agent in `details` for forensics; failures log `attemptedEmail` instead of `userId` (privacy-preserving).
+- **Erasure lifecycle:** `student_erasure_requested`, `student_erasure_cancelled`, `student_erasure_completed`. Exempt from retention pruning (compliance evidence — see §6.3).
 
 ### 6.2 Infrastructure audit
 
@@ -285,7 +286,13 @@ Schema: `event_type, subject_type1/id1, subject_type2/id2, instituteId, userId, 
 | `uk_dfe` | 7 years |
 | Default (no regime) | 1 year |
 
-**Current implementation:** S3 audit logs retained 6 years (covers HIPAA + IL); CloudWatch logs 90 days (cost trade-off, acknowledged in INFRASTRUCTURE.md). The application `activity_logs` table is not currently auto-pruned — required follow-up before HIPAA / IL MoE go-live.
+**Current implementation:** S3 audit logs retained 6 years (covers HIPAA + IL); CloudWatch logs 90 days (cost trade-off, acknowledged in INFRASTRUCTURE.md).
+
+The application `activity_logs` retention cron (`server/services/activityLogRetentionCron.ts`, `runActivityLogRetentionCheck`) is implemented and tested. It runs daily, scans every institute, and deletes rows older than `resolveAuditRetentionDays(institute regimes)` per row's institute (or the strictest known retention for orphan / `instituteId IS NULL` rows). It is wired into `server/index.ts` (long-lived Express path, used by the planned ECS deployment and dev) and skipped under `NODE_ENV=test`.
+
+**Compliance-evidence exemption:** rows with `event_type IN ('student_erasure_requested', 'student_erasure_cancelled', 'student_erasure_completed')` are never pruned — they outlive every retention window because they prove we honored a right-to-erasure request. The exempt set is exported as `ERASURE_AUDIT_EVENT_TYPES` from `studentErasureService.ts`.
+
+**Production-Lambda gap:** today's production stack uses the cost-optimized Lambda deployment path. `setInterval` doesn't fire reliably in Lambda (containers freeze between invocations), so `app.lambda.ts` does not invoke the cron scheduler. Until the planned ECS cutover, no production prune runs. We accept the resulting over-retention as a deliberate trade-off: it is conservative under every regime (we keep rows longer than the minimum, never shorter). The remediation pattern when ECS lands is straightforward (the long-lived process boots the cron at startup, same as `index.ts` already does); an EventBridge-scheduled cron Lambda is the alternative if Lambda is kept past ECS cutover.
 
 ## 7. Sub-processors
 
@@ -347,7 +354,7 @@ For an institute with mixed regimes (e.g. `il_moe` + `eu_gdpr`), the helper retu
 5. **Remediate** — fix root cause; rotate any leaked secrets; revoke any leaked tokens.
 6. **Post-mortem** — write up cause + corrective actions; attach to compliance evidence file.
 
-Notification templates live at `server/services/incident-templates/` (planned — not yet committed).
+Notification templates live at `server/services/incident-templates/` — three regimes (PHI breach, security breach, vendor incident) × two locales (en, he), filled at send-time via `incidentTemplateService.fillIncidentTemplate(...)`. The templates are reviewed-once-by-counsel; the service substitutes incident-specific facts into `{placeholder}` tokens. See `incident-templates/README.md` for the inventory and review process.
 
 ## 10. Penetration Testing & Vulnerability Management
 
@@ -391,9 +398,9 @@ Each external-test finding becomes one issue tagged `pen-test-finding`. Producti
 
 ## 12. Open Items (tracked, must be closed before regulator submission)
 
-1. **Application audit-log retention:** `activity_logs` is not auto-pruned. Implement scheduled purge based on `resolveAuditRetentionDays(institute regimes)`.
+1. 🟡 **Application audit-log retention:** code complete (`activityLogRetentionCron.ts`, 5 integration tests), wired into `index.ts` for long-lived Express. Production-Lambda invocation is **deferred to ECS cutover** — `setInterval` doesn't fire reliably in Lambda, and we accept conservative over-retention until the long-lived process is the production path. See §6.3 for the trade-off rationale. If Lambda is retained past ECS cutover, switch to an EventBridge-scheduled cron Lambda (Terraform: add `aws_cloudwatch_event_rule` targeting a new lambda whose handler calls `runActivityLogRetentionCheck()` and `runStudentErasureSweep()`).
 2. **Multi-region residency:** all infrastructure is in `il-central-1`. EU/US tenants requiring local residency need a region-routing layer.
-3. **Right-to-erasure automation:** end-to-end cascade (PHI tables, S3 objects, audit-log retention) currently has manual admin steps.
-4. **Login event audit:** login success/failure/MFA challenge events should write to `activity_logs`, not just CloudWatch.
-5. **Incident notification templates:** committed to repo at `server/services/incident-templates/`.
+3. ✅ **Right-to-erasure automation (2026-05-07):** soft-delete + scheduled hard-delete pipeline shipped. `studentErasureService.softDeleteStudent` tombstones the student (sets `deletedAt` / `scheduledHardDeleteAt`, revokes user_students + institute_students links, revokes object/standing shares), with a 30-day default cancellation window (`STUDENT_ERASURE_WINDOW_DAYS` env var). `studentErasureCron` sweeps daily and physically cascades through ~25 PHI tables in a single transaction. After the DB commits, the cron also deletes the linked biometric face image from S3 (`s3Service.delete`); failures are surfaced via `result.s3KeysFailed` so ops can drive a manual bucket cleanup, but the DB delete is not rolled back. Admin endpoints under `/api/admin/students/:id/erase[*]`. Audit events `student_erasure_{requested,cancelled,completed}` are exempt from retention pruning.
+4. ✅ **Login event audit (2026-05-06):** `authController` writes 8 auth event types (`auth_login_success`, `auth_login_failure`, `auth_logout`, `auth_mfa_challenge`, `auth_mfa_success`, `auth_mfa_failure`, `auth_password_reset_requested`, `auth_password_reset_completed`) to `activity_logs` with IP + user-agent in `details`. Failure rows log `attemptedEmail` instead of `userId` for privacy. Migration `0097_fast_molecule_man` added the enum values.
+5. ✅ **Incident notification templates:** committed to repo at `server/services/incident-templates/` (3 types × en/he, filled via `incidentTemplateService.fillIncidentTemplate`). Initial scaffold landed 2026-05-07; first counsel review still pending.
 6. **Per-institute breach contact:** institutes don't currently store a designated breach-notification address; today we contact the institute admin email.

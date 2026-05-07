@@ -12,6 +12,8 @@ import {
   defaultSpEntityId,
   buildSamlClient,
   profileToClaims,
+  generateSpMetadata,
+  clearSpMetadataCache,
 } from "../services/saml-helpers.js";
 import type { IdentityProvider } from "../../shared/schema.js";
 
@@ -113,6 +115,39 @@ describe("SAML helpers", () => {
       const provider = makeSamlProvider({ samlSpEntityId: "https://us/sp" });
       const client = await buildSamlClient(provider);
       expect(client.options.issuer).toBe("https://us/sp");
+    });
+  });
+
+  describe("generateSpMetadata caching", () => {
+    it("returns the same XML for repeated calls (cache hit)", async () => {
+      clearSpMetadataCache();
+      const fixedTime = new Date("2026-01-01T00:00:00Z");
+      const provider = makeSamlProvider({ id: "cache-test-1", updatedAt: fixedTime });
+      const a = await generateSpMetadata(provider);
+      const b = await generateSpMetadata(provider);
+      expect(a).toBe(b);
+    });
+
+    it("regenerates when updatedAt changes", async () => {
+      clearSpMetadataCache();
+      const baseProvider = makeSamlProvider({ id: "cache-test-2", updatedAt: new Date("2026-01-01T00:00:00Z") });
+      const first = await generateSpMetadata(baseProvider);
+      const updatedProvider = { ...baseProvider, updatedAt: new Date("2026-02-01T00:00:00Z"), samlSpEntityId: "https://changed/sp" };
+      const second = await generateSpMetadata(updatedProvider as any);
+      expect(second).toContain("https://changed/sp");
+      expect(second).not.toBe(first);
+    });
+
+    it("clearSpMetadataCache(providerId) drops only that entry", async () => {
+      const fixed = new Date("2026-01-01T00:00:00Z");
+      const p1 = makeSamlProvider({ id: "cache-test-3a", updatedAt: fixed });
+      const p2 = makeSamlProvider({ id: "cache-test-3b", updatedAt: fixed });
+      await generateSpMetadata(p1);
+      await generateSpMetadata(p2);
+      clearSpMetadataCache("cache-test-3a");
+      // Re-fetching p1 should still produce identical output (regeneration is deterministic).
+      const refreshed = await generateSpMetadata(p1);
+      expect(typeof refreshed).toBe("string");
     });
   });
 

@@ -284,6 +284,14 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "auth_mfa_failure",
   "auth_password_reset_requested",
   "auth_password_reset_completed",
+  // Right-to-erasure (GDPR Art. 17 / IL Privacy Protection Law) lifecycle.
+  // Subject is always a `student`. These event types are exempt from the
+  // activity-log retention cron — they are compliance evidence that
+  // outlives every other audit row, including the rows of the student
+  // they refer to.
+  "student_erasure_requested",
+  "student_erasure_cancelled",
+  "student_erasure_completed",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -428,9 +436,20 @@ export const students = pgTable("students", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  // Right-to-erasure (GDPR Art. 17 / IL Privacy Protection Law).
+  // `deletedAt` is the tombstone — when set, the student is invisible to
+  // every non-admin query and access checks return false. All linked PHI
+  // is preserved until `scheduledHardDeleteAt` arrives, giving the user
+  // a window to cancel an accidental deletion. The hard-delete cron
+  // (`studentErasureCron`) walks rows where `scheduledHardDeleteAt <= now`
+  // and cascades through the PHI tables. See planning-docs / F.2.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  scheduledHardDeleteAt: timestamp("scheduled_hard_delete_at", { withTimezone: true }),
 }, (table) => [
   index("idx_students_framework").on(table.framework),
   index("idx_students_is_active").on(table.isActive),
+  index("idx_students_scheduled_hard_delete_at").on(table.scheduledHardDeleteAt),
 ]);
 
 // AAC settings — one-to-one with students, contains all AAC-specific configuration

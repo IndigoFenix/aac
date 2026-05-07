@@ -12,23 +12,67 @@ const CALLBACK_BASE_URL = process.env.IDENTITY_CALLBACK_URL || process.env.APP_U
  * the user by external identity and log them in. Returns the redirect URL
  * (success or error) for the caller to use. Used by both OIDC and SAML
  * callbacks so the unauthenticated SSO-login flow shares a single code path.
+ *
+ * If no link exists and the provider has `autoProvision = true`, the SSO
+ * profile is used to create the user (or link an existing user matched by
+ * email) before logging in. This is required for IdPs like the Israeli
+ * MoE Sapakim portal where teachers click an MoE-portal link and expect
+ * to land in the app already-logged-in.
  */
 async function loginViaExternalIdentity(
   req: Request,
   providerId: string,
-  externalId: string,
+  result: { externalId: string; email?: string; claims: Record<string, unknown>; profile: { externalId: string; email?: string; givenName?: string; familyName?: string; fullName?: string; nationalIdNumber?: string; userType?: string; instituteCode?: string; raw: Record<string, unknown> } },
   returnUrl: string,
 ): Promise<string> {
-  const link = await identityService.findUserByExternalId(providerId, externalId);
-  if (!link) {
-    // No user has linked this external identity yet. We don't auto-create
-    // — the user must register first, then link from their account.
-    return `${returnUrl}?ssoError=no_account`;
+  let user: { id: string } | undefined;
+  let autoProvisioned = false;
+
+  const link = await identityService.findUserByExternalId(providerId, result.externalId);
+  if (link) {
+    user = await userRepository.getUser(link.userId);
+    if (!user) {
+      return `${returnUrl}?ssoError=user_not_found`;
+    }
+  } else {
+    // No user has linked this external identity yet. Try auto-provisioning
+    // when the provider allows it.
+    const provider = await identityService.getProvider(providerId);
+    if (!provider) {
+      return `${returnUrl}?ssoError=provider_not_found`;
+    }
+    if (!provider.autoProvision) {
+      // Auto-provisioning disabled — user must register first and link.
+      return `${returnUrl}?ssoError=no_account`;
+    }
+    if (!result.profile.email) {
+      // Auto-provision needs an email; the IdP didn't supply one.
+      return `${returnUrl}?ssoError=no_email_in_assertion`;
+    }
+    try {
+      const out = await identityService.autoProvisionFromProfile(provider, result.profile);
+      user = out.user;
+      autoProvisioned = out.created;
+      activityLogService.log({
+        userId: out.user.id,
+        eventType: out.created ? "create" : "link",
+        subjectType1: "user",
+        subjectId1: out.user.id,
+        details: {
+          ip: req.ip,
+          userAgent: req.get("user-agent") ?? null,
+          sso: true,
+          providerId,
+          autoProvisioned: out.created,
+          linkedExisting: !out.created,
+        },
+      });
+    } catch (err: any) {
+      console.error("SSO auto-provisioning failed:", err);
+      return `${returnUrl}?ssoError=auto_provision_failed`;
+    }
   }
-  const user = await userRepository.getUser(link.userId);
-  if (!user) {
-    return `${returnUrl}?ssoError=user_not_found`;
-  }
+
   return new Promise<string>((resolve) => {
     (req as any).login(user, (err: Error | null) => {
       if (err) {
@@ -37,18 +81,19 @@ async function loginViaExternalIdentity(
         return;
       }
       activityLogService.log({
-        userId: user.id,
+        userId: user!.id,
         eventType: "auth_login_success",
         subjectType1: "user",
-        subjectId1: user.id,
+        subjectId1: user!.id,
         details: {
           ip: req.ip,
           userAgent: req.get("user-agent") ?? null,
           sso: true,
           providerId,
+          autoProvisioned,
         },
       });
-      resolve(`${returnUrl}?ssoLoggedIn=true`);
+      resolve(`${returnUrl}?ssoLoggedIn=true${autoProvisioned ? "&ssoAutoProvisioned=true" : ""}`);
     });
   });
 }
@@ -228,8 +273,9 @@ export class IdentityController {
         );
         res.redirect(`${returnUrl}?identityLinked=true`);
       } else {
-        // Unauthenticated → log in via existing external identity.
-        const target = await loginViaExternalIdentity(req, providerId, result.externalId, returnUrl);
+        // Unauthenticated → log in via existing external identity (or
+        // auto-provision when enabled).
+        const target = await loginViaExternalIdentity(req, providerId, result, returnUrl);
         res.redirect(target);
       }
     } catch (error: any) {
@@ -388,8 +434,9 @@ export class IdentityController {
         );
         res.redirect(`${returnUrl}?identityLinked=true`);
       } else {
-        // Unauthenticated → log in via existing external identity.
-        const target = await loginViaExternalIdentity(req, providerId, result.externalId, returnUrl);
+        // Unauthenticated → log in via existing external identity (or
+        // auto-provision when enabled).
+        const target = await loginViaExternalIdentity(req, providerId, result, returnUrl);
         res.redirect(target);
       }
     } catch (error: any) {

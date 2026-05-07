@@ -67,6 +67,7 @@ import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
 import { identityController } from "./controllers/identityController";
+import { studentErasureController } from "./controllers/studentErasureController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -1664,6 +1665,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
     identityController.deleteProvider(req, res)
+  );
+
+  // Right-to-erasure (GDPR Art. 17 / IL Privacy Protection Law). Soft-delete
+  // first; hard-delete cron sweeps after the cancellation window elapses.
+  app.post("/api/admin/students/:id/erase", requireAuth, requireSystemAdmin, (req, res) =>
+    studentErasureController.requestErasure(req, res)
+  );
+  app.post("/api/admin/students/:id/erase/cancel", requireAuth, requireSystemAdmin, (req, res) =>
+    studentErasureController.cancelErasure(req, res)
+  );
+  app.get("/api/admin/students/:id/erasure-status", requireAuth, requireSystemAdmin, (req, res) =>
+    studentErasureController.getStatus(req, res)
   );
 
   // Customer support (system admin)
