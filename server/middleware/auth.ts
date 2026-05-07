@@ -253,6 +253,18 @@ export const validateCSRF: RequestHandler = (
       }
     }
   }
+  // Dev convenience: allow any loopback origin in non-prod, mirroring CORS.
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      const h = new URL(candidate).hostname;
+      if (h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1") {
+        next();
+        return;
+      }
+    } catch {
+      // fall through to rejection
+    }
+  }
 
   res.status(403).json({ success: false, message: "CSRF: origin not allowed" });
 };

@@ -53,3 +53,4 @@ The trader design concept is nice. Show the item they are offering held in their
 ## Asteroid size
 Asteroid size should correspond to the number of rocks that remain.
 
+## Better

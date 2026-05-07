@@ -62,32 +62,75 @@ export function applySecurityHeaders(app: Express): void {
   );
 }
 
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const h = new URL(origin).hostname;
+    return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Apply a strict CORS policy. The dev environment gets localhost + Electron;
  * prod reads from `ALLOWED_ORIGINS`. Reflecting `origin: true` (any origin)
  * is no longer permitted because we use credentialed cookies.
+ *
+ * Same-origin requests (Origin matches the request's own host) are always
+ * allowed. CORS exists to protect against cross-origin reads, so a request
+ * whose origin equals its destination host is not what the allowlist is
+ * gating — and forcing operators to add every deployment hostname (Render
+ * preview URLs, custom domains, local dev ports) to `ALLOWED_ORIGINS` is
+ * a footgun.
  */
 export function applyCorsPolicy(app: Express): void {
   const allowed = resolveAllowedOrigins();
 
+  const isDev = process.env.NODE_ENV !== "production";
+
   app.use(
-    cors({
-      credentials: true,
-      origin(origin, cb) {
-        // No origin header (e.g. server-to-server, curl): allow.
-        if (!origin) return cb(null, true);
-        if (allowed.includes(origin)) return cb(null, true);
-        // Wildcard subdomains (rare; opt-in via ALLOWED_ORIGINS entry like "https://*.example.com").
-        for (const a of allowed) {
-          if (a.startsWith("https://*.") && origin.startsWith("https://")) {
-            const suffix = a.slice("https://*.".length);
-            if (origin.endsWith("." + suffix) || origin === "https://" + suffix) {
-              return cb(null, true);
-            }
+    cors((req, cb) => {
+      const r = req as { headers: Record<string, string | string[] | undefined>; socket?: { encrypted?: boolean } };
+      const origin = r.headers.origin as string | undefined;
+      const credentials = true;
+
+      // No origin header (server-to-server, curl, same-origin GETs without
+      // CORS preflight): allow.
+      if (!origin) return cb(null, { origin: true, credentials });
+
+      // Same-origin: Origin header matches the host this request hit.
+      // `x-forwarded-proto` is honored when behind a TLS-terminating proxy
+      // (Render, ALB, CloudFront).
+      const host = r.headers.host as string | undefined;
+      const xfProto = r.headers["x-forwarded-proto"];
+      const xfp = Array.isArray(xfProto) ? xfProto[0] : xfProto;
+      const proto =
+        (typeof xfp === "string" ? xfp.split(",")[0].trim() : undefined) ||
+        (r.socket?.encrypted ? "https" : "http");
+      if (host && origin === `${proto}://${host}`) {
+        return cb(null, { origin: true, credentials });
+      }
+
+      // Dev convenience: allow any loopback origin on any port. Vite binds
+      // to `127.0.0.1` by default on some setups while the dev defaults list
+      // `localhost`; both are loopback and equally safe to allow locally.
+      if (isDev && isLoopbackOrigin(origin)) {
+        return cb(null, { origin: true, credentials });
+      }
+
+      if (allowed.includes(origin)) return cb(null, { origin: true, credentials });
+
+      // Wildcard subdomains (rare; opt-in via ALLOWED_ORIGINS entry like "https://*.example.com").
+      for (const a of allowed) {
+        if (a.startsWith("https://*.") && origin.startsWith("https://")) {
+          const suffix = a.slice("https://*.".length);
+          if (origin.endsWith("." + suffix) || origin === "https://" + suffix) {
+            return cb(null, { origin: true, credentials });
           }
         }
-        cb(new Error(`CORS: origin ${origin} not allowed`));
-      },
+      }
+
+      cb(new Error(`CORS: origin ${origin} not allowed`));
     }),
   );
 }
