@@ -8,7 +8,9 @@
   --lp-bg: #FCFDFD;
   --lp-bg-alt: #F4F7FA;
   --lp-text: #1E293B;
-  --lp-text-muted: #64748B;
+  /* WCAG 1.4.3 contrast: slate-500 (#64748B) on lp-bg-alt (#F4F7FA) is 4.42:1
+     — just below 4.5:1. slate-600 (#475569) on the same bg is ~7.1:1. */
+  --lp-text-muted: #475569;
   --lp-radius: 12px;
   --lp-radius-lg: 20px;
   --lp-shadow: 0 10px 40px rgba(26, 43, 76, 0.12);

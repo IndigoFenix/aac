@@ -80,6 +80,11 @@ jobs:
       - name: Run type check
         run: npm run check || npm run typecheck || echo "No typecheck script found"
 
+      # WCAG-relevant lint. Errors fail the build; the 0/0 baseline was
+      # established 2026-05-07 and this gate keeps it. Warnings allowed.
+      - name: Lint a11y rules
+        run: npm run lint:a11y
+
       - name: Run tests
         run: npm test || echo "No test script found"
         env:

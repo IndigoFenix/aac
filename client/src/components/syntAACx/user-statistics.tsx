@@ -260,10 +260,10 @@ export function UserStatistics() {
         <CardContent className="space-y-4">
           {/* Date Range */}
           <div className="flex items-center gap-4">
-            <Label>Date Range:</Label>
+            <Label htmlFor="user-stats-date-range">Date Range:</Label>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="w-[280px] justify-start text-left">
+                <Button id="user-stats-date-range" variant="outline" className="w-[280px] justify-start text-left">
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {format(startDate, "MMM dd, yyyy")} - {format(endDate, "MMM dd, yyyy")}
                 </Button>
@@ -284,9 +284,9 @@ export function UserStatistics() {
           {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
-              <Label>Plan Tiers</Label>
+              <Label htmlFor="user-stats-plan-tiers">Plan Tiers</Label>
               <Select value={planTiers.join(',') || 'all'} onValueChange={(value) => setPlanTiers(value === 'all' ? [] : value.split(','))}>
-                <SelectTrigger>
+                <SelectTrigger id="user-stats-plan-tiers">
                   <SelectValue placeholder="All plans" />
                 </SelectTrigger>
                 <SelectContent>
@@ -298,9 +298,9 @@ export function UserStatistics() {
             </div>
             
             <div>
-              <Label>Countries</Label>
+              <Label htmlFor="user-stats-countries">Countries</Label>
               <Select value={countries.join(',') || 'all'} onValueChange={(value) => setCountries(value === 'all' ? [] : value.split(','))}>
-                <SelectTrigger>
+                <SelectTrigger id="user-stats-countries">
                   <SelectValue placeholder="All countries" />
                 </SelectTrigger>
                 <SelectContent>
@@ -313,9 +313,9 @@ export function UserStatistics() {
             </div>
 
             <div>
-              <Label>Acquisition Source</Label>
+              <Label htmlFor="user-stats-acquisition">Acquisition Source</Label>
               <Select value={acquisitionSources.join(',') || 'all'} onValueChange={(value) => setAcquisitionSources(value === 'all' ? [] : value.split(','))}>
-                <SelectTrigger>
+                <SelectTrigger id="user-stats-acquisition">
                   <SelectValue placeholder="All sources" />
                 </SelectTrigger>
                 <SelectContent>
@@ -328,9 +328,9 @@ export function UserStatistics() {
             </div>
 
             <div>
-              <Label>Platforms</Label>
+              <Label htmlFor="user-stats-platforms">Platforms</Label>
               <Select value={platforms.join(',') || 'all'} onValueChange={(value) => setPlatforms(value === 'all' ? [] : value.split(','))}>
-                <SelectTrigger>
+                <SelectTrigger id="user-stats-platforms">
                   <SelectValue placeholder="All platforms" />
                 </SelectTrigger>
                 <SelectContent>
@@ -343,9 +343,9 @@ export function UserStatistics() {
             </div>
 
             <div>
-              <Label>Feature Tags</Label>
+              <Label htmlFor="user-stats-features">Feature Tags</Label>
               <Select value={featureTags.join(',') || 'all'} onValueChange={(value) => setFeatureTags(value === 'all' ? [] : value.split(','))}>
-                <SelectTrigger>
+                <SelectTrigger id="user-stats-features">
                   <SelectValue placeholder="All features" />
                 </SelectTrigger>
                 <SelectContent>

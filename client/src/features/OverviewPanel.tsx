@@ -354,10 +354,20 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   <div
                     key={student.id}
                     dir={isRTL ? 'rtl' : 'ltr'}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleStudentClick(student.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleStudentClick(student.id);
+                      }
+                    }}
+                    aria-label={`Open ${student.name}`}
                     className={cn(
                       'group flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
-                      isDark 
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                      isDark
                         ? 'border-slate-800 hover:border-primary/30 hover:bg-primary/5'
                         : 'border-border hover:border-primary/30 hover:bg-primary/5'
                     )}
@@ -385,6 +395,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 text-muted-foreground group-hover:text-primary"
+                      aria-label="Open"
                     >
                       <ChevronRight className={cn('w-4 h-4', isRTL && 'rotate-180')} />
                     </Button>

@@ -25,10 +25,13 @@ export const INTERACT_RADIUS = 70;    // ship must be this close to engage POI
 export const ASTEROID_BREAK_INTERVAL = 1400; // ms per rock chip
 export const TRADE_HOVER_DURATION = 1400;    // ms to complete a trade
 
-export const PIRATE_BASE_SPEED = 130;
-export const PIRATE_SPEED_PER_VALUE = 8;     // pirate speed += value(carried) * this
-export const PIRATE_FLEE_SPEED = 260;
+// Pirate speeds are tiered by what the player is carrying. SHIP_SPEED is 220.
+export const PIRATE_SPEED_SLOW = 110;        // tier 1: easily avoidable
+export const PIRATE_SPEED_MEDIUM = 190;      // tier 2: still slower than the ship
+export const PIRATE_SPEED_FAST = 280;        // tier 3: faster than the ship
+export const PIRATE_FLEE_SPEED = 320;
 export const PIRATE_FLEE_DURATION = 4000;    // ms before fleeing pirate despawns
+export const PIRATE_STEAL_ROCKS = 4;         // max rocks taken per attack
 
 export const POI_DESPAWN_DIST = 2400;        // far-from-ship cull distance
 export const POI_SPAWN_RING_MIN = 700;       // spawn just outside view
@@ -40,17 +43,9 @@ export const PIRATE_CHECK_INTERVAL = 4000;
 export const WORLD_CHECK_INTERVAL = 1500;
 
 export const ROCK_FLIGHT_DURATION = 550;     // ms — chip flies from asteroid to ship
+export const TRAIL_FADE_MS = 1500;           // ms — trail samples fully fade after this
 
 const SHAPES: Shape[] = ['circle', 'triangle', 'square'];
-
-// Numeric ranking used for "highest-value item" decisions and bad-deal detection.
-const KIND_VALUE: Record<ItemKind, number> = {
-  rock: 1,
-  shield: 3,
-  blue: 5,
-  gold: 12,
-  spiral: 100,
-};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -72,22 +67,26 @@ function dist(a: Vec2, b: Vec2): number {
   return Math.sqrt(dist2(a, b));
 }
 
-function valueOf(item: Item): number {
-  return KIND_VALUE[item.kind];
-}
-
-/** Total inventory value, used to gate pirate aggression. */
-function inventoryValue(ship: Ship): number {
-  let v = ship.rocks * KIND_VALUE.rock;
-  v += ship.shields * KIND_VALUE.shield;
-  for (const it of ship.inventory) v += valueOf(it);
-  return v;
-}
-
 function makeItem(state: GameState, kind: ItemKind, shape?: Shape): Item {
   const item: Item = { id: state.nextId++, kind };
-  if (shape && (kind === 'blue' || kind === 'gold')) item.shape = shape;
+  if (shape && (kind === 'blue' || kind === 'purple')) item.shape = shape;
   return item;
+}
+
+function shapeCount(ship: Ship): number {
+  let n = 0;
+  for (const it of ship.inventory) {
+    if (it.kind === 'blue' || it.kind === 'purple') n++;
+  }
+  return n;
+}
+
+function pirateSpeedFor(ship: Ship): number {
+  const rocks = ship.rocks;
+  const shapes = shapeCount(ship);
+  if (rocks > 12 || shapes > 3) return PIRATE_SPEED_FAST;
+  if (rocks > 8 || shapes > 2) return PIRATE_SPEED_MEDIUM;
+  return PIRATE_SPEED_SLOW;
 }
 
 function spawnRingPosition(ship: Ship): Vec2 {
@@ -107,7 +106,7 @@ export function createGameState(width: number, height: number, level = 0): GameS
     ship: {
       pos: { x: 0, y: 0 },
       heading: 0,
-      target: { x: 0, y: 0 },
+      cursorOffset: { x: 0, y: 0 },
       rocks: 0,
       shields: 0,
       inventory: [],
@@ -145,7 +144,7 @@ function createAsteroid(state: GameState): AsteroidPOI {
   const rocks = Math.round(rand(2, 5));
 
   // Probability the asteroid contains a hidden item — depends on level.
-  // Level 0: only the win-trader spawns the spiral; asteroids hold blues sometimes.
+  // Level 0: only the win-trader spawns the star; asteroids hold blues sometimes.
   let containedItem: Item | undefined;
   const roll = Math.random();
   if (state.level === 0) {
@@ -153,7 +152,7 @@ function createAsteroid(state: GameState): AsteroidPOI {
   } else if (state.level === 1) {
     if (roll < 0.25) containedItem = makeItem(state, 'blue', pickShape());
   } else {
-    if (roll < 0.18) containedItem = makeItem(state, 'gold', pickShape());
+    if (roll < 0.18) containedItem = makeItem(state, 'purple', pickShape());
     else if (roll < 0.5) containedItem = makeItem(state, 'blue', pickShape());
   }
 
@@ -170,7 +169,7 @@ function createAsteroid(state: GameState): AsteroidPOI {
 }
 
 /**
- * Build a trader. If `winTrader`, the trader holds the spiral as their offer
+ * Build a trader. If `winTrader`, the trader holds the star as their offer
  * (game-winning trade). Otherwise produces an exchange or a rock-for-item deal.
  */
 function createTrader(state: GameState, winTrader: boolean): TraderPOI {
@@ -181,14 +180,14 @@ function createTrader(state: GameState, winTrader: boolean): TraderPOI {
   let badDeal = false;
 
   if (winTrader) {
-    // Win condition: the spiral is offered. Demand depends on level.
-    offer = makeItem(state, 'spiral');
+    // Win condition: the star is offered. Demand depends on level.
+    offer = makeItem(state, 'star');
     if (state.level === 0) {
       want = { kind: 'rock', rockCount: 8 };
     } else if (state.level === 1) {
       want = { kind: 'blue', shape: pickShape() };
     } else {
-      want = { kind: 'gold', shape: pickShape() };
+      want = { kind: 'purple', shape: pickShape() };
     }
   } else {
     // Mix of helpful traders and occasional bad deals.
@@ -196,22 +195,22 @@ function createTrader(state: GameState, winTrader: boolean): TraderPOI {
     if (role < 0.4) {
       // Rocks → mid-tier item.
       const shape = pickShape();
-      offer = makeItem(state, state.level >= 2 ? 'gold' : 'blue', shape);
+      offer = makeItem(state, state.level >= 2 ? 'purple' : 'blue', shape);
       want = { kind: 'rock', rockCount: Math.round(rand(3, 6)) };
     } else if (role < 0.7) {
-      // Item-for-item upgrade (blue → gold).
+      // Item-for-item upgrade (blue → purple).
       const wantShape = pickShape();
       const offerShape = pickShape();
-      offer = makeItem(state, 'gold', offerShape);
+      offer = makeItem(state, 'purple', offerShape);
       want = { kind: 'blue', shape: wantShape };
     } else if (role < 0.85) {
       // Shield trader: rocks → shield. Always helpful.
       offer = makeItem(state, 'shield');
       want = { kind: 'rock', rockCount: Math.round(rand(2, 4)) };
     } else {
-      // Bad deal: gold → blue (downgrade for player).
+      // Bad deal: purple → blue (downgrade for player).
       offer = makeItem(state, 'blue', pickShape());
-      want = { kind: 'gold', shape: pickShape() };
+      want = { kind: 'purple', shape: pickShape() };
       badDeal = true;
     }
   }
@@ -237,7 +236,7 @@ function createPirate(state: GameState): PiratePOI {
     kind: 'pirate',
     pos,
     radius: 18,
-    speed: PIRATE_BASE_SPEED + inventoryValue(state.ship) * PIRATE_SPEED_PER_VALUE,
+    speed: pirateSpeedFor(state.ship),
     fleeing: false,
     despawnAt: 0,
   };
@@ -259,8 +258,10 @@ export function tick(state: GameState, dt: number, now: number): void {
 
 function updateShip(state: GameState, dt: number, now: number): void {
   const ship = state.ship;
-  const dx = ship.target.x - ship.pos.x;
-  const dy = ship.target.y - ship.pos.y;
+  // Cursor offset is in screen pixels relative to ship; treat it as a continuous
+  // steering vector so the ship keeps tracking a stationary cursor.
+  const dx = ship.cursorOffset.x;
+  const dy = ship.cursorOffset.y;
   const distToTarget = Math.hypot(dx, dy);
 
   if (distToTarget > 1) {
@@ -281,17 +282,22 @@ function updateShip(state: GameState, dt: number, now: number): void {
     ship.pos.y += Math.sin(ship.heading) * speed * dt;
   }
 
-  // Sample trail positions for towed items.
+  // Sample trail positions. While the ship is stationary, refresh the tail's
+  // timestamp so the ship's anchor stays alive while older samples age out — the
+  // visible trail shrinks toward the ship instead of sitting at fixed length.
   const tail = ship.trailPositions[ship.trailPositions.length - 1];
   if (!tail || dist(tail, ship.pos) > 6) {
-    ship.trailPositions.push({ x: ship.pos.x, y: ship.pos.y });
+    ship.trailPositions.push({ x: ship.pos.x, y: ship.pos.y, t: now });
+  } else {
+    tail.t = now;
   }
-  // Cap trail length proportional to inventory (plus headroom).
-  const maxTrail = Math.max(40, ship.inventory.length * 30 + 40);
-  if (ship.trailPositions.length > maxTrail) {
-    ship.trailPositions.splice(0, ship.trailPositions.length - maxTrail);
-  }
-  void now;
+  // Drop samples older than the fade window.
+  let firstAlive = 0;
+  while (
+    firstAlive < ship.trailPositions.length - 1 &&
+    now - ship.trailPositions[firstAlive].t > TRAIL_FADE_MS
+  ) firstAlive++;
+  if (firstAlive > 0) ship.trailPositions.splice(0, firstAlive);
 }
 
 function updatePOIs(state: GameState, dt: number, now: number): void {
@@ -356,7 +362,8 @@ function updatePirate(state: GameState, pirate: PiratePOI, dt: number, now: numb
     return true;
   }
 
-  // Chase ship.
+  // Chase ship — speed retunes with what the player is currently carrying.
+  pirate.speed = pirateSpeedFor(ship);
   const dx = ship.pos.x - pirate.pos.x;
   const dy = ship.pos.y - pirate.pos.y;
   const m = Math.hypot(dx, dy) || 1;
@@ -369,19 +376,37 @@ function updatePirate(state: GameState, pirate: PiratePOI, dt: number, now: numb
       ship.shields -= 1;
       pushMessage(state, 'Shield blocked the attack!');
     } else {
-      const stolen = takeHighestValueFromShip(ship);
-      if (stolen) {
-        if (stolen === 'rock') pushMessage(state, 'Pirate stole a rock!');
-        else pushMessage(state, `Pirate stole your ${describeItem(stolen)}!`);
-      } else {
-        pushMessage(state, 'Pirate found nothing to steal.');
-      }
+      pirateSteal(state, ship);
     }
     pirate.fleeing = true;
     pirate.despawnAt = now + PIRATE_FLEE_DURATION;
   }
 
   return true;
+}
+
+/**
+ * Pirate attack. If the player is carrying proportionally more shapes than rocks
+ * (shapeCount > rocks/4) take the first shape they collected; otherwise grab up to
+ * 4 rocks.
+ */
+function pirateSteal(state: GameState, ship: Ship): void {
+  const shapes = shapeCount(ship);
+  if (shapes > ship.rocks / 4) {
+    const idx = ship.inventory.findIndex(it => it.kind === 'blue' || it.kind === 'purple');
+    if (idx >= 0) {
+      const [taken] = ship.inventory.splice(idx, 1);
+      pushMessage(state, `Pirate stole your ${describeItem(taken.kind, taken.shape)}!`);
+      return;
+    }
+  }
+  if (ship.rocks > 0) {
+    const taken = Math.min(PIRATE_STEAL_ROCKS, ship.rocks);
+    ship.rocks -= taken;
+    pushMessage(state, taken === 1 ? 'Pirate stole a rock!' : `Pirate stole ${taken} rocks!`);
+    return;
+  }
+  pushMessage(state, 'Pirate found nothing to steal.');
 }
 
 function pruneFarPOIs(state: GameState): void {
@@ -411,13 +436,13 @@ function maybeSpawn(state: GameState, now: number): void {
   if (now - state.lastWorldCheck >= WORLD_CHECK_INTERVAL) {
     state.lastWorldCheck = now;
     const winTraderExists = state.pois.some(
-      p => p.kind === 'trader' && (p as TraderPOI).offer.kind === 'spiral',
+      p => p.kind === 'trader' && (p as TraderPOI).offer.kind === 'star',
     );
     while (state.pois.filter(p => p.kind === 'asteroid').length < TARGET_ASTEROIDS) {
       state.pois.push(createAsteroid(state));
     }
     if (!winTraderExists) {
-      // Always keep the spiral-bearing trader alive.
+      // Always keep the star-bearing trader alive.
       state.pois.push(createTrader(state, true));
     }
     while (
@@ -430,13 +455,15 @@ function maybeSpawn(state: GameState, now: number): void {
 
   if (now - state.lastPirateCheck >= PIRATE_CHECK_INTERVAL) {
     state.lastPirateCheck = now;
-    const value = inventoryValue(state.ship);
-    // Threshold at 4: a few rocks alone won't bring pirates.
-    if (value > 4) {
+    const ship = state.ship;
+    const shapes = shapeCount(ship);
+    // Pirates only show up once the player is hauling a worthwhile load.
+    if (ship.rocks > 4 || shapes > 1) {
       const pirateCount = state.pois.filter(p => p.kind === 'pirate' && !(p as PiratePOI).fleeing).length;
-      // Probability scales with carried value, capped.
-      const chance = Math.min(0.7, value / 60);
-      const cap = Math.min(3, 1 + Math.floor(value / 25));
+      // Spawn pressure scales with how dangerous the haul is.
+      const tier = ship.rocks > 12 || shapes > 3 ? 3 : ship.rocks > 8 || shapes > 2 ? 2 : 1;
+      const chance = tier === 3 ? 0.7 : tier === 2 ? 0.45 : 0.25;
+      const cap = tier === 3 ? 3 : tier === 2 ? 2 : 1;
       if (pirateCount < cap && Math.random() < chance) {
         state.pois.push(createPirate(state));
       }
@@ -484,39 +511,22 @@ function grantItemToShip(state: GameState, item: Item): void {
   } else if (item.kind === 'shield') {
     state.ship.shields += 1;
     pushMessage(state, 'Picked up a shield!');
-  } else if (item.kind === 'spiral') {
+  } else if (item.kind === 'star') {
     state.ship.inventory.push(item);
     state.won = true;
-    pushMessage(state, 'You found the Spiral! Mission complete.', 6000);
+    pushMessage(state, 'You found the Star! Mission complete.', 6000);
   } else {
     state.ship.inventory.push(item);
     pushMessage(state, `Got ${describeItem(item.kind, item.shape)}!`);
   }
 }
 
-function takeHighestValueFromShip(ship: Ship): ItemKind | null {
-  // Prefer items in inventory (most valuable first), then rocks.
-  if (ship.inventory.length > 0) {
-    let bestIdx = 0;
-    for (let i = 1; i < ship.inventory.length; i++) {
-      if (valueOf(ship.inventory[i]) > valueOf(ship.inventory[bestIdx])) bestIdx = i;
-    }
-    const [taken] = ship.inventory.splice(bestIdx, 1);
-    return taken.kind;
-  }
-  if (ship.rocks > 0) {
-    ship.rocks -= 1;
-    return 'rock';
-  }
-  return null;
-}
-
 // ── Public input handlers ─────────────────────────────────────────────────
 
 /** Set the ship's steering target from a screen-space (canvas) point. */
 export function setShipTargetFromScreen(state: GameState, screenX: number, screenY: number): void {
-  state.ship.target.x = state.ship.pos.x + (screenX - state.width / 2);
-  state.ship.target.y = state.ship.pos.y + (screenY - state.height / 2);
+  state.ship.cursorOffset.x = screenX - state.width / 2;
+  state.ship.cursorOffset.y = screenY - state.height / 2;
 }
 
 export function resetGame(state: GameState): void {
@@ -541,7 +551,7 @@ export function setLevel(state: GameState, level: number): void {
 export function describeItem(kind: ItemKind, shape?: Shape): string {
   if (kind === 'rock') return 'rock';
   if (kind === 'shield') return 'shield';
-  if (kind === 'spiral') return 'spiral';
+  if (kind === 'star') return 'star';
   if (shape) return `${kind} ${shape}`;
   return kind;
 }
@@ -567,6 +577,3 @@ export function isOnScreen(state: GameState, p: Vec2, pad = 50): boolean {
 export function activeMessages(state: GameState, now: number): GameMessage[] {
   return state.messages.filter(m => m.expiresAt > now);
 }
-
-// Re-export some constants used in rendering
-export const KIND_VALUES = KIND_VALUE;

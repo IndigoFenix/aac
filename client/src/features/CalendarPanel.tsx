@@ -657,13 +657,21 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
               return (
                 <div
                   key={dateKey}
+                  role="button"
+                  tabIndex={0}
                   className={cn(
                     "bg-card p-1 min-h-[80px] cursor-pointer transition-colors hover:bg-accent/50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     !isCurrentMonth && "bg-muted/30",
                     isSelected && "ring-2 ring-primary ring-inset",
                   )}
                   onClick={() => setSelectedDate(day)}
                   onDoubleClick={() => openNewEvent(day)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDate(day); }
+                  }}
+                  aria-label={day.toLocaleDateString()}
+                  aria-pressed={isSelected}
                 >
                   <div className={cn(
                     "text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full",
@@ -676,6 +684,8 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                     {dayEvents.slice(0, 3).map((item, i) => (
                       <div
                         key={`${item.event.id}-${i}`}
+                        role="button"
+                        tabIndex={0}
                         className={cn(
                           "text-[10px] leading-tight truncate rounded px-1 py-0.5 cursor-pointer",
                           rsvpPillClass(myRsvpStatus(item.event)),
@@ -683,6 +693,9 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedDate(day);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setSelectedDate(day); }
                         }}
                       >
                         {item.event.title}

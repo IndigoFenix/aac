@@ -151,15 +151,17 @@ function FilterBar({
 }) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <label className="text-sm text-muted-foreground">From</label>
+      <label htmlFor="session-history-start-date" className="text-sm text-muted-foreground">From</label>
       <Input
+        id="session-history-start-date"
         type="date"
         className="w-40 h-8"
         value={startDate}
         onChange={(e) => onStartDateChange(e.target.value)}
       />
-      <label className="text-sm text-muted-foreground">To</label>
+      <label htmlFor="session-history-end-date" className="text-sm text-muted-foreground">To</label>
       <Input
+        id="session-history-end-date"
         type="date"
         className="w-40 h-8"
         value={endDate}

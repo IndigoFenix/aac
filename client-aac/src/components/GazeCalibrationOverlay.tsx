@@ -229,9 +229,10 @@ export default function GazeCalibrationOverlay() {
       }}
     >
       {/* Cancel button — top right (for caretaker) */}
-      <button
+      <button type="button"
         data-cancel-calibration
         onClick={handleCancel}
+        aria-label="Cancel calibration"
         style={{
           position: "absolute",
           top: 16,

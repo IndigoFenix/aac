@@ -102,8 +102,8 @@ const CheckoutForm = ({ selectedPackage, onSuccess }: { selectedPackage: CreditP
       </div>
 
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">פרטי כרטיס אשראי</label>
+        <label className="block">
+          <span className="block text-sm font-medium mb-2">פרטי כרטיס אשראי</span>
           <div className="p-3 border rounded-md">
             <CardElement
               options={{
@@ -119,7 +119,7 @@ const CheckoutForm = ({ selectedPackage, onSuccess }: { selectedPackage: CreditP
               }}
             />
           </div>
-        </div>
+        </label>
       </div>
 
       <Button 

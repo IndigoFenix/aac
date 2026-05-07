@@ -73,12 +73,12 @@ function SymbolCard({ symbol, onEdit, onDelete }: {
       )}
       <div className="flex gap-1">
         {onEdit && (
-          <Button variant="ghost" size="sm" onClick={onEdit}>
+          <Button variant="ghost" size="sm" onClick={onEdit} aria-label={t('common.edit')}>
             <Edit className="w-3 h-3" />
           </Button>
         )}
         {onDelete && (
-          <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-700">
+          <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-700" aria-label={t('common.delete')}>
             <Trash2 className="w-3 h-3" />
           </Button>
         )}

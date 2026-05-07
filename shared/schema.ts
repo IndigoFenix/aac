@@ -98,20 +98,35 @@ export const adminUsers = pgTable("admin_users", {
 // PUBLIC TABLES — Identity Providers
 // =============================================================================
 
-// External identity providers (OIDC/OAuth2) for federated authentication
+// External identity providers (OIDC/OAuth2/SAML) for federated authentication
 export const identityProviders = pgTable("identity_providers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(), // e.g. "Ministry of Education", "Google"
   protocol: identityProviderProtocolEnum("protocol").notNull(),
+  // OIDC / OAuth2 fields
   discoveryUrl: text("discovery_url"), // OIDC discovery URL
   authorizationUrl: text("authorization_url"), // For OAuth2 without discovery
   tokenUrl: text("token_url"), // For OAuth2 without discovery
   userinfoUrl: text("userinfo_url"), // For OAuth2 without discovery
-  clientId: text("client_id").notNull(),
-  clientSecret: text("client_secret").notNull(), // Encrypted
+  clientId: text("client_id"), // null for SAML
+  clientSecret: text("client_secret"), // Encrypted; null for SAML (no shared secret)
   scopes: text("scopes").default("openid email profile"),
-  claimMappings: jsonb("claim_mappings").default({}), // Maps provider claims to user/institute fields
-  instituteIdType: text("institute_id_type"), // null = global (e.g. Google), 'MOE' = institute-specific
+  // SAML 2.0 fields. All nullable; only populated when protocol = 'saml'.
+  // The SP (us) is identified by samlSpEntityId (defaults to APP_URL/saml/sp).
+  samlEntityId: text("saml_entity_id"),               // IdP's entityID
+  samlSsoUrl: text("saml_sso_url"),                   // IdP's SingleSignOnService URL
+  samlSloUrl: text("saml_slo_url"),                   // IdP's SingleLogoutService URL
+  samlX509Cert: text("saml_x509_cert"),               // IdP's signing certificate (PEM)
+  samlNameIdFormat: text("saml_name_id_format")       // e.g. urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+    .default("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"),
+  samlSignAuthnRequests: boolean("saml_sign_authn_requests").default(false),
+  samlWantAssertionsSigned: boolean("saml_want_assertions_signed").default(true),
+  samlSpEntityId: text("saml_sp_entity_id"),          // Override SP entity ID (else derived from APP_URL)
+  samlSpPrivateKey: text("saml_sp_private_key"),      // Encrypted; only when SP signs requests
+  samlSpCertificate: text("saml_sp_certificate"),     // SP cert (PEM); published in SP metadata
+  // Common
+  claimMappings: jsonb("claim_mappings").default({}), // Maps provider claims/attrs to canonical user/institute fields
+  instituteIdType: text("institute_id_type"),         // null = global (e.g. Google), 'il_moe' = regime-specific
   reverificationDays: integer("reverification_days"), // null = never re-verify
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

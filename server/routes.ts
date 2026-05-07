@@ -43,6 +43,7 @@ import {
   requireLicensePermission,
   validateCSRF,
 } from "./middleware";
+import { authRateLimiter, passwordResetRateLimiter } from "./middleware/security";
 
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { apiProviderRepository } from "./repositories";
@@ -115,6 +116,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup user authentication (passport)
   await setupUserAuth(app);
 
+  // ============= CSRF PROTECTION =============
+  // Applied to all state-changing routes (POST/PUT/PATCH/DELETE) with a small
+  // skip-list for endpoints that receive cross-origin POSTs by design and have
+  // their own anti-replay protection (SAML ACS uses RelayState; the public
+  // anonymous endpoints don't carry session credentials).
+  app.use((req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+    if (req.path.startsWith("/api/identity/saml/acs/")) return next();
+    if (req.path.startsWith("/api/identity/saml/sls/")) return next();
+    if (req.path === "/api/contact") return next();
+    if (req.path.startsWith("/api/crm-chat/")) return next();
+    if (req.path === "/health") return next();
+    return validateCSRF(req, res, next);
+  });
+
   // ============ HEALTH CHECK =============
   app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -130,11 +146,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/crm-chat/message-stream", (req, res) => crmChatController.sendMessageStream(req, res));
 
   // ============= AUTH ROUTES =============
-  app.post("/auth/register", (req, res) => authController.register(req, res));
-  app.post("/auth/login", (req, res, next) => authController.login(req, res, next));
+  // Rate-limited per IP. authRateLimiter = 10/min; passwordResetRateLimiter = 5/15min.
+  app.post("/auth/register", authRateLimiter, (req, res) => authController.register(req, res));
+  app.post("/auth/login", authRateLimiter, (req, res, next) => authController.login(req, res, next));
   app.post("/auth/logout", (req, res) => authController.logout(req, res));
-  app.post("/auth/reset-password", (req, res) => authController.resetPassword(req, res));// Request password reset (sends email)
-  app.post("/auth/forgot-password", (req, res) =>
+  app.post("/auth/reset-password", passwordResetRateLimiter, (req, res) => authController.resetPassword(req, res));
+  app.post("/auth/forgot-password", passwordResetRateLimiter, (req, res) =>
     authController.forgotPassword(req, res)
   );
   // Validate reset token (check if valid before showing form)
@@ -173,36 +190,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/auth/mfa/setup", requireAuth, (req, res) =>
     authController.mfaSetup(req, res)
   );
-  // MFA setup with token (for enforced setup during login)
-  app.post("/auth/mfa/setup-with-token", (req, res) =>
+  // MFA setup with token (for enforced setup during login) — rate-limited (token is unauthenticated).
+  app.post("/auth/mfa/setup-with-token", authRateLimiter, (req, res) =>
     authController.mfaSetupWithToken(req, res)
   );
   // MFA verify setup (requires auth)
   app.post("/auth/mfa/verify-setup", requireAuth, (req, res) =>
     authController.mfaVerifySetup(req, res)
   );
-  // MFA verify setup with token (for enforced setup during login)
-  app.post("/auth/mfa/verify-setup-with-token", (req, res) =>
+  // MFA verify setup with token — rate-limited.
+  app.post("/auth/mfa/verify-setup-with-token", authRateLimiter, (req, res) =>
     authController.mfaVerifySetupWithToken(req, res)
   );
   // MFA disable (requires auth)
   app.post("/auth/mfa/disable", requireAuth, (req, res) =>
     authController.mfaDisable(req, res)
   );
-  // MFA verify during login (public, uses mfaToken)
-  app.post("/auth/mfa/verify", (req, res) =>
+  // MFA verify during login (public, uses mfaToken) — rate-limited.
+  app.post("/auth/mfa/verify", authRateLimiter, (req, res) =>
     authController.mfaVerify(req, res)
   );
-  // MFA recovery request (public)
-  app.post("/auth/mfa/recovery/request", (req, res) =>
+  // MFA recovery request (public) — looser limit, can email-flood otherwise.
+  app.post("/auth/mfa/recovery/request", passwordResetRateLimiter, (req, res) =>
     authController.mfaRecoveryRequest(req, res)
   );
   // MFA recovery validate (public)
   app.get("/auth/mfa/recovery/:token", (req, res) =>
     authController.mfaRecoveryValidate(req, res)
   );
-  // MFA recovery complete (public)
-  app.post("/auth/mfa/recovery/complete", (req, res) =>
+  // MFA recovery complete (public) — rate-limited.
+  app.post("/auth/mfa/recovery/complete", authRateLimiter, (req, res) =>
     authController.mfaRecoveryComplete(req, res)
   );
 
@@ -213,11 +230,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/identity/user", requireAuth, (req, res) =>
     identityController.getUserIdentities(req, res)
   );
-  app.get("/api/identity/link/:providerId", requireAuth, (req, res) =>
+  // Public list of active identity providers — used by the login page to
+  // render "Sign in with X" buttons. Rate-limited to deter discovery spam.
+  app.get("/api/auth/identity-providers", authRateLimiter, (req, res) =>
+    identityController.getPublicProviders(req, res)
+  );
+  // Initiate is public so it serves both flows: link (when authenticated)
+  // and login (when not). The session-state CSRF token handles auth-flow
+  // integrity. Rate-limited to deter abuse.
+  app.get("/api/identity/link/:providerId", authRateLimiter, (req, res) =>
     identityController.initiateLink(req, res)
   );
-  app.get("/api/identity/callback/:providerId", requireAuth, (req, res) =>
+  // Callback is public — the controller branches on req.user to decide
+  // between linking (existing session) or logging in via the external
+  // identity (no session). State token validation gates both paths.
+  app.get("/api/identity/callback/:providerId", (req, res) =>
     identityController.handleCallback(req, res)
+  );
+  // SAML Assertion Consumer Service — IdP POSTs here. Public for the same
+  // reason as /callback above; SAML's RelayState + signed assertion gate
+  // both link and login paths.
+  app.post("/api/identity/saml/acs/:providerId", (req, res) =>
+    identityController.handleSamlAcs(req, res)
+  );
+  // SAML SP metadata — public so IdPs can fetch it during onboarding.
+  app.get("/api/identity/saml/metadata/:providerId", (req, res) =>
+    identityController.getSamlMetadata(req, res)
+  );
+  // SAML Single Logout (SP-initiated). Initiator requires auth (we read the
+  // user's stored claims to build the LogoutRequest). The SLS endpoint
+  // receives the IdP's LogoutResponse — public, validated by signature +
+  // RelayState session check.
+  app.get("/api/identity/saml/slo/:providerId", requireAuth, (req, res) =>
+    identityController.initiateSamlLogout(req, res)
+  );
+  app.post("/api/identity/saml/sls/:providerId", (req, res) =>
+    identityController.handleSamlSlo(req, res)
   );
   app.delete("/api/identity/link/:providerId", requireAuth, (req, res) =>
     identityController.unlinkIdentity(req, res)

@@ -274,8 +274,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
         !isMobile && (isCollapsed ? "w-20" : "w-80")
       )}
     >
-      {/* Logo */}
-      <div className="p-6 cursor-pointer" onClick={() => { setActiveFeature('chat' as FeatureType); onNavigate?.(); }}>
+      {/* Logo — real <button> so it's keyboard-reachable and announces
+          correctly to screen readers (WCAG 2.1.1). */}
+      <button
+        type="button"
+        className="p-6 w-full text-start cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        onClick={() => { setActiveFeature('chat' as FeatureType); onNavigate?.(); }}
+        aria-label={t('nav.home') || 'Go to home'}
+      >
         {!isCollapsed ? (
           <div className="flex items-start gap-3">
             <img
@@ -303,19 +309,21 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
             />
           </div>
         )}
-      </div>
+      </button>
 
       {/* Current Student Context */}
       {hasStudentAccess && (
         !isCollapsed && (
           <div className="px-6 pb-4">
-            <div 
+            <button
+              type="button"
               className={cn(
-                "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
-                "group"
+                "w-full text-start bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
+                "group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               )}
               onClick={() => { if (student) { setActiveFeature('progress'); onNavigate?.(); } }}
               data-testid="card-student-context"
+              aria-label={student ? `Open progress for ${student.firstName ?? "current student"}` : undefined}
             > {student ? (
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
@@ -354,7 +362,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
                 </div>
               </div>
             )}
-            </div>
+            </button>
           </div>
         )
       )}

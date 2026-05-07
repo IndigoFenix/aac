@@ -7,7 +7,7 @@ export default function CookiePolicy() {
   const he = language === 'he';
 
   return (
-    <div className="min-h-screen w-full bg-gray-50 py-8">
+    <div className="min-h-screen w-full bg-background py-8">
       <div className="max-w-4xl mx-auto px-4">
         <Card>
           <CardHeader className={he ? 'text-right' : 'text-left'}>
@@ -169,7 +169,7 @@ export default function CookiePolicy() {
                     <>
                       <p>לכל שאלה בנוגע לשימוש שלנו בעוגיות, אנא פנו לממונה הגנת המידע שלנו:</p>
                       <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li><strong>דוא"ל DPO:</strong> <a href="mailto:dpo@aivota.ai" className="text-primary hover:underline">dpo@aivota.ai</a></li>
+                        <li><strong>דוא"ל DPO:</strong> <a href="mailto:dpo@aivota.ai" className="text-primary underline underline-offset-2">dpo@aivota.ai</a></li>
                         <li><strong>כתובת:</strong> בנטל 4, כפר יונה, ישראל</li>
                       </ul>
                     </>
@@ -177,7 +177,7 @@ export default function CookiePolicy() {
                     <>
                       <p>For any questions regarding our use of cookies, please contact our Data Protection Officer:</p>
                       <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li><strong>DPO Email:</strong> <a href="mailto:dpo@aivota.ai" className="text-primary hover:underline">dpo@aivota.ai</a></li>
+                        <li><strong>DPO Email:</strong> <a href="mailto:dpo@aivota.ai" className="text-primary underline underline-offset-2">dpo@aivota.ai</a></li>
                         <li><strong>Address:</strong> 4 Bental, Kfar Yona, Israel</li>
                       </ul>
                     </>

@@ -135,7 +135,7 @@ export function Grid3Preview() {
                   
                   if (button) {
                     return (
-                      <button
+                      <button type="button"
                         key={button.id}
                         onClick={() => handleButtonClick(button)}
                         data-testid={`button-${button.label.toLowerCase().replace(/\s+/g, '-')}`}

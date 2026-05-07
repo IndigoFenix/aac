@@ -212,7 +212,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
 
             {/* Playback controls — large and accessible */}
             <div className="flex items-center justify-center gap-4">
-              <button
+              <button type="button"
                 data-dwell
                 onClick={() => seekRelative(-15000)}
                 className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700 text-white`}
@@ -220,7 +220,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
               >
                 <SkipBack size={32} />
               </button>
-              <button
+              <button type="button"
                 data-dwell
                 onClick={togglePlay}
                 className={`${btnBase} w-24 h-24 bg-green-600 hover:bg-green-700 text-white`}
@@ -228,7 +228,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
               >
                 {isPlaying ? <Pause size={42} /> : <Play size={42} />}
               </button>
-              <button
+              <button type="button"
                 data-dwell
                 onClick={() => seekRelative(15000)}
                 className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700 text-white`}
@@ -243,7 +243,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
 
       {/* Close button at bottom — large and visible */}
       <div className="px-3 pb-4">
-        <button
+        <button type="button"
           data-dwell
           onClick={onClose}
           className={`${btnBase} w-full h-14 bg-red-500 text-white text-lg gap-2`}

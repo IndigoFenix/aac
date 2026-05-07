@@ -433,45 +433,46 @@ export default function AdminOverview() {
                                 Full information about this prompt and its processing
                               </SheetDescription>
                             </SheetHeader>
+                            {/* Field "labels" here are read-only data captions, not form controls. Use <span> + role=term/definition pairing rather than <label>. */}
                             {selectedPrompt && (
-                              <div className="mt-6 space-y-4">
+                              <dl className="mt-6 space-y-4">
                                 <div>
-                                  <label className="text-sm font-medium">User</label>
-                                  <p className="text-sm text-gray-600">{selectedPrompt.user.email}</p>
+                                  <dt className="text-sm font-medium">User</dt>
+                                  <dd className="text-sm text-gray-600">{selectedPrompt.user.email}</dd>
                                 </div>
                                 <div>
-                                  <label className="text-sm font-medium">Full Prompt</label>
-                                  <p className="text-sm text-gray-600 p-3 bg-gray-50 rounded border max-h-40 overflow-y-auto">
+                                  <dt className="text-sm font-medium">Full Prompt</dt>
+                                  <dd className="text-sm text-gray-600 p-3 bg-gray-50 rounded border max-h-40 overflow-y-auto">
                                     {selectedPrompt.prompt}
-                                  </p>
+                                  </dd>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                   <div>
-                                    <label className="text-sm font-medium">Topic</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.topic}</p>
+                                    <dt className="text-sm font-medium">Topic</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.topic}</dd>
                                   </div>
                                   <div>
-                                    <label className="text-sm font-medium">Language</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.language}</p>
+                                    <dt className="text-sm font-medium">Language</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.language}</dd>
                                   </div>
                                   <div>
-                                    <label className="text-sm font-medium">Model</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.model}</p>
+                                    <dt className="text-sm font-medium">Model</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.model}</dd>
                                   </div>
                                   <div>
-                                    <label className="text-sm font-medium">Pages Generated</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.pagesGenerated}</p>
+                                    <dt className="text-sm font-medium">Pages Generated</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.pagesGenerated}</dd>
                                   </div>
                                   <div>
-                                    <label className="text-sm font-medium">Processing Time</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.processingTimeMs}ms</p>
+                                    <dt className="text-sm font-medium">Processing Time</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.processingTimeMs}ms</dd>
                                   </div>
                                   <div>
-                                    <label className="text-sm font-medium">Downloaded</label>
-                                    <p className="text-sm text-gray-600">{selectedPrompt.downloaded ? 'Yes' : 'No'}</p>
+                                    <dt className="text-sm font-medium">Downloaded</dt>
+                                    <dd className="text-sm text-gray-600">{selectedPrompt.downloaded ? 'Yes' : 'No'}</dd>
                                   </div>
                                 </div>
-                              </div>
+                              </dl>
                             )}
                           </SheetContent>
                         </Sheet>

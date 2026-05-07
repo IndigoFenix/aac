@@ -624,7 +624,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" aria-label="Report actions">
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -1208,7 +1208,7 @@ function ArrayFieldEditor({ label, values, onChange, placeholder, disabled }: Ar
             placeholder={placeholder}
             className="flex-1"
           />
-          <Button type="button" variant="outline" size="sm" onClick={handleAdd}>
+          <Button type="button" variant="outline" size="sm" onClick={handleAdd} aria-label="Add">
             <Plus className="w-4 h-4" />
           </Button>
         </div>

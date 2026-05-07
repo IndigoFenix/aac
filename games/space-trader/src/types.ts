@@ -2,14 +2,14 @@
 
 export type Shape = 'circle' | 'triangle' | 'square';
 
-/** Item kinds, ordered by ascending value (rock cheapest, spiral wins). */
-export type ItemKind = 'rock' | 'blue' | 'gold' | 'spiral' | 'shield';
+/** Item kinds, ordered by ascending value (rock cheapest, star wins). */
+export type ItemKind = 'rock' | 'blue' | 'purple' | 'star' | 'shield';
 
 export interface Item {
   /** Unique id used to render trails / animations consistently. */
   id: number;
   kind: ItemKind;
-  /** Required for blue/gold items, optional otherwise. */
+  /** Required for blue/purple items, optional otherwise. */
   shape?: Shape;
 }
 
@@ -18,9 +18,12 @@ export interface Vec2 {
   y: number;
 }
 
+/** A trail-position sample with the wall-clock time it was recorded. */
+export type TrailSample = Vec2 & { t: number };
+
 /**
  * Trader's stated demand. If `kind === 'rock'` they want `rockCount` rocks.
- * For blue/gold/spiral/shield they want one matching item with `shape` (when applicable).
+ * For blue/purple/star/shield they want one matching item with `shape` (when applicable).
  */
 export interface TradeWant {
   kind: ItemKind;
@@ -32,16 +35,20 @@ export interface Ship {
   pos: Vec2;
   /** Current heading in radians (0 = right, +y = down, π/2 = down). */
   heading: number;
-  /** Current target in world coordinates the ship steers toward. */
-  target: Vec2;
+  /**
+   * Cursor position relative to the ship in screen pixels (cursor − screen-center).
+   * Re-evaluated each frame so the ship keeps tracking a stationary cursor; the
+   * magnitude doubles as a throttle (close to ship → slow / stop).
+   */
+  cursorOffset: Vec2;
   /** Rocks held (stack count, not individual items). */
   rocks: number;
   /** Shields held — passive defense, count rendered as orbiting dots. */
   shields: number;
   /** Items being towed (renders as a trail behind the ship). */
   inventory: Item[];
-  /** Recent ship positions used to render the item trail. */
-  trailPositions: Vec2[];
+  /** Recent ship positions used to render the item trail. Older samples fade out. */
+  trailPositions: TrailSample[];
 }
 
 export interface AsteroidPOI {
@@ -124,7 +131,7 @@ export interface GameState {
   height: number;
   /** Difficulty level; controls win condition and asteroid/trader composition. */
   level: number;
-  /** True once the player picks up the spiral. */
+  /** True once the player picks up the star. */
   won: boolean;
   /** ms timestamp of last pirate-spawn evaluation. */
   lastPirateCheck: number;

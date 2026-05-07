@@ -111,7 +111,7 @@ export function BiometricCameraDialog({ isOpen, onClose, onCapture }: Props) {
       cancelled = true;
       stopStream();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isOpen]);
 
   async function handleCapture() {

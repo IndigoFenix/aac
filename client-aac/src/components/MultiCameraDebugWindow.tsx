@@ -317,8 +317,9 @@ export default function MultiCameraDebugWindow({
         maxHeight: isMinimized ? 'auto' : '80vh'
       }}
     >
-      {/* Header */}
-      <div 
+      {/* Header — pointer-only drag handle for a debug-only floating window. */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div
         className={`flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 cursor-grab active:cursor-grabbing ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
@@ -356,11 +357,12 @@ export default function MultiCameraDebugWindow({
           >
             <span className="text-xs">{isMinimized ? '□' : '_'}</span>
           </Button>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onClose}
             className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label="Close"
           >
             <X className="h-3 w-3" />
           </Button>

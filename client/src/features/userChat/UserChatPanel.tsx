@@ -85,7 +85,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
             <div className="p-4 text-sm text-muted-foreground">{t("userChat.noRooms")}</div>
           )}
           {rooms.map((entry) => (
-            <button
+            <button type="button"
               key={entry.room.id}
               onClick={() => openRoom(entry.room.id)}
               className={cn(
@@ -265,7 +265,7 @@ function RoomView(props: {
           placeholder={t("userChat.composerPlaceholder")}
           data-testid="user-chat-composer"
         />
-        <Button onClick={handleSend} disabled={!draft.trim()} data-testid="user-chat-send">
+        <Button onClick={handleSend} disabled={!draft.trim()} data-testid="user-chat-send" aria-label={t('userChat.send') || 'Send'}>
           <Send className="w-4 h-4" />
         </Button>
       </div>
@@ -361,21 +361,31 @@ function NewChatDialog(props: {
                 {filtered.length === 0 && (
                   <div className="p-3 text-sm text-muted-foreground">{t("userChat.noContacts")}</div>
                 )}
-                {filtered.map((c) => (
-                  <label
-                    key={c.id}
-                    className="flex items-center gap-3 px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-muted"
-                  >
-                    <Checkbox
-                      checked={selected.has(c.id)}
-                      onCheckedChange={() => toggle(c.id)}
-                    />
-                    <div>
-                      <div className="font-medium">{displayNameFor(c)}</div>
-                      <div className="text-xs text-muted-foreground">{c.email}</div>
+                {filtered.map((c) => {
+                  const cbId = `user-chat-contact-${c.id}`;
+                  const labelId = `${cbId}-label`;
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-3 px-3 py-2 border-b last:border-b-0 hover:bg-muted"
+                    >
+                      <Checkbox
+                        id={cbId}
+                        aria-labelledby={labelId}
+                        checked={selected.has(c.id)}
+                        onCheckedChange={() => toggle(c.id)}
+                      />
+                      <label
+                        id={labelId}
+                        htmlFor={cbId}
+                        className="cursor-pointer flex-1"
+                      >
+                        <div className="font-medium">{displayNameFor(c)}</div>
+                        <div className="text-xs text-muted-foreground">{c.email}</div>
+                      </label>
                     </div>
-                  </label>
-                ))}
+                  );
+                })}
               </ScrollArea>
               {selected.size > 1 && (
                 <div>

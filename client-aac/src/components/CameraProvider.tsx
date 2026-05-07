@@ -246,7 +246,7 @@ export function CameraProvider({ children }: CameraProviderProps) {
 
   // Camera auto-start disabled: useMultiCamera hook is used instead (see home.tsx).
   // CameraProvider remains mounted for context compatibility but does not claim the device.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => { return () => stopCamera(); }, []);
 
   // Load available devices on mount

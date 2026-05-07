@@ -151,12 +151,12 @@ export function ModelSettings() {
                 <div className="grid grid-cols-2 gap-4">
                   {/* Provider selector */}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Provider</label>
+                    <label htmlFor={`model-settings-provider-${useCaseKey}`} className="text-sm font-medium">Provider</label>
                     <Select
                       value={config.provider}
                       onValueChange={(v) => handleProviderChange(useCaseKey, v as LLMProviderKey)}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={`model-settings-provider-${useCaseKey}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -171,12 +171,12 @@ export function ModelSettings() {
 
                   {/* Model selector */}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Model</label>
+                    <label htmlFor={`model-settings-model-${useCaseKey}`} className="text-sm font-medium">Model</label>
                     <Select
                       value={config.model}
                       onValueChange={(v) => handleModelChange(useCaseKey, v)}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={`model-settings-model-${useCaseKey}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

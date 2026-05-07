@@ -1431,7 +1431,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               transition={{ duration: 0.3 }}
               className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
             >
-              <button
+              <button type="button"
                 data-dwell
                 onClick={() => setPausedFnRef.current?.(false)}
                 className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/90 dark:bg-gray-800/90 shadow-2xl hover:scale-105 active:scale-95 transition-transform"

@@ -228,14 +228,14 @@ export function CommuniAACteNewSession(props: Props) {
                     {/* Image Menu Dropdown */}
                     {showImageMenu && (
                       <div className="absolute bottom-full left-0 mb-1 bg-background border border-border rounded-lg shadow-lg py-2 min-w-[150px] z-50">
-                        <button
+                        <button type="button"
                           onClick={handleCameraCapture}
                           className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
                         >
                           <Camera className="w-4 h-4" />
                           {language === "he" ? "צלם תמונה" : "Take Photo"}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={handleGallerySelect}
                           className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
                         >
@@ -283,10 +283,13 @@ export function CommuniAACteNewSession(props: Props) {
                             .map((suggestion, index) => (
                               <div
                                 key={index}
-                                onClick={() =>
-                                  handleSuggestionSelect(suggestion)
-                                }
-                                className="cursor-pointer bg-background hover:bg-muted border border-border rounded p-2 transition-colors"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => handleSuggestionSelect(suggestion)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSuggestionSelect(suggestion); }
+                                }}
+                                className="cursor-pointer bg-background hover:bg-muted border border-border rounded p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                 data-testid={`historical-suggestion-${index}`}
                               >
                                 <div className="flex justify-between items-start gap-2">
@@ -520,6 +523,7 @@ export function CommuniAACteNewSession(props: Props) {
                   variant="outline"
                   onClick={handleClear}
                   className="flex items-center gap-2 text-sm"
+                  aria-label="Clear conversation"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>

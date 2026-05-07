@@ -78,7 +78,7 @@ export function CameraAttentivenessDebug({ isVisible, onToggle }: CameraAttentiv
                 <Camera className="w-5 h-5" />
                 <span className="font-semibold">Camera Attentiveness</span>
               </div>
-              <button
+              <button type="button"
                 onClick={() => onToggle(false)}
                 className="text-white/80 hover:text-white"
               >
@@ -153,7 +153,7 @@ export function CameraAttentivenessDebug({ isVisible, onToggle }: CameraAttentiv
                 </div>
                 <div className="flex gap-1">
                   {(['sleep', 'low', 'medium', 'high'] as CaptureFrequency[]).map((freq) => (
-                    <button
+                    <button type="button"
                       key={freq}
                       onClick={() => setFrequency(freq)}
                       className={`
@@ -182,7 +182,7 @@ export function CameraAttentivenessDebug({ isVisible, onToggle }: CameraAttentiv
                 </div>
                 <div className="flex gap-1">
                   {(['low', 'medium', 'high'] as CaptureResolution[]).map((res) => (
-                    <button
+                    <button type="button"
                       key={res}
                       onClick={() => setResolution(res)}
                       className={`

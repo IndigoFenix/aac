@@ -245,11 +245,12 @@ export function ButtonInspector() {
           size="icon"
           className={cn(
             "h-7 w-7",
-            isDark 
+            isDark
               ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
               : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
           )}
           onClick={handleClose}
+          aria-label={t("common.close")}
         >
           <X size={14} />
         </Button>
@@ -933,7 +934,7 @@ export function ButtonInspector() {
           <ScrollArea className="max-h-[300px]">
             <div className="grid grid-cols-4 gap-2">
               {(symbolSearch && symbolSearchResults.length > 0 ? symbolSearchResults : availableSymbols).map(s => (
-                <button
+                <button type="button"
                   key={s.id}
                   className="border rounded-lg p-2 flex flex-col items-center gap-1 hover:bg-blue-50 transition-colors cursor-pointer"
                   onClick={() => {

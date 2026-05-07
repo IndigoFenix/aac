@@ -7,7 +7,7 @@ export default function AIPolicy() {
   const he = language === 'he';
 
   return (
-    <div className="min-h-screen w-full bg-gray-50 py-8">
+    <div className="min-h-screen w-full bg-background py-8">
       <div className="max-w-4xl mx-auto px-4">
         <Card>
           <CardHeader className={he ? 'text-right' : 'text-left'}>
@@ -155,14 +155,14 @@ export default function AIPolicy() {
                       <li>אנו מחויבים לשקיפות לגבי אופן השימוש שלנו ב-AI ולמידת ההשפעה שיש לו על חוויית המשתמש.</li>
                       <li>כאשר ה-AI מייצר לוחות AAC או מגיב בשיחה, הוא פועל על בסיס הקשר השיחה, פרופיל המשתמש והעדפותיו.</li>
                       <li>בהתאם ל<strong>עדכוני CCPA 2026</strong>, למשתמשים יש זכות לקבל מידע על ההיגיון מאחורי החלטות AI המשפיעות עליהם.</li>
-                      <li>באפשרותך לפנות אלינו בכל עת בכתובת <a href="mailto:ai@aivota.com" className="text-primary hover:underline">ai@aivota.com</a> לשאלות על אופן פעולת ה-AI.</li>
+                      <li>באפשרותך לפנות אלינו בכל עת בכתובת <a href="mailto:ai@aivota.com" className="text-primary underline underline-offset-2">ai@aivota.com</a> לשאלות על אופן פעולת ה-AI.</li>
                     </ul>
                   ) : (
                     <ul className="list-disc space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
                       <li>We are committed to transparency about how we use AI and the extent of its influence on the user experience.</li>
                       <li>When the AI generates AAC boards or responds in conversation, it operates based on the conversation context, user profile, and preferences.</li>
                       <li>Under <strong>2026 CCPA updates</strong>, users have the right to receive information about the logic behind AI decisions that affect them.</li>
-                      <li>You may contact us at any time at <a href="mailto:ai@aivota.com" className="text-primary hover:underline">ai@aivota.com</a> with questions about how the AI operates.</li>
+                      <li>You may contact us at any time at <a href="mailto:ai@aivota.com" className="text-primary underline underline-offset-2">ai@aivota.com</a> with questions about how the AI operates.</li>
                     </ul>
                   )}
                 </div>
@@ -171,14 +171,14 @@ export default function AIPolicy() {
                   <h3 className="font-semibold text-lg mb-3">6. {he ? 'נתונים ו-AI' : 'Data & AI'}</h3>
                   {he ? (
                     <ul className="list-disc space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                      <li>ה-AI מעבד נתוני שיחה ופרופיל משתמש כדי לספק תגובות מותאמות אישית. נתונים אלה מטופלים בהתאם ל<a href="/privacy-policy" className="text-primary hover:underline">מדיניות הפרטיות</a> שלנו.</li>
+                      <li>ה-AI מעבד נתוני שיחה ופרופיל משתמש כדי לספק תגובות מותאמות אישית. נתונים אלה מטופלים בהתאם ל<a href="/privacy-policy" className="text-primary underline underline-offset-2">מדיניות הפרטיות</a> שלנו.</li>
                       <li>סוכן הניטור עשוי לגשת למידע אישי של המשתמש (כגון יעדים ומידע רפואי) לצורך הערכה, אך יכול לכתוב רק לתחומי זיכרון מוגדרים.</li>
                       <li>יומני שיחות AI נשמרים לצורך שיפור השירות ומעקב קליני, ומטופלים לפי מדיניות שמירת הנתונים שלנו.</li>
                       <li>איננו משתמשים בשיחותיך הפרטיות לאימון מודלי AI גלובליים ללא הסכמה נפרדת ומפורשת.</li>
                     </ul>
                   ) : (
                     <ul className="list-disc space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                      <li>The AI processes conversation data and user profile information to deliver personalized responses. This data is handled in accordance with our <a href="/privacy-policy" className="text-primary hover:underline">Privacy Policy</a>.</li>
+                      <li>The AI processes conversation data and user profile information to deliver personalized responses. This data is handled in accordance with our <a href="/privacy-policy" className="text-primary underline underline-offset-2">Privacy Policy</a>.</li>
                       <li>The monitoring agent may access personal user information (such as goals and medical information) for evaluation purposes, but can only write to designated memory fields.</li>
                       <li>AI conversation logs are retained for service improvement and clinical tracking, subject to our data retention policy.</li>
                       <li>We do not use your private conversations to train global AI models without separate, explicit consent.</li>
@@ -250,11 +250,11 @@ export default function AIPolicy() {
                   <h3 className="font-semibold text-lg mb-3">9. {he ? 'עדכונים למדיניות' : 'Policy Updates'}</h3>
                   {he ? (
                     <p>
-                      מדיניות זו עשויה להתעדכן ככל שטכנולוגיות ה-AI שלנו מתפתחות או ככל שדרישות רגולטוריות משתנות. נודיע לך על שינויים מהותיים באמצעות הודעה בפלטפורמה או בדוא"ל. לשאלות בנוגע למדיניות AI שלנו, אנא פנו אלינו בכתובת <a href="mailto:ai@aivota.com" className="text-primary hover:underline">ai@aivota.com</a>.
+                      מדיניות זו עשויה להתעדכן ככל שטכנולוגיות ה-AI שלנו מתפתחות או ככל שדרישות רגולטוריות משתנות. נודיע לך על שינויים מהותיים באמצעות הודעה בפלטפורמה או בדוא"ל. לשאלות בנוגע למדיניות AI שלנו, אנא פנו אלינו בכתובת <a href="mailto:ai@aivota.com" className="text-primary underline underline-offset-2">ai@aivota.com</a>.
                     </p>
                   ) : (
                     <p>
-                      This policy may be updated as our AI technologies evolve or as regulatory requirements change. We will notify you of material changes via an in-platform notice or email. For questions about our AI policy, please contact us at <a href="mailto:ai@aivota.com" className="text-primary hover:underline">ai@aivota.com</a>.
+                      This policy may be updated as our AI technologies evolve or as regulatory requirements change. We will notify you of material changes via an in-platform notice or email. For questions about our AI policy, please contact us at <a href="mailto:ai@aivota.com" className="text-primary underline underline-offset-2">ai@aivota.com</a>.
                     </p>
                   )}
                 </div>

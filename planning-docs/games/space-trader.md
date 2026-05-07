@@ -41,3 +41,15 @@ Evaluation and difficulty levels:
 - Occasionally generate situations where bad trades are necessary - where the only way to collect the right item is to trade down.
 - Shields should not be considered to have an absolute value for evaluations, but examine if the player tends to prioritize them.
 - The more expertise the player demonstrates, the harder the game becomes (longer trade sequences, more frequent trade-downs required, more frequent bad trades.)
+
+# Improvements
+
+## Smooth movement of items
+Items (rocks and shapes) should not move instantly from position to position, but should be always be rendered as sliding smoothly. To fix this, items should have a previous position that is separate from their real position (the same as they are currently, following the player), and a move timer. Items should be rendered at a position between their previous position and their real position, determined by the current move timer. This position should start slow, be fast in the middle, and slow at the end to simulate acceleration and braking into position. (The acceleration should be faster than the braking.)
+
+## Trader animation and rendering
+The trader design concept is nice. Show the item they are offering held in their hands (rendered as circles), and just the item they want in the speech bubble. The speech bubble should pop up as the player approaches (the distance should be generous). Their eyes and hands should move around slightly as though they are tilting toward the player.
+
+## Asteroid size
+Asteroid size should correspond to the number of rocks that remain.
+

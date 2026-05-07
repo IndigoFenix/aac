@@ -417,6 +417,7 @@ export function AudioCapture({ onAudioProcessed, className, enabled = true, isVi
                   size="sm"
                   className="h-6 w-6 p-0 text-white hover:bg-blue-700"
                   onClick={() => setIsMinimized(!isMinimized)}
+                  aria-label={isMinimized ? "Maximize" : "Minimize"}
                 >
                   {isMinimized ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
                 </Button>
@@ -425,6 +426,7 @@ export function AudioCapture({ onAudioProcessed, className, enabled = true, isVi
                   size="sm"
                   className="h-6 w-6 p-0 text-white hover:bg-blue-700"
                   onClick={handleClose}
+                  aria-label="Close"
                 >
                   <X className="h-3 w-3" />
                 </Button>

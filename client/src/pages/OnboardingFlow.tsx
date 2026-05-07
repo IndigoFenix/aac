@@ -498,7 +498,7 @@ export default function OnboardingFlow() {
                   {step2Form.topicTags.map((tag) => (
                     <Badge key={tag} variant="secondary" className="px-3 py-1">
                       {tag}
-                      <button
+                      <button type="button"
                         data-testid={`button-remove-tag-${tag}`}
                         onClick={() => removeTopicTag(tag)}
                         className={`ml-2 hover:text-red-500 ${isRtl ? "mr-2 ml-0" : ""}`}

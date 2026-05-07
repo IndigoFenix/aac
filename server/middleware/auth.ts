@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { userRepository, studentRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { runWithSupportContext } from "../services/customerSupportService";
+import { resolveAllowedOrigins } from "./security";
 
 /**
  * Middleware that requires user to be authenticated
@@ -184,66 +185,76 @@ export const requireOnboardingComplete = async (
 };
 
 /**
- * CSRF protection middleware for admin routes
+ * CSRF protection middleware. Verifies that state-changing requests come
+ * from an allowed origin. The allowlist is the same one used by CORS
+ * (resolved via `resolveAllowedOrigins`).
+ *
+ * Origin header is preferred; we fall back to Referer for browsers that
+ * don't send Origin on same-origin POSTs (rare). Same-origin requests
+ * (Origin host equals our own host) are always allowed.
+ *
+ * Skipped for GET/HEAD/OPTIONS — these should be side-effect-free.
  */
 export const validateCSRF: RequestHandler = (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): void => {
-  // Skip CSRF for GET requests (they should be safe)
-  if (req.method === "GET") {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+  // Skip in tests — supertest doesn't send Origin and we don't want to block
+  // every integration test on a CSRF check.
+  if (process.env.NODE_ENV === "test") {
     next();
     return;
   }
 
-  const origin = req.headers.origin;
-  const referer = req.headers.referer;
+  const allowed = resolveAllowedOrigins();
+
   const host = req.headers.host;
   const protocol = req.secure ? "https:" : "http:";
-  const expectedOrigin = `${protocol}//${host}`;
+  const sameOrigin = host ? `${protocol}//${host}` : null;
 
-  // Check Origin header (preferred)
-  if (origin) {
-    if (origin !== expectedOrigin) {
-      res.status(403).json({
-        success: false,
-        message: "CSRF protection: Invalid origin",
-      });
-      return;
+  const origin = (req.headers.origin as string | undefined) || null;
+  const referer = (req.headers.referer as string | undefined) || null;
+
+  let candidate: string | null = origin;
+  if (!candidate && referer) {
+    try {
+      const u = new URL(referer);
+      candidate = `${u.protocol}//${u.host}`;
+    } catch {
+      // fall through to rejection
     }
-    next();
+  }
+
+  if (!candidate) {
+    res.status(403).json({ success: false, message: "CSRF: missing Origin/Referer" });
     return;
   }
 
-  // Fallback to Referer header
-  if (referer) {
-    try {
-      const refererUrl = new URL(referer);
-      const refererOrigin = `${refererUrl.protocol}//${refererUrl.host}`;
-      if (refererOrigin !== expectedOrigin) {
-        res.status(403).json({
-          success: false,
-          message: "CSRF protection: Invalid referer",
-        });
+  if (sameOrigin && candidate === sameOrigin) {
+    next();
+    return;
+  }
+  if (allowed.includes(candidate)) {
+    next();
+    return;
+  }
+  // Wildcard subdomain support, mirroring the CORS check.
+  for (const a of allowed) {
+    if (a.startsWith("https://*.") && candidate.startsWith("https://")) {
+      const suffix = a.slice("https://*.".length);
+      if (candidate.endsWith("." + suffix) || candidate === "https://" + suffix) {
+        next();
         return;
       }
-      next();
-      return;
-    } catch (error: any) {
-      res.status(403).json({
-        success: false,
-        message: "CSRF protection: Invalid referer format",
-      });
-      return;
     }
   }
 
-  // Reject if neither Origin nor Referer present
-  res.status(403).json({
-    success: false,
-    message: "CSRF protection: Missing origin/referer headers",
-  });
+  res.status(403).json({ success: false, message: "CSRF: origin not allowed" });
 };
 
 /**

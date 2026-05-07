@@ -156,6 +156,11 @@ export function TopicList({ parentId }: TopicListProps) {
                     </div>
                   </div>
 
+                  {/* stopPropagation shield — the parent row is clickable, this
+                      keeps clicks on the inner controls (Checkbox/Buttons) from
+                      bubbling. Not an actionable element itself, no keyboard
+                      handler needed. */}
+                  {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-2 me-4">
                       <Checkbox

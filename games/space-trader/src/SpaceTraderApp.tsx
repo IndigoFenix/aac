@@ -7,6 +7,7 @@ import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import {
   POI_DESPAWN_DIST,
   SHIP_RADIUS,
+  TRAIL_FADE_MS,
   activeMessages,
   createGameState,
   isOnScreen,
@@ -42,10 +43,9 @@ const HUD_REFRESH_MS = 250;
 const COLORS = {
   bg0: '#050816',
   bg1: '#0c0a26',
-  star: 'rgba(255,255,255,0.7)',
+  starfield: 'rgba(255,255,255,0.7)',
   ship: '#7dd3fc',
   shipOutline: '#0ea5e9',
-  trail: 'rgba(125, 211, 252, 0.25)',
   asteroid: '#6b6b73',
   asteroidEdge: '#3f3f46',
   rock: '#9ca3af',
@@ -55,8 +55,8 @@ const COLORS = {
   pirateOutline: '#7f1d1d',
   shield: '#10b981',
   blue: '#3b82f6',
-  gold: '#f59e0b',
-  spiral: '#a855f7',
+  purple: '#a855f7',
+  star: '#facc15',
   bubble: 'rgba(255,255,255,0.92)',
   bubbleStroke: 'rgba(0,0,0,0.55)',
   arrow: 'rgba(255,255,255,0.7)',
@@ -159,7 +159,7 @@ export default function SpaceTraderApp() {
       // Notify the platform once when the player wins.
       if (state.won && !wonReportedRef.current) {
         wonReportedRef.current = true;
-        sendToParent({ type: 'session_end', reason: 'won', summary: 'Captured the Spiral.' });
+        sendToParent({ type: 'session_end', reason: 'won', summary: 'Captured the Star.' });
       }
 
       if (now - lastHud >= HUD_REFRESH_MS) {
@@ -309,13 +309,13 @@ export default function SpaceTraderApp() {
         {/* Win overlay */}
         {hud.won && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-4 z-20">
-            <div className="text-5xl">🌀</div>
-            <div className="text-3xl font-bold text-purple-300">Mission Complete!</div>
-            <div className="text-slate-200">You captured the Spiral.</div>
+            <div className="text-5xl">⭐</div>
+            <div className="text-3xl font-bold text-yellow-300">Mission Complete!</div>
+            <div className="text-slate-200">You captured the Star.</div>
             <button
               data-dwell
               onClick={handleReset}
-              className="mt-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium"
+              className="mt-2 px-4 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-medium"
             >
               Play again
             </button>
@@ -331,11 +331,11 @@ export default function SpaceTraderApp() {
 function ItemBadge({ item }: { item: Item }) {
   const color =
     item.kind === 'blue' ? COLORS.blue
-    : item.kind === 'gold' ? COLORS.gold
-    : item.kind === 'spiral' ? COLORS.spiral
+    : item.kind === 'purple' ? COLORS.purple
+    : item.kind === 'star' ? COLORS.star
     : COLORS.rock;
   const symbol =
-    item.kind === 'spiral' ? '🌀'
+    item.kind === 'star' ? '★'
     : item.shape === 'circle' ? '●'
     : item.shape === 'triangle' ? '▲'
     : item.shape === 'square' ? '■'
@@ -365,7 +365,7 @@ function drawScene(
   ctx.fillRect(0, 0, width, height);
 
   // Parallax stars (drift opposite to ship position).
-  ctx.fillStyle = COLORS.star;
+  ctx.fillStyle = COLORS.starfield;
   const sx = state.ship.pos.x * 0.05;
   const sy = state.ship.pos.y * 0.05;
   for (const s of stars) {
@@ -380,7 +380,7 @@ function drawScene(
   ctx.globalAlpha = 1;
 
   // Draw item trail (behind ship).
-  drawShipTrail(ctx, state);
+  drawShipTrail(ctx, state, now);
 
   // POIs.
   for (const poi of state.pois) {
@@ -494,30 +494,46 @@ function drawRockSymbol(ctx: CanvasRenderingContext2D, x: number, y: number, siz
   ctx.stroke();
 }
 
-function drawShipTrail(ctx: CanvasRenderingContext2D, state: GameState) {
+function drawShipTrail(ctx: CanvasRenderingContext2D, state: GameState, now: number) {
   const ship = state.ship;
   const trail = ship.trailPositions;
-  if (trail.length < 2) return;
 
-  // Faint motion trail.
-  ctx.strokeStyle = COLORS.trail;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  for (let i = 0; i < trail.length; i++) {
-    const p = worldToScreen(state, trail[i]);
-    if (i === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
+  // Faint motion trail — each segment's alpha fades with the older endpoint's age,
+  // so the trail retreats toward the ship when the player stops.
+  if (trail.length >= 2) {
+    ctx.lineWidth = 3;
+    for (let i = 1; i < trail.length; i++) {
+      const a = worldToScreen(state, trail[i - 1]);
+      const b = worldToScreen(state, trail[i]);
+      const age = now - trail[i - 1].t;
+      const alpha = Math.max(0, 1 - age / TRAIL_FADE_MS);
+      if (alpha <= 0) continue;
+      ctx.strokeStyle = `rgba(125, 211, 252, ${0.35 * alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
   }
-  ctx.stroke();
 
-  // Towed items: place each item along the trail.
-  // Trail samples are roughly every 6 world units; spacing 4 samples ≈ 24 units apart.
+  // Towed items: place each along the trail. When the ship has been stationary
+  // and the trail has shrunk, fall back to clustering items behind the ship so
+  // they don't pop in/out of existence.
   const spacing = 4;
   const inv = ship.inventory;
   for (let i = 0; i < inv.length; i++) {
     const idx = trail.length - 1 - (i + 1) * spacing;
-    if (idx < 0) continue;
-    const p = worldToScreen(state, trail[idx]);
+    let world;
+    if (idx >= 0) {
+      world = trail[idx];
+    } else {
+      const offset = (i + 1) * 14;
+      world = {
+        x: ship.pos.x - Math.cos(ship.heading) * offset,
+        y: ship.pos.y - Math.sin(ship.heading) * offset,
+      };
+    }
+    const p = worldToScreen(state, world);
     drawItemBadge(ctx, p.x, p.y, inv[i], 12);
   }
 }
@@ -868,25 +884,27 @@ function drawItemSymbolKind(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-  } else if (kind === 'spiral') {
-    ctx.strokeStyle = COLORS.spiral;
-    ctx.lineWidth = 2;
+  } else if (kind === 'star') {
+    ctx.fillStyle = COLORS.star;
+    ctx.strokeStyle = '#854d0e';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    const turns = 2;
-    const steps = 30;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const a = t * Math.PI * 2 * turns;
-      const r = t * size;
+    const points = 5;
+    const inner = size * 0.45;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? size : inner;
+      const a = -Math.PI / 2 + (i / (points * 2)) * Math.PI * 2;
       const px = x + Math.cos(a) * r;
       const py = y + Math.sin(a) * r;
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
+    ctx.closePath();
+    ctx.fill();
     ctx.stroke();
   } else {
-    const fill = kind === 'gold' ? COLORS.gold : COLORS.blue;
-    const stroke = kind === 'gold' ? '#78350f' : '#1e3a8a';
+    const fill = kind === 'purple' ? COLORS.purple : COLORS.blue;
+    const stroke = kind === 'purple' ? '#581c87' : '#1e3a8a';
     ctx.fillStyle = fill;
     ctx.strokeStyle = stroke;
     if (shape === 'triangle') {

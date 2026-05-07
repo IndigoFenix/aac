@@ -41,7 +41,11 @@ export interface IdentityVerificationStatus {
   required: boolean;
   linked: boolean;
   expired: boolean;
-  provider?: { id: string; name: string };
+  /** ISO timestamp when the link expires; null if no reverification enforced. */
+  expiresAt: string | null;
+  /** Negative when expired. Null if no reverification enforced. */
+  daysUntilExpiry: number | null;
+  provider?: { id: string; name: string; protocol: 'oidc' | 'oauth2' | 'saml' };
 }
 
 export interface InstituteMember {

@@ -171,7 +171,7 @@ function Section({
         )}
       >
         <span>{title}</span>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onAdd}>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onAdd} aria-label={`Add ${title}`}>
           <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>

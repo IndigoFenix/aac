@@ -176,6 +176,7 @@ export function ConversationBox({
                 size="sm"
                 onClick={onToggle}
                 className="text-white hover:text-gray-200 hover:bg-white/10"
+                aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -254,6 +255,7 @@ export function ConversationBox({
                   onClick={startVoiceRecording}
                   disabled={isLoading}
                   className="bg-white/20 hover:bg-white/30 text-white rounded-full w-14 h-14 p-0"
+                  aria-label="Start voice recording"
                 >
                   <Mic className="w-6 h-6" />
                 </Button>
@@ -284,6 +286,7 @@ export function ConversationBox({
                     size="lg"
                     onClick={stopVoiceRecording}
                     className="bg-red-500 hover:bg-red-600 text-white rounded-full w-14 h-14 p-0 animate-pulse"
+                    aria-label="Stop recording"
                   >
                     <Square className="w-5 h-5 fill-current" />
                   </Button>
@@ -294,6 +297,7 @@ export function ConversationBox({
                     size="sm"
                     onClick={cancelVoiceRecording}
                     className="text-white/70 hover:text-white hover:bg-white/10"
+                    aria-label="Cancel recording"
                   >
                     <X className="w-4 h-4" />
                   </Button>

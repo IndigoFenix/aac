@@ -161,7 +161,7 @@ function BrowseView({
       items={channels}
       getKey={(ch) => ch.channelId}
       renderItem={(ch) => (
-        <button
+        <button type="button"
           data-dwell
           key={ch.channelId}
           onClick={() => setSelectedChannelId(ch.channelId)}
@@ -256,7 +256,7 @@ function ChannelVideosView({
       items={videos || []}
       getKey={(v) => v.videoId}
       renderItem={(v) => (
-        <button
+        <button type="button"
           data-dwell
           key={v.videoId}
           onClick={() => onPickVideo({ videoId: v.videoId, title: v.title })}
@@ -326,7 +326,7 @@ function PaginatedGrid<T>({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 bg-black/70 border-b border-gray-800 shrink-0">
         {onBack && (
-          <button
+          <button type="button"
             data-dwell
             onClick={onBack}
             className="w-12 h-12 rounded-xl bg-gray-800 text-white flex items-center justify-center active:scale-95 transition-transform"
@@ -341,7 +341,7 @@ function PaginatedGrid<T>({
             {page + 1} / {totalPages}
           </span>
         )}
-        <button
+        <button type="button"
           data-dwell
           onClick={onClose}
           className="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center active:scale-95 transition-transform"
@@ -373,7 +373,7 @@ function PaginatedGrid<T>({
       {/* Pager controls — hidden when only one page. */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-6 px-4 py-4 bg-black/70 border-t border-gray-800 shrink-0">
-          <button
+          <button type="button"
             data-dwell
             onClick={() => canPrev && setPage(page - 1)}
             disabled={!canPrev}
@@ -382,7 +382,7 @@ function PaginatedGrid<T>({
           >
             <ChevronLeft size={36} />
           </button>
-          <button
+          <button type="button"
             data-dwell
             onClick={() => canNext && setPage(page + 1)}
             disabled={!canNext}
@@ -414,7 +414,7 @@ function StatusView({
     <div className="h-full w-full bg-gray-900 flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3 bg-black/70 border-b border-gray-800 shrink-0">
         {onBack && (
-          <button
+          <button type="button"
             data-dwell
             onClick={onBack}
             className="w-12 h-12 rounded-xl bg-gray-800 text-white flex items-center justify-center active:scale-95 transition-transform"
@@ -424,7 +424,7 @@ function StatusView({
           </button>
         )}
         <h2 className="text-white text-lg font-semibold truncate flex-1">{title}</h2>
-        <button
+        <button type="button"
           data-dwell
           onClick={onClose}
           className="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center active:scale-95 transition-transform"
@@ -549,7 +549,7 @@ function PlayerView({
     <div ref={containerRef} className="h-full bg-black flex flex-col">
       <div className="relative z-10 flex items-center gap-3 px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
         {onBackToBrowse && (
-          <button
+          <button type="button"
             data-dwell
             onClick={onBackToBrowse}
             className="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center active:scale-95 transition-transform shrink-0"
@@ -571,7 +571,7 @@ function PlayerView({
         {hasError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <p className="text-white text-xl">{t("youtubeApp.unavailable")}</p>
-            <button data-dwell onClick={onClose} className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`}>
+            <button type="button" data-dwell onClick={onClose} className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`} aria-label={t("youtubeApp.close")}>
               <X size={36} />
             </button>
           </div>
@@ -580,19 +580,19 @@ function PlayerView({
 
       {!hasError && (
         <div className="relative z-10 flex items-center justify-center gap-4 px-4 py-5 bg-gradient-to-t from-black/80 to-transparent">
-          <button data-dwell onClick={onClose} className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`} aria-label={t("youtubeApp.close")}>
+          <button type="button" data-dwell onClick={onClose} className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`} aria-label={t("youtubeApp.close")}>
             <X size={36} />
           </button>
-          <button data-dwell onClick={() => seekRelative(-10)} className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`} aria-label={t("youtubeApp.back10")}>
+          <button type="button" data-dwell onClick={() => seekRelative(-10)} className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`} aria-label={t("youtubeApp.back10")}>
             <Rewind size={32} />
           </button>
-          <button data-dwell onClick={togglePlay} className={`${btnBase} w-24 h-24 bg-green-600 hover:bg-green-700`} aria-label={isPlaying ? t("youtubeApp.pause") : t("youtubeApp.play")}>
+          <button type="button" data-dwell onClick={togglePlay} className={`${btnBase} w-24 h-24 bg-green-600 hover:bg-green-700`} aria-label={isPlaying ? t("youtubeApp.pause") : t("youtubeApp.play")}>
             {isPlaying ? <Pause size={42} /> : <Play size={42} />}
           </button>
-          <button data-dwell onClick={() => seekRelative(10)} className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`} aria-label={t("youtubeApp.forward10")}>
+          <button type="button" data-dwell onClick={() => seekRelative(10)} className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`} aria-label={t("youtubeApp.forward10")}>
             <FastForward size={32} />
           </button>
-          <button data-dwell onClick={restart} className={`${btnBase} w-20 h-20 bg-purple-600 hover:bg-purple-700`} aria-label={t("youtubeApp.restart")}>
+          <button type="button" data-dwell onClick={restart} className={`${btnBase} w-20 h-20 bg-purple-600 hover:bg-purple-700`} aria-label={t("youtubeApp.restart")}>
             <RotateCcw size={32} />
           </button>
         </div>
@@ -611,7 +611,7 @@ function UnavailableView({ onClose }: { onClose: () => void }) {
     <div className="h-full w-full bg-black flex flex-col items-center justify-center gap-4 p-8 text-center">
       <Video size={64} className="text-gray-500" />
       <p className="text-white text-xl">{t("youtubeApp.unavailable")}</p>
-      <button
+      <button type="button"
         data-dwell
         onClick={onClose}
         className="w-20 h-20 bg-red-600 hover:bg-red-700 rounded-2xl text-white flex items-center justify-center active:scale-95 transition-transform"

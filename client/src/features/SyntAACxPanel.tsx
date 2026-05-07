@@ -581,7 +581,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
               </p>
             ) : (
               dropboxFiles.files.map((file) => (
-                <button
+                <button type="button"
                   key={file.path}
                   onClick={() => setSelectedImportFile(file)}
                   className={cn(

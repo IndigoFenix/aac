@@ -153,13 +153,24 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
         )}
         <ul>
           {history.map((h) => (
+            // <li> keeps list semantics ("list, N items"), but with role=button
+            // it acts as the click target. The interactive-role conflict is
+            // intentional and the only way to keep both list announcement +
+            // single-element click target.
             <li
               key={h.id}
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-element-to-interactive-role
+              role="button"
+              tabIndex={0}
               className={cn(
                 "p-3 border-b cursor-pointer hover:bg-accent text-sm",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 selectedId === h.id && "bg-accent"
               )}
               onClick={() => setSelectedId(h.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(h.id); }
+              }}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">

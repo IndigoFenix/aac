@@ -2,10 +2,13 @@
 // Express app for Lambda - ensures initialization completes
 
 import express, { type Request, Response, NextFunction } from "express";
-import cors from "cors";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { pool } from "./db";
+import {
+  applySecurityHeaders,
+  applyCorsPolicy,
+} from "./middleware/security";
 
 const app = express();
 
@@ -14,9 +17,10 @@ let isReady = false;
 let initPromise: Promise<void> | null = null;
 let startupError: Error | null = null;
 
+applySecurityHeaders(app);
+applyCorsPolicy(app);
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: false, limit: '100mb' }));
-app.use(cors({ origin: true, credentials: true }));
 
 function log(message: string, source = "lambda") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -40,13 +44,15 @@ app.get('/health', async (_req, res) => {
   }
 
   if (startupError) {
-    res.status(200).json({
+    // A 503 here lets the Lambda Web Adapter / load balancer detect the
+    // bad container and replace it instead of treating us as healthy.
+    res.status(503).json({
       status: 'error',
       error: startupError.message,
       timestamp: new Date().toISOString()
     });
   } else if (!isReady) {
-    res.status(200).json({
+    res.status(503).json({
       status: 'starting',
       timestamp: new Date().toISOString()
     });
@@ -104,32 +110,16 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Request logging
+// Request logging — does NOT capture response bodies (PHI safety).
 app.use((req, res, next) => {
+  if (!req.path.startsWith("/api") && !req.path.startsWith("/auth")) {
+    return next();
+  }
   const start = Date.now();
-  const reqPath = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (reqPath.startsWith("/api") || reqPath.startsWith("/auth")) {
-      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-      log(logLine);
-    }
+    log(`${req.method} ${req.path} ${res.statusCode} in ${duration}ms`);
   });
-
   next();
 });
 
@@ -199,7 +189,9 @@ async function initializeApp(): Promise<void> {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
       res.status(status).json({ message });
-      console.error("Request error:", err);
+      // Log message + status only; full stack traces persist 6yr in S3 logs
+      // and leak file paths / library versions to anyone with audit-log access.
+      console.error(`Request error [${status}]: ${message}`);
     });
 
     app.use("*", (_req, res) => {

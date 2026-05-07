@@ -206,9 +206,9 @@ export default function ClinicalDataPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Student Selector */}
             <div>
-              <label className="text-sm font-medium mb-2 block">Student</label>
+              <label htmlFor="clinical-data-student" className="text-sm font-medium mb-2 block">Student</label>
               <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-                <SelectTrigger data-testid="select-student">
+                <SelectTrigger id="clinical-data-student" data-testid="select-student">
                   <SelectValue placeholder="Select AAC user" />
                 </SelectTrigger>
                 <SelectContent>
@@ -224,10 +224,11 @@ export default function ClinicalDataPage() {
 
             {/* Start Date */}
             <div>
-              <label className="text-sm font-medium mb-2 block">Start Date</label>
+              <label htmlFor="clinical-data-start-date" className="text-sm font-medium mb-2 block">Start Date</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    id="clinical-data-start-date"
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",
@@ -252,10 +253,11 @@ export default function ClinicalDataPage() {
 
             {/* End Date */}
             <div>
-              <label className="text-sm font-medium mb-2 block">End Date</label>
+              <label htmlFor="clinical-data-end-date" className="text-sm font-medium mb-2 block">End Date</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    id="clinical-data-end-date"
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",

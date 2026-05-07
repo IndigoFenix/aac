@@ -11,6 +11,10 @@ export interface LicensePermissions {
   dashboardLevel: 0 | 1 | 2 | -1; // 0=none, 1=basic, 2=advanced, -1=full
   expertAgentsCount: number;
   deepAnalysisEnabled: boolean;
+  // Compliance regime slugs that apply to this license. Free-form strings
+  // resolved against shared/regime/regimes.ts. Stored as data so adding a
+  // new regime is a registry update, not a migration.
+  complianceRegimes?: string[];
 }
 
 export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -24,6 +28,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   dashboardLevel: 0,
   expertAgentsCount: 0,
   deepAnalysisEnabled: false,
+  complianceRegimes: [],
 };
 
 export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -37,6 +42,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   dashboardLevel: -1,
   expertAgentsCount: -1, // -1 = unlimited
   deepAnalysisEnabled: true,
+  complianceRegimes: [],
 };
 
 export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object({
@@ -50,6 +56,7 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   dashboardLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(-1)]),
   expertAgentsCount: z.number().int(),
   deepAnalysisEnabled: z.boolean(),
+  complianceRegimes: z.array(z.string()).optional(),
 });
 
 /**
@@ -58,7 +65,11 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
  */
 export function resolvePermissions(raw: Partial<LicensePermissions> | null | undefined): LicensePermissions {
   if (!raw) return { ...DEFAULT_LICENSE_PERMISSIONS };
-  if (raw.all) return { ...MAX_LICENSE_PERMISSIONS };
+  if (raw.all) {
+    // `all` grants max permissions but preserves any explicit regime
+    // declarations (regimes are constraints, not capabilities).
+    return { ...MAX_LICENSE_PERMISSIONS, complianceRegimes: raw.complianceRegimes ?? [] };
+  }
   return {
     ...DEFAULT_LICENSE_PERMISSIONS,
     ...raw,

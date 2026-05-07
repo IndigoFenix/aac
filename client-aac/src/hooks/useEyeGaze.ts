@@ -73,7 +73,7 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
       cameraProviderRef.current = null;
     };
     // preferredProvider intentionally excluded — handled by switchProvider / re-detect
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Feed rawFaces to camera provider (ref-based, no re-render)

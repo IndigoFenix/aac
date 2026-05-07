@@ -51,10 +51,22 @@ export class InterpretationController {
       }
 
       const validatedData = interpretRequestSchema.parse(requestData);
-      const language = (req.body.language as "en" | "he") || "he";
-      const context = req.body.context || null;
-      const studentId = req.body.studentId || null;
-      const studentName = req.body.studentName || null;
+      const auxSchema = z.object({
+        language: z.enum(["en", "he"]).optional(),
+        context: z.string().nullable().optional(),
+        studentId: z.string().uuid().nullable().optional(),
+        studentName: z.string().nullable().optional(),
+      });
+      const aux = auxSchema.parse({
+        language: req.body.language,
+        context: req.body.context,
+        studentId: req.body.studentId || null,
+        studentName: req.body.studentName,
+      });
+      const language: "en" | "he" = aux.language || "he";
+      const context = aux.context || null;
+      const studentId = aux.studentId || null;
+      const studentName = aux.studentName || null;
 
       let interpretationResult;
       let finalInput = validatedData.input;

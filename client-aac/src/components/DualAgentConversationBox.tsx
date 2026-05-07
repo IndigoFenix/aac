@@ -347,7 +347,7 @@ export function DualAgentConversationBox({
           {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
             {/* Cave (sleep toggle) — left of avatar (right in RTL) */}
-            <button
+            <button type="button"
               data-dwell
               onClick={handleCaveClick}
               className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
@@ -374,7 +374,7 @@ export function DualAgentConversationBox({
                 data-dwell is omitted while the avatar is talking + 3s grace period so eyegaze
                 doesn't accidentally start new turns when the user is just listening. */}
             {!isAsleep && (
-              <button
+              <button type="button"
                 {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
                 onClick={handleAvatarClick}
                 className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
@@ -681,7 +681,7 @@ export function DualAgentConversationBox({
             </div>
 
             {/* Face Mirror — always reserves space; click/dwell to toggle pause */}
-            <button
+            <button type="button"
               data-dwell
               onClick={() => setPaused(!paused)}
               className={`shrink-0 self-center rounded-lg cursor-pointer transition-opacity ${paused ? 'ring-2 ring-red-400 opacity-80' : 'hover:opacity-90'}`}

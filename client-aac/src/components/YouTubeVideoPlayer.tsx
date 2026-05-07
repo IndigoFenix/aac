@@ -169,9 +169,10 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
         {hasError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <p className="text-white text-xl">Video unavailable</p>
-            <button
+            <button type="button"
               onClick={onClose}
               className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`}
+              aria-label="Close"
             >
               <X size={36} />
             </button>
@@ -183,7 +184,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
       {!hasError && (
         <div className="relative z-10 flex items-center justify-center gap-4 px-4 py-5 bg-gradient-to-t from-black/80 to-transparent">
           {/* Exit */}
-          <button
+          <button type="button"
             onClick={onClose}
             className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`}
             aria-label="Exit"
@@ -192,7 +193,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
           </button>
 
           {/* Back 10s */}
-          <button
+          <button type="button"
             onClick={() => seekRelative(-10)}
             className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`}
             aria-label="Back 10 seconds"
@@ -201,7 +202,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
           </button>
 
           {/* Play/Pause — largest */}
-          <button
+          <button type="button"
             onClick={togglePlay}
             className={`${btnBase} w-24 h-24 ${isPlaying ? "bg-green-600 hover:bg-green-700" : "bg-green-600 hover:bg-green-700"}`}
             aria-label={isPlaying ? "Pause" : "Play"}
@@ -210,7 +211,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
           </button>
 
           {/* Forward 10s */}
-          <button
+          <button type="button"
             onClick={() => seekRelative(10)}
             className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700`}
             aria-label="Forward 10 seconds"
@@ -219,7 +220,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
           </button>
 
           {/* Restart */}
-          <button
+          <button type="button"
             onClick={restart}
             className={`${btnBase} w-20 h-20 bg-purple-600 hover:bg-purple-700`}
             aria-label="Restart"

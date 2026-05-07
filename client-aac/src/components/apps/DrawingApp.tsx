@@ -339,7 +339,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
       <div className="flex items-center justify-center gap-3 px-4 py-4 bg-white border-t border-gray-200 flex-wrap">
         {/* Color buttons */}
         {COLORS.map((c) => (
-          <button
+          <button type="button"
             data-dwell
             key={c.hex}
             onClick={() => { setActiveColor(c.hex); setIsEraser(false); }}
@@ -355,7 +355,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
         <div className="w-px h-12 bg-gray-300 mx-1" />
 
         {/* Eraser */}
-        <button
+        <button type="button"
           data-dwell
           onClick={() => setIsEraser(true)}
           className={`${btnBase} w-14 h-14 bg-gray-200 ${isEraser ? "ring-4 ring-gray-800 scale-110" : ""}`}
@@ -365,7 +365,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
         </button>
 
         {/* Clear */}
-        <button
+        <button type="button"
           data-dwell
           onClick={clearCanvas}
           className={`${btnBase} w-14 h-14 bg-yellow-100`}
@@ -375,7 +375,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
         </button>
 
         {/* Close */}
-        <button
+        <button type="button"
           data-dwell
           onClick={onClose}
           className={`${btnBase} w-14 h-14 bg-red-500 text-white`}

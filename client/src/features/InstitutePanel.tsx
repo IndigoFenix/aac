@@ -1346,7 +1346,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
           {currentInstitute.isAdmin ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" aria-label="Institute actions">
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -1534,7 +1534,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                             {currentInstitute.isAdmin && member.id !== user?.id && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
+                                  <Button variant="ghost" size="icon" aria-label="Member actions">
                                     <MoreHorizontal className="w-4 h-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1578,7 +1578,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                             {currentInstitute.isAdmin && member.id === user?.id && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
+                                  <Button variant="ghost" size="icon" aria-label="Edit your role">
                                     <MoreHorizontal className="w-4 h-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1701,7 +1701,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                     {currentInstitute.isAdmin && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="icon">
+                          <Button variant="outline" size="icon" aria-label="Classroom actions">
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -1920,7 +1920,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                             {currentInstitute.isAdmin && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
+                                  <Button variant="ghost" size="icon" aria-label="Student actions">
                                     <MoreHorizontal className="w-4 h-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1995,7 +1995,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                           {invite.status === 'pending' && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
+                                <Button variant="ghost" size="icon" aria-label="Invite actions">
                                   <MoreHorizontal className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>

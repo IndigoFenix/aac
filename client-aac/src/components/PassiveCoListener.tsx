@@ -338,8 +338,10 @@ export default function PassiveCoListener({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
             <Move className="h-4 w-4 text-gray-400 cursor-move" onClick={handleDragHandleClick} />
-            <div 
-              className="h-4 w-4 text-gray-500 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300" 
+            {/* Debug-only collapse toggle. */}
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+            <div
+              className="h-4 w-4 text-gray-500 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
               onClick={() => setIsExpanded(!isExpanded)}
               title="Toggle expanded view"
             >
@@ -349,7 +351,7 @@ export default function PassiveCoListener({
           <div className="flex items-center space-x-3">
             {/* Audio Capture Toggle */}
             {onAudioCaptureToggle && (
-              <button
+              <button type="button"
                 onClick={onAudioCaptureToggle}
                 className={`
                   flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:scale-105

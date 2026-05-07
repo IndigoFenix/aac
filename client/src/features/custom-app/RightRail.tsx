@@ -216,7 +216,7 @@ function RoomPropertiesPanel({
         isDark={isDark}
         right={
           <>
-            <Button variant="ghost" size="sm" onClick={handleDelete}>
+            <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete room">
               <Trash2 className="h-4 w-4" />
             </Button>
             <Button
@@ -630,7 +630,7 @@ function ButtonEditor({
         isDark={isDark}
         right={
           <>
-            <Button variant="ghost" size="sm" onClick={handleDelete}>
+            <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete button">
               <Trash2 className="h-4 w-4" />
             </Button>
             <Button

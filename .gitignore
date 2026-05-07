@@ -8,5 +8,7 @@ vite.config.ts.*
 *.tar.gz
 .env
 .claude
+claude.md
 generative-ai
 reference-files
+planning-docs

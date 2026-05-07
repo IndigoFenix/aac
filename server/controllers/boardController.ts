@@ -108,11 +108,23 @@ export class BoardController {
         return;
       }
 
+      const updateSchema = z.object({
+        name: z.string().optional(),
+        irData: z.unknown().optional(),
+        automaticSelection: z.boolean().optional(),
+        automaticSelectionHint: z.string().nullable().optional(),
+      }).strict();
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "error:INVALID_BODY", details: parsed.error.errors });
+        return;
+      }
+
+      // Drop undefined keys so we don't overwrite columns with null on partial updates.
       const updates: Record<string, any> = {};
-      if (req.body.name !== undefined) updates.name = req.body.name;
-      if (req.body.irData !== undefined) updates.irData = req.body.irData;
-      if (req.body.automaticSelection !== undefined) updates.automaticSelection = req.body.automaticSelection;
-      if (req.body.automaticSelectionHint !== undefined) updates.automaticSelectionHint = req.body.automaticSelectionHint;
+      for (const [k, v] of Object.entries(parsed.data)) {
+        if (v !== undefined) updates[k] = v;
+      }
 
       const updated = await boardRepository.updateBoard(board.id, updates);
       res.json(updated);

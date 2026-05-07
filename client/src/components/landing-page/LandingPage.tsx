@@ -98,8 +98,8 @@ export default function LandingPage() {
     <div className="landing" dir={isRTL ? "rtl" : "ltr"}>
       <header className="landing-header">
         <div className="landing-container">
-          <a href="#" className="landing-logo">
-            <img src={logo} alt="Aivota" />
+          <a href="/" className="landing-logo" aria-label="Aivota — home">
+            <img src={logo} alt="" />
             aivota
           </a>
           <div className="landing-header-actions">
@@ -340,7 +340,10 @@ export default function LandingPage() {
             {t("landing.footer.aiPolicy")}
           </a>
         </div>
-        <p style={{ marginTop: '0.75rem', fontSize: '0.75rem', opacity: 0.7 }}>
+        {/* opacity: 0.7 lightened the text below the 4.5:1 contrast threshold
+            (computed #929dad on #fcfdfd = 2.69:1). Drop the opacity; the
+            small font size already gives the visual hierarchy we want. */}
+        <p style={{ marginTop: '0.75rem', fontSize: '0.75rem' }}>
           {t("landing.footer.rights")}
         </p>
       </footer>

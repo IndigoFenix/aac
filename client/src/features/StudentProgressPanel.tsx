@@ -1359,18 +1359,26 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   <Separator />
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground text-center">{t('program.previousPrograms')}</p>
-                    {allPrograms.slice(0, 3).map((p) => (
-                          <div 
-                          key={p.id}
-                          className={cn(
-                            'p-3 rounded-lg border flex items-center justify-between cursor-pointer hover:bg-accent/50 transition-colors',
-                            isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
-                          )}
-                          onClick={() => {
+                    {allPrograms.slice(0, 3).map((p) => {
+                          const selectProgram = () => {
                             queryClient.setQueryData(
                               ['/api/students', student?.id, 'programs', 'current'],
                               { program: p }
                             );
+                          };
+                          return (
+                          <div
+                          key={p.id}
+                          role="button"
+                          tabIndex={0}
+                          className={cn(
+                            'p-3 rounded-lg border flex items-center justify-between cursor-pointer hover:bg-accent/50 transition-colors',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                            isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
+                          )}
+                          onClick={selectProgram}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectProgram(); }
                           }}
                         >
                         <div>
@@ -1381,7 +1389,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         </div>
                         <Badge className={STATUS_COLORS[p.status]}>{t(`program.status.${p.status}`)}</Badge>
                       </div>
-                    ))}
+                          );
+                        })}
                   </div>
                 </>
               )}
@@ -1413,6 +1422,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               size="icon"
               className="shrink-0"
               onClick={handleBackClick}
+              aria-label={t('common.back')}
             >
               <ArrowLeft className="w-4 h-4 icon-arrow-left" />
             </Button>
@@ -1469,7 +1479,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" aria-label="Program actions">
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>

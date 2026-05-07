@@ -74,6 +74,9 @@ export function ListEditor<T>({
       )}
 
       {items.map((item, i) => (
+        // Drop target for drag-and-drop list reorder. Drag is mouse-only by
+        // design; the rename/delete controls inside are keyboard-reachable.
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <div
           key={i}
           onDragOver={(e) => {
@@ -95,6 +98,8 @@ export function ListEditor<T>({
             overIndex === i && (isDark ? "border-blue-500" : "border-blue-400"),
           )}
         >
+          {/* Drag handle — pointer-only by design. */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
           <div
             draggable
             onDragStart={(e) => {

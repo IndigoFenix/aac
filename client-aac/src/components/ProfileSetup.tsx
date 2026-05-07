@@ -96,10 +96,11 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
+                  <label htmlFor="profile-first-name" className="block text-sm font-medium text-text-primary mb-2">
                     First Name *
                   </label>
                   <Input
+                    id="profile-first-name"
                     type="text"
                     placeholder="First name"
                     value={formData.firstName}
@@ -109,10 +110,11 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
+                  <label htmlFor="profile-last-name" className="block text-sm font-medium text-text-primary mb-2">
                     Last Name
                   </label>
                   <Input
+                    id="profile-last-name"
                     type="text"
                     placeholder="Last name"
                     value={formData.lastName}
@@ -121,12 +123,13 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                   />
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-2">
+                <label htmlFor="profile-age" className="block text-sm font-medium text-text-primary mb-2">
                   Age (optional)
                 </label>
                 <Input
+                  id="profile-age"
                   type="number"
                   placeholder="Age"
                   value={formData.age}
@@ -136,12 +139,13 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                   className="text-lg"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-2">
+                <label htmlFor="profile-preferences" className="block text-sm font-medium text-text-primary mb-2">
                   Favorite Things (optional)
                 </label>
                 <Textarea
+                  id="profile-preferences"
                   placeholder="Tell us about your favorite foods, activities, people..."
                   value={formData.preferences}
                   onChange={(e) => handleInputChange("preferences", e.target.value)}

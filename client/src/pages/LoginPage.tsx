@@ -207,6 +207,25 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       // Clean up URL
       window.history.replaceState({}, '', window.location.pathname);
     }
+
+    // Surface SSO callback errors on the login page so the user understands
+    // why their login attempt didn't succeed.
+    const ssoError = urlParams.get('ssoError');
+    if (ssoError) {
+      const messages: Record<string, string> = {
+        no_account: t('auth.ssoNoAccount') || "No account is linked to that identity. Please log in with your password and link the SSO provider from your account settings.",
+        user_not_found: t('auth.ssoUserNotFound') || "The linked account no longer exists. Contact your administrator.",
+        login_failed: t('auth.ssoLoginFailed') || "SSO sign-in could not establish a session. Please try again.",
+        invalid_state: t('auth.ssoInvalidState') || "SSO session expired. Please retry.",
+        invalid_relay_state: t('auth.ssoInvalidState') || "SSO session expired. Please retry.",
+      };
+      toast({
+        title: t('auth.ssoError') || "Sign-in via SSO failed",
+        description: messages[ssoError] || ssoError,
+        variant: "destructive",
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const fetchMfaSetup = async (token: string) => {
@@ -237,11 +256,31 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
     }
   };
 
+  // Fetch active identity providers for "Sign in with X" SSO buttons.
+  // Pre-auth call; backend strips secrets and returns a public-safe shape.
+  // Buttons only render for SAML / OIDC institutional providers, not generic
+  // OAuth like Google (Google has its own dedicated button).
+  const { data: ssoProvidersData } = useQuery<{
+    providers: Array<{ id: string; name: string; protocol: 'oidc' | 'oauth2' | 'saml'; instituteIdType: string | null }>;
+  }>({
+    queryKey: ['/api/auth/identity-providers'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/auth/identity-providers');
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  // Show only providers tied to an institute regime (e.g. il_moe, uk_dfe).
+  // Generic providers without an instituteIdType — like global Google OAuth —
+  // are rendered separately or via existing flows.
+  const ssoProviders = (ssoProvidersData?.providers ?? [])
+    .filter((p) => p.instituteIdType !== null);
+
   // Fetch invite details if in invite mode
-  const { 
-    data: inviteData, 
-    isLoading: inviteLoading, 
-    error: inviteError 
+  const {
+    data: inviteData,
+    isLoading: inviteLoading,
+    error: inviteError
   } = useQuery({
     queryKey: ['/api/invites/token', inviteToken],
     queryFn: async () => {
@@ -916,9 +955,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                     </div>
                   )}
                   <div className="space-y-2">
-                    <Label className="text-center block">Enter the 6-digit code:</Label>
+                    <Label htmlFor="login-mfa-code" className="text-center block">Enter the 6-digit code:</Label>
                     <div className="flex justify-center">
                       <InputOTP
+                        id="login-mfa-code"
                         maxLength={6}
                         value={mfaCode}
                         onChange={(value) => setMfaCode(value)}
@@ -1059,6 +1099,31 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   <GoogleIcon className="w-4 h-4 me-2" />
                   {t('auth.googleLogin')}
                 </Button>}
+
+                {/* Institutional SSO buttons — one per active provider with an
+                    instituteIdType set (e.g. il_moe, uk_dfe). Clicking starts
+                    the SSO flow; the callback will log the user in via their
+                    linked external identity, or return ssoError=no_account if
+                    they haven't linked yet. */}
+                {ssoProviders.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {ssoProviders.map((p) => (
+                      <Button
+                        key={p.id}
+                        variant="outline"
+                        className="w-full"
+                        type="button"
+                        onClick={() => {
+                          window.location.href = `/api/identity/link/${p.id}?returnUrl=/`;
+                        }}
+                        data-testid={`button-sso-${p.id}`}
+                      >
+                        <Shield className="w-4 h-4 me-2" />
+                        {t('auth.ssoLogin', { provider: p.name }) || `Sign in with ${p.name}`}
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </CardContent>
 
               <CardFooter className="flex flex-col gap-3">
@@ -1110,6 +1175,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                       size="sm"
                       disabled={isImpersonating}
                       className="shrink-0 border-orange-300 text-orange-600 hover:bg-orange-50"
+                      aria-label={isImpersonating ? "Impersonating, please wait" : "Impersonate user"}
                     >
                       {isImpersonating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
                     </Button>

@@ -88,10 +88,18 @@ export function CommuniAACteHistoryList({ t, isRTL, language }: Props) {
                 (interpretation: Interpretation) => (
                   <div
                     key={interpretation.id}
-                    className="border border-border rounded-lg p-3 hover:bg-muted transition-colors cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    className="border border-border rounded-lg p-3 hover:bg-muted transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     onClick={() =>
                       navigate(`/communiacte/history/${interpretation.id}`)
-                    } // <-- URL for specific conversation
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(`/communiacte/history/${interpretation.id}`);
+                      }
+                    }}
                   >
                   <div className="flex justify-between items-start mb-2 gap-2">
                     <div className="flex flex-col gap-1 shrink-0">
@@ -143,6 +151,9 @@ export function CommuniAACteHistoryList({ t, isRTL, language }: Props) {
                             : "AAC Image"}
                           :
                         </strong>
+                        {/* Lightbox trigger nested in an already-keyboard-accessible
+                            card. Pointer-only convenience. */}
+                        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
                         <img
                           src={`data:image/jpeg;base64,${interpretation.imageData}`}
                           alt={

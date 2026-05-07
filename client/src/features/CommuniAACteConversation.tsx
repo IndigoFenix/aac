@@ -310,6 +310,7 @@ export function CommuniAACteConversation({ t, isRTL, language }: Props) {
             variant="outline"
             onClick={handleClear}
             className="flex items-center gap-2 text-sm"
+            aria-label="Clear conversation"
           >
             <Trash2 className="w-4 h-4" />
           </Button>

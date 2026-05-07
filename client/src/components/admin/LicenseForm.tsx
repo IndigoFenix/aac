@@ -33,6 +33,7 @@ import {
   type UpdateLicenseData,
 } from '@/hooks/useAdminData';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { KNOWN_REGIMES, getRegimeBundle, type RegimeSlug } from '@shared/regime';
 
 interface LicenseFormProps {
   open: boolean;
@@ -104,6 +105,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [expertAgentsCount, setExpertAgentsCount] = useState(0);
   const [expertAgentsUnlimited, setExpertAgentsUnlimited] = useState(false);
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
+  // Compliance regimes — controls per-regime audit retention, breach window,
+  // accessibility-statement variant, identity-provider hint. Stored on
+  // licensePermissions.complianceRegimes JSONB. See shared/regime/regimes.ts.
+  const [complianceRegimes, setComplianceRegimes] = useState<RegimeSlug[]>([]);
 
   // Reset form when dialog opens/closes or license changes
   useEffect(() => {
@@ -129,6 +134,11 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           setExpertAgentsCount(perms.expertAgentsCount === -1 ? 0 : (perms.expertAgentsCount ?? 0));
           setExpertAgentsUnlimited(perms.expertAgentsCount === -1);
           setDeepAnalysisEnabled(perms.deepAnalysisEnabled ?? false);
+          setComplianceRegimes(
+            (perms.complianceRegimes ?? []).filter((s): s is RegimeSlug =>
+              (KNOWN_REGIMES as readonly string[]).includes(s),
+            ),
+          );
         } else {
           resetPermissions();
         }
@@ -151,6 +161,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setExpertAgentsCount(0);
     setExpertAgentsUnlimited(false);
     setDeepAnalysisEnabled(false);
+    setComplianceRegimes([]);
   }
 
   function resetAll() {
@@ -199,6 +210,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         dashboardLevel: -1 as -1,
         expertAgentsCount: -1,
         deepAnalysisEnabled: true,
+        complianceRegimes,
       };
     }
     return {
@@ -212,6 +224,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       dashboardLevel: Number(dashboardLevel) as 0 | 1 | 2 | -1,
       expertAgentsCount: expertAgentsUnlimited ? -1 : expertAgentsCount,
       deepAnalysisEnabled,
+      complianceRegimes,
     };
   }
 
@@ -412,6 +425,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                             type="button"
                             onClick={clearLogo}
                             className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                            aria-label="Remove logo"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -688,6 +702,45 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                         {t('admin.licenses.unlimited')}
                       </label>
                     </div>
+                  </div>
+                </div>
+
+                {/* Compliance regimes — drives audit retention, breach window,
+                    accessibility-statement variant, identity-provider hint. */}
+                <Separator />
+                <div className="space-y-2">
+                  <Label>{t('admin.licenses.complianceRegimes') || 'Compliance regimes'}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('admin.licenses.complianceRegimesHint') || 'Pick the regulatory frameworks that apply to this institute. Audit retention, breach-notification window, and accessibility-statement variant follow.'}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-md border p-3">
+                    {KNOWN_REGIMES.map((slug) => {
+                      const bundle = getRegimeBundle(slug);
+                      if (!bundle) return null;
+                      const checked = complianceRegimes.includes(slug);
+                      const id = `regime-${slug}`;
+                      return (
+                        <div key={slug} className="flex items-start gap-2">
+                          <Checkbox
+                            id={id}
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              setComplianceRegimes((prev) =>
+                                v
+                                  ? Array.from(new Set([...prev, slug]))
+                                  : prev.filter((s) => s !== slug),
+                              );
+                            }}
+                          />
+                          <label htmlFor={id} className="text-xs cursor-pointer leading-tight">
+                            <div className="font-medium">{bundle.label}</div>
+                            <div className="text-muted-foreground">
+                              {bundle.country} · {Math.round(bundle.auditRetentionDays / 365)}y retention
+                            </div>
+                          </label>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

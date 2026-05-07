@@ -1565,11 +1565,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">▶️</span>
                   <div>
-                    <Label className="text-sm font-medium">YouTube</Label>
+                    <Label htmlFor="aac-app-youtube" className="text-sm font-medium">YouTube</Label>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appYoutubeDesc')}</p>
                   </div>
                 </div>
                 <Switch
+                  id="aac-app-youtube"
                   checked={appConfig.youtube?.enabled ?? false}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, youtube: { ...prev.youtube, enabled: checked } }))
@@ -1582,11 +1583,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🎧</span>
                   <div>
-                    <Label className="text-sm font-medium">Spotify</Label>
+                    <Label htmlFor="aac-app-spotify" className="text-sm font-medium">Spotify</Label>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appSpotifyDesc')}</p>
                   </div>
                 </div>
                 <Switch
+                  id="aac-app-spotify"
                   checked={appConfig.spotify?.enabled ?? false}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, spotify: { ...prev.spotify, enabled: checked } }))

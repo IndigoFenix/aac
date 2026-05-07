@@ -51,8 +51,11 @@ export default function Dashboard() {
       {/* Mobile sidebar drawer */}
       {isMobile && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — click-outside-to-close. Esc-to-close is handled by
+              the sidebar modal itself; this is a pointer convenience. */}
+          { }
           <div
+            aria-hidden="true"
             className={cn(
               "fixed inset-0 bg-black/50 z-40 transition-opacity duration-300",
               isMobileSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"

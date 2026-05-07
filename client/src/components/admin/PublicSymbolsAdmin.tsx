@@ -107,7 +107,7 @@ function SymbolCard({ symbol, onApprove, onDelete }: {
             <span className="text-xs">&#10003;</span>
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-700">
+        <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-700" aria-label={t('common.delete')}>
           <Trash2 className="w-3 h-3" />
         </Button>
       </div>

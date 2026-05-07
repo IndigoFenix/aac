@@ -461,7 +461,7 @@ export function PromptPane() {
               {/* Quick prompts */}
               <div className="space-y-2">
                 {examplePrompts.map((example) => (
-                  <button
+                  <button type="button"
                     key={example}
                     className={cn(
                       "w-full text-left px-3 py-2 rounded-lg text-xs transition-colors border",
@@ -548,7 +548,7 @@ export function PromptPane() {
       {/* Board Settings Collapsible */}
       <Collapsible open={isBoardSettingsOpen} onOpenChange={setIsBoardSettingsOpen}>
         <CollapsibleTrigger asChild>
-          <button className={cn(
+          <button type="button" className={cn(
             "w-full px-4 py-2.5 border-t flex items-center justify-between text-xs transition-colors",
             isDark 
               ? "border-slate-800 text-slate-400 hover:text-slate-300 hover:bg-slate-800/50"

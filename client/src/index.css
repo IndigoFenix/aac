@@ -110,8 +110,16 @@
   --popover: 210 6% 14%;
   --popover-foreground: 210 5% 95%;
   --popover-border: 210 6% 18%;
-  --primary: 210 85% 32%;
-  --primary-foreground: 210 85% 98%;
+  /* Dark-mode primary needs to satisfy two constraints:
+       1. text-primary on the dark page bg (lum ~0.009) must hit ≥ 4.5:1.
+          → primary lum ≥ 0.213 → HSL lightness ≥ ~60%.
+       2. primary-foreground text on the (now-lighter) bg-primary must hit
+          ≥ 4.5:1. → primary-foreground lum ≤ ~0.014 → near-black.
+     Inverts the relationship from light mode (where primary is dark and
+     foreground is white). Buttons in dark mode now read as bright blue
+     with dark text, matching e.g. material design dark variants. */
+  --primary: 210 85% 65%;
+  --primary-foreground: 210 30% 10%;
   --secondary: 210 12% 18%;
   --secondary-foreground: 210 12% 88%;
   --muted: 210 8% 16%;

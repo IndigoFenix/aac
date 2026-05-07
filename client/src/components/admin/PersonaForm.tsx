@@ -250,7 +250,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
             {titleState.multilingual ? (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-muted-foreground">English</label>
+                  <label htmlFor="title-en" className="text-xs text-muted-foreground">English</label>
                   <Input
                     id="title-en"
                     value={titleState.en}
@@ -259,8 +259,9 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">עברית</label>
+                  <label htmlFor="title-he" className="text-xs text-muted-foreground">עברית</label>
                   <Input
+                    id="title-he"
                     value={titleState.he}
                     onChange={(e) => setTitleState((prev) => ({ ...prev, he: e.target.value }))}
                     placeholder="לדוגמה, עוזר קליני"
@@ -310,7 +311,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
             {descState.multilingual ? (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-muted-foreground">English</label>
+                  <label htmlFor="desc-en" className="text-xs text-muted-foreground">English</label>
                   <Textarea
                     id="desc-en"
                     value={descState.en}
@@ -320,8 +321,9 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">עברית</label>
+                  <label htmlFor="desc-he" className="text-xs text-muted-foreground">עברית</label>
                   <Textarea
+                    id="desc-he"
                     value={descState.he}
                     onChange={(e) => setDescState((prev) => ({ ...prev, he: e.target.value }))}
                     placeholder="תיאור קצר של הסוכן..."
@@ -358,20 +360,20 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
             </p>
           </div>
 
-          {/* LLM Model Override */}
-          <div className="space-y-3">
-            <Label>LLM Model Override</Label>
+          {/* LLM Model Override — section heading, not a control label. */}
+          <div className="space-y-3" role="group" aria-labelledby="persona-llm-override-label">
+            <div id="persona-llm-override-label" className="text-sm font-medium">LLM Model Override</div>
             <p className="text-xs text-muted-foreground -mt-1">
               Optionally use a specific model for this agent instead of the system default.
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Provider</label>
+                <label htmlFor="persona-provider" className="text-sm font-medium">Provider</label>
                 <Select
                   value={formData.llmProvider || SYSTEM_DEFAULT}
                   onValueChange={handleProviderChange}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="persona-provider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -386,13 +388,13 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Model</label>
+                <label htmlFor="persona-model" className="text-sm font-medium">Model</label>
                 <Select
                   value={formData.llmModel || ''}
                   onValueChange={handleModelChange}
                   disabled={!selectedProvider}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="persona-model">
                     <SelectValue placeholder={selectedProvider ? 'Select model' : 'Select provider first'} />
                   </SelectTrigger>
                   <SelectContent>
@@ -421,7 +423,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
 
           {/* Institute restriction */}
           <div className="space-y-2">
-            <Label>Institute</Label>
+            <Label htmlFor="persona-institute">Institute</Label>
             <p className="text-xs text-muted-foreground -mt-1">
               Restrict this agent to a specific institute, or leave global for all users.
             </p>
@@ -431,7 +433,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
                 setFormData((prev) => ({ ...prev, instituteId: v === NO_INSTITUTE ? null : v }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="persona-institute">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

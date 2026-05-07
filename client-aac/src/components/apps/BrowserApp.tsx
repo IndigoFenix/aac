@@ -80,7 +80,7 @@ export default function BrowserApp({
   useEffect(() => {
     armLoadTimer(url);
     return clearLoadTimer;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Handle iframe load: read URL + title where same-origin allows, notify AI.
@@ -164,7 +164,7 @@ export default function BrowserApp({
     <div className="h-full w-full bg-gray-100 flex flex-col">
       {/* Top bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 shadow-sm">
-        <button
+        <button type="button"
           data-dwell
           onClick={handleBack}
           disabled={historyIndex <= 0}
@@ -173,7 +173,7 @@ export default function BrowserApp({
         >
           <ChevronLeft size={28} className="text-gray-700" />
         </button>
-        <button
+        <button type="button"
           data-dwell
           onClick={handleRefresh}
           className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center active:scale-95 transition-transform"
@@ -187,7 +187,7 @@ export default function BrowserApp({
           <span className="text-sm text-gray-700 truncate font-mono">{currentUrl}</span>
         </div>
 
-        <button
+        <button type="button"
           data-dwell
           onClick={handleClose}
           className="w-12 h-12 rounded-xl bg-red-500 flex items-center justify-center active:scale-95 transition-transform"

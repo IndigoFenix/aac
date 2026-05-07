@@ -36,6 +36,7 @@ export default function ChatLog({ isOpen, onClose, studentId }: ChatLogProps) {
                 size="sm"
                 className="text-white hover:text-gray-200 hover:bg-white/10"
                 onClick={onClose}
+                aria-label="Close"
               >
                 <X className="h-6 w-6" />
               </Button>

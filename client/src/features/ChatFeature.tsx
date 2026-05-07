@@ -576,7 +576,7 @@ export function ChatFeature() {
               className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-1.5 text-sm"
             >
               {file.type === "image" && file.dataUrl ? (
-                <img src={file.dataUrl} className="w-6 h-6 rounded object-cover" />
+                <img src={file.dataUrl} alt="" className="w-6 h-6 rounded object-cover" />
               ) : (
                 getFileIcon(file.mimeType)
               )}

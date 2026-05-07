@@ -1,13 +1,47 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useRegimes } from "@/hooks/useRegimes";
+
+const LAST_UPDATED_EN = import.meta.env.VITE_PRIVACY_POLICY_LAST_UPDATED_EN || "March 15, 2026";
+const LAST_UPDATED_HE = import.meta.env.VITE_PRIVACY_POLICY_LAST_UPDATED_HE || "15 במרץ, 2026";
+
+function formatRetention(days: number, he: boolean): string {
+  if (days >= 365) {
+    const years = Math.round(days / 365);
+    return he ? `${years} שנים` : `${years} year${years === 1 ? '' : 's'}`;
+  }
+  return he ? `${days} ימים` : `${days} days`;
+}
+
+function formatBreachWindow(hours: number | null, he: boolean): string {
+  if (hours === null) return he ? 'לא הוגדר' : 'not configured';
+  if (hours >= 168) {
+    const days = Math.round(hours / 24);
+    return he ? `${days} ימים` : `${days} day${days === 1 ? '' : 's'}`;
+  }
+  return he ? `${hours} שעות` : `${hours} hour${hours === 1 ? '' : 's'}`;
+}
 
 export default function PrivacyPolicy() {
   const { language } = useLanguage();
   const he = language === 'he';
+  const { bundles, regimes } = useRegimes();
+  const lastUpdated = he ? LAST_UPDATED_HE : LAST_UPDATED_EN;
+
+  // Strictest values across the active regimes — the same resolvers used
+  // server-side (regimeService) but inlined here to avoid an extra fetch.
+  let maxRetentionDays = 0;
+  let minBreachHours: number | null = null;
+  for (const b of bundles) {
+    if (b.auditRetentionDays > maxRetentionDays) maxRetentionDays = b.auditRetentionDays;
+    if (minBreachHours === null || b.breachNotificationHours < minBreachHours) {
+      minBreachHours = b.breachNotificationHours;
+    }
+  }
 
   return (
-    <div className="min-h-screen w-full bg-gray-50 py-8">
+    <div className="min-h-screen w-full bg-background py-8">
       <div className="max-w-4xl mx-auto px-4">
         <Card>
           <CardHeader className={he ? 'text-right' : 'text-left'}>
@@ -21,7 +55,31 @@ export default function PrivacyPolicy() {
             <div className={`space-y-6 ${he ? 'text-right' : 'text-left'}`} dir={he ? 'rtl' : 'ltr'}>
               <div className="space-y-4 text-sm leading-relaxed">
                 <div className="text-sm text-muted-foreground">
-                  {he ? 'עודכן לאחרונה: 15 במרץ, 2026' : 'Last updated: March 15, 2026'}
+                  {he ? 'עודכן לאחרונה: ' : 'Last updated: '}{lastUpdated}
+                </div>
+
+                {/* Regime-driven processing summary. Shows the strictest retention
+                    and shortest breach window across the active institute's regimes. */}
+                <div className="rounded-md border bg-muted/30 p-4">
+                  <div className="font-semibold mb-2">
+                    {he ? 'סיכום עיבוד נתונים' : 'Data Processing Summary'}
+                  </div>
+                  <dl className="grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-[max-content_1fr] sm:gap-x-4">
+                    <dt className="font-medium">{he ? 'משטרי ציות:' : 'Compliance regimes:'}</dt>
+                    <dd>
+                      {bundles.length > 0
+                        ? bundles.map((b) => b.label).join(' · ')
+                        : <span className="text-muted-foreground">{he ? '(ברירת מחדל גלובלית)' : '(global default)'}</span>}
+                    </dd>
+                    {regimes.length > 0 && (
+                      <>
+                        <dt className="font-medium">{he ? 'שמירת לוג ביקורת:' : 'Audit log retention:'}</dt>
+                        <dd>{formatRetention(maxRetentionDays, he)}</dd>
+                        <dt className="font-medium">{he ? 'חלון הודעת פריצה:' : 'Breach-notification window:'}</dt>
+                        <dd>{formatBreachWindow(minBreachHours, he)}</dd>
+                      </>
+                    )}
+                  </dl>
                 </div>
 
                 <div>
@@ -33,7 +91,7 @@ export default function PrivacyPolicy() {
                       </p>
                       <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
                         <li>
-                          <strong>ממונה הגנת מידע (DPO):</strong> בהתאם לתיקון 13, מאחר שאנו מעבדים נתוני בריאות רגישים בקנה מידה נרחב, מינינו ממונה הגנת מידע. ניתן ליצור קשר עם הממונה בכתובת <a href="mailto:dpo@aivota.com" className="text-primary hover:underline">dpo@aivota.com</a>
+                          <strong>ממונה הגנת מידע (DPO):</strong> בהתאם לתיקון 13, מאחר שאנו מעבדים נתוני בריאות רגישים בקנה מידה נרחב, מינינו ממונה הגנת מידע. ניתן ליצור קשר עם הממונה בכתובת <a href="mailto:dpo@aivota.com" className="text-primary underline underline-offset-2">dpo@aivota.com</a>
                         </li>
                       </ul>
                     </>
@@ -44,7 +102,7 @@ export default function PrivacyPolicy() {
                       </p>
                       <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
                         <li>
-                          <strong>Data Protection Officer (DPO):</strong> In compliance with Amendment 13, as we process sensitive health data at scale, we have appointed a DPO. You may contact our DPO at <a href="mailto:dpo@aivota.com" className="text-primary hover:underline">dpo@aivota.com</a>
+                          <strong>Data Protection Officer (DPO):</strong> In compliance with Amendment 13, as we process sensitive health data at scale, we have appointed a DPO. You may contact our DPO at <a href="mailto:dpo@aivota.com" className="text-primary underline underline-offset-2">dpo@aivota.com</a>
                         </li>
                       </ul>
                     </>

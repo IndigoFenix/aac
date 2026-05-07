@@ -7,7 +7,7 @@ export default function TermsOfService() {
   const he = language === 'he';
 
   return (
-    <div className="min-h-screen w-full bg-gray-50 py-8">
+    <div className="min-h-screen w-full bg-background py-8">
       <div className="max-w-4xl mx-auto px-4">
         <Card>
           <CardHeader className={he ? 'text-right' : 'text-left'}>

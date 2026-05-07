@@ -42,6 +42,7 @@ export function YouTubePlayer({ videoId, title = 'Video', onClose }: YouTubePlay
             size="icon"
             onClick={onClose}
             data-testid="button-close-player"
+            aria-label="Close player"
           >
             <X size={20} />
           </Button>
@@ -52,6 +53,7 @@ export function YouTubePlayer({ videoId, title = 'Video', onClose }: YouTubePlay
           <div className="w-full h-full bg-black rounded-lg overflow-hidden">
             <iframe
               src={youtubeEmbedUrl}
+              title={title}
               className="w-full h-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen

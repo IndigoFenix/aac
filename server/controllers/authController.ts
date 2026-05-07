@@ -5,10 +5,24 @@ import type { Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { userService, passwordResetService } from "../services";
 import { mfaService } from "../services/mfaService";
+import { activityLogService } from "../services/activityLogService";
 import { registerSchema, loginSchema, validatePassword } from "@shared/schema";
 import { isCustomerSupport, type SupportSession } from "../services/customerSupportService";
 import { instituteRepository } from "../repositories/instituteRepository";
 import { licenseRepository } from "../repositories/licenseRepository";
+
+/**
+ * Build the `details` payload for an auth audit event. Captures IP and
+ * user-agent for forensics. Email goes in for failure cases (where the
+ * userId is null) so we can track credential-stuffing patterns.
+ */
+function authDetails(req: Request, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ip: req.ip,
+    userAgent: req.get("user-agent") ?? null,
+    ...extra,
+  };
+}
 
 function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
@@ -73,6 +87,16 @@ export class AuthController {
       }
 
       if (!user) {
+        activityLogService.log({
+          userId: null,
+          eventType: "auth_login_failure",
+          subjectType1: "user",
+          subjectId1: null,
+          details: authDetails(req, {
+            attemptedEmail: typeof req.body?.email === "string" ? req.body.email : null,
+            reason: info?.message ?? "invalid_credentials",
+          }),
+        });
         return res.status(401).json({
           success: false,
           message: info?.message || "Invalid login credentials",
@@ -83,6 +107,13 @@ export class AuthController {
       if (user.mfaEnabled) {
         // Generate MFA challenge token (don't create session yet)
         const mfaToken = mfaService.generateMfaToken(user.id, "mfa_challenge");
+        activityLogService.log({
+          userId: user.id,
+          eventType: "auth_mfa_challenge",
+          subjectType1: "user",
+          subjectId1: user.id,
+          details: authDetails(req),
+        });
         return res.json({
           success: true,
           mfaRequired: true,
@@ -121,6 +152,14 @@ export class AuthController {
         }
         // aacClient: no maxAge → session cookie, no timeout
 
+        activityLogService.log({
+          userId: user.id,
+          eventType: "auth_login_success",
+          subjectType1: "user",
+          subjectId1: user.id,
+          details: authDetails(req, { rememberMe: !!rememberMe, aacClient: !!aacClient }),
+        });
+
         res.json({
           success: true,
           message: "Login successful",
@@ -131,6 +170,7 @@ export class AuthController {
   }
 
   logout(req: Request, res: Response): void {
+    const userId = (req.user as any)?.id ?? null;
     req.logout((err) => {
       if (err) {
         res.status(500).json({
@@ -138,6 +178,15 @@ export class AuthController {
           message: "Logout failed",
         });
         return;
+      }
+      if (userId) {
+        activityLogService.log({
+          userId,
+          eventType: "auth_logout",
+          subjectType1: "user",
+          subjectId1: userId,
+          details: authDetails(req),
+        });
       }
       res.json({
         success: true,
@@ -170,6 +219,18 @@ export class AuthController {
       // the email never goes out. Awaiting first costs the SMTP latency on the
       // response but actually delivers the email.
       const result = await passwordResetService.requestPasswordReset(email, baseUrl);
+
+      // Audit: record the request regardless of whether the email exists.
+      // The privacy-preserving response shape doesn't reveal whether the
+      // account exists, but we still capture the attempted email for
+      // forensics — same convention as auth_login_failure.
+      activityLogService.log({
+        userId: null,
+        eventType: "auth_password_reset_requested",
+        subjectType1: "user",
+        subjectId1: null,
+        details: authDetails(req, { attemptedEmail: typeof email === "string" ? email : null }),
+      });
 
       // The user-existence side stays silent (success either way) — but if
       // the SMTP send itself failed we surface a 502 so the frontend can
@@ -267,6 +328,15 @@ export class AuthController {
       const result = await passwordResetService.resetPassword(token, newPassword);
 
       if (result.success) {
+        if (result.userId) {
+          activityLogService.log({
+            userId: result.userId,
+            eventType: "auth_password_reset_completed",
+            subjectType1: "user",
+            subjectId1: result.userId,
+            details: authDetails(req),
+          });
+        }
         res.json({
           success: true,
           message: "Password reset successful. You can now log in with your new password.",
@@ -724,6 +794,13 @@ export class AuthController {
       // Verify TOTP code
       const isValid = await mfaService.verifyUserMfa(user, code);
       if (!isValid) {
+        activityLogService.log({
+          userId: user.id,
+          eventType: "auth_mfa_failure",
+          subjectType1: "user",
+          subjectId1: user.id,
+          details: authDetails(req),
+        });
         res.status(400).json({
           success: false,
           message: "Invalid verification code",
@@ -745,6 +822,23 @@ export class AuthController {
             ? 30 * 24 * 60 * 60 * 1000
             : 24 * 60 * 60 * 1000;
         }
+
+        activityLogService.log({
+          userId: user.id,
+          eventType: "auth_mfa_success",
+          subjectType1: "user",
+          subjectId1: user.id,
+          details: authDetails(req, { rememberMe: !!rememberMe, aacClient: !!aacClient }),
+        });
+        // The successful MFA completes a login — also fire the login_success
+        // event so a single query for "login_success" gives the full picture.
+        activityLogService.log({
+          userId: user.id,
+          eventType: "auth_login_success",
+          subjectType1: "user",
+          subjectId1: user.id,
+          details: authDetails(req, { mfa: true }),
+        });
 
         res.json({
           success: true,

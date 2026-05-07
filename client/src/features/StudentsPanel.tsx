@@ -361,7 +361,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                 <div className="flex items-center gap-2">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Student actions">
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>

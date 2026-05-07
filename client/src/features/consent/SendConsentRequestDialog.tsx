@@ -366,7 +366,7 @@ function ResultPanel({
         <Label>{t("consent.send.resultLinkLabel") || "Redemption link"}</Label>
         <div className="flex items-center gap-2">
           <Input value={result.redemptionUrl} readOnly className="text-xs" />
-          <Button variant="outline" size="icon" onClick={onCopy}>
+          <Button variant="outline" size="icon" onClick={onCopy} aria-label="Copy link">
             <Copy className="h-4 w-4" />
           </Button>
         </div>

@@ -68,14 +68,14 @@ export function CoverImageSelector() {
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
+            <label htmlFor="cover-symbol-select" className="text-sm font-medium text-slate-700 mb-2 block">
               Cover Symbol
             </label>
-            <Select 
-              value={board.coverImage?.symbolPath || ""} 
+            <Select
+              value={board.coverImage?.symbolPath || ""}
               onValueChange={handleCoverImageChange}
             >
-              <SelectTrigger>
+              <SelectTrigger id="cover-symbol-select">
                 <SelectValue placeholder="Select a cover symbol" />
               </SelectTrigger>
               <SelectContent>
@@ -88,16 +88,16 @@ export function CoverImageSelector() {
             </Select>
           </div>
           
-          <div>
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
+          <div role="group" aria-labelledby="cover-bg-color-label">
+            <div id="cover-bg-color-label" className="text-sm font-medium text-slate-700 mb-2 block">
               Background Color
-            </label>
+            </div>
             <div className="grid grid-cols-4 gap-2">
               {[
                 "#D6FFF6FF", "#FFE5D9FF", "#E5FFEEFF", "#FFEAF5FF", 
                 "#FFFACDFF", "#E0F4FFFF", "#F0FFE0FF", "#FFE0E0FF"
               ].map((color) => (
-                <button
+                <button type="button"
                   key={color}
                   className={`w-12 h-12 rounded border-2 ${
                     board.coverImage?.backgroundColor === color 

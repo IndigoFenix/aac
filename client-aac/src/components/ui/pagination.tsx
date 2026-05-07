@@ -43,8 +43,13 @@ const PaginationLink = ({
   className,
   isActive,
   size = "icon",
+  children,
   ...props
 }: PaginationLinkProps) => (
+  // Generic wrapper — PaginationPrevious / PaginationNext / numbered
+  // PaginationItem all pass children with their page label. The lint rule
+  // can't see this statically; disable just for the wrapper component.
+   
   <a
     aria-current={isActive ? "page" : undefined}
     className={cn(
@@ -55,7 +60,9 @@ const PaginationLink = ({
       className
     )}
     {...props}
-  />
+  >
+    {children}
+  </a>
 )
 PaginationLink.displayName = "PaginationLink"
 

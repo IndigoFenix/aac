@@ -83,7 +83,8 @@ export function ObjectDetectionDebug({
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
+      {/* Header — pointer-only drag handle for a debug-only floating window. */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         className="bg-green-600 text-white p-2 cursor-move flex items-center justify-between"
         onMouseDown={handleMouseDown}

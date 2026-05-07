@@ -201,7 +201,6 @@ export default function ForgotPasswordPage() {
                   required
                   dir="ltr"
                   disabled={isSubmitting}
-                  autoFocus
                 />
               </div>
 

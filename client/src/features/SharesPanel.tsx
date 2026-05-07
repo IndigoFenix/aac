@@ -113,7 +113,7 @@ export function SharesPanel(_props: SharesPanelProps) {
     if (fromSearch && fromSearch !== tab) setTab(fromSearch);
     // Intentionally not in deps: we only want to react to URL changes, not
     // local tab switches (which would loop).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [search]);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -805,7 +805,6 @@ function RedeemDialog({
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="ABCDE23456FG"
-                autoFocus
               />
             </div>
           </div>

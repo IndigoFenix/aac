@@ -220,7 +220,7 @@ export type InstituteRole = typeof INSTITUTE_ROLES[number]["value"];
 export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 
 export const verificationStatusEnum = pgEnum("verification_status", ["unverified", "pending", "verified"]);
-export const identityProviderProtocolEnum = pgEnum("identity_provider_protocol", ["oidc", "oauth2"]);
+export const identityProviderProtocolEnum = pgEnum("identity_provider_protocol", ["oidc", "oauth2", "saml"]);
 
 // Guardian verification + informed consent (see planning-docs/student-consent-onboarding-plan.md)
 export const governmentIdTypeEnum = pgEnum("government_id_type", [
@@ -273,6 +273,17 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "consent_re_signed",
   "guardian_id_verified",
   "minor_threshold_crossed",
+  // Authentication audit events. Subject is always a `user`. Used for
+  // login surveillance and MFA challenge tracking — required for HIPAA /
+  // IL MoE auditability.
+  "auth_login_success",
+  "auth_login_failure",
+  "auth_logout",
+  "auth_mfa_challenge",
+  "auth_mfa_success",
+  "auth_mfa_failure",
+  "auth_password_reset_requested",
+  "auth_password_reset_completed",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [

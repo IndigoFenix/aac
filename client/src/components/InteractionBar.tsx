@@ -59,11 +59,11 @@ export function InteractionBar() {
     <div className="border-t border-border bg-card p-6 space-y-4">
       <div className="space-y-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
+          <label htmlFor="interaction-bar-tool" className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
             Current Tool
           </label>
           <Select value={selectedTool} onValueChange={setSelectedTool}>
-            <SelectTrigger className="w-full" data-testid="select-tool">
+            <SelectTrigger id="interaction-bar-tool" className="w-full" data-testid="select-tool">
               <div className="flex items-center gap-2">
                 <Settings2 className="w-4 h-4" />
                 <SelectValue />
@@ -79,11 +79,12 @@ export function InteractionBar() {
         </div>
 
         <div className="relative">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
+          <label htmlFor="interaction-bar-prompt" className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
             Your Message
           </label>
           <div className="relative">
             <Textarea
+              id="interaction-bar-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Ask CliniAACian"
@@ -102,16 +103,18 @@ export function InteractionBar() {
               className="absolute right-2 bottom-2"
               onClick={handleVoiceInput}
               data-testid="button-voice-input"
+              aria-label={isRecording ? "Stop voice input" : "Start voice input"}
             >
               <Mic className={`w-4 h-4 ${isRecording ? "animate-pulse" : ""}`} />
             </Button>
           </div>
         </div>
 
-        <div>
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 block">
+        <div role="group" aria-labelledby="interaction-bar-quick-actions-label">
+          {/* Heading for the button group, not a label for a single control. */}
+          <div id="interaction-bar-quick-actions-label" className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
             Quick Actions
-          </label>
+          </div>
           <div className="grid grid-cols-3 gap-4">
             {quickActions.map((action) => (
               <Button

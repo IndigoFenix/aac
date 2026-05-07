@@ -673,6 +673,20 @@
       "when": 1778002044088,
       "tag": "0095_gorgeous_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1778081967640,
+      "tag": "0096_quick_agent_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1778090079678,
+      "tag": "0097_fast_molecule_man",
+      "breakpoints": true
     }
   ]
 }

@@ -288,6 +288,8 @@ export function TopicView({ topicId }: TopicViewProps) {
                       </div>
                     </div>
 
+                    {/* stopPropagation shield — see TopicList.tsx for rationale. */}
+                    {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2 me-4">
                         <Checkbox

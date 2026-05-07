@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   Table,
@@ -47,20 +49,32 @@ import {
 import { apiRequest } from '@/lib/queryClient';
 import { useLanguage } from '@/contexts/LanguageContext';
 
+type Protocol = 'oidc' | 'oauth2' | 'saml';
+
 interface IdentityProvider {
   id: string;
   name: string;
-  protocol: 'oidc' | 'oauth2';
+  protocol: Protocol;
   discoveryUrl?: string;
   authorizationUrl?: string;
   tokenUrl?: string;
   userinfoUrl?: string;
-  clientId: string;
+  clientId?: string | null;
   scopes?: string;
   claimMappings?: Record<string, unknown>;
   instituteIdType?: string;
   reverificationDays?: number;
   isActive: boolean;
+  // SAML 2.0 fields
+  samlEntityId?: string | null;
+  samlSsoUrl?: string | null;
+  samlSloUrl?: string | null;
+  samlX509Cert?: string | null;
+  samlNameIdFormat?: string | null;
+  samlSignAuthnRequests?: boolean | null;
+  samlWantAssertionsSigned?: boolean | null;
+  samlSpEntityId?: string | null;
+  samlSpCertificate?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,7 +83,8 @@ const QUERY_KEY = ['/api/admin/identity-providers'];
 
 const emptyForm = {
   name: '',
-  protocol: 'oidc' as 'oidc' | 'oauth2',
+  protocol: 'oidc' as Protocol,
+  // OIDC / OAuth2
   discoveryUrl: '',
   authorizationUrl: '',
   tokenUrl: '',
@@ -77,6 +92,18 @@ const emptyForm = {
   clientId: '',
   clientSecret: '',
   scopes: 'openid email profile',
+  // SAML
+  samlEntityId: '',
+  samlSsoUrl: '',
+  samlSloUrl: '',
+  samlX509Cert: '',
+  samlNameIdFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+  samlSignAuthnRequests: false,
+  samlWantAssertionsSigned: true,
+  samlSpEntityId: '',
+  samlSpPrivateKey: '',
+  samlSpCertificate: '',
+  // Common
   instituteIdType: '',
   reverificationDays: '',
   isActive: true,
@@ -108,26 +135,49 @@ export function IdentityProviderList() {
       const body: Record<string, unknown> = {
         name: form.name,
         protocol: form.protocol,
-        clientId: form.clientId,
-        scopes: form.scopes || 'openid email profile',
         instituteIdType: form.instituteIdType || null,
         reverificationDays: form.reverificationDays ? parseInt(form.reverificationDays) : null,
         isActive: form.isActive,
       };
-      if (form.clientSecret) body.clientSecret = form.clientSecret;
-      if (form.protocol === 'oidc') {
-        body.discoveryUrl = form.discoveryUrl || null;
+
+      if (form.protocol === 'saml') {
+        // SAML doesn't use clientId/clientSecret/scopes — leave them null/default.
+        body.samlEntityId = form.samlEntityId || null;
+        body.samlSsoUrl = form.samlSsoUrl || null;
+        body.samlSloUrl = form.samlSloUrl || null;
+        body.samlX509Cert = form.samlX509Cert || null;
+        body.samlNameIdFormat = form.samlNameIdFormat || null;
+        body.samlSignAuthnRequests = form.samlSignAuthnRequests;
+        body.samlWantAssertionsSigned = form.samlWantAssertionsSigned;
+        body.samlSpEntityId = form.samlSpEntityId || null;
+        body.samlSpCertificate = form.samlSpCertificate || null;
+        if (form.samlSpPrivateKey) body.samlSpPrivateKey = form.samlSpPrivateKey;
+
+        if (!editingId) {
+          if (!form.samlSsoUrl) throw new Error('SAML SSO URL is required');
+          if (!form.samlX509Cert) throw new Error('SAML IdP certificate is required');
+        }
       } else {
-        body.authorizationUrl = form.authorizationUrl || null;
-        body.tokenUrl = form.tokenUrl || null;
-        body.userinfoUrl = form.userinfoUrl || null;
+        body.clientId = form.clientId;
+        body.scopes = form.scopes || 'openid email profile';
+        if (form.clientSecret) body.clientSecret = form.clientSecret;
+        if (form.protocol === 'oidc') {
+          body.discoveryUrl = form.discoveryUrl || null;
+        } else {
+          body.authorizationUrl = form.authorizationUrl || null;
+          body.tokenUrl = form.tokenUrl || null;
+          body.userinfoUrl = form.userinfoUrl || null;
+        }
+
+        if (!editingId) {
+          if (!form.clientSecret) throw new Error('Client secret is required');
+          body.clientSecret = form.clientSecret;
+        }
       }
 
       if (editingId) {
         await apiRequest('PATCH', `/api/admin/identity-providers/${editingId}`, body);
       } else {
-        if (!form.clientSecret) throw new Error('Client secret is required');
-        body.clientSecret = form.clientSecret;
         await apiRequest('POST', '/api/admin/identity-providers', body);
       }
     },
@@ -172,9 +222,19 @@ export function IdentityProviderList() {
       authorizationUrl: provider.authorizationUrl || '',
       tokenUrl: provider.tokenUrl || '',
       userinfoUrl: provider.userinfoUrl || '',
-      clientId: provider.clientId,
+      clientId: provider.clientId || '',
       clientSecret: '', // never sent back from server
       scopes: provider.scopes || 'openid email profile',
+      samlEntityId: provider.samlEntityId || '',
+      samlSsoUrl: provider.samlSsoUrl || '',
+      samlSloUrl: provider.samlSloUrl || '',
+      samlX509Cert: provider.samlX509Cert || '',
+      samlNameIdFormat: provider.samlNameIdFormat || 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+      samlSignAuthnRequests: !!provider.samlSignAuthnRequests,
+      samlWantAssertionsSigned: provider.samlWantAssertionsSigned !== false,
+      samlSpEntityId: provider.samlSpEntityId || '',
+      samlSpPrivateKey: '', // never sent back from server
+      samlSpCertificate: provider.samlSpCertificate || '',
       instituteIdType: provider.instituteIdType || '',
       reverificationDays: provider.reverificationDays?.toString() || '',
       isActive: provider.isActive,
@@ -261,7 +321,7 @@ export function IdentityProviderList() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingId
@@ -276,16 +336,91 @@ export function IdentityProviderList() {
             </div>
             <div>
               <Label>{t('admin.identityProviders.protocol')}</Label>
-              <Select value={form.protocol} onValueChange={(v) => setForm({ ...form, protocol: v as 'oidc' | 'oauth2' })}>
+              <Select value={form.protocol} onValueChange={(v) => setForm({ ...form, protocol: v as Protocol })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="oidc">OIDC</SelectItem>
                   <SelectItem value="oauth2">OAuth2</SelectItem>
+                  <SelectItem value="saml">SAML 2.0</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {form.protocol === 'oidc' ? (
+            {form.protocol === 'saml' ? (
+              <>
+                <div>
+                  <Label>{t('admin.identityProviders.samlSsoUrl')}</Label>
+                  <Input value={form.samlSsoUrl} onChange={(e) => setForm({ ...form, samlSsoUrl: e.target.value })} placeholder="https://idp.example.com/sso" />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.samlEntityId')}</Label>
+                  <Input value={form.samlEntityId} onChange={(e) => setForm({ ...form, samlEntityId: e.target.value })} placeholder="https://idp.example.com/entity" />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.samlX509Cert')}</Label>
+                  <Textarea
+                    value={form.samlX509Cert}
+                    onChange={(e) => setForm({ ...form, samlX509Cert: e.target.value })}
+                    rows={6}
+                    placeholder="-----BEGIN CERTIFICATE-----..."
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.samlNameIdFormat')}</Label>
+                  <Input value={form.samlNameIdFormat} onChange={(e) => setForm({ ...form, samlNameIdFormat: e.target.value })} />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.samlSloUrl')}</Label>
+                  <Input value={form.samlSloUrl} onChange={(e) => setForm({ ...form, samlSloUrl: e.target.value })} placeholder="(optional)" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label>{t('admin.identityProviders.samlWantAssertionsSigned')}</Label>
+                  <Switch checked={form.samlWantAssertionsSigned} onCheckedChange={(v) => setForm({ ...form, samlWantAssertionsSigned: v })} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label>{t('admin.identityProviders.samlSignAuthnRequests')}</Label>
+                  <Switch checked={form.samlSignAuthnRequests} onCheckedChange={(v) => setForm({ ...form, samlSignAuthnRequests: v })} />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.samlSpEntityId')}</Label>
+                  <Input value={form.samlSpEntityId} onChange={(e) => setForm({ ...form, samlSpEntityId: e.target.value })} placeholder={t('admin.identityProviders.samlSpEntityIdPlaceholder')} />
+                </div>
+                {form.samlSignAuthnRequests && (
+                  <>
+                    <div>
+                      <Label>
+                        {t('admin.identityProviders.samlSpPrivateKey')}
+                        {editingId && <span className="text-xs text-muted-foreground ms-1">({t('admin.identityProviders.leaveBlank')})</span>}
+                      </Label>
+                      <Textarea
+                        value={form.samlSpPrivateKey}
+                        onChange={(e) => setForm({ ...form, samlSpPrivateKey: e.target.value })}
+                        rows={4}
+                        placeholder="-----BEGIN PRIVATE KEY-----..."
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label>{t('admin.identityProviders.samlSpCertificate')}</Label>
+                      <Textarea
+                        value={form.samlSpCertificate}
+                        onChange={(e) => setForm({ ...form, samlSpCertificate: e.target.value })}
+                        rows={4}
+                        placeholder="-----BEGIN CERTIFICATE-----..."
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </>
+                )}
+                {editingId && (
+                  <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                    <div className="font-medium mb-1">{t('admin.identityProviders.samlMetadataLabel')}</div>
+                    <code className="break-all">{`/api/identity/saml/metadata/${editingId}`}</code>
+                  </div>
+                )}
+              </>
+            ) : form.protocol === 'oidc' ? (
               <div>
                 <Label>{t('admin.identityProviders.discoveryUrl')}</Label>
                 <Input value={form.discoveryUrl} onChange={(e) => setForm({ ...form, discoveryUrl: e.target.value })} placeholder="https://..." />
@@ -307,21 +442,25 @@ export function IdentityProviderList() {
               </>
             )}
 
-            <div>
-              <Label>{t('admin.identityProviders.clientId')}</Label>
-              <Input value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} />
-            </div>
-            <div>
-              <Label>
-                {t('admin.identityProviders.clientSecret')}
-                {editingId && <span className="text-xs text-muted-foreground ms-1">({t('admin.identityProviders.leaveBlank')})</span>}
-              </Label>
-              <Input type="password" value={form.clientSecret} onChange={(e) => setForm({ ...form, clientSecret: e.target.value })} />
-            </div>
-            <div>
-              <Label>{t('admin.identityProviders.scopes')}</Label>
-              <Input value={form.scopes} onChange={(e) => setForm({ ...form, scopes: e.target.value })} />
-            </div>
+            {form.protocol !== 'saml' && (
+              <>
+                <div>
+                  <Label>{t('admin.identityProviders.clientId')}</Label>
+                  <Input value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} />
+                </div>
+                <div>
+                  <Label>
+                    {t('admin.identityProviders.clientSecret')}
+                    {editingId && <span className="text-xs text-muted-foreground ms-1">({t('admin.identityProviders.leaveBlank')})</span>}
+                  </Label>
+                  <Input type="password" value={form.clientSecret} onChange={(e) => setForm({ ...form, clientSecret: e.target.value })} />
+                </div>
+                <div>
+                  <Label>{t('admin.identityProviders.scopes')}</Label>
+                  <Input value={form.scopes} onChange={(e) => setForm({ ...form, scopes: e.target.value })} />
+                </div>
+              </>
+            )}
             <div>
               <Label>{t('admin.identityProviders.instituteType')}</Label>
               <Input value={form.instituteIdType} onChange={(e) => setForm({ ...form, instituteIdType: e.target.value })} placeholder="MOE, MOH, ..." />

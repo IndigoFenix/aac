@@ -15,11 +15,14 @@ interface PasswordResetResult {
   // happy / no-user paths.
   sendFailed?: boolean;
   sendError?: string;
+  // Set on a successful reset so the caller can audit which user account
+  // had its password changed.
+  userId?: string;
 }
 
 export class PasswordResetService {
   private readonly TOKEN_EXPIRY_MINUTES = 60; // 1 hour
-  private readonly SALT_ROUNDS = 10;
+  private readonly SALT_ROUNDS = 12; // matches userRepository registration cost
 
   /**
    * Request a password reset
@@ -146,7 +149,7 @@ export class PasswordResetService {
 
       console.log(`Password reset successful for user ${user.id}`);
 
-      return { success: true };
+      return { success: true, userId: user.id };
     } catch (error) {
       console.error("Password reset error:", error);
       return { success: false, error: "Failed to reset password" };

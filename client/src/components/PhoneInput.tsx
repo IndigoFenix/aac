@@ -113,7 +113,7 @@ export function PhoneInput({
     onChange(e164 ?? "");
     // We deliberately exclude onChange from deps — its identity may change
     // each render in callers, which would loop us.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [country, localPart]);
 
   const isInvalid = useMemo(() => {

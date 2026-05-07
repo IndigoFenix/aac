@@ -2,6 +2,19 @@ import * as client from "openid-client";
 import memoize from "memoizee";
 import { identityProviderRepository } from "../repositories/identityProviderRepository";
 import { encrypt, decrypt } from "./encryption";
+import {
+  applyClaimMapping,
+  type ClaimMapping,
+  type CanonicalProfile,
+} from "./identity-claim-mapping";
+import {
+  buildSamlLoginUrl,
+  validateSamlResponse,
+  generateSpMetadata,
+  profileToClaims,
+  buildSamlLogoutUrl,
+  validateSamlLogoutResponse,
+} from "./saml-helpers";
 import type {
   IdentityProvider,
   InsertIdentityProvider,
@@ -41,17 +54,24 @@ export class IdentityService {
   }
 
   async createProvider(data: InsertIdentityProvider): Promise<IdentityProvider> {
-    const encrypted = await encrypt(data.clientSecret);
-    return identityProviderRepository.create({
-      ...data,
-      clientSecret: encrypted,
-    });
+    const toInsert: InsertIdentityProvider = { ...data };
+    // OIDC/OAuth2: encrypt client secret. SAML: encrypt SP private key (no shared secret).
+    if (data.clientSecret) {
+      toInsert.clientSecret = await encrypt(data.clientSecret);
+    }
+    if (data.samlSpPrivateKey) {
+      toInsert.samlSpPrivateKey = await encrypt(data.samlSpPrivateKey);
+    }
+    return identityProviderRepository.create(toInsert);
   }
 
   async updateProvider(id: string, data: UpdateIdentityProvider): Promise<IdentityProvider | undefined> {
     const updateData = { ...data };
     if (data.clientSecret) {
       updateData.clientSecret = await encrypt(data.clientSecret);
+    }
+    if (data.samlSpPrivateKey) {
+      updateData.samlSpPrivateKey = await encrypt(data.samlSpPrivateKey);
     }
     return identityProviderRepository.update(id, updateData);
   }
@@ -75,6 +95,14 @@ export class IdentityService {
     if (!provider.isActive) throw new Error("Identity provider is not active");
 
     const scopes = provider.scopes || "openid email profile";
+
+    if (provider.protocol === "saml") {
+      throw new Error("SAML providers do not use getAuthorizationUrl — call buildSamlLoginRequest instead");
+    }
+
+    if (!provider.clientId || !provider.clientSecret) {
+      throw new Error("OIDC/OAuth2 providers require clientId and clientSecret");
+    }
 
     if (provider.protocol === "oidc" && provider.discoveryUrl) {
       const secret = await decrypt(provider.clientSecret);
@@ -119,9 +147,16 @@ export class IdentityService {
     providerId: string,
     callbackUrl: URL,
     expectedState?: string,
-  ): Promise<{ externalId: string; email?: string; claims: Record<string, unknown> }> {
+  ): Promise<{ externalId: string; email?: string; claims: Record<string, unknown>; profile: CanonicalProfile }> {
     const provider = await identityProviderRepository.getById(providerId);
     if (!provider) throw new Error("Identity provider not found");
+
+    if (provider.protocol === "saml") {
+      throw new Error("SAML providers do not use handleCallback — call handleSamlCallback instead");
+    }
+    if (!provider.clientId || !provider.clientSecret) {
+      throw new Error("OIDC/OAuth2 providers require clientId and clientSecret");
+    }
 
     const secret = await decrypt(provider.clientSecret);
 
@@ -137,9 +172,8 @@ export class IdentityService {
       });
       const claims = tokens.claims() as Record<string, unknown> | undefined;
       if (!claims) throw new Error("No claims returned from OIDC provider");
-      const externalId = claims.sub as string;
-      const email = claims.email as string | undefined;
-      return { externalId, email, claims };
+      const profile = applyClaimMapping(claims, provider.claimMappings as ClaimMapping | null);
+      return { externalId: profile.externalId, email: profile.email, claims, profile };
     }
 
     // OAuth2 fallback — manual token exchange
@@ -179,9 +213,102 @@ export class IdentityService {
       throw new Error(`Userinfo fetch failed: ${userinfoResponse.statusText}`);
     }
     const claims = await userinfoResponse.json() as Record<string, unknown>;
-    const externalId = (claims.sub || claims.id) as string;
-    const email = claims.email as string | undefined;
-    return { externalId, email, claims };
+    const profile = applyClaimMapping(claims, provider.claimMappings as ClaimMapping | null);
+    return { externalId: profile.externalId, email: profile.email, claims, profile };
+  }
+
+  // ==================== SAML 2.0 Flows ====================
+
+  /**
+   * Build the IdP redirect URL (HTTP-Redirect binding) that begins SSO.
+   * Caller is expected to redirect the user to this URL.
+   */
+  async buildSamlLoginUrl(providerId: string, relayState: string): Promise<string> {
+    const provider = await identityProviderRepository.getById(providerId);
+    if (!provider) throw new Error("Identity provider not found");
+    if (!provider.isActive) throw new Error("Identity provider is not active");
+    if (provider.protocol !== "saml") throw new Error(`Provider ${providerId} is not SAML`);
+    return buildSamlLoginUrl(provider, relayState);
+  }
+
+  /**
+   * Validate a SAML POST response and return canonical claims.
+   * Returns the same shape as `handleCallback` for caller symmetry.
+   */
+  async handleSamlCallback(
+    providerId: string,
+    samlResponse: string,
+  ): Promise<{ externalId: string; email?: string; claims: Record<string, unknown>; profile: CanonicalProfile }> {
+    const provider = await identityProviderRepository.getById(providerId);
+    if (!provider) throw new Error("Identity provider not found");
+    if (provider.protocol !== "saml") throw new Error(`Provider ${providerId} is not SAML`);
+
+    const samlProfile = await validateSamlResponse(provider, samlResponse);
+    const claims = profileToClaims(samlProfile);
+    const profile = applyClaimMapping(claims, provider.claimMappings as ClaimMapping | null);
+    return { externalId: profile.externalId, email: profile.email, claims, profile };
+  }
+
+  /**
+   * Generate the SP metadata XML for a SAML provider. Used by IdP onboarding.
+   */
+  async getSamlMetadata(providerId: string): Promise<string> {
+    const provider = await identityProviderRepository.getById(providerId);
+    if (!provider) throw new Error("Identity provider not found");
+    if (provider.protocol !== "saml") throw new Error(`Provider ${providerId} is not SAML`);
+    return generateSpMetadata(provider);
+  }
+
+  /**
+   * Build the IdP redirect URL for SP-initiated SAML Single Logout.
+   * Looks up the user's stored claims (which carry nameID + sessionIndex
+   * from the original SSO assertion) and asks node-saml to construct the
+   * signed LogoutRequest URL.
+   *
+   * Throws if the provider isn't SAML, has no SLO URL configured, or the
+   * user has no linked identity for this provider.
+   */
+  async buildSamlLogoutUrl(
+    providerId: string,
+    userId: string,
+    relayState: string,
+  ): Promise<string> {
+    const provider = await identityProviderRepository.getById(providerId);
+    if (!provider) throw new Error("Identity provider not found");
+    if (provider.protocol !== "saml") throw new Error(`Provider ${providerId} is not SAML`);
+
+    const identity = await identityProviderRepository.getExternalIdentity(userId, providerId);
+    if (!identity) throw new Error("No SAML identity linked for this user");
+    const claims = (identity.claims ?? {}) as Record<string, unknown>;
+    const nameID = (claims.nameID ?? claims.sub) as string | undefined;
+    if (!nameID) throw new Error("Stored SAML claims missing nameID — cannot construct LogoutRequest");
+
+    // node-saml's Profile shape — only nameID/nameIDFormat/sessionIndex are
+    // load-bearing for logout. Issuer is filled from provider.samlEntityId.
+    const profile = {
+      nameID,
+      nameIDFormat: (claims.nameIDFormat as string | undefined)
+        || provider.samlNameIdFormat
+        || "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      sessionIndex: claims.sessionIndex as string | undefined,
+      issuer: provider.samlEntityId ?? "",
+    };
+
+    return buildSamlLogoutUrl(provider, profile as never, relayState);
+  }
+
+  /**
+   * Validate a POST'd LogoutResponse from the IdP. Returns true if the IdP
+   * confirmed the logout.
+   */
+  async handleSamlLogoutCallback(
+    providerId: string,
+    samlResponse: string,
+  ): Promise<boolean> {
+    const provider = await identityProviderRepository.getById(providerId);
+    if (!provider) throw new Error("Identity provider not found");
+    if (provider.protocol !== "saml") throw new Error(`Provider ${providerId} is not SAML`);
+    return validateSamlLogoutResponse(provider, samlResponse);
   }
 
   // ==================== Identity Linking ====================
@@ -208,26 +335,36 @@ export class IdentityService {
 
   /**
    * Check if a user has a valid (non-expired) identity for a provider.
+   * Returns expiresAt and daysUntilExpiry when the provider enforces re-verification.
    */
   async checkIdentityStatus(
     userId: string,
     providerId: string,
-  ): Promise<{ linked: boolean; expired: boolean; identity?: UserExternalIdentity }> {
+  ): Promise<{
+    linked: boolean;
+    expired: boolean;
+    expiresAt: Date | null;
+    daysUntilExpiry: number | null;
+    identity?: UserExternalIdentity;
+  }> {
     const identity = await identityProviderRepository.getExternalIdentity(userId, providerId);
-    if (!identity) return { linked: false, expired: false };
+    if (!identity) return { linked: false, expired: false, expiresAt: null, daysUntilExpiry: null };
 
     const provider = await identityProviderRepository.getById(providerId);
-    if (!provider) return { linked: false, expired: false };
+    if (!provider) return { linked: false, expired: false, expiresAt: null, daysUntilExpiry: null };
 
     if (provider.reverificationDays != null && identity.verifiedAt) {
       const expiresAt = new Date(identity.verifiedAt);
       expiresAt.setDate(expiresAt.getDate() + provider.reverificationDays);
-      if (new Date() > expiresAt) {
-        return { linked: true, expired: true, identity };
+      const now = Date.now();
+      const daysUntilExpiry = Math.ceil((expiresAt.getTime() - now) / (24 * 60 * 60 * 1000));
+      if (now > expiresAt.getTime()) {
+        return { linked: true, expired: true, expiresAt, daysUntilExpiry, identity };
       }
+      return { linked: true, expired: false, expiresAt, daysUntilExpiry, identity };
     }
 
-    return { linked: true, expired: false, identity };
+    return { linked: true, expired: false, expiresAt: null, daysUntilExpiry: null, identity };
   }
 
   /**

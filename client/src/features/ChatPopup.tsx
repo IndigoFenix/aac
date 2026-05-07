@@ -750,6 +750,7 @@ export function ChatPopup() {
               onClick={handleSend}
               disabled={!prompt.trim() || isSending || isListening}
               data-testid="chat-popup-send"
+              aria-label="Send"
             >
               <Send className={cn("w-3.5 h-3.5", isRTL && "rotate-180")} />
             </Button>

@@ -47,6 +47,7 @@ import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Slider } from '@/components/ui/slider';
 import { openUI } from '@/lib/uiEvents';
+import { useRegimes } from '@/hooks/useRegimes';
 
 type SystemType = 'tala' | 'us_iep';
 
@@ -57,6 +58,7 @@ export function SettingsPanel() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { fontSize, highContrast, reduceAnimations, enhancedFocusIndicator, setFontSize, setHighContrast, setReduceAnimations, setEnhancedFocusIndicator } = useAccessibility();
+  const { hasCountry } = useRegimes();
 
   // MFA state
   const [mfaSetupStep, setMfaSetupStep] = useState<'idle' | 'setup' | 'verify' | 'disable'>('idle');
@@ -128,8 +130,18 @@ export function SettingsPanel() {
     },
   });
 
-  // System type state (affects workflow and default language)
-  const [systemType, setSystemType] = useState<SystemType>('us_iep');
+  // System type state (affects workflow and default language).
+  // Default is derived from the active institute's compliance regime —
+  // any IL regime → 'tala', otherwise 'us_iep'. The user can still override.
+  const [systemType, setSystemType] = useState<SystemType>(() => hasCountry('IL') ? 'tala' : 'us_iep');
+
+  // If the regime resolves after first render (e.g. institutes load async),
+  // realign the default. We only realign if the user hasn't touched the value.
+  const [systemTypeUserChanged, setSystemTypeUserChanged] = useState(false);
+  useEffect(() => {
+    if (systemTypeUserChanged) return;
+    setSystemType(hasCountry('IL') ? 'tala' : 'us_iep');
+  }, [hasCountry, systemTypeUserChanged]);
 
   // Notification settings
   const [notifications, setNotifications] = useState({
@@ -169,6 +181,7 @@ export function SettingsPanel() {
   // Handle system type change
   const handleSystemTypeChange = (value: SystemType) => {
     setSystemType(value);
+    setSystemTypeUserChanged(true);
     // Auto-switch language based on system type
     if (value === 'tala') {
       setLanguage('he');

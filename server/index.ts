@@ -3,18 +3,18 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import fs from "fs";
 import path from "path";
-import cors from "cors";
 import { serveStaticWithLocaleLanding } from "./landing-static";
+import {
+  applySecurityHeaders,
+  applyCorsPolicy,
+  applyRequestLogger,
+} from "./middleware/security";
 
 const app = express();
+applySecurityHeaders(app);
+applyCorsPolicy(app);
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: false, limit: '100mb' }));
-app.use(
-  cors({
-    origin: ["http://localhost:5173", "http://localhost:5174", "app://aac"],
-    credentials: true,
-  }),
-);
 
 function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -26,35 +26,7 @@ function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const reqPath = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (reqPath.startsWith("/api")) {
-      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 200) {
-        logLine = logLine.slice(0, 199) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+applyRequestLogger(app);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
@@ -75,6 +47,12 @@ app.get('/health', (_req, res) => {
   // after boot for the first run.
   const { scheduleMinorThresholdCheck } = await import("./services/consent/consentThresholdCron");
   scheduleMinorThresholdCheck();
+
+  // Start the daily activity-log retention prune. Per-institute retention
+  // comes from the regime registry; orphan rows use the strictest known
+  // window. No-op in tests; deferred 60s after boot.
+  const { scheduleActivityLogRetention } = await import("./services/activityLogRetentionCron");
+  scheduleActivityLogRetention();
 
   // DEVELOPMENT: Use Vite dev server
   if (process.env.NODE_ENV === "development") {

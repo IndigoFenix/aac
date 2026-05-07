@@ -574,7 +574,7 @@ export default function DynamicBoard({
       {/* Navigation header — only shown for multi-page boards */}
       {isMultiPage && canGoBack && (
         <div className="flex items-center gap-2 mb-1 px-1 flex-shrink-0">
-          <button
+          <button type="button"
             onClick={navigateBack}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md hover:bg-blue-50"
           >

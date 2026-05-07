@@ -98,7 +98,7 @@ export function BoardsProvider({ children, studentId }: BoardsProviderProps) {
       }
       initStateRef.current = 'done';
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isLoading, queryError, studentId]);
 
   const selectBoard = useCallback((board: BoardData | null) => {
