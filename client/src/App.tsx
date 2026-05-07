@@ -221,6 +221,7 @@ function Router() {
       <Route path="/userchat" component={ProtectedDashboard} />
       <Route path="/deep-analysis" component={ProtectedDashboard} />
       <Route path="/shares" component={ProtectedDashboard} />
+      <Route path="/insurance-bridge" component={ProtectedDashboard} />
 
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
