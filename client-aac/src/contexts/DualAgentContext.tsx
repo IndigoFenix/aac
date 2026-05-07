@@ -509,16 +509,22 @@ function DualAgentProviderInner({
   // detection trigger so the AI sees what triggered the wake. The recent
   // buffered frames + audio are still in the ring buffers (Phase 2 keeps
   // capture running while sends are gated).
+  // Also notify the server of every transition so the Insurance Bridge module
+  // can subtract sleep windows from RTM service-time totals.
   const prevSleepStateRef = useRef(attentiveness?.sleepState ?? "awake");
+  const notifySleepStateChangeRef = useRef(liveAgent.notifySleepStateChange);
+  notifySleepStateChangeRef.current = liveAgent.notifySleepStateChange;
   useEffect(() => {
     if (!attentiveness) return;
     const prev = prevSleepStateRef.current;
     const next = attentiveness.sleepState;
+    if (prev === next) return;
     if (prev === "asleep" && next === "awake") {
       console.log("[DualAgentContext] Asleep → Awake — firing wake_check trigger");
       activityMonitor.triggerNow("wake_check");
     }
     prevSleepStateRef.current = next;
+    notifySleepStateChangeRef.current?.(next, "system");
   }, [attentiveness, attentiveness?.sleepState, activityMonitor]);
 
   // Stabilize sendMessage identity — use refs so the callback doesn't change on every render

@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+/**
+ * Insurance Bridge billing regime. Determines RTM thresholds, ICD code list,
+ * and LMN template the module uses for an institute. Single enum is enough
+ * for v1 — split into separate documentTemplate/codeSystem fields if a future
+ * regime needs the orthogonal mix.
+ *  - "none": module hidden / disabled (default)
+ *  - "us_cpt": US CPT codes 98977/98979/98980/98985 + ICD-10-CM + US LMN
+ */
+export type BillingRegime = "none" | "us_cpt";
+
 export interface LicensePermissions {
   all?: boolean;
   maxStudents: number;
@@ -15,6 +25,10 @@ export interface LicensePermissions {
   // resolved against shared/regime/regimes.ts. Stored as data so adding a
   // new regime is a registry update, not a migration.
   complianceRegimes?: string[];
+  // Insurance Bridge module — RTM dashboard, LMN generator, ICD picker.
+  insuranceBridgeEnabled: boolean;
+  // Which billing market shapes the module's behavior when enabled.
+  billingRegime: BillingRegime;
 }
 
 export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -29,6 +43,8 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   expertAgentsCount: 0,
   deepAnalysisEnabled: false,
   complianceRegimes: [],
+  insuranceBridgeEnabled: false,
+  billingRegime: "none",
 };
 
 export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -43,6 +59,8 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   expertAgentsCount: -1, // -1 = unlimited
   deepAnalysisEnabled: true,
   complianceRegimes: [],
+  insuranceBridgeEnabled: true,
+  billingRegime: "us_cpt",
 };
 
 export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object({
@@ -57,6 +75,8 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   expertAgentsCount: z.number().int(),
   deepAnalysisEnabled: z.boolean(),
   complianceRegimes: z.array(z.string()).optional(),
+  insuranceBridgeEnabled: z.boolean(),
+  billingRegime: z.enum(["none", "us_cpt"]),
 });
 
 /**
@@ -66,9 +86,14 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
 export function resolvePermissions(raw: Partial<LicensePermissions> | null | undefined): LicensePermissions {
   if (!raw) return { ...DEFAULT_LICENSE_PERMISSIONS };
   if (raw.all) {
-    // `all` grants max permissions but preserves any explicit regime
-    // declarations (regimes are constraints, not capabilities).
-    return { ...MAX_LICENSE_PERMISSIONS, complianceRegimes: raw.complianceRegimes ?? [] };
+    // `all` grants max capabilities but preserves any explicit regime
+    // declarations — regimes describe which market/jurisdiction the
+    // institute operates in, not which features are unlocked.
+    return {
+      ...MAX_LICENSE_PERMISSIONS,
+      complianceRegimes: raw.complianceRegimes ?? [],
+      billingRegime: raw.billingRegime ?? "none",
+    };
   }
   return {
     ...DEFAULT_LICENSE_PERMISSIONS,

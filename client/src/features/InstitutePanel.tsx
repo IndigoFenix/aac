@@ -985,6 +985,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         email: currentInstitute.email || '',
         website: currentInstitute.website || '',
         language: currentInstitute.language || '',
+        timezone: currentInstitute.timezone || '',
       });
       setShowEditDialog(true);
     }
@@ -2265,6 +2266,18 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editTimezone">{t('institute.timezone') || 'Timezone'}</Label>
+              <Input
+                id="editTimezone"
+                value={editForm.timezone || ''}
+                onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
+                placeholder={t('institute.timezonePlaceholder') || 'e.g. America/New_York, Asia/Jerusalem'}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('institute.timezoneHelp') || 'IANA timezone name. Used for billing day boundaries. Leave blank to use UTC.'}
+              </p>
             </div>
           </DialogBody>
           <DialogFooter>

@@ -43,6 +43,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/userchat': 'userchat',
   '/deep-analysis': 'deepAnalysis',
   '/shares': 'shares',
+  '/insurance-bridge': 'insuranceBridge',
 };
 
 // Feature to URL path mapping
@@ -67,6 +68,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   userchat: '/userchat',
   deepAnalysis: '/deep-analysis',
   shares: '/shares',
+  insuranceBridge: '/insurance-bridge',
 };
 
 // Feature configurations
@@ -237,6 +239,14 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 80,
     isFullScreen: false,
     path: '/shares',
+  },
+  insuranceBridge: {
+    id: 'insuranceBridge',
+    defaultSize: 100,
+    minSize: 100,
+    maxSize: 100,
+    isFullScreen: false,
+    path: '/insurance-bridge',
   },
 };
 

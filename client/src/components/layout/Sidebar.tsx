@@ -36,6 +36,7 @@ import {
   Contact,
   UserCircle,
   Share2,
+  Receipt,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
@@ -48,6 +49,7 @@ import { FeatureType } from '@shared/schema';
 import { FeedbackDialog } from '@/components/FeedbackDialog';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { useUserChat } from '@/features/userChat/UserChatContext';
+import { ReviewTimeIndicator } from '@/components/insurance/ReviewTimeIndicator';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -220,6 +222,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       disabled: false,
       badge: undefined as string | undefined,
     },
+    ...(perms?.insuranceBridgeEnabled ? [{
+      icon: Receipt,
+      labelKey: 'nav.insuranceBridge',
+      feature: 'insuranceBridge' as FeatureType,
+      testId: 'nav-insurance-bridge',
+      disabled: false,
+      badge: undefined as string | undefined,
+    }] : []),
   ];
 
   const positionClasses = position === 'right' 
@@ -345,6 +355,11 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
                   <p className="text-xs text-muted-foreground">
                     {t('nav.currentStudent')}
                   </p>
+                  <ReviewTimeIndicator
+                    enabled={!!perms?.insuranceBridgeEnabled}
+                    instituteId={currentInstitute?.id ?? null}
+                    studentId={student.id}
+                  />
                 </div>
               </div>
             ) : (

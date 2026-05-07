@@ -178,6 +178,10 @@ export const institutes = pgTable("institutes", {
   externalStorage: varchar("external_storage"),
   // Preferred operational language (e.g. 'en', 'he') — used for report defaults and AI prompts
   language: text("language"),
+  // IANA timezone (e.g. 'America/New_York', 'Asia/Jerusalem'). Optional; rollups
+  // that bucket events into local days fall back to UTC when this is unset.
+  // Used by the Insurance Bridge module for day-boundary alignment.
+  timezone: text("timezone"),
 
   // Verification status — whether this institute has been verified by its claimed authority (e.g. MoE)
   verificationStatus: verificationStatusEnum("verification_status").default("unverified").notNull(),
@@ -997,7 +1001,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat' | 'deepAnalysis' | 'shares';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat' | 'deepAnalysis' | 'shares' | 'insuranceBridge';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 

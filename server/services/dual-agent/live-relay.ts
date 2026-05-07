@@ -38,6 +38,8 @@ import {
   type FaceMatchResult,
 } from "../biometric/recognition-service";
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
+import { activityLogService } from "../activityLogService";
+import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
@@ -183,7 +185,8 @@ export type ClientMessage =
   | { type: "focus_frame"; data: string }                    // base64 JPEG — high-res focus frame
   | { type: "set_paused"; paused: boolean }
   | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot }
-  | { type: "context_injection"; text: string };           // inject context without triggering a response
+  | { type: "context_injection"; text: string }           // inject context without triggering a response
+  | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" };  // engagement state machine transition (server logs for RTM service-time)
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -288,6 +291,8 @@ export class LiveRelay {
   private debugMode = false;
   /** Client-reported IANA timezone for this session; injected into AI prompts. */
   private timezone: string | undefined = undefined;
+  /** Last known sleep state for this session — set whenever client or AI reports a transition. */
+  private lastSleepState: "hibernation" | "waking" | "awake" | "resting" | "asleep" = "awake";
 
   // Voice
   private aiVoice: ResolvedVoice | null = null;
@@ -1038,6 +1043,10 @@ export class LiveRelay {
             });
           }
           break;
+
+        case "client_sleep_state_change":
+          this.recordSleepStateChange(msg.state, msg.source);
+          break;
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -1468,6 +1477,18 @@ The user pressed "More" — they can't find the button they need on the current 
         content: `[BUTTON PRESS] ${buttonList}`,
         timestamp: Date.now(),
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
+    }
+
+    // Insurance Bridge: record the utterance for MLU/NDW aggregation. We
+    // prefer the pre-generated sentence (more natural language) but fall back
+    // to the raw button labels when no sentence is available.
+    if (this.studentId) {
+      recordUtterance({
+        studentId: this.studentId,
+        chatSessionId: this.sessionId,
+        text: singleSentence || buttonList,
+        source: "board_press",
+      });
     }
 
     const currentLabels = this.sessionCache?.state?.boardButtonLabels?.join(", ") || "none";
@@ -2183,12 +2204,14 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       case "sleep": {
         logLiveSession("SLEEP TOOL", "AI requested transition to Asleep");
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
+        this.recordSleepStateChange("asleep", "ai");
         return { id: call.id, name, response: { output: "session marked asleep" } };
       }
 
       case "end_session": {
         logLiveSession("END_SESSION TOOL", "AI requested transition to Hibernation");
         this.send({ type: "sleep_state_change", data: { state: "hibernation", source: "ai" } });
+        this.recordSleepStateChange("hibernation", "ai");
         return { id: call.id, name, response: { output: "session ended" } };
       }
 
@@ -3443,6 +3466,34 @@ When creating or referencing calendar events, interpret and speak in this local 
     } catch (err) {
       console.error("[LiveRelay] send() failed:", (err as Error).message, "msgType:", msg.type);
     }
+  }
+
+  /**
+   * Record an AAC sleep state transition to the activity log.
+   * Idempotent against same-state repeats. Used by the Insurance Bridge module
+   * to subtract sleep windows from RTM service-time totals.
+   */
+  private recordSleepStateChange(
+    toState: "hibernation" | "waking" | "awake" | "resting" | "asleep",
+    source: "ai" | "system" | "user",
+  ): void {
+    if (toState === this.lastSleepState) return;
+    const fromState = this.lastSleepState;
+    this.lastSleepState = toState;
+    if (!this.studentId) return;
+    activityLogService.log({
+      userId: this.userId ?? null,
+      eventType: "aac_sleep_state_change",
+      subjectType1: "student",
+      subjectId1: this.studentId,
+      details: {
+        sessionId: this.sessionId,
+        fromState,
+        toState,
+        source,
+      },
+      isAiInitiated: source === "ai",
+    });
   }
 
   /** Build and send a session_snapshot message to the client for local persistence. */

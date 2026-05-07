@@ -292,6 +292,18 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "student_erasure_requested",
   "student_erasure_cancelled",
   "student_erasure_completed",
+  // AAC sleep transitions. Subject is the student. Details carry
+  // `{ sessionId, fromState, toState, source }`. Used by the Insurance
+  // Bridge module to subtract sleep windows from RTM service-time totals.
+  "aac_sleep_state_change",
+  // Insurance Bridge: LMN auto-generator lifecycle. Subject is the student.
+  // Details carry `{ lmnId }`. Used for billing audit.
+  "lmn_generated",
+  "lmn_finalized",
+  // Insurance Bridge: a clinician opened a fresh review interval for a
+  // student. Subject is the student. Details carry `{ intervalId }`. Logged
+  // once per interval — heartbeat extensions are NOT audited (too noisy).
+  "rtm_review_recorded",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -1615,6 +1627,124 @@ export const chatSessions = pgTable("chat_sessions", {
   // (Drizzle doesn't emit expression-based GIN indexes reliably).
 ]);
 
+// =============================================================================
+// LETTERS OF MEDICAL NECESSITY (Insurance Bridge — LMN auto-generator)
+// =============================================================================
+
+/**
+ * Letter of Medical Necessity. Mirrors the lifecycle of medicalRecords /
+ * functionalReports / educationalReports — `draft` until the clinician signs,
+ * then `finalized` with `finalizedAt` set. Owning institute only writes here
+ * in v1 (cross-institute share-derived generation deferred).
+ *
+ * `sections` holds the rendered narrative blocks the clinician edits before
+ * finalizing. `metricsSnapshot` is a frozen copy of the utterance metrics at
+ * draft time so reprints reflect what was filed, not whatever the live
+ * metrics happen to say later.
+ */
+export const lmnStatusEnum = pgEnum("lmn_status", ["draft", "finalized"]);
+
+export const lettersOfMedicalNecessity = pgTable("letters_of_medical_necessity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  userId: varchar("user_id"), // creator
+  instituteId: varchar("institute_id"),
+
+  // Sensitivity markers — same conventions as medicalRecords.
+  isSensitive: boolean("is_sensitive").default(true).notNull(),
+  sensitivityCategory: sensitivityCategoryEnum("sensitivity_category").default("medical").notNull(),
+
+  // Editable narrative blocks. See lmnService for the shape.
+  sections: jsonb("sections").default({}).notNull(),
+  // Frozen utterance/active-time metrics at draft creation. Reprints quote these.
+  metricsSnapshot: jsonb("metrics_snapshot").default({}),
+
+  // Signature placeholder fields — populated when the clinician finalizes.
+  signatureName: text("signature_name"),
+  signatureLicense: text("signature_license"),
+  signatureCredentials: text("signature_credentials"),
+  signedAt: timestamp("signed_at"),
+
+  status: lmnStatusEnum("status").default("draft").notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  finalizedAt: timestamp("finalized_at"),
+}, (table) => [
+  index("idx_lmn_student_id").on(table.studentId),
+  index("idx_lmn_institute_id").on(table.instituteId),
+  index("idx_lmn_status").on(table.status),
+]);
+
+// =============================================================================
+// AAC UTTERANCE EVENTS (Insurance Bridge — communication metrics source)
+// =============================================================================
+
+/**
+ * Append-only log of student utterances during AAC sessions. Used by the
+ * Insurance Bridge module to compute MLU (Mean Length of Utterance), NDW
+ * (Number of Different Words), and communication rate for LMN reports.
+ *
+ * `source` distinguishes the origin: AAC board button presses, live speech
+ * heard by the relay, or text synthesized by the monitor. MLU/NDW are
+ * computed by SQL aggregate at query time — no precomputed metrics table.
+ */
+export const aacUtteranceSourceEnum = pgEnum("aac_utterance_source", [
+  "board_press",
+  "live_speech",
+  "monitor_synth",
+]);
+
+export const aacUtteranceEvents = pgTable("aac_utterance_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  chatSessionId: varchar("chat_session_id"),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  text: text("text").notNull(),
+  wordCount: integer("word_count").notNull(),
+  uniqueWordCount: integer("unique_word_count").notNull(),
+  source: aacUtteranceSourceEnum("source").notNull(),
+}, (table) => [
+  index("idx_aac_utterance_events_student").on(table.studentId),
+  index("idx_aac_utterance_events_session").on(table.chatSessionId),
+  index("idx_aac_utterance_events_recorded_at").on(table.recordedAt),
+]);
+
+// =============================================================================
+// CLINICIAN ACTIVITY INTERVALS (Insurance Bridge — review-time tracking)
+// =============================================================================
+
+/**
+ * Contiguous periods of clinician activity in the web client. Used by the
+ * Insurance Bridge module to compute "review time" for CPT 98979 / 98980,
+ * which bill on professional time spent reviewing student data — independent
+ * of whether the AI chat was used.
+ *
+ * One row = one contiguous interval. A new row opens when heartbeats resume
+ * after a >60s gap or the student-in-scope changes. `last_heartbeat_at + 60s`
+ * is the cap for time totals — the clinician is treated as idle 60s past
+ * the last interaction.
+ *
+ * Privacy: only timestamps and student-in-scope are recorded. No event
+ * payloads, no input contents, no coordinates.
+ */
+export const clinicianActivityIntervals = pgTable("clinician_activity_intervals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  studentId: varchar("student_id"),
+  instituteId: varchar("institute_id"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }).defaultNow().notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  tabClosed: boolean("tab_closed").default(false).notNull(),
+}, (table) => [
+  index("idx_clinician_activity_user").on(table.userId),
+  index("idx_clinician_activity_student").on(table.studentId),
+  index("idx_clinician_activity_institute").on(table.instituteId),
+  index("idx_clinician_activity_started_at").on(table.startedAt),
+  index("idx_clinician_activity_open").on(table.userId, table.endedAt),
+]);
+
 // Deep analyses — long-running chain-of-thought reports produced by the deep-analysis service.
 // Stored per-student; searchable via memory field Context_DeepAnalyses.
 // Intermediate state (messages, scratch notes, tool-call counters) is persisted so
@@ -2600,6 +2730,20 @@ export type InsertPhoneOtpCode = z.infer<typeof insertPhoneOtpCodeSchema>;
 // Chat types
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
+
+// AAC utterance events (Insurance Bridge metrics source)
+export type AacUtteranceEvent = typeof aacUtteranceEvents.$inferSelect;
+export type InsertAacUtteranceEvent = typeof aacUtteranceEvents.$inferInsert;
+export type AacUtteranceSource = (typeof aacUtteranceSourceEnum.enumValues)[number];
+
+// Clinician activity intervals (Insurance Bridge review-time)
+export type ClinicianActivityInterval = typeof clinicianActivityIntervals.$inferSelect;
+export type InsertClinicianActivityInterval = typeof clinicianActivityIntervals.$inferInsert;
+
+// Letters of Medical Necessity (Insurance Bridge LMN generator)
+export type LetterOfMedicalNecessity = typeof lettersOfMedicalNecessity.$inferSelect;
+export type InsertLetterOfMedicalNecessity = typeof lettersOfMedicalNecessity.$inferInsert;
+export type LmnStatus = (typeof lmnStatusEnum.enumValues)[number];
 
 // Board types
 export type Board = typeof boards.$inferSelect;

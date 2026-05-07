@@ -160,6 +160,16 @@ export interface UseDualAgentReturn {
   paused: boolean;
   setPaused: (paused: boolean) => void;
 
+  /**
+   * Notify the server that the engagement state machine transitioned sleep state.
+   * Logged to activity_logs so the Insurance Bridge module can subtract sleep
+   * windows from RTM service-time totals.
+   */
+  notifySleepStateChange: (
+    state: "hibernation" | "waking" | "awake" | "resting" | "asleep",
+    source: "ai" | "system" | "user",
+  ) => void;
+
   // Guessing mode
   /** True when the AI is in guessing mode (narrowing down user's thought) */
   guessingMode?: boolean;

@@ -988,6 +988,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
   }, [activeApp, wsSend]);
 
+  /**
+   * Notify the server when the engagement state machine transitions sleep state.
+   * Server logs this to activity_logs so the Insurance Bridge module can subtract
+   * sleep windows from RTM service-time totals.
+   */
+  const notifySleepStateChange = useCallback((
+    state: "hibernation" | "waking" | "awake" | "resting" | "asleep",
+    source: "ai" | "system" | "user",
+  ) => {
+    wsSend({ type: "client_sleep_state_change", state, source });
+  }, [wsSend]);
+
   /** Client-initiated app launch (e.g. from an AAC board button). */
   const launchApp = useCallback((appId: string, appData?: any) => {
     setActiveApp({ appId, appData });
@@ -1121,6 +1133,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Pause state
     paused,
     setPaused,
+
+    // Sleep state — notify server of engagement-machine transitions
+    notifySleepStateChange,
 
     // Guessing mode
     guessingMode,

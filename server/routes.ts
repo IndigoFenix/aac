@@ -66,6 +66,7 @@ import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
+import { insuranceBridgeController } from "./controllers/insuranceBridgeController";
 import { identityController } from "./controllers/identityController";
 import { studentErasureController } from "./controllers/studentErasureController";
 
@@ -1614,6 +1615,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Activity logs (system admin)
   app.get("/api/admin/activity-logs", requireAuth, requireSystemAdmin, (req, res) =>
     activityLogController.getLogs(req, res)
+  );
+
+  // Insurance Bridge — RTM rollup. Member-of-institute + insuranceBridgeEnabled
+  // permission checked inside the controller.
+  app.get("/api/insurance/rtm", requireAuth, (req, res) =>
+    insuranceBridgeController.getRtm(req, res)
+  );
+
+  // Insurance Bridge — clinician review-time rollup (98979 / 98980).
+  app.get("/api/insurance/clinician-time", requireAuth, (req, res) =>
+    insuranceBridgeController.getClinicianTime(req, res)
+  );
+
+  // Insurance Bridge — curated ICD-10 search.
+  app.get("/api/insurance/icd10", requireAuth, (req, res) =>
+    insuranceBridgeController.searchIcd(req, res)
+  );
+
+  // Insurance Bridge — Letters of Medical Necessity. Owning-institute scoping
+  // + insuranceBridgeEnabled checked in the controller.
+  app.get("/api/insurance/lmn", requireAuth, (req, res) =>
+    insuranceBridgeController.listLmns(req, res)
+  );
+  app.post("/api/insurance/lmn", requireAuth, (req, res) =>
+    insuranceBridgeController.createLmn(req, res)
+  );
+  app.get("/api/insurance/lmn/:id", requireAuth, (req, res) =>
+    insuranceBridgeController.getLmn(req, res)
+  );
+  app.patch("/api/insurance/lmn/:id", requireAuth, (req, res) =>
+    insuranceBridgeController.updateLmn(req, res)
+  );
+  app.post("/api/insurance/lmn/:id/finalize", requireAuth, (req, res) =>
+    insuranceBridgeController.finalizeLmn(req, res)
+  );
+
+  // Insurance Bridge — clinician activity heartbeats. No permission gate
+  // (every clinician's activity is welcome data); the rollup endpoint is
+  // what's gated on insuranceBridgeEnabled.
+  app.post("/api/insurance/activity/heartbeat", requireAuth, (req, res) =>
+    insuranceBridgeController.heartbeat(req, res)
+  );
+  app.post("/api/insurance/activity/close", requireAuth, (req, res) =>
+    insuranceBridgeController.closeActivity(req, res)
   );
 
   // Deep analyses (system admin) — viewer across all students

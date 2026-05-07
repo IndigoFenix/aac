@@ -11,6 +11,9 @@ import { DocuSLPPanel } from '@/features/DocuSLPPanel';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useStudent } from '@/hooks/useStudent';
+import { useInstitute } from '@/hooks/useInstitute';
+import { useClinicianActivityTracker } from '@/hooks/useClinicianActivityTracker';
 import { cn } from '@/lib/utils';
 import { OverviewPanel } from '@/features/OverviewPanel';
 import { StudentsPanel } from '@/features/StudentsPanel';
@@ -26,6 +29,7 @@ import { CalendarPanel } from '@/features/CalendarPanel';
 import { UserChatPanel } from '@/features/userChat/UserChatPanel';
 import { DeepAnalysisPanel } from '@/features/DeepAnalysisPanel';
 import { SharesPanel } from '@/features/SharesPanel';
+import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -44,6 +48,17 @@ export function MainLayout() {
 
   const { isRTL, t } = useLanguage();
   const isMobile = useIsMobile();
+  const { student } = useStudent();
+  const { currentInstitute, currentPermissions } = useInstitute();
+
+  // Insurance Bridge — clinician activity tracker. Only mounts when the
+  // institute has the module enabled, to avoid heartbeat traffic for
+  // licenses that won't use it.
+  useClinicianActivityTracker({
+    enabled: !!currentPermissions?.insuranceBridgeEnabled,
+    studentId: student?.id ?? null,
+    instituteId: currentInstitute?.id ?? null,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -154,6 +169,8 @@ export function MainLayout() {
         return <DeepAnalysisPanel isOpen={isPanelOpen} />;
       case 'shares':
         return <SharesPanel isOpen={isPanelOpen} />;
+      case 'insuranceBridge':
+        return <InsuranceBridgePanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

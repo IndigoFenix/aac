@@ -701,6 +701,34 @@
       "when": 1778144356187,
       "tag": "0099_outstanding_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1778151430139,
+      "tag": "0100_lovely_trish_tilby",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1778156948042,
+      "tag": "0101_white_miss_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1778160939822,
+      "tag": "0102_big_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1778162933230,
+      "tag": "0103_sleepy_black_crow",
+      "breakpoints": true
     }
   ]
 }

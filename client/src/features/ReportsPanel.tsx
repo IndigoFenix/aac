@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useChat } from '@/hooks/useChat';
 import { useInstitute } from '@/hooks/useInstitute';
+import { IcdCodePicker } from '@/components/insurance/IcdCodePicker';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 
@@ -1250,7 +1251,12 @@ interface MedicalRecordFormProps {
 
 function MedicalRecordForm({ record, onSave, onClose, isEditable, isSaving }: MedicalRecordFormProps) {
   const { t } = useLanguage();
-  
+  const { currentPermissions } = useInstitute();
+  const insuranceEnabled = !!currentPermissions?.insuranceBridgeEnabled;
+  const billingRegime = (currentPermissions?.billingRegime as
+    | import('@shared/license-permissions').BillingRegime
+    | undefined) ?? 'none';
+
   const [primaryDiagnosis, setPrimaryDiagnosis] = useState(record.primaryDiagnosis || '');
   const [primaryDiagnosisCode, setPrimaryDiagnosisCode] = useState(record.primaryDiagnosisCode || '');
   const [coMorbidities, setCoMorbidities] = useState<string[]>(getArrayField(record.coMorbidities));
@@ -1291,13 +1297,23 @@ function MedicalRecordForm({ record, onSave, onClose, isEditable, isSaving }: Me
         </div>
         <div className="space-y-2">
           <Label htmlFor="primaryDiagnosisCode">{t('reports.medical.primaryDiagnosisCode')}</Label>
-          <Input
-            id="primaryDiagnosisCode"
-            value={primaryDiagnosisCode}
-            onChange={(e) => setPrimaryDiagnosisCode(e.target.value)}
-            placeholder="ICD-10"
-            disabled={!isEditable}
-          />
+          {insuranceEnabled ? (
+            <IcdCodePicker
+              value={primaryDiagnosisCode}
+              onChange={setPrimaryDiagnosisCode}
+              regime={billingRegime}
+              disabled={!isEditable}
+              testId="medical-primary-diagnosis-code"
+            />
+          ) : (
+            <Input
+              id="primaryDiagnosisCode"
+              value={primaryDiagnosisCode}
+              onChange={(e) => setPrimaryDiagnosisCode(e.target.value)}
+              placeholder="ICD-10"
+              disabled={!isEditable}
+            />
+          )}
         </div>
       </div>
 
