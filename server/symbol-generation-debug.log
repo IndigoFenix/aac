@@ -8737,3 +8737,45 @@
 [2026-05-11T08:35:34.028Z] [queueGeneration] Queuing 1 keys: two_people_talking (hasCallback=true)
 [2026-05-11T08:35:34.199Z] [processQueue] Generating "two_people_talking"...
 [2026-05-11T08:35:36.410Z] [processQueue] Failed "two_people_talking": 400 Billing hard limit has been reached.
+[2026-05-11T08:55:02.345Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-11T08:55:02.347Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-11T08:55:13.405Z] [resolveImageKeys] Resolving 6 keys: person_playing_video_game, person_eating, person_outside, person_thinking, person_listening_to_music, person_drawing (format=internal, useUnapproved=true)
+[2026-05-11T08:55:13.631Z] [resolveImageKeys] Resolved "person_playing_video_game" → __SYMBOL__:efb45e18-98b1-4f13-89fc-4692bec43551
+[2026-05-11T08:55:13.801Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-11T08:55:13.981Z] [resolveImageKeys] Resolved "person_outside" → __SYMBOL__:363e74ca-6212-4385-b8d7-be8117c14347
+[2026-05-11T08:55:14.157Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-11T08:55:14.337Z] [resolveImageKeys] Resolved "person_listening_to_music" → __SYMBOL__:8ecf9a0c-61c6-49d1-a37f-efbac28ec4e2
+[2026-05-11T08:55:14.505Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:172bd2e4-58b9-4d0a-ace9-362b3993a8de
+[2026-05-11T08:55:14.506Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-05-11T09:07:52.162Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-11T09:07:52.185Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-11T09:07:55.767Z] [resolveImageKeys] Resolving 1 keys: person_avatar (format=internal, useUnapproved=true)
+[2026-05-11T09:07:56.036Z] [resolveImageKeys] No symbol found for "person_avatar"
+[2026-05-11T09:07:56.038Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_avatar
+[2026-05-11T09:07:56.041Z] [queueGeneration] Queuing 1 keys: person_avatar (hasCallback=true)
+[2026-05-11T09:07:56.223Z] [processQueue] Generating "person_avatar"...
+[2026-05-11T09:08:08.882Z] [processQueue] Failed "person_avatar": 400 Billing hard limit has been reached.
+[2026-05-11T09:08:13.028Z] [resolveImageKeys] Resolving 5 keys: boy_eating_cereal, boy_playing_video_game, person_reading, boy_watching_tv, person_walking_outside (format=internal, useUnapproved=true)
+[2026-05-11T09:08:15.027Z] [resolveImageKeys] No symbol found for "boy_eating_cereal"
+[2026-05-11T09:08:15.997Z] [resolveImageKeys] Resolved "boy_playing_video_game" → __SYMBOL__:133e42c2-9def-4292-b605-8e48aae22f8e
+[2026-05-11T09:08:16.322Z] [resolveImageKeys] Resolved "person_reading" → __SYMBOL__:fe7e7cc3-ccf8-4031-a125-9f037d0054fc
+[2026-05-11T09:08:16.483Z] [resolveImageKeys] No symbol found for "boy_watching_tv"
+[2026-05-11T09:08:16.657Z] [resolveImageKeys] Resolved "person_walking_outside" → __SYMBOL__:f55558c4-f921-4119-9e19-20024fdccaf7
+[2026-05-11T09:08:16.658Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: boy_eating_cereal, boy_watching_tv
+[2026-05-11T09:08:16.659Z] [queueGeneration] Queuing 2 keys: boy_eating_cereal, boy_watching_tv (hasCallback=true)
+[2026-05-11T09:08:16.838Z] [processQueue] Generating "boy_watching_tv"...
+[2026-05-11T09:08:21.534Z] [processQueue] Failed "boy_watching_tv": 400 Billing hard limit has been reached.
+[2026-05-11T09:08:21.694Z] [processQueue] Generating "boy_eating_cereal"...
+[2026-05-11T09:08:24.897Z] [processQueue] Failed "boy_eating_cereal": 400 Billing hard limit has been reached.
+[2026-05-11T09:08:46.278Z] [resolveImageKeys] Resolving 5 keys: boy_eating_cereal, boy_playing_video_game, person_reading, boy_watching_tv, person_walking_outside (format=internal, useUnapproved=true)
+[2026-05-11T09:08:47.046Z] [resolveImageKeys] No symbol found for "boy_eating_cereal"
+[2026-05-11T09:08:47.229Z] [resolveImageKeys] Resolved "boy_playing_video_game" → __SYMBOL__:133e42c2-9def-4292-b605-8e48aae22f8e
+[2026-05-11T09:08:47.647Z] [resolveImageKeys] Resolved "person_reading" → __SYMBOL__:fe7e7cc3-ccf8-4031-a125-9f037d0054fc
+[2026-05-11T09:08:47.888Z] [resolveImageKeys] No symbol found for "boy_watching_tv"
+[2026-05-11T09:08:48.052Z] [resolveImageKeys] Resolved "person_walking_outside" → __SYMBOL__:f55558c4-f921-4119-9e19-20024fdccaf7
+[2026-05-11T09:08:48.054Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: boy_eating_cereal, boy_watching_tv
+[2026-05-11T09:08:48.067Z] [queueGeneration] Queuing 2 keys: boy_eating_cereal, boy_watching_tv (hasCallback=true)
+[2026-05-11T09:08:48.231Z] [processQueue] Generating "boy_watching_tv"...
+[2026-05-11T09:08:50.484Z] [processQueue] Failed "boy_watching_tv": 400 Billing hard limit has been reached.
+[2026-05-11T09:08:50.644Z] [processQueue] Generating "boy_eating_cereal"...
+[2026-05-11T09:08:53.177Z] [processQueue] Failed "boy_eating_cereal": 400 Billing hard limit has been reached.

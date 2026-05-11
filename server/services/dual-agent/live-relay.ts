@@ -426,6 +426,12 @@ export class LiveRelay {
   // transcript so the model can't loop on it.
   private autoContinuationPending = false;
 
+  // Set whenever a button press is sent to the model, cleared on the next
+  // handleTurnComplete. Auto-continuation uses this as a trigger condition:
+  // if the model received a button press and produced no audio, we nudge it
+  // once to actually speak.
+  private lastTurnHadButtonPress = false;
+
   // The authenticated user driving this WebSocket. Established at upgrade time
   // by setupLiveWebSocket; trusted as the source of truth for userId. Any
   // userId in the client's `initialize` message is ignored.
@@ -934,6 +940,7 @@ export class LiveRelay {
           const exitInstruction = msg.instruction
             ? `[BUTTON PRESS] ${msg.label}\n\n(${msg.instruction})`
             : `[BUTTON PRESS] ${msg.label}`;
+          this.lastTurnHadButtonPress = true;
           this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
         }
@@ -1499,6 +1506,7 @@ The user pressed "More" — they can't find the button they need on the current 
     //
     // Track the prompt so we can retry if proactiveAudio swallows the turn.
     this.pendingRetryPrompt = prompt;
+    this.lastTurnHadButtonPress = true;
     this.provider!.sendMessage(prompt, "user", true, { interrupt });
 
     // Stream student voice TTS in parallel
@@ -1589,24 +1597,24 @@ The user pressed "More" — they can't find the button they need on the current 
     // can take 500ms+ for symbol lookups), the model times out and completes
     // its turn with zero audio output.
     //
-    // DIAGNOSTIC (revertible): switched from sendToolResponseAsContent
-    // (sendClientContent + turnComplete=false) back to sendToolResponse
-    // (protocol-native functionResponse path). The "As Content" workaround
-    // was added in April-2026 to avoid duplicate-generation when SILENT
-    // scheduling is ignored for BLOCKING tools on Vertex. With the upgraded
-    // model, the workaround appears to leave the model in a half-finished
-    // state — tool-only generations end with no audio and there's no clear
-    // signal that the loop has closed. Trying the native path again to see
-    // if (a) duplicate generation still happens on the upgraded model and
-    // (b) responsiveness improves with proper protocol-level closure.
+    // Using sendToolResponse (protocol-native path) — verified 2026-05-11
+    // that this is required for the upgraded model to actually generate
+    // audio after tool calls. The previous sendToolResponseAsContent
+    // workaround broke responsiveness on the upgraded native-audio model.
     //
-    // TO REVERT: change back to sendToolResponseAsContent.
+    // scheduling: "SILENT" — request that this functionResponse NOT trigger
+    // a new generation. Per project memory, on older model versions this was
+    // silently ignored for BLOCKING tools (and all tools are BLOCKING on
+    // Vertex because NON_BLOCKING is rejected), so every tool response
+    // triggered a duplicate turn. Re-trying on the upgraded model in case
+    // server-side behavior changed.
     if (this.provider) {
       this.provider.sendToolResponse(
         calls.map(c => ({
           id: c.id,
           name: c.name || "unknown",
           response: { output: "ok" },
+          scheduling: "SILENT" as const,
         })),
       );
     }
@@ -1861,6 +1869,28 @@ The user pressed "More" — they can't find the button they need on the current 
         // rebuild_board ALWAYS replaces the main board (max 8 buttons). If a custom
         // board is currently loaded, it's unloaded first. The side panel (context
         // sidebar) is separate and managed only by add_context_button.
+
+        // Optional 'response' parameter — the model's declaration of what
+        // it intends to say aloud, alongside this board update. NOT routed
+        // through TTS; the model still produces native audio for the actual
+        // speech. Writing the response text in the tool call is meant to
+        // help the model commit to producing the audio (the function-call
+        // pathway is more reliable on this model than audio output alone).
+        // The text is logged for the monitor agent and shows up in the UI.
+        const responseText = extractStringArg(args, "response").trim();
+        if (responseText) {
+          // Recorded as INTENDED speech, NOT actual speech. We don't add it
+          // to speakText (which tracks actual audio output via
+          // outputTranscription) — the auto-continuation logic uses the
+          // gap between intended speech and produced audio to decide
+          // whether to nudge.
+          this.turnAccum.rebuildBoardIntendedSpeech = responseText;
+          logLiveSession("REBUILD_BOARD response param", responseText);
+          // Surface as text in the UI so the user can see what the AI
+          // intended to say even if native audio failed.
+          this.send({ type: "text", data: responseText });
+        }
+
         const wasPrebuiltLoaded = !!state?.loadedBoardId;
         const maxSlots = 8;
         const buttons = toolArgsToButtons(args.buttons).slice(0, maxSlots);
@@ -2401,6 +2431,13 @@ The user pressed "More" — they can't find the button they need on the current 
     const wasAutoContinuationPending = this.autoContinuationPending;
     this.autoContinuationPending = false;
 
+    // Same snapshot-and-clear pattern for the button-press flag. If this turn
+    // was a response to a button press, the snapshot is true; the flag is
+    // cleared so subsequent turns (frame_grids, etc.) don't false-trigger
+    // the nudge.
+    const wasButtonPressTurn = this.lastTurnHadButtonPress;
+    this.lastTurnHadButtonPress = false;
+
     // If we were waiting for a debug-introspection response (the model calls
     // debug_message() to tell us what it tried), capture it and retry.
     if (this.awaitingDebugResponse) {
@@ -2563,63 +2600,70 @@ The user pressed "More" — they can't find the button they need on the current 
       return;
     }
 
-    // Auto-continuation: when the model transcribes the student speaking but
-    // emits no audio reply, nudge it once to actually respond. This works
-    // around an architectural quirk — sendToolResponseAsContent uses
-    // turnComplete:false (to avoid Vertex's duplication bug), which means the
-    // model's tool-only generations end the turn without ever producing audio.
-    //
-    // Only fires when:
-    //   1. We didn't already auto-continue on the previous turn (one retry max)
-    //   2. interactionMode === "interact" (don't speak in standby/assist)
-    //   3. transcript() was called this turn for the identified student
-    //      (skip background voices and unknown speakers)
-    //   4. No audio was produced
-    //   5. The model didn't explicitly call stay_silent — that's the model's
-    //      "I intentionally chose not to respond" signal and we honor it.
+    // Auto-continuation: when the model "should have spoken" but didn't,
+    // nudge it once. Two trigger conditions:
+    //   (a) transcript() called for the identified student + no audio
+    //   (b) button press was sent + no audio
+    // Plus the always-on guards:
+    //   - We didn't already auto-continue on the previous turn (one retry max)
+    //   - interactionMode === "interact"
+    //   - The model didn't explicitly call stay_silent
+    const noAudioThisTurn =
+      this.directAudioChunks.length === 0 &&
+      this.turnAccum.speakText.trim().length === 0;
+
+    const studentName =
+      this.sessionCache?.monitorAgent.getStudent?.()?.name?.trim() || "";
+    const speaker = (this.turnAccum.transcriptSpeaker || "").trim();
+    const studentFirstName = studentName.split(/\s+/)[0] || "";
+    const speakerIsStudent =
+      !!studentFirstName &&
+      speaker.toLowerCase().includes(studentFirstName.toLowerCase());
+
+    const transcriptTrigger =
+      this.turnAccum.transcriptText.trim().length > 0 && speakerIsStudent;
+    const buttonPressTrigger = wasButtonPressTurn;
+
     if (
       !wasAutoContinuationPending &&
       this.interactionMode === "interact" &&
-      this.directAudioChunks.length === 0 &&
-      this.turnAccum.speakText.trim().length === 0 &&
-      this.turnAccum.transcriptText.trim().length > 0 &&
+      noAudioThisTurn &&
       !this.turnAccum.staySilentReason &&
-      this.provider
+      this.provider &&
+      (transcriptTrigger || buttonPressTrigger)
     ) {
-      const studentName =
-        this.sessionCache?.monitorAgent.getStudent?.()?.name?.trim() || "";
-      const speaker = (this.turnAccum.transcriptSpeaker || "").trim();
-      const studentFirstName = studentName.split(/\s+/)[0] || "";
-      const speakerIsStudent =
-        !!studentFirstName &&
-        speaker.toLowerCase().includes(studentFirstName.toLowerCase());
+      const intent = this.turnAccum.rebuildBoardIntendedSpeech;
+      const reason = buttonPressTrigger
+        ? (intent
+          ? `button press, model declared intent "${intent.substring(0, 80)}" but did not speak it`
+          : `button press, model produced no audio`)
+        : `transcript=${JSON.stringify(this.turnAccum.transcriptText.trim())} speaker=${speaker}`;
+      logLiveSession("AUTO_CONTINUATION", `${reason} — re-prompting`);
 
-      if (speakerIsStudent) {
-        const transcribedText = this.turnAccum.transcriptText.trim();
-        logLiveSession(
-          "AUTO_CONTINUATION",
-          `transcript=${JSON.stringify(transcribedText)} speaker=${speaker} — no audio reply, re-prompting`,
-        );
-        // Don't include the verbatim transcribed text in the prompt — the
-        // native-audio model can latch onto it and echo it back in the
-        // student's voice. Keep the nudge abstract. Bias toward responding:
-        // the model defaults too readily to stay_silent when offered both
-        // options as parallel choices, so we frame stay_silent as the
-        // exception requiring positive evidence.
-        const continuePrompt = `[continue] You transcribed the student's speech but did not respond. Speak your reply now in your own voice. Do not repeat their words or imitate their voice.`;
-        // Reset turn state so the next TURN_COMPLETE sees a clean accumulator
-        // and can't retrigger this branch unless the model transcribes anew.
-        this.turnAccum = createEmptyAccumulator();
-        if (this.directAudioFlushTimer) {
-          clearTimeout(this.directAudioFlushTimer);
-          this.directAudioFlushTimer = null;
-        }
-        this.directAudioChunks = [];
-        this.autoContinuationPending = true;
-        this.setState("awaiting_turn");
-        this.provider.sendMessage(continuePrompt, "user");
-        return;
+      // Prompt is tailored to the trigger. For button-press silence, we
+      // can refer to the model's own declared intent (if it called
+      // rebuild_board with a response param) — that's strong steering.
+      let continuePrompt: string;
+      if (buttonPressTrigger && intent) {
+        continuePrompt = `[continue] You declared you would say "${intent}" but didn't speak it aloud. Say it now in your own voice.`;
+      } else if (buttonPressTrigger) {
+        continuePrompt = `[continue] The user pressed a button but you didn't respond aloud. Respond now in your own voice.`;
+      } else {
+        // transcript trigger
+        continuePrompt = `[continue] You transcribed the student's speech but did not respond. Speak your reply now in your own voice. Do not repeat their words or imitate their voice.`;
       }
+      // Reset turn state so the next TURN_COMPLETE sees a clean accumulator
+      // and can't retrigger this branch unless the model transcribes anew.
+      this.turnAccum = createEmptyAccumulator();
+      if (this.directAudioFlushTimer) {
+        clearTimeout(this.directAudioFlushTimer);
+        this.directAudioFlushTimer = null;
+      }
+      this.directAudioChunks = [];
+      this.autoContinuationPending = true;
+      this.setState("awaiting_turn");
+      this.provider.sendMessage(continuePrompt, "user");
+      return;
     }
 
     this.setState("processing_turn");

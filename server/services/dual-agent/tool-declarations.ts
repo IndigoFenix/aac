@@ -165,11 +165,19 @@ function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclara
 function buildRebuildBoardTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "rebuild_board",
-    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts. Speak your verbal reply FIRST in the same turn, THEN call rebuild_board() with new buttons that follow the conversation. If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same imageKey more than once on one board.`,
+    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts.
+
+The optional 'response' parameter is where you DECLARE what you are saying aloud in this same turn. You still speak the words yourself via your normal voice output — the parameter is your written commitment to that speech, not a substitute for it. Writing it here helps you actually produce the audio.
+
+If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same imageKey more than once on one board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
+        response: {
+          type: "string",
+          description: "Optional. What you are saying aloud in this turn. Speak the same words via your voice — this parameter is a declaration of your intent, not a TTS source. Useful for [BUTTON PRESS] responses (e.g. for 'I want to play' → response: 'Sure! What would you like to play with?'). The system logs this for monitoring and displays it as text in the UI alongside your spoken audio.",
+        },
         buttons: { type: "string", description: BUTTON_FORMAT_REBUILD },
       },
       required: ["buttons"],

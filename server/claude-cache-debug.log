@@ -37368,3 +37368,69 @@ USAGE: {"input_tokens":1109,"cache_creation_input_tokens":11032,"cache_read_inpu
 }
 ────────────────────────────────────────────────────────────────────────────────
 USAGE: {"input_tokens":1292,"cache_creation_input_tokens":11024,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11024,"ephemeral_1h_input_tokens":0},"output_tokens":168,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-11T09:08:53.484Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Greet the student if visible; greet a non-student briefly as a visitor (don't address them as the student); stay silent if no one is detected. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nUSER: [BUTTON PRESS] My Day\nASSISTANT: Okay, you want to talk about your day. Which part of the day are you thinking about?\nUSER: [BUTTON PRESS] Morning\nASSISTANT: You want to talk about this morning. What did you do?\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────

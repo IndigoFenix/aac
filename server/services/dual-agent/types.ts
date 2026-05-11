@@ -236,6 +236,11 @@ export interface TurnToolAccumulator {
    *  auto-continuation re-prompt — silence was an explicit decision, not a
    *  missed turn. */
   staySilentReason: string | null;
+  /** Set when the model passed a 'response' arg to rebuild_board() — the
+   *  model's written declaration of what it was saying aloud. Used by the
+   *  silence-recovery logic to detect "model wrote its intent but didn't
+   *  produce native audio" and nudge it once. */
+  rebuildBoardIntendedSpeech: string | null;
 }
 
 export function createEmptyAccumulator(): TurnToolAccumulator {
@@ -259,6 +264,7 @@ export function createEmptyAccumulator(): TurnToolAccumulator {
     boardRemoveLabels: [],
     emote: null,
     staySilentReason: null,
+    rebuildBoardIntendedSpeech: null,
   };
 }
 
