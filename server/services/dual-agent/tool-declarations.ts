@@ -477,9 +477,12 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
 
   // Board management
   declarations.push(buildAddContextButtonTool(config));
-  declarations.push(buildAddButtonsTool(config));
-  declarations.push(buildRemoveButtonsTool(config));
   declarations.push(buildRebuildBoardTool(config));
+
+  // Remove the add and remove buttons tools - rarely used anyway, the context buttons are better
+
+  // declarations.push(buildAddButtonsTool(config));
+  // declarations.push(buildRemoveButtonsTool(config));
 
   if (config.availableBoards.length > 0) {
     declarations.push(buildSetBoardTool(config));
