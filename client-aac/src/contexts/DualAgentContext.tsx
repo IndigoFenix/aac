@@ -41,10 +41,10 @@ interface DualAgentContextType {
   currentBoard: ParsedBoardData | null;
   contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>;
 
-  // Interaction mode
-  interactionMode: 'interact' | 'silent';
-  setInteractionMode: (mode: 'interact' | 'silent') => void;
-  lastModeChange: { mode: 'interact' | 'assist' | 'silent' | 'standby'; reason?: string; source: 'ai' | 'user'; at: number } | null;
+  // User-controlled mute state (cave click — AI cannot toggle this)
+  muteState: 'unmuted' | 'muted';
+  setMuteState: (state: 'unmuted' | 'muted') => void;
+  lastModeChange: { mode: 'interact' | 'assist' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -706,8 +706,8 @@ function ProviderShell({
     currentBoard,
     contextButtons,
 
-    interactionMode: agent.interactionMode,
-    setInteractionMode: agent.setInteractionMode,
+    muteState: agent.muteState,
+    setMuteState: agent.setMuteState,
     lastModeChange: agent.lastModeChange,
 
     responseMode: agent.responseMode,

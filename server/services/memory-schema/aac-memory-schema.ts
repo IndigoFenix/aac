@@ -46,7 +46,7 @@ export function buildInteractiveAgentPrompt(params: {
   persona: string;
   language?: string;
   memoryContext?: string;
-  mode: 'interact' | 'silent';
+  muteState: 'unmuted' | 'muted';
   studentAge?: string;
   studentGender?: string;
   studentDiagnosis?: string;
@@ -88,7 +88,7 @@ export function buildInteractiveAgentPrompt(params: {
   }
 
   const {
-    studentName, persona, language, memoryContext, mode,
+    studentName, persona, language, memoryContext, muteState,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
@@ -120,9 +120,9 @@ export function buildInteractiveAgentPrompt(params: {
 Button presses are voiced automatically by a separate TTS in the student's own voice — do NOT transcribe those.`
     : `You communicate ONLY through tools. Never produce audio directly — your audio output is discarded. All speech goes through speak(), voiced by external TTS.`;
 
-  const isSilent = mode === 'silent';
-  const silentOverride = isSilent
-    ? `\nSILENT MODE: You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.`
+  const isMuted = muteState === 'muted';
+  const muteOverride = isMuted
+    ? `\nMUTED: The user has muted you (cave clicked). You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate. You cannot unmute yourself — only the user can, by tapping the cave.`
     : '';
 
   const speechModality = useDirectAudio ? 'spoken dialogue' : 'speak() text';
@@ -136,7 +136,7 @@ Language: ${language || 'en'}. All board labels and ${speechModality} use this l
 </role>
 
 <communication>
-${commRules}${silentOverride}
+${commRules}${muteOverride}
 
 NEVER produce text or audio that begins with "[note]", "[thinking]", or any similar bracketed marker — anything you emit reaches the user, regardless of label.
 
@@ -306,7 +306,9 @@ Format: label|icon|imageKey|sentence
 - imageKey: lowercase_with_underscores describing a concrete visual.
 - sentence: natural first-person phrase.
 
-Example: "Water|💧|person_drinking_water|I want water" — imageKey must be unambiguous; the user may not read the label. Don't reuse the same imageKey more than once on one board.
+Example: "Water|💧|person_drinking_water|I want water" — imageKey must be unambiguous; the user may not read the label.
+
+CRITICAL — imageKey uniqueness: Every imageKey on the board MUST be unique. NEVER reuse the same imageKey on two buttons in the same call to add_buttons() or rebuild_board(). Buttons sharing an imageKey resolve to identical images, which makes the board unusable. If two ideas seem visually similar (e.g. "Interests" and "I'm thinking about" both feel like "person_thinking"), force them apart: pick one distinct concrete visual per button (e.g. person_calendar, person_thinking, person_with_lightbulb, person_pointing_at_chart). Before submitting, scan your button list and confirm no imageKey appears twice.
 </button_syntax>`;
 
   if (autoSymbolsEnabled) {
@@ -431,8 +433,8 @@ Sites:`;
   prompt += `
 
 <guessing_mode>
-On [GUESSING MODE]: narrow down what the user wants to say like 20 questions. Start broad (Actions/People/Things/Places/Feelings/Time), then specific options. Mark final guesses with "[GUESS]" prefix. On confirm, exit and rebuild for new context.${isSilent
-  ? ' Silent mode: button-only — let label + image carry the conversation, no spoken output.'
+On [GUESSING MODE]: narrow down what the user wants to say like 20 questions. Start broad (Actions/People/Things/Places/Feelings/Time), then specific options. Mark final guesses with "[GUESS]" prefix. On confirm, exit and rebuild for new context.${isMuted
+  ? ' Muted: button-only — let label + image carry the conversation, no spoken output.'
   : ' Speak each guess aloud as you offer it; voice the confirmed thought before rebuilding.'}
 
 Outside guessing mode: offer an "I'm thinking about|🤔" button if the user seems stuck or repeatedly presses "More".
@@ -505,15 +507,15 @@ That's it. No other rules. Just be a friendly companion who actually talks back.
  */
 export function buildMonitorSystemPrompt(
   student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
-  interactionMode: 'interact' | 'silent' = 'interact',
+  muteState: 'unmuted' | 'muted' = 'unmuted',
   interactivePrompt?: string,
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
 ): string {
   const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
-  const modeNote = interactionMode === 'silent'
-    ? 'The system is in SILENT mode — the Interactive Agent generates utterance-style buttons for the user to speak aloud. It does NOT talk to the user. Track button press patterns and communicative intent.'
-    : 'The system is in INTERACT mode — the Interactive Agent talks directly to your user. You do NOT talk to your user yourself.';
+  const modeNote = muteState === 'muted'
+    ? 'The user has MUTED the Interactive Agent — it generates utterance-style buttons for the user to speak aloud and does NOT talk to the user. Track button press patterns and communicative intent. Only the user can unmute by tapping the cave.'
+    : 'The Interactive Agent is UNMUTED — it talks directly to your user. You do NOT talk to your user yourself.';
 
     let prompt = `
 You are the Monitor Agent in a dual-agent AAC system.

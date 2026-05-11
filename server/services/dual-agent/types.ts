@@ -5,11 +5,12 @@ import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeCh
 import type { LLMProviderKey } from "@shared/llm-options";
 
 /**
- * Interaction mode for the AAC system.
- * - 'interact': AI companion talking TO the user (conversational, short button labels)
- * - 'silent':   AI silently observes, helps user talk to OTHERS (utterance-style buttons, no text/audio)
+ * User-controlled mute state for the AAC system. Toggled only by the user
+ * (cave click); the AI cannot change this on its own.
+ * - 'unmuted': AI companion talks TO the user (conversational, short button labels)
+ * - 'muted':   AI silently observes, helps user talk to OTHERS (utterance-style buttons, no text/audio)
  */
-export type AACInteractionMode = 'interact' | 'silent';
+export type AACMuteState = 'unmuted' | 'muted';
 
 /**
  * Response mode for the AAC system.
@@ -98,8 +99,8 @@ export interface DualAgentSessionState {
   messages: ChatMessage[]; // Main message log (Monitor's view)
   pendingMessages: PendingMessage[]; // Cached while Monitor busy
 
-  // Interaction mode
-  interactionMode: AACInteractionMode;
+  // User-controlled mute state (user-toggled only via cave click)
+  muteState: AACMuteState;
 
   // Board state
   currentBoard?: ParsedBoardData;

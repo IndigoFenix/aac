@@ -223,7 +223,7 @@ export class MinimalLiveRelay {
       case "context_injection":
       case "board_state":
       case "set_paused":
-      case "set_mode":
+      case "set_mute_state":
       case "set_response_mode":
       case "more_options":
       case "app_dismissed":

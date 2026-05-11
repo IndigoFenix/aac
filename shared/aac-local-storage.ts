@@ -35,8 +35,8 @@ export interface AacSessionSnapshot {
     content: string;
     timestamp: number;
   }>;
-  /** Current interaction mode */
-  interactionMode: "interact" | "silent";
+  /** Whether the user has muted the AI (cave click). Mute is user-only — the AI cannot toggle this. */
+  muteState: "unmuted" | "muted";
   /** Current response mode */
   responseMode?: "fast" | "analyze";
   /** Current board state */

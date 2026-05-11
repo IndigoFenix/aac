@@ -12,7 +12,7 @@ import type {
 import { studentRepository, calendarRepository, settingsRepository } from "../../repositories";
 import { calendarService } from "../calendarService";
 import type { StudentWithAacSettings } from "@shared/schema";
-import type { AACInteractionMode, AACAppDefinition } from "./types";
+import type { AACMuteState, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
   buildMonitorSystemPrompt,
@@ -75,7 +75,7 @@ export class MonitorAgent {
    * Initialize a new session and create the Interactive Agent's prompt
    * This is called when starting a new dual-agent session
    */
-  async initializeSession(interactionMode: AACInteractionMode = 'interact', enabledApps: AACAppDefinition[] = []): Promise<{
+  async initializeSession(muteState: AACMuteState = 'unmuted', enabledApps: AACAppDefinition[] = []): Promise<{
     sessionId: string;
     initialContext?: string;
     enhancedPrompt?: string;
@@ -342,7 +342,7 @@ Output ONLY the enhanced prompt between ${enhancedOpen} and ${enhancedClose} tag
   async processPendingMessages(
     pendingMessages: PendingMessage[],
     currentBoard?: ParsedBoardData,
-    interactionMode: AACInteractionMode = 'interact',
+    muteState: AACMuteState = 'unmuted',
     interactivePrompt?: string,
     availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
   ): Promise<MonitorResponse> {
@@ -378,7 +378,7 @@ Output ONLY the enhanced prompt between ${enhancedOpen} and ${enhancedClose} tag
     try {
       // Build monitor prompt for dual mode
       const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt(this.student, interactionMode, interactivePrompt, availableBoards)
+        ? buildMonitorSystemPrompt(this.student, muteState, interactivePrompt, availableBoards)
         : undefined;
 
       // Process through sessionService for memory updates

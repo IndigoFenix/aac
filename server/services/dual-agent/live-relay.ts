@@ -21,7 +21,7 @@ import { parseBoardButtons } from "./interactive-agent";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import type {
-  AACInteractionMode,
+  AACMuteState,
   AACResponseMode,
   DualAgentSessionState,
   TurnToolAccumulator,
@@ -127,6 +127,40 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
   });
 }
 
+/**
+ * When the model violates the "unique imageKey per board" rule and gives two
+ * buttons the same imageKey, both buttons resolve to the identical cached
+ * symbol — the user sees duplicate images. Detect that case and append a
+ * label-derived slug to subsequent duplicates so each routes to its own
+ * symbol slot (and triggers fresh symbol generation for the duplicates).
+ */
+function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons: T[]): T[] {
+  const seen = new Map<string, number>();
+  const collisions: string[] = [];
+  for (const btn of buttons) {
+    if (!btn.imageKey) continue;
+    const key = btn.imageKey;
+    const count = seen.get(key) ?? 0;
+    if (count > 0) {
+      const slug = btn.label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 24) || `dup${count}`;
+      btn.imageKey = `${key}_${slug}`;
+      collisions.push(`${key} → ${btn.imageKey}`);
+    }
+    seen.set(key, count + 1);
+  }
+  if (collisions.length > 0) {
+    logLiveSession(
+      "IMAGEKEY_DEDUP",
+      `Model produced duplicate imageKeys; rewriting: ${collisions.join("; ")}`,
+    );
+  }
+  return buttons;
+}
+
 /** Convert raw PCM buffer (16-bit LE, mono) to a WAV buffer by prepending a 44-byte header */
 function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
   const header = Buffer.alloc(44);
@@ -165,7 +199,7 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 
 /** Messages from client → server */
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
   | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
@@ -176,7 +210,7 @@ export type ClientMessage =
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
   | { type: "board_state"; data: any }
-  | { type: "set_mode"; mode: AACInteractionMode }
+  | { type: "set_mute_state"; muteState: AACMuteState }
   | { type: "set_response_mode"; mode: AACResponseMode }
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string }> }
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
@@ -285,7 +319,7 @@ export class LiveRelay {
   private userId: string | undefined = undefined;
   private sessionId: string | null = null;
   private sessionCache: SessionCache | null = null;
-  private interactionMode: AACInteractionMode = "interact";
+  private muteState: AACMuteState = "unmuted";
   private responseMode: AACResponseMode = "fast";
   private paused = false;
   private debugMode = false;
@@ -655,7 +689,7 @@ export class LiveRelay {
 
         if (!this.hasGreeted) {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
-          const prompt = this.interactionMode === "silent"
+          const prompt = this.muteState === "muted"
             ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
             : `The home board is loaded. This is a session start — greet whoever is present (see <presence> rules) or stay quiet if the device is unattended. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
@@ -972,10 +1006,48 @@ export class LiveRelay {
           break;
         }
 
-        case "set_mode":
-          this.interactionMode = msg.mode;
-          this.provider!.sendContextInjection(`[MODE CHANGE] Interaction mode changed to: ${msg.mode}`);
+        case "set_mute_state": {
+          this.muteState = msg.muteState;
+          // Rebuild the interactive system prompt for the new mode and inject
+          // it as a strong override. The Live API doesn't support changing
+          // systemInstruction mid-session, so we re-deliver the mode rules as
+          // a high-authority context injection.
+          const state = this.sessionCache?.state;
+          const student = this.sessionCache?.monitorAgent?.getStudent?.();
+          if (state && student) {
+            const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+            const persona = state.enhancedPrompt || rawPersona;
+            const computeAge = (bd: string | null | undefined) => {
+              if (!bd) return undefined;
+              const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+              return age > 0 ? String(age) : undefined;
+            };
+            state.interactivePrompt = buildInteractiveAgentPrompt({
+              studentName: student.name,
+              persona,
+              language: student.primaryLanguage || undefined,
+              memoryContext: state.enhancedPrompt ? undefined : state.memoryContext,
+              muteState: this.muteState,
+              studentAge: computeAge(student.birthDate),
+              studentGender: student.gender || undefined,
+              studentDiagnosis: state.cachedDiagnosis || undefined,
+              aiName: student.aacSettings?.aiName || undefined,
+              knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
+              availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
+              cachedSymbols: state.cachedSymbols?.length ? state.cachedSymbols : undefined,
+              enabledApps: APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id)).map(a => ({ id: a.id, name: a.name, description: a.description })),
+              permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
+              permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+              autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+              useDirectAudio: this.useDirectAudio,
+            });
+          }
+          const override = msg.muteState === "muted"
+            ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing utterance-style buttons via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
+            : `[MUTE CHANGE] The user has UNMUTED you. You may now speak() directly with the user again. Greet them.`;
+          this.provider!.sendContextInjection(override);
           break;
+        }
 
         case "set_response_mode":
           this.responseMode = msg.mode;
@@ -1095,7 +1167,7 @@ export class LiveRelay {
     }
 
     this.studentId = msg.studentId;
-    this.interactionMode = msg.interactionMode || "interact";
+    this.muteState = msg.muteState || "unmuted";
     this.responseMode = msg.responseMode || "fast";
     this.debugMode = msg.debugMode || false;
     this.timezone = msg.timezone;
@@ -1134,7 +1206,7 @@ export class LiveRelay {
         msg.studentId,
         msg.userId,
         msg.sessionId,
-        this.interactionMode,
+        this.muteState,
         this.pendingLocalState || undefined,
         this.timezone,
       );
@@ -1250,7 +1322,7 @@ export class LiveRelay {
             persona,
             language: student.primaryLanguage || undefined,
             memoryContext: state.enhancedPrompt ? undefined : state.memoryContext,
-            mode: this.interactionMode as "interact" | "silent",
+            muteState: this.muteState,
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
             studentDiagnosis: state.cachedDiagnosis || undefined,
@@ -1297,7 +1369,7 @@ export class LiveRelay {
         availableCustomApps,
         hasLoadedBoard: !!cached.state.loadedBoardId,
         faceRecognitionActive: (cached.state.cachedContacts?.length || 0) > 0 || this.unknownFaceDescriptors.length > 0,
-        isSilentMode: this.interactionMode === "silent",
+        isMutedMode: this.muteState === "muted",
         maxBoardItems: cached.state.maxBoardItems || 12,
         loadedBoardName: cached.state.loadedBoardData?.name || null,
         currentEmote: cached.state.currentEmote,
@@ -1344,7 +1416,7 @@ export class LiveRelay {
         `Provider: ${providerLabel}`,
         `Model: ${providerConfig.model}`,
         `Response Modality: ${providerConfig.responseModality || "default"}`,
-        `Interaction: ${this.interactionMode}`,
+        `Interaction: ${this.muteState}`,
         `Response: ${this.responseMode}`,
         `DirectAudio: ${this.useDirectAudio}`,
         `Startup: ${state.enhancedPrompt ? "thorough" : "fast"}`,
@@ -1355,7 +1427,7 @@ export class LiveRelay {
       }
 
       // 9. Store greeting for onReady to send
-      const isSilent = this.interactionMode === "silent";
+      const isMuted = this.muteState === "muted";
       const student = cached.monitorAgent.getStudent?.();
       const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
@@ -1368,7 +1440,7 @@ export class LiveRelay {
       const contextScan = ``;
       // Greeting is presence-conditional — student may not be at the device.
       const presenceCheck = ` Greet the student if visible; greet a non-student briefly as a visitor (don't address them as the student); stay silent if no one is detected.`;
-      const greetingPrompt = isSilent
+      const greetingPrompt = isMuted
         ? `Generate 4-12 contextual utterance buttons via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
         ? `Session start. Home board buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Don't change the board until a button is pressed.${imageHint}${personaHint}${contextScan}`
@@ -1415,7 +1487,7 @@ export class LiveRelay {
         provider: providerLabel,
         model: providerConfig.model,
         responseModality: providerConfig.responseModality || "default",
-        interactionMode: this.interactionMode,
+        muteState: this.muteState,
         responseMode: this.responseMode,
         useDirectAudio: this.useDirectAudio,
       });
@@ -1640,7 +1712,7 @@ The user pressed "More" — they can't find the button they need on the current 
   private async handleSingleToolCall(call: ToolCall): Promise<ToolResponse> {
     const name = call.name || "unknown";
     const args = call.args || {};
-    const isSilent = this.interactionMode === "silent";
+    const isMuted = this.muteState === "muted";
     const state = this.sessionCache?.state;
 
     switch (name) {
@@ -1655,7 +1727,7 @@ The user pressed "More" — they can't find the button they need on the current 
         if (!text) {
           logLiveSession("EMPTY TOOL CALL", `speak() got empty text. Raw args: ${JSON.stringify(args)}`);
         }
-        if (text && !isSilent) {
+        if (text && !isMuted) {
           const hasPreGenTts = this.preGenTtsPromise !== null;
           this.send({ type: "text", data: text, noAudioClear: hasPreGenTts || undefined });
         }
@@ -1754,7 +1826,7 @@ The user pressed "More" — they can't find the button they need on the current 
       }
 
       case "add_buttons": {
-        const buttons = toolArgsToButtons(args.buttons);
+        const buttons = dedupeImageKeys(toolArgsToButtons(args.buttons));
         const maxSlots = state?.maxBoardItems || 8;
 
         // When a prebuilt board is loaded, redirect to rebuild_board for the side panel
@@ -1886,14 +1958,20 @@ The user pressed "More" — they can't find the button they need on the current 
           // whether to nudge.
           this.turnAccum.rebuildBoardIntendedSpeech = responseText;
           logLiveSession("REBUILD_BOARD response param", responseText);
-          // Surface as text in the UI so the user can see what the AI
-          // intended to say even if native audio failed.
-          this.send({ type: "text", data: responseText });
+          // NOTE: We deliberately do NOT send the response text to the client
+          // here. The visible header text comes from the model's actual
+          // outputTranscription as it speaks the audio. Emitting it now would
+          // double-print: rebuild_board's response → "X" appended; then the
+          // auto-continuation nudge fires → model speaks → outputTranscription
+          // chunks of "X" appended to the SAME accumulator (no `complete`
+          // event resets the buffer between the two turns). Net result: header
+          // shows "XX". The intended-speech string is kept purely for
+          // auto-continuation steering (see handleTurnComplete).
         }
 
         const wasPrebuiltLoaded = !!state?.loadedBoardId;
         const maxSlots = 8;
-        const buttons = toolArgsToButtons(args.buttons).slice(0, maxSlots);
+        const buttons = dedupeImageKeys(toolArgsToButtons(args.buttons).slice(0, maxSlots));
 
         if (state) {
           state.loadedBoardId = null;
@@ -2216,7 +2294,7 @@ The user pressed "More" — they can't find the button they need on the current 
         }
         logLiveSession("MODE CHANGE (AI)", `→ ${mode} (reason: ${reason})`);
         // "assist" / "standby" are lighter states — AI stays active but less proactive.
-        // Don't change interactionMode (that's user-controlled via cave click).
+        // Don't change muteState (that's user-controlled via cave click).
         // Instead, set the avatar emote and notify the client.
         this.send({ type: "interaction_mode_changed", data: { mode, reason, source: "ai" } });
         return { id: call.id, name, response: { output: `mode set to ${mode}` } };
@@ -2606,7 +2684,7 @@ The user pressed "More" — they can't find the button they need on the current 
     //   (b) button press was sent + no audio
     // Plus the always-on guards:
     //   - We didn't already auto-continue on the previous turn (one retry max)
-    //   - interactionMode === "interact"
+    //   - muteState === "unmuted"
     //   - The model didn't explicitly call stay_silent
     const noAudioThisTurn =
       this.directAudioChunks.length === 0 &&
@@ -2626,7 +2704,7 @@ The user pressed "More" — they can't find the button they need on the current 
 
     if (
       !wasAutoContinuationPending &&
-      this.interactionMode === "interact" &&
+      this.muteState === "unmuted" &&
       noAudioThisTurn &&
       !this.turnAccum.staySilentReason &&
       this.provider &&
@@ -2712,7 +2790,7 @@ The user pressed "More" — they can't find the button they need on the current 
   // -------------------------------------------------------------------------
 
   private async processTurnEnd(): Promise<void> {
-    const isSilent = this.interactionMode === "silent";
+    const isMuted = this.muteState === "muted";
     const state = this.sessionCache?.state;
     const accum = this.turnAccum;
 
@@ -2934,7 +3012,7 @@ The user pressed "More" — they can't find the button they need on the current 
 
     // AI voice: direct audio chunks were already forwarded in real time via onAudioData,
     // so no buffered send needed. For external TTS mode, synthesize now.
-    if (!this.useDirectAudio && fullSpeakText && !isSilent && this.aiVoice) {
+    if (!this.useDirectAudio && fullSpeakText && !isMuted && this.aiVoice) {
       try {
         await this.streamTtsWithTimeout(
           fullSpeakText,
@@ -3168,7 +3246,7 @@ The user pressed "More" — they can't find the button they need on the current 
       parts.push(`Current AAC board buttons (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
     }
 
-    parts.push(`Interaction mode: ${this.interactionMode}`);
+    parts.push(`Interaction mode: ${this.muteState}`);
 
     if (state.currentEmote) {
       parts.push(`Current emotion: ${state.currentEmote}`);
@@ -3261,7 +3339,7 @@ The user pressed "More" — they can't find the button they need on the current 
     const state = this.sessionCache?.state;
     if (!state) return null;
 
-    const isSilent = this.interactionMode === "silent";
+    const isMuted = this.muteState === "muted";
 
     const sRef = "speak()";
     const abRef = "add_buttons()";
@@ -3275,7 +3353,7 @@ The user pressed "More" — they can't find the button they need on the current 
 
     parts.push("Visual checks: Stay silent if nothing important changed. Only report meaningful context changes.");
 
-    if (isSilent) {
+    if (isMuted) {
       parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use board tools.`);
     } else if (this.useDirectAudio) {
       parts.push(`Mode: standard — You speak directly with your voice. Do NOT narrate tool calls.`);
@@ -3459,7 +3537,7 @@ When creating or referencing calendar events, interpret and speak in this local 
         type: "initialize",
         studentId: this.studentId,
         userId: this.userId,
-        interactionMode: this.interactionMode,
+        muteState: this.muteState,
         responseMode: this.responseMode,
         debugMode: this.debugMode,
       });
@@ -3685,7 +3763,7 @@ When creating or referencing calendar events, interpret and speak in this local 
         content: pm.content,
         timestamp: pm.timestamp,
       })),
-      interactionMode: state.interactionMode,
+      muteState: state.muteState,
       responseMode: this.responseMode,
       currentBoard: state.currentBoard || null,
       boardButtonLabels: state.boardButtonLabels,

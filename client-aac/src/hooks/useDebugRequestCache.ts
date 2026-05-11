@@ -12,7 +12,7 @@ export interface CachedRequest {
   hasGestureContext: boolean;
   boardSlotCount: number;
   messagePreview?: string;   // First 80 chars of message text
-  interactionMode?: string;
+  muteState?: string;
   gridFrameCount?: number;   // For detect: how many frames in composite grid
 }
 

@@ -147,10 +147,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
-  // Interaction mode
-  const [interactionMode, setInteractionModeState] = useState<"interact" | "silent">("interact");
-  // Last mode change — set by AI tool calls or user toggle, used to flash an indicator
-  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "silent" | "standby"; reason?: string; source: "ai" | "user"; at: number } | null>(null);
+  // User-controlled mute state (cave toggle — the AI cannot change this)
+  const [muteState, setMuteStateImpl] = useState<"unmuted" | "muted">("unmuted");
+  // Last AI-initiated mode change — used to flash the "AI: <mode>" indicator
+  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "standby"; reason?: string; source: "ai"; at: number } | null>(null);
 
   // Response mode
   const [responseMode, setResponseModeState] = useState<"fast" | "analyze">("fast");
@@ -562,14 +562,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "interaction_mode_changed":
-          // AI changed interaction mode — flash indicator. Only sync the
-          // primary `interactionMode` for "interact" / "silent" — the lighter
-          // "assist" / "standby" states are tracked via lastModeChange and
-          // shouldn't override the user-controlled silent/interact toggle.
-          if (msg.data.mode === "interact" || msg.data.mode === "silent") {
-            setInteractionModeState(msg.data.mode);
+          // AI changed its own behavioral mode (interact / assist / standby).
+          // This NEVER affects the user-controlled muteState — only the cave
+          // tap can mute or unmute. Just flash the indicator.
+          if (msg.data.mode === "interact" || msg.data.mode === "assist" || msg.data.mode === "standby") {
+            setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: "ai", at: Date.now() });
           }
-          setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: msg.data.source, at: Date.now() });
           break;
 
         case "sleep_state_change":
@@ -788,7 +786,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             type: "initialize",
             studentId,
             userId: userRef.current?.user?.id,
-            interactionMode,
+            muteState,
             responseMode,
             debugMode,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -863,7 +861,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       setError("error:CONNECTION_ERROR");
       setIsLoading(false);
     }
-  }, [studentId, interactionMode, responseMode, debugMode, isInitialized, wsSend, handleServerMessage]);
+  }, [studentId, muteState, responseMode, debugMode, isInitialized, wsSend, handleServerMessage]);
 
   // -------------------------------------------------------------------------
   // Actions — send messages over WebSocket
@@ -915,8 +913,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend, audioRecorder]);
 
   const interpretButtons = useCallback(async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
+    // Drop any pending student-voice TTS chunks from a previous button press.
+    // Without this, if the user taps a second button before the first
+    // button's interpretation_audio chunks finish playing, the queued tail
+    // of the previous TTS plays before (or instead of) the new button — the
+    // user hears the wrong sentence for the button they just pressed.
+    // Only clears the "interpret" tag; the AI's "avatar" audio is left alone.
+    audioPlayer.clearByTag("interpret");
     wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
-  }, [wsSend]);
+  }, [wsSend, audioPlayer]);
 
   /**
    * Activity-driven detection: send composite grid + optional audio clip.
@@ -990,11 +995,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "pcm_audio", data: int16Base64 });
   }, [wsSend]);
 
-  // Interaction mode setter — also notify server
-  const setInteractionMode = useCallback((mode: "interact" | "silent") => {
-    setInteractionModeState(mode);
-    setLastModeChange({ mode, source: "user", at: Date.now() });
-    wsSend({ type: "set_mode", mode });
+  // Mute setter — user-only toggle (cave click). Notify server so the live
+  // session can rebuild its system prompt for the new mode.
+  const setMuteState = useCallback((state: "unmuted" | "muted") => {
+    setMuteStateImpl(state);
+    wsSend({ type: "set_mute_state", muteState: state });
   }, [wsSend]);
 
   // Response mode setter — also notify server
@@ -1104,9 +1109,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     audioLevel: audioRecorder.audioLevel,
     recordingDuration: audioRecorder.duration,
 
-    // Interaction mode
-    interactionMode,
-    setInteractionMode,
+    // Mute state
+    muteState,
+    setMuteState,
     lastModeChange,
 
     // Response mode

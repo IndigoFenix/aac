@@ -87,11 +87,11 @@ export interface UseDualAgentReturn {
   audioLevel: number;
   recordingDuration: number;
 
-  // Interaction mode
-  interactionMode: 'interact' | 'silent';
-  setInteractionMode: (mode: 'interact' | 'silent') => void;
-  /** Last mode change — set by AI tool calls or user toggle, used to flash an indicator. */
-  lastModeChange: { mode: 'interact' | 'assist' | 'silent' | 'standby'; reason?: string; source: 'ai' | 'user'; at: number } | null;
+  // User-controlled mute state (cave toggle — the AI cannot change this)
+  muteState: 'unmuted' | 'muted';
+  setMuteState: (state: 'unmuted' | 'muted') => void;
+  /** Last AI-initiated mode change — used to flash the "AI: <mode>" indicator. */
+  lastModeChange: { mode: 'interact' | 'assist' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';

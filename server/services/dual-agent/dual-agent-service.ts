@@ -17,7 +17,7 @@ import { MonitorAgent, createMonitorAgent } from "./monitor-agent";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { getChatProvider } from "../providers/provider-factory";
 import type {
-  AACInteractionMode,
+  AACMuteState,
   DualAgentConfig,
   DualAgentSessionState,
   PendingMessage,
@@ -337,7 +337,7 @@ export class DualAgentService {
     studentId: string,
     userId?: string,
     existingSessionId?: string,
-    interactionMode: AACInteractionMode = 'interact',
+    muteState: AACMuteState = 'unmuted',
     localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
     timezone?: string,
   ): Promise<DualAgentSessionState> {
@@ -373,7 +373,7 @@ export class DualAgentService {
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, interactionMode, timezone);
+    return this.createNewSession(studentId, userId, muteState, timezone);
   }
 
   /**
@@ -382,7 +382,7 @@ export class DualAgentService {
   private async createNewSession(
     studentId: string,
     userId?: string,
-    interactionMode: AACInteractionMode = 'interact',
+    muteState: AACMuteState = 'unmuted',
     timezone?: string,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
@@ -403,7 +403,7 @@ export class DualAgentService {
     // Initialize session - Monitor searches memory and creates base prompt
     const defaultApps = getDefaultEnabledApps();
     const enabledAppDefs = APP_REGISTRY.filter(a => defaultApps.includes(a.id));
-    const initResult = await monitorAgent.initializeSession(interactionMode, enabledAppDefs);
+    const initResult = await monitorAgent.initializeSession(muteState, enabledAppDefs);
 
     // Fetch contacts for prompt context
     let cachedContacts: DualAgentSessionState['cachedContacts'] = [];
@@ -463,7 +463,7 @@ export class DualAgentService {
         persona,
         language: student.primaryLanguage || undefined,
         memoryContext: initResult.enhancedPrompt ? undefined : initResult.initialContext,
-        mode: interactionMode,
+        muteState,
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
         studentDiagnosis: cachedDiagnosis || undefined,
@@ -508,7 +508,7 @@ export class DualAgentService {
       monitorBusy: false,
       messages: [],
       pendingMessages: [],
-      interactionMode,
+      muteState,
       appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
       permittedWebsites,
       permittedYoutubeChannels,
@@ -559,7 +559,7 @@ export class DualAgentService {
     const state = await this.createNewSession(
       studentId,
       userId,
-      localState.interactionMode || 'interact',
+      localState.muteState || 'unmuted',
     );
 
     // Overlay messages and board state from local snapshot
@@ -640,7 +640,7 @@ export class DualAgentService {
         monitorBusySince,
         messages: chatState?.history || [],
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
-        interactionMode: chatState?.interactionMode || 'interact',
+        muteState: (chatState as any)?.muteState || 'unmuted',
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
         permittedWebsites: [], // Populated with aacSettings below
         permittedYoutubeChannels: [], // Populated with aacSettings below
@@ -730,7 +730,7 @@ export class DualAgentService {
           studentName: student.firstName || student.name.split(' ')[0] || "",
           persona: personaPrompt,
           language: student.primaryLanguage || undefined,
-          mode: state.interactionMode,
+          muteState: state.muteState,
           studentAge: computeAge(student.birthDate),
           studentGender: student.gender || undefined,
           studentDiagnosis: state.cachedDiagnosis || undefined,
@@ -793,7 +793,7 @@ export class DualAgentService {
         conversationSummary: "",
         openedTopics: [],
         memoryState: {},
-        interactionMode: state.interactionMode,
+        muteState: state.muteState,
         memoryContext: state.memoryContext,
         enhancedPrompt: state.enhancedPrompt,
       };
@@ -1098,7 +1098,7 @@ export class DualAgentService {
           conversationSummary: dbState?.conversationSummary || "",
           openedTopics: dbState?.openedTopics || [],
           memoryState: dbState?.memoryState || {},
-          interactionMode: state.interactionMode,
+          muteState: state.muteState,
         };
 
         await db
@@ -1131,7 +1131,7 @@ export class DualAgentService {
       // ------------------------------------------------------------------
       const response = await Promise.race([
         monitorAgent.processPendingMessages(
-          pendingSnapshot, board, state.interactionMode, state.interactivePrompt,
+          pendingSnapshot, board, state.muteState, state.interactivePrompt,
           state.availableBoards?.map(b => ({ id: b.id, name: b.name, hint: b.hint, isGenerated: (b as any).isGenerated }))
         ),
         new Promise<never>((_, reject) => {
@@ -1365,7 +1365,7 @@ export class DualAgentService {
         monitorBusy: false,
         messages: [],
         pendingMessages: [],
-        interactionMode: "interact",
+        muteState: "unmuted",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
         onTerminate: args.onTerminate,

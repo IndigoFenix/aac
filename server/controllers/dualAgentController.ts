@@ -41,7 +41,7 @@ export class DualAgentController {
           interactivePrompt: state.interactivePrompt,
           lastMonitorActivity: state.lastMonitorActivity,
           lastInteractiveActivity: state.lastInteractiveActivity,
-          interactionMode: state.interactionMode,
+          muteState: state.muteState,
           messages: state.messages.slice(-50),
           pendingMessages: state.pendingMessages,
           monitorError: state.monitorError || null,

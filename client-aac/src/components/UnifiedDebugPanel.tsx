@@ -817,7 +817,7 @@ export default function UnifiedDebugPanel({
                       {req.gridFrameCount && <span className="text-[9px] text-gray-400">{req.gridFrameCount}f</span>}
                       {expandedRequest === req.id && (
                         <div className="flex-1 text-[10px] text-gray-500 truncate">
-                          {req.messagePreview || `board:${req.boardSlotCount} ${req.interactionMode || ""}`}
+                          {req.messagePreview || `board:${req.boardSlotCount} ${req.muteState || ""}`}
                         </div>
                       )}
                     </div>
@@ -835,9 +835,9 @@ export default function UnifiedDebugPanel({
               isOpen={sections.interactive}
               onClick={() => toggleSection("interactive")}
               badge={
-                sessionData?.interactionMode ? (
-                  <Badge className={`text-[9px] px-1 ${sessionData.interactionMode === "interact" ? "bg-blue-500 text-white" : "bg-orange-500 text-white"}`}>
-                    {sessionData.interactionMode}
+                sessionData?.muteState ? (
+                  <Badge className={`text-[9px] px-1 ${sessionData.muteState === "unmuted" ? "bg-blue-500 text-white" : "bg-orange-500 text-white"}`}>
+                    {sessionData.muteState}
                   </Badge>
                 ) : undefined
               }

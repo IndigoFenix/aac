@@ -24,7 +24,7 @@ export interface ToolDeclarationConfig {
   hasLoadedBoard: boolean;
   faceRecognitionActive: boolean;
   cachedSymbols?: Array<{ id: string; name: string }>;
-  isSilentMode?: boolean;
+  isMutedMode?: boolean;
 
   // Enriched context for detailed tool descriptions
   maxBoardItems?: number;
@@ -44,9 +44,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want water\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. rowSpan/colSpan are optional (default 1). Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want water\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons (including against existing buttons already on the board). If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. rowSpan/colSpan are optional (default 1). Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons. If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -465,7 +465,7 @@ const DEBUG_MESSAGE: FunctionDeclaration = {
 export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   const declarations: FunctionDeclaration[] = [];
 
-  if (!config.isSilentMode && !config.useDirectAudio) {
+  if (!config.isMutedMode && !config.useDirectAudio) {
     declarations.push(buildSpeakTool(config));
   }
 

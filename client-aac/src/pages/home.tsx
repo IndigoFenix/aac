@@ -68,7 +68,7 @@ interface HomeProps {
  * Must be rendered inside DualAgentProvider.
  */
 function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
-  onModeChange: (mode: 'interact' | 'silent') => void;
+  onModeChange: (state: 'unmuted' | 'muted') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
@@ -85,11 +85,11 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onGuessingModeChange?: (active: boolean) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
+  const { muteState, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
 
   useEffect(() => {
-    onModeChange(interactionMode);
-  }, [interactionMode, onModeChange]);
+    onModeChange(muteState);
+  }, [muteState, onModeChange]);
 
   useEffect(() => {
     onInterpretReady((buttons: string[], sentences?: Record<string, string>) => interpretButtons(buttons, sentences));
@@ -333,8 +333,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
   const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');
 
-  // Dual-agent mode bridged from context
-  const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
+  // User-controlled mute state bridged from DualAgentContext
+  const [_muteState, setMuteStateFromCtx] = useState<'unmuted' | 'muted'>('unmuted');
   const [aiSessionActive, setAiSessionActive] = useState(false);
   const [isGuessingMode, setIsGuessingMode] = useState(false);
 
@@ -1598,7 +1598,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           getFaceImage={faceImageCache.getFaceImage}
         >
           <DualAgentBridge
-            onModeChange={setDualAgentMode}
+            onModeChange={setMuteStateFromCtx}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
             onSymbolUpdateChange={setSymbolUpdateData}

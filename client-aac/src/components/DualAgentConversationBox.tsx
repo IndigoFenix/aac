@@ -25,29 +25,7 @@ import {
   Zap,
   ScanSearch,
 } from "lucide-react";
-// Axolotl avatar assets are served as static files from
-// client-aac/public/aac-avatars/axolotl/ — keeps stable filenames in dist
-// (no Vite content hashes) and works for both dev (BASE_URL = "/") and
-// production (BASE_URL = "/aac/").
-const AXOLOTL_BASE = `${import.meta.env.BASE_URL}aac-avatars/axolotl`;
-const avatarHappy = `${AXOLOTL_BASE}/axolotl-happy.png`;
-const avatarSad = `${AXOLOTL_BASE}/axolotl-sad.png`;
-const avatarNeutral = `${AXOLOTL_BASE}/axolotl-neutral.png`;
-const mouthHappy = `${AXOLOTL_BASE}/axolotl-mouth-happy.png`;
-const mouthSad = `${AXOLOTL_BASE}/axolotl-mouth-sad.png`;
-const mouthNeutral = `${AXOLOTL_BASE}/axolotl-mouth-neutral.png`;
-const mouthHappyOpen = `${AXOLOTL_BASE}/axolotl-mouth-happy-open.png`;
-const mouthSadOpen = `${AXOLOTL_BASE}/axolotl-mouth-sad-open.png`;
-const mouthNeutralOpen = `${AXOLOTL_BASE}/axolotl-mouth-neutral-open.png`;
-const avatarSleep = `${AXOLOTL_BASE}/axolotl-sleep.png`;
-const avatarRest = `${AXOLOTL_BASE}/axolotl-rest.png`;
-const caveEmpty = `${AXOLOTL_BASE}/axolotl-cave-empty.png`;
-const caveRest = `${AXOLOTL_BASE}/axolotl-cave-rest.png`;
-const caveSleep = `${AXOLOTL_BASE}/axolotl-cave-sleep.png`;
-const caveDefault = `${AXOLOTL_BASE}/axolotl-cave.png`;
-const avatarError = `${AXOLOTL_BASE}/axolotl-error.png`;
-const avatarGlasses = `${AXOLOTL_BASE}/axolotl-glasses.png`;
-import { motion, AnimatePresence } from "framer-motion";
+import { AacAvatar, AacCave, type EyeState, type EarState } from "@/components/AacAvatar";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
@@ -59,22 +37,10 @@ import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { FaceMirror } from "@/components/FaceMirror";
 
-// Avatar image maps by emotion
-const AVATAR_BODY: Record<string, string> = {
-  happy: avatarHappy,
-  sad: avatarSad,
-  neutral: avatarNeutral,
-};
-const MOUTH_CLOSED: Record<string, string> = {
-  happy: mouthHappy,
-  sad: mouthSad,
-  neutral: mouthNeutral,
-};
-const MOUTH_OPEN: Record<string, string> = {
-  happy: mouthHappyOpen,
-  sad: mouthSadOpen,
-  neutral: mouthNeutralOpen,
-};
+// Avatar variant: currently only "axolotl" is shipped. Assets live in
+// client-aac/public/aac-avatars/<variant>/ — see AacAvatar.tsx for the
+// expected layer filenames.
+const AVATAR_VARIANT = "axolotl";
 
 const MOUTH_OPEN_THRESHOLD = 0.08;
 
@@ -138,8 +104,8 @@ export function DualAgentConversationBox({
     audioLevel,
     recordingDuration,
     transcription,
-    interactionMode,
-    setInteractionMode,
+    muteState,
+    setMuteState,
     lastModeChange,
     videoCaptureEnabled,
     setVideoCaptureEnabled,
@@ -274,7 +240,7 @@ export function DualAgentConversationBox({
     const isEyegaze = dwellMode === 'eyegaze';
     attentiveness?.triggerAlwaysWake(isEyegaze ? 'avatarEyegaze' : 'avatarTap');
 
-    if (interactionMode === 'silent' || !isInitialized) return;
+    if (muteState === 'muted' || !isInitialized) return;
     if (isEyegaze) {
       sendMessage("[system: the user is looking at you]");
     } else if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'touch') {
@@ -282,68 +248,59 @@ export function DualAgentConversationBox({
     } else {
       sendMessage("[system: the user clicked you]");
     }
-  }, [interactionMode, isInitialized, dwellMode, sendMessage, attentiveness]);
+  }, [muteState, isInitialized, dwellMode, sendMessage, attentiveness]);
 
-  // Cave click: toggles sleep mode. Sleeping → wake & greet. Awake → sleep & stop audio.
+  // Cave click: user-only mute toggle. Muted → unmute & greet. Unmuted → mute & stop audio.
   // Either direction is a clear user-initiated engagement event, so it always-wakes
   // the sleep system as well (counts as an avatar tap).
   const handleCaveClick = useCallback(() => {
     attentiveness?.triggerAlwaysWake('avatarTap');
-    if (interactionMode === 'silent') {
-      setInteractionMode('interact');
+    if (muteState === 'muted') {
+      setMuteState('unmuted');
       if (isInitialized) {
-        sendMessage("[system: the device has been switched to interactive mode, greet the user]");
+        sendMessage("[system: the user has unmuted you, greet them]");
       }
     } else {
-      setInteractionMode('silent');
+      setMuteState('muted');
       stopAudio();
     }
-  }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio, attentiveness]);
+  }, [muteState, isInitialized, setMuteState, sendMessage, stopAudio, attentiveness]);
 
   // Determine if avatar should show asleep. There are two paths into the cave:
   // (1) user-toggled silent mode, and (2) no live session — uninitialized or
   // disconnected. In both cases the cave is shown and the avatar body is
   // hidden because there's nothing actively running behind it.
   const noSession = !isInitialized;
-  const isAsleep = interactionMode === 'silent' || noSession;
-  // AI-initiated "assist" mode — less proactive, avatar shows sleep face
-  const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
-  // AI-initiated "standby" mode — student not present, avatar shows resting
+  const isAsleep = muteState === 'muted' || noSession;
+  // AI-initiated "standby" mode — student not present, avatar shows resting eyes.
   const isStandbyMode = lastModeChange?.mode === 'standby' && lastModeChange.source === 'ai';
+  // AI-initiated "assist" mode — less proactive, ears at neutral instead of open.
+  const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
   // Mouth is open when audio is playing and volume exceeds threshold
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
 
-  // Sleep system → sprite mapping. Cave variants are used in Silent Mode;
-  // avatar variants are used in non-Silent Mode. See planning-docs/aac-sleep-system-plan.md.
-  // Standby (AI-determined "no one home") visually maps to the resting indicator.
-  // When there's no live session, force the sleeping variant — the AI is not
-  // running, so the cave/avatar should reflect that, not the last-known sleepState.
+  // Eye state — sleep system + error. When there's no live session, force the
+  // sleeping variant so the cave/avatar reflects reality, not the last-known
+  // sleepState. Standby (AI-determined "no one home") visually maps to resting.
   const sleepState = attentiveness?.sleepState;
   const isSleepingState = noSession || sleepState === 'hibernation' || sleepState === 'asleep';
   const isRestingState = !noSession && (sleepState === 'resting' || sleepState === 'waking' || isStandbyMode);
-  // In Silent Mode the cave is always shown — pick a variant based on the
-  // current sleep/standby state. Default to the closed cave (axolotl-cave).
-  const caveSrc = isSleepingState ? caveSleep : isRestingState ? caveRest : caveDefault;
-  const restOrSleepBody = isSleepingState
-    ? avatarSleep
+  const eyeState: EyeState = error
+    ? 'hurt'
+    : isSleepingState
+    ? 'closed'
     : isRestingState
-    ? avatarRest
-    : null;
+    ? 'rest'
+    : 'open';
+  // Ear state — driven by AI interaction mode. Default to open (the active
+  // interact look) when no AI mode change has been recorded yet.
+  const earState: EarState = isStandbyMode ? 'closed' : isAssistMode ? 'neutral' : 'open';
 
   if (!isVisible) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ y: "-100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "-100%" }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className={`fixed top-0 left-0 right-0 z-50 shadow-lg ${
-          "bg-primary"
-        } text-white`}
-      >
-        <div className="px-4 py-2">
+    <div className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-primary text-white">
+      <div className="px-4 py-2">
           {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
             {/* Cave (sleep toggle) — left of avatar (right in RTL) */}
@@ -351,12 +308,12 @@ export function DualAgentConversationBox({
               data-dwell
               onClick={handleCaveClick}
               className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-              title={isAsleep ? "Wake up (switch to interact mode)" : "Sleep (switch to silent mode)"}
+              title={isAsleep ? "Unmute (tap cave to wake)" : "Mute (tap cave to silence)"}
             >
-              <img
-                src={isAsleep ? caveSrc : caveEmpty}
-                alt={isAsleep ? `Cave (${sleepState ?? 'silent'})` : "Cave (empty)"}
-                className="w-full h-full object-contain"
+              <AacCave
+                avatar={AVATAR_VARIANT}
+                empty={!isAsleep}
+                eyeState={eyeState}
               />
               {/* Mode-change indicator — flashes briefly when AI changes mode */}
               {lastModeChange && lastModeChange.source === "ai" && (Date.now() - lastModeChange.at) < 4000 && (
@@ -380,47 +337,15 @@ export function DualAgentConversationBox({
                 className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
                 title="Tap to get attention"
               >
-                {error ? (
-                  <img
-                    src={avatarError}
-                    alt="Error"
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <img
-                    src={
-                      restOrSleepBody
-                      ?? (isAssistMode && emote === "neutral" ? avatarSleep : (AVATAR_BODY[emote] || AVATAR_BODY.happy))
-                    }
-                    alt={`Avatar (${sleepState ?? emote})`}
-                    className="w-full h-full object-contain"
-                  />
-                )}
-                {!error && (
-                  <img
-                    src={isMouthOpen
-                      ? (MOUTH_OPEN[emote] || MOUTH_OPEN.happy)
-                      : (MOUTH_CLOSED[emote] || MOUTH_CLOSED.happy)
-                    }
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                  />
-                )}
-                {/* Glasses overlay — briefly shown when AI requests a focus frame */}
-                <AnimatePresence>
-                  {focusActive && (
-                    <motion.img
-                      key="focus-glasses"
-                      src={avatarGlasses}
-                      alt=""
-                      initial={{ opacity: 0, scale: 1.3 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.3 }}
-                      className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                    />
-                  )}
-                </AnimatePresence>
+                <AacAvatar
+                  avatar={AVATAR_VARIANT}
+                  eyeState={eyeState}
+                  earState={earState}
+                  mouthEmote={emote}
+                  mouthOpen={isMouthOpen}
+                  showMouth={!error}
+                  focusActive={!!focusActive}
+                />
               </button>
             )}
 
@@ -566,8 +491,8 @@ export function DualAgentConversationBox({
                 </div>
               </div>
 
-              {/* Bottom row: message / silent content — min-h keeps header stable during loading */}
-              {interactionMode === 'interact' ? (
+              {/* Bottom row: message (unmuted) / utterance buttons (muted) — min-h keeps header stable during loading */}
+              {muteState === 'unmuted' ? (
                 <div className="flex items-center min-h-[2rem]">
                   {isLoading ? (
                     <div className="flex items-center gap-2 text-white">
@@ -696,8 +621,7 @@ export function DualAgentConversationBox({
             </button>
           </div>
         </div>
-      </motion.div>
-    </AnimatePresence>
+    </div>
   );
 }
 

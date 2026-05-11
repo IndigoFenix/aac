@@ -18,7 +18,7 @@ export interface DebugSessionData {
   interactivePrompt: string;
   lastMonitorActivity: number;
   lastInteractiveActivity: number;
-  interactionMode: "interact" | "silent";
+  muteState: "unmuted" | "muted";
   messages: DebugSessionMessage[];
   pendingMessages: Array<{
     role: "user" | "assistant";
