@@ -420,6 +420,12 @@ export class LiveRelay {
   private rejectionCooldownUntil = 0;
   private static readonly REJECTION_COOLDOWN_MS = 15_000;
 
+  // Set when we've just sent an auto-continuation prompt (because the model
+  // transcribed the student but produced no audio). Cleared when the next
+  // turn completes — bounds the auto-continuation to one retry per silent
+  // transcript so the model can't loop on it.
+  private autoContinuationPending = false;
+
   // The authenticated user driving this WebSocket. Established at upgrade time
   // by setupLiveWebSocket; trusted as the source of truth for userId. Any
   // userId in the client's `initialize` message is ignored.
@@ -645,7 +651,7 @@ export class LiveRelay {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.interactionMode === "silent"
             ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
-            : `The home board is loaded. This is a session start — you may greet the user or wait. Do NOT change the board until the user presses a button.`;
+            : `The home board is loaded. This is a session start — greet whoever is present (see <presence> rules) or stay quiet if the device is unattended. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
         } else {
@@ -776,8 +782,8 @@ export class LiveRelay {
           // false alarm (in which case it should call report_false_wake).
           const isWakeCheck = msg.triggerReason === "wake_check";
           const prompt = isWakeCheck
-            ? `[wake check] The session was Asleep. Local engagement signals just crossed the wake threshold — recent buffered audio and visual context are attached. Evaluate: is the user actually re-engaging with the device, or is this a false alarm (background TV, an unrelated adult talking, a passing pet, etc.)? If false alarm, call report_false_wake() with a brief reason and stay silent. Otherwise, respond naturally to the user.${peopleNote}${gestureNote}`
-            : `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${peopleNote}${gestureNote}`;
+            ? `[wake check] Session woken. Respond naturally if the user is engaging with you.${peopleNote}${gestureNote}`
+            : `[scene update] React if something here calls for action.${peopleNote}${gestureNote}`;
           this.provider!.sendFrameWithPrompt(msg.data, prompt, extraImages);
           break;
         }
@@ -800,7 +806,7 @@ export class LiveRelay {
           this.setState("awaiting_turn");
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via update_context() tool and update the board if needed.`,
+            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Update the board if needed.`,
           );
           console.log("[LiveRelay] Focus frame sent to Gemini");
           break;
@@ -921,20 +927,13 @@ export class LiveRelay {
             }).catch(console.error);
           }
 
-          // Board-exit `label` and `instruction` are clinician-set control
-          // signals — the AI is *supposed* to act on them (e.g. "[INTERACT]"
-          // tells it to switch modes). Wrapping them as untrusted made the
-          // model refuse legitimate directives. Defense against malicious
-          // board content belongs at write-time sanitization of these fields,
-          // not at read-time tagging here.
-          //
-          // [ACTION REQUIRED] prefix is necessary because the system prompt's
-          // "stay silent unless..." guidance was making the model emit empty
-          // turns for these directives — they are NOT scene updates, they're
-          // user actions that demand a board change.
+          // Home-menu button press: chat-style framing matching the
+          // dynamic-button path. The press is presented as the student
+          // saying the label; the board-defined intent text is appended
+          // as parenthetical guidance for context.
           const exitInstruction = msg.instruction
-            ? `[ACTION REQUIRED] The user pressed the "${msg.label}" home button. You MUST respond this turn by calling rebuild_board() (or set_board() if a custom board fits) to follow this instruction: ${msg.instruction}`
-            : `[ACTION REQUIRED] The user pressed the "${msg.label}" home button. You MUST respond this turn by calling rebuild_board() to create a new board for the current context.`;
+            ? `[BUTTON PRESS] ${msg.label}\n\n(${msg.instruction})`
+            : `[BUTTON PRESS] ${msg.label}`;
           this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
         }
@@ -1359,18 +1358,14 @@ export class LiveRelay {
         ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
-      const contextScan = ` IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model.`;
-      // Greeting must be presence-conditional — the student may not be in
-      // front of the camera at session start (a caregiver may be setting up,
-      // or no one may be there yet). Greeting unconditionally would make the
-      // AI address whoever happens to be visible as if they were the student.
-      const presenceCheck =
-        ` Before greeting, check [PEOPLE PRESENT]: if it tags a face as [THE STUDENT], greet them; if it shows someone else without [THE STUDENT], do not greet them as the student (you are in STANDBY MODE — wait for them to engage); if no faces are listed, stay silent.`;
+      const contextScan = ``;
+      // Greeting is presence-conditional — student may not be at the device.
+      const presenceCheck = ` Greet the student if visible; greet a non-student briefly as a visitor (don't address them as the student); stay silent if no one is detected.`;
       const greetingPrompt = isSilent
-        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}${contextScan}`
+        ? `Generate 4-12 contextual utterance buttons via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `The home board "${this.homeBoardData?.name || "Home"}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. Use your judgment based on who is present.${presenceCheck} Do NOT change the board until the user presses a button.${imageHint}${personaHint}${contextScan}`
-        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Wait for a button press before changing the board.${imageHint}${personaHint}${contextScan}`;
+        ? `Session start. Home board buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Don't change the board until a button is pressed.${imageHint}${personaHint}${contextScan}`
+        : `Session start. Function calls only. Home board buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Wait for a button press.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -1491,16 +1486,12 @@ The user pressed "More" — they can't find the button they need on the current 
       });
     }
 
-    const currentLabels = this.sessionCache?.state?.boardButtonLabels?.join(", ") || "none";
-    const prompt = singleSentence
-      ? `[BUTTON PRESS] ${buttonList}
-A button was pressed: "${singleSentence}". Treat this as a user statement and respond accordingly.
-CURRENT MAIN BOARD: ${currentLabels}
-You MUST call rebuild_board() with new buttons that respond to this choice. Also use add_context_button() if you notice something relevant in the environment.`
-      : `[BUTTON PRESS] ${buttonList}
-The user pressed the above button(s). Interpret this as a user statement and respond accordingly.
-CURRENT MAIN BOARD: ${currentLabels}
-You MUST call rebuild_board() with new buttons that respond to this. Also use add_context_button() if you notice something relevant in the environment.`;
+    // Minimal natural framing: present the press as the student speaking.
+    // No system markers, no procedural instructions — the per-turn payload
+    // looks like a chat message. The system prompt's
+    // <how_the_student_talks_to_you> block handles the "respond aloud +
+    // rebuild_board" behavior expectation.
+    const prompt = `[BUTTON PRESS] ${singleSentence || buttonList}`;
 
     // Send prompt with turnComplete=true immediately. Student TTS runs in
     // parallel. With Google Cloud TTS (~300ms) and AI response time (~1s),
@@ -2222,6 +2213,26 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         return { id: call.id, name, response: { output: "false wake noted" } };
       }
 
+      case "stay_silent": {
+        const reason = extractStringArg(args, "reason").trim();
+        if (!reason) {
+          return { id: call.id, name, response: { error: "reason is required" } };
+        }
+        logLiveSession("STAY_SILENT", reason);
+        this.turnAccum.staySilentReason = reason;
+        // Persist to pendingMessages so the monitor agent and any future
+        // reconnection sees it as part of the conversation history. It is
+        // never sent to the client, so the user never sees or hears it.
+        if (this.sessionId) {
+          await dualAgentService.addPendingMessage(this.sessionId, {
+            role: "assistant",
+            content: `[STAY_SILENT] ${reason}`,
+            timestamp: Date.now(),
+          });
+        }
+        return { id: call.id, name, response: { output: "silence acknowledged" } };
+      }
+
       case "private_note": {
         const note = extractStringArg(args, "note").trim();
         if (!note) {
@@ -2376,6 +2387,13 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
   private async handleTurnComplete(reason?: string): Promise<void> {
     logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
 
+    // Snapshot the auto-continuation flag and clear it eagerly. If this turn
+    // is itself the response to a continuation prompt we sent last time, the
+    // snapshot blocks us from firing a second continuation; the cleared field
+    // means the *next* genuinely-silent transcript can fire normally.
+    const wasAutoContinuationPending = this.autoContinuationPending;
+    this.autoContinuationPending = false;
+
     // If we were waiting for a debug-introspection response (the model calls
     // debug_message() to tell us what it tried), capture it and retry.
     if (this.awaitingDebugResponse) {
@@ -2490,9 +2508,111 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       return;
     }
 
-    // If we're idle somehow (e.g. empty turn with no tool calls), just stay idle
+    // If we're idle, we might still have activity to process: Gemini Live's
+    // built-in VAD can trigger spontaneous model turns (it hears the user
+    // speak and starts generating audio without us sending turnComplete=true).
+    // The audio arrives while state is idle, but it IS a real turn. Only
+    // return early if absolutely nothing happened.
     if (this.state === "idle") {
+      const hadActivity =
+        this.directAudioChunks.length > 0 ||
+        this.turnAccum.speakText.trim().length > 0 ||
+        this.turnAccum.transcriptText.trim().length > 0 ||
+        this.turnAccum.contextText.trim().length > 0 ||
+        this.turnAccum.boardChanged ||
+        !!this.turnAccum.staySilentReason;
+      if (!hadActivity) {
+        return;
+      }
+      // Activity happened in idle state — fall through to processTurnEnd so
+      // audio is flushed and post-turn hooks fire. Note: we skip the auto-
+      // continuation block below because the spontaneous-audio path means
+      // either (a) the model already responded with audio, or (b) tool calls
+      // ran and we want them to be handled normally.
+      logLiveSession(
+        "IDLE_TURN_RECOVERY",
+        `state was idle but turn had activity — escalating to processing_turn (audio=${this.directAudioChunks.length}, transcript=${!!this.turnAccum.transcriptText.trim()}, board=${this.turnAccum.boardChanged})`,
+      );
+      this.setState("processing_turn");
+      try {
+        await Promise.race([
+          this.processTurnEnd(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("processTurnEnd timed out after 60s")), 60_000),
+          ),
+        ]);
+      } catch (err) {
+        console.error("[LiveRelay] processTurnEnd error (idle recovery):", (err as Error).message);
+        this.send({ type: "error", data: "error:TURN_FAILED" });
+      } finally {
+        this.turnAccum = createEmptyAccumulator();
+        this.flushDirectAudio();
+        this.directAudioChunks = [];
+        this.preGenTtsPromise = null;
+        this.pendingRetryPrompt = null;
+        this.debugRetryCount = 0;
+        this.setState("idle");
+      }
       return;
+    }
+
+    // Auto-continuation: when the model transcribes the student speaking but
+    // emits no audio reply, nudge it once to actually respond. This works
+    // around an architectural quirk — sendToolResponseAsContent uses
+    // turnComplete:false (to avoid Vertex's duplication bug), which means the
+    // model's tool-only generations end the turn without ever producing audio.
+    //
+    // Only fires when:
+    //   1. We didn't already auto-continue on the previous turn (one retry max)
+    //   2. interactionMode === "interact" (don't speak in standby/assist)
+    //   3. transcript() was called this turn for the identified student
+    //      (skip background voices and unknown speakers)
+    //   4. No audio was produced
+    //   5. The model didn't explicitly call stay_silent — that's the model's
+    //      "I intentionally chose not to respond" signal and we honor it.
+    if (
+      !wasAutoContinuationPending &&
+      this.interactionMode === "interact" &&
+      this.directAudioChunks.length === 0 &&
+      this.turnAccum.speakText.trim().length === 0 &&
+      this.turnAccum.transcriptText.trim().length > 0 &&
+      !this.turnAccum.staySilentReason &&
+      this.provider
+    ) {
+      const studentName =
+        this.sessionCache?.monitorAgent.getStudent?.()?.name?.trim() || "";
+      const speaker = (this.turnAccum.transcriptSpeaker || "").trim();
+      const studentFirstName = studentName.split(/\s+/)[0] || "";
+      const speakerIsStudent =
+        !!studentFirstName &&
+        speaker.toLowerCase().includes(studentFirstName.toLowerCase());
+
+      if (speakerIsStudent) {
+        const transcribedText = this.turnAccum.transcriptText.trim();
+        logLiveSession(
+          "AUTO_CONTINUATION",
+          `transcript=${JSON.stringify(transcribedText)} speaker=${speaker} — no audio reply, re-prompting`,
+        );
+        // Don't include the verbatim transcribed text in the prompt — the
+        // native-audio model can latch onto it and echo it back in the
+        // student's voice. Keep the nudge abstract. Bias toward responding:
+        // the model defaults too readily to stay_silent when offered both
+        // options as parallel choices, so we frame stay_silent as the
+        // exception requiring positive evidence.
+        const continuePrompt = `[continue] You transcribed the student's speech but did not respond. Speak your reply now in your own voice. Do not repeat their words or imitate their voice.`;
+        // Reset turn state so the next TURN_COMPLETE sees a clean accumulator
+        // and can't retrigger this branch unless the model transcribes anew.
+        this.turnAccum = createEmptyAccumulator();
+        if (this.directAudioFlushTimer) {
+          clearTimeout(this.directAudioFlushTimer);
+          this.directAudioFlushTimer = null;
+        }
+        this.directAudioChunks = [];
+        this.autoContinuationPending = true;
+        this.setState("awaiting_turn");
+        this.provider.sendMessage(continuePrompt, "user");
+        return;
+      }
     }
 
     this.setState("processing_turn");
@@ -3099,7 +3219,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
 
     const parts: string[] = [
       `[BEHAVIORAL REMINDER]`,
-      `Buttons have pre-generated sentences that are spoken automatically when pressed. Do NOT interpret or paraphrase them.\nWhen you hear a student sentence after a [BUTTON PRESS], that is automatic TTS — do NOT transcribe it.`,
+      `On every [BUTTON PRESS], RESPOND ALOUD to the student's statement and then call rebuild_board() — that is the expected flow. Separately: the button's sentence is voiced by a TTS layer through the device speaker, which the mic will pick up. That re-heard audio is NOT new user speech — do not transcribe it. The transcription rule does NOT change the response rule: respond to the [BUTTON PRESS] text turn, ignore the echoed TTS audio.`,
     ];
 
     parts.push("Visual checks: Stay silent if nothing important changed. Only report meaningful context changes.");
@@ -3107,9 +3227,9 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     if (isSilent) {
       parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use board tools.`);
     } else if (this.useDirectAudio) {
-      parts.push(`Mode: interact — You speak directly with your voice. Do NOT narrate tool calls.`);
+      parts.push(`Mode: standard — You speak directly with your voice. Do NOT narrate tool calls.`);
     } else {
-      parts.push(`Mode: interact — AI voice active via ${sRef}.`);
+      parts.push(`Mode: standard — AI voice active via ${sRef}.`);
     }
 
     if (this.useDirectAudio) {
@@ -3135,7 +3255,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
   private buildEchoAwareness(): string {
     if (this.useDirectAudio) {
       return `AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. You WILL hear your own voice echoed back through the speakers — never transcribe or respond to your own echoes. Also, button press sentences are voiced by a separate TTS system — those echoes are NOT new speech either.`;
+The microphone picks up audio that came from your own speaker — your own voice playing back, and the student's button-press TTS playing back. That re-heard audio is NOT new user speech. Don't TRANSCRIBE it (no transcript() calls for it). This rule is about transcription only — it does NOT mean "don't respond". When a [BUTTON PRESS] text turn arrives, respond to it normally as the user's statement, even though you may hear the TTS echo right after.`;
     }
 
     return `AUDIO ECHO AWARENESS:

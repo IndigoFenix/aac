@@ -333,24 +333,58 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
           // Skip empty/whitespace-only text to avoid clearing the display
           if (!msg.data || !msg.data.trim()) break;
-          // Strip any tag-like artifacts that occasionally leak from Gemini's
-          // output transcription (e.g. "<ctrl46>", "<end_of_turn>", "<unk>").
-          // Log them so we can see what the model is producing.
-          const tagMatches = msg.data.match(/<[^<>]+>/g);
-          if (tagMatches) {
-            console.log("[useLiveSession] Stripped tags from text:", tagMatches.join(", "), "| original:", msg.data);
+
+          let textData = msg.data;
+
+          // Detect `<ctrl##>` control tokens. On the upgraded
+          // gemini-live-2.5-flash-native-audio model these tokens occasionally
+          // leak through the output transcription, separating Google's
+          // internal recovery scaffolding (e.g. "If you were doing both, try
+          // just one first. If you were silent, say something.<ctrl95>") from
+          // the model's actual response. The audio output is correct — only
+          // the transcription leaks. When we see a ctrl token, treat
+          // everything up to and including it as scaffold, discard whatever
+          // text was accumulated so far (it was all scaffold), and keep only
+          // what comes after the last ctrl token in this chunk.
+          const ctrlMatches = [...textData.matchAll(/<ctrl\d+>/g)];
+          if (ctrlMatches.length > 0) {
+            const last = ctrlMatches[ctrlMatches.length - 1];
+            const afterCtrl = textData.slice(last.index! + last[0].length);
+            // Logged loudly so we can audit what scaffolding patterns leak
+            // — the full original text (scaffold + tokens) is preserved here
+            // even though the user-facing display drops it.
+            console.warn(
+              "[LEAK] ctrl-token scaffold detected → discarded prefix + accumulated.",
+              "Tokens:", ctrlMatches.map(m => m[0]).join(", "),
+              "| Full original:", JSON.stringify(textData),
+              "| Accumulated so far (also discarded):", JSON.stringify(textAccumRef.current),
+              "| Kept (after last ctrl):", JSON.stringify(afterCtrl),
+            );
+            textAccumRef.current = "";
+            setCurrentMessage(prev =>
+              prev?.role === "assistant" ? { ...prev, content: "" } : prev,
+            );
+            textData = afterCtrl;
+            if (!textData.trim()) break;
           }
-          const cleaned = msg.data.replace(/<[^<>]+>/g, "");
+
+          // Strip any other tag-like artifacts that occasionally leak from
+          // Gemini's output transcription (e.g. "<end_of_turn>", "<unk>").
+          const tagMatches = textData.match(/<[^<>]+>/g);
+          if (tagMatches) {
+            console.warn("[LEAK] non-ctrl tag artifacts stripped:", tagMatches.join(", "), "| original:", JSON.stringify(textData));
+          }
+          const cleaned = textData.replace(/<[^<>]+>/g, "");
           if (!cleaned.trim()) break;
           // Drop the entire turn if the model leaks a private-reasoning prefix —
-          // those are the model's own notes (it should be using private_note())
+          // those are the model's own notes (it should be using stay_silent())
           // and must not be shown to the user. Match only at the start of a
           // fresh accumulation so we don't truncate legitimate speech.
           if (
             !textAccumRef.current &&
             /^\s*\[(private\s*note|note|thinking|internal|reasoning|self[\s-]*note)\b/i.test(cleaned)
           ) {
-            console.log("[useLiveSession] Dropped private-note leak:", cleaned);
+            console.warn("[LEAK] private-note prefix dropped:", JSON.stringify(cleaned));
             break;
           }
           textAccumRef.current += cleaned;

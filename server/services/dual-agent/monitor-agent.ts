@@ -148,7 +148,7 @@ export class MonitorAgent {
     if (fastCommProfile) {
       contextParts.push(`Communication profile (clinician-set, authoritative): ${fastCommProfile}`);
     } else {
-      contextParts.push(`Communication profile: NOT ON FILE — treat any audible voice as belonging to someone other than the student until evidence proves otherwise.`);
+      // contextParts.push(`Communication profile: NOT ON FILE — treat any audible voice as belonging to someone other than the student until evidence proves otherwise.`);
     }
     if (memory.Student_CommunicationStyle) {
       contextParts.push(`Communication style (legacy, may be stale): ${JSON.stringify(memory.Student_CommunicationStyle)}`);

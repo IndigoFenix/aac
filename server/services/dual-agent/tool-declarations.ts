@@ -44,9 +44,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Water|💧||I want water, Play|🎮||I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. for consistency. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Play|🎮||I want to play, Music|🎵||Put on some music, Draw|✏️||I want to draw, Tired|😴||I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. for consistency. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -165,7 +165,7 @@ function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclara
 function buildRebuildBoardTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "rebuild_board",
-    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts. You MUST call this after every button press. If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that.`,
+    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts. You MUST call this after every button press. If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same imageKey more than once on one board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -343,7 +343,7 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
     parametersJsonSchema: {
       type: "object",
       properties: {
-        button: { type: "string", description: "Single button: label|icon|imageKey|sentence. Prefer emojis — only add imageKey when no emoji captures the concept. Example: \"Teddy Bear|🧸||I see my teddy bear\"" },
+        button: { type: "string", description: "Single button: label|icon|imageKey|sentence." },
       },
       required: ["button"],
     },
@@ -399,20 +399,38 @@ const REPORT_FALSE_WAKE: FunctionDeclaration = {
   },
 };
 
-// Private note — the model's own scratchpad. Recorded into the conversation
-// transcript so the monitor agent and future turns can see the reasoning, but
-// never spoken or displayed to the user. Use this instead of writing
-// "[private note] ..." in text or audio output.
+// Private-note — silent thought / breadcrumb the model can leave. Not spoken
+// aloud, not shown to the user; logged for the developer and persisted into
+// the conversation history so the monitor agent and future turns can see it.
+// Use as a low-stakes way for the model to communicate observations or
+// reasoning when speech isn't appropriate.
 const PRIVATE_NOTE: FunctionDeclaration = {
   name: "private_note",
-  description: `Record a silent thought or reasoning note. The note is added to your own conversation history and the monitor agent's view, but is never spoken or shown to the user. Use this whenever you want to think out loud about what is happening, what you plan to do, or why you are choosing not to act — instead of producing text/speech that starts with "[private note]", "[note]", "[thinking]", or similar markers. Keep notes short and specific.`,
+  description: `Record a private thought or note. The note is saved to your conversation history and visible to the developer / monitor agent, but is NEVER spoken to the user. Use this when you want to log reasoning, observations, plans, or intentions without producing speech. Keep notes short and specific. NEVER produce text or audio beginning with "[note]", "[thinking]", "[private note]", or any similar bracketed marker — anything you emit reaches the user. Use this tool instead.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
     properties: {
-      note: { type: "string", description: "The private thought to record." },
+      note: { type: "string", description: "Your private thought (one short sentence)." },
     },
     required: ["note"],
+  },
+};
+
+// Stay-silent — explicit signal that the model has decided NOT to respond
+// aloud this turn. The reason is recorded for the monitor agent. Critically,
+// the live-relay's auto-continuation uses this as the "intentional silence"
+// signal — without it, a transcript-and-no-audio turn gets re-prompted.
+const STAY_SILENT: FunctionDeclaration = {
+  name: "stay_silent",
+  description: `Use this when you have decided NOT to produce a spoken response this turn. Examples of valid reasons: a voice you heard was background TV / another person's conversation not directed at you; the student is engaged with media and shouldn't be interrupted; you logged an observation but no reply is needed. Pass a brief reason — the system uses this signal to know your silence was intentional rather than a missed turn. Do NOT call stay_silent as a placeholder for "I'll think before responding" — if you intend to speak, just speak. Do NOT call it before or after speaking on the same turn.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Brief reason you are not responding (one short sentence)." },
+    },
+    required: ["reason"],
   },
 };
 
@@ -484,11 +502,18 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(buildCallMonitorTool(config));
   declarations.push(YES_NO);
   declarations.push(ASK_YES_NO);
-  declarations.push(buildRequestFocusTool(config));
+  // declarations.push(buildRequestFocusTool(config));
   declarations.push(SET_INTERACTION_MODE);
   declarations.push(SLEEP);
   declarations.push(END_SESSION);
-  declarations.push(REPORT_FALSE_WAKE);
+  // DISABLED: report_false_wake — only used in wake-check flow, gave the
+  // model an "I'll opt out" path. Same family of self-talk-to-stay-silent
+  // tools as stay_silent.
+  // declarations.push(REPORT_FALSE_WAKE);
+  // DISABLED: stay_silent — explicit silence signal. The model uses it as
+  // an escape hatch from responding even when proactiveAudio handles that
+  // decision at the wire level.
+  // declarations.push(STAY_SILENT);
   declarations.push(PRIVATE_NOTE);
   declarations.push(DEBUG_MESSAGE);
 

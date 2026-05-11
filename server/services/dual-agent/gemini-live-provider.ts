@@ -193,29 +193,33 @@ export class GeminiLiveProvider implements LiveProvider {
               targetTokens: String(targetTokens),
             },
           },
-          // proactiveAudio: true lets the model decide NOT to respond to irrelevant
-          // input (silence, noise, its own echo). Per the SDK docs:
-          // "When set to true, the model can decide not to respond to the most recent
-          //  prompt if it determines that the prompt is not directed at it."
-          // NOTE: Do NOT add realtimeInputConfig or activityHandling — those cause
-          // empty turns for text input (see feedback_gemini_live_config.md).
-          // 3.1 Preview rejects the `proactivity` field with 1007 — omit for that model.
+          // proactiveAudio: true — lets the model decide not to respond to
+          // background chatter, echoes, or input not directed at it.
+          // Empirically, removing this causes MALFORMED_FUNCTION_CALL bursts
+          // at session start (4+ consecutive zero-token malformed turns) on
+          // gemini-live-2.5-flash-native-audio. Re-enabled with the
+          // expectation that the system prompt's strong positive bias toward
+          // responding (in <interact> mode) keeps the model engaged, while
+          // proactivity handles the genuine "not directed at me" cases that
+          // stay_silent is too explicit for.
+          // 3.1 Preview rejects the `proactivity` field with 1007 — omit there.
           ...(config.model === "gemini-3.1-flash-live-preview"
             ? {}
             : { proactivity: { proactiveAudio: true } }),
-          // Safety filters disabled — Gemini was rejecting innocuous greetings to a
-          // 6-year-old AAC user with RESPONSE_REJECTED, causing partial audio
-          // playback + retry loops. The system prompt strictly defines behavior
-          // and the input is button presses from a controlled vocabulary.
+          // Safety filters disabled — Gemini was rejecting innocuous greetings
+          // with RESPONSE_REJECTED. Using BLOCK_NONE rather than OFF: both are
+          // "do not block", but BLOCK_NONE is more universally accepted across
+          // endpoints. If OFF is rejected as an invalid enum on this endpoint,
+          // the API may silently fall back to default thresholds.
           // (cast: SDK's LiveConnectConfig type doesn't expose safetySettings,
           // but the wire protocol accepts it.)
           ...({
             safetySettings: [
-              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.OFF },
-              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.OFF },
-              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.OFF },
-              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.OFF },
-              { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.OFF },
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
             ],
           } as any),
           // Voice selection for native audio output

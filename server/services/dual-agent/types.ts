@@ -232,6 +232,10 @@ export interface TurnToolAccumulator {
   boardAddLabels: string[];
   boardRemoveLabels: string[];
   emote: 'happy' | 'sad' | 'neutral' | null;
+  /** Set when the model called stay_silent() this turn. Suppresses the
+   *  auto-continuation re-prompt — silence was an explicit decision, not a
+   *  missed turn. */
+  staySilentReason: string | null;
 }
 
 export function createEmptyAccumulator(): TurnToolAccumulator {
@@ -254,6 +258,7 @@ export function createEmptyAccumulator(): TurnToolAccumulator {
     boardAddLabels: [],
     boardRemoveLabels: [],
     emote: null,
+    staySilentReason: null,
   };
 }
 
