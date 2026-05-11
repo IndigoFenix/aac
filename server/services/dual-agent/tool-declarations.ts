@@ -44,9 +44,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. for consistency. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want water\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. rowSpan/colSpan are optional (default 1). Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. for consistency. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. rowSpan/colSpan are optional (default 1). Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -70,7 +70,7 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
 function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "transcript",
-    description: `Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently spoke or the user pushed an utterance button, you WILL hear those words echoed back through the microphone — that is the system's echo that has already been automatically transcribed, not new speech. Never transcribe system echoes.`,
+    description: `Record clear speech you heard from a person nearby (someone speaking in their own voice through the room, not via the AAC device). Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. DO NOT transcribe your own voice echoing back through the mic, and DO NOT transcribe the device's TTS playing back a button the user pressed — both are device output, not new speech, and you already have the [BUTTON PRESS] text turn for the latter (respond to that turn normally, just don't call transcript() for the echo).`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -165,7 +165,7 @@ function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclara
 function buildRebuildBoardTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "rebuild_board",
-    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts. You MUST call this after every button press. If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same imageKey more than once on one board.`,
+    description: `Replace the main AAC board (right side, up to 8 buttons). Use after [BUTTON PRESS] inputs or major conversation shifts. Speak your verbal reply FIRST in the same turn, THEN call rebuild_board() with new buttons that follow the conversation. If a custom board is currently loaded, calling this will unload it and replace it with your new dynamic board. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same imageKey more than once on one board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",

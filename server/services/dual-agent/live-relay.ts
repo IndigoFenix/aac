@@ -1589,13 +1589,20 @@ The user pressed "More" — they can't find the button they need on the current 
     // can take 500ms+ for symbol lookups), the model times out and completes
     // its turn with zero audio output.
     //
-    // We use sendToolResponseAsContent (protocol-correct functionResponse
-    // parts via sendClientContent with turnComplete=false) because:
-    // - sendToolResponse triggers a new turn (duplication bug on Vertex)
-    // - sendContextInjection leaves the functionCall unresolved → malformed
-    // ────────────────────────────────────────────────────────────────────────
+    // DIAGNOSTIC (revertible): switched from sendToolResponseAsContent
+    // (sendClientContent + turnComplete=false) back to sendToolResponse
+    // (protocol-native functionResponse path). The "As Content" workaround
+    // was added in April-2026 to avoid duplicate-generation when SILENT
+    // scheduling is ignored for BLOCKING tools on Vertex. With the upgraded
+    // model, the workaround appears to leave the model in a half-finished
+    // state — tool-only generations end with no audio and there's no clear
+    // signal that the loop has closed. Trying the native path again to see
+    // if (a) duplicate generation still happens on the upgraded model and
+    // (b) responsiveness improves with proper protocol-level closure.
+    //
+    // TO REVERT: change back to sendToolResponseAsContent.
     if (this.provider) {
-      this.provider.sendToolResponseAsContent(
+      this.provider.sendToolResponse(
         calls.map(c => ({
           id: c.id,
           name: c.name || "unknown",
