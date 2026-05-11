@@ -25,7 +25,8 @@ import {
   Zap,
   ScanSearch,
 } from "lucide-react";
-import { AacAvatar, AacCave, type EyeState, type EarState } from "@/components/AacAvatar";
+import { AacAvatar, AacCave } from "@/components/AacAvatar";
+import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
@@ -36,13 +37,6 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { FaceMirror } from "@/components/FaceMirror";
-
-// Avatar variant: currently only "axolotl" is shipped. Assets live in
-// client-aac/public/aac-avatars/<variant>/ — see AacAvatar.tsx for the
-// expected layer filenames.
-const AVATAR_VARIANT = "axolotl";
-
-const MOUTH_OPEN_THRESHOLD = 0.08;
 
 interface DualAgentConversationBoxProps {
   isVisible: boolean;
@@ -124,17 +118,15 @@ export function DualAgentConversationBox({
     setOnUnloadBoard,
     monitorError,
     monitorConsecutiveFailures,
-    emote,
-    speakingVolume,
     interpretConfidence,
     responseMode,
     setResponseMode,
     reconnecting,
     safetyBlocked,
-    focusActive,
     paused,
     setPaused,
   } = useDualAgentContext();
+  const sprite = useAvatarSprite();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
@@ -266,35 +258,10 @@ export function DualAgentConversationBox({
     }
   }, [muteState, isInitialized, setMuteState, sendMessage, stopAudio, attentiveness]);
 
-  // Determine if avatar should show asleep. There are two paths into the cave:
-  // (1) user-toggled silent mode, and (2) no live session — uninitialized or
-  // disconnected. In both cases the cave is shown and the avatar body is
-  // hidden because there's nothing actively running behind it.
-  const noSession = !isInitialized;
-  const isAsleep = muteState === 'muted' || noSession;
-  // AI-initiated "standby" mode — student not present, avatar shows resting eyes.
-  const isStandbyMode = lastModeChange?.mode === 'standby' && lastModeChange.source === 'ai';
-  // AI-initiated "assist" mode — less proactive, ears at neutral instead of open.
-  const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
-  // Mouth is open when audio is playing and volume exceeds threshold
-  const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
-
-  // Eye state — sleep system + error. When there's no live session, force the
-  // sleeping variant so the cave/avatar reflects reality, not the last-known
-  // sleepState. Standby (AI-determined "no one home") visually maps to resting.
-  const sleepState = attentiveness?.sleepState;
-  const isSleepingState = noSession || sleepState === 'hibernation' || sleepState === 'asleep';
-  const isRestingState = !noSession && (sleepState === 'resting' || sleepState === 'waking' || isStandbyMode);
-  const eyeState: EyeState = error
-    ? 'hurt'
-    : isSleepingState
-    ? 'closed'
-    : isRestingState
-    ? 'rest'
-    : 'open';
-  // Ear state — driven by AI interaction mode. Default to open (the active
-  // interact look) when no AI mode change has been recorded yet.
-  const earState: EarState = isStandbyMode ? 'closed' : isAssistMode ? 'neutral' : 'open';
+  // Sprite presentation (eye/ear/mouth/focus, animation frames, sleep flags)
+  // comes from <AvatarSpriteProvider> so the header avatar and the fullscreen
+  // overlay render the exact same blink/ear-flap frames.
+  const { isAsleep, eyeState } = sprite;
 
   if (!isVisible) return null;
 
@@ -311,7 +278,7 @@ export function DualAgentConversationBox({
               title={isAsleep ? "Unmute (tap cave to wake)" : "Mute (tap cave to silence)"}
             >
               <AacCave
-                avatar={AVATAR_VARIANT}
+                avatar={sprite.avatar}
                 empty={!isAsleep}
                 eyeState={eyeState}
               />
@@ -338,13 +305,13 @@ export function DualAgentConversationBox({
                 title="Tap to get attention"
               >
                 <AacAvatar
-                  avatar={AVATAR_VARIANT}
-                  eyeState={eyeState}
-                  earState={earState}
-                  mouthEmote={emote}
-                  mouthOpen={isMouthOpen}
-                  showMouth={!error}
-                  focusActive={!!focusActive}
+                  avatar={sprite.avatar}
+                  renderedEye={sprite.renderedEye}
+                  renderedEar={sprite.renderedEar}
+                  mouthEmote={sprite.mouthEmote}
+                  mouthOpen={sprite.mouthOpen}
+                  showMouth={sprite.showMouth}
+                  focusActive={sprite.focusActive}
                 />
               </button>
             )}

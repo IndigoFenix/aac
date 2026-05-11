@@ -292,6 +292,7 @@ export const de: Translations = {
     disconnected: "Getrennt",
     processing: "Verarbeitung...",
     wakingUp: "Aufwachen...",
+    sleeping: "Schläft...",
   },
 
   quickActions: {

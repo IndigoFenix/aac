@@ -12,6 +12,8 @@ import UserSettings from "@/components/UserSettings";
 import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
 import { ConversationBox } from "@/components/ConversationBox";
 import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
+import { FullscreenAvatarOverlay } from "@/components/FullscreenAvatarOverlay";
+import { AvatarSpriteProvider } from "@/contexts/AvatarSpriteContext";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
@@ -1597,6 +1599,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           debugMode={debugMode}
           getFaceImage={faceImageCache.getFaceImage}
         >
+          <AvatarSpriteProvider>
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
@@ -1637,6 +1640,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             rawFaces={rawFaces}
             rawHands={rawHands}
           />
+          <FullscreenAvatarOverlay />
           {debugMode && (
             <UnifiedDebugPanel
               isOpen={showDebugPanel}
@@ -1656,6 +1660,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               lastCapturedFaceImage={lastCapturedFaceImage}
             />
           )}
+          </AvatarSpriteProvider>
         </DualAgentProvider>
       )}
 

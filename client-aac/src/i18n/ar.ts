@@ -292,6 +292,7 @@ export const ar: Translations = {
     disconnected: "\u063a\u064a\u0631 \u0645\u062a\u0635\u0644",
     processing: "\u062c\u0627\u0631\u064a \u0627\u0644\u0645\u0639\u0627\u0644\u062c\u0629...",
     wakingUp: "\u0627\u0644\u0627\u0633\u062a\u064a\u0642\u0627\u0638...",
+    sleeping: "\u0646\u0627\u0626\u0645...",
   },
 
   quickActions: {

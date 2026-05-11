@@ -292,6 +292,7 @@ export const ru: Translations = {
     disconnected: "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
     processing: "\u041e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430...",
     wakingUp: "\u041f\u0440\u043e\u0431\u0443\u0436\u0434\u0435\u043d\u0438\u0435...",
+    sleeping: "\u0421\u043f\u0438\u0442...",
   },
 
   quickActions: {

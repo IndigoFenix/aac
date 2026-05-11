@@ -290,6 +290,7 @@ export const en = {
     disconnected: "Disconnected",
     processing: "Processing...",
     wakingUp: "Waking up...",
+    sleeping: "Sleeping...",
   },
 
   quickActions: {

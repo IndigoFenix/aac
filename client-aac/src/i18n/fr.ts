@@ -292,6 +292,7 @@ export const fr: Translations = {
     disconnected: "D\u00e9connect\u00e9",
     processing: "Traitement...",
     wakingUp: "Réveil en cours...",
+    sleeping: "En sommeil...",
   },
 
   quickActions: {

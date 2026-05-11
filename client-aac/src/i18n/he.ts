@@ -292,6 +292,7 @@ export const he: Translations = {
     disconnected: "מנותק",
     processing: "מעבד...",
     wakingUp: "מתעורר...",
+    sleeping: "ישן...",
   },
 
   quickActions: {

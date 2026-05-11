@@ -292,6 +292,7 @@ export const zh: Translations = {
     disconnected: "已断开",
     processing: "处理中...",
     wakingUp: "唤醒中...",
+    sleeping: "睡眠中...",
   },
 
   quickActions: {

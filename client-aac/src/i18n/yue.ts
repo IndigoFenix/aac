@@ -292,6 +292,7 @@ export const yue: Translations = {
     disconnected: "已斷開",
     processing: "處理緊...",
     wakingUp: "醒緊...",
+    sleeping: "瞓緊...",
   },
 
   quickActions: {

@@ -34,7 +34,7 @@ const CAVE_EYE_FILE: Record<EyeState, string> = {
 
 // Idle blink: every ~8s (+0–4s jitter) snap eyes shut briefly. Disabled when
 // eyes are already closed or showing the hurt sprite.
-function useBlink(eyeState: EyeState): boolean {
+export function useBlink(eyeState: EyeState): boolean {
   const [blinking, setBlinking] = useState(false);
   useEffect(() => {
     if (eyeState === "closed" || eyeState === "hurt") {
@@ -62,31 +62,51 @@ function useBlink(eyeState: EyeState): boolean {
   return blinking;
 }
 
-// Ear flap cycle for interact mode: 1.75s open, 0.25s neutral, repeat.
-function useEarFlap(earState: EarState, eyeState: EyeState): EarState {
+// Ear flap cycle: `earFlapSpeed` ms open, 250 ms neutral, repeat. Caller
+// passes earFlapSpeed === 0 to disable flapping entirely (e.g. standby/
+// assist). Flap runs regardless of eyeState so sleeping avatars can still
+// twitch their ears slowly.
+export function useEarFlap(earState: EarState, earFlapSpeed: number): EarState {
   const [phaseOpen, setPhaseOpen] = useState(true);
   useEffect(() => {
     if (earState !== "open") return;
-    if (eyeState !== "open") return;
+    if (earFlapSpeed === 0) return;
     let timer: ReturnType<typeof setTimeout>;
     let current = true;
     const tick = () => {
       current = !current;
       setPhaseOpen(current);
-      timer = setTimeout(tick, current ? 1750 : 250);
+      timer = setTimeout(tick, current ? earFlapSpeed - 250 : 250);
     };
     setPhaseOpen(true);
-    timer = setTimeout(tick, 1750);
+    timer = setTimeout(tick, earFlapSpeed - 250);
     return () => clearTimeout(timer);
-  }, [earState, eyeState]);
+  }, [earState, earFlapSpeed]);
   if (earState !== "open") return earState;
   return phaseOpen ? "open" : "neutral";
 }
 
+// Resolve the displayed eye/ear frames from logical state. Call this once at
+// the "source" level (e.g. AvatarSpriteProvider) so multiple <AacAvatar />
+// instances can share the same blink/ear-flap frame instead of running
+// independent random timers.
+export function useAvatarFrames(
+  eyeState: EyeState,
+  earState: EarState,
+  earFlapSpeed: number
+): { renderedEye: EyeState; renderedEar: EarState } {
+  const blinking = useBlink(eyeState);
+  const renderedEar = useEarFlap(earState, earFlapSpeed);
+  return {
+    renderedEye: blinking ? "closed" : eyeState,
+    renderedEar,
+  };
+}
+
 interface AacAvatarProps {
   avatar: string;
-  eyeState: EyeState;
-  earState: EarState;
+  renderedEye: EyeState;
+  renderedEar: EarState;
   mouthEmote: MouthEmote;
   mouthOpen: boolean;
   showMouth: boolean;
@@ -95,17 +115,14 @@ interface AacAvatarProps {
 
 export function AacAvatar({
   avatar,
-  eyeState,
-  earState,
+  renderedEye,
+  renderedEar,
   mouthEmote,
   mouthOpen,
   showMouth,
   focusActive,
 }: AacAvatarProps) {
   const base = BASE(avatar);
-  const blinking = useBlink(eyeState);
-  const renderedEye: EyeState = blinking ? "closed" : eyeState;
-  const renderedEar = useEarFlap(earState, eyeState);
   const mouthFile = `mouth-${mouthEmote}${mouthOpen ? "-open" : ""}.png`;
 
   return (
