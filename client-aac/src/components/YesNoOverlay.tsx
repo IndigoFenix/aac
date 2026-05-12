@@ -5,6 +5,7 @@
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { YesNoSprite } from "@/components/YesNoSprite";
 
 interface YesNoOverlayProps {
   active: boolean;
@@ -58,7 +59,7 @@ export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverl
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 onClick={() => onSelect("Yes")}
               >
-                <span className="text-7xl mb-2">✅</span>
+                <YesNoSprite variant="yes" size="min(28vw, 180px)" className="mb-2" />
                 {t("quickActions.yes")}
               </motion.button>
 
@@ -73,7 +74,7 @@ export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverl
                 transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.05 }}
                 onClick={() => onSelect("No")}
               >
-                <span className="text-7xl mb-2">❌</span>
+                <YesNoSprite variant="no" size="min(28vw, 180px)" className="mb-2" />
                 {t("quickActions.no")}
               </motion.button>
             </div>

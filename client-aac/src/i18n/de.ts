@@ -28,6 +28,7 @@ export const de: Translations = {
     confirm: "Best\u00e4tigen",
     reset: "Zur\u00fccksetzen",
     logout: "Abmelden",
+    holdToLogout: "Zum Abmelden gedrückt halten",
     login: "Anmelden",
     or: "oder",
   },
@@ -182,7 +183,6 @@ export const de: Translations = {
     elevenlabsTitle: "ElevenLabs-Stimme",
     elevenlabsDesc: "Geben Sie Ihren eigenen ElevenLabs-API-Schl\u00fcssel und Stimm-IDs f\u00fcr hochwertige TTS ein. \u00dcberschreibt alle anderen Stimmeinstellungen, wenn festgelegt.",
     elevenlabsStudentVoiceId: "Sch\u00fclerstimme-ID",
-    elevenlabsAiVoiceId: "KI-Stimme-ID",
     elevenlabsVoiceIdPlaceholder: "z.B. 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "Tastengr\u00f6\u00dfe",

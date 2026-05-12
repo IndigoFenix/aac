@@ -26,6 +26,7 @@ export const en = {
     confirm: "Confirm",
     reset: "Reset",
     logout: "Log Out",
+    holdToLogout: "Hold to log out",
     login: "Log In",
     or: "or",
   },
@@ -180,7 +181,6 @@ export const en = {
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsStudentVoiceId: "Student Voice ID",
-    elevenlabsAiVoiceId: "AI Voice ID",
     elevenlabsVoiceIdPlaceholder: "e.g. 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "Button Size",

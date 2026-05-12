@@ -35,6 +35,9 @@ interface User {
   isTrial?: boolean;
   trialExpiresAt?: string;
   supportSession?: { instituteId: string; startedAt: string } | null;
+  // Set only when the session identity is from admin_users. Array of admin
+  // section keys this admin can access, with "*" meaning all sections.
+  adminPermissions?: string[];
 }
 
 export interface LoginResult {

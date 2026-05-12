@@ -1,8 +1,8 @@
-[19:57:24.861] memoryValues.Student_Notes (0 items)
+[15:19:05.198] memoryValues.Student_Notes (0 items)
 []
-[19:57:24.861] memoryValues.Student_People (0 items)
+[15:19:05.199] memoryValues.Student_People (0 items)
 []
-[19:57:24.862] memoryValues.Student_Contacts
+[15:19:05.200] memoryValues.Student_Contacts
 {
   "33015fd1_indigo_fenix": {
     "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
@@ -28,11 +28,11 @@
     "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
   }
 }
-[19:57:24.863] memoryValues.Student_Incidents
+[15:19:05.201] memoryValues.Student_Incidents
 {}
-[19:57:24.864] memoryValues.Student_Interests (0 items)
+[15:19:05.202] memoryValues.Student_Interests (0 items)
 []
-[19:57:24.865] memoryVisualization — data section (107 lines)
+[15:19:05.203] memoryVisualization — data section (107 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -144,44 +144,41 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[19:57:26.869] INPUT
+[15:19:06.578] INPUT
 {
   "ops": [
     {
-      "action": "add",
-      "path": "/Student_Notes",
-      "value": "Daniel reported feeling happy after talking to a friend in person at a location other than home, park, school, restaurant, store, or community center. Still determining the exact location."
+      "action": "view",
+      "path": "/Student_Notes"
     }
   ]
 }
-[19:57:26.872] BEFORE add /Student_Notes — Student_Notes array (0 items)
+[15:19:06.579] BEFORE view /Student_Notes — Student_Notes array (0 items)
 []
-[19:57:26.902] ADD to array /Student_Notes — array has 0 items, adding
-Daniel reported feeling happy after talking to a friend in person at a location other than home, park, school, restaurant, store, or community center. Still determining the exact location.
-[19:57:26.906] ADD OK /Student_Notes — array now has 1 items
-[19:57:27.074] RESULTS
+[15:19:06.593] RESULTS
 [
   {
     "target": "/Student_Notes",
-    "action": "add",
-    "ok": true
+    "action": "view",
+    "ok": true,
+    "message": "• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value.",
+    "mutatedPaths": [
+      "/Student_Notes"
+    ],
+    "summary": "Empty array (0 items)"
   }
 ]
-[19:57:27.075] AFTER add /Student_Notes — Student_Notes array (1 items)
-[
-  "Daniel reported feeling happy after talking to a friend in person at a location other than home, park, school, restaurant, store, or community center. Still determining the exact location."
-]
+[15:19:06.594] AFTER view /Student_Notes — Student_Notes array (0 items)
+[]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[19:57:27.085] memoryValues.Student_Notes (1 items)
-[
-  "Daniel reported feeling happy after talking to a friend in person at a location other than home, park, school, restaurant, store, or community center. Still determining the exact location."
-]
-[19:57:27.086] memoryValues.Student_People (0 items)
+[15:19:06.599] memoryValues.Student_Notes (0 items)
 []
-[19:57:27.087] memoryValues.Student_Contacts
+[15:19:06.599] memoryValues.Student_People (0 items)
+[]
+[15:19:06.600] memoryValues.Student_Contacts
 {
   "33015fd1_indigo_fenix": {
     "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
@@ -207,11 +204,11 @@ Daniel reported feeling happy after talking to a friend in person at a location 
     "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
   }
 }
-[19:57:27.089] memoryValues.Student_Incidents
+[15:19:06.600] memoryValues.Student_Incidents
 {}
-[19:57:27.090] memoryValues.Student_Interests (0 items)
+[15:19:06.600] memoryValues.Student_Interests (0 items)
 []
-[19:57:27.091] memoryVisualization — data section (107 lines)
+[15:19:06.601] memoryVisualization — data section (107 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -229,9 +226,9 @@ Daniel reported feeling happy after talking to a friend in person at a location 
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: <untrusted-data>"Daniel reported feeling happy after talking to a friend in person at a location other than home, park, school, restaurant, store, or community center. Still determining the exact location."</untrusted-data>
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) 
+  (empty - no items to display)
+  ↪ To append: action "add" at "/Student_Notes" with value.
 • /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
 • /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
   - 33015fd1_indigo_fenix: {object}

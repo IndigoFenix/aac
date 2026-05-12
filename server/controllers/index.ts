@@ -4,6 +4,7 @@ export { studentController, StudentController } from "./studentController";
 export { inviteCodeController, InviteCodeController } from "./inviteCodeController";
 export { savedLocationController, SavedLocationController } from "./savedLocationController";
 export { adminController, AdminController } from "./adminController";
+export { adminUsersController } from "./adminUsersController";
 export { creditPackageController, CreditPackageController } from "./creditPackageController";
 export { interpretationController, InterpretationController } from "./interpretationController";
 export { boardController, BoardController } from "./boardController";

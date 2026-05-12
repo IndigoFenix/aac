@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { YesNoSprite } from "@/components/YesNoSprite";
 
 interface QuickActionsProps {
   onAction: (action: string, text: string) => void;
@@ -15,9 +16,9 @@ interface QuickActionsProps {
 export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false }: QuickActionsProps) {
   const { t } = useLanguage();
 
-  const quickActions = [
-    { id: "yes", labelKey: "quickActions.yes", emoji: "✅", color: "#D1FAE5" },
-    { id: "no", labelKey: "quickActions.no", emoji: "❌", color: "#FEE2E2" },
+  const quickActions: Array<{ id: "yes" | "no"; labelKey: string; color: string }> = [
+    { id: "yes", labelKey: "quickActions.yes", color: "#D1FAE5" },
+    { id: "no", labelKey: "quickActions.no", color: "#FEE2E2" },
   ];
 
   const handleAction = (action: typeof quickActions[0]) => {
@@ -88,7 +89,7 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-xl">{action.emoji}</span>
+          <YesNoSprite variant={action.id} size={36} />
           <span className="text-xs font-semibold text-gray-800 mt-0.5">
             {t(action.labelKey)}
           </span>

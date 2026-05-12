@@ -41917,3 +41917,2783 @@ USAGE: {"input_tokens":872,"cache_creation_input_tokens":11482,"cache_read_input
 }
 ────────────────────────────────────────────────────────────────────────────────
 USAGE: {"input_tokens":1011,"cache_creation_input_tokens":11537,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11537,"ephemeral_1h_input_tokens":0},"output_tokens":39,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T13:26:07.723Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [39863 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "Great! What would you like to talk about?\n[SYSTEM — Board changes: Board rebuilt: My Day, Feelings, Interests, What]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Do you want to go outside?\n[TRANSCRIPT] [Unknown] Do you want to go outside?"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Yes, I do, No, thank you, Later]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Daniel, do you want to go outside?\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "Great! What would you like to talk about?\n[SYSTEM — Board changes: Board rebuilt: My Day, Feelings, Interests, What]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Do you want to go outside?\n[TRANSCRIPT] [Unknown] Do you want to go outside?"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Yes, I do, No, thank you, Later]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Daniel, do you want to go outside?"
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":846,"cache_creation_input_tokens":11759,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11759,"ephemeral_1h_input_tokens":0},"output_tokens":54,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T13:26:11.668Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [39997 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "Great! What would you like to talk about?\n[SYSTEM — Board changes: Board rebuilt: My Day, Feelings, Interests, What]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Do you want to go outside?\n[TRANSCRIPT] [Unknown] Do you want to go outside?"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Yes, I do, No, thank you, Later]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Daniel, do you want to go outside?\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[BUTTON PRESS] Talk"
+    },
+    {
+      "role": "assistant",
+      "content": "Great! What would you like to talk about?\n[SYSTEM — Board changes: Board rebuilt: My Day, Feelings, Interests, What]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Do you want to go outside?\n[TRANSCRIPT] [Unknown] Do you want to go outside?"
+    },
+    {
+      "role": "assistant",
+      "content": "[SYSTEM — Board changes: Board rebuilt: Yes, I do, No, thank you, Later]"
+    },
+    {
+      "role": "user",
+      "content": "[TRANSCRIPT] [Unknown] Daniel, do you want to go outside?"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01NNEEcXc8h5guZiQPeX6BrC",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Context_Progress"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01NNEEcXc8h5guZiQPeX6BrC",
+          "content": "[{\"target\":\"/Context_Progress\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\\\n  ↪ To expand: view \\\"/Context_Progress/*\\\". (read-only)\",\"mutatedPaths\":[\"/Context_Progress\"],\"summary\":\"Path not found or not loaded\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1016,"cache_creation_input_tokens":11810,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11810,"ephemeral_1h_input_tokens":0},"output_tokens":186,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:06:49.919Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40514 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input.\nSounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]"
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User is looking at the expanded feelings board; no selection yet."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]\n[MORE OPTIONS REQUESTED]\n[BUTTON PRESS] Home\n[BUTTON PRESS] Interact"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure, I'm here to talk! What's on your mind?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] My Day"
+    },
+    {
+      "role": "assistant",
+      "content": "I'd love to hear about it! Which part of your day would you like to share?\n[SYSTEM — Board changes: Board rebuilt: Morning, Afternoon, Evening, Weekend]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Weekend"
+    },
+    {
+      "role": "assistant",
+      "content": "Weekends are great! What did you do this weekend?\n[SYSTEM — Board changes: Board rebuilt: Saturday, Sunday, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Sunday"
+    },
+    {
+      "role": "assistant",
+      "content": "Sounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out"
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":976,"cache_creation_input_tokens":11921,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11921,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:06:53.669Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40648 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input.\nSounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]"
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User is looking at the expanded feelings board; no selection yet."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]\n[MORE OPTIONS REQUESTED]\n[BUTTON PRESS] Home\n[BUTTON PRESS] Interact"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure, I'm here to talk! What's on your mind?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] My Day"
+    },
+    {
+      "role": "assistant",
+      "content": "I'd love to hear about it! Which part of your day would you like to share?\n[SYSTEM — Board changes: Board rebuilt: Morning, Afternoon, Evening, Weekend]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Weekend"
+    },
+    {
+      "role": "assistant",
+      "content": "Weekends are great! What did you do this weekend?\n[SYSTEM — Board changes: Board rebuilt: Saturday, Sunday, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Sunday"
+    },
+    {
+      "role": "assistant",
+      "content": "Sounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_016sS9tt5Rb7KJTdzyunsK7y",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Context_Progress"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_016sS9tt5Rb7KJTdzyunsK7y",
+          "content": "[{\"target\":\"/Context_Progress\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\\\n  ↪ To expand: view \\\"/Context_Progress/*\\\". (read-only)\",\"mutatedPaths\":[\"/Context_Progress\"],\"summary\":\"Path not found or not loaded\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1146,"cache_creation_input_tokens":11972,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11972,"ephemeral_1h_input_tokens":0},"output_tokens":55,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:06:54.789Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40648 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input.\nSounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]"
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] User is looking at the expanded feelings board; no selection yet."
+    },
+    {
+      "role": "user",
+      "content": "[MORE OPTIONS REQUESTED]\n[MORE OPTIONS REQUESTED]\n[BUTTON PRESS] Home\n[BUTTON PRESS] Interact"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure, I'm here to talk! What's on your mind?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] My Day"
+    },
+    {
+      "role": "assistant",
+      "content": "I'd love to hear about it! Which part of your day would you like to share?\n[SYSTEM — Board changes: Board rebuilt: Morning, Afternoon, Evening, Weekend]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Weekend"
+    },
+    {
+      "role": "assistant",
+      "content": "Weekends are great! What did you do this weekend?\n[SYSTEM — Board changes: Board rebuilt: Saturday, Sunday, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Sunday"
+    },
+    {
+      "role": "assistant",
+      "content": "Sounds like you had a Sunday! What did you get up to?\n[SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Went out"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_016sS9tt5Rb7KJTdzyunsK7y",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Context_Progress"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_016sS9tt5Rb7KJTdzyunsK7y",
+          "content": "[{\"target\":\"/Context_Progress\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\\\n  ↪ To expand: view \\\"/Context_Progress/*\\\". (read-only)\",\"mutatedPaths\":[\"/Context_Progress\"],\"summary\":\"Path not found or not loaded\"}]"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01TS5pG1pPDj2dxDozi2DD5A",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Context_Progress/*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01TS5pG1pPDj2dxDozi2DD5A",
+          "content": "[{\"target\":\"/Context_Progress/*\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\\\n  ↪ To expand: view \\\"/Context_Progress/*\\\". (read-only)\",\"mutatedPaths\":[],\"summary\":\"Path not found or not loaded\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1313,"cache_creation_input_tokens":11972,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11972,"ephemeral_1h_input_tokens":0},"output_tokens":54,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:07:08.768Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nASSISTANT: [PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input.\nUSER: [MORE OPTIONS REQUESTED]\nASSISTANT: [PRIVATE_NOTE] User is looking at the expanded feelings board; no selection yet.\nUSER: [MORE OPTIONS REQUESTED]\nUSER: [MORE OPTIONS REQUESTED]\nUSER: [BUTTON PRESS] Home\nUSER: [BUTTON PRESS] Interact\nASSISTANT: Sure, I'm here to talk! What's on your mind?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]\nUSER: [BUTTON PRESS] My Day\nASSISTANT: I'd love to hear about it! Which part of your day would you like to share?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Morning, Afternoon, Evening, Weekend]\nUSER: [BUTTON PRESS] Weekend\nASSISTANT: Weekends are great! What did you do this weekend?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Saturday, Sunday, Something else]\nUSER: [BUTTON PRESS] Sunday\nASSISTANT: Sounds like you had a Sunday! What did you get up to?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]\nUSER: [BUTTON PRESS] Went out\nUSER: Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nASSISTANT: [PRIVATE_NOTE] User maintains a neutral expression; waiting for a button press or verbal input.\nUSER: [MORE OPTIONS REQUESTED]\nASSISTANT: [PRIVATE_NOTE] User is looking at the expanded feelings board; no selection yet.\nUSER: [MORE OPTIONS REQUESTED]\nUSER: [MORE OPTIONS REQUESTED]\nUSER: [BUTTON PRESS] Home\nUSER: [BUTTON PRESS] Interact\nASSISTANT: Sure, I'm here to talk! What's on your mind?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]\nUSER: [BUTTON PRESS] My Day\nASSISTANT: I'd love to hear about it! Which part of your day would you like to share?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Morning, Afternoon, Evening, Weekend]\nUSER: [BUTTON PRESS] Weekend\nASSISTANT: Weekends are great! What did you do this weekend?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Saturday, Sunday, Something else]\nUSER: [BUTTON PRESS] Sunday\nASSISTANT: Sounds like you had a Sunday! What did you get up to?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Relaxed, Went out, Saw friends, Something else]\nUSER: [BUTTON PRESS] Went out"
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1774,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":164,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:21:00.109Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40400 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] No action needed; awaiting user input in Interact mode."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Is there something else you'd like to talk about instead?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "No problem. Let me know if you change your mind, or you can choose another option here.\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Home\n[BUTTON PRESS] Feelings"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, how are you feeling right now?"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Tired\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] No action needed; awaiting user input in Interact mode."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Is there something else you'd like to talk about instead?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "No problem. Let me know if you change your mind, or you can choose another option here.\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Home\n[BUTTON PRESS] Feelings"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, how are you feeling right now?"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Tired"
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":948,"cache_creation_input_tokens":11899,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11899,"ephemeral_1h_input_tokens":0},"output_tokens":89,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:21:02.193Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40504 chars] ...nd keep the context focused. Provide a summary of removed content so important context is preserved.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] No action needed; awaiting user input in Interact mode."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Is there something else you'd like to talk about instead?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "No problem. Let me know if you change your mind, or you can choose another option here.\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Home\n[BUTTON PRESS] Feelings"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, how are you feeling right now?"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Tired\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "[PRIVATE_NOTE] No action needed; awaiting user input in Interact mode."
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Is there something else you'd like to talk about instead?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] No"
+    },
+    {
+      "role": "assistant",
+      "content": "No problem. Let me know if you change your mind, or you can choose another option here.\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests, Feelings]"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Home\n[BUTTON PRESS] Feelings"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, how are you feeling right now?"
+    },
+    {
+      "role": "user",
+      "content": "[BUTTON PRESS] Tired"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01F1T3AqBmQKZXoijid2LyD9",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "add",
+                "path": "/Student_Notes",
+                "value": "Daniel expressed feeling tired during today's session (May 12, 2026)."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01F1T3AqBmQKZXoijid2LyD9",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"add\",\"ok\":true}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1068,"cache_creation_input_tokens":11936,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11936,"ephemeral_1h_input_tokens":0},"output_tokens":64,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:39:31.385Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40233 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":764,"cache_creation_input_tokens":11866,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11866,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T14:39:33.192Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40197 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\n[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01UQFnhqK6v9KQ8ne8ACEcZE",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01UQFnhqK6v9KQ8ne8ACEcZE",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":947,"cache_creation_input_tokens":11858,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11858,"ephemeral_1h_input_tokens":0},"output_tokens":157,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T15:19:03.382Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 se... [214 chars] ..., and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the following session transcript.\n\nChat mode: aac\n\nTranscript:\nUSER: Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant.\nASSISTANT: Hi Daniel! How are you doing this evening?\nASSISTANT: [SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests]\nUSER: [SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 400,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "importance"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title, ≤ 80 chars. No quotes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript."
+          },
+          "importance": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare."
+          }
+        }
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+[2026-05-12T15:19:05.237Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40164 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Daniel! How are you doing this evening?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Daniel! How are you doing this evening?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1163,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":153,"service_tier":"standard","inference_geo":"not_available"}
+USAGE: {"input_tokens":832,"cache_creation_input_tokens":11850,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11850,"ephemeral_1h_input_tokens":0},"output_tokens":65,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-05-12T15:19:06.616Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\n\nYou are the Monitor Agent in a dual-agent AAC system.\n\nYour responsib... [40128 chars] ...ints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Session start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Daniel! How are you doing this evening?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.\nSession start. Home board buttons: Interact, Talk, My Day, Interests, Feelings, Help, Apps, I'm thinking about. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Don't change the board until a button is pressed.\nUse the camera image to observe the environment and make the buttons contextually relevant."
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Daniel! How are you doing this evening?\n[SYSTEM — Board changes: Board rebuilt: Talk, My Day, Interests]"
+    },
+    {
+      "role": "user",
+      "content": "[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:\n1. Summarize the session — note anything significant that happened.\n2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_017ugz9Y9D2LHXRDTnyXMWfN",
+          "name": "manageMemory",
+          "input": {
+            "ops": [
+              {
+                "action": "view",
+                "path": "/Student_Notes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_017ugz9Y9D2LHXRDTnyXMWfN",
+          "content": "[{\"target\":\"/Student_Notes\",\"action\":\"view\",\"ok\":true,\"message\":\"• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) \\\\n  (empty - no items to display)\\\\n  ↪ To append: action \\\"add\\\" at \\\"/Student_Notes\\\" with value.\",\"mutatedPaths\":[\"/Student_Notes\"],\"summary\":\"Empty array (0 items)\"}]"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "hide",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view/hide)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":1015,"cache_creation_input_tokens":11842,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":11842,"ephemeral_1h_input_tokens":0},"output_tokens":166,"service_tier":"standard","inference_geo":"not_available"}

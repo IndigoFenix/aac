@@ -59,7 +59,6 @@ export default function UserSettings({
   const [geminiStudentVoice, setGeminiStudentVoice] = useState("");
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
-  const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
   const [aiVoicePitch, setAiVoicePitch] = useState(0);
   const [studentVoicePitch, setStudentVoicePitch] = useState(0);
@@ -107,7 +106,6 @@ export default function UserSettings({
       setGeminiStudentVoice(aac?.geminiStudentVoice || "");
       setUseLocalTts(aac?.useLocalTts ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
-      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || "");
       setAiVoicePitch(aac?.aiVoicePitch ?? 0);
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
@@ -203,7 +201,6 @@ export default function UserSettings({
       geminiStudentVoice: geminiStudentVoice || undefined,
       useLocalTts,
       elevenlabsEnabled,
-      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       aiVoicePitch,
       studentVoicePitch,
@@ -566,7 +563,7 @@ export default function UserSettings({
                       <Label className="text-sm font-semibold">{t("settings.elevenlabsTitle")}</Label>
                       <p className="text-xs text-gray-500">{t("settings.elevenlabsDesc")}</p>
                     </div>
-                    {(elevenlabsAiVoiceId.trim() || elevenlabsStudentVoiceId.trim()) && (
+                    {elevenlabsStudentVoiceId.trim() && (
                       <Switch checked={elevenlabsEnabled} onCheckedChange={setElevenlabsEnabled} />
                     )}
                   </div>
@@ -579,18 +576,6 @@ export default function UserSettings({
                         type="text"
                         value={elevenlabsStudentVoiceId}
                         onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                        placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
-                        className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="aac-settings-el-ai-voice-id" className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
-                      <input
-                        id="aac-settings-el-ai-voice-id"
-                        type="text"
-                        value={elevenlabsAiVoiceId}
-                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
                         placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
                         className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
                       />

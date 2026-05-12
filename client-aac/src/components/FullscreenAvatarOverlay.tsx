@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LogOut } from "lucide-react";
 import { AacAvatar } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
@@ -32,6 +33,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import type { SleepState } from "@/lib/cameraAttentivenessTypes";
 
 const WAKING_HOLD_MS = 1500;
+const LOGOUT_HOLD_MS = 2000;
 
 type Stage = "sleeping" | "waking" | "hidden";
 type Phase = "sleep" | "wake" | "awake";
@@ -122,12 +124,14 @@ export function FullscreenAvatarOverlay() {
       {visible && (
         <motion.div
           key="fullscreen-avatar-overlay"
+          data-dwell-trap
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6, ease: "easeInOut" }}
-          className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/70 backdrop-blur-md pointer-events-none select-none"
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/70 backdrop-blur-md select-none"
         >
+          <HoldToLogoutButton />
           <div className="relative w-[min(60vw,60vh)] aspect-square">
             <AacAvatar
               avatar={sprite.avatar}
@@ -145,6 +149,71 @@ export function FullscreenAvatarOverlay() {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// Corner logout button. Requires a sustained pointer-hold to fire, so an
+// accidental tap can't log the student out. Intentionally omits data-dwell so
+// eye-gaze can't reach it — only a deliberate physical press works.
+function HoldToLogoutButton() {
+  const { t, isRTL } = useLanguage();
+  const [holding, setHolding] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const doLogout = () => {
+    localStorage.removeItem("synapse_user_profile");
+    localStorage.removeItem("synapse_user_id");
+    localStorage.removeItem("synapse_student_id");
+    localStorage.setItem("aac_signed_out", "true");
+    window.location.reload();
+  };
+
+  const cancel = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setHolding(false);
+  };
+
+  const start = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setHolding(true);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setHolding(false);
+      doLogout();
+    }, LOGOUT_HOLD_MS);
+  };
+
+  useEffect(() => () => cancel(), []);
+
+  return (
+    <button
+      type="button"
+      aria-label={t("common.logout")}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start();
+      }}
+      onPointerUp={cancel}
+      onPointerCancel={cancel}
+      onPointerLeave={cancel}
+      className={`absolute top-4 ${isRTL ? "left-4" : "right-4"} pointer-events-auto h-14 w-14 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white flex items-center justify-center overflow-hidden`}
+    >
+      <span
+        className="absolute inset-0 bg-red-500/60 origin-bottom"
+        style={{
+          transform: `scaleY(${holding ? 1 : 0})`,
+          transition: holding
+            ? `transform ${LOGOUT_HOLD_MS}ms linear`
+            : "transform 150ms ease-out",
+        }}
+        aria-hidden
+      />
+      <LogOut className="w-6 h-6 relative" />
+      <span className="sr-only">{t("common.holdToLogout")}</span>
+    </button>
   );
 }
 

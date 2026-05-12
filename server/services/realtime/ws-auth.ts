@@ -2,11 +2,15 @@ import type { IncomingMessage } from "http";
 import type { RequestHandler } from "express";
 import { getUserSession } from "../../userAuth";
 import { storage } from "../../storage";
+import { adminUserRepository } from "../../repositories/adminUserRepository";
+import { adaptAdminAsUser } from "../../services/adminAuthService";
 import type { User } from "@shared/schema";
 
 // Reuse the same express-session middleware used by HTTP routes. Running it
-// against the upgrade request populates `req.session`; Passport stores the
-// user id under `req.session.passport.user`.
+// against the upgrade request populates `req.session`. Passport stores the
+// serialized identity under `req.session.passport.user` — either the new
+// tagged `{ kind, id }` object or, for sessions that predate the tagged-
+// identity rollout, a bare user-id string.
 let sessionMiddleware: RequestHandler | null = null;
 
 function getMiddleware(): RequestHandler {
@@ -21,10 +25,20 @@ export async function authenticateUpgrade(req: IncomingMessage): Promise<User | 
     const res: any = { getHeader: () => undefined, setHeader: () => undefined, end: () => undefined };
     middleware(req as any, res, async () => {
       const session = (req as any).session;
-      const userId: string | undefined = session?.passport?.user;
-      if (!userId) return resolve(null);
+      const raw = session?.passport?.user;
+      if (!raw) return resolve(null);
       try {
-        const user = await storage.getUser(userId);
+        const identity =
+          typeof raw === "string" ? { kind: "user" as const, id: raw } : raw;
+
+        if (identity?.kind === "admin") {
+          const admin = await adminUserRepository.getById(identity.id);
+          if (!admin) return resolve(null);
+          const sourceUser = await storage.getUser(admin.id);
+          return resolve(adaptAdminAsUser(admin, sourceUser ?? undefined));
+        }
+
+        const user = await storage.getUser(identity.id);
         resolve(user ?? null);
       } catch {
         resolve(null);

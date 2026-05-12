@@ -28,6 +28,7 @@ export const es: Translations = {
     confirm: "Confirmar",
     reset: "Restablecer",
     logout: "Cerrar sesi\u00f3n",
+    holdToLogout: "Mantenga pulsado para cerrar sesi\u00f3n",
     login: "Iniciar sesi\u00f3n",
     or: "o",
   },
@@ -182,7 +183,6 @@ export const es: Translations = {
     elevenlabsTitle: "Voz ElevenLabs",
     elevenlabsDesc: "Ingrese su propia clave API de ElevenLabs e IDs de voz para TTS de alta calidad. Anula todas las dem\u00e1s configuraciones de voz cuando est\u00e1 configurado.",
     elevenlabsStudentVoiceId: "ID de voz del estudiante",
-    elevenlabsAiVoiceId: "ID de voz de IA",
     elevenlabsVoiceIdPlaceholder: "ej. 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "Tama\u00f1o de botones",

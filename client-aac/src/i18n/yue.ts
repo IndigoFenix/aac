@@ -28,6 +28,7 @@ export const yue: Translations = {
     confirm: "確認",
     reset: "重設",
     logout: "登出",
+    holdToLogout: "長按以登出",
     login: "登入",
     or: "或者",
   },
@@ -182,7 +183,6 @@ export const yue: Translations = {
     elevenlabsTitle: "ElevenLabs 語音",
     elevenlabsDesc: "輸入你自己嘅 ElevenLabs API 密鑰同語音 ID 嚟攞高質素語音合成。設定之後會覆蓋所有其他語音設定。",
     elevenlabsStudentVoiceId: "學生語音 ID",
-    elevenlabsAiVoiceId: "AI 語音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "按鈕大小",

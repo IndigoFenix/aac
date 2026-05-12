@@ -28,6 +28,7 @@ export const ko: Translations = {
     confirm: "확인",
     reset: "초기화",
     logout: "로그아웃",
+    holdToLogout: "로그아웃하려면 길게 누르세요",
     login: "로그인",
     or: "또는",
   },
@@ -182,7 +183,6 @@ export const ko: Translations = {
     elevenlabsTitle: "ElevenLabs 음성",
     elevenlabsDesc: "고품질 TTS를 위해 ElevenLabs API 키와 음성 ID를 입력하세요. 설정 시 다른 모든 음성 설정을 재정의합니다.",
     elevenlabsStudentVoiceId: "학생 음성 ID",
-    elevenlabsAiVoiceId: "AI 음성 ID",
     elevenlabsVoiceIdPlaceholder: "예: 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "버튼 크기",

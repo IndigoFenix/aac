@@ -28,6 +28,7 @@ export const zh: Translations = {
     confirm: "确认",
     reset: "重置",
     logout: "退出登录",
+    holdToLogout: "长按以退出登录",
     login: "登录",
     or: "或",
   },
@@ -182,7 +183,6 @@ export const zh: Translations = {
     elevenlabsTitle: "ElevenLabs 语音",
     elevenlabsDesc: "输入您自己的 ElevenLabs API 密钥和语音 ID 以获取高质量语音合成。设置后将覆盖所有其他语音设置。",
     elevenlabsStudentVoiceId: "学生语音 ID",
-    elevenlabsAiVoiceId: "AI 语音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "按钮大小",

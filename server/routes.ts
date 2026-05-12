@@ -32,6 +32,7 @@ import {
   shareInviteController,
   consentController,
   crmChatController,
+  adminUsersController,
 } from "./controllers";
 
 import {
@@ -42,6 +43,7 @@ import {
   requireSLPPlan,
   requireLicensePermission,
   validateCSRF,
+  requireAdminSection,
 } from "./middleware";
 import { authRateLimiter, passwordResetRateLimiter } from "./middleware/security";
 
@@ -370,23 +372,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/users/me/classrooms', requireAuth, classroomController.getMyClassrooms.bind(classroomController));
 
   // ============= PERSONA ROUTES =============
-  // Admin routes (system admin only)
-  app.get('/api/admin/personas', requireAuth, requireSystemAdmin, personaController.getPersonas.bind(personaController));
-  app.post('/api/admin/personas', requireAuth, requireSystemAdmin, personaController.createPersona.bind(personaController));
-  app.get('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.getPersona.bind(personaController));
-  app.patch('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.updatePersona.bind(personaController));
-  app.delete('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.deletePersona.bind(personaController));
+  // Admin routes (admins with the "personas" section permission)
+  app.get('/api/admin/personas', requireAuth, requireAdminSection('personas'), personaController.getPersonas.bind(personaController));
+  app.post('/api/admin/personas', requireAuth, requireAdminSection('personas'), personaController.createPersona.bind(personaController));
+  app.get('/api/admin/personas/:id', requireAuth, requireAdminSection('personas'), personaController.getPersona.bind(personaController));
+  app.patch('/api/admin/personas/:id', requireAuth, requireAdminSection('personas'), personaController.updatePersona.bind(personaController));
+  app.delete('/api/admin/personas/:id', requireAuth, requireAdminSection('personas'), personaController.deletePersona.bind(personaController));
 
   // User routes (any authenticated user)
   app.get('/api/personas/selectable', requireAuth, personaController.getSelectablePersonas.bind(personaController));
 
   // ============= VOICE RECORD ROUTES =============
-  // Admin routes (system admin only)
-  app.get('/api/admin/voices', requireAuth, requireSystemAdmin, voiceRecordController.getVoices.bind(voiceRecordController));
-  app.post('/api/admin/voices', requireAuth, requireSystemAdmin, voiceRecordController.createVoice.bind(voiceRecordController));
-  app.get('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.getVoice.bind(voiceRecordController));
-  app.patch('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.updateVoice.bind(voiceRecordController));
-  app.delete('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.deleteVoice.bind(voiceRecordController));
+  // Admin routes (admins with the "voices" section permission)
+  app.get('/api/admin/voices', requireAuth, requireAdminSection('voices'), voiceRecordController.getVoices.bind(voiceRecordController));
+  app.post('/api/admin/voices', requireAuth, requireAdminSection('voices'), voiceRecordController.createVoice.bind(voiceRecordController));
+  app.get('/api/admin/voices/:id', requireAuth, requireAdminSection('voices'), voiceRecordController.getVoice.bind(voiceRecordController));
+  app.patch('/api/admin/voices/:id', requireAuth, requireAdminSection('voices'), voiceRecordController.updateVoice.bind(voiceRecordController));
+  app.delete('/api/admin/voices/:id', requireAuth, requireAdminSection('voices'), voiceRecordController.deleteVoice.bind(voiceRecordController));
 
   // User routes (any authenticated user - active voices for settings panel)
   app.get('/api/voices/active', requireAuth, voiceRecordController.getActiveVoices.bind(voiceRecordController));
@@ -394,12 +396,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/voices/preview', requireAuth, voiceRecordController.previewVoice.bind(voiceRecordController));
 
   // ============= TOPIC/LIBRARY ROUTES =============
-  // Admin routes (system admin only)
-  app.get('/api/admin/topics', requireAuth, requireSystemAdmin, topicController.getTopics.bind(topicController));
-  app.post('/api/admin/topics', requireAuth, requireSystemAdmin, topicController.createTopic.bind(topicController));
-  app.get('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.getTopic.bind(topicController));
-  app.patch('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.updateTopic.bind(topicController));
-  app.delete('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.deleteTopic.bind(topicController));
+  // Admin routes (admins with the "library" section permission)
+  app.get('/api/admin/topics', requireAuth, requireAdminSection('library'), topicController.getTopics.bind(topicController));
+  app.post('/api/admin/topics', requireAuth, requireAdminSection('library'), topicController.createTopic.bind(topicController));
+  app.get('/api/admin/topics/:id', requireAuth, requireAdminSection('library'), topicController.getTopic.bind(topicController));
+  app.patch('/api/admin/topics/:id', requireAuth, requireAdminSection('library'), topicController.updateTopic.bind(topicController));
+  app.delete('/api/admin/topics/:id', requireAuth, requireAdminSection('library'), topicController.deleteTopic.bind(topicController));
 
   // User routes (any authenticated user - active topics only)
   app.get('/api/topics', requireAuth, topicController.getActiveTopics.bind(topicController));
@@ -1249,10 +1251,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/institute/:instituteId", requireAuth, (req, res) =>
     customSymbolController.getInstituteSymbols(req, res)
   );
-  app.get("/api/custom-symbols/public", requireSystemAdmin, (req, res) =>
+  app.get("/api/custom-symbols/public", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.getPublicSymbols(req, res)
   );
-  app.get("/api/custom-symbols/unapproved", requireSystemAdmin, (req, res) =>
+  app.get("/api/custom-symbols/unapproved", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.getUnapprovedSymbols(req, res)
   );
   app.get("/api/custom-symbols/by-key/:key", requireAuth, (req, res) =>
@@ -1267,7 +1269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
     customSymbolController.getAvailableSymbols(req, res)
   );
-  app.post("/api/custom-symbols/bulk-delete-unapproved", requireSystemAdmin, (req, res) =>
+  app.post("/api/custom-symbols/bulk-delete-unapproved", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.bulkDeleteUnapproved(req, res)
   );
 
@@ -1281,10 +1283,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/:id/image", requireAuth, (req, res) =>
     customSymbolController.getSymbolImage(req, res)
   );
-  app.patch("/api/custom-symbols/:id", requireSystemAdmin, (req, res) =>
+  app.patch("/api/custom-symbols/:id", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.updateSymbol(req, res)
   );
-  app.delete("/api/custom-symbols/:id", requireSystemAdmin, (req, res) =>
+  app.delete("/api/custom-symbols/:id", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.deleteSymbol(req, res)
   );
 
@@ -1524,6 +1526,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     adminController.setMfaEnforcement(req, res)
   );
 
+  // Admins (backoffice admin management). Gated by the 'admins' section
+  // permission — only admins with `"*"` or `"admins"` in their permission
+  // list can manage other admins.
+  app.get("/api/admin/admins", requireAuth, requireAdminSection("admins"), (req, res) =>
+    adminUsersController.list(req, res)
+  );
+  app.post("/api/admin/admins", requireAuth, requireAdminSection("admins"), (req, res) =>
+    adminUsersController.create(req, res)
+  );
+  app.patch("/api/admin/admins/:id", requireAuth, requireAdminSection("admins"), (req, res) =>
+    adminUsersController.update(req, res)
+  );
+  app.delete("/api/admin/admins/:id", requireAuth, requireAdminSection("admins"), (req, res) =>
+    adminUsersController.remove(req, res)
+  );
+
   // System prompt
   app.get("/api/admin/prompt", requireAdmin, (req, res) =>
     adminController.getSystemPrompt(req, res)
@@ -1533,35 +1551,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // LLM Config (must come before /api/admin/settings/:key to avoid param match)
-  app.get("/api/admin/settings/llm_configs", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/settings/llm_configs", requireAuth, requireAdminSection("models"), (req, res) =>
     adminController.getLLMConfigs(req, res)
   );
-  app.put("/api/admin/settings/llm_configs", requireAuth, requireSystemAdmin, (req, res) =>
+  app.put("/api/admin/settings/llm_configs", requireAuth, requireAdminSection("models"), (req, res) =>
     adminController.updateLLMConfigs(req, res)
   );
 
   // CRM landing-page chat settings (also before /api/admin/settings/:key)
-  app.get("/api/admin/crm/settings", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/crm/settings", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.getCrmChatSettings(req, res)
   );
-  app.put("/api/admin/crm/settings", requireAuth, requireSystemAdmin, (req, res) =>
+  app.put("/api/admin/crm/settings", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.updateCrmChatSettings(req, res)
   );
 
   // CRM customer admin
-  app.get("/api/admin/crm/customers", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/crm/customers", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.listCrmCustomers(req, res)
   );
-  app.get("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/crm/customers/:id", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.getCrmCustomer(req, res)
   );
-  app.patch("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.patch("/api/admin/crm/customers/:id", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.updateCrmCustomer(req, res)
   );
-  app.delete("/api/admin/crm/customers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.delete("/api/admin/crm/customers/:id", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.deleteCrmCustomer(req, res)
   );
-  app.get("/api/admin/crm/sessions/:id/log", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/crm/sessions/:id/log", requireAuth, requireAdminSection("crm"), (req, res) =>
     adminController.getCrmSessionLog(req, res)
   );
 
@@ -1598,22 +1616,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     adminController.updateApiProvider(req, res)
   );
 
-  // Session history (admin)
-  app.get("/api/admin/sessions/aac", requireAdmin, (req, res) =>
+  // Session history (admins with the "sessions" section permission). Tightened
+  // from requireAdmin to admin-section gating — only the AdminDashboard
+  // session-history page consumes these endpoints.
+  app.get("/api/admin/sessions/aac", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getAACSessions(req, res)
   );
-  app.get("/api/admin/sessions/aac/:id/log", requireAdmin, (req, res) =>
+  app.get("/api/admin/sessions/aac/:id/log", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getAACSessionLog(req, res)
   );
-  app.get("/api/admin/sessions/chat", requireAdmin, (req, res) =>
+  app.get("/api/admin/sessions/chat", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getChatSessions(req, res)
   );
-  app.get("/api/admin/sessions/chat/:id/log", requireAdmin, (req, res) =>
+  app.get("/api/admin/sessions/chat/:id/log", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getChatSessionLog(req, res)
   );
 
-  // Activity logs (system admin)
-  app.get("/api/admin/activity-logs", requireAuth, requireSystemAdmin, (req, res) =>
+  // Activity logs (admins with the "activity-log" section permission)
+  app.get("/api/admin/activity-logs", requireAuth, requireAdminSection("activity-log"), (req, res) =>
     activityLogController.getLogs(req, res)
   );
 
@@ -1661,22 +1681,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     insuranceBridgeController.closeActivity(req, res)
   );
 
-  // Deep analyses (system admin) — viewer across all students
-  app.get("/api/admin/deep-analyses", requireAuth, requireSystemAdmin, (req, res) =>
+  // Deep analyses — viewer across all students
+  app.get("/api/admin/deep-analyses", requireAuth, requireAdminSection("deep-analyses"), (req, res) =>
     deepAnalysisController.adminList(req, res)
   );
-  app.get("/api/admin/deep-analyses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/deep-analyses/:id", requireAuth, requireAdminSection("deep-analyses"), (req, res) =>
     deepAnalysisController.adminGet(req, res)
   );
 
-  // Licenses (admin)
-  app.get("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res) =>
+  // Licenses
+  app.get("/api/admin/licenses", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.listLicenses(req, res)
   );
-  app.get("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/licenses/:id", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.getLicense(req, res)
   );
-  app.post("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res, next) => {
+  app.post("/api/admin/licenses", requireAuth, requireAdminSection("licenses"), (req, res, next) => {
     if (req.is('multipart/form-data')) {
       upload.single("instituteLogo")(req, res, next);
     } else {
@@ -1685,30 +1705,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }, (req, res) =>
     licenseController.createLicense(req as any, res)
   );
-  app.patch("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.patch("/api/admin/licenses/:id", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.updateLicense(req, res)
   );
-  app.delete("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.delete("/api/admin/licenses/:id", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.deleteLicense(req, res)
   );
-  app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireSystemAdmin, (req, res) =>
+  app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.resendInvite(req, res)
   );
 
-  // Identity providers (system admin)
-  app.get("/api/admin/identity-providers", requireAuth, requireSystemAdmin, (req, res) =>
+  // Identity providers
+  app.get("/api/admin/identity-providers", requireAuth, requireAdminSection("identity-providers"), (req, res) =>
     identityController.getProviders(req, res)
   );
-  app.get("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.get("/api/admin/identity-providers/:id", requireAuth, requireAdminSection("identity-providers"), (req, res) =>
     identityController.getProvider(req, res)
   );
-  app.post("/api/admin/identity-providers", requireAuth, requireSystemAdmin, (req, res) =>
+  app.post("/api/admin/identity-providers", requireAuth, requireAdminSection("identity-providers"), (req, res) =>
     identityController.createProvider(req, res)
   );
-  app.patch("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.patch("/api/admin/identity-providers/:id", requireAuth, requireAdminSection("identity-providers"), (req, res) =>
     identityController.updateProvider(req, res)
   );
-  app.delete("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.delete("/api/admin/identity-providers/:id", requireAuth, requireAdminSection("identity-providers"), (req, res) =>
     identityController.deleteProvider(req, res)
   );
 
@@ -1732,11 +1752,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     authController.supportLogout(req, res)
   );
 
-  // Contact inquiries (admin)
-  app.get("/api/admin/contacts", requireAuth, requireSystemAdmin, (req, res) =>
+  // Contact inquiries
+  app.get("/api/admin/contacts", requireAuth, requireAdminSection("contacts"), (req, res) =>
     contactController.list(req, res)
   );
-  app.delete("/api/admin/contacts/:id", requireAuth, requireSystemAdmin, (req, res) =>
+  app.delete("/api/admin/contacts/:id", requireAuth, requireAdminSection("contacts"), (req, res) =>
     contactController.remove(req, res)
   );
 

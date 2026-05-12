@@ -21,99 +21,115 @@ import {
   Sparkles,
   Image as ImageIcon,
   MessageCircle,
+  Users as UsersIcon,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
-
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols' | 'crm';
+import { hasAdminSection, type AdminSection } from '@shared/admin-sections';
 
 type AdminSidebarProps = {
-  activeSection: AdminSection;
+  // Null briefly during the redirect from `/admin` (no section in URL) to the
+  // first permitted section — no item is highlighted in that window.
+  activeSection: AdminSection | null;
   onSectionChange: (section: AdminSection) => void;
 };
 
 export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [, navigate] = useLocation();
 
-  const navItems = [
+  const allNavItems = [
     {
       icon: Bot,
-      label: 'Agents',
+      label: t('admin.sections.personas'),
       section: 'personas' as AdminSection,
       testId: 'admin-nav-personas',
     },
     {
       icon: BookOpen,
-      label: 'Library',
+      label: t('admin.sections.library'),
       section: 'library' as AdminSection,
       testId: 'admin-nav-library',
     },
     {
+      icon: ImageIcon,
+      label: t('admin.sections.public-symbols'),
+      section: 'public-symbols' as AdminSection,
+      testId: 'admin-nav-public-symbols',
+    },
+    {
       icon: Volume2,
-      label: 'Voices',
+      label: t('admin.sections.voices'),
       section: 'voices' as AdminSection,
       testId: 'admin-nav-voices',
     },
     {
-      icon: Cpu,
-      label: 'AI Models',
-      section: 'models' as AdminSection,
-      testId: 'admin-nav-models',
+      icon: ClipboardList,
+      label: t('admin.sections.activity-log'),
+      section: 'activity-log' as AdminSection,
+      testId: 'admin-nav-activity-log',
     },
     {
       icon: History,
-      label: 'Sessions',
+      label: t('admin.sections.sessions'),
       section: 'sessions' as AdminSection,
       testId: 'admin-nav-sessions',
     },
     {
+      icon: Sparkles,
+      label: t('admin.sections.deep-analyses'),
+      section: 'deep-analyses' as AdminSection,
+      testId: 'admin-nav-deep-analyses',
+    },
+    {
+      icon: Cpu,
+      label: t('admin.sections.models'),
+      section: 'models' as AdminSection,
+      testId: 'admin-nav-models',
+    },
+    {
       icon: Mail,
-      label: 'Contacts',
+      label: t('admin.sections.contacts'),
       section: 'contacts' as AdminSection,
       testId: 'admin-nav-contacts',
     },
     {
+      icon: MessageCircle,
+      label: t('admin.sections.crm'),
+      section: 'crm' as AdminSection,
+      testId: 'admin-nav-crm',
+    },
+    {
       icon: KeyRound,
-      label: 'Licenses',
+      label: t('admin.sections.licenses'),
       section: 'licenses' as AdminSection,
       testId: 'admin-nav-licenses',
     },
     {
       icon: ShieldCheck,
-      label: 'Identity Providers',
+      label: t('admin.sections.identity-providers'),
       section: 'identity-providers' as AdminSection,
       testId: 'admin-nav-identity-providers',
     },
     {
-      icon: ClipboardList,
-      label: 'Activity Log',
-      section: 'activity-log' as AdminSection,
-      testId: 'admin-nav-activity-log',
-    },
-    {
-      icon: Sparkles,
-      label: 'Deep Analyses',
-      section: 'deep-analyses' as AdminSection,
-      testId: 'admin-nav-deep-analyses',
-    },
-    {
-      icon: ImageIcon,
-      label: 'Public Symbols',
-      section: 'public-symbols' as AdminSection,
-      testId: 'admin-nav-public-symbols',
-    },
-    {
-      icon: MessageCircle,
-      label: 'CRM Chat',
-      section: 'crm' as AdminSection,
-      testId: 'admin-nav-crm',
+      icon: UsersIcon,
+      label: t('admin.sections.admins'),
+      section: 'admins' as AdminSection,
+      testId: 'admin-nav-admins',
     },
   ];
+
+  // Filter by the current admin's permissions. Sessions that came from a
+  // regular user (e.g. an institute admin who somehow lands here) have no
+  // adminPermissions and see no sections — they shouldn't be on this page.
+  const adminPermissions = user?.adminPermissions;
+  const navItems = allNavItems.filter((item) =>
+    hasAdminSection(adminPermissions, item.section),
+  );
 
   const renderNavItem = (item: typeof navItems[0]) => {
     const isActive = activeSection === item.section;

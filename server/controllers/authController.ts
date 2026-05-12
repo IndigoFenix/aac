@@ -8,6 +8,7 @@ import { mfaService } from "../services/mfaService";
 import { activityLogService } from "../services/activityLogService";
 import { registerSchema, loginSchema, validatePassword } from "@shared/schema";
 import { isCustomerSupport, type SupportSession } from "../services/customerSupportService";
+import { resolveLoginIdentity } from "../services/adminAuthService";
 import { instituteRepository } from "../repositories/instituteRepository";
 import { licenseRepository } from "../repositories/licenseRepository";
 
@@ -52,7 +53,12 @@ export class AuthController {
         referralCode
       );
 
-      req.login(user, (err) => {
+      // Admin-first identity resolution: if an admin row already exists for
+      // this email (e.g. an admin was pre-provisioned by an existing admin
+      // and is now self-registering), establish the session under the admin
+      // identity rather than the regular user.
+      const identity = await resolveLoginIdentity(user);
+      req.login(identity, (err) => {
         if (err) {
           res.status(500).json({
             success: false,
@@ -64,7 +70,7 @@ export class AuthController {
         res.json({
           success: true,
           message: "Account created successfully",
-          user: userService.formatUserForResponse(user),
+          user: userService.formatUserForResponse(identity as any),
         });
       });
     } catch (error: any) {
@@ -135,36 +141,42 @@ export class AuthController {
         });
       }
 
-      // No MFA required, complete login
-      req.login(user, (err) => {
-        if (err) {
-          return res.status(500).json({
-            success: false,
-            message: "Login failed",
+      // No MFA required, complete login. If the user's email matches an
+      // admin_users row, the session is established under the admin identity
+      // rather than the regular user (per the admin-first login design).
+      resolveLoginIdentity(user).then((identity) => {
+        req.login(identity, (err) => {
+          if (err) {
+            return res.status(500).json({
+              success: false,
+              message: "Login failed",
+            });
+          }
+
+          const { rememberMe, aacClient } = req.body;
+          if (!aacClient) {
+            req.session.cookie.maxAge = rememberMe
+              ? 30 * 24 * 60 * 60 * 1000 // 30 days
+              : 24 * 60 * 60 * 1000;      // 1 day
+          }
+          // aacClient: no maxAge → session cookie, no timeout
+
+          activityLogService.log({
+            userId: identity.id,
+            eventType: "auth_login_success",
+            subjectType1: "user",
+            subjectId1: identity.id,
+            details: authDetails(req, { rememberMe: !!rememberMe, aacClient: !!aacClient }),
           });
-        }
 
-        const { rememberMe, aacClient } = req.body;
-        if (!aacClient) {
-          req.session.cookie.maxAge = rememberMe
-            ? 30 * 24 * 60 * 60 * 1000 // 30 days
-            : 24 * 60 * 60 * 1000;      // 1 day
-        }
-        // aacClient: no maxAge → session cookie, no timeout
-
-        activityLogService.log({
-          userId: user.id,
-          eventType: "auth_login_success",
-          subjectType1: "user",
-          subjectId1: user.id,
-          details: authDetails(req, { rememberMe: !!rememberMe, aacClient: !!aacClient }),
+          res.json({
+            success: true,
+            message: "Login successful",
+            user: userService.formatUserForResponse(identity as any),
+          });
         });
-
-        res.json({
-          success: true,
-          message: "Login successful",
-          user: userService.formatUserForResponse(user),
-        });
+      }).catch(() => {
+        res.status(500).json({ success: false, message: "Login failed" });
       });
     })(req, res, next);
   }
@@ -649,8 +661,9 @@ export class AuthController {
       await mfaService.enableMfa(user.id, pendingSetup.secret);
       pendingMfaSetups.delete(user.id);
 
-      // Complete login
-      req.login(user, (err) => {
+      // Complete login (admin-first identity resolution).
+      const identity = await resolveLoginIdentity(user);
+      req.login(identity, (err) => {
         if (err) {
           return res.status(500).json({
             success: false,
@@ -667,7 +680,7 @@ export class AuthController {
         res.json({
           success: true,
           message: "MFA enabled and login successful",
-          user: userService.formatUserForResponse(user),
+          user: userService.formatUserForResponse(identity as any),
         });
       });
     } catch (error: any) {
@@ -808,8 +821,9 @@ export class AuthController {
         return;
       }
 
-      // Complete login
-      req.login(user, (err) => {
+      // Complete login (admin-first identity resolution).
+      const identity = await resolveLoginIdentity(user);
+      req.login(identity, (err) => {
         if (err) {
           return res.status(500).json({
             success: false,
@@ -824,26 +838,26 @@ export class AuthController {
         }
 
         activityLogService.log({
-          userId: user.id,
+          userId: identity.id,
           eventType: "auth_mfa_success",
           subjectType1: "user",
-          subjectId1: user.id,
+          subjectId1: identity.id,
           details: authDetails(req, { rememberMe: !!rememberMe, aacClient: !!aacClient }),
         });
         // The successful MFA completes a login — also fire the login_success
         // event so a single query for "login_success" gives the full picture.
         activityLogService.log({
-          userId: user.id,
+          userId: identity.id,
           eventType: "auth_login_success",
           subjectType1: "user",
-          subjectId1: user.id,
+          subjectId1: identity.id,
           details: authDetails(req, { mfa: true }),
         });
 
         res.json({
           success: true,
           message: "Login successful",
-          user: userService.formatUserForResponse(user),
+          user: userService.formatUserForResponse(identity as any),
         });
       });
     } catch (error: any) {
@@ -1003,7 +1017,8 @@ export class AuthController {
         return;
       }
 
-      req.login(user, (err) => {
+      const identity = await resolveLoginIdentity(user);
+      req.login(identity, (err) => {
         if (err) {
           return res.status(500).json({
             success: false,
@@ -1018,7 +1033,7 @@ export class AuthController {
         res.json({
           success: true,
           message: `Now logged in as ${user.email}`,
-          user: userService.formatUserForResponse(user),
+          user: userService.formatUserForResponse(identity as any),
         });
       });
     } catch (error: any) {

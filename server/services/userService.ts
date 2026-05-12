@@ -147,6 +147,13 @@ export class UserService {
   }
 
   formatUserForResponse(user: User) {
+    // When the session identity is an admin pseudo-user (admin_users row),
+    // surface its `adminPermissions` list so the client can filter the admin
+    // sidebar and section views to what this admin is allowed to see.
+    const adminPermissions = (user as any)?._identityKind === "admin"
+      ? ((user as any).adminPermissions ?? [])
+      : undefined;
+
     return {
       id: user.id,
       email: user.email,
@@ -164,6 +171,7 @@ export class UserService {
       mfaEnabled: user.mfaEnabled,
       mfaEnforcedByAdmin: user.mfaEnforcedByAdmin,
       biometricDataId: (user as any).biometricDataId ?? null,
+      adminPermissions,
     };
   }
 

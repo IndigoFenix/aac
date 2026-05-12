@@ -3,6 +3,8 @@ import { userRepository, studentRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { runWithSupportContext } from "../services/customerSupportService";
 import { resolveAllowedOrigins } from "./security";
+import { hasAdminSection, type AdminSection } from "@shared/admin-sections";
+import { isAdminIdentity } from "../services/adminAuthService";
 
 /**
  * Middleware that requires user to be authenticated
@@ -108,6 +110,40 @@ export const requireSystemAdmin: RequestHandler = (
 
   next();
 };
+
+/**
+ * Middleware factory that requires the current admin to have access to a
+ * specific admin section. Used on routes belonging to a single section
+ * (e.g. the Admins-management endpoints below). Sessions that aren't an
+ * admin identity at all (regular users) are rejected as 403, since these
+ * routes live under `/api/admin/*` and are not for regular users.
+ *
+ * NOTE: existing admin routes still use `requireSystemAdmin`. Migrating
+ * each section to its own `requireAdminSection(key)` gate is a follow-up;
+ * for now only the new Admins-management routes carry it.
+ */
+export function requireAdminSection(section: AdminSection): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.isAuthenticated() || !req.user) {
+      res.status(401).json({ success: false, message: "Authentication required" });
+      return;
+    }
+    const user = req.user as any;
+    if (!isAdminIdentity(user)) {
+      res.status(403).json({ success: false, message: "Admin privileges required" });
+      return;
+    }
+    if (!hasAdminSection(user.adminPermissions, section)) {
+      res.status(403).json({
+        success: false,
+        message: `You do not have access to the "${section}" section`,
+        code: "ADMIN_SECTION_FORBIDDEN",
+      });
+      return;
+    }
+    next();
+  };
+}
 
 /**
  * Middleware that requires SLP subscription plan

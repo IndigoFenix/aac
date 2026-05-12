@@ -18,19 +18,37 @@ import { DeepAnalysisAdmin } from '@/components/admin/DeepAnalysisAdmin';
 import { PublicSymbolsAdmin } from '@/components/admin/PublicSymbolsAdmin';
 import { CrmAdminPage } from '@/components/admin/CrmAdminPage';
 import { CrmCustomerDetail } from '@/components/admin/CrmCustomerDetail';
+import { AdminUsersManager } from '@/components/admin/AdminUsersManager';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/hooks/useAuth';
+import { ADMIN_SECTIONS, hasAdminSection, type AdminSection } from '@shared/admin-sections';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols' | 'crm';
+/**
+ * First section in canonical order that the admin has permission for.
+ * Used to decide where to land an admin who navigates to `/admin` with no
+ * section, and to redirect away from a section they can't access.
+ */
+function firstPermittedSection(perms: string[] | null | undefined): AdminSection | null {
+  for (const section of ADMIN_SECTIONS) {
+    if (hasAdminSection(perms, section)) return section;
+  }
+  return null;
+}
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
   const [, params] = useRoute('/admin/library/:topicId');
   const [, crmCustomerParams] = useRoute('/admin/crm/customers/:customerId');
   const { direction } = useLanguage();
+  const { user } = useAuth();
+  const adminPermissions = user?.adminPermissions;
+  const fallbackSection = firstPermittedSection(adminPermissions);
 
-  // Determine active section from URL
-  const getActiveSection = (): AdminSection => {
+  // Determine active section from URL. Returns null if the URL is the bare
+  // `/admin` (no section chosen yet) — the redirect effect below sends the
+  // admin to the first section they can access.
+  const getActiveSection = (): AdminSection | null => {
     if (location.startsWith('/admin/library')) return 'library';
     if (location.startsWith('/admin/voices')) return 'voices';
     if (location.startsWith('/admin/models')) return 'models';
@@ -42,16 +60,32 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/deep-analyses')) return 'deep-analyses';
     if (location.startsWith('/admin/public-symbols')) return 'public-symbols';
     if (location.startsWith('/admin/crm')) return 'crm';
+    if (location.startsWith('/admin/admins')) return 'admins';
     if (location.startsWith('/admin/personas')) return 'personas';
-    return 'personas'; // default
+    return null;
   };
 
-  const [activeSection, setActiveSection] = useState<AdminSection>(getActiveSection());
+  const [activeSection, setActiveSection] = useState<AdminSection | null>(getActiveSection());
 
   // Update section when URL changes
   useEffect(() => {
     setActiveSection(getActiveSection());
   }, [location]);
+
+  // If the URL lacks a section, or the admin doesn't have permission for the
+  // chosen section, redirect them to the first section their permissions
+  // allow. Mirrors the server-side `requireAdminSection` gate — so a
+  // restricted admin never lands on a section that would 403.
+  useEffect(() => {
+    if (!user) return;
+    const urlSection = getActiveSection();
+    const needsRedirect =
+      urlSection === null ||
+      (adminPermissions !== undefined && !hasAdminSection(adminPermissions, urlSection));
+    if (needsRedirect && fallbackSection) {
+      navigate(`/admin/${fallbackSection}`);
+    }
+  }, [location, adminPermissions, user]);
 
   const handleSectionChange = (section: AdminSection) => {
     setActiveSection(section);
@@ -79,6 +113,8 @@ export function AdminDashboard() {
       navigate('/admin/public-symbols');
     } else if (section === 'crm') {
       navigate('/admin/crm');
+    } else if (section === 'admins') {
+      navigate('/admin/admins');
     }
   };
 
@@ -140,6 +176,19 @@ export function AdminDashboard() {
       return <CrmAdminPage />;
     }
 
+    if (activeSection === 'admins') {
+      return <AdminUsersManager />;
+    }
+
+    // Either the redirect effect is about to fire (activeSection still null),
+    // or the admin truly has no permitted sections at all.
+    if (activeSection === null && adminPermissions !== undefined && !fallbackSection) {
+      return (
+        <div className="text-muted-foreground">
+          No admin sections are enabled for this account.
+        </div>
+      );
+    }
     return null;
   };
 

@@ -28,6 +28,7 @@ export const he: Translations = {
     confirm: "אישור",
     reset: "איפוס",
     logout: "התנתקות",
+    holdToLogout: "החזק כדי להתנתק",
     login: "התחברות",
     or: "או",
   },
@@ -182,7 +183,6 @@ export const he: Translations = {
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsStudentVoiceId: "מזהה קול התלמיד",
-    elevenlabsAiVoiceId: "מזהה קול הבינה המלאכותית",
     elevenlabsVoiceIdPlaceholder: "לדוגמה 21m00Tcm4TlvDq8ikWAM",
 
     buttonSize: "גודל כפתורים",

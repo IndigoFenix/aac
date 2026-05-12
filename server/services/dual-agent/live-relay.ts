@@ -344,6 +344,10 @@ export class LiveRelay {
   private initialConnectionDone = false;
   private pendingGreeting: { prompt: string; frame?: string } | null = null;
   private hasGreeted = false;
+  // Whether the AI has greeted within the current "interact window". Reset
+  // on wake from hibernation so the AI greets again when re-entering interact
+  // mode after the device was put to sleep.
+  private hasGreetedInteract = false;
   // Defer the initial set_board(home) send to the client until the model is
   // actually ready (onReady fires). Otherwise the home board buttons appear
   // before the model can handle them and clicks get dropped or queued.
@@ -465,6 +469,23 @@ export class LiveRelay {
   // if the model received a button press and produced no audio, we nudge it
   // once to actually speak.
   private lastTurnHadButtonPress = false;
+
+  // Same pattern for the [GREET] system-injected user message that fires on
+  // first interact-mode entry. Without this, the model frequently satisfies the
+  // greet by stuffing text into rebuild_board.response with no native audio,
+  // and the no-trigger AUTO_CONTINUATION path skips it.
+  //
+  // Subtle: we send GREET from inside handleSingleToolCall(set_interaction_mode),
+  // so the very next TURN_COMPLETE is the close of that tool turn (no audio,
+  // empty turnAccum), NOT the model's response to the greet. handleTurnComplete
+  // therefore only consumes lastTurnHadGreet when the turn shows real content
+  // (rebuildBoardIntendedSpeech / transcript / audio); a pure tool-ack turn
+  // leaves the flag set so the actual response turn can trigger nudge logic.
+  private lastTurnHadGreet = false;
+  // Persists across auto-continuation so hasGreetedInteract finally latches
+  // when audio eventually arrives (the auto-continuation turn isn't itself a
+  // "greet turn" anymore but we still want to mark the greet as completed).
+  private greetAudioPending = false;
 
   // The authenticated user driving this WebSocket. Established at upgrade time
   // by setupLiveWebSocket; trusted as the source of truth for userId. Any
@@ -691,7 +712,7 @@ export class LiveRelay {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.muteState === "muted"
             ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
-            : `The home board is loaded. This is a session start — greet whoever is present (see <presence> rules) or stay quiet if the device is unattended. Do NOT change the board until the user presses a button.`;
+            : `The home board is loaded. This is a session start. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
         } else {
@@ -1045,7 +1066,10 @@ export class LiveRelay {
           const override = msg.muteState === "muted"
             ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing utterance-style buttons via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
             : `[MUTE CHANGE] The user has UNMUTED you. You may now speak() directly with the user again. Greet them.`;
-          this.provider!.sendContextInjection(override);
+          // sendMessage (turnComplete=true) so the model actually reacts now —
+          // muted: switch to utterance-button mode immediately;
+          // unmuted: produce the greeting instead of stalling until the next frame.
+          this.provider!.sendMessage(override, "user");
           break;
         }
 
@@ -1438,13 +1462,16 @@ export class LiveRelay {
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
       const contextScan = ``;
-      // Greeting is presence-conditional — student may not be at the device.
-      const presenceCheck = ` Greet the student if visible; greet a non-student briefly as a visitor (don't address them as the student); stay silent if no one is detected.`;
+      // Greeting is deferred to the first set_interaction_mode("interact") call
+      // (see handleToolCalls) — by that point face recognition has resolved and
+      // the AI knows who, if anyone, to address. Start in STANDBY and only
+      // transition (and greet) once presence is confirmed.
+      const modeGuidance = ` Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present.`;
       const greetingPrompt = isMuted
         ? `Generate 4-12 contextual utterance buttons via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `Session start. Home board buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Don't change the board until a button is pressed.${imageHint}${personaHint}${contextScan}`
-        : `Session start. Function calls only. Home board buttons: ${homeBoardButtons.join(", ")}.${presenceCheck} Wait for a button press.${imageHint}${personaHint}${contextScan}`;
+        ? `Session start. Home board buttons: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the board until a button is pressed.${imageHint}${personaHint}${contextScan}`
+        : `Session start. Function calls only. Home board buttons: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a button press.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -2297,6 +2324,39 @@ The user pressed "More" — they can't find the button they need on the current 
         // Don't change muteState (that's user-controlled via cave click).
         // Instead, set the avatar emote and notify the client.
         this.send({ type: "interaction_mode_changed", data: { mode, reason, source: "ai" } });
+        // First entry into interact mode in this session (or first entry after
+        // waking from hibernation) — nudge the AI to greet now that presence
+        // is confirmed. Skip when muted: the AI must not speak in mute mode.
+        if (
+          mode === "interact" &&
+          !this.hasGreetedInteract &&
+          this.muteState !== "muted" &&
+          this.provider
+        ) {
+          // Voice-first phrasing — analytical checklists trigger proactivity to
+          // route the greeting silently into rebuild_board.response instead of
+          // emitting native audio. Make the audio command explicit and primary.
+          const hour = new Date().getHours();
+          const partOfDay =
+            hour < 5 ? "night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 22 ? "evening" : "night";
+          const presenceClause = reason ? ` ${reason}` : "";
+          const greetingNudge = `[GREET]${presenceClause} You are now in interact mode (${partOfDay}). Greet them out loud right now using your voice — one short, warm sentence appropriate to the ${partOfDay} and what you can see of their mood. Immediately after greeting, call rebuild_board() with 3-4 follow-up buttons.`;
+          logLiveSession("GREETING (interact entry)", greetingNudge);
+          // sendMessage (turnComplete=true) — sendContextInjection would set
+          // turnComplete=false and the nudge would just sit in the buffer until
+          // the next frame_grid arrived, leaving the greeting silent.
+          this.provider.sendMessage(greetingNudge, "user");
+          // Mark this turn so AUTO_CONTINUATION (handleTurnComplete) can re-prompt
+          // if the model produces a board with declared intent but no audio.
+          this.lastTurnHadGreet = true;
+          // Tracks across the whole greet+retry sequence — latches hasGreetedInteract
+          // only when audio actually comes out, even if it takes an auto-continuation.
+          this.greetAudioPending = true;
+          // Note: hasGreetedInteract is NOT set here. We only latch it in
+          // handleTurnComplete once the greet actually produces audio. Otherwise
+          // a silent first attempt would lock the session out of ever greeting,
+          // even if the model rapidly cycles standby ↔ interact afterwards.
+        }
         return { id: call.id, name, response: { output: `mode set to ${mode}` } };
       }
 
@@ -2516,6 +2576,26 @@ The user pressed "More" — they can't find the button they need on the current 
     const wasButtonPressTurn = this.lastTurnHadButtonPress;
     this.lastTurnHadButtonPress = false;
 
+    // Same for the [GREET] system message we send on first interact entry —
+    // but only consume the flag if this turn carries real content. The very
+    // next TURN_COMPLETE after sending GREET is the close of the
+    // set_interaction_mode tool turn (no audio, no rebuild_board, no transcript).
+    // Treat that as transparent and let the flag carry forward to the actual
+    // response turn that follows ~1s later.
+    const turnHasContent =
+      this.directAudioChunks.length > 0 ||
+      this.turnAccum.speakText.trim().length > 0 ||
+      (this.turnAccum.rebuildBoardIntendedSpeech?.trim().length ?? 0) > 0 ||
+      this.turnAccum.transcriptText.trim().length > 0 ||
+      !!this.turnAccum.staySilentReason;
+    const wasGreetTurn = this.lastTurnHadGreet && turnHasContent;
+    if (this.lastTurnHadGreet && !turnHasContent) {
+      logLiveSession("GREET FLAG PRESERVED", `intermediate empty tool-ack turn — waiting for real response`);
+    }
+    if (turnHasContent) {
+      this.lastTurnHadGreet = false;
+    }
+
     // If we were waiting for a debug-introspection response (the model calls
     // debug_message() to tell us what it tried), capture it and retry.
     if (this.awaitingDebugResponse) {
@@ -2679,9 +2759,10 @@ The user pressed "More" — they can't find the button they need on the current 
     }
 
     // Auto-continuation: when the model "should have spoken" but didn't,
-    // nudge it once. Two trigger conditions:
+    // nudge it once. Trigger conditions:
     //   (a) transcript() called for the identified student + no audio
     //   (b) button press was sent + no audio
+    //   (c) [GREET] system message was sent (interact-mode entry) + no audio
     // Plus the always-on guards:
     //   - We didn't already auto-continue on the previous turn (one retry max)
     //   - muteState === "unmuted"
@@ -2701,6 +2782,16 @@ The user pressed "More" — they can't find the button they need on the current 
     const transcriptTrigger =
       this.turnAccum.transcriptText.trim().length > 0 && speakerIsStudent;
     const buttonPressTrigger = wasButtonPressTurn;
+    const greetTrigger = wasGreetTurn;
+
+    // Latch hasGreetedInteract once audio actually arrives during the greet
+    // window (covers both the direct-success case and the post-auto-continuation
+    // case). Deferred from set_interaction_mode so a silent first attempt
+    // doesn't permanently disable greeting on subsequent interact entries.
+    if (this.greetAudioPending && !noAudioThisTurn) {
+      this.hasGreetedInteract = true;
+      this.greetAudioPending = false;
+    }
 
     if (
       !wasAutoContinuationPending &&
@@ -2708,21 +2799,29 @@ The user pressed "More" — they can't find the button they need on the current 
       noAudioThisTurn &&
       !this.turnAccum.staySilentReason &&
       this.provider &&
-      (transcriptTrigger || buttonPressTrigger)
+      (transcriptTrigger || buttonPressTrigger || greetTrigger)
     ) {
       const intent = this.turnAccum.rebuildBoardIntendedSpeech;
-      const reason = buttonPressTrigger
+      const reason = greetTrigger
+        ? (intent
+          ? `greet, model declared intent "${intent.substring(0, 80)}" but did not speak it`
+          : `greet, model produced no audio`)
+        : buttonPressTrigger
         ? (intent
           ? `button press, model declared intent "${intent.substring(0, 80)}" but did not speak it`
           : `button press, model produced no audio`)
         : `transcript=${JSON.stringify(this.turnAccum.transcriptText.trim())} speaker=${speaker}`;
       logLiveSession("AUTO_CONTINUATION", `${reason} — re-prompting`);
 
-      // Prompt is tailored to the trigger. For button-press silence, we
-      // can refer to the model's own declared intent (if it called
-      // rebuild_board with a response param) — that's strong steering.
+      // Prompt is tailored to the trigger. When the model declared intent via
+      // rebuild_board.response (button or greet path), echoing that intent back
+      // is strong steering.
       let continuePrompt: string;
-      if (buttonPressTrigger && intent) {
+      if (greetTrigger && intent) {
+        continuePrompt = `[continue] You declared you would greet with "${intent}" but didn't speak it aloud. Say it now in your own voice.`;
+      } else if (greetTrigger) {
+        continuePrompt = `[continue] You set interact mode but didn't greet aloud. Greet the user now in your own voice — one short sentence.`;
+      } else if (buttonPressTrigger && intent) {
         continuePrompt = `[continue] You declared you would say "${intent}" but didn't speak it aloud. Say it now in your own voice.`;
       } else if (buttonPressTrigger) {
         continuePrompt = `[continue] The user pressed a button but you didn't respond aloud. Respond now in your own voice.`;
@@ -3729,6 +3828,11 @@ When creating or referencing calendar events, interpret and speak in this local 
     if (toState === this.lastSleepState) return;
     const fromState = this.lastSleepState;
     this.lastSleepState = toState;
+    // Re-arm the interact-mode greeting on any wake from hibernation, so
+    // the next set_interaction_mode("interact") triggers a fresh greeting.
+    if (fromState === "hibernation" && toState !== "hibernation") {
+      this.hasGreetedInteract = false;
+    }
     if (!this.studentId) return;
     activityLogService.log({
       userId: this.userId ?? null,

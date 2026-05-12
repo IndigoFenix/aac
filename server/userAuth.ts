@@ -10,7 +10,9 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import createMemoryStore from "memorystore";
 import { identityProviderRepository } from "./repositories/identityProviderRepository";
+import { adminUserRepository } from "./repositories/adminUserRepository";
 import { identityService } from "./services/identityService";
+import { adaptAdminAsUser, resolveLoginIdentity, type SessionIdentity } from "./services/adminAuthService";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -136,6 +138,18 @@ export async function setupUserAuth(app: Express) {
 
         // Check if user exists by email
         if (email) {
+          // Admin-first: a Google-verified email matching an admin_users row
+          // logs in under the admin identity. If a matching users row also
+          // exists we adapt that as the source for MFA/credit fields; if not,
+          // the admin signs in with admin_users as the sole identity (the
+          // normal path for admins added via the management UI who never
+          // needed a regular user row).
+          const adminMatch = await adminUserRepository.getByEmail(email);
+          if (adminMatch) {
+            const matchingUser = await storage.getUserByEmail(email);
+            return done(null, adaptAdminAsUser(adminMatch, matchingUser ?? undefined));
+          }
+
           let user = await storage.getUserByEmail(email);
 
           if (user) {
@@ -186,13 +200,35 @@ export async function setupUserAuth(app: Express) {
     ));
   }
 
+  // Sessions store a tagged identity: { kind: 'admin' | 'user', id }. An
+  // existing session that predates this change holds a bare user-id string —
+  // we treat that as { kind: 'user', id } so logged-in users don't get kicked
+  // out by the rollout.
   passport.serializeUser((user: any, done) => {
-    done(null, user.id);
+    const identity: SessionIdentity =
+      user?._identityKind === "admin"
+        ? { kind: "admin", id: user.id }
+        : { kind: "user", id: user.id };
+    done(null, identity);
   });
 
-  passport.deserializeUser(async (id: string, done) => {
+  passport.deserializeUser(async (raw: any, done) => {
     try {
-      const user = await storage.getUser(id);
+      const identity: SessionIdentity =
+        typeof raw === "string" ? { kind: "user", id: raw } : raw;
+
+      if (identity.kind === "admin") {
+        const admin = await adminUserRepository.getById(identity.id);
+        if (!admin) {
+          return done(null, false);
+        }
+        // Carry over MFA/credits/etc. from the legacy users row when it
+        // exists (the migrated admin and its source user share the same id).
+        const sourceUser = await storage.getUser(admin.id);
+        return done(null, adaptAdminAsUser(admin, sourceUser ?? undefined));
+      }
+
+      const user = await storage.getUser(identity.id);
       done(null, user);
     } catch (error) {
       done(error);

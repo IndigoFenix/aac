@@ -267,6 +267,10 @@ export class DualAgentService {
     const elEnabled = aac?.elevenlabsEnabled !== false;
 
     return {
+      // AI voice: in live mode the model speaks directly via Gemini native
+      // audio, so the ElevenLabs fields below are currently inert. Kept wired
+      // so the non-direct-audio fallback path can be re-enabled later without
+      // re-plumbing.
       aiVoice: {
         fallbackType: aiFallback,
         customVoice: aiCustom || null,
@@ -275,16 +279,16 @@ export class DualAgentService {
         elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsAiVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
-      // Student voice defaults to Gemini Live TTS via a persistent WebSocket
-      // session owned by the LiveRelay (see gemini-live-tts-service.ts). The
-      // session is attached to the voice after resolution. ElevenLabs (when
-      // configured) still takes precedence — see tts-facade.ts for the order.
-      // Google Cloud TTS remains the fallback when no Live session is attached
-      // (e.g. /api/voice/speak HTTP endpoint).
+      // Student voice goes through ttsFacade. ElevenLabs (when configured)
+      // takes precedence; otherwise the LiveRelay attaches a persistent
+      // Gemini Live TTS session after resolution; Google Cloud TTS is the
+      // final fallback.
       studentVoice: {
         fallbackType: studentFallback as any,
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
+        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
+        elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsStudentVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },
     };

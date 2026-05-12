@@ -1,4 +1,5 @@
 export { userRepository, UserRepository } from "./userRepository";
+export { adminUserRepository } from "./adminUserRepository";
 export { studentRepository, StudentRepository } from "./studentRepository";
 export { aacSettingsRepository, AacSettingsRepository } from "./aacSettingsRepository";
 export { interpretationRepository, InterpretationRepository } from "./interpretationRepository";

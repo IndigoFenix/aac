@@ -83,6 +83,9 @@ export const sessions = pgTable(
 );
 
 // Admin users table for backoffice access
+// `permissions` is a list of admin-section keys this admin can access; the
+// wildcard `"*"` grants every section. Migrated legacy system admins land
+// with `["*"]`; future admins added via the management UI get an explicit list.
 export const adminUsers = pgTable("admin_users", {
   id: varchar("id").primaryKey().notNull(),
   email: varchar("email").unique(),
@@ -90,6 +93,10 @@ export const adminUsers = pgTable("admin_users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: text("role").default("admin"),
+  permissions: jsonb("permissions")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'["*"]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

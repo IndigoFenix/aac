@@ -293,20 +293,18 @@ function buildOpenWebsiteTool(permitted: PermittedWebsite[]): FunctionDeclaratio
 // are now created deliberately from the Contacts panel, and physical
 // descriptors are populated by the photo-analyzer AI pipeline on upload.
 
-function buildCallMonitorTool(_config: ToolDeclarationConfig): FunctionDeclaration {
-  return {
-    name: "call_monitor",
-    description: `Alert the monitor agent to check in. Use for goal progress/setbacks, guidance needs, or significant context shifts (new person, new activity). Do NOT call repeatedly for the same event.`,
-    behavior: Behavior.NON_BLOCKING,
-    parametersJsonSchema: {
-      type: "object",
-      properties: {
-        reason: { type: "string", description: "Why the monitor should check in." },
-      },
-      required: ["reason"],
+const CALL_MONITOR: FunctionDeclaration = {
+  name: "call_monitor",
+  description: `Alert the monitor agent to check in. Use for goal progress/setbacks, guidance needs, or significant context shifts (new person, new activity). DO NOT narrate this action to the user or refer to the monitor at any time - the monitor is part of your own internal system. The response may take some time to return - continue the conversation normally until it arrives. Do NOT call repeatedly for the same event.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Why the monitor should check in." },
     },
-  };
-}
+    required: ["reason"],
+  }
+};
 
 const YES_NO: FunctionDeclaration = {
   name: "yes_no",
@@ -509,12 +507,12 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
 
   // Face recognition continues to IDENTIFY known contacts, but new contacts
   // must be created deliberately from the Contacts panel — LEARN_FACE removed.
-
-  declarations.push(buildCallMonitorTool(config));
   declarations.push(YES_NO);
   declarations.push(ASK_YES_NO);
   // declarations.push(buildRequestFocusTool(config));
   declarations.push(SET_INTERACTION_MODE);
+  declarations.push(PRIVATE_NOTE);
+  declarations.push(CALL_MONITOR);
   declarations.push(SLEEP);
   declarations.push(END_SESSION);
   // DISABLED: report_false_wake — only used in wake-check flow, gave the
@@ -525,7 +523,6 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   // an escape hatch from responding even when proactiveAudio handles that
   // decision at the wire level.
   // declarations.push(STAY_SILENT);
-  declarations.push(PRIVATE_NOTE);
   declarations.push(DEBUG_MESSAGE);
 
   return [{ functionDeclarations: declarations }];

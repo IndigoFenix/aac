@@ -9186,3 +9186,390 @@
 [2026-05-11T19:57:28.319Z] [processQueue] Failed "board_games": 400 Billing hard limit has been reached.
 [2026-05-11T19:57:28.489Z] [processQueue] Generating "books"...
 [2026-05-11T19:57:30.395Z] [processQueue] Failed "books": 400 Billing hard limit has been reached.
+[2026-05-12T13:24:39.254Z] [resolveImageKeys] Resolving 5 keys: person_talking, person_calendar, person_feeling_happy, person_thinking, person_reaching_out (format=internal, useUnapproved=true)
+[2026-05-12T13:24:39.455Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T13:24:39.619Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T13:24:39.782Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-12T13:24:39.947Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T13:24:40.109Z] [resolveImageKeys] Resolved "person_reaching_out" → __SYMBOL__:ded79080-415d-412f-abe6-ac74a87b1c69
+[2026-05-12T13:24:40.110Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: person_calendar
+[2026-05-12T13:24:40.111Z] [queueGeneration] Queuing 1 keys: person_calendar (hasCallback=true)
+[2026-05-12T13:24:40.283Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T13:24:44.860Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T13:24:53.109Z] [resolveImageKeys] Resolving 3 keys: person_calendar, person_feeling_happy, person_thinking (format=internal, useUnapproved=true)
+[2026-05-12T13:24:53.299Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T13:24:53.470Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-12T13:24:53.641Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T13:24:53.642Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_calendar
+[2026-05-12T13:24:53.643Z] [queueGeneration] Queuing 1 keys: person_calendar (hasCallback=true)
+[2026-05-12T13:24:53.823Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T13:24:55.582Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T13:25:29.342Z] [resolveImageKeys] Resolving 3 keys: person_thumbs_up, person_thumbs_down, person_waiting (format=internal, useUnapproved=true)
+[2026-05-12T13:25:29.535Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T13:25:29.704Z] [resolveImageKeys] No symbol found for "person_thumbs_down"
+[2026-05-12T13:25:29.871Z] [resolveImageKeys] Resolved "person_waiting" → __SYMBOL__:a9bbbcde-83bd-410d-9468-de9e307c94dd
+[2026-05-12T13:25:29.872Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_thumbs_down
+[2026-05-12T13:25:29.873Z] [queueGeneration] Queuing 1 keys: person_thumbs_down (hasCallback=true)
+[2026-05-12T13:25:30.043Z] [processQueue] Generating "person_thumbs_down"...
+[2026-05-12T13:25:33.652Z] [processQueue] Failed "person_thumbs_down": 400 Billing hard limit has been reached.
+[2026-05-12T13:25:45.209Z] [resolveImageKeys] Resolving 3 keys: person_thumbs_up, person_thumbs_down, person_waiting (format=internal, useUnapproved=true)
+[2026-05-12T13:25:45.395Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T13:25:45.570Z] [resolveImageKeys] No symbol found for "person_thumbs_down"
+[2026-05-12T13:25:45.739Z] [resolveImageKeys] Resolved "person_waiting" → __SYMBOL__:a9bbbcde-83bd-410d-9468-de9e307c94dd
+[2026-05-12T13:25:45.739Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_thumbs_down
+[2026-05-12T13:25:45.740Z] [queueGeneration] Queuing 1 keys: person_thumbs_down (hasCallback=true)
+[2026-05-12T13:25:45.911Z] [processQueue] Generating "person_thumbs_down"...
+[2026-05-12T13:25:48.806Z] [processQueue] Failed "person_thumbs_down": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:13.584Z] [resolveImageKeys] Resolving 4 keys: person_inside_house, person_thinking, person_talking, home_button (format=internal, useUnapproved=true)
+[2026-05-12T13:26:13.789Z] [resolveImageKeys] No symbol found for "person_inside_house"
+[2026-05-12T13:26:13.967Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T13:26:14.143Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T13:26:14.318Z] [resolveImageKeys] No symbol found for "home_button"
+[2026-05-12T13:26:14.319Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_inside_house, home_button
+[2026-05-12T13:26:14.319Z] [queueGeneration] Queuing 2 keys: person_inside_house, home_button (hasCallback=true)
+[2026-05-12T13:26:14.498Z] [processQueue] Generating "home_button"...
+[2026-05-12T13:26:16.644Z] [processQueue] Failed "home_button": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:16.813Z] [processQueue] Generating "person_inside_house"...
+[2026-05-12T13:26:19.597Z] [processQueue] Failed "person_inside_house": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:21.207Z] [resolveImageKeys] Resolving 4 keys: boy_playing_video_game, person_watching_tv, person_relaxing, person_reading (format=internal, useUnapproved=true)
+[2026-05-12T13:26:21.398Z] [resolveImageKeys] Resolved "boy_playing_video_game" → __SYMBOL__:133e42c2-9def-4292-b605-8e48aae22f8e
+[2026-05-12T13:26:21.575Z] [resolveImageKeys] Resolved "person_watching_tv" → __SYMBOL__:3c325cb8-40fb-42c2-9527-ca37ab9eb4a6
+[2026-05-12T13:26:21.751Z] [resolveImageKeys] No symbol found for "person_relaxing"
+[2026-05-12T13:26:21.928Z] [resolveImageKeys] Resolved "person_reading" → __SYMBOL__:fe7e7cc3-ccf8-4031-a125-9f037d0054fc
+[2026-05-12T13:26:21.928Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_relaxing
+[2026-05-12T13:26:21.929Z] [queueGeneration] Queuing 1 keys: person_relaxing (hasCallback=true)
+[2026-05-12T13:26:22.106Z] [processQueue] Generating "person_relaxing"...
+[2026-05-12T13:26:23.946Z] [processQueue] Failed "person_relaxing": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:37.012Z] [resolveImageKeys] Resolving 4 keys: book_with_bookmark, person_reading_nonfiction, person_holding_magazine, person_holding_comic (format=internal, useUnapproved=true)
+[2026-05-12T13:26:37.218Z] [resolveImageKeys] No symbol found for "book_with_bookmark"
+[2026-05-12T13:26:37.393Z] [resolveImageKeys] No symbol found for "person_reading_nonfiction"
+[2026-05-12T13:26:37.575Z] [resolveImageKeys] No symbol found for "person_holding_magazine"
+[2026-05-12T13:26:37.751Z] [resolveImageKeys] No symbol found for "person_holding_comic"
+[2026-05-12T13:26:37.752Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: book_with_bookmark, person_reading_nonfiction, person_holding_magazine, person_holding_comic
+[2026-05-12T13:26:37.752Z] [queueGeneration] Queuing 4 keys: book_with_bookmark, person_reading_nonfiction, person_holding_magazine, person_holding_comic (hasCallback=true)
+[2026-05-12T13:26:37.930Z] [processQueue] Generating "person_holding_comic"...
+[2026-05-12T13:26:40.034Z] [processQueue] Failed "person_holding_comic": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:40.210Z] [processQueue] Generating "person_holding_magazine"...
+[2026-05-12T13:26:42.376Z] [processQueue] Failed "person_holding_magazine": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:42.551Z] [processQueue] Generating "person_reading_nonfiction"...
+[2026-05-12T13:26:46.097Z] [processQueue] Failed "person_reading_nonfiction": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:46.273Z] [processQueue] Generating "book_with_bookmark"...
+[2026-05-12T13:26:47.871Z] [processQueue] Failed "book_with_bookmark": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:50.621Z] [resolveImageKeys] Resolving 4 keys: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship (format=internal, useUnapproved=true)
+[2026-05-12T13:26:50.809Z] [resolveImageKeys] No symbol found for "person_on_adventure"
+[2026-05-12T13:26:50.977Z] [resolveImageKeys] No symbol found for "person_solving_mystery"
+[2026-05-12T13:26:51.144Z] [resolveImageKeys] No symbol found for "person_with_magic"
+[2026-05-12T13:26:51.310Z] [resolveImageKeys] No symbol found for "person_in_spaceship"
+[2026-05-12T13:26:51.311Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship
+[2026-05-12T13:26:51.311Z] [queueGeneration] Queuing 4 keys: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship (hasCallback=true)
+[2026-05-12T13:26:51.482Z] [processQueue] Generating "person_in_spaceship"...
+[2026-05-12T13:26:53.530Z] [processQueue] Failed "person_in_spaceship": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:53.697Z] [processQueue] Generating "person_with_magic"...
+[2026-05-12T13:26:55.631Z] [processQueue] Failed "person_with_magic": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:55.798Z] [processQueue] Generating "person_solving_mystery"...
+[2026-05-12T13:26:57.421Z] [resolveImageKeys] Resolving 4 keys: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship (format=internal, useUnapproved=true)
+[2026-05-12T13:26:57.631Z] [resolveImageKeys] No symbol found for "person_on_adventure"
+[2026-05-12T13:26:57.810Z] [processQueue] Failed "person_solving_mystery": 400 Billing hard limit has been reached.
+[2026-05-12T13:26:57.816Z] [resolveImageKeys] No symbol found for "person_solving_mystery"
+[2026-05-12T13:26:57.985Z] [resolveImageKeys] No symbol found for "person_with_magic"
+[2026-05-12T13:26:57.992Z] [processQueue] Generating "person_on_adventure"...
+[2026-05-12T13:26:58.158Z] [resolveImageKeys] No symbol found for "person_in_spaceship"
+[2026-05-12T13:26:58.159Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship
+[2026-05-12T13:26:58.161Z] [queueGeneration] Queuing 4 keys: person_on_adventure, person_solving_mystery, person_with_magic, person_in_spaceship (hasCallback=true)
+[2026-05-12T13:27:00.599Z] [processQueue] Failed "person_on_adventure": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:00.771Z] [processQueue] Generating "person_in_spaceship"...
+[2026-05-12T13:27:02.567Z] [processQueue] Failed "person_in_spaceship": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:02.736Z] [processQueue] Generating "person_with_magic"...
+[2026-05-12T13:27:04.470Z] [processQueue] Failed "person_with_magic": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:04.639Z] [processQueue] Generating "person_solving_mystery"...
+[2026-05-12T13:27:06.352Z] [processQueue] Failed "person_solving_mystery": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:06.523Z] [processQueue] Generating "person_on_adventure"...
+[2026-05-12T13:27:08.167Z] [processQueue] Failed "person_on_adventure": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:25.183Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_feeling_happy, person_reaching_out (format=internal, useUnapproved=true)
+[2026-05-12T13:27:25.382Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T13:27:25.548Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T13:27:25.714Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-12T13:27:25.881Z] [resolveImageKeys] Resolved "person_reaching_out" → __SYMBOL__:ded79080-415d-412f-abe6-ac74a87b1c69
+[2026-05-12T13:27:25.883Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_calendar
+[2026-05-12T13:27:25.884Z] [queueGeneration] Queuing 1 keys: person_calendar (hasCallback=true)
+[2026-05-12T13:27:26.056Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T13:27:28.093Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:35.223Z] [resolveImageKeys] Resolving 4 keys: person_in_pain, person_feeling_sick, person_with_bandage, emergency_siren (format=internal, useUnapproved=true)
+[2026-05-12T13:27:35.455Z] [resolveImageKeys] No symbol found for "person_in_pain"
+[2026-05-12T13:27:35.629Z] [resolveImageKeys] No symbol found for "person_feeling_sick"
+[2026-05-12T13:27:35.800Z] [resolveImageKeys] Resolved "person_with_bandage" → __SYMBOL__:56625d39-ec73-4633-ac0e-09f43b1074ae
+[2026-05-12T13:27:35.971Z] [resolveImageKeys] No symbol found for "emergency_siren"
+[2026-05-12T13:27:35.973Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: person_in_pain, person_feeling_sick, emergency_siren
+[2026-05-12T13:27:35.975Z] [queueGeneration] Queuing 3 keys: person_in_pain, person_feeling_sick, emergency_siren (hasCallback=true)
+[2026-05-12T13:27:36.149Z] [processQueue] Generating "emergency_siren"...
+[2026-05-12T13:27:38.201Z] [processQueue] Failed "emergency_siren": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:38.377Z] [processQueue] Generating "person_feeling_sick"...
+[2026-05-12T13:27:40.182Z] [processQueue] Failed "person_feeling_sick": 400 Billing hard limit has been reached.
+[2026-05-12T13:27:40.359Z] [processQueue] Generating "person_in_pain"...
+[2026-05-12T13:27:42.532Z] [processQueue] Failed "person_in_pain": 400 Billing hard limit has been reached.
+[2026-05-12T13:43:27.634Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T13:43:27.832Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T13:43:28.006Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T13:43:28.180Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T13:43:28.354Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T13:43:28.355Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T13:43:28.358Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T13:43:28.540Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T13:43:31.595Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T13:43:31.771Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T13:43:35.172Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T13:44:29.157Z] [resolveImageKeys] Resolving 4 keys: person_inside, boy_playing_video_game, person_eating, person_drinking (format=internal, useUnapproved=true)
+[2026-05-12T13:44:29.350Z] [resolveImageKeys] No symbol found for "person_inside"
+[2026-05-12T13:44:29.525Z] [resolveImageKeys] Resolved "boy_playing_video_game" → __SYMBOL__:133e42c2-9def-4292-b605-8e48aae22f8e
+[2026-05-12T13:44:29.699Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-12T13:44:29.875Z] [resolveImageKeys] Resolved "person_drinking" → __SYMBOL__:b67525a6-07d3-4c1b-8e57-d952c9cd67f5
+[2026-05-12T13:44:29.876Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_inside
+[2026-05-12T13:44:29.879Z] [queueGeneration] Queuing 1 keys: person_inside (hasCallback=true)
+[2026-05-12T13:44:30.068Z] [processQueue] Generating "person_inside"...
+[2026-05-12T13:44:32.258Z] [processQueue] Failed "person_inside": 400 Billing hard limit has been reached.
+[2026-05-12T13:44:48.780Z] [resolveImageKeys] Resolving 4 keys: boy_playing_video_game, person_eating, person_drinking, person_relaxing (format=internal, useUnapproved=true)
+[2026-05-12T13:44:48.975Z] [resolveImageKeys] Resolved "boy_playing_video_game" → __SYMBOL__:133e42c2-9def-4292-b605-8e48aae22f8e
+[2026-05-12T13:44:49.151Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-12T13:44:49.328Z] [resolveImageKeys] Resolved "person_drinking" → __SYMBOL__:b67525a6-07d3-4c1b-8e57-d952c9cd67f5
+[2026-05-12T13:44:49.502Z] [resolveImageKeys] No symbol found for "person_relaxing"
+[2026-05-12T13:44:49.503Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_relaxing
+[2026-05-12T13:44:49.504Z] [queueGeneration] Queuing 1 keys: person_relaxing (hasCallback=true)
+[2026-05-12T13:44:49.680Z] [processQueue] Generating "person_relaxing"...
+[2026-05-12T13:44:51.772Z] [processQueue] Failed "person_relaxing": 400 Billing hard limit has been reached.
+[2026-05-12T14:04:35.000Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T14:04:35.201Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:04:35.373Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:04:35.543Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T14:04:35.712Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:04:35.713Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T14:04:35.715Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T14:04:35.895Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T14:04:38.798Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T14:04:38.968Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:04:42.409Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:04:43.119Z] [resolveImageKeys] Resolving 4 keys: person_thumbs_up, person_shrugging, person_smiling, more_options (format=internal, useUnapproved=true)
+[2026-05-12T14:04:43.320Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T14:04:43.492Z] [resolveImageKeys] Resolved "person_shrugging" → __SYMBOL__:252992b1-062a-4720-940a-5a3aecfd01fd
+[2026-05-12T14:04:43.666Z] [resolveImageKeys] Resolved "person_smiling" → __SYMBOL__:b681108b-bfc8-42f7-aa04-e44da2e80b10
+[2026-05-12T14:04:43.838Z] [resolveImageKeys] No symbol found for "more_options"
+[2026-05-12T14:04:43.839Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: more_options
+[2026-05-12T14:04:43.841Z] [queueGeneration] Queuing 1 keys: more_options (hasCallback=true)
+[2026-05-12T14:04:44.021Z] [processQueue] Generating "more_options"...
+[2026-05-12T14:04:48.468Z] [processQueue] Failed "more_options": 400 Billing hard limit has been reached.
+[2026-05-12T14:04:59.157Z] [resolveImageKeys] Resolving 8 keys: person_thumbs_up, person_shrugging, person_smiling, person_laughing, person_feeling_sad, person_yawning, person_frowning_angry, person_thinking (format=internal, useUnapproved=true)
+[2026-05-12T14:04:59.359Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T14:04:59.530Z] [resolveImageKeys] Resolved "person_shrugging" → __SYMBOL__:252992b1-062a-4720-940a-5a3aecfd01fd
+[2026-05-12T14:04:59.707Z] [resolveImageKeys] Resolved "person_smiling" → __SYMBOL__:b681108b-bfc8-42f7-aa04-e44da2e80b10
+[2026-05-12T14:04:59.882Z] [resolveImageKeys] No symbol found for "person_laughing"
+[2026-05-12T14:05:00.061Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:05:00.233Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:be8b8208-0cb5-4762-8537-fab62f8139c2
+[2026-05-12T14:05:00.403Z] [resolveImageKeys] No symbol found for "person_frowning_angry"
+[2026-05-12T14:05:00.571Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T14:05:00.571Z] [resolveImageKeys] Done. Resolved 6, unresolved 2: person_laughing, person_frowning_angry
+[2026-05-12T14:05:00.572Z] [queueGeneration] Queuing 2 keys: person_laughing, person_frowning_angry (hasCallback=true)
+[2026-05-12T14:05:00.743Z] [processQueue] Generating "person_frowning_angry"...
+[2026-05-12T14:05:03.256Z] [processQueue] Failed "person_frowning_angry": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:03.427Z] [processQueue] Generating "person_laughing"...
+[2026-05-12T14:05:05.312Z] [processQueue] Failed "person_laughing": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:08.569Z] [resolveImageKeys] Resolving 8 keys: person_thumbs_up, person_shrugging, person_smiling, person_laughing, person_feeling_sad, person_yawning, person_frowning_angry, person_thinking (format=internal, useUnapproved=true)
+[2026-05-12T14:05:08.790Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T14:05:08.962Z] [resolveImageKeys] Resolved "person_shrugging" → __SYMBOL__:252992b1-062a-4720-940a-5a3aecfd01fd
+[2026-05-12T14:05:09.133Z] [resolveImageKeys] Resolved "person_smiling" → __SYMBOL__:b681108b-bfc8-42f7-aa04-e44da2e80b10
+[2026-05-12T14:05:09.309Z] [resolveImageKeys] No symbol found for "person_laughing"
+[2026-05-12T14:05:09.486Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:05:09.662Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:be8b8208-0cb5-4762-8537-fab62f8139c2
+[2026-05-12T14:05:09.834Z] [resolveImageKeys] No symbol found for "person_frowning_angry"
+[2026-05-12T14:05:10.004Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T14:05:10.005Z] [resolveImageKeys] Done. Resolved 6, unresolved 2: person_laughing, person_frowning_angry
+[2026-05-12T14:05:10.006Z] [queueGeneration] Queuing 2 keys: person_laughing, person_frowning_angry (hasCallback=true)
+[2026-05-12T14:05:10.179Z] [processQueue] Generating "person_frowning_angry"...
+[2026-05-12T14:05:12.634Z] [processQueue] Failed "person_frowning_angry": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:12.806Z] [processQueue] Generating "person_laughing"...
+[2026-05-12T14:05:15.037Z] [processQueue] Failed "person_laughing": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:24.053Z] [resolveImageKeys] Resolving 8 keys: person_thumbs_up, person_shrugging, person_smiling, person_laughing, person_feeling_sad, person_yawning, person_frowning_angry, person_thinking (format=internal, useUnapproved=true)
+[2026-05-12T14:05:24.251Z] [resolveImageKeys] Resolved "person_thumbs_up" → __SYMBOL__:435f72de-7786-4c2e-8169-6b3a98c46db3
+[2026-05-12T14:05:24.424Z] [resolveImageKeys] Resolved "person_shrugging" → __SYMBOL__:252992b1-062a-4720-940a-5a3aecfd01fd
+[2026-05-12T14:05:24.593Z] [resolveImageKeys] Resolved "person_smiling" → __SYMBOL__:b681108b-bfc8-42f7-aa04-e44da2e80b10
+[2026-05-12T14:05:24.764Z] [resolveImageKeys] No symbol found for "person_laughing"
+[2026-05-12T14:05:24.936Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:05:25.106Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:be8b8208-0cb5-4762-8537-fab62f8139c2
+[2026-05-12T14:05:25.275Z] [resolveImageKeys] No symbol found for "person_frowning_angry"
+[2026-05-12T14:05:25.446Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T14:05:25.446Z] [resolveImageKeys] Done. Resolved 6, unresolved 2: person_laughing, person_frowning_angry
+[2026-05-12T14:05:25.447Z] [queueGeneration] Queuing 2 keys: person_laughing, person_frowning_angry (hasCallback=true)
+[2026-05-12T14:05:25.616Z] [processQueue] Generating "person_frowning_angry"...
+[2026-05-12T14:05:28.247Z] [processQueue] Failed "person_frowning_angry": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:28.417Z] [processQueue] Generating "person_laughing"...
+[2026-05-12T14:05:31.344Z] [processQueue] Failed "person_laughing": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:31.446Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T14:05:31.637Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:05:31.809Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:05:31.986Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T14:05:32.159Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:05:32.161Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T14:05:32.162Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T14:05:32.335Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T14:05:34.621Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:34.791Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:05:36.436Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:40.409Z] [resolveImageKeys] Resolving 4 keys: person_waking_up, person_at_work, person_relaxing, person_calendar (format=internal, useUnapproved=true)
+[2026-05-12T14:05:40.601Z] [resolveImageKeys] Resolved "person_waking_up" → __SYMBOL__:d16d3d8b-6942-4559-9e73-3b4f8d9bc091
+[2026-05-12T14:05:40.770Z] [resolveImageKeys] No symbol found for "person_at_work"
+[2026-05-12T14:05:40.940Z] [resolveImageKeys] No symbol found for "person_relaxing"
+[2026-05-12T14:05:41.110Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:05:41.111Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: person_at_work, person_relaxing, person_calendar
+[2026-05-12T14:05:41.112Z] [queueGeneration] Queuing 3 keys: person_at_work, person_relaxing, person_calendar (hasCallback=true)
+[2026-05-12T14:05:41.282Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:05:43.582Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:43.753Z] [processQueue] Generating "person_relaxing"...
+[2026-05-12T14:05:45.500Z] [processQueue] Failed "person_relaxing": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:45.672Z] [processQueue] Generating "person_at_work"...
+[2026-05-12T14:05:49.279Z] [processQueue] Failed "person_at_work": 400 Billing hard limit has been reached.
+[2026-05-12T14:05:55.696Z] [resolveImageKeys] Resolving 3 keys: person_at_park, person_reading_book, more_options (format=internal, useUnapproved=true)
+[2026-05-12T14:05:55.899Z] [resolveImageKeys] Resolved "person_at_park" → __SYMBOL__:367ba7bb-31a3-440b-97df-9a16166cf718
+[2026-05-12T14:05:56.071Z] [resolveImageKeys] Resolved "person_reading_book" → __SYMBOL__:822c1c2b-3de7-47cf-aeb2-912430ea3d5f
+[2026-05-12T14:05:56.245Z] [resolveImageKeys] No symbol found for "more_options"
+[2026-05-12T14:05:56.246Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: more_options
+[2026-05-12T14:05:56.249Z] [queueGeneration] Queuing 1 keys: more_options (hasCallback=true)
+[2026-05-12T14:05:56.431Z] [processQueue] Generating "more_options"...
+[2026-05-12T14:05:58.087Z] [processQueue] Failed "more_options": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:06.512Z] [resolveImageKeys] Resolving 4 keys: person_relaxing, person_leaving_house, person_with_friends, more_options (format=internal, useUnapproved=true)
+[2026-05-12T14:06:06.704Z] [resolveImageKeys] No symbol found for "person_relaxing"
+[2026-05-12T14:06:06.876Z] [resolveImageKeys] No symbol found for "person_leaving_house"
+[2026-05-12T14:06:07.047Z] [resolveImageKeys] No symbol found for "person_with_friends"
+[2026-05-12T14:06:07.223Z] [resolveImageKeys] No symbol found for "more_options"
+[2026-05-12T14:06:07.225Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: person_relaxing, person_leaving_house, person_with_friends, more_options
+[2026-05-12T14:06:07.227Z] [queueGeneration] Queuing 4 keys: person_relaxing, person_leaving_house, person_with_friends, more_options (hasCallback=true)
+[2026-05-12T14:06:07.407Z] [processQueue] Generating "more_options"...
+[2026-05-12T14:06:09.846Z] [processQueue] Failed "more_options": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:10.016Z] [processQueue] Generating "person_with_friends"...
+[2026-05-12T14:06:11.802Z] [processQueue] Failed "person_with_friends": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:11.974Z] [processQueue] Generating "person_leaving_house"...
+[2026-05-12T14:06:14.169Z] [processQueue] Failed "person_leaving_house": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:14.340Z] [processQueue] Generating "person_relaxing"...
+[2026-05-12T14:06:16.201Z] [processQueue] Failed "person_relaxing": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:27.291Z] [resolveImageKeys] Resolving 4 keys: person_shopping, person_at_park, person_eating, more_options (format=internal, useUnapproved=true)
+[2026-05-12T14:06:27.486Z] [resolveImageKeys] No symbol found for "person_shopping"
+[2026-05-12T14:06:27.659Z] [resolveImageKeys] Resolved "person_at_park" → __SYMBOL__:367ba7bb-31a3-440b-97df-9a16166cf718
+[2026-05-12T14:06:27.836Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-12T14:06:28.006Z] [resolveImageKeys] No symbol found for "more_options"
+[2026-05-12T14:06:28.007Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_shopping, more_options
+[2026-05-12T14:06:28.007Z] [queueGeneration] Queuing 2 keys: person_shopping, more_options (hasCallback=true)
+[2026-05-12T14:06:28.180Z] [processQueue] Generating "more_options"...
+[2026-05-12T14:06:30.463Z] [processQueue] Failed "more_options": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:30.635Z] [processQueue] Generating "person_shopping"...
+[2026-05-12T14:06:32.710Z] [processQueue] Failed "person_shopping": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:41.833Z] [resolveImageKeys] Resolving 4 keys: person_walking, person_playing_ball, person_sitting_on_bench, more_options (format=internal, useUnapproved=true)
+[2026-05-12T14:06:42.038Z] [resolveImageKeys] Resolved "person_walking" → __SYMBOL__:fe7ddde7-8229-4189-9f77-440423ea1364
+[2026-05-12T14:06:42.214Z] [resolveImageKeys] No symbol found for "person_playing_ball"
+[2026-05-12T14:06:42.385Z] [resolveImageKeys] No symbol found for "person_sitting_on_bench"
+[2026-05-12T14:06:42.556Z] [resolveImageKeys] No symbol found for "more_options"
+[2026-05-12T14:06:42.557Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: person_playing_ball, person_sitting_on_bench, more_options
+[2026-05-12T14:06:42.557Z] [queueGeneration] Queuing 3 keys: person_playing_ball, person_sitting_on_bench, more_options (hasCallback=true)
+[2026-05-12T14:06:42.730Z] [processQueue] Generating "more_options"...
+[2026-05-12T14:06:44.611Z] [processQueue] Failed "more_options": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:44.781Z] [processQueue] Generating "person_sitting_on_bench"...
+[2026-05-12T14:06:46.900Z] [processQueue] Failed "person_sitting_on_bench": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:47.069Z] [processQueue] Generating "person_playing_ball"...
+[2026-05-12T14:06:49.077Z] [processQueue] Failed "person_playing_ball": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:53.834Z] [resolveImageKeys] Resolving 4 keys: person_eating, person_looking_around, person_talking, go_home (format=internal, useUnapproved=true)
+[2026-05-12T14:06:54.029Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:9a1e857b-5761-4f7d-8eec-61e5a921a870
+[2026-05-12T14:06:54.201Z] [resolveImageKeys] No symbol found for "person_looking_around"
+[2026-05-12T14:06:54.381Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:06:54.555Z] [resolveImageKeys] No symbol found for "go_home"
+[2026-05-12T14:06:54.556Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_looking_around, go_home
+[2026-05-12T14:06:54.557Z] [queueGeneration] Queuing 2 keys: person_looking_around, go_home (hasCallback=true)
+[2026-05-12T14:06:54.752Z] [processQueue] Generating "go_home"...
+[2026-05-12T14:06:56.915Z] [processQueue] Failed "go_home": 400 Billing hard limit has been reached.
+[2026-05-12T14:06:57.087Z] [processQueue] Generating "person_looking_around"...
+[2026-05-12T14:06:58.904Z] [processQueue] Failed "person_looking_around": 400 Billing hard limit has been reached.
+[2026-05-12T14:17:16.048Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T14:17:16.230Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:17:16.394Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:17:16.557Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T14:17:16.721Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:17:16.722Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T14:17:16.722Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T14:17:16.888Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T14:17:20.120Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T14:17:20.288Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:17:22.256Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:17:35.329Z] [resolveImageKeys] Resolving 1 keys: person_waving (format=internal, useUnapproved=true)
+[2026-05-12T14:17:35.539Z] [resolveImageKeys] Resolved "person_waving" → __SYMBOL__:285f9b1f-bf36-44ea-85bb-392457dde278
+[2026-05-12T14:17:35.541Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-12T14:17:51.093Z] [resolveImageKeys] Resolving 1 keys: person_making_ok_sign (format=internal, useUnapproved=true)
+[2026-05-12T14:17:51.307Z] [resolveImageKeys] No symbol found for "person_making_ok_sign"
+[2026-05-12T14:17:51.308Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_making_ok_sign
+[2026-05-12T14:17:51.309Z] [queueGeneration] Queuing 1 keys: person_making_ok_sign (hasCallback=true)
+[2026-05-12T14:17:51.485Z] [processQueue] Generating "person_making_ok_sign"...
+[2026-05-12T14:17:53.765Z] [processQueue] Failed "person_making_ok_sign": 400 Billing hard limit has been reached.
+[2026-05-12T14:17:57.847Z] [resolveImageKeys] Resolving 1 keys: person_making_peace_sign (format=internal, useUnapproved=true)
+[2026-05-12T14:17:58.036Z] [resolveImageKeys] No symbol found for "person_making_peace_sign"
+[2026-05-12T14:17:58.037Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_making_peace_sign
+[2026-05-12T14:17:58.038Z] [queueGeneration] Queuing 1 keys: person_making_peace_sign (hasCallback=true)
+[2026-05-12T14:17:58.211Z] [processQueue] Generating "person_making_peace_sign"...
+[2026-05-12T14:18:00.087Z] [processQueue] Failed "person_making_peace_sign": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:10.562Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T14:18:10.762Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:18:10.933Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:18:11.102Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T14:18:11.273Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:18:11.274Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T14:18:11.275Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T14:18:11.448Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T14:18:13.332Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:13.502Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:18:15.829Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:23.113Z] [resolveImageKeys] Resolving 4 keys: person_talking, person_calendar, person_with_lightbulb, person_feeling_sad (format=internal, useUnapproved=true)
+[2026-05-12T14:18:23.311Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T14:18:23.487Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T14:18:23.665Z] [resolveImageKeys] No symbol found for "person_with_lightbulb"
+[2026-05-12T14:18:23.842Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:18:23.843Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_calendar, person_with_lightbulb
+[2026-05-12T14:18:23.844Z] [queueGeneration] Queuing 2 keys: person_calendar, person_with_lightbulb (hasCallback=true)
+[2026-05-12T14:18:24.024Z] [processQueue] Generating "person_with_lightbulb"...
+[2026-05-12T14:18:26.268Z] [processQueue] Failed "person_with_lightbulb": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:26.444Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T14:18:28.758Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:38.592Z] [resolveImageKeys] Resolving 8 keys: person_feeling_happy, person_feeling_sad, person_feeling_tired, person_feeling_excited, person_feeling_angry, person_feeling_scared, person_feeling_bored, person_feeling_frustrated (format=internal, useUnapproved=true)
+[2026-05-12T14:18:38.785Z] [resolveImageKeys] Resolved "person_feeling_happy" → __SYMBOL__:862e0e49-b4cb-498c-8ebe-d9ab8711be9f
+[2026-05-12T14:18:38.960Z] [resolveImageKeys] Resolved "person_feeling_sad" → __SYMBOL__:3764d5f3-e719-4351-b996-dbce0b49d1ba
+[2026-05-12T14:18:39.132Z] [resolveImageKeys] No symbol found for "person_feeling_tired"
+[2026-05-12T14:18:39.305Z] [resolveImageKeys] No symbol found for "person_feeling_excited"
+[2026-05-12T14:18:39.475Z] [resolveImageKeys] No symbol found for "person_feeling_angry"
+[2026-05-12T14:18:39.645Z] [resolveImageKeys] No symbol found for "person_feeling_scared"
+[2026-05-12T14:18:39.817Z] [resolveImageKeys] No symbol found for "person_feeling_bored"
+[2026-05-12T14:18:39.986Z] [resolveImageKeys] No symbol found for "person_feeling_frustrated"
+[2026-05-12T14:18:39.987Z] [resolveImageKeys] Done. Resolved 2, unresolved 6: person_feeling_tired, person_feeling_excited, person_feeling_angry, person_feeling_scared, person_feeling_bored, person_feeling_frustrated
+[2026-05-12T14:18:39.989Z] [queueGeneration] Queuing 6 keys: person_feeling_tired, person_feeling_excited, person_feeling_angry, person_feeling_scared, person_feeling_bored, person_feeling_frustrated (hasCallback=true)
+[2026-05-12T14:18:40.166Z] [processQueue] Generating "person_feeling_frustrated"...
+[2026-05-12T14:18:43.577Z] [processQueue] Failed "person_feeling_frustrated": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:43.749Z] [processQueue] Generating "person_feeling_bored"...
+[2026-05-12T14:18:45.370Z] [processQueue] Failed "person_feeling_bored": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:45.543Z] [processQueue] Generating "person_feeling_scared"...
+[2026-05-12T14:18:47.297Z] [resolveImageKeys] Resolving 4 keys: person_resting, person_sleeping, person_meditating, person_asking_for_help (format=internal, useUnapproved=true)
+[2026-05-12T14:18:47.501Z] [resolveImageKeys] No symbol found for "person_resting"
+[2026-05-12T14:18:47.671Z] [resolveImageKeys] Resolved "person_sleeping" → __SYMBOL__:1eac4335-a085-4f14-ba78-8db55decdc4d
+[2026-05-12T14:18:47.841Z] [resolveImageKeys] No symbol found for "person_meditating"
+[2026-05-12T14:18:47.897Z] [processQueue] Failed "person_feeling_scared": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:48.019Z] [resolveImageKeys] Resolved "person_asking_for_help" → __SYMBOL__:5ca0b6d5-fdd3-4465-9880-05dfd2e33672
+[2026-05-12T14:18:48.020Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: person_resting, person_meditating
+[2026-05-12T14:18:48.021Z] [queueGeneration] Queuing 2 keys: person_resting, person_meditating (hasCallback=true)
+[2026-05-12T14:18:48.083Z] [processQueue] Generating "person_feeling_angry"...
+[2026-05-12T14:18:50.382Z] [processQueue] Failed "person_feeling_angry": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:50.552Z] [processQueue] Generating "person_meditating"...
+[2026-05-12T14:18:52.835Z] [processQueue] Failed "person_meditating": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:53.005Z] [processQueue] Generating "person_resting"...
+[2026-05-12T14:18:54.751Z] [processQueue] Failed "person_resting": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:54.922Z] [processQueue] Generating "person_feeling_excited"...
+[2026-05-12T14:18:57.021Z] [processQueue] Failed "person_feeling_excited": 400 Billing hard limit has been reached.
+[2026-05-12T14:18:57.193Z] [processQueue] Generating "person_feeling_tired"...
+[2026-05-12T14:18:58.829Z] [processQueue] Failed "person_feeling_tired": 400 Billing hard limit has been reached.
+[2026-05-12T15:18:47.970Z] [resolveImageKeys] Resolving 3 keys: person_talking, person_calendar, person_thinking (format=internal, useUnapproved=true)
+[2026-05-12T15:18:48.166Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:de69b9d9-a830-48ab-a227-28b9c1a91c8f
+[2026-05-12T15:18:48.338Z] [resolveImageKeys] No symbol found for "person_calendar"
+[2026-05-12T15:18:48.509Z] [resolveImageKeys] Resolved "person_thinking" → __SYMBOL__:ea7c8fbf-c72d-4de8-a180-63f17e2c1b12
+[2026-05-12T15:18:48.510Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_calendar
+[2026-05-12T15:18:48.511Z] [queueGeneration] Queuing 1 keys: person_calendar (hasCallback=true)
+[2026-05-12T15:18:48.691Z] [processQueue] Generating "person_calendar"...
+[2026-05-12T15:18:50.771Z] [processQueue] Failed "person_calendar": 400 Billing hard limit has been reached.

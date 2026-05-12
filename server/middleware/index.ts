@@ -8,4 +8,5 @@ export {
   requireOnboardingComplete,
   validateCSRF,
   requireLicensePermission,
+  requireAdminSection,
 } from "./auth";
