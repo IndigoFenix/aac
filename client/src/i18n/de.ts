@@ -2435,6 +2435,8 @@ export const de = {
     appSandboxGameDesc: "Pflanzen anbauen und eine Farm aufbauen",
     appBubblesGame: "Blasen",
     appBubblesGameDesc: "Schwebende Blasen zerplatzen für Hand-Auge-Koordination",
+    appSpaceTrader: "Weltraumhändler",
+    appSpaceTraderDesc: "Steuere ein Schiff durch Handelsrätsel, um den Stern zu erobern",
     spotifyConnected: "Spotify verbunden",
     spotifyConnect: "Verbinden",
     spotifyDisconnect: "Trennen",

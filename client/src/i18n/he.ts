@@ -2435,6 +2435,8 @@ export const he = {
     appSandboxGameDesc: "גדל צמחים ובנה חווה",
     appBubblesGame: "בועות",
     appBubblesGameDesc: "פיצוץ בועות צפות לאימון תיאום עין-יד",
+    appSpaceTrader: "סוחר חלל",
+    appSpaceTraderDesc: "נווט בחללית דרך חידות מסחר ולכוד את הכוכב",
     spotifyConnected: "ספוטיפיי מחובר",
     spotifyConnect: "חבר",
     spotifyDisconnect: "נתק",

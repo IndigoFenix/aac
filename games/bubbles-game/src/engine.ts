@@ -368,3 +368,33 @@ export function bubbleNearPoint(state: GameState, x: number, y: number, maxDist:
   }
   return best;
 }
+
+/**
+ * Find the topmost (most recently spawned) bubble whose extent contains
+ * the point, allowing `leeway` extra px outside the visible radius. Used
+ * for gaze targeting where the gaze position needs a small tolerance.
+ */
+export function bubbleAtPoint(state: GameState, x: number, y: number, leeway = 0): Bubble | null {
+  for (let i = state.bubbles.length - 1; i >= 0; i--) {
+    const b = state.bubbles[i];
+    const dx = x - b.x;
+    const dy = y - b.y;
+    const r = b.radius + leeway;
+    if (dx * dx + dy * dy <= r * r) return b;
+  }
+  return null;
+}
+
+/**
+ * Immediately pop a bubble by id (used for sustained-gaze pops). Bypasses
+ * the touch pop-window. Returns the popped bubble for animation, or null
+ * if no such bubble exists.
+ */
+export function popBubbleById(state: GameState, bubbleId: number, now: number): Bubble | null {
+  const idx = state.bubbles.findIndex(b => b.id === bubbleId);
+  if (idx < 0) return null;
+  const [b] = state.bubbles.splice(idx, 1);
+  state.stats.popped += 1;
+  state.recentPops.push(now);
+  return b;
+}

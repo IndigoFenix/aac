@@ -7,15 +7,31 @@ import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import {
   POI_DESPAWN_DIST,
   SHIP_RADIUS,
+  ASTEROID_FADE_OUT_MS,
+  TRADER_BUBBLE_DIST,
+  TRADER_DEFENSIVE_DIST,
+  TRADER_FADE_START_MS,
+  TRADER_OUTRO_DURATION,
+  TRADER_RIPPLE_START_MS,
+  TRADER_SMILE_START_MS,
+  TRADER_SPAWN_FADE_MS,
+  TRADER_SWAP_MS,
   TRAIL_FADE_MS,
-  activeMessages,
+  asteroidVisualRadius,
   createGameState,
+  getAlternateTradeItems,
   isOnScreen,
+  itemRenderPos,
   resetGame,
   resizeGame,
   setLevel,
   setShipTargetFromScreen,
+  shipCanCompleteTrade,
   tick,
+  transitionFadeAlpha,
+  transitionPhase,
+  wantRequirements,
+  warpSpeedFractionAt,
   worldToScreen,
 } from './engine';
 import type {
@@ -26,6 +42,8 @@ import type {
   PiratePOI,
   POI,
   Shape,
+  TradeRequirement,
+  TradeWant,
   TraderPOI,
 } from './types';
 
@@ -69,7 +87,6 @@ export default function SpaceTraderApp() {
 
   const stateRef = useRef<GameState>(createGameState(1, 1));
   const starsRef = useRef<{ x: number; y: number; r: number; phase: number }[]>([]);
-  const wonReportedRef = useRef(false);
   const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
 
   const [hud, setHud] = useState({
@@ -77,8 +94,7 @@ export default function SpaceTraderApp() {
     shields: 0,
     level: 0,
     inventory: [] as Item[],
-    won: false,
-    messages: [] as { id: number; text: string }[],
+    transitioning: false,
   });
 
   // ── Bridge: announce ready and listen for platform messages ──────────
@@ -156,12 +172,6 @@ export default function SpaceTraderApp() {
 
       drawScene(ctx, state, starsRef.current, now);
 
-      // Notify the platform once when the player wins.
-      if (state.won && !wonReportedRef.current) {
-        wonReportedRef.current = true;
-        sendToParent({ type: 'session_end', reason: 'won', summary: 'Captured the Star.' });
-      }
-
       if (now - lastHud >= HUD_REFRESH_MS) {
         lastHud = now;
         setHud({
@@ -169,8 +179,7 @@ export default function SpaceTraderApp() {
           shields: state.ship.shields,
           level: state.level,
           inventory: [...state.ship.inventory],
-          won: state.won,
-          messages: activeMessages(state, now).map(m => ({ id: m.id, text: m.text })),
+          transitioning: state.transitionStart !== null,
         });
       }
     };
@@ -200,13 +209,11 @@ export default function SpaceTraderApp() {
   }, [setTargetFromEvent]);
 
   const handleReset = useCallback(() => {
-    wonReportedRef.current = false;
     resetGame(stateRef.current);
   }, []);
 
   const handleCycleLevel = useCallback(() => {
     const next = (stateRef.current.level + 1) % (MAX_LEVEL + 1);
-    wonReportedRef.current = false;
     setLevel(stateRef.current, next);
     sendToParent({ type: 'level_changed', level: next });
   }, []);
@@ -294,33 +301,6 @@ export default function SpaceTraderApp() {
           </div>
         )}
 
-        {/* Floating messages (bottom-center) */}
-        <div className="absolute bottom-3 left-0 right-0 flex flex-col items-center gap-1 z-10 pointer-events-none">
-          {hud.messages.slice(-3).map(m => (
-            <div
-              key={m.id}
-              className="px-3 py-1 rounded-lg bg-black/70 text-slate-100 text-sm shadow-lg"
-            >
-              {m.text}
-            </div>
-          ))}
-        </div>
-
-        {/* Win overlay */}
-        {hud.won && (
-          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-4 z-20">
-            <div className="text-5xl">⭐</div>
-            <div className="text-3xl font-bold text-yellow-300">Mission Complete!</div>
-            <div className="text-slate-200">You captured the Star.</div>
-            <button
-              data-dwell
-              onClick={handleReset}
-              className="mt-2 px-4 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-medium"
-            >
-              Play again
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -356,6 +336,8 @@ function drawScene(
   now: number,
 ): void {
   const { width, height } = state;
+  const phase = transitionPhase(state, now);
+  const warping = phase === 'warp_out' || phase === 'warp_in';
 
   // Background gradient.
   const grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.7);
@@ -364,20 +346,44 @@ function drawScene(
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 
-  // Parallax stars (drift opposite to ship position).
+  // Parallax stars (drift opposite to camera). During warp, stretch them into
+  // streaks along the ship's heading; length tracks the eased warp speed so the
+  // streaks lengthen and shorten with the ship's acceleration.
   ctx.fillStyle = COLORS.starfield;
-  const sx = state.ship.pos.x * 0.05;
-  const sy = state.ship.pos.y * 0.05;
-  for (const s of stars) {
-    const x = ((s.x - sx) % width + width) % width;
-    const y = ((s.y - sy) % height + height) % height;
-    const tw = 0.55 + 0.45 * Math.sin(now / 600 + s.phase);
-    ctx.globalAlpha = tw;
-    ctx.beginPath();
-    ctx.arc(x, y, s.r, 0, Math.PI * 2);
-    ctx.fill();
+  const sx = state.cameraPos.x * 0.05;
+  const sy = state.cameraPos.y * 0.05;
+  if (warping) {
+    const headDx = Math.cos(state.ship.heading);
+    const headDy = Math.sin(state.ship.heading);
+    const streakLen = 90 * warpSpeedFractionAt(state, now);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    for (const s of stars) {
+      const x = ((s.x - sx) % width + width) % width;
+      const y = ((s.y - sy) % height + height) % height;
+      if (streakLen > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - headDx * streakLen, y - headDy * streakLen);
+        ctx.stroke();
+      }
+      // Head dot so the star never fully vanishes at the edges of the warp.
+      ctx.beginPath();
+      ctx.arc(x, y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    for (const s of stars) {
+      const x = ((s.x - sx) % width + width) % width;
+      const y = ((s.y - sy) % height + height) % height;
+      const tw = 0.55 + 0.45 * Math.sin(now / 600 + s.phase);
+      ctx.globalAlpha = tw;
+      ctx.beginPath();
+      ctx.arc(x, y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 
   // Draw item trail (behind ship).
   drawShipTrail(ctx, state, now);
@@ -385,8 +391,8 @@ function drawScene(
   // POIs.
   for (const poi of state.pois) {
     if (!isOnScreen(state, poi.pos, 100)) continue;
-    if (poi.kind === 'asteroid') drawAsteroid(ctx, state, poi);
-    else if (poi.kind === 'trader') drawTrader(ctx, state, poi);
+    if (poi.kind === 'asteroid') drawAsteroid(ctx, state, poi, now);
+    else if (poi.kind === 'trader') drawTrader(ctx, state, poi, now);
     else if (poi.kind === 'pirate') drawPirate(ctx, state, poi, now);
   }
 
@@ -396,15 +402,21 @@ function drawScene(
   drawOrbitingRocks(ctx, state, now);
   drawFlyingRocks(ctx, state, now);
 
-  // Off-screen direction arrows.
-  drawOffscreenArrows(ctx, state);
+  // Off-screen direction arrows (hidden during warp).
+  if (!warping) drawOffscreenArrows(ctx, state, now);
+
+  // Black warp overlay — peaks at 1 at the midpoint of the level transition.
+  const fade = transitionFadeAlpha(state, now);
+  if (fade > 0) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${fade})`;
+    ctx.fillRect(0, 0, width, height);
+  }
 }
 
 function drawShip(ctx: CanvasRenderingContext2D, state: GameState) {
-  const cx = state.width / 2;
-  const cy = state.height / 2;
+  const screen = worldToScreen(state, state.ship.pos);
   ctx.save();
-  ctx.translate(cx, cy);
+  ctx.translate(screen.x, screen.y);
   ctx.rotate(state.ship.heading);
   // Body — pointed triangle
   ctx.beginPath();
@@ -427,8 +439,9 @@ function drawShip(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function drawShieldRings(ctx: CanvasRenderingContext2D, state: GameState) {
-  const cx = state.width / 2;
-  const cy = state.height / 2;
+  const screen = worldToScreen(state, state.ship.pos);
+  const cx = screen.x;
+  const cy = screen.y;
   const visibleShields = Math.min(SHIELD_RING_CAP, state.ship.shields);
   for (let i = 0; i < visibleShields; i++) {
     const r = SHIELD_RING_INNER + i * SHIELD_RING_STEP;
@@ -448,8 +461,9 @@ function drawShieldRings(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function drawOrbitingRocks(ctx: CanvasRenderingContext2D, state: GameState, now: number) {
-  const cx = state.width / 2;
-  const cy = state.height / 2;
+  const screen = worldToScreen(state, state.ship.pos);
+  const cx = screen.x;
+  const cy = screen.y;
   const inFlight = state.flyingRocks.length;
   const orbiting = Math.max(0, state.ship.rocks - inFlight);
   const drawCount = Math.min(ROCK_ORBIT_CAP, orbiting);
@@ -516,31 +530,31 @@ function drawShipTrail(ctx: CanvasRenderingContext2D, state: GameState, now: num
     }
   }
 
-  // Towed items: place each along the trail. When the ship has been stationary
-  // and the trail has shrunk, fall back to clustering items behind the ship so
-  // they don't pop in/out of existence.
-  const spacing = 4;
+  // Towed items: each one is locked to its chain point, only tweening when a
+  // slot-shift happens (new item arrives or one is stolen / consumed).
   const inv = ship.inventory;
   for (let i = 0; i < inv.length; i++) {
-    const idx = trail.length - 1 - (i + 1) * spacing;
-    let world;
-    if (idx >= 0) {
-      world = trail[idx];
-    } else {
-      const offset = (i + 1) * 14;
-      world = {
-        x: ship.pos.x - Math.cos(ship.heading) * offset,
-        y: ship.pos.y - Math.sin(ship.heading) * offset,
-      };
-    }
+    const world = itemRenderPos(state, i, now);
     const p = worldToScreen(state, world);
     drawItemBadge(ctx, p.x, p.y, inv[i], 12);
   }
 }
 
-function drawAsteroid(ctx: CanvasRenderingContext2D, state: GameState, poi: AsteroidPOI) {
+const ASTEROID_FADE_IN_MS = 700;
+
+function drawAsteroid(ctx: CanvasRenderingContext2D, state: GameState, poi: AsteroidPOI, now: number) {
   const p = worldToScreen(state, poi.pos);
+  const r = asteroidVisualRadius(poi);
+  // Fade out when a cluster has spawned over this asteroid.
+  const fadeOut = poi.fadeOutStart !== undefined
+    ? Math.max(0, 1 - (now - poi.fadeOutStart) / ASTEROID_FADE_OUT_MS)
+    : 1;
+  // Fade in on spawn so new asteroids don't pop into the world.
+  const fadeIn = Math.max(0, Math.min(1, (now - poi.spawnTime) / ASTEROID_FADE_IN_MS));
+  const fadeAlpha = fadeOut * fadeIn;
+  if (fadeAlpha <= 0) return;
   ctx.save();
+  ctx.globalAlpha = fadeAlpha;
   ctx.translate(p.x, p.y);
 
   // Lumpy body — stable per-id random.
@@ -550,9 +564,9 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, state: GameState, poi: Aste
   for (let i = 0; i < lumps; i++) {
     const a = (i / lumps) * Math.PI * 2;
     const wob = 0.85 + ((Math.sin(seed + i) + 1) / 2) * 0.3;
-    const r = poi.radius * wob;
-    const x = Math.cos(a) * r;
-    const y = Math.sin(a) * r;
+    const rr = r * wob;
+    const x = Math.cos(a) * rr;
+    const y = Math.sin(a) * rr;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
@@ -563,16 +577,11 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, state: GameState, poi: Aste
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Hint of contained item.
-  if (poi.containedItem) {
-    drawItemBadge(ctx, 0, 0, poi.containedItem, Math.min(poi.radius * 0.5, 14));
-  }
-
   // Break-progress arc when ship is harvesting.
   if (poi.breakProgress > 0) {
     const frac = Math.max(0, Math.min(1, poi.breakProgress / poi.breakInterval));
     ctx.beginPath();
-    ctx.arc(0, 0, poi.radius + 6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.arc(0, 0, r + 6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
     ctx.strokeStyle = '#fbbf24';
     ctx.lineWidth = 3;
     ctx.stroke();
@@ -583,64 +592,369 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, state: GameState, poi: Aste
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  if (!poi.containedItem) {
-    ctx.fillText(`×${poi.rocksRemaining}`, 0, 0);
-  }
+  ctx.fillText(`×${poi.rocksRemaining}`, 0, 0);
   ctx.restore();
 }
 
-function drawTrader(ctx: CanvasRenderingContext2D, state: GameState, poi: TraderPOI) {
+function drawTrader(
+  ctx: CanvasRenderingContext2D,
+  state: GameState,
+  poi: TraderPOI,
+  now: number,
+) {
   const p = worldToScreen(state, poi.pos);
+  const ship = state.ship;
+  const dx = ship.pos.x - poi.pos.x;
+  const dy = ship.pos.y - poi.pos.y;
+  const distToShip = Math.hypot(dx, dy);
+  const angleToShip = Math.atan2(dy, dx);
+  const r = poi.radius;
+
+  // Outro-phase timing relative to tradeStartAt.
+  let swapT = 0;
+  let smileT = 0;
+  let rippleT = 0;
+  let fadeAlpha = 1;
+  let defensiveT = 0;
+  let bubbleVis = 0;
+  const isOutro = poi.done && poi.tradeStartAt !== undefined;
+
+  if (isOutro) {
+    const e = now - (poi.tradeStartAt as number);
+    swapT = clamp01(e / TRADER_SWAP_MS);
+    smileT = clamp01((e - TRADER_SMILE_START_MS) / 400);
+    rippleT = clamp01((e - TRADER_RIPPLE_START_MS) / (TRADER_OUTRO_DURATION - TRADER_RIPPLE_START_MS));
+    fadeAlpha = 1 - clamp01((e - TRADER_FADE_START_MS) / (TRADER_OUTRO_DURATION - TRADER_FADE_START_MS));
+    bubbleVis = (1 - swapT) * fadeAlpha;
+  } else {
+    // Bubble fades in as the player approaches — generous distance.
+    bubbleVis = clamp01((TRADER_BUBBLE_DIST - distToShip) / 60);
+    // Defensive posture only when the player has NO way to settle this trade
+    // (normal or alt) — accepting a valid alt purple shouldn't make the trader
+    // pull their offer in.
+    if (distToShip < TRADER_DEFENSIVE_DIST && !shipCanCompleteTrade(ship, poi)) {
+      defensiveT = clamp01((TRADER_DEFENSIVE_DIST - distToShip) / 80);
+    }
+  }
+
+  // Spawn-in: trader fades up and a ring collapses inward to reveal it. Always
+  // runs but invisible past the fade duration.
+  const spawnT = clamp01((now - poi.spawnTime) / TRADER_SPAWN_FADE_MS);
+  const spawnAlpha = spawnT;
+  fadeAlpha *= spawnAlpha;
+  bubbleVis *= spawnAlpha;
+
+  // Eye / pupil tracking — pupils drift toward the player (clamped) with a soft
+  // idle wobble. Hands gently bob and lean toward the ship.
+  const pupilDriftMax = r * 0.18;
+  const pupilDriftX = Math.cos(angleToShip) * pupilDriftMax;
+  const pupilDriftY = Math.sin(angleToShip) * pupilDriftMax;
+  const wobbleX = Math.sin(now / 730 + poi.id) * 1.2;
+  const wobbleY = Math.cos(now / 810 + poi.id) * 1.2;
+  const headTiltY = Math.sin(now / 950 + poi.id) * 1.5;
+
+  const { skin, stroke: skinStroke } = traderColors(poi);
 
   ctx.save();
   ctx.translate(p.x, p.y);
+  ctx.globalAlpha = fadeAlpha;
+  ctx.translate(0, headTiltY * 0.5);
 
-  if (poi.done) {
-    // Inert — dim circle.
-    ctx.beginPath();
-    ctx.arc(0, 0, poi.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#52525b';
-    ctx.fill();
-    ctx.strokeStyle = '#27272a';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  // Trader station body.
+  // Head.
   ctx.beginPath();
-  ctx.arc(0, 0, poi.radius, 0, Math.PI * 2);
-  ctx.fillStyle = poi.badDeal ? '#dc2626' : COLORS.trader;
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = skin;
   ctx.fill();
-  ctx.strokeStyle = poi.badDeal ? '#7f1d1d' : COLORS.traderOutline;
+  ctx.strokeStyle = skinStroke;
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Antenna so it reads as a structure rather than a planet.
+  // Eyes.
+  const eyeY = -r * 0.15;
+  const eyeX = r * 0.38;
+  const eyeOuterR = r * 0.22;
+  const pupilR = eyeOuterR * 0.5;
+  for (const side of [-1, 1]) {
+    const ex = side * eyeX;
+    ctx.beginPath();
+    ctx.arc(ex, eyeY, eyeOuterR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ex + pupilDriftX + wobbleX * 0.2, eyeY + pupilDriftY + wobbleY * 0.2, pupilR, 0, Math.PI * 2);
+    ctx.fillStyle = '#1f2937';
+    ctx.fill();
+  }
+
+  // Mouth — neutral, deepens to a smile during the smile phase.
+  const mouthY = r * 0.32;
+  const mouthW = r * 0.55;
+  const curve = mouthY + smileT * r * 0.32;
   ctx.beginPath();
-  ctx.moveTo(0, -poi.radius);
-  ctx.lineTo(0, -poi.radius - 10);
-  ctx.strokeStyle = COLORS.traderOutline;
-  ctx.lineWidth = 2;
+  ctx.moveTo(-mouthW * 0.5, mouthY);
+  ctx.quadraticCurveTo(0, curve, mouthW * 0.5, mouthY);
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
   ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(0, -poi.radius - 12, 3, 0, Math.PI * 2);
-  ctx.fillStyle = '#fde68a';
-  ctx.fill();
+
+  // Hands — flank the head, drift toward each other when defensive.
+  const baseHandX = r * 1.05;
+  const baseHandY = r * 0.7;
+  const handR = r * 0.24;
+  const handXIn = baseHandX * (1 - defensiveT * 0.65);
+  const handYIn = baseHandY + defensiveT * r * 0.08;
+  const handTrackX = Math.cos(angleToShip) * 2.5;
+  const handTrackY = Math.sin(angleToShip) * 2.5;
+  for (const side of [-1, 1]) {
+    const hx = side * handXIn + handTrackX + wobbleX * 0.4;
+    const hy = handYIn + handTrackY + wobbleY * 0.4;
+    ctx.beginPath();
+    ctx.arc(hx, hy, handR, 0, Math.PI * 2);
+    ctx.fillStyle = skin;
+    ctx.fill();
+    ctx.strokeStyle = skinStroke;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Offer between the hands — fades out during the swap (it's now flying to the ship).
+  const offerAlpha = (1 - swapT) * (1 - defensiveT * 0.4);
+  if (offerAlpha > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = fadeAlpha * offerAlpha;
+    const offerX = handTrackX + wobbleX * 0.4;
+    const offerY = handYIn + handTrackY + wobbleY * 0.4 - r * 0.02;
+    drawItemSymbolKind(ctx, offerX, offerY, poi.offer.kind, poi.offer.shape, r * 0.32);
+    ctx.restore();
+  }
 
   ctx.restore();
 
-  // Thought bubble showing what they want.
-  drawThoughtBubble(ctx, p.x + poi.radius + 8, p.y - poi.radius - 8, poi);
+  // Speech bubble — fades in by proximity, fades out during the swap. Pushed
+  // further off the trader's body than before so it doesn't overlap the trade
+  // hot-spot; a tail of dots keeps the speaker reading clearly.
+  const bubbleX = p.x + r + 30;
+  const bubbleY = p.y - r - 52;
+  const { h: bubbleH } = bubbleDimensions(poi.want);
+  if (bubbleVis > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = bubbleVis;
+    drawBubbleTail(ctx, bubbleX, bubbleY, bubbleH, p.x, p.y, r);
+    drawThoughtBubble(ctx, bubbleX, bubbleY, poi);
+    ctx.restore();
+  }
 
-  // Trade-in-progress arc.
-  if (poi.hoverProgress > 0) {
+  // Alternate trade-down bubble. Only appears when the normal trade is NOT
+  // currently payable but the trade-down rule yields a valid payment plan.
+  // Shows the exact items the player will hand over (matched items + purple
+  // substitutions), not a placeholder.
+  if (bubbleVis > 0.01 && !isOutro) {
+    const altItems = getAlternateTradeItems(ship, poi);
+    if (altItems !== null) {
+      ctx.save();
+      ctx.globalAlpha = bubbleVis;
+      drawAlternateTradeBubble(ctx, bubbleX, bubbleY + bubbleH + 6, altItems, poi.offer);
+      ctx.restore();
+    }
+  }
+
+  // Trade-in-progress arc (only while genuinely hovering, never during outro).
+  if (!isOutro && poi.hoverProgress > 0) {
     const frac = Math.max(0, Math.min(1, poi.hoverProgress / poi.hoverDuration));
     ctx.beginPath();
-    ctx.arc(p.x, p.y, poi.radius + 6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.arc(p.x, p.y, r + 8, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
     ctx.strokeStyle = '#22c55e';
     ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // Outro ripple — expanding rings that pulse outward as the trader fades.
+  if (rippleT > 0) {
+    for (let i = 0; i < 2; i++) {
+      const stagger = i * 0.18;
+      const tt = clamp01(rippleT * 1.1 - stagger);
+      if (tt <= 0) continue;
+      const rr = r + tt * 90;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(251, 191, 36, ${(1 - tt) * 0.65})`;
+      ctx.lineWidth = 3 - i;
+      ctx.stroke();
+    }
+  }
+
+  // Spawn-in ripple — ring collapses inward as the trader materialises.
+  if (spawnT < 1) {
+    const collapse = 1 - spawnT;
+    const rr = r + collapse * 70;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(251, 191, 36, ${collapse * 0.7})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+}
+
+/**
+ * Trade-down bubble: shows the actual items the player would hand over under
+ * the alternate-payment plan, with an "or" prefix. Items are rendered in the
+ * same +-separated row format as the primary bubble, ending in the trader's
+ * offer so the player can compare both routes at a glance.
+ */
+function drawAlternateTradeBubble(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  items: TradeRequirement[],
+  offer: Item,
+) {
+  const prefixW = 18;
+  let wantsW = 0;
+  for (let i = 0; i < items.length; i++) {
+    wantsW += requirementWidth(items[i]);
+    if (i < items.length - 1) wantsW += 12;
+  }
+  const w = 10 + prefixW + wantsW + 6 + 14 + 6 + 18 + 10;
+  const hasRocks = items.some(r => r.kind === 'rock');
+  const h = hasRocks ? 44 : 38;
+  const r = 12;
+
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(243,232,255,0.95)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(88,28,135,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const cy = y + h / 2;
+  ctx.fillStyle = '#581c87';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('or', x + 10, cy);
+
+  let cursor = x + 10 + prefixW;
+  for (let i = 0; i < items.length; i++) {
+    const req = items[i];
+    const reqW = requirementWidth(req);
+    const centerX = cursor + reqW / 2;
+    if (req.kind === 'rock') {
+      drawRockCluster(ctx, centerX, cy, req.rockCount ?? 1);
+    } else {
+      drawItemSymbolKind(ctx, centerX, cy, req.kind, req.shape, 8);
+    }
+    cursor += reqW;
+    if (i < items.length - 1) {
+      ctx.fillStyle = '#581c87';
+      ctx.textAlign = 'center';
+      ctx.fillText('+', cursor + 6, cy);
+      ctx.textAlign = 'left';
+      cursor += 12;
+    }
+  }
+
+  cursor += 6;
+  ctx.strokeStyle = '#581c87';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cursor, cy);
+  ctx.lineTo(cursor + 10, cy);
+  ctx.moveTo(cursor + 7, cy - 3);
+  ctx.lineTo(cursor + 10, cy);
+  ctx.lineTo(cursor + 7, cy + 3);
+  ctx.stroke();
+  cursor += 14;
+
+  drawItemSymbolKind(ctx, cursor + 12, cy, offer.kind, offer.shape, 8);
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/**
+ * Light-tinted body colour for a trader, keyed off what they're holding so the
+ * player can read each trader's offer at a glance.
+ */
+function traderColors(poi: TraderPOI): { skin: string; stroke: string } {
+  switch (poi.offer.kind) {
+    case 'blue':
+      return { skin: '#bfdbfe', stroke: '#1e3a8a' };
+    case 'purple':
+      return { skin: '#e9d5ff', stroke: '#581c87' };
+    case 'star':
+    default:
+      return { skin: '#fde68a', stroke: COLORS.traderOutline };
+  }
+}
+
+/** Width budgeted for one requirement entry inside the bubble's want section. */
+function requirementWidth(req: TradeRequirement): number {
+  return req.kind === 'rock' ? 38 : 18;
+}
+
+function bubbleDimensions(want: TradeWant): { w: number; h: number } {
+  const reqs = wantRequirements(want);
+  let wantsW = 0;
+  for (let i = 0; i < reqs.length; i++) {
+    wantsW += requirementWidth(reqs[i]);
+    if (i < reqs.length - 1) wantsW += 12; // "+" separator
+  }
+  // 10px padding, wants, 6px gap, 14px arrow, 6px gap, 18px offer, 10px padding.
+  const w = 10 + wantsW + 6 + 14 + 6 + 18 + 10;
+  const hasRocks = reqs.some(r => r.kind === 'rock');
+  const h = hasRocks ? 44 : 38;
+  return { w, h };
+}
+
+/**
+ * Chain of shrinking dots from the bubble's lower-left corner to the trader's
+ * edge facing the bubble — bigger dots near the bubble, smaller near the speaker.
+ */
+function drawBubbleTail(
+  ctx: CanvasRenderingContext2D,
+  bubbleX: number,
+  bubbleY: number,
+  bubbleH: number,
+  traderX: number,
+  traderY: number,
+  traderRadius: number,
+) {
+  const ax = bubbleX + 4;
+  const ay = bubbleY + bubbleH - 2;
+  const dx = traderX - ax;
+  const dy = traderY - ay;
+  const d = Math.hypot(dx, dy);
+  if (d < 1) return;
+  const nx = dx / d;
+  const ny = dy / d;
+  const tipX = traderX - nx * traderRadius;
+  const tipY = traderY - ny * traderRadius;
+  for (let i = 0; i < 3; i++) {
+    const t = (i + 1) / 4;
+    const dotX = ax + (tipX - ax) * t;
+    const dotY = ay + (tipY - ay) * t;
+    const radius = 5 - i * 1.3;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.bubble;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.bubbleStroke;
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 }
@@ -651,10 +965,7 @@ function drawThoughtBubble(
   y: number,
   trader: TraderPOI,
 ) {
-  // Wider bubble when the want is a rock pile so the cluster fits.
-  const wantsRocks = trader.want.kind === 'rock';
-  const w = wantsRocks ? 96 : 72;
-  const h = wantsRocks ? 44 : 38;
+  const { w, h } = bubbleDimensions(trader.want);
   const r = 12;
 
   // Bubble background (rounded rectangle).
@@ -675,40 +986,45 @@ function drawThoughtBubble(
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Connector dots toward trader (lower-left).
-  for (let i = 0; i < 2; i++) {
-    const dx = -8 - i * 6;
-    const dy = h + 4 + i * 4;
-    ctx.beginPath();
-    ctx.arc(x + dx, y + dy, 2 + i, 0, Math.PI * 2);
-    ctx.fillStyle = COLORS.bubble;
-    ctx.fill();
-    ctx.strokeStyle = COLORS.bubbleStroke;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
   const cy = y + h / 2;
-  const wantCx = x + (wantsRocks ? 24 : 14);
-  if (wantsRocks) {
-    drawRockCluster(ctx, wantCx, cy, trader.want.rockCount ?? 1);
-  } else {
-    drawItemSymbolKind(ctx, wantCx, cy, trader.want.kind, trader.want.shape, 8);
+  const reqs = wantRequirements(trader.want);
+  let cursor = x + 10;
+  ctx.fillStyle = '#1f2937';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < reqs.length; i++) {
+    const req = reqs[i];
+    const reqW = requirementWidth(req);
+    const centerX = cursor + reqW / 2;
+    if (req.kind === 'rock') {
+      drawRockCluster(ctx, centerX, cy, req.rockCount ?? 1);
+    } else {
+      drawItemSymbolKind(ctx, centerX, cy, req.kind, req.shape, 8);
+    }
+    cursor += reqW;
+    if (i < reqs.length - 1) {
+      ctx.fillStyle = '#1f2937';
+      ctx.fillText('+', cursor + 6, cy);
+      cursor += 12;
+    }
   }
 
-  // Arrow.
+  // Arrow between wants and offer.
+  cursor += 6;
   ctx.strokeStyle = '#1f2937';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(x + w / 2 - 4, cy);
-  ctx.lineTo(x + w / 2 + 4, cy);
-  ctx.moveTo(x + w / 2 + 1, cy - 3);
-  ctx.lineTo(x + w / 2 + 4, cy);
-  ctx.lineTo(x + w / 2 + 1, cy + 3);
+  ctx.moveTo(cursor, cy);
+  ctx.lineTo(cursor + 10, cy);
+  ctx.moveTo(cursor + 7, cy - 3);
+  ctx.lineTo(cursor + 10, cy);
+  ctx.lineTo(cursor + 7, cy + 3);
   ctx.stroke();
+  cursor += 14;
 
   // Offer side.
-  drawItemSymbolKind(ctx, x + w - 14, cy, trader.offer.kind, trader.offer.shape, 8);
+  drawItemSymbolKind(ctx, cursor + 12, cy, trader.offer.kind, trader.offer.shape, 8);
 }
 
 /**
@@ -754,13 +1070,26 @@ function drawRockCluster(
 
 function drawPirate(ctx: CanvasRenderingContext2D, state: GameState, poi: PiratePOI, now: number) {
   const p = worldToScreen(state, poi.pos);
-  const dx = state.ship.pos.x - poi.pos.x;
-  const dy = state.ship.pos.y - poi.pos.y;
-  const heading = Math.atan2(dy, dx) + (poi.fleeing ? Math.PI : 0);
+
+  // Stolen item drags behind the pirate as it flees. Drawn before the body so
+  // the wedge sits on top of the tether/item.
+  if (poi.fleeing && poi.carriedItem) {
+    const trailDist = poi.radius + 18;
+    const tx = p.x - Math.cos(poi.heading) * trailDist;
+    const ty = p.y - Math.sin(poi.heading) * trailDist;
+    ctx.strokeStyle = 'rgba(252, 165, 165, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p.x - Math.cos(poi.heading) * poi.radius * 0.7,
+               p.y - Math.sin(poi.heading) * poi.radius * 0.7);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    drawItemSymbolKind(ctx, tx, ty, poi.carriedItem.kind, poi.carriedItem.shape, 9);
+  }
 
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(heading);
+  ctx.rotate(poi.heading);
 
   // Wedge shape.
   ctx.beginPath();
@@ -775,7 +1104,6 @@ function drawPirate(ctx: CanvasRenderingContext2D, state: GameState, poi: Pirate
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Skull blip
   ctx.beginPath();
   ctx.arc(-2, 0, poi.radius * 0.25, 0, Math.PI * 2);
   ctx.fillStyle = '#1f1f1f';
@@ -783,24 +1111,45 @@ function drawPirate(ctx: CanvasRenderingContext2D, state: GameState, poi: Pirate
 
   ctx.restore();
 
-  // Pulsing menace ring (only while chasing).
+  // Pulsing menace ring while chasing — fades with depleting morale.
   if (!poi.fleeing) {
+    const moraleFrac = poi.moraleMax > 0 ? Math.max(0, poi.morale / poi.moraleMax) : 1;
     const pulse = 0.5 + 0.5 * Math.sin(now / 250);
     ctx.beginPath();
     ctx.arc(p.x, p.y, poi.radius + 6 + pulse * 2, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(239, 68, 68, ${0.25 + pulse * 0.35})`;
+    ctx.strokeStyle = `rgba(239, 68, 68, ${(0.25 + pulse * 0.35) * moraleFrac})`;
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // Morale bar — short red bar above the pirate, shrinks left-to-right.
+    if (moraleFrac < 0.99) {
+      const barW = poi.radius * 1.8;
+      const barH = 3;
+      const barX = p.x - barW / 2;
+      const barY = p.y - poi.radius - 9;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(barX, barY, barW * moraleFrac, barH);
+    }
   }
 }
 
-function drawOffscreenArrows(ctx: CanvasRenderingContext2D, state: GameState) {
+const RADAR_FADE_BUFFER = 70;
+const RADAR_SPAWN_FADE_MS = 700;
+
+function drawOffscreenArrows(ctx: CanvasRenderingContext2D, state: GameState, now: number) {
   const cx = state.width / 2;
   const cy = state.height / 2;
   const margin = 26;
+  // Outermost ring sits just inside the canvas edge; the closer ring sits at
+  // ~80% of that, so radar icons hug the screen perimeter instead of cluttering
+  // the middle of the play area.
+  const innerR = Math.min(state.width, state.height) / 2 - margin;
+  const minR = innerR * 0.82;
 
   for (const poi of state.pois) {
-    if (isOnScreen(state, poi.pos, 0)) continue;
+    if (poi.kind === 'trader' && poi.done) continue;
 
     const dx = poi.pos.x - state.ship.pos.x;
     const dy = poi.pos.y - state.ship.pos.y;
@@ -808,38 +1157,89 @@ function drawOffscreenArrows(ctx: CanvasRenderingContext2D, state: GameState) {
     if (d > POI_DESPAWN_DIST) continue;
 
     const angle = Math.atan2(dy, dx);
-    // Closer POIs => arrow nearer to the ship; farther => arrow at edge.
-    const innerR = Math.min(state.width, state.height) / 2 - margin;
-    const minR = Math.min(80, innerR * 0.3);
     const t = Math.min(1, d / POI_DESPAWN_DIST);
     const r = minR + t * (innerR - minR);
+
+    // Fade out as the POI distance approaches the indicator's radius — that's
+    // the point where the icon would be drawn on top of the actual object —
+    // and fade in just before despawn range so newly discovered POIs ease in.
+    const nearFade = Math.max(0, Math.min(1, (d - r) / RADAR_FADE_BUFFER));
+    const farFade = Math.max(0, Math.min(1, (POI_DESPAWN_DIST - d) / RADAR_FADE_BUFFER));
+    // Spawn-in fade so the icon eases in along with the entity it represents.
+    const spawnTime =
+      poi.kind === 'trader' ? poi.spawnTime
+      : poi.kind === 'pirate' ? poi.spawnTime
+      : poi.kind === 'asteroid' ? poi.spawnTime
+      : 0;
+    const spawnFade = Math.max(0, Math.min(1, (now - spawnTime) / RADAR_SPAWN_FADE_MS));
+    const alpha = Math.min(nearFade, farFade) * spawnFade;
+    if (alpha <= 0.01) continue;
 
     const ax = cx + Math.cos(angle) * r;
     const ay = cy + Math.sin(angle) * r;
 
-    ctx.save();
-    ctx.translate(ax, ay);
-    ctx.rotate(angle);
+    // Encountered traders carry their offer on the indicator — small badge
+    // anchored on the ring, with a directional arrow tucked behind it.
+    const isEncounteredTrader = poi.kind === 'trader' && poi.encountered;
 
-    const color = colorForPOI(poi);
-    ctx.fillStyle = color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-6, -5);
-    ctx.lineTo(-3, 0);
-    ctx.lineTo(-6, 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    if (isEncounteredTrader) {
+      // Tag the offer item; the small triangle still points the direction.
+      ctx.save();
+      ctx.translate(ax, ay);
+      ctx.rotate(angle);
+      ctx.fillStyle = colorForPOI(poi);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-2, -4);
+      ctx.lineTo(-2, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Badge backing.
+      ctx.beginPath();
+      ctx.arc(ax, ay, 10, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fill();
+      ctx.strokeStyle = colorForPOI(poi);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      drawItemSymbolKind(ctx, ax, ay, poi.offer.kind, poi.offer.shape, 6);
+    } else {
+      ctx.translate(ax, ay);
+      ctx.rotate(angle);
+      ctx.fillStyle = colorForPOI(poi);
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(-6, -5);
+      ctx.lineTo(-3, 0);
+      ctx.lineTo(-6, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
 
 function colorForPOI(poi: POI): string {
   if (poi.kind === 'pirate') return COLORS.pirate;
-  if (poi.kind === 'trader') return (poi as TraderPOI).badDeal ? COLORS.pirate : COLORS.trader;
+  if (poi.kind === 'trader') {
+    // Radar marker echoes the trader's tint so the player can tell offers apart.
+    switch (poi.offer.kind) {
+      case 'blue': return COLORS.blue;
+      case 'purple': return COLORS.purple;
+      default: return COLORS.trader;
+    }
+  }
   return COLORS.asteroid;
 }
 

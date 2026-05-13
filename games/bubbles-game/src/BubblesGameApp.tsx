@@ -11,9 +11,11 @@ import { X } from 'lucide-react';
 import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import {
   POP_WINDOW_MS,
+  bubbleAtPoint,
   bubbleNearPoint,
   createGameState,
   handleTouch,
+  popBubbleById,
   resetGame,
   resizeGame,
   tick,
@@ -27,6 +29,19 @@ const GAZE_ENCOURAGE_THRESHOLD_MS = 2000;    // dwell on bubble without touch
 const GAZE_ENCOURAGE_COOLDOWN_MS = 25_000;   // min between encouragements
 const GAZE_HIT_RADIUS_PX = 90;
 const IDLE_AFTER_TOUCH_MS = 1500;            // must not have touched recently
+
+// Gaze-paint pop: as the gaze sweeps across a bubble it "paints" the visited
+// angular sectors. When enough sectors are filled, the bubble pops. The user
+// has to draw the line all over the bubble — a stationary stare doesn't pop.
+const GAZE_BUBBLE_LEEWAY_PX = 24;        // outside bubble.radius still counts as "on"
+const GAZE_PAINT_MIN_SEG_PX = 2;         // skip drawing segments shorter than this
+
+const PAINT_SECTORS = 12;                // angular sectors used for coverage
+const PAINT_POP_SECTOR_COUNT = 9;        // pop once this many sectors visited (of PAINT_SECTORS)
+const PAINT_INNER_RADIUS_FRAC = 0.18;    // ignore gaze too near bubble center
+const PAINT_INTERP_STEPS = 6;            // interpolate between samples so fast moves don't skip sectors
+const PAINT_LINE_WIDTH = 6;
+const PAINT_STROKE_STYLE = 'rgba(14, 165, 233, 0.9)';
 
 const POP_RING_MS = 350;
 
@@ -58,6 +73,17 @@ export default function BubblesGameApp() {
 
   // Gaze state — updated from `gaze` platform messages. iframe-local pixels.
   const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
+
+  // Persistent paint, one offscreen canvas per painted bubble. Paint is drawn
+  // incrementally as the gaze moves and blitted onto the main canvas each
+  // frame, clipped to the bubble's current circle — so the paint moves with
+  // the bubble and stays visible for the bubble's whole lifetime at O(1)
+  // cost per frame regardless of how much paint has accumulated.
+  const paintCanvasByBubble = useRef<Map<number, HTMLCanvasElement>>(new Map());
+
+  // Persistent coverage state per bubble — bitmask of visited angular sectors.
+  // Survives until the bubble pops or is culled.
+  const coverageMaskByBubble = useRef<Map<number, number>>(new Map());
 
   // Bridge: announce ready, listen for gaze + close.
   useEffect(() => {
@@ -114,6 +140,12 @@ export default function BubblesGameApp() {
     let lastEncourageTime = 0;
     let gazeLockBubbleId: number | null = null;
     let gazeLockStart = 0;
+    // Previous gaze sample in bubble-local coords (for interpolation across
+    // fast moves). Tracked per bubble so a hop between bubbles doesn't
+    // interpolate across the gap.
+    let lastPaintBubbleId: number | null = null;
+    let lastPaintLocalX = 0;
+    let lastPaintLocalY = 0;
 
     const loop = (time: number) => {
       rafId = requestAnimationFrame(loop);
@@ -199,18 +231,113 @@ export default function BubblesGameApp() {
       }
       popAnimsRef.current = keptAnims;
 
-      // ── Gaze tracking without touch: nudge AI ──
+      // ── Gaze handling: persistent bubble-local paint + coverage-to-pop ──
       // Coordinates from the bridge are already iframe-local, but the canvas
       // sits inside the iframe with a (possibly nonzero) bounding rect — so
       // we still subtract the canvas's offset within the iframe.
       const gaze = gazeRef.current;
+      const coverage = coverageMaskByBubble.current;
+      const paintCanvases = paintCanvasByBubble.current;
+
       if (gaze.mode !== 'off' && gaze.x >= 0) {
         const rect = canvas.getBoundingClientRect();
         const gx = gaze.x - rect.left;
         const gy = gaze.y - rect.top;
+
+        const onBubble = bubbleAtPoint(state, gx, gy, GAZE_BUBBLE_LEEWAY_PX);
+
+        if (onBubble) {
+          const localX = gx - onBubble.x;
+          const localY = gy - onBubble.y;
+
+          // Get or create this bubble's offscreen paint canvas. Sized to the
+          // bubble's max possible footprint (targetRadius + leeway) so paint
+          // never overflows the buffer.
+          let paintCanvas = paintCanvases.get(onBubble.id);
+          let half: number;
+          if (!paintCanvas) {
+            half = Math.ceil(onBubble.targetRadius + GAZE_BUBBLE_LEEWAY_PX + 4);
+            paintCanvas = document.createElement('canvas');
+            paintCanvas.width = half * 2;
+            paintCanvas.height = half * 2;
+            paintCanvases.set(onBubble.id, paintCanvas);
+          } else {
+            half = paintCanvas.width / 2;
+          }
+          const pctx = paintCanvas.getContext('2d');
+
+          // Paint the new segment (or a starting dot) onto the offscreen.
+          const continuing = lastPaintBubbleId === onBubble.id;
+          if (pctx) {
+            pctx.lineCap = 'round';
+            pctx.lineJoin = 'round';
+            pctx.strokeStyle = PAINT_STROKE_STYLE;
+            pctx.fillStyle = PAINT_STROKE_STYLE;
+            pctx.lineWidth = PAINT_LINE_WIDTH;
+            if (continuing) {
+              const segLen = Math.hypot(localX - lastPaintLocalX, localY - lastPaintLocalY);
+              if (segLen >= GAZE_PAINT_MIN_SEG_PX) {
+                pctx.beginPath();
+                pctx.moveTo(lastPaintLocalX + half, lastPaintLocalY + half);
+                pctx.lineTo(localX + half, localY + half);
+                pctx.stroke();
+              }
+            } else {
+              // First sample on this bubble — drop a starting dot so paint
+              // is visible immediately even before the gaze moves.
+              pctx.beginPath();
+              pctx.arc(localX + half, localY + half, PAINT_LINE_WIDTH / 2, 0, Math.PI * 2);
+              pctx.fill();
+            }
+          }
+
+          // Update coverage: interpolate along the segment so a fast move
+          // doesn't skip sectors.
+          let mask = coverage.get(onBubble.id) ?? 0;
+          const fromX = continuing ? lastPaintLocalX : localX;
+          const fromY = continuing ? lastPaintLocalY : localY;
+          const innerR2 = (onBubble.radius * PAINT_INNER_RADIUS_FRAC) ** 2;
+          for (let s = 1; s <= PAINT_INTERP_STEPS; s++) {
+            const k = s / PAINT_INTERP_STEPS;
+            const tx = fromX + (localX - fromX) * k;
+            const ty = fromY + (localY - fromY) * k;
+            if (tx * tx + ty * ty < innerR2) continue;
+            const a = Math.atan2(ty, tx);
+            const sector = Math.floor(((a + Math.PI) / (Math.PI * 2)) * PAINT_SECTORS) % PAINT_SECTORS;
+            mask |= 1 << sector;
+          }
+          coverage.set(onBubble.id, mask);
+          lastPaintBubbleId = onBubble.id;
+          lastPaintLocalX = localX;
+          lastPaintLocalY = localY;
+
+          // Pop when enough sectors visited.
+          let popcount = 0;
+          for (let m = mask; m; m >>>= 1) popcount += m & 1;
+          if (popcount >= PAINT_POP_SECTOR_COUNT) {
+            const popped = popBubbleById(state, onBubble.id, now);
+            if (popped) {
+              popAnimsRef.current.push({
+                x: popped.x,
+                y: popped.y,
+                radius: popped.radius,
+                startTime: now,
+                special: popped.special,
+              });
+            }
+            coverage.delete(onBubble.id);
+            paintCanvases.delete(onBubble.id);
+            lastPaintBubbleId = null;
+          }
+        } else {
+          // Gaze in empty space — break the paint chain so the next hop onto
+          // a bubble doesn't draw a long phantom segment.
+          lastPaintBubbleId = null;
+        }
+
+        // AI encouragement: student watching a nearby bubble without touching.
         const nearest = bubbleNearPoint(state, gx, gy, GAZE_HIT_RADIUS_PX);
         const idleSinceTouch = now - state.lastTouchTime > IDLE_AFTER_TOUCH_MS;
-
         if (nearest && idleSinceTouch) {
           if (gazeLockBubbleId === nearest.id) {
             if (
@@ -222,7 +349,7 @@ export default function BubblesGameApp() {
                 type: 'ai_observation',
                 surface: {
                   event: 'student_watching_bubble',
-                  hint: 'Student is watching a bubble closely but not reaching out to pop it. Offer gentle encouragement to try touching the screen.',
+                  hint: 'Student is watching a bubble closely but not popping it. Offer gentle encouragement to move their gaze around the bubble or touch the screen.',
                   bubbleHue: nearest.hue,
                   isSpecial: nearest.special,
                 },
@@ -235,6 +362,38 @@ export default function BubblesGameApp() {
         } else {
           gazeLockBubbleId = null;
         }
+      } else {
+        lastPaintBubbleId = null;
+        gazeLockBubbleId = null;
+      }
+
+      // Drop coverage + paint canvases for bubbles that no longer exist.
+      const liveBubbleIds = new Set<number>();
+      for (const b of state.bubbles) liveBubbleIds.add(b.id);
+      for (const id of Array.from(coverage.keys())) {
+        if (!liveBubbleIds.has(id)) coverage.delete(id);
+      }
+      for (const id of Array.from(paintCanvases.keys())) {
+        if (!liveBubbleIds.has(id)) paintCanvases.delete(id);
+      }
+
+      // ── Blit each bubble's paint canvas onto the main canvas, clipped to
+      //    the bubble's current visual radius so the paint sits "on" it. ──
+      for (const b of state.bubbles) {
+        const pc = paintCanvases.get(b.id);
+        if (!pc) continue;
+        let drawRadius = b.radius;
+        if (b.pendingTouchTime !== undefined) {
+          const p = Math.min(1, (now - b.pendingTouchTime) / POP_WINDOW_MS);
+          drawRadius = b.radius * (1 + 0.25 * p);
+        }
+        const half = pc.width / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, drawRadius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(pc, b.x - half, b.y - half);
+        ctx.restore();
       }
 
       // ── Periodic HUD refresh ──
@@ -274,6 +433,17 @@ export default function BubblesGameApp() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const now = Date.now();
+
+    // Always emit a small ripple at the click point so the user gets the same
+    // tactile feedback whether or not the click landed on a bubble.
+    popAnimsRef.current.push({
+      x,
+      y,
+      radius: 18,
+      startTime: now,
+      special: false,
+    });
+
     const result = handleTouch(stateRef.current, x, y, now);
     if (result.popped && result.bubble) {
       popAnimsRef.current.push({
@@ -284,6 +454,26 @@ export default function BubblesGameApp() {
         special: result.bubble.special,
       });
     }
+  }, []);
+
+  // Feed gaze from local mouse movement. Coordinates here are in the same
+  // space as the platform-bridged gaze (iframe-local viewport pixels), so the
+  // loop's existing rect.left/top subtraction works for both.
+  //
+  // Only mouse pointers drive this — touch can't hover, and dragging a finger
+  // shouldn't paint a trail. We also defer to the platform when it's actively
+  // sending real eyegaze data (mode === 'eyegaze'), so a real eye tracker
+  // isn't overwritten by an incidental mouse twitch.
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    if (gazeRef.current.mode === 'eyegaze') return;
+    gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
+  }, []);
+
+  const handlePointerLeave = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    if (gazeRef.current.mode === 'eyegaze') return;
+    gazeRef.current = { x: -1, y: -1, mode: 'off' };
   }, []);
 
   const handleReset = useCallback(() => {
@@ -332,6 +522,8 @@ export default function BubblesGameApp() {
           ref={canvasRef}
           className="absolute inset-0 touch-none"
           onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={handlePointerLeave}
         />
       </div>
     </div>

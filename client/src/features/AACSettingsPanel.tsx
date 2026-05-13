@@ -1644,6 +1644,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   }
                 />
               </div>
+
+              {/* Space Trader */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🚀</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appSpaceTrader')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSpaceTraderDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.space_trader?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, space_trader: { ...prev.space_trader, enabled: checked } }))
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

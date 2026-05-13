@@ -2435,6 +2435,8 @@ export const ru = {
     appSandboxGameDesc: "Выращивать растения и строить ферму",
     appBubblesGame: "Пузыри",
     appBubblesGameDesc: "Лопать плавающие пузыри для тренировки координации",
+    appSpaceTrader: "Космический торговец",
+    appSpaceTraderDesc: "Управляйте кораблём в торговых головоломках, чтобы захватить Звезду",
     spotifyConnected: "Spotify подключён",
     spotifyConnect: "Подключить",
     spotifyDisconnect: "Отключить",

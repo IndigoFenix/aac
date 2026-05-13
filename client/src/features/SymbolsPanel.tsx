@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon, ChevronDown } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon, ChevronDown, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -44,10 +44,14 @@ interface SymbolData {
 
 const PAGE_SIZE = 24;
 
-function SymbolCard({ symbol, onEdit, onDelete }: {
+function SymbolCard({ symbol, onEdit, onDelete, onAddToStudent, addToStudentLabel, alreadyOnStudent, addPending }: {
   symbol: SymbolData;
   onEdit?: () => void;
   onDelete?: () => void;
+  onAddToStudent?: () => void;
+  addToStudentLabel?: string;
+  alreadyOnStudent?: boolean;
+  addPending?: boolean;
 }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
@@ -80,6 +84,19 @@ function SymbolCard({ symbol, onEdit, onDelete }: {
         {onDelete && (
           <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-700" aria-label={t('common.delete')}>
             <Trash2 className="w-3 h-3" />
+          </Button>
+        )}
+        {onAddToStudent && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddToStudent}
+            disabled={alreadyOnStudent || addPending}
+            aria-label={addToStudentLabel || t('symbols.addStudent')}
+            title={alreadyOnStudent ? t('symbols.alreadyAdded') : (addToStudentLabel || t('symbols.addStudent'))}
+            className={alreadyOnStudent ? "text-green-600" : ""}
+          >
+            {addPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
           </Button>
         )}
       </div>
@@ -156,11 +173,32 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     },
   });
 
+  const addToStudentMutation = useMutation({
+    mutationFn: ({ symbol }: { symbol: SymbolData }) =>
+      apiRequest('POST', `/api/custom-symbols/${symbol.id}/student-associate`, {
+        studentId: student!.id,
+        key: symbol.assocKey || symbol.key || null,
+        description: symbol.assocDescription || symbol.description || null,
+      }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
+  });
+
+  // Symbol IDs already associated with the current student — used to disable the
+  // "Add to student" button on My Symbols cards once the link exists.
+  const studentSymbolIds = useMemo(
+    () => new Set(studentSymbols.map(s => s.id)),
+    [studentSymbols],
+  );
+
   if (!isOpen) return null;
 
   const renderGrid = (symbols: SymbolData[], opts: {
     onEdit?: (s: SymbolData) => void;
     onDelete?: (s: SymbolData) => void;
+    onAddToStudent?: (s: SymbolData) => void;
+    addToStudentLabel?: string;
+    isAlreadyOnStudent?: (s: SymbolData) => boolean;
+    addPendingId?: string;
     emptyMessage: string;
     total: number;
     page: number;
@@ -177,6 +215,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               symbol={s}
               onEdit={opts.onEdit ? () => opts.onEdit!(s) : undefined}
               onDelete={opts.onDelete ? () => opts.onDelete!(s) : undefined}
+              onAddToStudent={opts.onAddToStudent ? () => opts.onAddToStudent!(s) : undefined}
+              addToStudentLabel={opts.addToStudentLabel}
+              alreadyOnStudent={opts.isAlreadyOnStudent?.(s)}
+              addPending={opts.addPendingId === s.id}
             />
           ))}
         </div>
@@ -229,6 +271,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
             {renderGrid(paginatedMy, {
               onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'user', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
               onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'user' }),
+              onAddToStudent: student ? (s) => addToStudentMutation.mutate({ symbol: s }) : undefined,
+              addToStudentLabel: student ? t('symbols.addStudent').replace('{{STUDENT}}', student.name || t('symbols.student')) : undefined,
+              isAlreadyOnStudent: student ? (s) => studentSymbolIds.has(s.id) : undefined,
+              addPendingId: addToStudentMutation.isPending ? (addToStudentMutation.variables?.symbol.id) : undefined,
               emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noSymbols'),
               total: filteredMy.length,
               page: myPage,

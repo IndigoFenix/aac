@@ -46,7 +46,7 @@ export interface ToolDeclarationConfig {
 
 const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want water\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons (including against existing buttons already on the board). If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons. If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Tired|😴|person_yawning|I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons. If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Aim to fill the board (6–8 buttons) unless the context is unusually narrow. Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Read|📖|child_reading_book|Let's read a book, Outside|🌳|child_in_garden|I want to go outside, Snack|🍎|boy_eating_apple|I'm hungry, Hug|🤗|person_hugging|I want a hug, Tired|😴|person_yawning|I am tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -356,6 +356,67 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
   };
 }
 
+function buildSetMemoryChipsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
+  return {
+    name: "set_construction_memory_chips",
+    description: `Update the memory-driven mode chips on the sentence construction board for one category tab. 0–3 chips surface the student's special interests, recent conversation topics, or context-relevant filters (e.g. "planets", "from breakfast today", "things mom mentioned"). Pass an empty array to clear. Keys should be stable snake_case_descriptive — they'll be used as the active modeChip when tapped.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        category: {
+          type: "string",
+          enum: ["who", "do", "what", "where", "when"],
+          description: "Which tab these chips apply to.",
+        },
+        chips: {
+          type: "array",
+          description: "Up to 3 chips. Replaces any prior memory chips for this category.",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string", description: "Stable snake_case key." },
+              label: { type: "string", description: "Short display label (2–3 words)." },
+            },
+            required: ["key", "label"],
+          },
+        },
+      },
+      required: ["category", "chips"],
+    },
+  };
+}
+
+function buildSuggestConstructionButtonsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
+  return {
+    name: "suggest_construction_buttons",
+    description: `Populate the AI strip on the sentence construction board with up to 4 candidate buttons for the slot the student is currently filling. Call this in response to a [CONSTRUCTION STATE] context injection — never spontaneously. Prefer glyph-registry keys when they fit; for AI-generated nouns use snake_case_descriptive (e.g. \`ice_cream_cone\`, \`bluey_character\`). Never include any key from \`exclude_keys\`. If you have no useful suggestions, omit the tool call.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        slot_index: {
+          type: "integer",
+          description: "Which slot the candidates target. Use the `targetSlot` value from the [CONSTRUCTION STATE] injection. Use 0 if uncertain.",
+        },
+        candidates: {
+          type: "array",
+          description: "Up to 4 candidate keys. Order matters — leftmost is the strongest suggestion.",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string", description: "Registry key (snake_case) or AI-generated key. Must NOT be in exclude_keys." },
+              label: { type: "string", description: "Optional display label override. Omit for registry items (label comes from i18n)." },
+            },
+            required: ["key"],
+          },
+        },
+      },
+      required: ["slot_index", "candidates"],
+    },
+  };
+}
+
 const SET_INTERACTION_MODE: FunctionDeclaration = {
   name: "set_interaction_mode",
   description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention; the avatar appears sleepy. Use "assist" when the user is busy with another person or in a situation where proactive speech would be intrusive. "standby" = the student is not present (not visible AND not heard) — don't proactively start conversation or treat the visible person as the student, but still respond to button presses and direct questions and update the board for them; the avatar appears resting. Use "interact" to re-engage when the student shows interest or returns.`,
@@ -475,6 +536,8 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
 
   // Board management
   declarations.push(buildAddContextButtonTool(config));
+  declarations.push(buildSuggestConstructionButtonsTool(config));
+  declarations.push(buildSetMemoryChipsTool(config));
   declarations.push(buildRebuildBoardTool(config));
 
   // Remove the add and remove buttons tools - rarely used anyway, the context buttons are better
@@ -523,7 +586,9 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   // an escape hatch from responding even when proactiveAudio handles that
   // decision at the wire level.
   // declarations.push(STAY_SILENT);
-  declarations.push(DEBUG_MESSAGE);
+  if (process.env.AAC_DEBUG_INTROSPECTION === "1") {
+    declarations.push(DEBUG_MESSAGE);
+  }
 
   return [{ functionDeclarations: declarations }];
 }

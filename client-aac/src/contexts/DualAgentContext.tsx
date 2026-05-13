@@ -137,6 +137,14 @@ interface DualAgentContextType {
   // Guessing mode
   guessingMode: boolean;
 
+  // Construction board (sentence builder)
+  sendConstructionState: (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void;
+  constructionSuggestions: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null;
+  constructionMemoryChips: Partial<Record<
+    import("@/hooks/dual-agent-types").ConstructionStateClient["category"],
+    import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient
+  >>;
+
   // PCM gating debug (Live API only)
   pcmDebug: {
     /** Whether mic PCM is currently blocked (isBusyRef from audio player) */
@@ -777,6 +785,10 @@ function ProviderShell({
     safetyBlocked: agent.safetyBlocked ?? false,
 
     guessingMode: agent.guessingMode ?? false,
+
+    sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
+    constructionSuggestions: agent.constructionSuggestions ?? null,
+    constructionMemoryChips: agent.constructionMemoryChips ?? {},
 
     pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
   };

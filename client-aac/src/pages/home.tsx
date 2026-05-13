@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserX, Eye, EyeOff, Play } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
+import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
@@ -69,7 +70,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -86,8 +87,11 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
   onGuessingModeChange?: (active: boolean) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
+  onSendConstructionStateReady?: (fn: ((state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void) | null) => void;
+  onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
+  onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
+  const { muteState, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -162,6 +166,19 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     onActiveAppChange?.(activeApp, dismissApp, registerAppCanvasCapture);
   }, [activeApp, dismissApp, registerAppCanvasCapture, onActiveAppChange]);
 
+  useEffect(() => {
+    onSendConstructionStateReady?.(sendConstructionState);
+    return () => onSendConstructionStateReady?.(null);
+  }, [sendConstructionState, onSendConstructionStateReady]);
+
+  useEffect(() => {
+    onConstructionSuggestionsChange?.(constructionSuggestions);
+  }, [constructionSuggestions, onConstructionSuggestionsChange]);
+
+  useEffect(() => {
+    onConstructionMemoryChipsChange?.(constructionMemoryChips);
+  }, [constructionMemoryChips, onConstructionMemoryChipsChange]);
+
   return null;
 }
 
@@ -211,6 +228,15 @@ function renderAppContent(
         gameId="bubbles-game"
         src="/games/bubbles-game/"
         forwardGaze
+        onClose={dismissApp}
+      />
+    );
+  }
+  if (activeApp.appId === "space_trader") {
+    return (
+      <GameEmbed
+        gameId="space-trader"
+        src="/games/space-trader/"
         onClose={dismissApp}
       />
     );
@@ -339,6 +365,22 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [_muteState, setMuteStateFromCtx] = useState<'unmuted' | 'muted'>('unmuted');
   const [aiSessionActive, setAiSessionActive] = useState(false);
   const [isGuessingMode, setIsGuessingMode] = useState(false);
+  const [showConstructionBoard, setShowConstructionBoard] = useState(false);
+  // Lifted from the DualAgentBridge — the construction board renders outside
+  // the DualAgentProvider subtree, so it can't use the context directly.
+  const sendConstructionStateRef = useRef<((state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void) | null>(null);
+  const [constructionSuggestionsState, setConstructionSuggestionsState] = useState<import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null>(null);
+  const [constructionMemoryChipsState, setConstructionMemoryChipsState] = useState<Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>>({});
+  // Stable callback identity — otherwise an inline lambda re-creates on every
+  // Home render (PCM audio, frame grids, etc.) and the child's state-push
+  // effect spams the AI with construction-state turns, each one interrupting
+  // the previous before it can respond.
+  const stableSendConstructionState = useCallback(
+    (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => {
+      sendConstructionStateRef.current?.(state);
+    },
+    []
+  );
 
   // Active app state (bridged from DualAgentContext)
   const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
@@ -820,6 +862,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     // Exit/exitBoard buttons: send directly as board_exit (no speech, no interpretation)
     if (button.action?.type === "exit" || (button as any).exitBoard) {
       const instruction = button.action?.text || "";
+      // Construction-board entry: open the overlay client-side; do NOT forward
+      // to the AI. The construction board emits its own state injections.
+      if (instruction.includes("[CONSTRUCTION BOARD]")) {
+        console.log("[construction] home button intercept — opening overlay");
+        setShowConstructionBoard(true);
+        return;
+      }
       // Save current page as latestPage when entering guessing mode from non-home tier
       if (instruction.includes("[GUESSING MODE]") && currentTier !== "home") {
         if (boardData) setLatestPage(boardData);
@@ -1271,6 +1320,27 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               setYesNoActive(false);
             }}
           />
+
+          {showConstructionBoard && (
+            <div className="absolute inset-0 z-30 bg-white dark:bg-gray-900">
+              <SentenceConstructorBoard
+                sendConstructionState={stableSendConstructionState}
+                constructionSuggestions={constructionSuggestionsState}
+                constructionMemoryChips={constructionMemoryChipsState}
+                onPlay={(glyphString) => {
+                  // Route the assembled glyph through the interpret pipeline so
+                  // the AI converts it to a natural sentence + voices it.
+                  if (interpretFnRef.current) {
+                    interpretFnRef.current([glyphString], { [glyphString]: glyphString });
+                  } else {
+                    speak(glyphString, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+                  }
+                  setShowConstructionBoard(false);
+                }}
+                onClose={() => setShowConstructionBoard(false)}
+              />
+            </div>
+          )}
           {/* Context sidebar — always shows context buttons from add_context_button() */}
           {(() => {
             const sidebarBoard: ParsedBoardData | null = contextButtons.length > 0
@@ -1616,6 +1686,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
+            onSendConstructionStateReady={(fn) => { sendConstructionStateRef.current = fn; }}
+            onConstructionSuggestionsChange={setConstructionSuggestionsState}
+            onConstructionMemoryChipsChange={setConstructionMemoryChipsState}
           />
           <DualAgentConversationBox
             isVisible={showConversation}

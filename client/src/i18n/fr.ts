@@ -2435,6 +2435,8 @@ export const fr = {
     appSandboxGameDesc: "Cultiver des plantes et construire une ferme",
     appBubblesGame: "Bulles",
     appBubblesGameDesc: "Éclater des bulles flottantes pour la coordination œil-main",
+    appSpaceTrader: "Marchand de l'espace",
+    appSpaceTraderDesc: "Pilotez un vaisseau à travers des énigmes commerciales pour capturer l'Étoile",
     spotifyConnected: "Spotify connecté",
     spotifyConnect: "Connecter",
     spotifyDisconnect: "Déconnecter",

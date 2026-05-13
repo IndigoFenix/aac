@@ -2435,6 +2435,8 @@ export const zh = {
     appSandboxGameDesc: "种植植物和建设农场",
     appBubblesGame: "泡泡",
     appBubblesGameDesc: "戳破漂浮的泡泡，训练手眼协调",
+    appSpaceTrader: "太空商人",
+    appSpaceTraderDesc: "驾驶飞船穿越贸易谜题，夺取星星",
     spotifyConnected: "Spotify 已连接",
     spotifyConnect: "连接",
     spotifyDisconnect: "断开连接",

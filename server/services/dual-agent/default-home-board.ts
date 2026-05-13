@@ -69,12 +69,15 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     instruction: "[APPS] The user wants to use apps. Rebuild the board with buttons for each available app (use open_app() to launch them). Include app names and icons.",
   },
   {
-    id: "home_thinking",
-    labels: { en: "I'm thinking about", he: "אני חושב על" },
-    icon: "🤔",
+    id: "home_construct",
+    labels: { en: "Build sentence", he: "בנה משפט" },
+    icon: "🧩",
     imageKey: "person_thinking",
     staticIcon: "/aac-buttons/main-menu/person_thinking.png",
-    instruction: "[GUESSING MODE] The user wants help expressing a specific thought. Enter Guessing Mode — start by offering broad categories (Actions, People, Things, Places, Feelings, Time) and narrow down from there.",
+    // Intercepted by the client (see home.tsx handleBoardButtonClick) — opens
+    // the sentence construction board as an overlay. NOT forwarded to the AI;
+    // the construction board emits its own state injections once open.
+    instruction: "[CONSTRUCTION BOARD] Open the sentence construction board.",
   },
 ];
 

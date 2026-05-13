@@ -29,6 +29,37 @@ export interface IdentifiedPerson {
   contextNotes?: string;
 }
 
+/** Construction-board snapshot the client sends to the AI on every relevant change. */
+export interface ConstructionStateClient {
+  category: "who" | "do" | "what" | "where" | "when";
+  modeChip: string;
+  /** Serialized glyph string (e.g. "i_me+want+water.big#question"). */
+  glyph: string;
+  /** Slot index currently selected by the user, or null. */
+  activeSlot: number | null;
+  /** Slot index the AI should suggest for (null = next empty). */
+  targetSlot: number | null;
+  /** Keys already shown for this slot — AI must not repeat. */
+  excludeKeys: string[];
+  /** When true, student requested help — AI should enter guessing mode for the target slot. */
+  requestGuessingMode?: boolean;
+}
+
+/** AI's suggestion payload received from the server, populates the AI strip. */
+export interface ConstructionSuggestionsClient {
+  targetSlot: number;
+  candidates: Array<{ key: string; label?: string }>;
+  /** Monotonic counter so consumers can tell two arrivals apart. */
+  receivedAt: number;
+}
+
+/** AI-driven memory chips for the construction board, scoped per category. */
+export interface ConstructionMemoryChipsClient {
+  category: "who" | "do" | "what" | "where" | "when";
+  chips: Array<{ key: string; label: string }>;
+  receivedAt: number;
+}
+
 /** Server-side face match result delivered via the `people_identified` WS message. */
 export interface IdentifiedFace {
   faceIndex: number;
@@ -173,6 +204,14 @@ export interface UseDualAgentReturn {
   // Guessing mode
   /** True when the AI is in guessing mode (narrowing down user's thought) */
   guessingMode?: boolean;
+
+  // Construction board (sentence builder)
+  /** Push the current construction-board state to the AI so it can populate the AI strip. */
+  sendConstructionState?: (state: ConstructionStateClient) => void;
+  /** Latest AI suggestion payload received from the server. */
+  constructionSuggestions?: ConstructionSuggestionsClient | null;
+  /** Memory chips per category, set by the AI. Indexed by category key. */
+  constructionMemoryChips?: Partial<Record<ConstructionStateClient["category"], ConstructionMemoryChipsClient>>;
 
   // Reconnection state (Live API only)
   /** Whether the server is currently reconnecting to Gemini */

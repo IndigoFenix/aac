@@ -161,6 +161,36 @@ function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons
   return buttons;
 }
 
+/**
+ * Format a construction-board state snapshot as a [CONSTRUCTION STATE]
+ * context injection. Compact and structured so the model can quickly route
+ * to the suggest_construction_buttons tool.
+ */
+function formatConstructionStateInjection(state: ConstructionStateWire): string {
+  const filled = state.glyph ? state.glyph : "(empty)";
+  const lines: string[] = [
+    "[CONSTRUCTION STATE]",
+    `category: ${state.category}`,
+    `mode_chip: ${state.modeChip}`,
+    `glyph: ${filled}`,
+    `target_slot: ${state.targetSlot ?? "next_empty"}`,
+  ];
+  if (state.excludeKeys.length > 0) {
+    lines.push(`exclude_keys: ${state.excludeKeys.join(", ")}`);
+  }
+  lines.push("");
+  if (state.requestGuessingMode) {
+    lines.push(
+      `The student pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what they want to put in the target slot. When you've narrowed enough, call suggest_construction_buttons with the resolved key as the single candidate to populate the slot directly.`
+    );
+  } else {
+    lines.push(
+      "Call suggest_construction_buttons with up to 4 candidates for the target slot. Skip if nothing helpful comes to mind."
+    );
+  }
+  return lines.join("\n");
+}
+
 /** Convert raw PCM buffer (16-bit LE, mono) to a WAV buffer by prepending a 44-byte header */
 function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
   const header = Buffer.alloc(44);
@@ -220,7 +250,8 @@ export type ClientMessage =
   | { type: "set_paused"; paused: boolean }
   | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot }
   | { type: "context_injection"; text: string }           // inject context without triggering a response
-  | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" };  // engagement state machine transition (server logs for RTM service-time)
+  | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
+  | { type: "construction_state"; data: ConstructionStateWire };  // sentence construction board state changed — relay formats as context injection
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -266,7 +297,37 @@ export type ServerMessage =
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
+  | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip
+  | { type: "construction_memory_chips"; data: ConstructionMemoryChipsWire }  // AI-curated dynamic chips for one tab on the construction board
   | { type: "complete"; data?: any };
+
+/** Construction-board state forwarded to the AI as context, on every relevant change. */
+export interface ConstructionStateWire {
+  category: "who" | "do" | "what" | "where" | "when";
+  modeChip: string;
+  /** Serialized glyph string ("i_me+want+water.big#question"). */
+  glyph: string;
+  /** Slot index currently selected by the user, or null. */
+  activeSlot: number | null;
+  /** Slot index the AI should suggest for (null = next empty slot). */
+  targetSlot: number | null;
+  /** Keys already shown for this slot — AI should not repeat them. */
+  excludeKeys: string[];
+  /** When true, the student has requested help — AI should enter guessing mode. */
+  requestGuessingMode?: boolean;
+}
+
+/** AI's suggestion payload — routed back to the construction board's AI strip. */
+export interface ConstructionSuggestionsWire {
+  targetSlot: number;
+  candidates: Array<{ key: string; label?: string }>;
+}
+
+/** AI's memory-driven mode chips for one category tab. */
+export interface ConstructionMemoryChipsWire {
+  category: "who" | "do" | "what" | "where" | "when";
+  chips: Array<{ key: string; label: string }>;
+}
 
 /** Public wire format for an identified face (server → client). */
 export interface IdentifiedFaceWire {
@@ -1146,6 +1207,22 @@ export class LiveRelay {
           }
           break;
 
+        case "construction_state":
+          logLiveSession("CONSTRUCTION_STATE_IN",
+            `cat=${msg.data.category} target=${msg.data.targetSlot} glyph="${msg.data.glyph}" exclude=${msg.data.excludeKeys.length} hasProvider=${!!this.provider}`);
+          if (this.provider) {
+            const text = formatConstructionStateInjection(msg.data);
+            // Use sendMessage (turnComplete=true) so the model actually
+            // responds with a tool call. sendContextInjection uses
+            // turnComplete=false, which would inject the state silently
+            // and never trigger suggest_construction_buttons.
+            this.provider.sendMessage(text, "user", true);
+            logLiveSession("CONSTRUCTION_STATE_SENT", `text="${text.replace(/\n/g, " | ")}"`);
+          } else {
+            logLiveSession("CONSTRUCTION_STATE_DROPPED", "no provider — message ignored");
+          }
+          break;
+
         case "client_sleep_state_change":
           this.recordSleepStateChange(msg.state, msg.source);
           break;
@@ -1850,6 +1927,64 @@ The user pressed "More" — they can't find the button they need on the current 
           added: btn.label,
           current_context_buttons: this.contextButtonLabels.join(", "),
         }};
+      }
+
+      case "suggest_construction_buttons": {
+        const rawCandidates = Array.isArray(args.candidates) ? args.candidates : [];
+        const slotIndex = Number.isInteger(args.slot_index) ? args.slot_index as number : 0;
+        // Tolerate both shapes the model emits in practice:
+        //   1. {key: "water", label?: "Water"} — what the schema specifies
+        //   2. "water" — bare string (Vertex Live often ignores object schemas)
+        const candidates = rawCandidates
+          .map((c) => {
+            if (typeof c === "string" && c.trim().length > 0) {
+              return { key: c.trim(), label: undefined as string | undefined };
+            }
+            if (c && typeof c === "object" && typeof c.key === "string" && c.key.trim().length > 0) {
+              return { key: c.key.trim(), label: typeof c.label === "string" ? c.label : undefined };
+            }
+            return null;
+          })
+          .filter((c): c is { key: string; label: string | undefined } => c !== null)
+          .slice(0, 4);
+
+        logLiveSession("CONSTRUCTION_SUGGEST_RAW",
+          `slot=${slotIndex} rawCount=${rawCandidates.length} validCount=${candidates.length} rawShape=${JSON.stringify(rawCandidates).substring(0, 200)}`);
+
+        if (candidates.length === 0) {
+          logLiveSession("CONSTRUCTION_SUGGEST_REJECT", "no valid candidates after normalization");
+          return { id: call.id, name, response: { error: "No valid candidates provided" } };
+        }
+
+        this.send({
+          type: "construction_suggestions",
+          data: { targetSlot: slotIndex, candidates },
+        });
+        logLiveSession("CONSTRUCTION_SUGGEST", `slot=${slotIndex} keys=[${candidates.map(c => c.key).join(", ")}]`);
+        return { id: call.id, name, response: { output: "ok", count: candidates.length } };
+      }
+
+      case "set_construction_memory_chips": {
+        const category = args.category;
+        const validCategories = new Set(["who", "do", "what", "where", "when"]);
+        if (typeof category !== "string" || !validCategories.has(category)) {
+          return { id: call.id, name, response: { error: "Invalid category" } };
+        }
+        const rawChips = Array.isArray(args.chips) ? args.chips : [];
+        const chips = rawChips
+          .filter((c): c is { key: string; label: string } =>
+            !!c && typeof c.key === "string" && typeof c.label === "string" &&
+            c.key.trim().length > 0 && c.label.trim().length > 0
+          )
+          .slice(0, 3)
+          .map((c) => ({ key: c.key.trim(), label: c.label.trim() }));
+
+        this.send({
+          type: "construction_memory_chips",
+          data: { category: category as ConstructionMemoryChipsWire["category"], chips },
+        });
+        logLiveSession("CONSTRUCTION_MEMORY_CHIPS", `category=${category} chips=[${chips.map(c => c.key).join(", ")}]`);
+        return { id: call.id, name, response: { output: "ok", count: chips.length } };
       }
 
       case "add_buttons": {
@@ -2667,8 +2802,14 @@ The user pressed "More" — they can't find the button they need on the current 
       this.send({ type: "audio_interrupt" });
 
       // On MALFORMED_FUNCTION_CALL or RESPONSE_REJECTED (with partial output),
-      // ask the model to introspect via the debug_message() tool.
-      if ((reason === "MALFORMED_FUNCTION_CALL" || reason === "RESPONSE_REJECTED") && this.provider) {
+      // optionally ask the model to introspect via the debug_message() tool.
+      // Off by default — the round-trip can self-perpetuate: the retry prompt
+      // forces the model to respond when it had nothing to say, which produces
+      // a filler stall ("Let me check") with no tool call, which is itself
+      // rejected as MALFORMED_FUNCTION_CALL, restarting the cycle. Opt-in via
+      // env (AAC_DEBUG_INTROSPECTION=1) when actively debugging rejection bugs.
+      const introspectionEnabled = process.env.AAC_DEBUG_INTROSPECTION === "1";
+      if (introspectionEnabled && (reason === "MALFORMED_FUNCTION_CALL" || reason === "RESPONSE_REJECTED") && this.provider) {
         this.awaitingDebugResponse = true;
         this.debugResponseBuffer = "";
         this.setState("awaiting_turn");
@@ -2680,6 +2821,10 @@ The user pressed "More" — they can't find the button they need on the current 
         return;
       }
 
+      // Apply rejection cooldown so the next frame_grid / scene update doesn't
+      // immediately re-trigger the same rejected content path.
+      this.rejectionCooldownUntil = Date.now() + LiveRelay.REJECTION_COOLDOWN_MS;
+      this.debugRetryCount = 0;
       this.setState("idle");
       return;
     }

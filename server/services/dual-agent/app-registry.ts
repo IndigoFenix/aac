@@ -62,6 +62,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🫧",
     enabledByDefault: false,
   },
+  {
+    id: "space_trader",
+    name: "Space Trader",
+    description: "Opens a space-trading puzzle game designed for eyegaze controls. The student steers a ship to mine asteroids, complete trade chains, and capture the Star across escalating difficulty levels. ALWAYS use open_app to launch this when the user wants to play the space trader game, the space game, or the trader puzzle.",
+    icon: "🚀",
+    enabledByDefault: false,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

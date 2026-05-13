@@ -2435,6 +2435,8 @@ export const ar = {
     appSandboxGameDesc: "زراعة النباتات وبناء مزرعة",
     appBubblesGame: "فقاعات",
     appBubblesGameDesc: "فرقعة الفقاعات العائمة لتدريب التنسيق بين العين واليد",
+    appSpaceTrader: "تاجر الفضاء",
+    appSpaceTraderDesc: "قُد سفينة عبر ألغاز التجارة للاستيلاء على النجمة",
     spotifyConnected: "Spotify متصل",
     spotifyConnect: "ربط",
     spotifyDisconnect: "قطع الاتصال",

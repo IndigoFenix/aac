@@ -169,6 +169,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Guessing mode state
   const [guessingMode, setGuessingMode] = useState(false);
+  const [constructionSuggestions, setConstructionSuggestions] = useState<
+    import("./dual-agent-types").ConstructionSuggestionsClient | null
+  >(null);
+  const [constructionMemoryChips, setConstructionMemoryChips] = useState<
+    Partial<Record<import("./dual-agent-types").ConstructionStateClient["category"],
+      import("./dual-agent-types").ConstructionMemoryChipsClient>>
+  >({});
 
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
@@ -688,6 +695,33 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setGuessingMode(msg.active ?? false);
           break;
 
+        case "construction_suggestions": {
+          const data = msg.data;
+          if (data && Array.isArray(data.candidates)) {
+            setConstructionSuggestions({
+              targetSlot: typeof data.targetSlot === "number" ? data.targetSlot : 0,
+              candidates: data.candidates,
+              receivedAt: Date.now(),
+            });
+          }
+          break;
+        }
+
+        case "construction_memory_chips": {
+          const data = msg.data;
+          if (data && typeof data.category === "string" && Array.isArray(data.chips)) {
+            setConstructionMemoryChips((prev) => ({
+              ...prev,
+              [data.category]: {
+                category: data.category,
+                chips: data.chips,
+                receivedAt: Date.now(),
+              },
+            }));
+          }
+          break;
+        }
+
         case "people_identified":
           setIdentifiedFaces(msg.data || []);
           break;
@@ -890,6 +924,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const sendContextOnly = useCallback((text: string) => {
     wsSend({ type: "context_injection", text });
   }, [wsSend]);
+
+  /** Push construction-board state to the AI; relay formats as context injection. */
+  const sendConstructionState = useCallback(
+    (state: import("./dual-agent-types").ConstructionStateClient) => {
+      console.log("[construction] sendConstructionState fired", {
+        category: state.category,
+        modeChip: state.modeChip,
+        glyph: state.glyph,
+        targetSlot: state.targetSlot,
+        excludeKeys: state.excludeKeys.length,
+        requestGuessingMode: state.requestGuessingMode,
+        wsReady: wsRef.current?.readyState,
+      });
+      wsSend({ type: "construction_state", data: state });
+    },
+    [wsSend]
+  );
 
   const sendBoardExit = useCallback((label: string, instruction: string) => {
     wsSend({ type: "board_exit", label, instruction });
@@ -1178,6 +1229,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     // Guessing mode
     guessingMode,
+
+    // Construction board (sentence builder)
+    sendConstructionState,
+    constructionSuggestions,
+    constructionMemoryChips,
 
     // Reconnection state
     reconnecting,
