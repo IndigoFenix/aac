@@ -375,6 +375,8 @@ window.addEventListener("resize", resize);
 
 // ── Main loop ───────────────────────────────────────────────────────────────
 let prev = performance.now();
+// Throttle for periodic cloud-pass diagnostic logging.
+let cloudDiagAccum = 0;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - prev) / 1000);
   prev = now;
@@ -519,6 +521,18 @@ function frame(now: number) {
   // the dominant body has no cloud config. When there's a cloud-bearing
   // body in gravity context, use its parameters; otherwise fall back
   // to the home planet (Earth) so geometry/shell math still works.
+  //
+  // IMPORTANT: rig.update() above sets position/quat but DOESN'T update
+  // matrixWorld. Three.js updates matrixWorld inside renderer.render() —
+  // which runs LATER in this frame. Without an explicit update here,
+  // the cloud pass reads the previous frame's matrixWorld (or identity
+  // on the first frame). That makes computeViewRay produce the same
+  // direction for every pixel, shell intersection never hits anything
+  // meaningful, and clouds are invisible.
+  rig.camera.updateMatrixWorld(true);
+  cloudDiagAccum += dt;
+  const shouldLogCloud = cloudDiagAccum >= 1.0;
+  if (shouldLogCloud) cloudDiagAccum = 0;
   {
     const star = world.star;
     const dom = player.state.gravity.dominant;
@@ -573,6 +587,40 @@ function frame(now: number) {
         cameraNear: rig.camera.near,
         cameraFar: rig.camera.far,
         densityMult: GFX.cloudVolMult ?? 1,
+      });
+    }
+
+    // Periodic diagnostic dump.
+    if (shouldLogCloud) {
+      const refBody = target ?? null;
+      const cp = rig.camera.position;
+      const pc = refBody?.worldPosition;
+      const camDist = pc
+        ? Math.sqrt((cp.x - pc.x) ** 2 + (cp.y - pc.y) ** 2 + (cp.z - pc.z) ** 2)
+        : null;
+      const playerAlt = player.state.gravity?.altitude;
+      // eslint-disable-next-line no-console
+      console.log("[cloud-pass]", {
+        target: refBody?.id ?? "(none)",
+        debug: GFX.cloudDebug,
+        steps: GFX.cloudSteps,
+        cloudInner: GFX.cloudInnerM,
+        cloudOuter: GFX.cloudOuterM,
+        densityMult: GFX.cloudVolMult,
+        cameraPos: cp ? [cp.x.toFixed(1), cp.y.toFixed(1), cp.z.toFixed(1)] : null,
+        planetCenter: pc ? [pc.x.toFixed(0), pc.y.toFixed(0), pc.z.toFixed(0)] : "(none)",
+        planetRadius: refBody?.radius,
+        camDistFromCenter: camDist?.toFixed(1),
+        playerAltitude: playerAlt?.toFixed(1) ?? "(none)",
+        rInner: refBody ? (refBody.radius + GFX.cloudInnerM).toFixed(1) : null,
+        rOuter: refBody ? (refBody.radius + GFX.cloudOuterM).toFixed(1) : null,
+        camRelToShell: refBody && camDist !== null
+          ? (camDist < refBody.radius + GFX.cloudInnerM
+              ? "below cloud inner"
+              : camDist < refBody.radius + GFX.cloudOuterM
+                ? "INSIDE shell"
+                : "above cloud outer")
+          : "(no body)",
       });
     }
   }

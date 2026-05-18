@@ -314,25 +314,6 @@ float lightMarch(vec3 startPos, int steps) {
 void main() {
   vec4 sceneColor = texture2D(uSceneColor, vUv);
 
-  // SUPER DIAGNOSTIC: paint a distinct solid color per debug mode,
-  // BEFORE any other logic. If sliding the cloud-debug slider changes
-  // the screen color, the slider→GFX→uniform chain is working and
-  // the issue is in the cloud logic. If the screen stays the same as
-  // you slide, the uniform isn't reaching the shader.
-  //   0 = pass-through (scene unchanged)
-  //   1 = solid RED
-  //   2 = solid GREEN
-  //   3 = solid BLUE
-  //   4 = scene mixed with YELLOW
-  if (uDebugMode == 1) { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return; }
-  if (uDebugMode == 2) { gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); return; }
-  if (uDebugMode == 3) { gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0); return; }
-  if (uDebugMode == 4) {
-    gl_FragColor = vec4(mix(sceneColor.rgb, vec3(1.0, 1.0, 0.0), 0.5), 1.0);
-    return;
-  }
-  // Mode 0 falls through to normal logic below.
-
   if (uEnabled < 0.5) {
     gl_FragColor = sceneColor;
     return;
@@ -341,19 +322,24 @@ void main() {
   vec3 ro = uCameraPosition;
   vec3 rd = computeViewRay(vUv);
 
+  // Debug 2: paint raw vUv as RGB to verify the per-pixel UV varies
+  // at all. Expected: bottom-left = (0,0) BLACK, bottom-right = (1,0)
+  // RED, top-left = (0,1) GREEN, top-right = (1,1) YELLOW — a smooth
+  // gradient across the screen. If solid color, vUv is constant (the
+  // fragment shader is somehow being fed a single uv for all pixels).
+  if (uDebugMode == 2) {
+    gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+    return;
+  }
+
   // Find cloud-shell entry/exit.
   float rInner = uPlanetRadius + uCloudInner;
   float rOuter = uPlanetRadius + uCloudOuter;
   vec2 shell = raysShell(ro, rd, uPlanetCenter, rInner, rOuter);
-  if (shell.x < 0.0 || shell.y <= shell.x) {
-    gl_FragColor = sceneColor;
-    return;
-  }
+  bool shellHit = !(shell.x < 0.0 || shell.y <= shell.x);
 
-  // Debug 2: paint shell mask red so we can see where the ray enters
-  // the cloud shell.
-  if (uDebugMode == 2) {
-    gl_FragColor = vec4(mix(sceneColor.rgb, vec3(1.0, 0.0, 0.0), 0.6), 1.0);
+  if (!shellHit) {
+    gl_FragColor = sceneColor;
     return;
   }
 

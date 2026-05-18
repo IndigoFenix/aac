@@ -54,7 +54,7 @@ import { aacSettingsRepository } from "../../repositories/aacSettingsRepository"
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { getVocabularyItem } from "@shared/glyph-registry";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
-import { parseGlyph } from "@shared/glyph-compositor";
+import { parseGlyph } from "@shared/glyph-compositor.js";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------

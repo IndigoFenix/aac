@@ -599,10 +599,14 @@ export const GFX = {
   /** Number of ray-march samples per pixel. Lower = faster but banded. */
   cloudSteps: 32,
   /** Cloud layer inner / outer altitude in METERS above planet surface.
-   *  Defaults to Earth's typical low cumulus deck (1.5–4 km). Override
-   *  for testing different deck heights without rebuilding. */
-  cloudInnerM: 1500,
-  cloudOuterM: 4000,
+   *  Wide default band (500 m → 10 km) so the camera consistently sits
+   *  INSIDE the cloud shell — shell-intersection always succeeds and
+   *  cloud rendering is robust as the player walks / flies through
+   *  varied terrain altitudes. Real cloud layers are thinner, but for
+   *  rendering correctness at planetary scale a wider band avoids
+   *  boundary-case shell-misses. */
+  cloudInnerM: 500,
+  cloudOuterM: 10000,
   /** Legacy sphere-clouds opacity. Disabled by default — kept so the
    *  sphere mesh isn't a surprise visual artifact. */
   cloudMult: 0.0,
