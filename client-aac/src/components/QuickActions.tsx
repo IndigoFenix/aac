@@ -11,9 +11,14 @@ interface QuickActionsProps {
   hasPrebuiltBoard?: boolean;
   currentTier?: "home" | "context" | "latest";
   isGuessingMode?: boolean;
+  /** Toggle the sentence-builder overlay. When already open, this should
+   *  dismiss it (the underlying board is preserved by the overlay model). */
+  onSpeak?: () => void;
+  /** When true, the Speak button renders as a Back button. */
+  inSentenceBuilder?: boolean;
 }
 
-export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false }: QuickActionsProps) {
+export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, onSpeak, inSentenceBuilder = false }: QuickActionsProps) {
   const { t } = useLanguage();
 
   const quickActions: Array<{ id: "yes" | "no"; labelKey: string; color: string }> = [
@@ -47,8 +52,20 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
 
   const endButton = getEndButton();
 
+  // Speak button toggles to Back when the sentence builder is open. Only
+  // rendered when a handler is wired — keeps the row at 4 cols otherwise so
+  // existing screens are unaffected.
+  const showSpeakSlot = !!onSpeak;
+  const speakLabel = inSentenceBuilder ? t("quickActions.back") : t("quickActions.speak");
+  const speakIcon = inSentenceBuilder ? "◀" : "💬";
+  const speakColor = inSentenceBuilder ? "#E5E7EB" : "#FEF3C7";
+
   return (
-    <div className="grid grid-cols-4 gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+    <div
+      className={`grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 ${
+        showSpeakSlot ? "grid-cols-5" : "grid-cols-4"
+      }`}
+    >
       {/* 1st button: More (AI mode) or Back (DB mode) */}
       {boardMode === 'ai' ? (
         <motion.button
@@ -110,6 +127,24 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
           {t(endButton.labelKey)}
         </span>
       </motion.button>
+
+      {/* 5th button: Speak (opens sentence builder) / Back (closes it) */}
+      {showSpeakSlot && (
+        <motion.button
+          data-dwell
+          data-testid="quick-speak"
+          onClick={onSpeak}
+          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
+          style={{ backgroundColor: speakColor }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="text-xl">{speakIcon}</span>
+          <span className="text-xs font-semibold text-gray-800 mt-0.5">
+            {speakLabel}
+          </span>
+        </motion.button>
+      )}
     </div>
   );
 }

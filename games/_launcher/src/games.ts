@@ -9,6 +9,7 @@ export interface GameEntry {
   description: string;
   emoji: string;
   /** Tailwind gradient classes — keeps the cards visually distinct without artwork. */
+  hidden?: boolean;
   gradient: string;
 }
 
@@ -33,5 +34,13 @@ export const GAMES: GameEntry[] = [
     description: "Tap or click to pop floating bubbles. A friendly reflex game for practicing hand-eye coordination.",
     emoji: "🫧",
     gradient: "from-sky-600 to-cyan-900",
+  },
+  {
+    id: "seagull-dream",
+    name: "Seagull Dream",
+    description: "Fly a seagull over a tiny world. Look up to take off, look down to land. Hands-free 3D exploration.",
+    emoji: "🕊️",
+    hidden: true,
+    gradient: "from-sky-500 to-indigo-900",
   },
 ];

@@ -463,6 +463,11 @@ export const en = {
     imageKey: "Image Key",
     imageKeyPlaceholder: "e.g. drinking_water, person_yawning",
     imageKeyHint: "Auto-generated symbol key for custom image generation",
+    glyph: "Glyph (multi-image)",
+    glyphHint: "Composed visual using + to join parts, e.g. i_me+want+water. Parts may be registry keys, emojis (🍎), or imageKeys. Use .modifier for adjectives and host(payload) for composables.",
+    glyphFallback: "Glyph fallback",
+    glyphFallbackHint: "Same composition with no imageKeys (emojis / symbol:ID / face:ID only). Shown while imageKey parts are still generating.",
+    glyphPreview: "Preview",
   },
 
   // ============================================================================

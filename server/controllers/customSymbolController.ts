@@ -58,6 +58,120 @@ class CustomSymbolController {
     }
   }
 
+  /**
+   * POST /api/custom-symbols/generate-and-create — admin shortcut that
+   * generates a fresh symbol image and creates the DB row in one call.
+   * Prompt defaults to the key (with underscores → spaces). Returns the
+   * created symbol.
+   */
+  async generateAndCreateSymbol(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const { key, description, prompt, isPublic, isApproved } = req.body ?? {};
+      if (!key || typeof key !== "string" || !key.trim()) {
+        return res.status(400).json({ message: "Key is required" });
+      }
+      const trimmedKey = key.trim();
+      const generationPrompt = (typeof prompt === "string" && prompt.trim())
+        || (typeof description === "string" && description.trim())
+        || trimmedKey.replace(/_/g, " ");
+
+      const result = await generateSymbolImage(generationPrompt);
+      const symbol = await customSymbolService.createSymbol(result.imageBuffer, {
+        key: trimmedKey,
+        description: description || trimmedKey.replace(/_/g, " "),
+        isPublic: isPublic !== false,  // admin-created defaults to public
+        isApproved: isApproved !== false,  // admin-created defaults to approved
+        createdByUserId: userId,
+      });
+
+      res.status(201).json(symbol);
+
+      activityLogService.log({
+        userId,
+        eventType: "create",
+        subjectType1: "custom_symbol",
+        subjectId1: symbol.id,
+        details: { source: "admin_generate" },
+      });
+    } catch (error: any) {
+      console.error("[CustomSymbolController] generateAndCreateSymbol error:", error);
+      res.status(500).json({ message: error.message || "Failed to generate and create symbol" });
+    }
+  }
+
+  /**
+   * PUT /api/custom-symbols/:id/image — replace a symbol's image via upload.
+   * Multipart field name: `image`. Reuses the existing s3Key so association
+   * caches stay valid; clients should bust by ?v=<updatedAt>.
+   */
+  async replaceSymbolImage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const file = (req as any).file as Express.Multer.File | undefined;
+      if (!file) return res.status(400).json({ message: "Image file required" });
+
+      const updated = await customSymbolService.replaceSymbolImage(req.params.id, file.buffer);
+      if (!updated) return res.status(404).json({ message: "Symbol not found" });
+
+      res.json(updated);
+
+      activityLogService.log({
+        userId,
+        eventType: "update",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+        details: { field: "image", source: "upload" },
+      });
+    } catch (error: any) {
+      console.error("[CustomSymbolController] replaceSymbolImage error:", error);
+      res.status(500).json({ message: error.message || "Failed to replace symbol image" });
+    }
+  }
+
+  /**
+   * POST /api/custom-symbols/:id/regenerate — replace a symbol's image by
+   * running the auto-symbol generator. Prompt defaults to the symbol's key.
+   */
+  async regenerateSymbol(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const existing = await customSymbolRepository.getSymbol(req.params.id);
+      if (!existing) return res.status(404).json({ message: "Symbol not found" });
+
+      const customPrompt = req.body?.prompt;
+      const generationPrompt = (typeof customPrompt === "string" && customPrompt.trim())
+        || (existing.description || "").trim()
+        || (existing.key || "").replace(/_/g, " ");
+      if (!generationPrompt) {
+        return res.status(400).json({ message: "Symbol has no key or description, and no prompt provided" });
+      }
+
+      const result = await generateSymbolImage(generationPrompt);
+      const updated = await customSymbolService.replaceSymbolImage(req.params.id, result.imageBuffer);
+      if (!updated) return res.status(404).json({ message: "Symbol not found" });
+
+      res.json(updated);
+
+      activityLogService.log({
+        userId,
+        eventType: "update",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+        details: { field: "image", source: "regenerate", prompt: generationPrompt },
+      });
+    } catch (error: any) {
+      console.error("[CustomSymbolController] regenerateSymbol error:", error);
+      res.status(500).json({ message: error.message || "Failed to regenerate symbol" });
+    }
+  }
+
   /** GET /api/custom-symbols/search?q=... */
   async searchSymbols(req: Request, res: Response) {
     try {

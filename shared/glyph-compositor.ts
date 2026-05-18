@@ -6,19 +6,36 @@
 // these primitives.
 //
 // Glyph string format (from planning-docs/glyph-system.md):
-//   slot1[.mod[.mod]] [+ slot2[.mod[.mod]] [+ slot3[.mod[.mod]]]] [#tag[.tag]]
+//   slot1[(payload)][.mod[.mod]] [+ slot2... [+ slot3...]] [#tag[.tag]]
 //
 // A single bare key (e.g. "apple") is a 1-slot glyph and renders as a simple
 // image — this is what gives backward compatibility with old single-image
 // buttons.
+//
+// `(payload)` is only valid when the slot's key is a composable host
+// (see ComposableFacet in glyph-registry.ts). The payload renders as an
+// overlay on the host's symbol — e.g. `want(apple)` shows the want-hands
+// image with an apple centered inside it.
 
+import { resolveEmoji } from "./emoji-registry.js";
 import {
   getVocabularyItem,
   type ToneFamily,
   type VocabularyItem,
 } from "./glyph-registry.js";
 
-export type ToneTag = "question" | "exclamation";
+/**
+ * Glyph-level tags attached after `#`. They split into two visual groups
+ * the compositor renders as separate corner badges so a sentence can stack
+ * tense + prosody (e.g. `i_me+want+water#past#question` = "Did I want
+ * water?"):
+ *   - PROSODY: `question` / `exclamation` — purple/red ?/! badge, top-right.
+ *   - TENSE:   `past` / `future`           — amber/blue ←/→ badge, top-left.
+ * Each axis allows at most one tag; if both members of an axis appear,
+ * the renderer collapses them (question+exclamation → "?!"). Cross-axis
+ * tags coexist on opposite corners.
+ */
+export type ToneTag = "question" | "exclamation" | "past" | "future";
 
 /**
  * Image resolver passed to the React renderer. Receives the registry item
@@ -37,10 +54,17 @@ export interface ParsedSlot {
   modifiers: string[];
   /** True when `key` is not in the registry (AI-generated / on-demand image). */
   unknown: boolean;
+  /**
+   * Embedded payload key — only meaningful when the slot's `key` is a
+   * composable host. Rendered as an overlay on the host's symbol.
+   */
+  payload?: string;
+  /** True when the payload key is not in the registry. */
+  payloadUnknown?: boolean;
 }
 
 export interface ParsedGlyph {
-  slots: ParsedSlot[];     // 0–3 slots; 0 is an empty/invalid glyph
+  slots: ParsedSlot[];     // 0–MAX_SLOTS slots; 0 is an empty/invalid glyph
   toneTags: ToneTag[];     // 0–2 distinct tone tags
   raw: string;             // original input
 }
@@ -49,8 +73,20 @@ export interface ParsedGlyph {
 // Parse / serialize
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAX_SLOTS = 3;
-const KNOWN_TONE_TAGS = new Set<ToneTag>(["question", "exclamation"]);
+/**
+ * Upper bound on slot count. Set high enough that students composing a full
+ * compound sentence don't bump into a cap, but bounded so a malformed glyph
+ * string (e.g. a 10 KB blob of `a+a+a+...`) doesn't allocate without limit.
+ * The visual scaling in `computeLayout` makes more slots progressively
+ * smaller, which is the practical limit students will hit first.
+ */
+export const MAX_SLOTS = 16;
+const KNOWN_TONE_TAGS = new Set<ToneTag>(["question", "exclamation", "past", "future"]);
+
+/** Tags that occupy the prosody (top-right) badge. */
+const PROSODY_TAGS = new Set<ToneTag>(["question", "exclamation"]);
+/** Tags that occupy the tense (top-left) badge. */
+const TENSE_TAGS = new Set<ToneTag>(["past", "future"]);
 
 /** Parse a glyph string. Tolerant — malformed segments are dropped silently. */
 export function parseGlyph(input: string): ParsedGlyph {
@@ -75,18 +111,42 @@ export function parseGlyph(input: string): ParsedGlyph {
 
   // Parse slots
   const slotStrs = body.split("+").map((s) => s.trim()).filter(Boolean);
-  const slots: ParsedSlot[] = slotStrs.slice(0, MAX_SLOTS).map((slotStr) => {
-    const parts = slotStr.split(".").map((s) => s.trim()).filter(Boolean);
-    const key = parts[0] ?? "";
-    const modifiers = parts.slice(1);
-    return {
-      key,
-      modifiers,
-      unknown: !getVocabularyItem(key),
-    };
-  });
+  const slots: ParsedSlot[] = slotStrs.slice(0, MAX_SLOTS).map((slotStr) => parseSlot(slotStr));
 
   return { slots, toneTags, raw };
+}
+
+/**
+ * Parse a single slot string like `want(apple).please` into a ParsedSlot.
+ * Tolerant of malformed input — missing payload close-paren is treated as
+ * no payload; empty `()` is treated as no payload.
+ */
+function parseSlot(slotStr: string): ParsedSlot {
+  // Split out payload `(...)` first so dots inside it don't confuse modifiers.
+  const open = slotStr.indexOf("(");
+  let head = slotStr;
+  let payload: string | undefined;
+  if (open >= 0) {
+    const close = slotStr.indexOf(")", open + 1);
+    if (close > open) {
+      const inner = slotStr.slice(open + 1, close).trim();
+      if (inner) payload = inner;
+      head = slotStr.slice(0, open) + slotStr.slice(close + 1);
+    }
+  }
+  const parts = head.split(".").map((s) => s.trim()).filter(Boolean);
+  const key = parts[0] ?? "";
+  const modifiers = parts.slice(1);
+  const slot: ParsedSlot = {
+    key,
+    modifiers,
+    unknown: !getVocabularyItem(key),
+  };
+  if (payload) {
+    slot.payload = payload;
+    slot.payloadUnknown = !getVocabularyItem(payload);
+  }
+  return slot;
 }
 
 /** Round-trip back to a glyph string. */
@@ -94,7 +154,8 @@ export function serializeGlyph(parsed: ParsedGlyph): string {
   const slotStrs = parsed.slots
     .map((s) => {
       if (!s.key) return "";
-      return s.modifiers.length ? [s.key, ...s.modifiers].join(".") : s.key;
+      const headWithPayload = s.payload ? `${s.key}(${s.payload})` : s.key;
+      return s.modifiers.length ? [headWithPayload, ...s.modifiers].join(".") : headWithPayload;
     })
     .filter(Boolean);
 
@@ -131,8 +192,10 @@ export interface GlyphLayout {
   viewBoxWidth: number;
   viewBoxHeight: number;
   slots: SlotLayout[];
-  /** Where the tone corner-badge anchors (top-right of overall glyph). */
+  /** Prosody (?/!) badge — top-right in LTR, top-left in RTL. */
   cornerBadge: { x: number; y: number; size: number };
+  /** Tense (←/→) badge — top-left in LTR, top-right in RTL. Opposite the prosody badge. */
+  tenseBadge: { x: number; y: number; size: number };
 }
 
 /**
@@ -162,8 +225,15 @@ export function computeLayout(parsed: ParsedGlyph, rtl = false): GlyphLayout {
     y: 0,
     size: CORNER_BADGE_SIZE,
   };
+  // Tense badge sits on the opposite top corner so prosody (?/!) and
+  // tense (past/future) don't collide when both are set on a sentence.
+  const tenseBadge = {
+    x: rtl ? viewBoxWidth - CORNER_BADGE_SIZE : 0,
+    y: 0,
+    size: CORNER_BADGE_SIZE,
+  };
 
-  return { viewBoxWidth, viewBoxHeight, slots, cornerBadge };
+  return { viewBoxWidth, viewBoxHeight, slots, cornerBadge, tenseBadge };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,8 +291,9 @@ function makeSlot(key: string): ParsedSlot {
 }
 
 /**
- * Push a new slot into the next empty position. If all 3 slots are filled,
- * returns the input unchanged (caller must explicitly replace).
+ * Push a new slot into the next empty position. If MAX_SLOTS slots are
+ * filled, returns the input unchanged (caller must explicitly replace
+ * an existing slot to make room).
  */
 export function pushSlot(glyph: ParsedGlyph, key: string): ParsedGlyph {
   if (glyph.slots.length >= MAX_SLOTS) return glyph;
@@ -278,6 +349,40 @@ export function removeModifier(
   return { ...glyph, slots };
 }
 
+/**
+ * Set (or replace) the payload on a composable host slot. No-op when the
+ * slot's host item isn't composable or accepts don't match — the registry
+ * is the gate, this helper just stores the key.
+ */
+export function setPayload(
+  glyph: ParsedGlyph,
+  slotIdx: number,
+  payloadKey: string
+): ParsedGlyph {
+  if (slotIdx < 0 || slotIdx >= glyph.slots.length) return glyph;
+  const slot = glyph.slots[slotIdx];
+  const host = getVocabularyItem(slot.key);
+  if (!host?.composable) return glyph;
+  const slots = glyph.slots.slice();
+  slots[slotIdx] = {
+    ...slot,
+    payload: payloadKey,
+    payloadUnknown: !getVocabularyItem(payloadKey),
+  };
+  return { ...glyph, slots };
+}
+
+/** Clear the payload on a slot. No-op when there's no payload. */
+export function clearPayload(glyph: ParsedGlyph, slotIdx: number): ParsedGlyph {
+  if (slotIdx < 0 || slotIdx >= glyph.slots.length) return glyph;
+  const slot = glyph.slots[slotIdx];
+  if (!slot.payload) return glyph;
+  const slots = glyph.slots.slice();
+  const { payload: _p, payloadUnknown: _u, ...rest } = slot;
+  slots[slotIdx] = rest;
+  return { ...glyph, slots };
+}
+
 /** Replace the tone tags wholesale (deduplicating). */
 export function setToneTags(glyph: ParsedGlyph, tags: ToneTag[]): ParsedGlyph {
   const seen = new Set<ToneTag>();
@@ -308,4 +413,45 @@ export function resolveActiveSlot(
     return explicit;
   }
   return mostRecentSlot(glyph);
+}
+
+/** Caller-supplied predicate: "is this snake_case key cached as a
+ *  generated symbol whose URL we can render now?" */
+export type HasResolvedSymbol = (key: string) => boolean;
+
+/** True iff `key` would render to something other than "❓" right now. */
+function canResolveKey(key: string, hasSymbol: HasResolvedSymbol): boolean {
+  if (!key) return false;
+  const item = getVocabularyItem(key);
+  // Registry entry with a bundled image → always renders.
+  if (item?.imagePath) return true;
+  // resolveEmoji covers: raw emoji codepoints, registry item.emoji, and the
+  // supplementary EXTRA_EMOJIS map. If any of those produces an emoji, the
+  // slot renders an emoji glyph immediately.
+  if (resolveEmoji(key)) return true;
+  // Generated symbol already cached on the client.
+  if (hasSymbol(key)) return true;
+  return false;
+}
+
+/**
+ * Walk every slot's key and payload. Returns true only when ALL of them
+ * can render visually right now (bundled image, known emoji, raw emoji,
+ * or cached generated symbol). Returns false when any slot would fall
+ * through to the "❓" placeholder — the renderer should then use the
+ * fallback glyph string instead.
+ *
+ * Server-safe: pure logic, no React or DOM.
+ */
+export function canResolveGlyph(
+  input: string | ParsedGlyph,
+  hasSymbol: HasResolvedSymbol = () => false,
+): boolean {
+  const parsed = typeof input === "string" ? parseGlyph(input) : input;
+  if (parsed.slots.length === 0) return false;
+  for (const slot of parsed.slots) {
+    if (!canResolveKey(slot.key, hasSymbol)) return false;
+    if (slot.payload && !canResolveKey(slot.payload, hasSymbol)) return false;
+  }
+  return true;
 }

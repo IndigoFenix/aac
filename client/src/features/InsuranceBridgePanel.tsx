@@ -902,7 +902,6 @@ function LmnFinalizeDialog({ lmn, onClose, onFinalized }: LmnFinalizeDialogProps
               id="lmn-sig-name"
               value={signatureName}
               onChange={(e) => setSignatureName(e.target.value)}
-              autoFocus
               data-testid="lmn-sig-name"
             />
           </div>

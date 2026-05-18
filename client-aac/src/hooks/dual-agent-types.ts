@@ -43,12 +43,30 @@ export interface ConstructionStateClient {
   excludeKeys: string[];
   /** When true, student requested help — AI should enter guessing mode for the target slot. */
   requestGuessingMode?: boolean;
+  /**
+   * When the active/most-recent slot is a composable host with no payload yet,
+   * the AI should suggest items that fit *inside* the host (the blank) rather
+   * than candidates for the next sentence slot.
+   */
+  payloadTarget?: {
+    slotIndex: number;
+    hostKey: string;
+    /** Coarse part-of-speech types accepted as the payload. */
+    accepts: string[];
+    /** Categories the AI should bias suggestions toward. */
+    suggestCategories: Array<"who" | "do" | "what" | "where" | "when">;
+  };
 }
 
 /** AI's suggestion payload received from the server, populates the AI strip. */
 export interface ConstructionSuggestionsClient {
   targetSlot: number;
-  candidates: Array<{ key: string; label?: string }>;
+  candidates: Array<{
+    key: string;
+    label?: string;
+    /** Resolved image URL for AI-generated keys; undefined for registry/emoji items. */
+    symbolPath?: string;
+  }>;
   /** Monotonic counter so consumers can tell two arrivals apart. */
   receivedAt: number;
 }
@@ -165,6 +183,12 @@ export interface UseDualAgentReturn {
   sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  /**
+   * Send a composed glyph from the sentence builder. The AI converts it to
+   * natural language via the `interpret` tool — the relay does NOT TTS the
+   * raw glyph string. See the [GLYPH PRESS] flow in live-relay.ts.
+   */
+  playGlyph?: (glyphString: string) => void;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
   cancelRecording: () => void;

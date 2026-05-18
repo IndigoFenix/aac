@@ -44,9 +44,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want water\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons (including against existing buttons already on the board). If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Example: \"Water|💧|boy_drinking_water|I want water, Play|🎮|girl_listening_to_music|I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person words spoken when tapped (\"I want water\"); (2) glyph — composed visual encoding the sentence (slots joined by `+`, modifiers with `.`, composable hosts with `(payload)`, tone tags with `#`); slot keys may be registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), snake_case imageKeys (`pikachu`, `school_bus` — async-generated), `symbol:ID`, or `face:ID`; (3) fallback — same composition with NO imageKeys (use bundled-icon keys / emojis / `symbol:ID` / `face:ID`), shown WHILE imageKeys are still generating; (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. Match slot count to the sentence shape — a full subject+verb+object thought is usually a 3-slot glyph (e.g. \"I want a banana\" → \"i_me+want+banana\"); one-word answers and feelings are 1-slot (\"Yes\" → \"yes\", \"I'm tired\" → \"tired\"). Don't pad to three when it's unnatural. Glyph imageKeys may repeat across buttons; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Example: \"I want a banana|i_me+want+banana|👤+🤲+🍌|Banana, Pizza, please|pizza|🍕|Pizza, I'm tired|tired|😴|Tired, I want to play with Mom|i_me+want+mom|👤+🤲+👩|With Mom\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. The 'sentence' field is what the BUTTON itself will speak when tapped — phrase it as the words the user would say (first-person, e.g. \"I want to play\"). imageKey should depict the user when relevant, use terms like 'boy', 'girl', 'person', etc. EVERY imageKey on the board MUST be unique — never reuse the same imageKey on two buttons. If two ideas overlap, pick distinct concrete visuals (e.g. \"My Day\" → person_calendar, \"I'm thinking about\" → person_thinking, \"Interests\" → person_with_lightbulb). rowSpan/colSpan are optional (default 1). Aim to fill the board (6–8 buttons) unless the context is unusually narrow. Example: \"Play|🎮|boy_playing_video_game|I want to play, Music|🎵|girl_listening_to_music|Put on some music, Draw|✏️|child_drawing_picture|I want to draw, Read|📖|child_reading_book|Let's read a book, Outside|🌳|child_in_garden|I want to go outside, Snack|🍎|boy_eating_apple|I'm hungry, Hug|🤗|person_hugging|I want a hug, Tired|😴|person_yawning|I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person phrase voiced when pressed; (2) glyph — composed glyph encoding the sentence; slot keys may be registry keys from <bundled_icons>, raw EMOJIS, snake_case imageKeys, `symbol:ID`, or `face:ID`; (3) fallback — same composition with NO imageKeys (use bundled-icon keys / emojis / `symbol:ID` / `face:ID`); (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. Match slot count to the sentence shape — full subject+verb+object thoughts are usually 3-slot glyphs (the visual subject+action+object is the typical conversational shape); short answers and feelings are 1-slot. Don't pad to 3 when it's unnatural. Glyph imageKeys may repeat; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Aim to fill the board (6–8 buttons) unless context is unusually narrow. Example: \"I want to play|i_me+want+play|👤+🤲+🎮|Play, Let's listen to music|i_me+want+music|👤+🤲+🎵|Music, I want to draw|i_me+want+draw|👤+🤲+🎨|Draw, Let's read a book|i_me+want+book|👤+🤲+📖|Read, Outside|i_me+want+outside|👤+🤲+🌳|Outside, I'm hungry|hungry|🤤|Hungry, A hug|i_me+want+🤗|👤+🤲+🤗|Hug, I'm tired|tired|😴|Tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -63,6 +63,43 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
         text: { type: "string", description: "The text to speak aloud." },
       },
       required: ["text"],
+    },
+  };
+}
+
+/**
+ * `interpret` — voice on behalf of the student.
+ *
+ * Called ONLY in response to a [GLYPH PRESS] turn (the student composed a
+ * glyph in the sentence builder and pressed Play). The model produces a
+ * natural-language interpretation in first-person — what the student would
+ * say if they could speak directly — and the relay:
+ *   1. streams it through the student-voice TTS so the room hears the
+ *      sentence in the student's own voice;
+ *   2. records it in the session log as [BUTTON PRESS] <sentence>, so the
+ *      conversation history shows the student's spoken contribution rather
+ *      than the raw glyph;
+ *   3. lets the model continue the same turn with speak() + rebuild_board()
+ *      to respond to that statement normally.
+ *
+ * This is the ONLY case where the AI voices anything on the student's
+ * behalf. Do NOT call interpret() in response to a regular [BUTTON PRESS]
+ * (those already carry a pre-generated sentence and are TTS'd separately).
+ */
+function buildInterpretTool(_config: ToolDeclarationConfig): FunctionDeclaration {
+  return {
+    name: "interpret",
+    description: `Voice a natural-language interpretation of the student's glyph through the STUDENT'S TTS voice. Call this ONLY in response to a [GLYPH PRESS] turn — never spontaneously, and never in response to a regular [BUTTON PRESS] (those already have a pre-baked sentence that TTS plays automatically). The 'sentence' argument MUST be first-person, as the student would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <glyph_interpretation> rules — read the glyph creatively using student interests, don't echo slot keys. After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        sentence: {
+          type: "string",
+          description: "The student's intended statement in their voice. First-person, natural language. Do not include the raw glyph string.",
+        },
+      },
+      required: ["sentence"],
     },
   };
 }
@@ -349,7 +386,7 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
     parametersJsonSchema: {
       type: "object",
       properties: {
-        button: { type: "string", description: "Single button: label|icon|imageKey|sentence." },
+        button: { type: "string", description: "Single button: sentence|glyph|fallback|label. See <button_syntax> for field details." },
       },
       required: ["button"],
     },
@@ -390,7 +427,7 @@ function buildSetMemoryChipsTool(_config: ToolDeclarationConfig): FunctionDeclar
 function buildSuggestConstructionButtonsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "suggest_construction_buttons",
-    description: `Populate the AI strip on the sentence construction board with up to 4 candidate buttons for the slot the student is currently filling. Call this in response to a [CONSTRUCTION STATE] context injection — never spontaneously. Prefer glyph-registry keys when they fit; for AI-generated nouns use snake_case_descriptive (e.g. \`ice_cream_cone\`, \`bluey_character\`). Never include any key from \`exclude_keys\`. If you have no useful suggestions, omit the tool call.`,
+    description: `Populate the AI strip on the sentence construction board with up to 4 candidate buttons for the slot the student is currently filling. Call this in response to a [CONSTRUCTION STATE] context injection — never spontaneously. When the injection includes \`payload_target\`, the student has placed a composable host (e.g. \`want\`, \`give\`, \`think\`, \`say\`) whose embedded blank is unfilled — suggest items that would fill THAT blank (what they might want/give/think-about/etc.), not the next sentence slot, and use \`slot_index\` matching the payload_target's slotIndex. Prefer glyph-registry keys when they fit; for AI-generated nouns use snake_case_descriptive (e.g. \`ice_cream_cone\`, \`bluey_character\`). Never include any key from \`exclude_keys\`. If you have no useful suggestions, omit the tool call.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -528,8 +565,11 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
     declarations.push(buildSpeakTool(config));
   }
 
-  // Interpretation is handled server-side (pre-generated TTS on button press).
-  // No interpret() tool is declared — the AI does not voice on behalf of the user.
+  // Interpret is declared so the AI can voice the student's intent when
+  // they play a glyph from the sentence builder (see [GLYPH PRESS] flow).
+  // Regular button presses still use pre-generated sentences, voiced
+  // server-side without the model's involvement.
+  declarations.push(buildInterpretTool(config));
 
   declarations.push(buildTranscriptTool(config));
   declarations.push(buildContextTool(config));

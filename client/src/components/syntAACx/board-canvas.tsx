@@ -42,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSound } from "@/contexts/SoundContext";
+import { Glyph } from "@/components/Glyph";
 
 export function BoardCanvas() {
   const { t, isRTL, language } = useLanguage();
@@ -665,6 +666,25 @@ export function BoardCanvas() {
                               ? "fa-house"
                               : isRTL ? "fa-arrow-right" : "fa-arrow-left";
                             return <i className={`fas ${faClass} text-xl mb-1`} />;
+                          }
+
+                          // Glyph: composed multi-image button. Renders the
+                          // primary glyph string when every slot resolves;
+                          // falls back to glyphFallback while parts are
+                          // still generating. Takes precedence over the
+                          // legacy single-icon priority chain below.
+                          const btnAny = button as any;
+                          if (btnAny.glyph || btnAny.glyphFallback) {
+                            return (
+                              <div className="w-12 h-8 mb-1 flex items-center justify-center">
+                                <Glyph
+                                  glyph={btnAny.glyph}
+                                  fallback={btnAny.glyphFallback}
+                                  noBackground
+                                  ariaLabel={button.label}
+                                />
+                              </div>
+                            );
                           }
 
                           // Icon priority: 1) button.symbolPath (server-resolved), 2) symbol store (SSE-resolved),

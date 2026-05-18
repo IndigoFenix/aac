@@ -463,6 +463,11 @@ export const he = {
     imageKey: "מפתח תמונה",
     imageKeyPlaceholder: "למשל drinking_water, person_yawning",
     imageKeyHint: "מפתח סמל ליצירת תמונה אוטומטית",
+    glyph: "גליף (רב-תמונה)",
+    glyphHint: "הרכב חזותי מהצורה i_me+want+water. החלקים יכולים להיות מפתחי רישום, אמוג'י (🍎), או imageKeys.",
+    glyphFallback: "תחליף הגליף",
+    glyphFallbackHint: "אותו הרכב ללא imageKeys (רק אמוג'י / symbol:ID / face:ID). מוצג בעת יצירת התמונות.",
+    glyphPreview: "תצוגה מקדימה",
   },
 
   // ============================================================================

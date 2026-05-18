@@ -463,6 +463,11 @@ export const ar = {
     imageKey: "مفتاح الصورة",
     imageKeyPlaceholder: "مثال: drinking_water, person_yawning",
     imageKeyHint: "مفتاح رمز مُنشأ تلقائياً لإنشاء صور مخصصة",
+    glyph: "رمز مركّب (متعدد الصور)",
+    glyphHint: "تكوين بصري بالشكل i_me+want+water. يمكن للأجزاء أن تكون مفاتيح سجل، إيموجي (🍎)، أو مفاتيح صور.",
+    glyphFallback: "بديل الرمز المركّب",
+    glyphFallbackHint: "نفس التكوين بدون مفاتيح صور (إيموجي / symbol:ID / face:ID فقط). يُعرض أثناء إنشاء الصور.",
+    glyphPreview: "معاينة",
   },
 
   // ============================================================================

@@ -1221,6 +1221,21 @@ export interface BoardButton {
   symbolPath?: string;
   rebusKey?: string;
   imageKey?: string;
+  /**
+   * Glyph string (see shared/glyph-compositor.ts) representing the entire
+   * meaning of this button — e.g. "i_me+want+water". May contain imageKeys
+   * in individual slots; those go through the auto-symbol pipeline. When
+   * present, the board renderer prefers it over symbolPath/iconRef.
+   */
+  glyph?: string;
+  /**
+   * Safe fallback glyph string, used if `glyph` fails to render (e.g.
+   * all of its slots require image generation that hasn't completed).
+   * MUST be self-contained — only emojis, custom-symbol refs (`symbol:ID`),
+   * or face refs (`face:ID`) are valid here; imageKeys are NOT allowed
+   * since the fallback exists precisely for when generation isn't ready.
+   */
+  glyphFallback?: string;
   selfClosing?: boolean;
   /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
   exitBoard?: boolean;

@@ -463,6 +463,11 @@ export const yue = {
     imageKey: "圖片鍵",
     imageKeyPlaceholder: "例如 drinking_water, person_yawning",
     imageKeyHint: "用嚟自訂圖片生成嘅自動生成符號鍵",
+    glyph: "字符組合 (多圖片)",
+    glyphHint: "例如 i_me+want+water 嘅組合視覺。每部分可以係登錄字鍵、emoji (🍎) 或者 imageKey。",
+    glyphFallback: "備用組合",
+    glyphFallbackHint: "同一組合，但唔用 imageKey（只用 emoji / symbol:ID / face:ID）。喺 imageKey 部分仲喺度生成嗰陣顯示。",
+    glyphPreview: "預覽",
   },
 
   // ============================================================================

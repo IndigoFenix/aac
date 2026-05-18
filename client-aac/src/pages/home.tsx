@@ -70,9 +70,10 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
+  onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
@@ -91,7 +92,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -101,6 +102,19 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     onInterpretReady((buttons: string[], sentences?: Record<string, string>) => interpretButtons(buttons, sentences));
     return () => onInterpretReady(null);
   }, [interpretButtons, onInterpretReady]);
+
+  // playGlyph: hand the sentence-builder's composed glyph to the AI for
+  // interpretation. Optional on the context (older sessions may not have
+  // it); we silently skip wiring if undefined.
+  useEffect(() => {
+    if (!onPlayGlyphReady) return;
+    if (playGlyph) {
+      onPlayGlyphReady((glyphString: string) => playGlyph(glyphString));
+    } else {
+      onPlayGlyphReady(null);
+    }
+    return () => onPlayGlyphReady(null);
+  }, [playGlyph, onPlayGlyphReady]);
 
   useEffect(() => {
     onDetectionChange?.(videoCaptureEnabled || voiceEnabled);
@@ -391,6 +405,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNoRef = useRef<(() => void) | null>(null);
   const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
+  const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
@@ -1328,11 +1343,19 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 constructionSuggestions={constructionSuggestionsState}
                 constructionMemoryChips={constructionMemoryChipsState}
                 onPlay={(glyphString) => {
-                  // Route the assembled glyph through the interpret pipeline so
-                  // the AI converts it to a natural sentence + voices it.
-                  if (interpretFnRef.current) {
-                    interpretFnRef.current([glyphString], { [glyphString]: glyphString });
+                  // Hand the composed glyph to the AI. The relay sends it as
+                  // a [GLYPH PRESS] turn; the AI calls interpret(sentence)
+                  // with a natural-language reading, which streams the
+                  // student-voice TTS and records the sentence as the
+                  // student's turn. The AI then responds normally.
+                  // Routed through playGlyphFnRef because the function lives
+                  // on DualAgentContext, which DualAgentBridge consumes —
+                  // not directly accessible from this Home component. Falls
+                  // back to direct TTS only if the bridge hasn't wired up yet.
+                  if (playGlyphFnRef.current) {
+                    playGlyphFnRef.current(glyphString);
                   } else {
+                    console.warn("[home] playGlyph unavailable, falling back to direct TTS");
                     speak(glyphString, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
                   }
                   setShowConstructionBoard(false);
@@ -1489,6 +1512,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           hasPrebuiltBoard={!!prebuiltBoardData}
           currentTier={currentTier}
           isGuessingMode={isGuessingMode}
+          inSentenceBuilder={showConstructionBoard}
+          onSpeak={() => setShowConstructionBoard((s) => !s)}
         />
 
         {/* Pause Overlay — covers board and quick actions when paused */}
@@ -1673,6 +1698,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
+            onPlayGlyphReady={(fn) => { playGlyphFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
             onSymbolUpdateChange={setSymbolUpdateData}
             onAiButtonPressChange={setAiButtonPressData}

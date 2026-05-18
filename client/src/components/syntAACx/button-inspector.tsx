@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ActionLinkIR } from "@/types/board-ir";
+import { Glyph } from "@/components/Glyph";
 
 export function ButtonInspector() {
   const { t, isRTL } = useLanguage();
@@ -484,6 +485,83 @@ export function ButtonInspector() {
               {t("button.imageKeyHint")}
             </p>
           </div>
+
+          {/* Glyph + Fallback — composed multi-image button. When `glyph` is
+              set the board preview uses it instead of the single iconRef /
+              symbolPath / imageKey chain. Fallback renders while imageKey
+              parts of the glyph are still generating. Syntax:
+              slot1+slot2+slot3, with modifiers via `.modifier` and
+              composable payloads via `host(payload)`. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="glyph" className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("button.glyph")}
+            </Label>
+            <Input
+              id="glyph"
+              value={(selectedBtn as any).glyph || ""}
+              onChange={(e) => handleUpdate("glyph", e.target.value || undefined)}
+              placeholder="i_me+want+water"
+              className={cn(
+                "h-8 text-xs font-mono",
+                isDark
+                  ? "bg-slate-800 border-slate-700 text-slate-200"
+                  : "bg-white border-gray-300 text-gray-800"
+              )}
+            />
+            <p className={cn(
+              "text-[10px] leading-tight",
+              isDark ? "text-slate-500" : "text-gray-500"
+            )}>
+              {t("button.glyphHint")}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="glyphFallback" className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("button.glyphFallback")}
+            </Label>
+            <Input
+              id="glyphFallback"
+              value={(selectedBtn as any).glyphFallback || ""}
+              onChange={(e) => handleUpdate("glyphFallback", e.target.value || undefined)}
+              placeholder="👤+🤲+💧"
+              className={cn(
+                "h-8 text-xs font-mono",
+                isDark
+                  ? "bg-slate-800 border-slate-700 text-slate-200"
+                  : "bg-white border-gray-300 text-gray-800"
+              )}
+            />
+            <p className={cn(
+              "text-[10px] leading-tight",
+              isDark ? "text-slate-500" : "text-gray-500"
+            )}>
+              {t("button.glyphFallbackHint")}
+            </p>
+          </div>
+
+          {/* Live glyph preview — only when one is set. */}
+          {((selectedBtn as any).glyph || (selectedBtn as any).glyphFallback) && (
+            <div className={cn(
+              "rounded-md border p-2",
+              isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"
+            )}>
+              <div className="text-[10px] text-gray-500 mb-1">{t("button.glyphPreview")}</div>
+              <div className="h-16 flex items-center justify-center">
+                <Glyph
+                  glyph={(selectedBtn as any).glyph}
+                  fallback={(selectedBtn as any).glyphFallback}
+                  ariaLabel={selectedBtn.label}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Action */}
           <div className="space-y-1.5">

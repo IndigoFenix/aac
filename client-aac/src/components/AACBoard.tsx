@@ -5,6 +5,7 @@ import type { ParsedBoardData, BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { resolveStaticIconPath } from "@/lib/utils";
+import { Glyph } from "@/components/Glyph";
 
 interface AACBoardProps {
   board: ParsedBoardData | null;
@@ -227,10 +228,24 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                     } : {}),
                   }}
                 >
-                  {/* Symbol/Icon */}
-                  <div className="flex-1 flex items-center justify-center min-h-0">
+                  {/* Symbol/Icon — priority chain:
+                       1. back/home FA icon (special navigation)
+                       2. button.glyph + glyphFallback (sentence-meaning glyph;
+                          Glyph component swaps between them per-slot as
+                          generated symbols arrive)
+                       3. button.symbolPath (custom symbol / generated image)
+                       4. button.iconRef (emoji or FA class)
+                       5. label-derived emoji fallback */}
+                  <div className="flex-1 flex items-center justify-center min-h-0 w-full">
                     {(button.action?.type === "back" || button.action?.type === "home") ? (
                       <i className={`fas ${button.action.type === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none text-gray-700`} />
+                    ) : (button.glyph || button.glyphFallback) ? (
+                      <Glyph
+                        glyph={button.glyph}
+                        fallback={button.glyphFallback}
+                        noBackground
+                        ariaLabel={button.label}
+                      />
                     ) : button.symbolPath ? (
                       <img
                         src={resolveStaticIconPath(button.symbolPath)}

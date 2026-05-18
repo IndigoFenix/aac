@@ -1,0 +1,40 @@
+Pre-2026: LLM-based structured memory and database interaction system
+Jan 2026: Initial build of CliniAACian - AI can add structured student data to database, automatic AAC board builder
+Feb 2026: Initial build of AAC - AI can build button boards and interact using multimodal system, drawing and music app
+Mar 8: Founding of aivota.ai, landing page deployed
+Mar 10: Multilingual support for personas
+Mar 11: Gemini Vertex for AAC
+Mar 13: Mobile layout for CliniAACian
+Mar 16: AAC - Added reactive yes/no button popups
+Mar 18: Dynamic image generator added
+Mar 20: License system and multiple institute types added (family, clinic, school)
+Mar 22: AAC - Eyegaze system operational, live testing started
+Mar 29: Customer support mode added to admin
+Mar 30: Database structure redesigned for external storage
+Mar 31: Added memory to sessions
+Apr 1: Better caching for loading improvements
+Apr 10: AAC: Home board added
+Apr 16: AAC: Fixed bug with duplicate responses
+Apr 20: Security system improvements
+Apr 23: Calendar events system and incidents reporting finalized
+Apr 28: Added parental approval system for students
+May 1: In-house security audit
+May 2: Landing page chatbot
+May 4: Aivota Games division started, bubble game added
+May 7: Security updated for MoH standards
+May 8: Insurance bridge added
+May 11: 
+    AAC: 
+        - Fixed silence bug
+        - Added mute mode
+        - Added automatic sleep overlay when student is not present
+        - Prompt improvements to make conversation flow better
+May 13: 
+    AAC:
+        - Glyph board initial test
+    Aivota Games:
+        - Bubble game made eyegaze responsive
+        - Space Trader release version
+May 15:
+    Aivota Games:
+        - POC for Seagull-dream, flight physics and procgen planet/system/galaxy

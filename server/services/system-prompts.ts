@@ -18,7 +18,7 @@ The board is stored at /Context_Board with this structure:
 - coverImage: { iconRef, imageKey, backgroundColor } — Board thumbnail/cover image (same icon system as buttons)
 - pages: Array of pages, each containing:
   - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, imageKey, symbolPath (optional), action
+  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, imageKey, symbolPath (optional), glyph (optional), glyphFallback (optional), action
 
 ## Operations
 
@@ -79,6 +79,29 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 - For "more", use "more 1"
 
 ${IMAGE_KEY_BOARD_PROMPT}
+
+**Glyph (multi-image composition):** Optional. When a button's visual is best expressed as a SHORT PHRASE rather than a single concept, set the \`glyph\` field on the button to a composed glyph string instead of (or in addition to) iconRef + imageKey. The renderer lays the glyph parts out side-by-side as a single tile — the student sees a multi-image button that reads like a sentence.
+
+Glyph syntax (same as the sentence-builder):
+- Slots joined by \`+\` — e.g. \`i_me+want+water\` renders three side-by-side images.
+- Each slot is one of: a registry key (people/me, want, have, big, color_red, etc.), a raw emoji (🍎, 🤗, 🎮), a snake_case imageKey (\`pikachu\`, \`school_bus\` — generated), \`symbol:ID\` (custom symbol), or \`face:ID\` (face).
+- Modifiers attach via \`.modifier\` — e.g. \`water.big.color_blue\` = "big blue water".
+- Composable hosts (want / give / take / receive / have / say / think) accept an embedded payload via \`host(payload)\` — e.g. \`want(water)\` = the want-hands holding water.
+- Tone tags via \`#question\` or \`#exclamation\` — e.g. \`you+ok#question\`.
+
+Always set \`glyphFallback\` whenever \`glyph\` uses snake_case imageKeys. The fallback uses the SAME composition but with NO imageKeys — only registry keys, raw emojis, \`symbol:ID\`, or \`face:ID\` — so the button always has something safe to render while imageKey parts generate. When the glyph is purely registry/emoji-based (no async pieces) you may omit fallback.
+
+When you set \`glyph\`, the board preview uses it instead of the legacy iconRef → symbolPath → imageKey chain. Still set \`iconRef\` to a single emoji as a final safety net (the AAC renderer may fall back to it if both glyph and fallback fail to resolve). \`rebusKey\` is still required when the board will be exported to Grid3.
+
+Examples (full button objects):
+- A "Have water" button:
+  \`{ id: "btn-water", row: 0, col: 0, label: "Have water", spokenText: "I have water", color: "#3B82F6", iconRef: "💧", rebusKey: "water", glyph: "water.my.your", glyphFallback: "💧", action: { type: "speak", text: "I have water" } }\`
+- A "Want banana" button:
+  \`{ id: "btn-banana", row: 0, col: 1, label: "Banana", spokenText: "I want a banana", color: "#EAB308", iconRef: "🍌", rebusKey: "banana", glyph: "i_me+want+🍌", glyphFallback: "👤+🤲+🍌", action: { type: "speak", text: "I want a banana" } }\`
+- A "Pikachu" button (async imageKey, fallback uses emoji):
+  \`{ id: "btn-pikachu", row: 0, col: 2, label: "Pikachu", spokenText: "I want a Pikachu sticker", color: "#EAB308", iconRef: "✨", rebusKey: "pikachu", imageKey: "pikachu", glyph: "i_me+want+pikachu", glyphFallback: "👤+🤲+✨", action: { type: "speak", text: "I want a Pikachu sticker" } }\`
+
+Prefer a glyph over a single iconRef/imageKey when the button conveys a relation (subject + verb + object, possession, want + object) using common registry vocabulary. Keep a single iconRef/imageKey for one-concept buttons ("Apple", "Mom", "Park") — the glyph system is a tool, not a requirement.
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

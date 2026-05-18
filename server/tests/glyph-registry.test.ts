@@ -11,6 +11,7 @@ import {
   listByCategory,
   listByModeChip,
   modifiersFor,
+  canAcceptPayload,
   listDimensions,
   getDimension,
   MODE_CHIPS,
@@ -139,6 +140,39 @@ describe("glyph registry", () => {
     for (const v of listAllVocabulary()) {
       expect(!!v.imagePath || !!v.emoji || !!v.faIcon).toBe(true);
     }
+  });
+
+  it("composable hand verbs accept noun payloads", () => {
+    for (const k of ["want", "give", "take", "receive", "have"]) {
+      const item = getVocabularyItem(k);
+      expect(item).toBeDefined();
+      expect(item!.composable).toBeDefined();
+      expect(canAcceptPayload(item!, "noun")).toBe(true);
+    }
+  });
+
+  it("mental verbs (say, think) are composable", () => {
+    for (const k of ["say", "think"]) {
+      const item = getVocabularyItem(k);
+      expect(item).toBeDefined();
+      expect(item!.composable).toBeDefined();
+      expect(canAcceptPayload(item!, "noun")).toBe(true);
+    }
+  });
+
+  it("composable.suggestCategories reference known categories", () => {
+    const knownCats = new Set(["who", "do", "what", "where", "when"]);
+    for (const v of listAllVocabulary()) {
+      if (!v.composable) continue;
+      for (const c of v.composable.suggestCategories) {
+        expect(knownCats.has(c)).toBe(true);
+      }
+    }
+  });
+
+  it("canAcceptPayload returns false for items without composable facet", () => {
+    const i_me = getVocabularyItem("i_me")!;
+    expect(canAcceptPayload(i_me, "noun")).toBe(false);
   });
 
   it("modifier facets reference only known parts of speech", () => {

@@ -52,6 +52,9 @@ import { licenseService } from "../licenseService";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
+import { getVocabularyItem } from "@shared/glyph-registry";
+import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
+import { parseGlyph } from "@shared/glyph-compositor";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
@@ -88,43 +91,136 @@ function stringifyMsg(msg: any): string {
 
 /** Convert tool-call button args to internal format.
  *  Accepts multiple formats the model may produce:
- *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
- *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
- *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
-  // String — the expected format from native audio models: "label|icon, label|icon"
+ *  - String (preferred):  "I want water|i_me+want+water|👤+🤲+💧|Water"  (parseBoardButtons format)
+ *  - Array of strings:    join and parse via parseBoardButtons
+ *  - Object array:        [{sentence, glyph, fallback, label, row_span?, col_span?}]
+ *
+ *  The object array also accepts legacy field names (`icon`, `image_key`)
+ *  so that older Gemini tool-call shapes don't break mid-rollout. */
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
+  // String — the expected format from native audio models.
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
   }
 
   if (!Array.isArray(raw) || raw.length === 0) return [];
 
-  // Array of strings — join into comma-separated and parse
+  // Array of strings — join into comma-separated and parse.
   if (typeof raw[0] === "string") {
     const joined = raw.map((s: any) => String(s).trim()).filter(Boolean).join(", ");
     return parseBoardButtons(joined);
   }
 
-  // Object array — OpenAI / legacy Gemini format
+  // Object array — OpenAI / Gemini structured tool-call format.
   return raw.map((b: any) => {
     const label = (typeof b?.label === "string" ? b.label : String(b?.label ?? "")).trim() || "?";
-    let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "💬";
-    let symbolPath: string | undefined;
-    const imageKey = (typeof b?.image_key === "string" ? b.image_key : "").trim() || undefined;
     const sentence = (typeof b?.sentence === "string" ? b.sentence : "").trim() || undefined;
+    const glyph = (typeof b?.glyph === "string" ? b.glyph : "").trim() || undefined;
+    const glyphFallback = (typeof b?.fallback === "string" ? b.fallback : "").trim() || undefined;
+    // Legacy field names — still accepted for backward compatibility.
+    const legacyIcon = (typeof b?.icon === "string" ? b.icon : "").trim();
+    const legacyImageKey = (typeof b?.image_key === "string" ? b.image_key : "").trim();
     const rawRowSpan = typeof b?.row_span === "number" ? b.row_span : parseInt(b?.row_span, 10);
     const rawColSpan = typeof b?.col_span === "number" ? b.col_span : parseInt(b?.col_span, 10);
     const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
     const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
-    if (iconRef.startsWith("face:")) {
-      symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
-      iconRef = "👤";
-    } else if (iconRef.startsWith("symbol:")) {
-      symbolPath = `__SYMBOL__:${iconRef.substring(7).trim()}`;
-      iconRef = "🖼️";
+
+    // Derive iconRef / symbolPath / imageKey from the fallback (single-slot
+    // emoji or `symbol:`/`face:` ref) and the glyph (single-slot snake_case
+    // imageKey). This mirrors parseBoardButtons so both input shapes produce
+    // the same downstream button objects.
+    let iconRef = "fas fa-comment";
+    let symbolPath: string | undefined;
+    let imageKey: string | undefined;
+
+    if (glyphFallback) {
+      const fbSlots = glyphFallback.split('+').map((s: string) => s.trim()).filter(Boolean);
+      if (fbSlots.length === 1) {
+        const slotMain = fbSlots[0].split('.')[0].split('(')[0].trim();
+        if (slotMain.startsWith("face:")) {
+          symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
+        } else if (slotMain.startsWith("symbol:")) {
+          symbolPath = `__SYMBOL__:${slotMain.substring(7).trim()}`;
+        } else if (slotMain) {
+          iconRef = slotMain;
+        }
+      }
     }
-    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey, sentence, rowSpan, colSpan };
+    // Legacy `icon` field — only used if the new `fallback` field didn't
+    // already set an iconRef or symbolPath.
+    if (iconRef === "fas fa-comment" && !symbolPath && legacyIcon) {
+      if (legacyIcon.startsWith("face:")) {
+        symbolPath = `__FACE__:${legacyIcon.substring(5).trim()}`;
+      } else if (legacyIcon.startsWith("symbol:")) {
+        symbolPath = `__SYMBOL__:${legacyIcon.substring(7).trim()}`;
+      } else {
+        iconRef = legacyIcon;
+      }
+    }
+
+    if (glyph) {
+      const glyphSlots = glyph.split('+').map((s: string) => s.trim()).filter(Boolean);
+      if (glyphSlots.length === 1) {
+        const slotMain: string = glyphSlots[0].split('.')[0].split('(')[0].trim();
+        const isEmoji = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
+        if (slotMain && !isEmoji && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
+          imageKey = slotMain;
+          if (iconRef === "fas fa-comment") {
+            const emojiSwap = resolveEmoji(slotMain);
+            if (emojiSwap) {
+              iconRef = emojiSwap;
+              imageKey = undefined;
+            }
+          }
+        }
+      }
+    } else if (legacyImageKey) {
+      // Legacy: AI emitted `image_key` without a glyph field. Treat it as
+      // a single-concept button — promote to glyph if multi-part.
+      if (legacyImageKey.includes("+")) {
+        const parts = legacyImageKey.split("+").map((s: string) => s.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          // Use this as the glyph below by reassigning to glyph.
+          return assemble({ label, sentence, glyph: parts.join("+"), glyphFallback, iconRef, symbolPath, imageKey: undefined, rowSpan, colSpan });
+        }
+      }
+      imageKey = legacyImageKey;
+      if (iconRef === "fas fa-comment") {
+        const emojiSwap = resolveEmoji(legacyImageKey);
+        if (emojiSwap) {
+          iconRef = emojiSwap;
+          imageKey = undefined;
+        }
+      }
+    }
+
+    return assemble({ label, sentence, glyph, glyphFallback, iconRef, symbolPath, imageKey, rowSpan, colSpan });
   });
+}
+
+/** Small helper to centralize the final button object shape. */
+function assemble(b: {
+  label: string;
+  sentence?: string;
+  glyph?: string;
+  glyphFallback?: string;
+  iconRef: string;
+  symbolPath?: string;
+  imageKey?: string;
+  rowSpan?: number;
+  colSpan?: number;
+}) {
+  return {
+    label: b.label,
+    iconRef: b.iconRef,
+    symbolPath: b.symbolPath,
+    imageKey: b.imageKey,
+    glyph: b.glyph,
+    glyphFallback: b.glyphFallback,
+    sentence: b.sentence,
+    rowSpan: b.rowSpan,
+    colSpan: b.colSpan,
+  };
 }
 
 /**
@@ -134,6 +230,31 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
  * label-derived slug to subsequent duplicates so each routes to its own
  * symbol slot (and triggers fresh symbol generation for the duplicates).
  */
+/**
+ * Walk a glyph string and add any slot keys or payload keys that look
+ * like generation-eligible imageKeys into `into`. A key is eligible only
+ * when it would otherwise render as "❓": NOT a raw emoji, NOT a
+ * `symbol:`/`face:` ref, NOT in the glyph registry with a bundled
+ * image or emoji, and NOT covered by the supplementary emoji registry.
+ */
+function collectGlyphImageKeys(glyph: string, into: Set<string>): void {
+  if (!glyph) return;
+  const parsed = parseGlyph(glyph);
+  const addIfImageKey = (key: string) => {
+    if (!key) return;
+    if (isEmoji(key)) return;
+    if (key.startsWith("symbol:") || key.startsWith("face:")) return;
+    const item = getVocabularyItem(key);
+    if (item?.imagePath || item?.emoji) return;
+    if (resolveEmoji(key)) return;
+    into.add(key);
+  };
+  for (const slot of parsed.slots) {
+    addIfImageKey(slot.key);
+    if (slot.payload) addIfImageKey(slot.payload);
+  }
+}
+
 function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons: T[]): T[] {
   const seen = new Map<string, number>();
   const collisions: string[] = [];
@@ -166,7 +287,10 @@ function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons
  * context injection. Compact and structured so the model can quickly route
  * to the suggest_construction_buttons tool.
  */
-function formatConstructionStateInjection(state: ConstructionStateWire): string {
+function formatConstructionStateInjection(
+  state: ConstructionStateWire,
+  currentBoardLabels: readonly string[] = [],
+): string {
   const filled = state.glyph ? state.glyph : "(empty)";
   const lines: string[] = [
     "[CONSTRUCTION STATE]",
@@ -175,13 +299,30 @@ function formatConstructionStateInjection(state: ConstructionStateWire): string 
     `glyph: ${filled}`,
     `target_slot: ${state.targetSlot ?? "next_empty"}`,
   ];
+  // Surface what was on the dynamic AAC board when the student pivoted to
+  // the sentence builder. Labels are the AI's own button text from the
+  // most recent rebuild_board / add_buttons / loaded board, so they
+  // anchor the construction-state to the live conversation topic and let
+  // the model bias suggestions toward the same theme.
+  if (currentBoardLabels.length > 0) {
+    lines.push(`current_board: [${currentBoardLabels.join(", ")}]`);
+  }
   if (state.excludeKeys.length > 0) {
     lines.push(`exclude_keys: ${state.excludeKeys.join(", ")}`);
+  }
+  if (state.payloadTarget) {
+    lines.push(
+      `payload_target: slot ${state.payloadTarget.slotIndex} (${state.payloadTarget.hostKey}) — needs a filler of type [${state.payloadTarget.accepts.join(", ")}]; suggestions should come from [${state.payloadTarget.suggestCategories.join(", ")}]`
+    );
   }
   lines.push("");
   if (state.requestGuessingMode) {
     lines.push(
       `The student pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what they want to put in the target slot. When you've narrowed enough, call suggest_construction_buttons with the resolved key as the single candidate to populate the slot directly.`
+    );
+  } else if (state.payloadTarget) {
+    lines.push(
+      `The student placed a composable host (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 candidates that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Skip if nothing helpful comes to mind.`
     );
   } else {
     lines.push(
@@ -251,7 +392,8 @@ export type ClientMessage =
   | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot }
   | { type: "context_injection"; text: string }           // inject context without triggering a response
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
-  | { type: "construction_state"; data: ConstructionStateWire };  // sentence construction board state changed — relay formats as context injection
+  | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
+  | { type: "glyph_press"; glyph: string };                       // student played a glyph from the sentence builder — AI must call interpret() to voice it
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -298,6 +440,7 @@ export type ServerMessage =
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
   | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip
+  | { type: "construction_symbol_ready"; data: ConstructionSymbolReadyWire }  // a queued construction-key symbol finished generating — client patches the AI strip by key
   | { type: "construction_memory_chips"; data: ConstructionMemoryChipsWire }  // AI-curated dynamic chips for one tab on the construction board
   | { type: "complete"; data?: any };
 
@@ -315,12 +458,44 @@ export interface ConstructionStateWire {
   excludeKeys: string[];
   /** When true, the student has requested help — AI should enter guessing mode. */
   requestGuessingMode?: boolean;
+  /**
+   * Set when the user has placed a composable host (e.g. `want`) whose
+   * payload is still empty. The AI should suggest fillers for the blank
+   * (typically nouns) instead of candidates for the next sentence slot.
+   */
+  payloadTarget?: {
+    slotIndex: number;
+    hostKey: string;
+    accepts: string[];
+    suggestCategories: Array<"who" | "do" | "what" | "where" | "when">;
+  };
 }
 
 /** AI's suggestion payload — routed back to the construction board's AI strip. */
 export interface ConstructionSuggestionsWire {
   targetSlot: number;
-  candidates: Array<{ key: string; label?: string }>;
+  candidates: Array<{
+    key: string;
+    label?: string;
+    /**
+     * Resolved image URL for AI-generated keys (i.e. keys not in the glyph
+     * registry). When undefined, the client renders the candidate using the
+     * registry's imagePath/emoji (or a placeholder if the key is unknown
+     * and a symbol generation is pending — see construction_symbol_ready).
+     */
+    symbolPath?: string;
+  }>;
+}
+
+/**
+ * Notification that an AI-generated construction key has its symbol image
+ * ready (or freshly generated). The client patches any AI-strip candidate
+ * whose `key` matches `imageKey`. Independent of the per-board `symbol_update`
+ * which is keyed by label and uses internal `__SYMBOL__:id` paths.
+ */
+export interface ConstructionSymbolReadyWire {
+  imageKey: string;
+  symbolPath: string;
 }
 
 /** AI's memory-driven mode chips for one category tab. */
@@ -1207,11 +1382,58 @@ export class LiveRelay {
           }
           break;
 
-        case "construction_state":
+        case "glyph_press": {
+          // Student played a glyph from the sentence builder. Hand the raw
+          // glyph to the AI and ask it to call interpret() with the
+          // natural-language meaning — the AI is the only piece that has
+          // the conversation context + student-interest awareness needed
+          // to turn an approximate glyph like `i_me.my+say(food)` into
+          // "I want to say something about food."
+          //
+          // We deliberately do NOT TTS the glyph string here. The
+          // interpret() tool handler streams student TTS once the AI has
+          // produced its interpretation.
+          const glyphString = msg.glyph?.trim() || "";
+          if (!glyphString) {
+            logLiveSession("GLYPH_PRESS_EMPTY", "ignoring blank glyph_press");
+            break;
+          }
+          if (this.state === "initializing" || this.state === "closed") {
+            logLiveSession("GLYPH_PRESS_DROPPED", `state=${this.state} glyph="${glyphString}"`);
+            break;
+          }
+          if (!this.provider) {
+            logLiveSession("GLYPH_PRESS_DROPPED", `no provider — glyph="${glyphString}"`);
+            break;
+          }
+          // Persist the raw glyph press in the session log so the next
+          // assistant response is anchored to it.
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: `[GLYPH PRESS] ${glyphString}`,
+              timestamp: Date.now(),
+            }).catch(err => console.error("[LiveRelay] Failed to persist glyph press:", err));
+          }
+          const wasIdle = this.state === "idle";
+          this.setState("awaiting_turn");
+          const prompt = `[GLYPH PRESS] ${glyphString}
+The student composed this glyph in the sentence builder and pressed Play. It is YOUR job to put words in their mouth: interpret the glyph (see <glyph_interpretation>) and call the \`interpret\` tool with the natural-language sentence — first-person, as the student would say it. The tool voices that sentence in the student's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
+          logLiveSession("GLYPH_PRESS_IN", `glyph="${glyphString}" wasIdle=${wasIdle}`);
+          this.provider.sendMessage(prompt, "user", true, { interrupt: !wasIdle });
+          break;
+        }
+
+        case "construction_state": {
+          // Pull current dynamic-board labels off the session state so the
+          // injection carries the conversation topic the student just pivoted
+          // away from — see formatConstructionStateInjection.
+          const sessionState = this.sessionCache?.state;
+          const boardLabels = sessionState?.boardButtonLabels ?? [];
           logLiveSession("CONSTRUCTION_STATE_IN",
-            `cat=${msg.data.category} target=${msg.data.targetSlot} glyph="${msg.data.glyph}" exclude=${msg.data.excludeKeys.length} hasProvider=${!!this.provider}`);
+            `cat=${msg.data.category} target=${msg.data.targetSlot} glyph="${msg.data.glyph}" exclude=${msg.data.excludeKeys.length} payload=${msg.data.payloadTarget?.hostKey ?? "-"} boardLabels=${boardLabels.length} hasProvider=${!!this.provider}`);
           if (this.provider) {
-            const text = formatConstructionStateInjection(msg.data);
+            const text = formatConstructionStateInjection(msg.data, boardLabels);
             // Use sendMessage (turnComplete=true) so the model actually
             // responds with a tool call. sendContextInjection uses
             // turnComplete=false, which would inject the state silently
@@ -1222,6 +1444,7 @@ export class LiveRelay {
             logLiveSession("CONSTRUCTION_STATE_DROPPED", "no provider — message ignored");
           }
           break;
+        }
 
         case "client_sleep_state_change":
           this.recordSleepStateChange(msg.state, msg.source);
@@ -1841,8 +2064,80 @@ The user pressed "More" — they can't find the button they need on the current 
       }
 
       case "interpret": {
-        // interpret() is no longer a declared tool — ignore if model hallucates it
-        logLiveSession("IGNORED TOOL CALL", `interpret() — not a declared tool`);
+        // Called in response to a [GLYPH PRESS] turn — the AI has produced
+        // a natural-language interpretation of the student's composed glyph.
+        // Stream student TTS, record the sentence as the student's turn in
+        // the session log, and AWAIT the TTS finish before returning so the
+        // AI's subsequent speak() (typically in the same turn) is sequenced
+        // after the student's voice.
+        const sentence = extractStringArg(args, "sentence")?.trim() || "";
+        if (!sentence) {
+          logLiveSession("INTERPRET_REJECTED", "missing 'sentence' argument");
+          return { id: call.id, name, response: { error: "sentence is required" } };
+        }
+        logLiveSession("INTERPRET", `sentence="${sentence}"`);
+
+        // 1. Show the student's "speech" in the UI immediately.
+        this.send({ type: "interpret", text: sentence, confidence: "high", noAudioClear: false });
+        this.turnAccum.interpretText = sentence;
+        this.turnAccum.interpretConfidence = "high";
+
+        // 2. Record as user turn so the conversation history shows the
+        // student's contribution (the prior [GLYPH PRESS] line stays in
+        // the log as the raw input — they bracket each other).
+        if (this.sessionId) {
+          dualAgentService.addPendingMessage(this.sessionId, {
+            role: "user",
+            content: `[BUTTON PRESS] ${sentence}`,
+            timestamp: Date.now(),
+          }).catch(err => console.error("[LiveRelay] Failed to persist interpret sentence:", err));
+        }
+        if (this.studentId) {
+          recordUtterance({
+            studentId: this.studentId,
+            chatSessionId: this.sessionId,
+            text: sentence,
+            source: "board_press",
+          });
+        }
+
+        // 3. Stream student-voice TTS and AWAIT it. The follow-up speak()
+        // (if any) runs in the next handler step, which the provider only
+        // invokes after this promise resolves — so the student voice
+        // finishes before the AI's voice begins.
+        //
+        // We also pin the same promise to `this.preGenTtsPromise` so
+        // handleTurnComplete's `else if (fullInterpretText && studentVoice)`
+        // branch is bypassed; otherwise the turn-complete handler would
+        // re-synthesize the same sentence and the user would hear the
+        // student voice twice. The existing `preGenTtsPromise` path is the
+        // intended "student TTS already streamed in this turn" channel.
+        if (this.studentVoice) {
+          if (this.studentTtsAbortController) {
+            this.studentTtsAbortController.abort();
+            this.send({ type: "audio_clear_tag", tag: "interpret" });
+          }
+          const controller = new AbortController();
+          this.studentTtsAbortController = controller;
+          const ttsPromise = this.streamTtsWithTimeout(
+            sentence,
+            this.studentVoice,
+            "interpretation_audio",
+            "Student",
+            15_000,
+            controller.signal,
+          );
+          this.preGenTtsPromise = ttsPromise;
+          try {
+            await ttsPromise;
+          } catch (err) {
+            logLiveSession("INTERPRET_TTS_ERROR", (err as Error).message);
+          } finally {
+            if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
+          }
+        } else {
+          logLiveSession("INTERPRET_TTS_SKIPPED", "no studentVoice configured");
+        }
         return { id: call.id, name, response: { output: "ok" } };
       }
 
@@ -1905,6 +2200,10 @@ The user pressed "More" — they can't find the button they need on the current 
 
         const unresolvedKeys = await this.resolveExistingSymbols([btn]);
         this.queueMissingSymbolGeneration([btn], unresolvedKeys);
+        // Per-slot generation for any imageKey-shaped pieces of the
+        // button's glyph (fire-and-forget; results arrive via
+        // construction_symbol_ready WS messages).
+        void this.resolveAndQueueGlyphParts([btn]);
 
         // Track server-side and send to client
         this.contextButtonLabels.push(btn.label);
@@ -1917,6 +2216,7 @@ The user pressed "More" — they can't find the button they need on the current 
           iconRef: btn.iconRef,
           symbolPath: btn.symbolPath,
           imageKey: btn.imageKey,
+          glyph: btn.glyph,
           sentence: btn.sentence,
           buttonType: btn.buttonType,
         }});
@@ -1956,12 +2256,80 @@ The user pressed "More" — they can't find the button they need on the current 
           return { id: call.id, name, response: { error: "No valid candidates provided" } };
         }
 
+        // Resolve symbol paths for AI-generated keys. A candidate gets a
+        // symbolPath if its key has no built-in icon (i.e. not in the glyph
+        // registry, or in the registry but without an imagePath). Keys with
+        // a built-in icon stay unresolved here — the client uses the
+        // registry's imagePath/emoji directly.
+        const enriched: Array<{ key: string; label?: string; symbolPath?: string }> =
+          candidates.map((c) => ({ ...c }));
+        const symbolButtons: Array<{
+          label: string;
+          iconRef: string;
+          imageKey?: string;
+          symbolPath?: string;
+        }> = [];
+        const indexByImageKey = new Map<string, number>();
+        for (let i = 0; i < enriched.length; i++) {
+          const c = enriched[i];
+          const reg = getVocabularyItem(c.key);
+          // Skip keys we can already render without touching the symbol
+          // pipeline: registry items with a bundled icon, registry items
+          // with an inline emoji, raw emoji keys, and EXTRA_EMOJIS hits
+          // (which together cover everything `resolveEmoji` knows about).
+          // Without this filter, common keys like "car", "mom", "happy"
+          // get routed through `resolveImageKeys` → if a stale/broken
+          // custom_symbols row exists for the key, the broken URL is
+          // cached client-side via `construction_symbol_ready` and shows
+          // as a broken image on EVERY subsequent glyph that uses the key.
+          if (reg?.imagePath) continue;
+          if (resolveEmoji(c.key)) continue;
+          symbolButtons.push({
+            label: c.label || c.key,
+            iconRef: reg?.emoji || "",
+            imageKey: c.key,
+          });
+          indexByImageKey.set(c.key, i);
+        }
+
+        const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+        if (symbolButtons.length > 0 && (generateSymbols || useApprovedSymbols || useUnapprovedSymbols)) {
+          const useUnapproved = useUnapprovedSymbols;
+          const unresolved = (useApprovedSymbols || useUnapprovedSymbols)
+            ? await resolveImageKeys(symbolButtons, { symbolPathFormat: "api-path", useUnapproved })
+            : symbolButtons.filter(b => b.imageKey).map(b => b.imageKey!);
+
+          // Copy resolved paths back onto the candidate list.
+          for (const btn of symbolButtons) {
+            if (btn.imageKey && btn.symbolPath) {
+              const idx = indexByImageKey.get(btn.imageKey)!;
+              enriched[idx].symbolPath = btn.symbolPath;
+            }
+          }
+
+          // Queue generation for the rest; push a live update when each lands.
+          if (generateSymbols && unresolved.length > 0) {
+            queueSymbolGeneration(unresolved, (imageKey, symbol) => {
+              logLiveSession("CONSTRUCTION_SYMBOL_READY",
+                `imageKey=${imageKey} symbolId=${symbol.id} wsOpen=${this.ws.readyState === 1}`);
+              this.send({
+                type: "construction_symbol_ready",
+                data: {
+                  imageKey,
+                  symbolPath: `/api/custom-symbols/${symbol.id}/image`,
+                },
+              });
+            });
+          }
+        }
+
         this.send({
           type: "construction_suggestions",
-          data: { targetSlot: slotIndex, candidates },
+          data: { targetSlot: slotIndex, candidates: enriched },
         });
-        logLiveSession("CONSTRUCTION_SUGGEST", `slot=${slotIndex} keys=[${candidates.map(c => c.key).join(", ")}]`);
-        return { id: call.id, name, response: { output: "ok", count: candidates.length } };
+        logLiveSession("CONSTRUCTION_SUGGEST",
+          `slot=${slotIndex} keys=[${enriched.map(c => c.symbolPath ? `${c.key}*` : c.key).join(", ")}]`);
+        return { id: call.id, name, response: { output: "ok", count: enriched.length } };
       }
 
       case "set_construction_memory_chips": {
@@ -2017,6 +2385,11 @@ The user pressed "More" — they can't find the button they need on the current 
         const allButtons = [...mainButtons, ...overflowButtons];
         const unresolvedKeys = await this.resolveExistingSymbols(allButtons);
         this.queueMissingSymbolGeneration(allButtons, unresolvedKeys);
+        // Also resolve / queue every imageKey-shaped slot in each button's
+        // glyph. Per-slot generation results stream back as
+        // construction_symbol_ready WS messages and the renderer swaps
+        // fallback → glyph automatically as each part lands.
+        void this.resolveAndQueueGlyphParts(allButtons);
 
         // Add main buttons to the board
         if (mainButtons.length > 0) {
@@ -2052,6 +2425,7 @@ The user pressed "More" — they can't find the button they need on the current 
             iconRef: btn.iconRef,
             symbolPath: btn.symbolPath,
             imageKey: btn.imageKey,
+            glyph: btn.glyph,
             sentence: btn.sentence,
           }});
         }
@@ -2147,6 +2521,10 @@ The user pressed "More" — they can't find the button they need on the current 
 
         const unresolvedKeys = await this.resolveExistingSymbols(buttons);
         this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
+        // Per-slot generation for every imageKey embedded in a glyph.
+        // Client renders the fallback string until each part resolves;
+        // construction_symbol_ready events drive the live swap.
+        void this.resolveAndQueueGlyphParts(buttons);
 
         // Evict any context-sidebar buttons whose label collides with the new
         // main board — same-label buttons on both sidebars cause ambiguous
@@ -3424,7 +3802,72 @@ The user pressed "More" — they can't find the button they need on the current 
     });
   }
 
-  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
+  /**
+   * For every multi-slot glyph on the supplied buttons, find slot keys
+   * that look like generation-eligible imageKeys (not registry-known,
+   * not emoji-covered, not raw emojis), resolve any that already have
+   * symbols in the DB, and queue generation for the rest. Per-key
+   * resolution is broadcast as `construction_symbol_ready` events; the
+   * client listens for those and re-renders the affected glyphs in
+   * place (see useDisplayGlyph / canResolveGlyph). Fire-and-forget for
+   * the generation queue — the buttons render with their fallback in
+   * the meantime.
+   */
+  private async resolveAndQueueGlyphParts(
+    buttons: Array<{ glyph?: string }>,
+  ): Promise<void> {
+    const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    if (!generateSymbols && !useApprovedSymbols && !useUnapprovedSymbols) return;
+
+    // Aggregate every distinct glyph-part imageKey across the button set.
+    const keys = new Set<string>();
+    for (const btn of buttons) {
+      if (btn.glyph) collectGlyphImageKeys(btn.glyph, keys);
+    }
+    if (keys.size === 0) return;
+
+    logLiveSession("GLYPH_PARTS_COLLECT", `keys=${keys.size} [${Array.from(keys).join(", ")}]`);
+
+    // Look up existing symbols. resolveImageKeys mutates a button-shaped
+    // array, so synthesize one entry per key and copy the result back.
+    const synthesized: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> =
+      Array.from(keys).map(k => ({ label: k, iconRef: "", imageKey: k }));
+    let unresolved: string[];
+    if (useApprovedSymbols || useUnapprovedSymbols) {
+      unresolved = await resolveImageKeys(synthesized, {
+        symbolPathFormat: "api-path",
+        useUnapproved: useUnapprovedSymbols,
+      });
+    } else {
+      // Lookup disabled — every key falls into the generation queue
+      // (subject to generateSymbols below).
+      unresolved = Array.from(keys);
+    }
+
+    // Push immediate resolutions to the client.
+    for (const b of synthesized) {
+      if (b.imageKey && b.symbolPath) {
+        logLiveSession("GLYPH_PART_CACHED", `imageKey=${b.imageKey} symbolPath=${b.symbolPath}`);
+        this.send({
+          type: "construction_symbol_ready",
+          data: { imageKey: b.imageKey, symbolPath: b.symbolPath },
+        });
+      }
+    }
+
+    // Queue generation for the rest, broadcasting each as it arrives.
+    if (generateSymbols && unresolved.length > 0) {
+      queueSymbolGeneration(unresolved, (imageKey, symbol) => {
+        logLiveSession("GLYPH_PART_READY", `imageKey=${imageKey} symbolId=${symbol.id} wsOpen=${this.ws.readyState === 1}`);
+        this.send({
+          type: "construction_symbol_ready",
+          data: { imageKey, symbolPath: `/api/custom-symbols/${symbol.id}/image` },
+        });
+      });
+    }
+  }
+
+  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -3448,6 +3891,8 @@ The user pressed "More" — they can't find the button they need on the current 
           style: {},
           iconRef: b.iconRef,
           symbolPath: b.symbolPath,
+          ...(b.glyph ? { glyph: b.glyph } : {}),
+          ...(b.glyphFallback ? { glyphFallback: b.glyphFallback } : {}),
         })),
       }],
       currentPageId: pageId,

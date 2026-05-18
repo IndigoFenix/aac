@@ -50,6 +50,32 @@ export const customSymbolService = {
   },
 
   /**
+   * Replace the image bytes of an existing symbol. Resizes to 256x256 PNG
+   * and overwrites the object at the existing s3Key, then bumps updatedAt.
+   * Returns the updated symbol row, or undefined if the symbol is missing.
+   *
+   * The s3Key is intentionally reused so cached references on associations
+   * stay valid; cache invalidation is the caller's job (clients should
+   * append ?v=<updatedAt> when fetching the image).
+   */
+  async replaceSymbolImage(symbolId: string, imageBuffer: Buffer): Promise<CustomSymbol | undefined> {
+    const symbol = await customSymbolRepository.getSymbol(symbolId);
+    if (!symbol) return undefined;
+
+    const processed = await sharp(imageBuffer)
+      .resize(256, 256, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
+      .png()
+      .toBuffer();
+
+    await s3Service.upload(symbol.s3Key, processed, "image/png");
+
+    return customSymbolRepository.updateSymbol(symbolId, {
+      width: 256,
+      height: 256,
+    });
+  },
+
+  /**
    * Delete a symbol if it has no associations remaining and is not public.
    */
   async deleteSymbolIfOrphaned(symbolId: string): Promise<boolean> {

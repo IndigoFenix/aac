@@ -1272,6 +1272,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/custom-symbols/bulk-delete-unapproved", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.bulkDeleteUnapproved(req, res)
   );
+  app.post("/api/custom-symbols/generate-and-create", requireAdminSection("public-symbols"), (req, res) =>
+    customSymbolController.generateAndCreateSymbol(req, res)
+  );
 
   // Symbol CRUD (parameterized routes last)
   app.post("/api/custom-symbols", requireAuth, upload.single("image"), (req, res) =>
@@ -1285,6 +1288,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.patch("/api/custom-symbols/:id", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.updateSymbol(req, res)
+  );
+  app.put("/api/custom-symbols/:id/image", requireAdminSection("public-symbols"), upload.single("image"), (req, res) =>
+    customSymbolController.replaceSymbolImage(req, res)
+  );
+  app.post("/api/custom-symbols/:id/regenerate", requireAdminSection("public-symbols"), (req, res) =>
+    customSymbolController.regenerateSymbol(req, res)
   );
   app.delete("/api/custom-symbols/:id", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.deleteSymbol(req, res)

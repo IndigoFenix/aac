@@ -44,7 +44,25 @@ export type ModifierTransform =
   | "glow"         // emphasis glow lines (very)
   | "shrink"       // smaller render (little)
   | "halo_warm"    // warm halo (hot)
-  | "halo_cool";   // cool halo (cold)
+  | "halo_cool"    // cool halo (cold)
+  | "dimension"    // arrow decorations + image warp (big/small/long/short/tall/wide/thin)
+  | "color";       // colored frame around slot rim — color name lives in modifier.colorValue
+
+/**
+ * Dimension-modifier shapes. Each pattern drives both an arrow-decoration
+ * layout drawn around the slot AND a [x, y] scale that warps the host
+ * image to visually match the adjective (big → enlarged, thin → narrower
+ * etc.). The compositor switches on `pattern` to draw the right arrows.
+ */
+export type DimensionPattern =
+  | "big"            // 4 corner arrows pointing outward; image scaled up
+  | "small"          // 4 corner arrows pointing inward; image scaled down
+  | "length_long"    // double-headed arrow below; image stretched horizontally
+  | "length_short"   // two inward arrows below; image compressed horizontally
+  | "tall_high"      // single side arrow pointing up; image stretched vertically
+  | "short_low"      // single side half-arrow pointing down; image compressed vertically
+  | "wide"           // two side arrows pointing outward; image stretched horizontally
+  | "thin";          // two side arrows pointing inward; image compressed horizontally
 
 export interface ModifierFacet {
   /** Coarse types this modifier can apply to. */
@@ -53,6 +71,34 @@ export interface ModifierFacet {
   transform: ModifierTransform;
   /** Sort hint within the modifier carousel; lower = leftmost. */
   order: number;
+  /**
+   * Anchor corner for badge-style modifiers. Defaults to "top-left". RTL
+   * flips the horizontal side automatically (top-left → top-right, etc.),
+   * so authors should always specify the LTR position here.
+   */
+  corner?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  /**
+   * Required when `transform === "dimension"` — picks the arrow layout
+   * and image-warp scale. The compositor reads this to draw arrows
+   * around the slot AND to scale the host symbol so it visually matches
+   * the adjective (big stretches outward, thin compresses horizontally,
+   * etc.). See DimensionPattern.
+   */
+  dimension?: DimensionPattern;
+  /**
+   * Required when `transform === "color"` — CSS color string (hex
+   * preferred) that the compositor uses for the colored frame around
+   * the slot. e.g. "#DC2626" for color_red.
+   */
+  colorValue?: string;
+  /**
+   * When true, this modifier is hidden from the generic modifier
+   * carousel — the construction board surfaces it through a dedicated
+   * UI affordance instead (currently used by the color picker). The AI
+   * can still emit the key directly; only the carousel listing is
+   * suppressed.
+   */
+  hiddenFromCarousel?: boolean;
 }
 
 export interface DimensionValueFacet {
@@ -60,6 +106,28 @@ export interface DimensionValueFacet {
   dimension: string;
   /** Value within that dimension (e.g. "big" → values include "big"|"small"). */
   value: string;
+}
+
+/**
+ * Composable facet — this item is a "host" with an embedded payload slot.
+ * Renders as the host image with a payload image overlaid on top (e.g.
+ * `want(apple)` → the want-hands image with an apple centered inside it).
+ *
+ * Composable items signal the AI strip to suggest fillers for the payload
+ * rather than candidates for the next sentence slot. Open-ended: any item
+ * can be made composable by adding this facet.
+ */
+export interface ComposableFacet {
+  /** Coarse part-of-speech types accepted as the embedded payload. */
+  accepts: GlyphPos[];
+  /**
+   * Categories the AI should bias suggestions toward when proposing
+   * fillers (e.g. a "want" host suggests WHAT items). The construction
+   * board can also use this to pivot its grid focus.
+   */
+  suggestCategories: GlyphCategory[];
+  /** Where the payload renders relative to the host glyph. Defaults to "center". */
+  position?: "center" | "upper";
 }
 
 export interface VocabularyItem {
@@ -85,6 +153,8 @@ export interface VocabularyItem {
   modifier?: ModifierFacet;
   /** When present, this item is also a value in a guessing-mode dimension. */
   dimensionValue?: DimensionValueFacet;
+  /** When present, this item is a host with an embedded payload slot. */
+  composable?: ComposableFacet;
 }
 
 /** Top-level dimension definition for guessing mode. */
@@ -140,16 +210,32 @@ const VOCAB: VocabularyItem[] = [
   // ── DO ───────────────────────────────────────────────────────────────────
   { key: "want", tKey: "aac.glyph.want", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "request",
-    imagePath: "actions/hands/want", emoji: "🤲" },
+    imagePath: "actions/hands/want", emoji: "🤲",
+    composable: { accepts: ["noun", "animal", "person", "place"], suggestCategories: ["what", "who"] } },
   { key: "give", tKey: "aac.glyph.give", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "request",
-    imagePath: "actions/hands/give", emoji: "🫴" },
+    imagePath: "actions/hands/give", emoji: "🫴",
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
   { key: "take", tKey: "aac.glyph.take", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "request",
-    imagePath: "actions/hands/take", emoji: "🫳" },
+    imagePath: "actions/hands/take", emoji: "🫳",
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  { key: "receive", tKey: "aac.glyph.receive", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "comment",
+    imagePath: "actions/hands/receive", emoji: "🙌",
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
   { key: "have", tKey: "aac.glyph.have", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment",
-    imagePath: "actions/hands/hold", emoji: "✊" },
+    imagePath: "actions/hands/hold", emoji: "✊",
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  { key: "make", tKey: "aac.glyph.make", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "request",
+    imagePath: "actions/hands/make", emoji: "🔨",
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  { key: "use", tKey: "aac.glyph.use", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "comment",
+    imagePath: "actions/hands/use", emoji: "🛠️",
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
   { key: "like", tKey: "aac.glyph.like", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "mental"] }, tone: "feeling", emoji: "❤️" },
   { key: "see", tKey: "aac.glyph.see", pos: "verb", categories: ["do"],
@@ -167,7 +253,13 @@ const VOCAB: VocabularyItem[] = [
   { key: "help", tKey: "aac.glyph.help", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "social"] }, tone: "request", emoji: "🆘" },
   { key: "say", tKey: "aac.glyph.say", pos: "verb", categories: ["do"],
-    modeChips: { do: ["social"] }, tone: "social", emoji: "💬" },
+    modeChips: { do: ["social", "mental"] }, tone: "social", emoji: "💬",
+    composable: { accepts: ["noun", "animal", "person", "place", "feeling"],
+                  suggestCategories: ["what", "who"], position: "upper" } },
+  { key: "think", tKey: "aac.glyph.think", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "mental"] }, tone: "comment", emoji: "💭",
+    composable: { accepts: ["noun", "animal", "person", "place", "feeling"],
+                  suggestCategories: ["what", "who"], position: "upper" } },
   { key: "stop", tKey: "aac.glyph.stop", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "request", emoji: "🛑" },
 
@@ -212,6 +304,11 @@ const VOCAB: VocabularyItem[] = [
   { key: "there", tKey: "aac.glyph.there", pos: "place", categories: ["where"],
     modeChips: { where: ["spatial"] }, tone: "comment", emoji: "🎯" },
 
+  // ── Indicators (deictic pointers — cross-listed under WHO and WHAT) ──────
+  { key: "that", tKey: "aac.glyph.that", pos: "noun", categories: ["who", "what"],
+    modeChips: { who: ["all"], what: ["all", "things"] }, tone: "comment",
+    imagePath: "indicators/that", emoji: "👉" },
+
   // ── WHEN ─────────────────────────────────────────────────────────────────
   { key: "now", tKey: "aac.glyph.now", pos: "time", categories: ["when"],
     modeChips: { when: ["quick"] }, tone: "comment", emoji: "⏱️" },
@@ -234,21 +331,26 @@ const VOCAB: VocabularyItem[] = [
   // Quantity dots
   { key: "one", tKey: "aac.glyph.one", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "1️⃣",
-    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 10 } },
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 30 } },
   { key: "two", tKey: "aac.glyph.two", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "2️⃣",
-    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 11 } },
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 31 } },
   { key: "many", tKey: "aac.glyph.many", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "🔢",
-    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 12 } },
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 32 } },
 
-  // Possession
+  // Possession — reuse the inward-/outward-hand artwork from the take/give
+  // verbs so the directional meaning carries through. `my` (toward speaker)
+  // anchors top-left; `your` (toward addressee) anchors bottom-left. RTL
+  // mirrors the corner side and the image itself.
   { key: "my", tKey: "aac.glyph.my", pos: "modifier", categories: [],
-    modeChips: {}, tone: "comment", emoji: "🫳",
-    modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 1 } },
+    modeChips: {}, tone: "comment",
+    imagePath: "actions/hands/take", emoji: "🫳",
+    modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 1, corner: "top-left" } },
   { key: "your", tKey: "aac.glyph.your", pos: "modifier", categories: [],
-    modeChips: {}, tone: "comment", emoji: "🫴",
-    modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 2 } },
+    modeChips: {}, tone: "comment",
+    imagePath: "actions/hands/give", emoji: "🫴",
+    modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 2, corner: "bottom-left" } },
 
   // Negation
   { key: "not", tKey: "aac.glyph.not", pos: "modifier", categories: [],
@@ -266,23 +368,93 @@ const VOCAB: VocabularyItem[] = [
     modifier: { appliesTo: ["verb", "feeling", "modifier"], transform: "shrink", order: 4 },
     dimensionValue: { dimension: "intensity", value: "little" } },
 
-  // Size (vocabulary in WHAT, modifier on nouns, dimension value for size)
+  // Dimension adjectives — vocabulary in WHAT, modifier on nouns. When
+  // applied as a modifier the compositor draws arrow decorations around
+  // the slot AND warps the host image to match the adjective. Bundled
+  // icons under attached_assets/aac-icons/adjectives/dimension/ render
+  // when the key is staged as a standalone slot. See DimensionPattern.
   { key: "big", tKey: "aac.glyph.big", pos: "modifier", categories: ["what"],
-    modeChips: { what: ["all"] }, tone: "comment", emoji: "📏",
-    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 5 },
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/big", emoji: "📏",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 5, dimension: "big" },
     dimensionValue: { dimension: "size", value: "big" } },
   { key: "small", tKey: "aac.glyph.small", pos: "modifier", categories: ["what"],
-    modeChips: { what: ["all"] }, tone: "comment", emoji: "🐭",
-    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 6 },
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/small", emoji: "🐭",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 6, dimension: "small" },
     dimensionValue: { dimension: "size", value: "small" } },
+  { key: "length_long", tKey: "aac.glyph.length_long", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/long", emoji: "↔️",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 7, dimension: "length_long" } },
+  { key: "length_short", tKey: "aac.glyph.length_short", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/short", emoji: "🩳",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 8, dimension: "length_short" } },
+  { key: "tall_high", tKey: "aac.glyph.tall_high", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/tall_high", emoji: "⬆️",
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dimension", order: 9, dimension: "tall_high" } },
+  { key: "short_low", tKey: "aac.glyph.short_low", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/short_low", emoji: "⬇️",
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "dimension", order: 10, dimension: "short_low" } },
+  { key: "wide", tKey: "aac.glyph.wide", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/wide", emoji: "↔️",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 11, dimension: "wide" } },
+  { key: "thin", tKey: "aac.glyph.thin", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment",
+    imagePath: "adjectives/dimension/thin", emoji: "📏",
+    modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 12, dimension: "thin" } },
 
   // Temperature
   { key: "hot", tKey: "aac.glyph.hot", pos: "modifier", categories: ["what"],
     modeChips: { what: ["all"] }, tone: "comment", emoji: "🔥",
-    modifier: { appliesTo: ["noun"], transform: "halo_warm", order: 7 } },
+    modifier: { appliesTo: ["noun"], transform: "halo_warm", order: 20 } },
   { key: "cold", tKey: "aac.glyph.cold", pos: "modifier", categories: ["what"],
     modeChips: { what: ["all"] }, tone: "comment", emoji: "❄️",
-    modifier: { appliesTo: ["noun"], transform: "halo_cool", order: 8 } },
+    modifier: { appliesTo: ["noun"], transform: "halo_cool", order: 21 } },
+
+  // ── Color modifiers ────────────────────────────────────────────────────
+  // The compositor renders a colored frame around the slot rim when one of
+  // these is applied. They're hidden from the modifier carousel — the
+  // construction board exposes them via a dedicated color-picker popup —
+  // but the AI may emit any of these keys directly. Standalone (used as
+  // a slot rather than a modifier) they appear as a colored square emoji.
+  { key: "color_red", tKey: "aac.glyph.color_red", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟥",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 50, colorValue: "#DC2626", hiddenFromCarousel: true } },
+  { key: "color_orange", tKey: "aac.glyph.color_orange", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟧",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 51, colorValue: "#EA580C", hiddenFromCarousel: true } },
+  { key: "color_yellow", tKey: "aac.glyph.color_yellow", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟨",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 52, colorValue: "#FACC15", hiddenFromCarousel: true } },
+  { key: "color_green", tKey: "aac.glyph.color_green", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟩",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 53, colorValue: "#16A34A", hiddenFromCarousel: true } },
+  { key: "color_blue", tKey: "aac.glyph.color_blue", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟦",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 54, colorValue: "#2563EB", hiddenFromCarousel: true } },
+  { key: "color_purple", tKey: "aac.glyph.color_purple", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟪",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 55, colorValue: "#9333EA", hiddenFromCarousel: true } },
+  { key: "color_pink", tKey: "aac.glyph.color_pink", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🩷",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 56, colorValue: "#EC4899", hiddenFromCarousel: true } },
+  { key: "color_brown", tKey: "aac.glyph.color_brown", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🟫",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 57, colorValue: "#92400E", hiddenFromCarousel: true } },
+  { key: "color_black", tKey: "aac.glyph.color_black", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬛",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 58, colorValue: "#111827", hiddenFromCarousel: true } },
+  { key: "color_white", tKey: "aac.glyph.color_white", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬜",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 59, colorValue: "#F3F4F6", hiddenFromCarousel: true } },
+  { key: "color_gray", tKey: "aac.glyph.color_gray", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "◻️",
+    modifier: { appliesTo: ["noun", "animal"], transform: "color", order: 60, colorValue: "#6B7280", hiddenFromCarousel: true } },
 
   // Social
   { key: "please", tKey: "aac.glyph.please", pos: "modifier", categories: ["do"],
@@ -347,8 +519,29 @@ export function listByModeChip(
 
 /** Modifiers that can apply to an item of the given part-of-speech. */
 export function modifiersFor(pos: GlyphPos): VocabularyItem[] {
-  return VOCAB.filter((v) => !!v.modifier && v.modifier.appliesTo.includes(pos))
-    .sort((a, b) => (a.modifier!.order - b.modifier!.order));
+  return VOCAB.filter((v) =>
+    !!v.modifier
+    && v.modifier.appliesTo.includes(pos)
+    && !v.modifier.hiddenFromCarousel
+  ).sort((a, b) => (a.modifier!.order - b.modifier!.order));
+}
+
+/**
+ * Color modifiers applicable to the given pos. Exposed separately
+ * because the construction board surfaces them through a dedicated
+ * color-picker popup rather than the regular modifier carousel — the
+ * carousel filters them out via `hiddenFromCarousel`.
+ */
+export function colorModifiersFor(pos: GlyphPos): VocabularyItem[] {
+  return VOCAB.filter((v) =>
+    v.modifier?.transform === "color"
+    && v.modifier.appliesTo.includes(pos)
+  ).sort((a, b) => (a.modifier!.order - b.modifier!.order));
+}
+
+/** True when the host can accept an item with the given part-of-speech as its payload. */
+export function canAcceptPayload(host: VocabularyItem, payloadPos: GlyphPos): boolean {
+  return !!host.composable && host.composable.accepts.includes(payloadPos);
 }
 
 export function listDimensions(category: GlyphCategory): GlyphDimension[] {

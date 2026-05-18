@@ -46,7 +46,7 @@ function GameList({ games, onSelect }: { games: GameEntry[]; onSelect: (id: stri
         <p className="mt-2 text-slate-400">Pick a game to play.</p>
       </header>
       <ul className="mx-auto max-w-5xl grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        {games.map(g => (
+        {games.filter(g => !g.hidden).map(g => (
           <li key={g.id}>
             <button
               type="button"

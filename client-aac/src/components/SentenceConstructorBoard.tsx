@@ -20,11 +20,13 @@ import {
   getVocabularyItem,
   listByModeChip,
   modifiersFor,
+  colorModifiersFor,
   MODE_CHIPS,
   defaultModeChip,
 } from "@shared/glyph-registry";
 import {
   EMPTY_GLYPH,
+  MAX_SLOTS,
   pushSlot,
   replaceSlot,
   clearSlot,
@@ -32,11 +34,13 @@ import {
   removeModifier,
   resolveActiveSlot,
   serializeGlyph,
+  setPayload,
   setToneTags,
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
+import { resolveEmoji } from "@shared/emoji-registry";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import type {
@@ -48,8 +52,25 @@ import type {
 /** Compute the slot we want the AI to suggest for. */
 function computeTargetSlot(glyph: ParsedGlyph, activeSlot: number | null): number {
   if (activeSlot != null) return activeSlot;
-  if (glyph.slots.length < 3) return glyph.slots.length; // next empty
-  return 2; // all filled → default to slot 3 (re-suggest)
+  // No upper clamp — slots can grow up to MAX_SLOTS. We always target
+  // the next empty position; if it's at the cap, the last slot is the
+  // target for re-suggestion.
+  return Math.min(glyph.slots.length, MAX_SLOTS - 1);
+}
+
+/**
+ * Find a slot that is a composable host with no payload yet. Returns the
+ * slot index, or null. When set, item presses route into the payload
+ * rather than pushing a new slot.
+ */
+function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
+  // Walk from most-recent to oldest — the freshly-placed host is usually last.
+  for (let i = glyph.slots.length - 1; i >= 0; i--) {
+    const slot = glyph.slots[i];
+    const item = getVocabularyItem(slot.key);
+    if (item?.composable && !slot.payload) return i;
+  }
+  return null;
 }
 
 const TABS: readonly GlyphCategory[] = ["who", "do", "what", "where", "when"] as const;
@@ -60,6 +81,47 @@ const TAB_ICON: Record<GlyphCategory, string> = {
   what: "📦",
   where: "📍",
   when: "🕐",
+};
+
+/**
+ * Emoji for each static mode-chip key. Memory chips render ✨ via the
+ * `chip.memory` branch in the sidebar — they're AI-generated and don't have
+ * a stable key to map. Keys that appear in multiple categories ("all",
+ * "people", "places") share one icon.
+ */
+const CHIP_ICON: Record<string, string> = {
+  // who
+  all: "🔠",
+  people: "👥",
+  animals: "🐾",
+  photos: "📷",
+  // do
+  common: "⭐",
+  hands: "🤲",
+  sensory: "👁️",
+  body: "🧍",
+  social: "💬",
+  mental: "💭",
+  relation: "🔁",
+  // what
+  food: "🍎",
+  drink: "🥤",
+  toys: "🧸",
+  clothes: "👕",
+  things: "📦",
+  places: "🏠",
+  body_parts: "🖐️",
+  ideas: "💡",
+  // where
+  rooms: "🚪",
+  spatial: "📍",
+  // when
+  quick: "⚡",
+  days: "📅",
+  "time-of-day": "🌅",
+  clock: "🕐",
+  routine: "🔁",
+  frequency: "📊",
 };
 
 export interface SentenceConstructorBoardProps {
@@ -120,6 +182,19 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const [chipPage, setChipPage] = useState(0);
   const CHIPS_PER_PAGE = 7;
 
+  // Main grid pagination. The grid is a fixed 9×2 = 18 cells — wider
+  // than tall per cell, since each button's label sits BELOW a square
+  // image (the image dominates the visual identity; the cell can afford
+  // to be narrower because the label is just a one-line hint). When the
+  // mode-chip has 18 or fewer items we show them all; when there's
+  // overflow we show 17 items plus a More button (which cycles the page).
+  // The cap matches the grid-template — without it the button overflows
+  // onto an implicit 3rd row and the browser compresses the declared
+  // rows to make space.
+  const [gridPage, setGridPage] = useState(0);
+  const GRID_CELLS = 18;
+  const GRID_ITEMS_WITH_MORE = GRID_CELLS - 1;
+
   // Merge tone toggle state into the glyph as tone tags. The compositor and
   // the play action both read from the displayed glyph.
   const displayedGlyph = useMemo(() => {
@@ -137,10 +212,20 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [displayedGlyph, activeSlot]
   );
 
-  const gridItems = useMemo(
-    () => listByModeChip(activeTab, modeChip).slice(0, 18),
+  const allGridItems = useMemo(
+    () => listByModeChip(activeTab, modeChip),
     [activeTab, modeChip]
   );
+  const gridNeedsMore = allGridItems.length > GRID_CELLS;
+  const gridItemsPerPage = gridNeedsMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
+  const gridItems = useMemo(() => {
+    if (!gridNeedsMore) return allGridItems.slice(0, GRID_CELLS);
+    // Wrap-around slice so each page shows a full set; if the user keeps
+    // tapping More we cycle through everything and eventually loop.
+    const start = (gridPage * gridItemsPerPage) % allGridItems.length;
+    const wrapped = [...allGridItems.slice(start), ...allGridItems.slice(0, start)];
+    return wrapped.slice(0, gridItemsPerPage);
+  }, [allGridItems, gridPage, gridNeedsMore, gridItemsPerPage]);
 
   // All applicable modifiers for the active slot (full list, before pagination).
   const allModifiers = useMemo(() => {
@@ -167,6 +252,35 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return new Set(slot?.modifiers ?? []);
   }, [displayedGlyph, effectiveActiveSlot]);
 
+  // Color modifiers applicable to the active slot. Exposed via a dedicated
+  // color-picker popup rather than the main carousel — see colorPickerOpen
+  // and the swatch row rendered below the modifier zone.
+  const colorOptions = useMemo<VocabularyItem[]>(() => {
+    if (effectiveActiveSlot == null) return [];
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    if (!item) return [];
+    return colorModifiersFor(item.pos);
+  }, [displayedGlyph, effectiveActiveSlot]);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  // Auto-close the color picker when the active slot changes or when no
+  // colors apply to the current pos.
+  useEffect(() => {
+    if (colorOptions.length === 0) setColorPickerOpen(false);
+  }, [colorOptions]);
+  // Active color modifier on the slot (so the picker can highlight it and
+  // tapping it again clears the color).
+  const activeColorKey = useMemo(() => {
+    if (effectiveActiveSlot == null) return null;
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    if (!slot) return null;
+    for (const modKey of slot.modifiers) {
+      const mod = getVocabularyItem(modKey);
+      if (mod?.modifier?.transform === "color") return modKey;
+    }
+    return null;
+  }, [displayedGlyph, effectiveActiveSlot]);
+
   const handleTabSelect = useCallback((tab: GlyphCategory) => {
     setActiveTab(tab);
     setModeChip(defaultModeChip(tab));
@@ -185,12 +299,31 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const handleGridPress = useCallback(
     (item: VocabularyItem) => {
       setGlyph((g) => {
+        // Explicit slot selection: replace that slot. Filling a composable
+        // host this way leaves its payload empty for the next press.
         if (activeSlot != null && activeSlot < g.slots.length) {
           return replaceSlot(g, activeSlot, item.key);
+        }
+        // No explicit selection: if a composable host is waiting for its
+        // payload AND the picked item is an acceptable type, fill the
+        // payload instead of pushing a new slot.
+        const pending = findPendingPayloadSlot(g);
+        if (pending != null) {
+          const host = getVocabularyItem(g.slots[pending].key);
+          if (host?.composable?.accepts.includes(item.pos)) {
+            return setPayload(g, pending, item.key);
+          }
         }
         return pushSlot(g, item.key);
       });
       setActiveSlot(null);
+      // If we just placed a composable host with no payload, hop to the
+      // first suggestCategory so the grid surfaces relevant fillers.
+      if (item.composable && item.composable.suggestCategories.length > 0) {
+        const nextTab = item.composable.suggestCategories[0];
+        setActiveTab(nextTab);
+        setModeChip(defaultModeChip(nextTab));
+      }
     },
     [activeSlot]
   );
@@ -250,14 +383,30 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       return;
     }
     setAiThinking(true);
+    // If a composable host has an empty payload, the AI should suggest
+    // fillers for the *blank inside the host*, not the next sentence slot.
+    const pendingPayload = findPendingPayloadSlot(glyph);
+    let payloadTarget: ConstructionStateClient["payloadTarget"];
+    if (pendingPayload != null) {
+      const host = getVocabularyItem(glyph.slots[pendingPayload].key);
+      if (host?.composable) {
+        payloadTarget = {
+          slotIndex: pendingPayload,
+          hostKey: host.key,
+          accepts: host.composable.accepts,
+          suggestCategories: host.composable.suggestCategories,
+        };
+      }
+    }
     sendConstructionState({
       category: activeTab,
       modeChip,
       glyph: serializeGlyph(glyph),
       activeSlot,
-      targetSlot: computeTargetSlot(glyph, activeSlot),
+      targetSlot: payloadTarget ? payloadTarget.slotIndex : computeTargetSlot(glyph, activeSlot),
       excludeKeys,
       requestGuessingMode: pendingHelpRequest || undefined,
+      payloadTarget,
     });
     if (pendingHelpRequest) setPendingHelpRequest(false);
     // Effect intentionally does NOT depend on tone toggles (sentence-level,
@@ -304,6 +453,12 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setChipPage(0);
   }, [activeTab]);
 
+  // Reset grid pagination when the tab or mode-chip changes (different
+  // vocabulary list).
+  useEffect(() => {
+    setGridPage(0);
+  }, [activeTab, modeChip]);
+
   // Build the combined static + memory chip list for the active tab.
   const allChips = useMemo(() => {
     const memChips = constructionMemoryChips?.[activeTab]?.chips ?? [];
@@ -342,6 +497,40 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setModifierPage((p) => p + 1);
   }, []);
 
+  /**
+   * Apply (or toggle) a color modifier on the active slot. Colors are
+   * mutually exclusive — picking a new color replaces any existing one
+   * first, so the slot's frame can only be one color at a time.
+   */
+  const handleColorPick = useCallback(
+    (colorItem: VocabularyItem) => {
+      if (effectiveActiveSlot == null) return;
+      setGlyph((g) => {
+        let next = g;
+        const slot = next.slots[effectiveActiveSlot];
+        if (!slot) return g;
+        // Strip any existing color modifier first (mutual exclusion).
+        for (const modKey of slot.modifiers) {
+          if (modKey === colorItem.key) continue;
+          const mod = getVocabularyItem(modKey);
+          if (mod?.modifier?.transform === "color") {
+            next = removeModifier(next, effectiveActiveSlot, modKey);
+          }
+        }
+        // Toggle: tapping the active color again removes it; otherwise add.
+        const refreshedSlot = next.slots[effectiveActiveSlot];
+        if (refreshedSlot.modifiers.includes(colorItem.key)) {
+          next = removeModifier(next, effectiveActiveSlot, colorItem.key);
+        } else {
+          next = addModifier(next, effectiveActiveSlot, colorItem.key);
+        }
+        return next;
+      });
+      setColorPickerOpen(false);
+    },
+    [effectiveActiveSlot]
+  );
+
   // "More" press: hide the current candidates, exclude them next round.
   // After MORE_ESCALATION_THRESHOLD presses without a selection, escalate to
   // guessing mode by flagging the next state injection.
@@ -361,8 +550,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     });
   }, [aiCandidates]);
 
-  // AI-strip press: routes through handleGridPress so it behaves like a grid
-  // tap — fills the next-empty slot or replaces the selected slot.
+  // AI-strip press: routes through the same fill/replace logic as the grid
+  // — selected slot → replace; pending payload host → fill payload;
+  // otherwise → push new slot.
   const handleAiCandidatePress = useCallback(
     (candidate: { key: string; label?: string }) => {
       const item = getVocabularyItem(candidate.key);
@@ -374,11 +564,19 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         modeChips: {},
         tone: "comment",
       };
-      // Reuse the grid handler's fill/replace logic. The function expects
-      // a VocabularyItem-shaped object but only reads `.key` from it.
       setGlyph((g) => {
         if (activeSlot != null && activeSlot < g.slots.length) {
           return replaceSlot(g, activeSlot, synthesized.key);
+        }
+        const pending = findPendingPayloadSlot(g);
+        if (pending != null) {
+          // AI-generated keys (unknown to the registry) are assumed
+          // noun-like and acceptable — composable hosts that accept "noun"
+          // will take them.
+          const host = getVocabularyItem(g.slots[pending].key);
+          if (host?.composable?.accepts.includes(synthesized.pos)) {
+            return setPayload(g, pending, synthesized.key);
+          }
         }
         return pushSlot(g, synthesized.key);
       });
@@ -443,6 +641,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             : chip.memory
               ? "bg-purple-50/60 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-100"
               : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600";
+          const icon = chip.memory ? "✨" : CHIP_ICON[chip.key];
           return (
             <motion.button
               key={chip.key}
@@ -450,12 +649,16 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => setModeChip(chip.key)}
               whileTap={{ scale: 0.95 }}
               className={[
-                "rounded-xl border-2 text-xs font-medium py-2 px-2 flex items-center justify-center gap-1 truncate",
+                "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
                 baseStyle,
               ].join(" ")}
             >
-              {chip.memory && <span aria-hidden>✨</span>}
-              <span className="truncate">{chip.label}</span>
+              {icon && (
+                <span className="text-2xl leading-none" aria-hidden>
+                  {icon}
+                </span>
+              )}
+              <span className="truncate w-full text-center">{chip.label}</span>
             </motion.button>
           );
         })}
@@ -543,8 +746,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           )}
         </div>
 
-        {/* Modifier zone — only rendered when there are applicable modifiers */}
-        {modifierItems.length > 0 && (
+        {/* Modifier zone — only rendered when there are applicable modifiers OR colors. */}
+        {(modifierItems.length > 0 || colorOptions.length > 0) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
             {modifierItems.map((m) => (
               <ModifierButton
@@ -557,11 +760,45 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             {allModifiers.length > MODIFIERS_PER_PAGE && (
               <MoreButton onPress={handleModifierMore} testId="modifier-more" />
             )}
+            {colorOptions.length > 0 && (
+              <ColorPickerButton
+                active={colorPickerOpen}
+                activeColorValue={
+                  activeColorKey
+                    ? getVocabularyItem(activeColorKey)?.modifier?.colorValue
+                    : undefined
+                }
+                onPress={() => setColorPickerOpen((o) => !o)}
+              />
+            )}
           </div>
         )}
 
-        {/* AI strip */}
-        <div className="flex items-stretch gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        {/* Color picker row — shown only when the picker button is toggled
+            on. Renders the swatches inline so we don't have to manage
+            popover positioning; tapping the picker button again or a
+            swatch closes the row. */}
+        {colorPickerOpen && colorOptions.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="color-picker"
+          >
+            {colorOptions.map((c) => (
+              <ColorSwatchButton
+                key={c.key}
+                item={c}
+                active={activeColorKey === c.key}
+                onPress={() => handleColorPick(c)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* AI strip — fixed height. Without this, an <img> with a large intrinsic
+            size grows the button (and the strip) past its intended ~110px, squeezing
+            the grid below. The percentage max-h on the img inside requires a
+            definite parent height to resolve. */}
+        <div className="flex items-stretch gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-[110px]">
           <span className="self-center text-xl select-none" aria-hidden>
             ✨
           </span>
@@ -590,8 +827,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           <div
             className="grid gap-2 w-full h-full"
             style={{
-              gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-              gridTemplateRows: "repeat(3, minmax(0, 1fr))",
+              gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
+              gridTemplateRows: "repeat(2, minmax(0, 1fr))",
             }}
           >
             {gridItems.map((item) => (
@@ -601,8 +838,17 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onPress={() => handleGridPress(item)}
               />
             ))}
-            {/* Trailing "more" button in fixed grid position */}
-            <MoreButton onPress={() => {/* task #5 */}} testId="grid-more" />
+            {/* Trailing More button — only rendered when the current
+                mode-chip has more items than fit in one page. It occupies
+                the last cell (cell 18 of the 6×3 grid); without the
+                conditional it would always push the grid onto an implicit
+                4th row and compress the visible buttons. */}
+            {gridNeedsMore && (
+              <MoreButton
+                onPress={() => setGridPage((p) => p + 1)}
+                testId="grid-more"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -736,6 +982,102 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
   );
 }
 
+/**
+ * Entry button for the color picker — same footprint as ModifierButton so
+ * it slots into the modifier zone without disrupting the row's geometry.
+ * Shows a colored paint-drop emoji when no color is active; switches to
+ * the currently-active color swatch when one is.
+ */
+function ColorPickerButton(props: {
+  active: boolean;
+  activeColorValue?: string;
+  onPress: () => void;
+}) {
+  return (
+    <motion.button
+      data-dwell
+      data-testid="color-picker-toggle"
+      onClick={props.onPress}
+      aria-pressed={props.active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
+        props.active
+          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      aria-label="Color"
+      title="Color"
+    >
+      {props.activeColorValue ? (
+        <span
+          className="w-8 h-8 rounded-full border border-gray-300"
+          style={{ backgroundColor: props.activeColorValue }}
+          aria-hidden
+        />
+      ) : (
+        <span className="text-2xl" aria-hidden>🎨</span>
+      )}
+    </motion.button>
+  );
+}
+
+/**
+ * Swatch in the color picker row. Filled disc in the color, with a tick
+ * overlay when the swatch is currently applied to the active slot.
+ */
+function ColorSwatchButton(props: {
+  item: VocabularyItem;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const colorValue = props.item.modifier?.colorValue ?? "#9CA3AF";
+  const label = useItemLabel(props.item);
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`color-swatch-${props.item.key}`}
+      onClick={props.onPress}
+      aria-pressed={props.active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-12 h-12 rounded-full border-2 flex items-center justify-center relative",
+        props.active
+          ? "border-blue-600"
+          : "border-gray-300 dark:border-gray-600",
+      ].join(" ")}
+      style={{ backgroundColor: colorValue }}
+      aria-label={label}
+      title={label}
+    >
+      {props.active && (
+        <span
+          className="text-lg font-bold"
+          // Tick contrasts with the swatch — light tick on dark colors,
+          // dark tick on light colors. Cheap luminance proxy.
+          style={{ color: isLightColor(colorValue) ? "#1F2937" : "#FFFFFF" }}
+          aria-hidden
+        >
+          ✓
+        </span>
+      )}
+    </motion.button>
+  );
+}
+
+/** Quick luminance check — true for colors lighter than ~50% perceived brightness. */
+function isLightColor(hex: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  // ITU-R BT.709 luminance approximation.
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 160;
+}
+
 function MoreButton(props: { onPress: () => void; testId?: string; disabled?: boolean }) {
   const { t } = useLanguage();
   return (
@@ -759,13 +1101,38 @@ function MoreButton(props: { onPress: () => void; testId?: string; disabled?: bo
 }
 
 function AiCandidateButton(props: {
-  candidate: { key: string; label?: string };
+  candidate: { key: string; label?: string; symbolPath?: string };
   onPress: () => void;
 }) {
   const { t } = useLanguage();
   const { candidate } = props;
   const item = getVocabularyItem(candidate.key);
-  const url = item?.imagePath ? resolveIconPath(item.imagePath) : null;
+  // Image priority:
+  //   1. server-resolved symbolPath (AI-generated keys with custom symbols)
+  //   2. registry imagePath (built-in icons)
+  //   3. emoji fallback (item.emoji → emoji-registry → ✨)
+  const url =
+    candidate.symbolPath
+    ?? (item?.imagePath ? resolveIconPath(item.imagePath) : null);
+
+  // The image element triggers an error event on 404 / network failure /
+  // CORS issues — without an explicit fallback we'd render a broken-image
+  // glyph. Track per-URL load failures so we can swap to the emoji
+  // fallback when the symbol service hands back a path that doesn't
+  // actually resolve (e.g. generation quota exhausted, generation pending
+  // but URL not live yet).
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => {
+    // New URL — reset the error flag so a fresh load gets a fair attempt.
+    setImageFailed(false);
+  }, [url]);
+  const showImage = !!url && !imageFailed;
+
+  // Emoji fallback chain — also covers raw-emoji candidate keys (the AI
+  // sometimes proposes "🤤" directly) and snake_case keys with
+  // EXTRA_EMOJIS entries (e.g. "hungry" → 🤤).
+  const fallbackEmoji = item?.emoji ?? resolveEmoji(candidate.key) ?? "✨";
+
   // Label resolution: AI-provided label → registry translation → bare key.
   let label = candidate.label;
   if (!label && item) {
@@ -778,13 +1145,20 @@ function AiCandidateButton(props: {
       data-dwell
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
-      className="flex-1 min-h-[90px] rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/60 dark:bg-purple-900/30 flex flex-col items-center justify-center gap-1 p-2"
+      className="flex-1 min-w-0 h-full rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/60 dark:bg-purple-900/30 flex flex-col items-center justify-center gap-1 p-2"
     >
-      {url ? (
-        <img src={url} alt="" className="max-h-[55%] max-w-[80%] object-contain" />
+      {showImage ? (
+        // min-h-0 lets the flex child shrink; max-h pixel cap pins the image
+        // regardless of intrinsic size so the button can't grow vertically.
+        <img
+          src={url!}
+          alt=""
+          className="min-h-0 max-h-[50px] max-w-[80%] object-contain"
+          onError={() => setImageFailed(true)}
+        />
       ) : (
-        <span className="text-3xl" aria-hidden>
-          {item?.emoji ?? "✨"}
+        <span className="text-3xl leading-none" aria-hidden>
+          {fallbackEmoji}
         </span>
       )}
       <span className="text-xs font-medium truncate w-full text-center">
@@ -798,7 +1172,7 @@ function AiPlaceholder(props: { pulsing: boolean }) {
   return (
     <div
       className={[
-        "flex-1 min-h-[90px] rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 bg-white/40 dark:bg-gray-800/40",
+        "flex-1 h-full rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 bg-white/40 dark:bg-gray-800/40",
         props.pulsing ? "animate-pulse" : "",
       ].join(" ")}
       aria-hidden

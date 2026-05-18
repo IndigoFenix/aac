@@ -13,7 +13,9 @@ import {
   getVocabularyItem,
   type VocabularyItem,
   type ModifierTransform,
+  type DimensionPattern,
 } from "./glyph-registry.js";
+import { resolveEmoji } from "./emoji-registry.js";
 import {
   parseGlyph,
   computeLayout,
@@ -145,13 +147,22 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
         );
       })}
 
-      {/* Tone corner badge */}
-      {parsed.toneTags.length > 0 && (
+      {/* Prosody corner badge (? / ! / both) — top-right in LTR. */}
+      {parsed.toneTags.some((t) => t === "question" || t === "exclamation") && (
         <ToneCornerBadge
           tags={parsed.toneTags}
           x={layout.cornerBadge.x}
           y={layout.cornerBadge.y}
           size={layout.cornerBadge.size}
+        />
+      )}
+      {/* Tense corner badge (past / future) — top-left in LTR. */}
+      {parsed.toneTags.some((t) => t === "past" || t === "future") && (
+        <TenseCornerBadge
+          tags={parsed.toneTags}
+          x={layout.tenseBadge.x}
+          y={layout.tenseBadge.y}
+          size={layout.tenseBadge.size}
         />
       )}
     </svg>
@@ -186,7 +197,31 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   const mainX = layout.x + (SLOT_UNIT - mainSize) / 2;
   const mainY = layout.y + (SLOT_UNIT - mainSize) / 2;
 
+  // Dimension modifier (big/small/long/short/tall/wide/thin) — drives both
+  // the arrow decorations drawn around the slot AND a scale applied to the
+  // main symbol so the underlying image visually matches the adjective.
+  const dimensionPattern = collectDimensionPattern(slot);
+  const dimensionScale = dimensionPattern ? DIMENSION_SCALES[dimensionPattern] : null;
+
+  // Color modifier — draws a colored frame around the slot rim. Doesn't
+  // alter the underlying symbol (emoji or image) because reliable
+  // emoji-recoloring across browsers is fragile; the frame is unambiguous
+  // and keeps the symbol identifiable.
+  const colorValue = collectColorValue(slot);
+
   const url = slot ? resolveImage?.({ item, key: slot.key }) ?? null : null;
+  const imageReversible = !!item && !isNonReversible(item);
+  const mainCx = mainX + mainSize / 2;
+  const mainCy = mainY + mainSize / 2;
+  const imageTransforms: string[] = [];
+  if (rtl && imageReversible) {
+    imageTransforms.push(`translate(${mainCx} ${mainCy}) scale(-1 1) translate(${-mainCx} ${-mainCy})`);
+  }
+  if (dimensionScale) {
+    const [sx, sy] = dimensionScale;
+    imageTransforms.push(`translate(${mainCx} ${mainCy}) scale(${sx} ${sy}) translate(${-mainCx} ${-mainCy})`);
+  }
+  const mainImageTransform = imageTransforms.length ? imageTransforms.join(" ") : undefined;
 
   return (
     <g
@@ -233,14 +268,10 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           width={mainSize}
           height={mainSize}
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
-          transform={
-            rtl && item && !isNonReversible(item)
-              ? `translate(${mainX + mainSize}, ${mainY}) scale(-1, 1) translate(${-mainX}, ${-mainY})`
-              : undefined
-          }
+          transform={mainImageTransform}
         />
       )}
-      {slot && !url && (item?.emoji || !item) && (
+      {slot && !url && (
         <text
           x={layout.x + SLOT_UNIT / 2}
           y={layout.y + SLOT_UNIT / 2}
@@ -248,9 +279,45 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           dominantBaseline="central"
           fontSize={SLOT_UNIT * 0.6 * mainScale}
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
+          transform={dimensionScale ? `translate(${layout.x + SLOT_UNIT / 2} ${layout.y + SLOT_UNIT / 2}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-(layout.x + SLOT_UNIT / 2)} ${-(layout.y + SLOT_UNIT / 2)})` : undefined}
         >
-          {item?.emoji ?? "❓"}
+          {item?.emoji ?? resolveEmoji(slot.key) ?? "❓"}
         </text>
+      )}
+
+      {/* Dimension arrows — drawn after the main symbol so they overlay
+          the slot rim. The pattern picks the decoration layout; the
+          warp scale above keeps the symbol visually in step. */}
+      {dimensionPattern && (
+        <DimensionArrows pattern={dimensionPattern} layout={layout} />
+      )}
+
+      {/* Composable payload overlay — payload symbol on top of host symbol. */}
+      {slot && item?.composable && (
+        <PayloadOverlay
+          slot={slot}
+          host={item}
+          layout={layout}
+          rtl={rtl}
+          resolveImage={resolveImage}
+        />
+      )}
+
+      {/* Color modifier — thick rounded outline in the modifier's color
+          around the slot rim. The active-slot blue outline (below)
+          renders on top of this. */}
+      {colorValue && (
+        <rect
+          x={layout.x + 4}
+          y={layout.y + 4}
+          width={layout.width - 8}
+          height={layout.height - 8}
+          fill="none"
+          stroke={colorValue}
+          strokeWidth={6}
+          rx={10}
+          ry={10}
+        />
       )}
 
       {/* Active-slot outline (for construction board) */}
@@ -269,7 +336,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
       )}
 
       {/* Badge-type modifiers (and `hands`, which is treated as a badge for v1) */}
-      <BadgeStack slot={slot} layout={layout} resolveImage={resolveImage} />
+      <BadgeStack slot={slot} layout={layout} rtl={rtl} resolveImage={resolveImage} />
 
       {/* Dot indicators at bottom for count modifiers */}
       {transforms.has("dots") && (
@@ -298,6 +365,90 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Payload overlay (composable hosts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PayloadOverlayProps {
+  slot: ParsedSlot;
+  host: VocabularyItem;
+  layout: SlotLayout;
+  rtl: boolean;
+  resolveImage?: ImageResolver;
+}
+
+function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
+  const { slot, host, layout, rtl, resolveImage } = props;
+  const composable = host.composable;
+  if (!composable) return null;
+
+  // Payload is rendered at ~45% of slot size, centered or upper per facet.
+  const size = SLOT_UNIT * 0.45;
+  const cx = layout.x + SLOT_UNIT / 2;
+  const cy =
+    composable.position === "upper"
+      ? layout.y + SLOT_UNIT * 0.32  // upper third
+      : layout.y + SLOT_UNIT / 2;    // dead center
+  const x = cx - size / 2;
+  const y = cy - size / 2;
+
+  // Empty payload → dashed placeholder ring so the user sees the slot is fillable.
+  if (!slot.payload) {
+    return (
+      <g aria-hidden>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={size / 2}
+          fill="rgba(255,255,255,0.55)"
+          stroke="#9CA3AF"
+          strokeWidth={2}
+          strokeDasharray="4 3"
+        />
+      </g>
+    );
+  }
+
+  const payloadItem = getVocabularyItem(slot.payload);
+  const url = resolveImage?.({ item: payloadItem, key: slot.payload }) ?? null;
+
+  return (
+    <g>
+      {/* Subtle white pad so the payload reads cleanly over the host. */}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={size / 2 + 2}
+        fill="rgba(255,255,255,0.75)"
+      />
+      {url ? (
+        <image
+          href={url}
+          x={x}
+          y={y}
+          width={size}
+          height={size}
+          transform={
+            rtl && payloadItem && !isNonReversible(payloadItem)
+              ? `translate(${x + size}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
+              : undefined
+          }
+        />
+      ) : (
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={size * 0.85}
+        >
+          {payloadItem?.emoji ?? resolveEmoji(slot.payload) ?? "❓"}
+        </text>
+      )}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Modifier helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -312,16 +463,207 @@ function collectModifierTransforms(slot: ParsedSlot | undefined): Set<ModifierTr
   return out;
 }
 
+/**
+ * Pick the first dimension pattern (big/small/long/short/tall/short_low/
+ * wide/thin) attached to the slot. Only one active at a time — if the AI
+ * stacks two contradictory ones the first wins, which keeps the visual
+ * coherent. Returns undefined when no dimension modifier is present.
+ */
+function collectDimensionPattern(slot: ParsedSlot | undefined): DimensionPattern | undefined {
+  if (!slot) return undefined;
+  for (const modKey of slot.modifiers) {
+    const mod = getVocabularyItem(modKey);
+    if (mod?.modifier?.transform === "dimension" && mod.modifier.dimension) {
+      return mod.modifier.dimension;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Pick the first color modifier on the slot and return its CSS color.
+ * Only one color shows at a time — the AI stacking two contradictory
+ * ones (color_red+color_blue) is treated as the first winning so the
+ * visual stays coherent.
+ */
+function collectColorValue(slot: ParsedSlot | undefined): string | undefined {
+  if (!slot) return undefined;
+  for (const modKey of slot.modifiers) {
+    const mod = getVocabularyItem(modKey);
+    if (mod?.modifier?.transform === "color" && mod.modifier.colorValue) {
+      return mod.modifier.colorValue;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Image-warp scale per dimension pattern — [xScale, yScale] applied to
+ * the main symbol so it visually matches the adjective. Values are
+ * intentionally subtle (~±25%) so the symbol stays recognizable; the
+ * dimension's meaning is mainly carried by the arrow decoration.
+ */
+const DIMENSION_SCALES: Record<DimensionPattern, [number, number]> = {
+  big:            [1.2, 1.2],
+  small:          [0.75, 0.75],
+  length_long:    [1.25, 1],
+  length_short:   [0.7, 1],
+  tall_high:      [1, 1.25],
+  short_low:      [1, 0.7],
+  wide:           [1.25, 1],
+  thin:           [0.7, 1],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dimension arrows
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ARROW_STROKE = "#1E40AF";    // deep blue, reads against any tone bg
+const ARROW_WIDTH = 3;
+const ARROW_HEAD_LEN = 7;
+
+/**
+ * Draw a single arrow as line + two head strokes. Origin (x1,y1) to
+ * tip (x2,y2). When `doubleHeaded` is true a mirror head is drawn at
+ * the start too — used for long.
+ */
+function Arrow(props: {
+  x1: number; y1: number; x2: number; y2: number;
+  doubleHeaded?: boolean;
+}): React.ReactElement {
+  const { x1, y1, x2, y2, doubleHeaded } = props;
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const halfSpread = Math.PI / 7;
+  const ax = (cx: number, cy: number, dir: number, off: number) => ({
+    x: cx + ARROW_HEAD_LEN * Math.cos(angle + dir * Math.PI + off),
+    y: cy + ARROW_HEAD_LEN * Math.sin(angle + dir * Math.PI + off),
+  });
+  // End head (pointing along the arrow direction at x2,y2).
+  const e1 = ax(x2, y2, 1, halfSpread);
+  const e2 = ax(x2, y2, 1, -halfSpread);
+  // Optional start head (pointing back along the arrow direction at x1,y1).
+  const s1 = ax(x1, y1, 0, halfSpread);
+  const s2 = ax(x1, y1, 0, -halfSpread);
+  return (
+    <g stroke={ARROW_STROKE} strokeWidth={ARROW_WIDTH} strokeLinecap="round" fill="none">
+      <line x1={x1} y1={y1} x2={x2} y2={y2} />
+      <line x1={x2} y1={y2} x2={e1.x} y2={e1.y} />
+      <line x1={x2} y1={y2} x2={e2.x} y2={e2.y} />
+      {doubleHeaded && (
+        <>
+          <line x1={x1} y1={y1} x2={s1.x} y2={s1.y} />
+          <line x1={x1} y1={y1} x2={s2.x} y2={s2.y} />
+        </>
+      )}
+    </g>
+  );
+}
+
+/**
+ * Render the arrow decoration for a dimension modifier. Each pattern
+ * places arrows differently around the slot rim — see DimensionPattern.
+ * The image-warp scale is applied separately to the main symbol.
+ */
+function DimensionArrows(props: {
+  pattern: DimensionPattern;
+  layout: SlotLayout;
+}): React.ReactElement | null {
+  const { pattern, layout } = props;
+  const x = layout.x;
+  const y = layout.y;
+  const W = SLOT_UNIT;
+  // Inset where the arrow tail sits, and edge offset where the tip lands.
+  const INNER = 30;
+  const EDGE = 6;
+  const HALF = W / 2;
+
+  switch (pattern) {
+    case "big":
+      // 4 corner arrows pointing outward.
+      return (
+        <g>
+          <Arrow x1={x + INNER}     y1={y + INNER}     x2={x + EDGE}     y2={y + EDGE} />
+          <Arrow x1={x + W - INNER} y1={y + INNER}     x2={x + W - EDGE} y2={y + EDGE} />
+          <Arrow x1={x + INNER}     y1={y + W - INNER} x2={x + EDGE}     y2={y + W - EDGE} />
+          <Arrow x1={x + W - INNER} y1={y + W - INNER} x2={x + W - EDGE} y2={y + W - EDGE} />
+        </g>
+      );
+    case "small":
+      // 4 corner arrows pointing inward.
+      return (
+        <g>
+          <Arrow x1={x + EDGE}     y1={y + EDGE}     x2={x + INNER}     y2={y + INNER} />
+          <Arrow x1={x + W - EDGE} y1={y + EDGE}     x2={x + W - INNER} y2={y + INNER} />
+          <Arrow x1={x + EDGE}     y1={y + W - EDGE} x2={x + INNER}     y2={y + W - INNER} />
+          <Arrow x1={x + W - EDGE} y1={y + W - EDGE} x2={x + W - INNER} y2={y + W - INNER} />
+        </g>
+      );
+    case "length_long":
+      // Single horizontal double-headed arrow below the image.
+      return (
+        <Arrow x1={x + 10} y1={y + W - 8} x2={x + W - 10} y2={y + W - 8} doubleHeaded />
+      );
+    case "length_short":
+      // Two horizontal arrows below, pointing inward toward each other.
+      return (
+        <g>
+          <Arrow x1={x + 10}      y1={y + W - 8} x2={x + HALF - 8}  y2={y + W - 8} />
+          <Arrow x1={x + W - 10}  y1={y + W - 8} x2={x + HALF + 8}  y2={y + W - 8} />
+        </g>
+      );
+    case "tall_high":
+      // Single vertical arrow on the right side, pointing up (full height).
+      return (
+        <Arrow x1={x + W - 8} y1={y + W - 10} x2={x + W - 8} y2={y + 10} />
+      );
+    case "short_low":
+      // Single short vertical arrow on the right side, pointing down,
+      // spanning roughly the lower half of the slot.
+      return (
+        <Arrow x1={x + W - 8} y1={y + HALF - 10} x2={x + W - 8} y2={y + W - 10} />
+      );
+    case "wide":
+      // Two horizontal arrows on the sides, pointing outward.
+      return (
+        <g>
+          <Arrow x1={x + HALF - 10} y1={y + HALF} x2={x + 8}     y2={y + HALF} />
+          <Arrow x1={x + HALF + 10} y1={y + HALF} x2={x + W - 8} y2={y + HALF} />
+        </g>
+      );
+    case "thin":
+      // Two horizontal arrows on the sides, pointing inward.
+      return (
+        <g>
+          <Arrow x1={x + 8}     y1={y + HALF} x2={x + HALF - 10} y2={y + HALF} />
+          <Arrow x1={x + W - 8} y1={y + HALF} x2={x + HALF + 10} y2={y + HALF} />
+        </g>
+      );
+  }
+}
+
 interface BadgeStackProps {
   slot: ParsedSlot | undefined;
   layout: SlotLayout;
+  rtl: boolean;
   resolveImage?: ImageResolver;
 }
 
 const BADGE_TRANSFORMS: ReadonlyArray<ModifierTransform> = ["badge", "hands"];
 
+type CornerKey = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+/** Mirror the horizontal side of a corner in RTL ("top-left" ↔ "top-right"). */
+function mirrorCorner(corner: CornerKey): CornerKey {
+  switch (corner) {
+    case "top-left": return "top-right";
+    case "top-right": return "top-left";
+    case "bottom-left": return "bottom-right";
+    case "bottom-right": return "bottom-left";
+  }
+}
+
 function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
-  const { slot, layout, resolveImage } = props;
+  const { slot, layout, rtl, resolveImage } = props;
   if (!slot) return null;
   const badges = slot.modifiers
     .map((k) => getVocabularyItem(k))
@@ -331,34 +673,69 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
   if (badges.length === 0) return null;
 
   const badgeSize = SLOT_UNIT * 0.28;
+  const pad = 4;
+  const gap = 2;
+
+  // Group badges by visual corner (after RTL mirroring) so multiple badges
+  // at the same anchor stack predictably.
+  const groups = new Map<CornerKey, VocabularyItem[]>();
+  for (const b of badges) {
+    const ltrCorner = b.modifier!.corner ?? "top-left";
+    const visualCorner = rtl ? mirrorCorner(ltrCorner) : ltrCorner;
+    const arr = groups.get(visualCorner) ?? [];
+    arr.push(b);
+    groups.set(visualCorner, arr);
+  }
+
+  /** Where the i-th badge sits within a stack anchored at a given corner. */
+  const computeBadgeXY = (corner: CornerKey, i: number) => {
+    const onTop = corner === "top-left" || corner === "top-right";
+    const onLeft = corner === "top-left" || corner === "bottom-left";
+    const stackOffset = i * (badgeSize + gap);
+    const x = onLeft
+      ? layout.x + pad + stackOffset
+      : layout.x + SLOT_UNIT - pad - badgeSize - stackOffset;
+    const y = onTop
+      ? layout.y + pad
+      : layout.y + SLOT_UNIT - pad - badgeSize;
+    return { x, y };
+  };
+
   return (
     <g>
-      {badges.map((b, i) => {
-        const bx = layout.x + 4 + i * (badgeSize + 2);
-        const by = layout.y + 4;
-        const url = resolveImage?.({ item: b, key: b.key }) ?? null;
-        return url ? (
-          <image
-            key={b.key}
-            href={url}
-            x={bx}
-            y={by}
-            width={badgeSize}
-            height={badgeSize}
-          />
-        ) : (
-          <text
-            key={b.key}
-            x={bx + badgeSize / 2}
-            y={by + badgeSize / 2}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={badgeSize * 0.9}
-          >
-            {b.emoji ?? "•"}
-          </text>
-        );
-      })}
+      {Array.from(groups.entries()).flatMap(([corner, items]) =>
+        items.map((b, i) => {
+          const { x, y } = computeBadgeXY(corner, i);
+          const url = resolveImage?.({ item: b, key: b.key }) ?? null;
+          // Flip image content horizontally in RTL so a directional hand still
+          // points the same way relative to the speaker/addressee axis.
+          const imageTransform = url && rtl && !isNonReversible(b)
+            ? `translate(${x + badgeSize}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
+            : undefined;
+          return url ? (
+            <image
+              key={b.key}
+              href={url}
+              x={x}
+              y={y}
+              width={badgeSize}
+              height={badgeSize}
+              transform={imageTransform}
+            />
+          ) : (
+            <text
+              key={b.key}
+              x={x + badgeSize / 2}
+              y={y + badgeSize / 2}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={badgeSize * 0.9}
+            >
+              {b.emoji ?? "•"}
+            </text>
+          );
+        })
+      )}
     </g>
   );
 }
@@ -411,6 +788,46 @@ function ToneCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
   const hasExclamation = tags.includes("exclamation");
   const label = hasQuestion && hasExclamation ? "?!" : hasQuestion ? "?" : "!";
   const fill = hasQuestion ? "#7C3AED" : "#DC2626";
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={size}
+        height={size}
+        rx={4}
+        ry={4}
+        fill={fill}
+      />
+      <text
+        x={x + size / 2}
+        y={y + size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={size * 0.7}
+        fontWeight={700}
+        fill="white"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Tense corner badge — renders past (←, amber) and/or future (→, blue).
+ * If both stack (rare but legal), shows "↔" to indicate temporal range.
+ * Sits opposite the prosody badge so a sentence can mark tense AND
+ * intonation without the two glyphs overlapping.
+ */
+function TenseCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
+  const { tags, x, y, size } = props;
+  const hasPast = tags.includes("past");
+  const hasFuture = tags.includes("future");
+  const label = hasPast && hasFuture ? "↔" : hasPast ? "←" : "→";
+  // Amber for past (memory / earlier), blue for future (ahead / later);
+  // both → muted gray, the symbol itself carries the meaning.
+  const fill = hasPast && hasFuture ? "#6B7280" : hasPast ? "#D97706" : "#2563EB";
   return (
     <g>
       <rect

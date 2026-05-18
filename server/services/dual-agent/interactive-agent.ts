@@ -7,90 +7,142 @@ import type {
 import type {
   ChatProvider,
 } from "../providers/streaming-provider";
+import { resolveEmoji } from "@shared/emoji-registry";
 
 /**
- * Parse board button format: "label|icon, label|icon, ..." or "label|icon|image_key, ..."
- * If no icon is provided, defaults to comment icon.
- * The optional third pipe-delimited field is an image_key for auto-generated symbols.
- * The optional fourth pipe-delimited field is a pre-generated interpreted sentence:
- *   "Water|💧|water_drop|I would like some water, Play|🎮|game_controller|Let's play"
- *   "Water|💧||I would like some water"  (no image_key, but sentence)
- * The optional fifth and sixth fields are rowSpan and colSpan (default 1):
- *   "Big Button|🎯||Press me|2|2"  (spans 2 rows and 2 columns)
+ * Parse board button format. NEW field order:
+ *   sentence|glyph|fallback|label[|rowSpan|colSpan]
+ *
+ * Fields:
+ *   - sentence: natural first-person phrase voiced when pressed.
+ *   - glyph:    composed glyph string (slots joined by `+`, modifiers with
+ *               `.`, composable hosts with `(payload)`, tone tags with `#`).
+ *               Slot keys may be emojis, snake_case imageKeys (server may
+ *               auto-generate images), `symbol:ID`, or `face:ID`.
+ *   - fallback: same glyph syntax, but slots may ONLY be emojis,
+ *               `symbol:ID`, or `face:ID` — no imageKeys. Used when
+ *               `glyph` rendering can't complete (e.g. all slots are
+ *               waiting on generation).
+ *   - label:    short on-button text. May begin with "[GUESS]" for
+ *               guessing-mode buttons.
+ *
+ * For backward compat with the renderer's existing visual priority chain,
+ * the parser ALSO derives `iconRef`, `symbolPath`, and `imageKey` from
+ * the glyph/fallback fields when they're single-slot:
+ *   - fallback is a bare emoji → iconRef = emoji
+ *   - fallback is `symbol:ID`  → symbolPath = `__SYMBOL__:ID`
+ *   - fallback is `face:ID`    → symbolPath = `__FACE__:ID`
+ *   - glyph is a bare snake_case key → imageKey = key (single-concept
+ *     button — same as legacy imageKey, may trigger symbol generation)
+ *
+ * Examples:
+ *   "I want water|i_me+want+water|👤+🤲+💧|Water"
+ *   "I want a hug|i_me+want+hug|🤗|Hug"
+ *   "It's my turn|turn.my|👉|My turn"
+ *   "Hello!|hello|👋|Hi"           (single-concept)
+ *   "Big button|big|🎯|Press!|2|2" (rowSpan/colSpan trailing)
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> = [];
   const items = content.split(',');
 
   for (const item of items) {
     const trimmed = item.trim();
     if (!trimmed) continue;
 
-    // Check for label|icon or label|icon|image_key or label|icon|image_key|sentence format
-    const pipeIndex = trimmed.indexOf('|');
-    if (pipeIndex > 0) {
-      const parts = trimmed.split('|');
-      let label = parts[0].trim();
-      let iconRef = parts[1].trim();
+    const parts = trimmed.split('|');
 
-      // Detect [GUESS] prefix for guessing mode final guesses
-      let buttonType: "guess" | "category" | undefined;
-      if (label.startsWith("[GUESS]")) {
-        label = label.substring(7).trim();
-        buttonType = "guess";
-      }
-      // imageKey is only valid if there are 4+ parts and the 3rd part is non-empty;
-      // otherwise the AI omitted the image key and parts[2] is actually the sentence.
-      // Special case: "label|icon||sentence" has 4 parts with empty imageKey — sentence is parts[3].
-      const hasImageKey = parts.length >= 4 && parts[2]?.trim() !== "";
-      const imageKey = hasImageKey ? parts[2].trim() : undefined;
-      const sentence = hasImageKey
-        ? (parts[3]?.trim() || undefined)
-        : (parts.length >= 4 && parts[2]?.trim() === "")
-          ? (parts[3]?.trim() || undefined)   // label|icon||sentence format
-          : (parts[2]?.trim() || undefined);   // label|icon|sentence format (no imageKey slot)
-      const spanOffset = hasImageKey ? 4 : 3;
-      const rawRowSpan = parseInt(parts[spanOffset]?.trim(), 10);
-      const rawColSpan = parseInt(parts[spanOffset + 1]?.trim(), 10);
-      const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
-      const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
-      let symbolPath: string | undefined;
-
-      // Handle face:contactId references
-      if (iconRef.startsWith("face:")) {
-        const contactId = iconRef.substring(5).trim();
-        symbolPath = `__FACE__:${contactId}`;
-        iconRef = "👤"; // fallback emoji
-        console.log(`[InteractiveAgent] Parsed face button: "${label}" → face:${contactId}`);
-      }
-
-      // Handle symbol:symbolId references ��� skip image_key when custom symbol is used
-      if (iconRef.startsWith("symbol:")) {
-        const symbolId = iconRef.substring(7).trim();
-        symbolPath = `__SYMBOL__:${symbolId}`;
-        iconRef = "🖼️"; // fallback emoji
-        console.log(`[InteractiveAgent] Parsed symbol button: "${label}" → symbol:${symbolId}`);
-      }
-
-      if (label) {
-        // Skip imageKey when icon is a single character/number (not an emoji) — the character is the visual
-        const isSingleChar = iconRef.length === 1 && !/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/u.test(iconRef);
-        buttons.push({
-          label,
-          iconRef: iconRef || "fas fa-comment",
-          symbolPath,
-          // Only include imageKey if no custom symbol is set and icon isn't a plain character
-          imageKey: (symbolPath || isSingleChar) ? undefined : imageKey,
-          sentence,
-          buttonType,
-          rowSpan,
-          colSpan,
-        });
-      }
-    } else {
-      // Just a label, use default icon
+    // Degenerate input: a bare label with no pipes at all.
+    if (parts.length === 1) {
       buttons.push({ label: trimmed, iconRef: "fas fa-comment" });
+      continue;
     }
+
+    let sentence = parts[0]?.trim() || undefined;
+    const glyph = parts[1]?.trim() || undefined;
+    const glyphFallback = parts[2]?.trim() || undefined;
+    let label = parts[3]?.trim() || "";
+
+    // Tolerate AI undershoot — if there are fewer than 4 fields, treat the
+    // FIRST field as the label (this matches the most common "label only"
+    // and "label|icon" shapes seen in older prompts).
+    if (parts.length < 4 && !label) {
+      label = sentence || "";
+      sentence = undefined;
+    }
+    if (!label) continue;
+
+    // Detect [GUESS] prefix for guessing-mode final guesses.
+    let buttonType: "guess" | "category" | undefined;
+    if (label.startsWith("[GUESS]")) {
+      label = label.substring(7).trim();
+      buttonType = "guess";
+    }
+
+    // Optional trailing rowSpan/colSpan in fields 4 / 5.
+    const rawRowSpan = parseInt(parts[4]?.trim(), 10);
+    const rawColSpan = parseInt(parts[5]?.trim(), 10);
+    const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
+    const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
+
+    // ── Derive iconRef / symbolPath / imageKey for renderer fallback ────
+    let iconRef = "fas fa-comment";
+    let symbolPath: string | undefined;
+    let imageKey: string | undefined;
+
+    if (glyphFallback) {
+      // Single-slot fallback → pull an iconRef or symbolPath from it.
+      const fbSlots = glyphFallback.split('+').map(s => s.trim()).filter(Boolean);
+      if (fbSlots.length === 1) {
+        const slotMain = fbSlots[0].split('.')[0].split('(')[0].trim();
+        if (slotMain.startsWith("face:")) {
+          symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
+        } else if (slotMain.startsWith("symbol:")) {
+          symbolPath = `__SYMBOL__:${slotMain.substring(7).trim()}`;
+        } else if (slotMain) {
+          iconRef = slotMain;
+        }
+      }
+      // Multi-slot fallback: leave iconRef as default. The renderer prefers
+      // glyphFallback over iconRef when it's set, so this is fine.
+    }
+
+    if (glyph) {
+      const glyphSlots = glyph.split('+').map(s => s.trim()).filter(Boolean);
+      if (glyphSlots.length === 1) {
+        const slotMain = glyphSlots[0].split('.')[0].split('(')[0].trim();
+        // An imageKey is a bare snake_case identifier — not an emoji, not a
+        // symbol/face ref. The existing auto-symbol pipeline picks this up
+        // and queues generation if no matching custom symbol exists yet.
+        const isEmoji = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
+        if (slotMain && !isEmoji && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
+          imageKey = slotMain;
+          // Emoji-registry swap: if the imageKey has a known emoji and the
+          // fallback didn't already set an iconRef, use the emoji and skip
+          // generation entirely.
+          if (iconRef === "fas fa-comment") {
+            const emojiSwap = resolveEmoji(imageKey);
+            if (emojiSwap) {
+              iconRef = emojiSwap;
+              imageKey = undefined;
+            }
+          }
+        }
+      }
+    }
+
+    buttons.push({
+      label,
+      iconRef,
+      symbolPath,
+      imageKey,
+      glyph,
+      glyphFallback,
+      sentence,
+      buttonType,
+      rowSpan,
+      colSpan,
+    });
   }
 
   return buttons;

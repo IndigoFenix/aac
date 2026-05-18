@@ -463,6 +463,11 @@ export const ko = {
     imageKey: "이미지 키",
     imageKeyPlaceholder: "예: drinking_water, person_yawning",
     imageKeyHint: "맞춤 이미지 생성을 위한 자동 생성 기호 키",
+    glyph: "글리프 (다중 이미지)",
+    glyphHint: "i_me+want+water 형식의 합성 시각. 각 부분은 레지스트리 키, 이모지(🍎), 또는 imageKey가 될 수 있습니다.",
+    glyphFallback: "글리프 대체",
+    glyphFallbackHint: "imageKey 없이 동일한 합성(이모지 / symbol:ID / face:ID만). imageKey 부분이 생성되는 동안 표시됩니다.",
+    glyphPreview: "미리보기",
   },
 
   // ============================================================================

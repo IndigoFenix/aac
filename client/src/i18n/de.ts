@@ -463,6 +463,11 @@ export const de = {
     imageKey: "Bildschlüssel",
     imageKeyPlaceholder: "z.B. drinking_water, person_yawning",
     imageKeyHint: "Automatisch generierter Symbolschlüssel für benutzerdefinierte Bildgenerierung",
+    glyph: "Glyph (Mehrbild)",
+    glyphHint: "Zusammengesetzte Darstellung, z.B. i_me+want+water. Teile können Registry-Schlüssel, Emojis (🍎) oder imageKeys sein.",
+    glyphFallback: "Glyph-Fallback",
+    glyphFallbackHint: "Gleiche Komposition ohne imageKeys (nur Emojis / symbol:ID / face:ID). Wird angezeigt, während imageKey-Teile generiert werden.",
+    glyphPreview: "Vorschau",
   },
 
   // ============================================================================

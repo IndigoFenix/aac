@@ -6,7 +6,9 @@
 // the index of /games/. We build it last so leftover launcher artifacts from
 // a previous run get overwritten in place while game subfolders are preserved.
 //
-// Usage: `npm run build:games`
+// Usage:
+//   `npm run build:games`              — build all games + launcher
+//   `npm run build:games -- <name>`    — build just one target (game or `_launcher`)
 
 import { spawnSync } from "node:child_process";
 import { readdirSync, statSync, existsSync } from "node:fs";
@@ -24,9 +26,24 @@ function gameFolders(): string[] {
     .filter(name => existsSync(join(GAMES_DIR, name, "vite.config.ts")));
 }
 
+const onlyTarget = process.argv[2];
+
 const games = gameFolders();
 const launcherExists = existsSync(join(GAMES_DIR, LAUNCHER, "vite.config.ts"));
-const buildOrder = launcherExists ? [...games, LAUNCHER] : games;
+const allTargets = launcherExists ? [...games, LAUNCHER] : games;
+
+let buildOrder: string[];
+if (onlyTarget) {
+  if (!existsSync(join(GAMES_DIR, onlyTarget, "vite.config.ts"))) {
+    console.error(`No vite.config.ts found at games/${onlyTarget}/. Available: ${allTargets.join(", ")}`);
+    process.exit(1);
+  }
+  buildOrder = onlyTarget === LAUNCHER || !launcherExists
+    ? [onlyTarget]
+    : [onlyTarget, LAUNCHER];
+} else {
+  buildOrder = allTargets;
+}
 
 if (buildOrder.length === 0) {
   console.log("No games to build (games/ contained no buildable folders).");

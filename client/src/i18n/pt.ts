@@ -463,6 +463,11 @@ export const pt = {
     imageKey: "Chave de imagem",
     imageKeyPlaceholder: "ex. drinking_water, person_yawning",
     imageKeyHint: "Chave de símbolo autogerada para geração de imagens personalizadas",
+    glyph: "Glifo (multi-imagem)",
+    glyphHint: "Composição visual do tipo i_me+want+water. Partes podem ser chaves de registro, emojis (🍎), ou imageKeys.",
+    glyphFallback: "Fallback do glifo",
+    glyphFallbackHint: "Mesma composição sem imageKeys (apenas emojis / symbol:ID / face:ID). Exibido enquanto as partes geram.",
+    glyphPreview: "Pré-visualização",
   },
 
   // ============================================================================

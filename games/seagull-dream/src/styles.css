@@ -1,0 +1,160 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; font-family: system-ui, -apple-system, sans-serif; color: #f8fafc; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: none; }
+
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+  margin-top: -14px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transition: transform 60ms linear;
+}
+#crosshair::before, #crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+}
+#crosshair::before { left: 50%; top: -8px; width: 1px; height: 6px; }
+#crosshair::after  { top: 50%; left: -8px; height: 1px; width: 6px; }
+
+#hud {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.35);
+  border-radius: 10px;
+  font-size: 13px;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+#state-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9; }
+#hint { opacity: 0.7; font-size: 11px; }
+
+#debug {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  min-width: 220px;
+}
+#debug > div { display: contents; }
+#debug .k { opacity: 0.6; }
+#debug .v { text-align: right; opacity: 0.95; white-space: nowrap; }
+
+#tuning {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+  min-width: 260px;
+  pointer-events: auto;
+}
+#tuning .title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-bottom: 2px;
+}
+#tuning .row {
+  display: grid;
+  grid-template-columns: 78px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+}
+#tuning .lbl { opacity: 0.7; }
+#tuning .val { text-align: right; opacity: 0.95; }
+#tuning input[type="range"] {
+  width: 100%;
+  accent-color: #94a3b8;
+  cursor: pointer;
+}
+
+#universe-tuning {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+  min-width: 260px;
+  pointer-events: auto;
+}
+#universe-tuning .title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-bottom: 2px;
+}
+#universe-tuning .row {
+  display: grid;
+  grid-template-columns: 96px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+}
+#universe-tuning .lbl { opacity: 0.7; }
+#universe-tuning .val { text-align: right; opacity: 0.95; }
+#universe-tuning input[type="range"] {
+  width: 100%;
+  accent-color: #94a3b8;
+  cursor: pointer;
+}
+#universe-tuning input[type="number"] {
+  width: 100%;
+  background: rgba(0,0,0,0.25);
+  color: inherit;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font: inherit;
+}
+#universe-tuning .check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#universe-tuning button {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(148, 163, 184, 0.25);
+  color: inherit;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+#universe-tuning button:hover { background: rgba(148, 163, 184, 0.4); }

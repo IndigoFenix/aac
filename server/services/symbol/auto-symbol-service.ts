@@ -82,7 +82,16 @@ export const IMAGE_KEY_PROMPT_RULES = `The imageKey is an unambiguous English ke
 export const IMAGE_KEY_BOARD_PROMPT = `**Image Key:** The imageKey field is used to look up or auto-generate symbol images. REQUIRED for every content button — NEVER omit imageKey. Every content button MUST have both iconRef (emoji fallback) AND imageKey (symbol generation).${IMAGE_KEY_RULES}`;
 
 /** Image key rules formatted for the AAC live button format instruction */
-export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").
+export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: sentence|glyph|fallback|label.
+- sentence: first-person phrase spoken when the button is pressed ("I want water").
+- glyph: composed glyph. Slot keys may be registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), snake_case imageKeys, \`symbol:ID\`, or \`face:ID\`. See <glyph_grammar>. Match slot count to the sentence — full subject+verb+object thoughts are usually 3-slot; short answers and feelings are 1-slot.
+- fallback: same composition with NO imageKeys (use bundled-icon keys / emojis / \`symbol:ID\` / \`face:ID\`). Shown WHILE imageKeys generate.
+- label: short on-button text.
+
+Examples:
+- "I want a banana|i_me+want+banana|👤+🤲+🍌|Banana"   (3-slot subject+verb+object)
+- "I'm tired|tired|😴|Tired"                            (1-slot feeling)
+- "I want a hug|i_me+want+🤗|👤+🤲+🤗|Hug"             (raw emoji as a slot)
 ${IMAGE_KEY_PROMPT_RULES}`;
 
 // ---------------------------------------------------------------------------

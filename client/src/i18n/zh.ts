@@ -463,6 +463,11 @@ export const zh = {
     imageKey: "图片键",
     imageKeyPlaceholder: "例如 drinking_water, person_yawning",
     imageKeyHint: "用于自定义图片生成的自动生成符号键",
+    glyph: "字符组合 (多图)",
+    glyphHint: "例如 i_me+want+water 的组合视觉。每部分可以是注册键、emoji (🍎) 或 imageKey。",
+    glyphFallback: "备用组合",
+    glyphFallbackHint: "同样的组合，但不使用 imageKey（仅 emoji / symbol:ID / face:ID）。在 imageKey 部分生成时显示。",
+    glyphPreview: "预览",
   },
 
   // ============================================================================

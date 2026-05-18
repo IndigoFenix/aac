@@ -12,12 +12,15 @@ import {
   dominantToneFamily,
   TONE_COLORS,
   SLOT_UNIT,
+  MAX_SLOTS,
   EMPTY_GLYPH,
   pushSlot,
   replaceSlot,
   clearSlot,
   addModifier,
   removeModifier,
+  setPayload,
+  clearPayload,
   setToneTags,
   mostRecentSlot,
   resolveActiveSlot,
@@ -72,9 +75,11 @@ describe("parseGlyph", () => {
     expect(g.toneTags).toEqual(["question"]);
   });
 
-  it("caps slots at 3", () => {
-    const g = parseGlyph("a+b+c+d+e");
-    expect(g.slots.length).toBe(3);
+  it("caps slots at MAX_SLOTS", () => {
+    // Build a glyph string with twice the cap; the parser must clamp.
+    const overflow = Array.from({ length: MAX_SLOTS * 2 }, (_, i) => `k${i}`).join("+");
+    const g = parseGlyph(overflow);
+    expect(g.slots.length).toBe(MAX_SLOTS);
   });
 
   it("handles empty and whitespace input", () => {
@@ -97,6 +102,41 @@ describe("parseGlyph", () => {
     const g = parseGlyph(input);
     expect(g.raw).toBe(input);
   });
+
+  it("parses a composable host with a payload", () => {
+    const g = parseGlyph("want(water)");
+    expect(g.slots[0].key).toBe("want");
+    expect(g.slots[0].payload).toBe("water");
+    expect(g.slots[0].payloadUnknown).toBe(false);
+    expect(g.slots[0].modifiers).toEqual([]);
+  });
+
+  it("parses host(payload) combined with modifiers", () => {
+    const g = parseGlyph("want(water).please");
+    expect(g.slots[0]).toMatchObject({
+      key: "want",
+      payload: "water",
+      modifiers: ["please"],
+    });
+  });
+
+  it("flags an unknown payload key", () => {
+    const g = parseGlyph("want(pikachu)");
+    expect(g.slots[0].payload).toBe("pikachu");
+    expect(g.slots[0].payloadUnknown).toBe(true);
+  });
+
+  it("empty parens produce no payload", () => {
+    const g = parseGlyph("want()");
+    expect(g.slots[0].key).toBe("want");
+    expect(g.slots[0].payload).toBeUndefined();
+  });
+
+  it("payload form survives across multiple slots", () => {
+    const g = parseGlyph("i_me+want(water)+please");
+    expect(g.slots.map((s) => s.key)).toEqual(["i_me", "want", "please"]);
+    expect(g.slots[1].payload).toBe("water");
+  });
 });
 
 describe("serializeGlyph", () => {
@@ -108,6 +148,11 @@ describe("serializeGlyph", () => {
 
   it("round-trips a bare key", () => {
     expect(serializeGlyph(parseGlyph("water"))).toBe("water");
+  });
+
+  it("round-trips a host with payload + modifier", () => {
+    const input = "want(water).please";
+    expect(serializeGlyph(parseGlyph(input))).toBe(input);
   });
 
   it("drops empty slot keys", () => {
@@ -194,15 +239,22 @@ describe("dominantToneFamily", () => {
 });
 
 describe("pure glyph mutations", () => {
-  it("pushSlot appends slots in order and caps at 3", () => {
+  it("pushSlot appends slots in order and caps at MAX_SLOTS", () => {
     let g = EMPTY_GLYPH;
+    // The first three pushes still produce the canonical 3-slot sentence
+    // shape (subject + verb + object) — historically the common case.
     g = pushSlot(g, "i_me");
     g = pushSlot(g, "want");
     g = pushSlot(g, "water");
     expect(g.slots.map((s) => s.key)).toEqual(["i_me", "want", "water"]);
-    // 4th push is a no-op
-    g = pushSlot(g, "more");
-    expect(g.slots.length).toBe(3);
+    // Fill up to the cap.
+    for (let i = g.slots.length; i < MAX_SLOTS; i++) {
+      g = pushSlot(g, `extra${i}`);
+    }
+    expect(g.slots.length).toBe(MAX_SLOTS);
+    // Pushes beyond the cap are no-ops.
+    g = pushSlot(g, "overflow");
+    expect(g.slots.length).toBe(MAX_SLOTS);
   });
 
   it("pushSlot marks unknown keys", () => {
@@ -272,6 +324,31 @@ describe("pure glyph mutations", () => {
     const after = pushSlot(g, "b");
     expect(g.slots.length).toBe(1);
     expect(after.slots.length).toBe(2);
+  });
+
+  it("setPayload only succeeds on composable hosts", () => {
+    // `want` is composable
+    let g = parseGlyph("want");
+    g = setPayload(g, 0, "apple");
+    expect(g.slots[0].payload).toBe("apple");
+    expect(g.slots[0].payloadUnknown).toBe(true); // "apple" not in registry
+
+    g = setPayload(g, 0, "water");
+    expect(g.slots[0].payload).toBe("water");
+    expect(g.slots[0].payloadUnknown).toBe(false);
+
+    // `i_me` is not composable — should be a no-op
+    const before = parseGlyph("i_me");
+    const after = setPayload(before, 0, "apple");
+    expect(after.slots[0].payload).toBeUndefined();
+  });
+
+  it("clearPayload removes the payload but keeps the host", () => {
+    let g = parseGlyph("give(water)");
+    expect(g.slots[0].payload).toBe("water");
+    g = clearPayload(g, 0);
+    expect(g.slots[0].payload).toBeUndefined();
+    expect(g.slots[0].key).toBe("give");
   });
 
   it("the resulting glyph round-trips through serialize/parse", () => {

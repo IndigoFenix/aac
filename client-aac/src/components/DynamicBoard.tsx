@@ -7,6 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { ArrowLeft } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
+import { Glyph } from "@/components/Glyph";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -106,12 +107,13 @@ function getButtonColor(color?: string): string {
 }
 
 /** Create a BoardButton from a patch add entry */
-function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string; sentence?: string }, index: number): BoardButton {
+function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string; glyph?: string; sentence?: string }, index: number): BoardButton {
   return {
     id: `btn-patch-${Date.now()}-${index}`,
     label: entry.label,
     spokenText: entry.label,
     ...(entry.sentence ? { sentence: entry.sentence } : {}),
+    ...(entry.glyph ? { glyph: entry.glyph } : {}),
     row: 0,
     col: 0,
     iconRef: entry.iconRef,
@@ -510,6 +512,19 @@ export default function DynamicBoard({
     // Images constrained to the icon area: height fills the flex-basis:0 container, width scales proportionally
     const imgStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" as const };
     const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
+
+    // Glyph wins over everything except __FACE__/__SYMBOL__ pseudo-paths
+    // (special instance-bound resolution that the glyph system doesn't replace).
+    // The Glyph component takes BOTH glyph and glyphFallback — it picks
+    // which to render based on per-slot resolution, swapping automatically
+    // as generated symbols arrive.
+    if ((button.glyph || button.glyphFallback) && !button.symbolPath?.startsWith("__FACE__:") && !button.symbolPath?.startsWith("__SYMBOL__:")) {
+      return (
+        <div style={{ width: "100%", height: "100%" }}>
+          <Glyph glyph={button.glyph} fallback={button.glyphFallback} noBackground ariaLabel={button.label} />
+        </div>
+      );
+    }
 
     const renderLoadingOverlay = (emoji: string, halfSize = false) => (
       <span style={{ ...emojiStyle, ...(halfSize ? { fontSize: `calc(${iconFontSize} * 0.5)` } : {}), position: "relative" as const, display: "inline-block" }}>

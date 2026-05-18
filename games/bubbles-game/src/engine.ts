@@ -204,7 +204,12 @@ function adjustDifficulty(state: GameState, dt: number): void {
 }
 
 /** Advance the game one tick. dt is seconds since last tick. */
-export function tick(state: GameState, dt: number, now: number): void {
+export function tick(
+  state: GameState,
+  dt: number,
+  now: number,
+  onPop?: (b: Bubble) => void,
+): void {
   const { difficulty } = state.stats;
 
   // Spawn — cap depends on bubble size so big bubbles don't fill the screen
@@ -231,6 +236,7 @@ export function tick(state: GameState, dt: number, now: number): void {
     if (b.pendingTouchTime !== undefined && now - b.pendingTouchTime >= POP_WINDOW_MS) {
       state.stats.popped += 1;
       state.recentPops.push(now);
+      onPop?.(b);
       continue; // drop bubble
     }
 

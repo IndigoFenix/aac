@@ -21,6 +21,7 @@ import {
   tick,
 } from './engine';
 import type { GameStats } from './types';
+import { feedHum, playClick, playPop, stopHum, unlockAudio, updateHums } from './audio';
 
 const GAME_ID = 'bubbles-game';
 const HUD_REFRESH_MS = 400;
@@ -42,6 +43,11 @@ const PAINT_INNER_RADIUS_FRAC = 0.18;    // ignore gaze too near bubble center
 const PAINT_INTERP_STEPS = 6;            // interpolate between samples so fast moves don't skip sectors
 const PAINT_LINE_WIDTH = 6;
 const PAINT_STROKE_STYLE = 'rgba(14, 165, 233, 0.9)';
+// Second pop trigger: total stroke length accumulated on the bubble. Lets
+// concentrated scribbling in one spot pop the bubble without requiring the
+// user to circle the whole thing. Scales with radius so big bubbles need
+// more drawing — factor ≈ 2π means roughly one circumference of strokes.
+const PAINT_POP_LENGTH_FACTOR = 6;
 
 const POP_RING_MS = 350;
 
@@ -84,6 +90,10 @@ export default function BubblesGameApp() {
   // Persistent coverage state per bubble — bitmask of visited angular sectors.
   // Survives until the bubble pops or is culled.
   const coverageMaskByBubble = useRef<Map<number, number>>(new Map());
+
+  // Accumulated stroke length per bubble (in bubble-local pixels). Second pop
+  // trigger: enough total length scribbled anywhere on the bubble also pops it.
+  const paintLengthByBubble = useRef<Map<number, number>>(new Map());
 
   // Bridge: announce ready, listen for gaze + close.
   useEffect(() => {
@@ -155,7 +165,12 @@ export default function BubblesGameApp() {
       const state = stateRef.current;
       const now = Date.now();
 
-      tick(state, dt, now);
+      tick(state, dt, now, popped => {
+        // Touch-window expiry: the engine popped this bubble silently.
+        stopHum(popped.id);
+        playPop(popped.hue, popped.special, popped.radius);
+      });
+      updateHums();
 
       // ── Draw ──
       ctx.clearRect(0, 0, state.width, state.height);
@@ -238,6 +253,7 @@ export default function BubblesGameApp() {
       const gaze = gazeRef.current;
       const coverage = coverageMaskByBubble.current;
       const paintCanvases = paintCanvasByBubble.current;
+      const paintLengths = paintLengthByBubble.current;
 
       if (gaze.mode !== 'off' && gaze.x >= 0) {
         const rect = canvas.getBoundingClientRect();
@@ -281,6 +297,7 @@ export default function BubblesGameApp() {
                 pctx.moveTo(lastPaintLocalX + half, lastPaintLocalY + half);
                 pctx.lineTo(localX + half, localY + half);
                 pctx.stroke();
+                paintLengths.set(onBubble.id, (paintLengths.get(onBubble.id) ?? 0) + segLen);
               }
             } else {
               // First sample on this bubble — drop a starting dot so paint
@@ -311,10 +328,24 @@ export default function BubblesGameApp() {
           lastPaintLocalX = localX;
           lastPaintLocalY = localY;
 
-          // Pop when enough sectors visited.
+          // Pop when EITHER enough sectors visited OR enough total length
+          // scribbled — the latter scales with the bubble's radius so bigger
+          // bubbles need correspondingly more drawing.
           let popcount = 0;
           for (let m = mask; m; m >>>= 1) popcount += m & 1;
-          if (popcount >= PAINT_POP_SECTOR_COUNT) {
+          const lengthThreshold = onBubble.radius * PAINT_POP_LENGTH_FACTOR;
+          const totalLength = paintLengths.get(onBubble.id) ?? 0;
+
+          // Drive the bubble's hum each frame paint touches it. Detune tracks
+          // whichever pop trigger is closer to firing, so either path produces
+          // an audible build-up.
+          const progress = Math.max(
+            popcount / PAINT_POP_SECTOR_COUNT,
+            totalLength / lengthThreshold,
+          );
+          feedHum(onBubble.id, onBubble.hue, onBubble.radius, Math.min(1, progress));
+
+          if (popcount >= PAINT_POP_SECTOR_COUNT || totalLength >= lengthThreshold) {
             const popped = popBubbleById(state, onBubble.id, now);
             if (popped) {
               popAnimsRef.current.push({
@@ -324,9 +355,12 @@ export default function BubblesGameApp() {
                 startTime: now,
                 special: popped.special,
               });
+              stopHum(popped.id);
+              playPop(popped.hue, popped.special, popped.radius);
             }
             coverage.delete(onBubble.id);
             paintCanvases.delete(onBubble.id);
+            paintLengths.delete(onBubble.id);
             lastPaintBubbleId = null;
           }
         } else {
@@ -375,6 +409,9 @@ export default function BubblesGameApp() {
       }
       for (const id of Array.from(paintCanvases.keys())) {
         if (!liveBubbleIds.has(id)) paintCanvases.delete(id);
+      }
+      for (const id of Array.from(paintLengths.keys())) {
+        if (!liveBubbleIds.has(id)) paintLengths.delete(id);
       }
 
       // ── Blit each bubble's paint canvas onto the main canvas, clipped to
@@ -429,6 +466,7 @@ export default function BubblesGameApp() {
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    unlockAudio();
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -445,7 +483,11 @@ export default function BubblesGameApp() {
     });
 
     const result = handleTouch(stateRef.current, x, y, now);
-    if (result.popped && result.bubble) {
+    if (result.bubble) {
+      // Either path — instant pop on a damaged bubble, or the start of the
+      // 200ms pop window on an undamaged one — gets the same bubble-sized
+      // ripple. The sound differs: a brief "tap" for the pending state, the
+      // full bell ping for the actual pop.
       popAnimsRef.current.push({
         x: result.bubble.x,
         y: result.bubble.y,
@@ -453,6 +495,12 @@ export default function BubblesGameApp() {
         startTime: now,
         special: result.bubble.special,
       });
+      if (result.popped) {
+        stopHum(result.bubble.id);
+        playPop(result.bubble.hue, result.bubble.special, result.bubble.radius);
+      } else {
+        playClick(result.bubble.hue, result.bubble.special, result.bubble.radius);
+      }
     }
   }, []);
 
@@ -467,6 +515,7 @@ export default function BubblesGameApp() {
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.pointerType !== 'mouse') return;
     if (gazeRef.current.mode === 'eyegaze') return;
+    unlockAudio();
     gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
   }, []);
 

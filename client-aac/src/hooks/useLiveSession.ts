@@ -34,6 +34,7 @@ import {
   loadLatestSnapshot,
   cleanupOldSessions,
 } from "@/services/aac-local-storage";
+import { registerSymbolPath } from "@/lib/glyph-images";
 import type {
   AacLocalStorageConfig,
   AacSessionSnapshot,
@@ -698,10 +699,43 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "construction_suggestions": {
           const data = msg.data;
           if (data && Array.isArray(data.candidates)) {
+            // Register any pre-resolved symbol paths so the compositor
+            // (used for the glyph display itself, not just the AI strip)
+            // can render AI-generated payloads too.
+            for (const c of data.candidates) {
+              if (c.symbolPath && typeof c.key === "string") {
+                registerSymbolPath(c.key, c.symbolPath);
+              }
+            }
             setConstructionSuggestions({
               targetSlot: typeof data.targetSlot === "number" ? data.targetSlot : 0,
               candidates: data.candidates,
               receivedAt: Date.now(),
+            });
+          }
+          break;
+        }
+
+        case "construction_symbol_ready": {
+          // A queued auto-symbol finished generating. Patch any AI-strip
+          // candidate whose `key` matches the imageKey so the freshly
+          // generated image swaps in without a re-suggest round-trip.
+          const data = msg.data;
+          if (data && typeof data.imageKey === "string" && typeof data.symbolPath === "string") {
+            registerSymbolPath(data.imageKey, data.symbolPath);
+            setConstructionSuggestions((prev) => {
+              if (!prev) return prev;
+              let changed = false;
+              const candidates = prev.candidates.map((c) => {
+                if (c.key === data.imageKey && c.symbolPath !== data.symbolPath) {
+                  changed = true;
+                  return { ...c, symbolPath: data.symbolPath };
+                }
+                return c;
+              });
+              return changed
+                ? { ...prev, candidates, receivedAt: Date.now() }
+                : prev;
             });
           }
           break;
@@ -975,6 +1009,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend, audioPlayer]);
 
   /**
+   * Send a composed glyph from the sentence builder up to the AI for
+   * interpretation. The AI is responsible for converting the glyph to a
+   * natural-language sentence via the `interpret` tool — the relay does
+   * NOT TTS the glyph string itself. See the [GLYPH PRESS] flow in
+   * live-relay.ts.
+   */
+  const playGlyph = useCallback((glyphString: string) => {
+    audioPlayer.clearByTag("interpret");
+    wsSend({ type: "glyph_press", glyph: glyphString });
+  }, [wsSend, audioPlayer]);
+
+  /**
    * Activity-driven detection: send composite grid + optional audio clip.
    * Fire-and-forget — no waiting for response (WebSocket is non-blocking).
    */
@@ -1208,6 +1254,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendBoardExit,
     sendVoice,
     interpretButtons,
+    playGlyph,
     startRecording: audioRecorder.startRecording,
     stopRecording: audioRecorder.stopRecording as any,
     cancelRecording: audioRecorder.cancelRecording,

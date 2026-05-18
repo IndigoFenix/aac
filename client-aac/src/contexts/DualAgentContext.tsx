@@ -60,6 +60,8 @@ interface DualAgentContextType {
   sendContextOnly: (text: string) => void;
   sendBoardExit: (label: string, instruction: string) => void;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  /** Send a sentence-builder glyph to the AI for interpretation via the `interpret` tool. */
+  playGlyph?: (glyphString: string) => void;
   startVoiceRecording: () => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   cancelVoiceRecording: () => void;
@@ -729,6 +731,7 @@ function ProviderShell({
     sendContextOnly,
     sendBoardExit,
     interpretButtons,
+    playGlyph: agent.playGlyph,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,
     cancelVoiceRecording: agent.cancelRecording,
