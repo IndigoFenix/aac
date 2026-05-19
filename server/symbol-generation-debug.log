@@ -6781,3 +6781,71 @@
 [2026-05-19T15:42:11.037Z] [processQueue] Failed "broccoli": 400 Billing hard limit has been reached.
 [2026-05-19T15:42:11.202Z] [processQueue] Generating "carrots"...
 [2026-05-19T15:42:12.728Z] [processQueue] Failed "carrots": 400 Billing hard limit has been reached.
+[2026-05-19T17:51:12.804Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T17:51:12.816Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T17:51:14.877Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T17:51:14.878Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:06:47.215Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:06:47.217Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:09:00.156Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:09:00.157Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:09:01.922Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:09:01.922Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:21:58.923Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:21:58.925Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:29:48.883Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:29:48.885Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T18:53:42.426Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T18:53:42.427Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T19:47:06.805Z] [resolveImageKeys] Resolving 1 keys: evening#question (format=internal, useUnapproved=true)
+[2026-05-19T19:47:07.015Z] [resolveImageKeys] No symbol found for "evening#question"
+[2026-05-19T19:47:07.018Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: evening#question
+[2026-05-19T19:47:07.019Z] [queueGeneration] Queuing 1 keys: evening#question (hasCallback=true)
+[2026-05-19T19:47:07.197Z] [processQueue] Generating "evening#question"...
+[2026-05-19T19:47:14.237Z] [resolveImageKeys] Resolving 1 keys: evening#question (format=internal, useUnapproved=true)
+[2026-05-19T19:47:14.431Z] [resolveImageKeys] No symbol found for "evening#question"
+[2026-05-19T19:47:14.432Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: evening#question
+[2026-05-19T19:47:14.432Z] [queueGeneration] Queuing 1 keys: evening#question (hasCallback=true)
+[2026-05-19T19:47:22.271Z] [COST] imageKey="evening#question" | refinement: gemini/gemini-2.5-flash in=728 out=73 | image: openai/gpt-image-1 in=81 out=272
+[2026-05-19T19:47:22.271Z] [processQueue] Generated "evening#question" → 9f19a780-5cf5-464b-be67-46fa1a450291 (1 total)
+[2026-05-19T19:47:22.272Z] [processQueue] FULL REFINED PROMPT for "evening#question": A simple, bold illustration of a dark blue sky with a bright yellow crescent moon and a single yellow star in the upper right, indicating evening. A large, stylized white question mark is centrally placed over the sky, with a thick black outline around all shapes. The image uses flat, solid colors with no gradients or shadows, suitable for an AAC communication board icon.
+[2026-05-19T19:47:26.455Z] [processQueue] "evening#question" already exists → 9f19a780-5cf5-464b-be67-46fa1a450291
+[2026-05-19T19:47:42.447Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T19:47:42.448Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T20:00:21.119Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T20:00:21.122Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T20:35:05.043Z] [resolveImageKeys] Resolving 1 keys: today#question (format=internal, useUnapproved=true)
+[2026-05-19T20:35:05.364Z] [resolveImageKeys] No symbol found for "today#question"
+[2026-05-19T20:35:05.367Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: today#question
+[2026-05-19T20:35:05.370Z] [queueGeneration] Queuing 1 keys: today#question (hasCallback=true)
+[2026-05-19T20:35:05.546Z] [processQueue] Generating "today#question"...
+[2026-05-19T20:35:20.646Z] [COST] imageKey="today#question" | refinement: gemini/gemini-2.5-flash in=728 out=69 | image: openai/gpt-image-1 in=75 out=272
+[2026-05-19T20:35:20.648Z] [processQueue] Generated "today#question" → b664ab33-00c7-4713-a4cc-7b45031fcaa9 (1 total)
+[2026-05-19T20:35:20.649Z] [processQueue] FULL REFINED PROMPT for "today#question": A bold, simple AAC symbol icon on a transparent background. The icon features a large, stylized question mark, rendered in a bright yellow color with a thick black outline. The question mark is centered and fills approximately 70% of the square canvas, with its curve facing right. There are no other elements, text, or background details.
+[2026-05-19T20:35:37.074Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T20:35:37.076Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T20:35:50.482Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-19T20:35:50.484Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-19T20:38:52.900Z] [resolveImageKeys] Resolving 2 keys: eat#question, drink#question (format=internal, useUnapproved=true)
+[2026-05-19T20:38:53.158Z] [resolveImageKeys] No symbol found for "eat#question"
+[2026-05-19T20:38:53.330Z] [resolveImageKeys] No symbol found for "drink#question"
+[2026-05-19T20:38:53.332Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: eat#question, drink#question
+[2026-05-19T20:38:53.335Z] [queueGeneration] Queuing 2 keys: eat#question, drink#question (hasCallback=true)
+[2026-05-19T20:38:53.518Z] [processQueue] Generating "drink#question"...
+[2026-05-19T20:39:12.219Z] [COST] imageKey="drink#question" | refinement: gemini/gemini-2.5-flash in=728 out=86 | image: openai/gpt-image-1 in=92 out=272
+[2026-05-19T20:39:12.221Z] [processQueue] Generated "drink#question" → d201b10c-70ef-412d-a63d-46762892d7b7 (1 total)
+[2026-05-19T20:39:12.222Z] [processQueue] FULL REFINED PROMPT for "drink#question": A simple, bold AAC symbol icon of a question mark inside a drinking glass. The drinking glass is depicted from the side, filled with a light blue liquid, with a thick black outline. The question mark is centrally placed within the glass, also with a thick black outline and a solid white fill. The overall image uses flat, solid colors with no gradients or shadows, suitable for instant recognition at small sizes on a transparent background.
+[2026-05-19T20:39:13.332Z] [resolveImageKeys] Resolving 4 keys: eat, eat_dup1, eat_dup2, eat_dup3 (format=internal, useUnapproved=true)
+[2026-05-19T20:39:13.543Z] [resolveImageKeys] No symbol found for "eat"
+[2026-05-19T20:39:13.707Z] [resolveImageKeys] No symbol found for "eat_dup1"
+[2026-05-19T20:39:13.873Z] [resolveImageKeys] No symbol found for "eat_dup2"
+[2026-05-19T20:39:14.036Z] [resolveImageKeys] No symbol found for "eat_dup3"
+[2026-05-19T20:39:14.039Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: eat, eat_dup1, eat_dup2, eat_dup3
+[2026-05-19T20:39:14.040Z] [queueGeneration] Queuing 4 keys: eat, eat_dup1, eat_dup2, eat_dup3 (hasCallback=true)
+[2026-05-19T20:39:14.047Z] [resolveImageKeys] Resolving 1 keys: vegetables (format=api-path, useUnapproved=true)
+[2026-05-19T20:39:14.219Z] [resolveImageKeys] No symbol found for "vegetables"
+[2026-05-19T20:39:14.220Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: vegetables
+[2026-05-19T20:39:14.222Z] [queueGeneration] Queuing 1 keys: vegetables (hasCallback=true)
+[2026-05-19T20:39:16.499Z] [processQueue] Generating "eat#question"...
+[2026-05-19T20:39:30.246Z] [processQueue] Failed "eat#question": 400 Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_fe2db2557f484974833414bfa0aad426. safety_violations=[self-harm].
+[2026-05-19T20:39:34.440Z] [processQueue] Generating "vegetables"...

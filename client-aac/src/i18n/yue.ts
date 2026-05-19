@@ -7,6 +7,13 @@ export const yue: Translations = {
   app: {
     name: "Aivota AAC",
     loading: "載入緊...",
+    tagline: "進階溝通平台",
+    initializing: "初始化中...",
+    retry: "重試",
+    cameraUnavailable: "相機唔可用",
+    boardsUnavailable: "面板唔可用",
+    chatUnavailable: "聊天唔可用",
+    featuresLimited: "部分功能可能受限",
   },
 
   common: {

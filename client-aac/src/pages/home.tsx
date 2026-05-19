@@ -9,7 +9,6 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 
 import ChatLog from "@/components/ChatLog";
 import ProfileSetup from "@/components/ProfileSetup";
-import UserSettings from "@/components/UserSettings";
 import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
 import { ConversationBox } from "@/components/ConversationBox";
 import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
@@ -49,7 +48,7 @@ import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
 import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
-import { isValidSignLanguageCode } from "@/i18n";
+import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
 import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
@@ -60,7 +59,7 @@ import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, fetchWithAuth } from "@/lib/queryClient";
+import { fetchWithAuth } from "@/lib/queryClient";
 
 interface HomeProps {
   studentId: string;
@@ -293,7 +292,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [showChatLog, setShowChatLog] = useState(false);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
-  const [showUserSettings, setShowUserSettings] = useState(false);
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [currentSpeech, setCurrentSpeech] = useState<string>("");
   const [showGestureHints, setShowGestureHints] = useState(false);
@@ -304,7 +302,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [isCameraBlocked, setIsCameraBlocked] = useState<boolean>(false);
   const [isStandbyMode, setIsStandbyMode] = useState<boolean>(false);
   // Language is now managed by LanguageContext
-  const { language: currentLanguage, setLanguage: setCurrentLanguage, t, isRTL, direction, signLanguage } = useLanguage();
+  const { language: currentLanguage, setLanguage: setCurrentLanguage, t, direction, signLanguage } = useLanguage();
   const [useDualAgent, setUseDualAgent] = useState<boolean>(true); // Toggle for dual-agent system
 
   // Use the initialization context for loading state
@@ -421,7 +419,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
-  const restartSessionFnRef = useRef<(() => void) | null>(null);
 
   // Pause state (bridged from DualAgentContext)
   const [isPaused, setIsPaused] = useState(false);
@@ -714,7 +711,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Initialize gesture handling
   useGestures({
-    onSwipeLeft: () => setShowUserSettings(true),
     onCornerTap: () => setShowChatLog(true),
     onSwipeRight: () => setShowConversation(!showConversation),
   });
@@ -727,23 +723,17 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   }, []);
 
 
-  // Update user language preference when changed (now handled by LanguageContext)
-  // The context handles localStorage, we just need to sync with server
-  // Only sync after initialization is complete to avoid race conditions
+  // The AAC UI follows the *student's* primaryLanguage, not the logged-in
+  // user's browser/localStorage preference. When the student profile loads,
+  // adopt its language so e.g. a Hebrew student gets a Hebrew UI even when a
+  // caregiver with an English browser opens the AAC client.
   useEffect(() => {
-    if (!isInitComplete) return; // Don't sync during initialization
-
-    const syncLanguageToServer = async () => {
-      if (studentId && currentLanguage) {
-        try {
-          await apiRequest('PATCH', `/api/students/${studentId}`, { primaryLanguage: currentLanguage });
-        } catch (error) {
-          console.log("Could not save language preference to server");
-        }
-      }
-    };
-    syncLanguageToServer();
-  }, [currentLanguage, studentId, isInitComplete]);
+    const fromServer = userProfile?.primaryLanguage;
+    if (!fromServer || typeof fromServer !== 'string') return;
+    if (!isValidLanguageCode(fromServer)) return;
+    if (fromServer === currentLanguage) return;
+    setCurrentLanguage(fromServer);
+  }, [userProfile?.primaryLanguage]);
 
   // Standby mode logic - monitor camera status and user presence
   useEffect(() => {
@@ -1334,8 +1324,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           <i className="fas fa-camera text-accent text-lg" />
         </motion.div>
 
-        {/* Board Area — fills all remaining space */}
-        <div className={`flex-1 min-h-0 overflow-hidden relative flex ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+        {/* Board Area — fills all remaining space. Plain `flex-row` because
+            the document root has `dir="rtl"` for Hebrew/Arabic, and CSS already
+            reverses the visual order for us. Forcing `flex-row-reverse` in RTL
+            double-flips and lands the sidebar on the wrong side. */}
+        <div className="flex-1 min-h-0 overflow-hidden relative flex flex-row"
           data-dwell-trap={activeApp ? true : undefined}
         >
           <YesNoOverlay
@@ -1627,19 +1620,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         onSkip={() => setShowProfileSetup(false)}
       />
 
-      {/* User Settings */}
-      <UserSettings
-        isOpen={showUserSettings}
-        onClose={() => setShowUserSettings(false)}
-        studentId={studentId}
-        userProfile={userProfile}
-        onProfileUpdate={setUserProfile}
-        debugMode={debugMode}
-        onDebugModeChange={setDebugMode}
-        onEyegazeChange={setEyegazeSettings}
-        onRestartSession={() => restartSessionFnRef.current?.()}
-      />
-
       {/* Conversation Box - Toggle between single-agent and dual-agent */}
       {studentId && !useDualAgent && (
         <ConversationBox
@@ -1756,7 +1736,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onInitializedChange={setAiSessionActive}
             onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
             onBinaryChoiceChange={(options, dismiss) => { setBinaryChoiceOptions(options); dismissBinaryChoiceRef.current = dismiss; }}
-            onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onSendConstructionStateReady={(fn) => { sendConstructionStateRef.current = fn; }}
@@ -1776,7 +1755,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onBoardModeChange={setBoardMode}
             recentButtonPresses={recentButtonPresses}
             onInterpret={handleInterpret}
-            onSettings={() => setShowUserSettings(true)}
             onExitStudent={onExitStudent}
             onLogout={() => onLogout()}
             onFullScreen={handleFullScreen}

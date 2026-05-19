@@ -14,10 +14,10 @@ import {
   EyeOff,
   Grid3X3,
   Speech,
-  Settings,
   Maximize,
   LogOut,
   ArrowLeft,
+  ArrowRight,
   Bug,
   AlertTriangle,
   Sun,
@@ -35,7 +35,6 @@ import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessCo
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
-import { LanguageSelector } from "@/components/LanguageSelector";
 import { FaceMirror } from "@/components/FaceMirror";
 
 interface DualAgentConversationBoxProps {
@@ -52,7 +51,6 @@ interface DualAgentConversationBoxProps {
   recentButtonPresses?: string[];
   onInterpret?: () => void;
   // App-level controls (moved from top nav bar)
-  onSettings?: () => void;
   onExitStudent?: () => void;
   onLogout?: () => void;
   onFullScreen?: () => void;
@@ -76,7 +74,6 @@ export function DualAgentConversationBox({
   onBoardModeChange,
   recentButtonPresses,
   onInterpret,
-  onSettings,
   onExitStudent,
   onLogout,
   onFullScreen,
@@ -127,7 +124,7 @@ export function DualAgentConversationBox({
     setPaused,
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
 
@@ -372,10 +369,6 @@ export function DualAgentConversationBox({
                     {responseMode === 'fast' ? <Zap className="w-4 h-4" /> : <ScanSearch className="w-4 h-4" />}
                   </Button>
 
-                  <div className="w-px h-4 bg-white/30 mx-0.5" />
-
-                  <LanguageSelector className="text-xs" />
-
                   <Button
                     variant="ghost"
                     size="sm"
@@ -410,18 +403,6 @@ export function DualAgentConversationBox({
                     </Button>
                   )}
 
-                  {onSettings && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={onSettings}
-                      className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                      title="Settings"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </Button>
-                  )}
-
                   {onExitStudent && (
                     <Button
                       variant="ghost"
@@ -430,7 +411,7 @@ export function DualAgentConversationBox({
                       className="text-white hover:text-orange-300 hover:bg-white/10 h-7 w-7 p-0"
                       title="Switch Student"
                     >
-                      <ArrowLeft className="w-4 h-4" />
+                      {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
                     </Button>
                   )}
 

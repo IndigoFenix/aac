@@ -4,6 +4,10 @@ export default {
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
+    // Match `@shared/foo.js` first so the trailing `.js` is stripped before
+    // ts-jest looks the file up. Without this, source files that use ESM-
+    // style `@shared/...js` imports fail to resolve under jest.
+    '^@shared/(.*)\\.js$': '<rootDir>/shared/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },

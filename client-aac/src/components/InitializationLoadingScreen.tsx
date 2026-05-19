@@ -2,9 +2,11 @@ import { motion } from "framer-motion";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 const axolotlLogo = `${import.meta.env.BASE_URL}aac-avatars/axolotl/axolotl-logo.png`;
 
 export default function InitializationLoadingScreen() {
+  const { t } = useLanguage();
   const {
     progress,
     currentTaskLabel,
@@ -53,7 +55,7 @@ export default function InitializationLoadingScreen() {
             Aivota
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
-            Advanced Communication Platform
+            {t("app.tagline")}
           </p>
         </motion.div>
 
@@ -74,19 +76,19 @@ export default function InitializationLoadingScreen() {
                 >
                   <AlertTriangle className="w-4 h-4" />
                   <span className="text-sm">
-                    {task.id === 'camera' && 'Camera unavailable'}
-                    {task.id === 'boards' && 'Boards unavailable'}
-                    {task.id === 'conversation' && 'Chat unavailable'}
+                    {task.id === 'camera' && t("app.cameraUnavailable")}
+                    {task.id === 'boards' && t("app.boardsUnavailable")}
+                    {task.id === 'conversation' && t("app.chatUnavailable")}
                   </span>
                 </div>
               ))}
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                Some features may be limited
+                {t("app.featuresLimited")}
               </p>
             </div>
           ) : currentTaskLabel ? (
             <>
-              <div className="flex items-center justify-center space-x-2 text-gray-500 dark:text-gray-400">
+              <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                 <motion.div
                   className="w-2 h-2 bg-blue-500 rounded-full"
                   animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
@@ -118,7 +120,7 @@ export default function InitializationLoadingScreen() {
               animate={{ opacity: [0.5, 1, 0.5] }}
               transition={{ duration: 2, repeat: Infinity }}
             >
-              Initializing...
+              {t("app.initializing")}
             </motion.p>
           )}
         </motion.div>
@@ -156,7 +158,7 @@ export default function InitializationLoadingScreen() {
               className="gap-2"
             >
               <RefreshCw className="w-4 h-4" />
-              Retry
+              {t("app.retry")}
             </Button>
           </motion.div>
         )}

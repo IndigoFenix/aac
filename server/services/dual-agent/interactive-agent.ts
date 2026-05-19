@@ -61,13 +61,25 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
 
     let sentence = parts[0]?.trim() || undefined;
     const glyph = parts[1]?.trim() || undefined;
-    const glyphFallback = parts[2]?.trim() || undefined;
-    let label = parts[3]?.trim() || "";
+    let glyphFallback: string | undefined;
+    let label: string;
 
-    // Tolerate AI undershoot — if there are fewer than 4 fields, treat the
-    // FIRST field as the label (this matches the most common "label only"
-    // and "label|icon" shapes seen in older prompts).
-    if (parts.length < 4 && !label) {
+    if (parts.length === 3) {
+      // AI sometimes emits `sentence|glyph|label` instead of
+      // `sentence|glyph||label` — it reads "omit fallback" as dropping the
+      // delimiter rather than leaving the field empty. Treat the 3-section
+      // shape as fallback-absent; the downstream validator still raises a
+      // "fallback required" error when the glyph actually needs one.
+      glyphFallback = undefined;
+      label = parts[2]?.trim() || "";
+    } else {
+      glyphFallback = parts[2]?.trim() || undefined;
+      label = parts[3]?.trim() || "";
+    }
+
+    // Tolerate AI undershoot — for 2-section forms (`label|icon`), the
+    // first field is the label, not the sentence.
+    if (parts.length < 3 && !label) {
       label = sentence || "";
       sentence = undefined;
     }

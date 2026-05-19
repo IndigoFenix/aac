@@ -19,6 +19,7 @@ import {
 } from "../memory-schema/aac-memory-schema";
 import { GPT, type GPTInputItem } from "../chat/gpt";
 import { startOfDayInTimezone, formatLocalDateTime } from "../../lib/timezone";
+import { getLanguageName } from "@shared/language-names";
 
 /**
  * Monitor Agent
@@ -189,7 +190,7 @@ export class MonitorAgent {
         studentDataParts.push(`Age: ${age}`);
       }
       if (student.gender) studentDataParts.push(`Gender: ${student.gender}`);
-      if (student.primaryLanguage) studentDataParts.push(`Language: ${student.primaryLanguage}`);
+      if (student.primaryLanguage) studentDataParts.push(`Language: ${getLanguageName(student.primaryLanguage)}`);
 
       if (memory.Student_Notes?.length > 0 && this.privacyOptions.allowNotes) {
         studentDataParts.push(`Notes: ${JSON.stringify(memory.Student_Notes)}`);

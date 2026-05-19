@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, Home, Volume2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home, Volume2 } from "lucide-react";
 import type { ParsedBoardData, BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -139,7 +139,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
               onClick={handleBack}
               className="p-2 rounded-lg bg-white dark:bg-gray-700 shadow-sm hover:shadow-md transition-shadow"
             >
-              <ChevronLeft className="w-6 h-6" />
+              {isRTL ? <ChevronRight className="w-6 h-6" /> : <ChevronLeft className="w-6 h-6" />}
             </motion.button>
           )}
           <motion.button

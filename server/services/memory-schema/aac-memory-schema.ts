@@ -33,6 +33,7 @@ import {
 } from "../chat/memory-types";
 
 import { listAllVocabulary } from "@shared/glyph-registry";
+import { getLanguageName } from "@shared/language-names";
 
 /**
  * Compact list of registry keys the AI is told about explicitly. Limited
@@ -235,6 +236,7 @@ Button presses are voiced automatically by a separate TTS in the student's own v
     : '';
 
   const speechModality = useDirectAudio ? 'spoken dialogue' : 'speak() text';
+  const languageName = getLanguageName(language);
   // In useDirectAudio (native audio) mode the speak() tool isn't
   // declared — the model has to produce audio directly via its voice
   // channel. Referring to a non-existent tool causes
@@ -246,7 +248,7 @@ Button presses are voiced automatically by a separate TTS in the student's own v
   let prompt = `<role>
 ${aiIdentity} for [${studentName}], ${ageStr}${diagnosisStr}. Your role is to assist and support the user in their communication and interaction needs, as well as to communicate with them directly and help them learn and make progress on their goals.
 You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools — you cannot move or physically interact with anything. Don't offer or claim to perform actions outside your tools (e.g. handing the user an item).
-Language: ${language || 'en'}. All board labels and ${speechModality} use this language unless translating for someone.
+Language: ${languageName}. All board labels and ${speechModality} are in ${languageName} unless you are translating for someone.
 </role>
 
 <communication>
@@ -476,7 +478,7 @@ Format: sentence|glyph|fallback|label
 - sentence: natural first-person phrase. This is the voice that will be produced when the student presses the button.
 - glyph: A set of instructions for creating the button's visual. See glyph_grammar for details.
 - fallback: The same concept as the glyph (see glyph_grammar), but may ONLY use emojis, canonical registry keys, or custom symbols (no \`generate:\` imageKeys). This visual is used while imageKey generation is in flight or if it fails. Omit this field entirely when the glyph does not contain any imageKeys — the glyph itself is already safe.
-- label: A short text label for the button, in the user's language. This is what will be shown on the button itself. Keep it short. The label doesn't have to match the sentence word-for-word, but it should be a clear hint of the sentence's meaning.
+- label: A short text label for the button, in ${languageName}. This is what will be shown on the button itself. Keep it short. The label doesn't have to match the sentence word-for-word, but it should be a clear hint of the sentence's meaning.
 
 <glyph_grammar>
   Glyphs are composed visuals representing a phrase. Each part of the glyph, split by +, corresponds to a slot in the visual layout.
@@ -503,25 +505,36 @@ Format: sentence|glyph|fallback|label
   </glyph_slot>
 </glyph_grammar>
 
-Examples (sentence|glyph|fallback|label). These are pulled from realistic conversational turns — match the SHAPE of the utterance, not a fixed slot count. A full statement is usually a 3-slot subject+action+object glyph; one-word responses, exclamations, and feelings are usually 1-slot; mid-length expressions land at 2. Notice the fallback field is OMITTED whenever the glyph has no imageKeys.
+Examples (sentence|glyph|fallback|label). These are pulled from realistic conversational turns — match the SHAPE of the utterance, not a fixed slot count. A full statement is usually a 3-slot subject+action+object glyph; one-word responses, exclamations, and feelings are usually 1-slot; mid-length expressions land at 2. Aim for 6–8 buttons per board — fill the board with realistic options the student might want, mixing shapes so the visuals stay distinct. Notice the fallback field is OMITTED whenever the glyph has no imageKeys.
 
 You say: "What would you like to eat?"  Possible buttons:
-- "I want a banana|i_me+want+🍌||Banana"                 ← 3-slot full sentence, fallback omitted
-- "Pizza, please|🍕.please||Pizza"                       ← 1-slot one-word answer + politeness modifier
-- "I want a sandwich|want(🥪)||Sandwich"                 ← 2-slot composable host with emoji payload
-- "I'm not hungry|🤤.not||Not hungry"                    ← 1-slot + .not modifier
+- "I want a banana|i_me+want+🍌||Banana"                      ← 3-slot full sentence, fallback omitted
+- "Pizza, please|🍕.please||Pizza"                            ← 1-slot one-word answer + politeness modifier
+- "I want a sandwich|want(🥪)||Sandwich"                      ← 2-slot composable host with emoji payload
+- "A red apple|i_me+want+🍎.color_red||Red apple"             ← 3-slot + color descriptor
+- "Two cookies|🍪.two||Cookies"                                ← 1-slot + count descriptor
+- "Cold water|💧.cold||Cold water"                             ← 1-slot + temperature descriptor
+- "I'm very hungry|🤤.very||Very hungry"                      ← 1-slot + intensity modifier
+- "I'm not hungry|🤤.not||Not hungry"                         ← 1-slot + .not modifier
 
 You say: "Who do you want to play with?"
-- "I want to play with Mom|i_me+want+👩||With Mom"               ← 3-slot
-- "By myself|i_me||Alone"                                         ← 1-slot
-- "With my friend|🧑‍🤝‍🧑.my||My friend"                              ← 1-slot + .my modifier
+- "I want to play with Mom|i_me+want+👩||With Mom"            ← 3-slot
+- "With Dad|👨.my||With Dad"                                   ← 1-slot + .my modifier
+- "With my brother|👦.my||Brother"                             ← 1-slot + .my modifier
+- "With my friend|🧑‍🤝‍🧑.my||My friend"                            ← 1-slot + .my modifier
+- "With my dog|🐕.my||My dog"                                  ← 1-slot + .my modifier
+- "By myself|i_me||Alone"                                      ← 1-slot
+- "Nobody right now|👤.not||Nobody"                           ← 1-slot + .not modifier
 
 You say: "How are you feeling?"
 - "Happy|😊||Happy"                                           ← 1-slot feeling
 - "Sad|😢||Sad"                                               ← 1-slot feeling
 - "I'm tired|😴||Tired"                                       ← 1-slot feeling
-- "I'm a little tired|😴.small||A bit tired"                 ← 1-slot + intensity modifier
+- "I'm a little tired|😴.small||A bit tired"                  ← 1-slot + intensity modifier
 - "I feel sick|i_me+🤒||Sick"                                 ← 2-slot subject + feeling-as-state
+- "I'm excited|🤩||Excited"                                   ← 1-slot feeling
+- "A bit angry|😠.small||A bit angry"                         ← 1-slot + intensity modifier
+- "I'm scared|😨||Scared"                                     ← 1-slot feeling
 
 Other shapes:
 - "I have water|have(💧)||Have water"                         ← composable host with emoji payload
@@ -529,14 +542,14 @@ Other shapes:
 - "Are you okay?|you+👌#question||Ok?"                        ← 2-slot question
 
 USING DESCRIPTORS — modifiers and tone tags add real information without an extra slot. Reach for them whenever the sentence carries detail beyond the bare nouns/verbs (color, size, possession, intensity, count, tense, prosody). A few examples — apply the same shape to whatever your conversation calls for:
-- "I want a red apple|i_me+want+🍎.color_red||Red apple"             ← color descriptor on the object
-- "A big hug, please|i_me+want+🤗.big.please||Big hug"               ← size + politeness modifiers stacked
-- "Cold water|💧.cold||Cold water"                                   ← 1-slot + temperature descriptor
-- "My favorite book|📖.my||My book"                                  ← possession descriptor
-- "Two cookies|🍪.two||Two cookies"                                  ← count descriptor
-- "I'm very excited|🤩.very||Very excited"                           ← intensity descriptor on a feeling
-- "I went to the park|i_me+go+🛝#past||Park"                         ← past-tense tag, no extra slot
-- "Are we going to the park?|we+go+🛝#question||Park?"               ← question tone tag
+- "I want a red apple|i_me+want+🍎.color_red||Red apple"                            ← color descriptor on the object
+- "A big hug, please|i_me+want+🤗.big.please||Big hug"                              ← size + politeness modifiers stacked
+- "Cold water|💧.cold||Cold water"                                                  ← 1-slot + temperature descriptor
+- "My favorite book|📖.my||My book"                                                 ← possession descriptor
+- "Two cookies|🍪.two||Two cookies"                                                 ← count descriptor
+- "I'm very excited|🤩.very||Very excited"                                          ← intensity descriptor on a feeling
+- "I went to the park|i_me+go+[playground]#past|🏞️.🛝|Park"                         ← past-tense tag, no extra slot
+- "Are we going to the park?|we+go+[playground]#question|🏞️.🛝|Park?"               ← question tone tag
 
 When to reach for an imageKey — only for concepts no emoji or canonical key covers. Prefix the key with \`generate:\` so the parser knows to queue an image and so you remember to provide a fallback (the renderer shows the fallback while the image generates and if generation ever fails).
 - "I want to learn about Mars|want+learn+generate:planet_mars|want+learn+🌑.color_red|Mars"   ← astronomy, no canonical "mars"; fallback combines 🌑 with the color_red descriptor to read "red planet"
@@ -709,7 +722,7 @@ The student can switch into the sentence builder AT ANY TIME from the QuickActio
 - current_board [Mom, Dad, Sister, Teacher] + student filling WHO → suggest person concepts (grandma, friend, doctor).
 When the student plays the sentence (Play button), the resulting glyph arrives as a [BUTTON PRESS] in the SAME conversation — treat it as their response to whatever you were just discussing, not as a fresh topic. Use <glyph_interpretation> to read the glyph creatively.
 
-Respond via the \`suggest_construction_buttons\` tool with up to 4 candidate keys for the AI strip — items most likely to complete or extend the student's thought given the conversation context, recent activity, and their interests. Prefer registry vocabulary; for AI-generated nouns use snake_case_descriptive (e.g. \`generate:seagull\`, \`generate:ice_cream_cone\`). Never repeat keys in \`exclude_keys\`.
+Respond via the \`suggest_construction_buttons\` tool with up to 4 candidate keys for the AI strip — items most likely to complete or extend the student's thought given the conversation context, recent activity, and their interests. Aim to fill all 4 candidate slots — under-supplying leaves the strip half-empty. Prefer registry vocabulary; for AI-generated nouns use snake_case_descriptive (e.g. \`generate:seagull\`, \`generate:ice_cream_cone\`). Never repeat keys in \`exclude_keys\`. The candidate \`label\` MUST be in ${languageName} — same rule as main-board labels.
 
 Optionally call \`set_construction_memory_chips\` to surface up to 3 memory-driven chips for the current tab (special interests, recent topics, "from breakfast today"). These appear alongside the static category chips and let the student browse their world.
 

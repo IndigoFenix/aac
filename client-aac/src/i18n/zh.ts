@@ -7,6 +7,13 @@ export const zh: Translations = {
   app: {
     name: "Aivota AAC",
     loading: "加载中...",
+    tagline: "高级沟通平台",
+    initializing: "初始化中...",
+    retry: "重试",
+    cameraUnavailable: "相机不可用",
+    boardsUnavailable: "面板不可用",
+    chatUnavailable: "聊天不可用",
+    featuresLimited: "某些功能可能受限",
   },
 
   common: {

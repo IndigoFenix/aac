@@ -7,6 +7,13 @@ export const ko: Translations = {
   app: {
     name: "Aivota AAC",
     loading: "로딩 중...",
+    tagline: "고급 의사소통 플랫폼",
+    initializing: "초기화 중...",
+    retry: "재시도",
+    cameraUnavailable: "카메라를 사용할 수 없음",
+    boardsUnavailable: "보드를 사용할 수 없음",
+    chatUnavailable: "채팅을 사용할 수 없음",
+    featuresLimited: "일부 기능이 제한될 수 있습니다",
   },
 
   common: {

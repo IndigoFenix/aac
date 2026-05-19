@@ -4,7 +4,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
@@ -593,8 +593,8 @@ export default function DynamicBoard({
             onClick={navigateBack}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md hover:bg-blue-50"
           >
-            <ArrowLeft className="w-3 h-3" />
-            Back
+            {isRTL ? <ArrowRight className="w-3 h-3" /> : <ArrowLeft className="w-3 h-3" />}
+            {t("common.back")}
           </button>
           {currentPage?.name && (
             <span className="text-xs text-gray-500 truncate">{currentPage.name}</span>

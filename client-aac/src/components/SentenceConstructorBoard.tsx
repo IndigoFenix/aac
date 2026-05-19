@@ -758,10 +758,11 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             />
           )}
 
-          {/* Play button — disabled when no slots filled */}
+          {/* Play button — disabled when no slots filled. Arrow points
+              along the reading direction so it reads as "forward / go". */}
           <ActionButton
             label={t("construction.play")}
-            icon="▶"
+            icon={isRTL ? "◀" : "▶"}
             primary
             disabled={displayedGlyph.slots.length === 0}
             onPress={handlePlay}

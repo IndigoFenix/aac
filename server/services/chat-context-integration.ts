@@ -72,6 +72,7 @@ import type { LicensePermissions } from "@shared/license-permissions";
 import type { AccessCtx } from "./sharing/visibility";
 import { withInstituteVisibility } from "./sharing/visibility";
 import { recordShareDerivedViewSingle } from "./sharing/audit";
+import { getLanguageName } from "@shared/language-names";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
@@ -711,7 +712,7 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
 
     const s = this.state.student;
     const age = studentService.calculateAge(s.birthDate);
-    return `Student: ${s.firstName || "Unknown"}\nGender: ${s.gender}\nAge: ${age}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
+    return `Student: ${s.firstName || "Unknown"}\nGender: ${s.gender}\nAge: ${age}\n${s.primaryLanguage ? `Primary Language: ${getLanguageName(s.primaryLanguage)}\n` : ""}`;
   }
 }
 

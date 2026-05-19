@@ -7,6 +7,13 @@ export const he: Translations = {
   app: {
     name: "Aivota AAC",
     loading: "טוען...",
+    tagline: "פלטפורמת תקשורת מתקדמת",
+    initializing: "מאתחל...",
+    retry: "נסה שוב",
+    cameraUnavailable: "מצלמה אינה זמינה",
+    boardsUnavailable: "לוחות אינם זמינים",
+    chatUnavailable: "צ'אט אינו זמין",
+    featuresLimited: "חלק מהתכונות עשויות להיות מוגבלות",
   },
 
   common: {

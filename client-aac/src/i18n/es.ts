@@ -7,6 +7,13 @@ export const es: Translations = {
   app: {
     name: "Aivota AAC",
     loading: "Cargando...",
+    tagline: "Plataforma de Comunicación Avanzada",
+    initializing: "Inicializando...",
+    retry: "Reintentar",
+    cameraUnavailable: "Cámara no disponible",
+    boardsUnavailable: "Tableros no disponibles",
+    chatUnavailable: "Chat no disponible",
+    featuresLimited: "Algunas funciones pueden estar limitadas",
   },
 
   common: {

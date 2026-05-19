@@ -5,6 +5,13 @@ export const en = {
   app: {
     name: "Aivota AAC",
     loading: "Loading...",
+    tagline: "Advanced Communication Platform",
+    initializing: "Initializing...",
+    retry: "Retry",
+    cameraUnavailable: "Camera unavailable",
+    boardsUnavailable: "Boards unavailable",
+    chatUnavailable: "Chat unavailable",
+    featuresLimited: "Some features may be limited",
   },
 
   common: {
