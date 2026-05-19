@@ -19,6 +19,7 @@ export type {
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
+  BinaryChoiceOption,
 } from "./dual-agent-types";
 import type {
   DualAgentMessage,
@@ -27,6 +28,7 @@ import type {
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
+  BinaryChoiceOption,
   UseDualAgentReturn,
 } from "./dual-agent-types";
 import {
@@ -185,12 +187,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNo = useCallback(() => setYesNoActive(false), []);
 
+  // Binary-choice overlay state — non-null array of two options shows the overlay
+  const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<BinaryChoiceOption[] | null>(null);
+  const dismissBinaryChoice = useCallback(() => setBinaryChoiceOptions(null), []);
+
   // Focus frame active state — briefly true when AI requests a focus frame
   const [focusActive, setFocusActive] = useState(false);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Deferred ask_yes_no: show overlay after TTS playback completes
   const pendingAskYesNoRef = useRef(false);
+  // Deferred ask_binary_choice: same pattern — buffered options until TTS ends
+  const pendingAskBinaryChoiceRef = useRef<BinaryChoiceOption[] | null>(null);
 
   // Local storage config (from server) — stored as ref to avoid re-renders
   const localStorageConfigRef = useRef<AacLocalStorageConfig | null>(null);
@@ -222,6 +230,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       if (pendingAskYesNoRef.current) {
         pendingAskYesNoRef.current = false;
         setYesNoActive(true);
+      }
+      // Same for deferred binary-choice overlay
+      if (pendingAskBinaryChoiceRef.current) {
+        const opts = pendingAskBinaryChoiceRef.current;
+        pendingAskBinaryChoiceRef.current = null;
+        setBinaryChoiceOptions(opts);
       }
     },
   });
@@ -605,6 +619,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           pendingAskYesNoRef.current = true;
           break;
 
+        case "binary_choice": {
+          const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
+          if (opts.length >= 2) setBinaryChoiceOptions(opts.slice(0, 2));
+          break;
+        }
+
+        case "ask_binary_choice": {
+          // Deferred binary-choice — show overlay after TTS playback completes
+          const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
+          if (opts.length >= 2) pendingAskBinaryChoiceRef.current = opts.slice(0, 2);
+          break;
+        }
+
         case "focus_request":
           // AI requested a high-resolution focus frame
           if (msg.data?.reason && captureHighResFrameRef.current) {
@@ -769,6 +796,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           if (pendingAskYesNoRef.current && !audioPlayer.isPlaying) {
             pendingAskYesNoRef.current = false;
             setYesNoActive(true);
+          }
+          if (pendingAskBinaryChoiceRef.current && !audioPlayer.isPlaying) {
+            const opts = pendingAskBinaryChoiceRef.current;
+            pendingAskBinaryChoiceRef.current = null;
+            setBinaryChoiceOptions(opts);
           }
           break;
       }
@@ -1243,6 +1275,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Yes/No overlay
     yesNoActive,
     dismissYesNo,
+
+    // Binary-choice overlay
+    binaryChoiceOptions,
+    dismissBinaryChoice,
 
     // Focus frame
     focusActive,

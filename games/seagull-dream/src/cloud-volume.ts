@@ -148,38 +148,18 @@ float valueNoise(vec3 p) {
   );
 }
 
-// Worley (cellular) noise — produces puffy "cell" patterns the way real
-// cumulus clouds clump. We invert it so high values = inside a cell.
-float worley(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  float minDist = 1.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      for (int z = -1; z <= 1; z++) {
-        vec3 g = vec3(float(x), float(y), float(z));
-        vec3 o = vec3(
-          hash3(i + g + vec3(0.0)),
-          hash3(i + g + vec3(11.3)),
-          hash3(i + g + vec3(23.7))
-        );
-        vec3 d = g + o - f;
-        minDist = min(minDist, dot(d, d));
-      }
-    }
-  }
-  return 1.0 - clamp(sqrt(minDist), 0.0, 1.0);
-}
-
-// Perlin-Worley-ish: mix of low-freq value noise with worley detail.
-// 3 octaves; cheap enough for per-march-sample evaluation.
+// Value-only fbm (2 octaves). Dropped the worley octave — worley does
+// 27 hash lookups per sample, and at 32 view steps × 4 light steps it
+// was the dominant per-frame cost. Two octaves of value noise gives
+// puffy-enough cloud patches for the look we need; the worley cell
+// shape becomes visible only on close-up inspection anyway.
 float fbm(vec3 p) {
   float n = 0.0;
-  float amp = 0.5;
+  float amp = 0.6;
   float freq = 1.0;
-  for (int i = 0; i < 3; i++) {
-    n += amp * mix(valueNoise(p * freq), worley(p * freq), 0.5);
-    freq *= 2.13;
+  for (int i = 0; i < 2; i++) {
+    n += amp * valueNoise(p * freq);
+    freq *= 2.31;
     amp *= 0.5;
   }
   return n;
@@ -233,8 +213,16 @@ vec2 raysShell(vec3 ro, vec3 rd, vec3 center, float rInner, float rOuter) {
 // ── View ray reconstruction ────────────────────────────────────────────────
 // Reconstruct the world-space view direction for the current pixel from
 // uv + projectionInverse + cameraMatrixWorld.
+//
+// IMPORTANT: clip.z is 0 (NOT 1). NDC.z = 1 corresponds to the far
+// plane at "infinity" in the perspective formula, which produces
+// view.w = (1 + c)/d where c → -1 for far >> near → view.w = 0.
+// Division by zero → NaN → every pixel gets the same garbage value
+// (solid color). NDC.z = 0 unprojects mid-frustum and gives a
+// well-defined view-space point whose direction (after normalize) is
+// the correct camera→pixel ray.
 vec3 computeViewRay(vec2 uv) {
-  vec4 clip = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+  vec4 clip = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
   vec4 view = uProjectionInverse * clip;
   view /= view.w;
   vec4 world = uCameraMatrixWorld * vec4(view.xyz, 0.0);
@@ -267,50 +255,45 @@ float dualLobeHG(float g, float cosTheta, float k) {
   return mix(henyeyGreenstein(g, cosTheta), henyeyGreenstein(-g * 0.5, cosTheta), k);
 }
 
-// ── Cloud density ──────────────────────────────────────────────────────────
-// Maps a 3D sample inside the cloud shell to a [0,1] density. Combines:
-//  - altitude-based dimensional profile (puffy in the middle of the
-//    shell, thin at top and bottom)
-//  - fbm noise for shape
-//  - coverage threshold (sliding the noise → clamp window)
-float cloudDensity(vec3 worldPos) {
-  vec3 fromCenter = worldPos - uPlanetCenter;
-  float r = length(fromCenter);
-
-  // Altitude-based dimensional profile.
-  float altT = clamp((r - uPlanetRadius - uCloudInner) /
-                     max(1.0, uCloudOuter - uCloudInner), 0.0, 1.0);
-  float profile = altT * (1.0 - altT) * 4.0; // peaks at 0.5 alt with value 1
-
-  // Noise sampling. Coordinates scaled so wavelength is ~1 km at the
-  // chosen frequency. uTime drift gives slow movement.
-  vec3 dir = fromCenter / max(r, 1.0);
-  // Two scales — coarse shape + finer detail.
-  float baseScale = 0.0009; // ~1 cycle per ~1 km
-  vec3 nPos = dir * uPlanetRadius * baseScale + vec3(uTime * 0.005, 0.0, 0.0);
-  float n = fbm(nPos);
-
-  // Coverage maps to a noise threshold. coverage=1 → very low threshold.
-  float thresh = mix(0.7, 0.1, uCoverage);
-  float density = smoothstep(thresh, thresh + 0.15, n) * profile;
-  return density * uDensityMult;
-}
-
-// Light-ray density accumulation. Samples toward the sun and integrates
-// extinction.
-float lightMarch(vec3 startPos, int steps) {
-  float depth = 0.0;
-  float stepSize = (uCloudOuter - uCloudInner) / float(steps);
-  for (int j = 0; j < 16; j++) {
-    if (j >= steps) break;
-    vec3 samplePos = startPos + uSunDirection * stepSize * (float(j) + 0.5);
-    float d = cloudDensity(samplePos);
-    depth += d * stepSize;
-  }
-  return depth;
+// Ray-sphere first-intersection helper (returns smallest positive t,
+// or negative if no hit).
+float raySpherePositive(vec3 ro, vec3 rd, vec3 center, float radius) {
+  vec3 oc = ro - center;
+  float b = dot(oc, rd);
+  float c = dot(oc, oc) - radius * radius;
+  float h = b * b - c;
+  if (h < 0.0) return -1.0;
+  h = sqrt(h);
+  float t1 = -b - h;
+  float t2 = -b + h;
+  if (t1 > 0.0) return t1;   // outside, ahead
+  if (t2 > 0.0) return t2;   // inside (or behind near), ahead
+  return -1.0;
 }
 
 // ── Main pass ──────────────────────────────────────────────────────────────
+//
+// SINGLE-SPHERE-SAMPLE cloud shader. No ray marching. Cloud layer is
+// rendered as a SHEET wrapped around the planet at one altitude
+// (midpoint of inner/outer). For each pixel we:
+//
+//   1. Intersect camera ray with the cloud sphere.
+//   2. Sample two-tier noise at the surface direction:
+//      - MACRO noise = "is there a cloud cluster here?" (continent-
+//        scale wavelength, ~5000 km features). Threshold gives big
+//        clear regions and big stormy regions.
+//      - DETAIL noise = "what's the cloud shape inside the cluster?"
+//        (~500 km features). Adds variety within stormy regions.
+//   3. Multiply macro × detail with thresholds for lumpy variety.
+//   4. Shade with sphere normal · sun direction (simple lambertian).
+//   5. Composite with scene.
+//
+// Per-pixel cost: ~1 sphere test + 2 fbm calls (4 noise lookups total).
+// Versus ray-march version: 16 march × 2 light × ~8 noise = 256 lookups.
+// ~30× faster.
+//
+// Trade-off: no volumetric depth. Clouds look like a painted sheet at
+// one altitude. Fits the "abstract, low-poly" aesthetic.
 void main() {
   vec4 sceneColor = texture2D(uSceneColor, vUv);
 
@@ -322,103 +305,104 @@ void main() {
   vec3 ro = uCameraPosition;
   vec3 rd = computeViewRay(vUv);
 
-  // Debug 2: paint raw vUv as RGB to verify the per-pixel UV varies
-  // at all. Expected: bottom-left = (0,0) BLACK, bottom-right = (1,0)
-  // RED, top-left = (0,1) GREEN, top-right = (1,1) YELLOW — a smooth
-  // gradient across the screen. If solid color, vUv is constant (the
-  // fragment shader is somehow being fed a single uv for all pixels).
+  // Debug 2: visualize world-space view ray as RGB.
   if (uDebugMode == 2) {
-    gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+    gl_FragColor = vec4(rd * 0.5 + 0.5, 1.0);
     return;
   }
 
-  // Find cloud-shell entry/exit.
-  float rInner = uPlanetRadius + uCloudInner;
-  float rOuter = uPlanetRadius + uCloudOuter;
-  vec2 shell = raysShell(ro, rd, uPlanetCenter, rInner, rOuter);
-  bool shellHit = !(shell.x < 0.0 || shell.y <= shell.x);
-
-  if (!shellHit) {
+  // Cloud sheet at midpoint of declared inner/outer altitudes.
+  float cloudR = uPlanetRadius + (uCloudInner + uCloudOuter) * 0.5;
+  float t = raySpherePositive(ro, rd, uPlanetCenter, cloudR);
+  if (t < 0.0) {
     gl_FragColor = sceneColor;
     return;
   }
 
-  // Cap the march at the scene depth — don't march clouds behind solid
-  // geometry. Sample non-linear depth, convert to linear meters, clamp.
-  // Debug 1 skips this clip so we can see clouds even where geometry
-  // would normally hide them.
+  vec3 worldPt = ro + rd * t;
+
+  // PLANET-OCCLUSION CLIP. The camera ray may hit the cloud sphere
+  // either on the visible (near) hemisphere or on the far hemisphere
+  // (behind the planet from the camera's POV). Without this clip the
+  // far-hemisphere intersection renders against the horizon and below,
+  // looking like "a second layer painted on the ground in the distance".
+  //
+  // We test whether the camera→cloud-point line passes through the
+  // planet sphere: parameterize ray, find the closest approach to
+  // planet center, and if that closest point is INSIDE the planet
+  // sphere AND in front of the camera, the cloud point is occluded.
+  //
+  // This does NOT account for terrain elevation above the planet base
+  // (e.g. mountains taller than the cloud altitude). The previous
+  // depth-buffer clip would have, but it was broken — the renderer
+  // uses logarithmicDepthBuffer which my linearizeDepth formula does
+  // not handle correctly. Trade-off: mountains > cloud altitude can
+  // poke through the cloud sheet visually until log-depth handling
+  // is added.
   if (uDebugMode != 1) {
-    float sceneZ = texture2D(uSceneDepth, vUv).r;
-    if (sceneZ < 1.0) {
-      float linearScene = linearizeDepth(sceneZ);
-      shell.y = min(shell.y, linearScene);
-      if (shell.y <= shell.x) {
+    vec3 d = worldPt - ro;
+    float dLenSq = dot(d, d);
+    float tMinPlanet = dot(uPlanetCenter - ro, d) / max(dLenSq, 1e-6);
+    if (tMinPlanet > 0.0 && tMinPlanet < 1.0) {
+      vec3 closestPt = ro + tMinPlanet * d;
+      if (length(closestPt - uPlanetCenter) < uPlanetRadius) {
         gl_FragColor = sceneColor;
         return;
       }
     }
   }
 
-  // March. uMarchSteps samples evenly distributed across the shell
-  // segment. Stride = (tFar - tNear) / N.
-  float tFar = shell.y;
-  float tNear = max(0.0, shell.x);
-  float marchLen = tFar - tNear;
-  float stride = marchLen / float(uMarchSteps);
+  // Sample direction on the cloud sphere (point where the ray hits).
+  vec3 sphereDir = normalize(worldPt - uPlanetCenter);
 
-  // Phase function — anisotropic forward scattering toward sun.
-  float cosTheta = dot(rd, -uSunDirection);
-  float phase = dualLobeHG(0.7, cosTheta, 0.5);
+  // Two-tier noise — defined in spherical-direction space so it wraps
+  // smoothly around the planet without seam artifacts.
+  vec3 timeDrift = vec3(uTime * 0.003, 0.0, uTime * 0.001);
+  float macroScale = 4.0;   // ~continent-sized (4 cycles around planet hemisphere)
+  float detailScale = 25.0; // ~few hundred km (25 cycles around hemisphere)
 
-  vec3 accumColor = vec3(0.0);
-  float transmittance = 1.0;
+  float macroN = fbm(sphereDir * macroScale + timeDrift);
+  float detailN = fbm(sphereDir * detailScale + timeDrift * 4.0);
 
-  // Stochastic jitter to break up banding from low march counts.
-  float jitter = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+  // Cluster mask: smoothstep so the boundary between clear/stormy is
+  // soft. Threshold controlled by uCoverage — higher coverage = lower
+  // threshold = more cloud.
+  float clusterThresh = mix(0.65, 0.25, uCoverage);
+  float cluster = smoothstep(clusterThresh, clusterThresh + 0.12, macroN);
 
-  // Debug 3: accumulate raw density along the ray as grayscale —
-  // independent of lighting. Tests whether the noise field is
-  // producing visible density.
+  // Detail mask inside cluster regions.
+  float shape = smoothstep(0.35, 0.65, detailN);
+
+  // Combined density. Multiplication gives "lumpy" character:
+  // clear regions stay clear (cluster ~ 0), stormy regions vary
+  // internally (cluster ~ 1 modulated by shape).
+  float density = cluster * shape * uDensityMult;
+
+  // Debug 3: paint raw density as grayscale.
   if (uDebugMode == 3) {
-    float densitySum = 0.0;
-    for (int i = 0; i < 128; i++) {
-      if (i >= uMarchSteps) break;
-      float t = tNear + stride * (float(i) + jitter);
-      vec3 samplePos = ro + rd * t;
-      densitySum += cloudDensity(samplePos);
-    }
-    float luma = clamp(densitySum / float(uMarchSteps) * 2.0, 0.0, 1.0);
-    gl_FragColor = vec4(mix(sceneColor.rgb, vec3(luma), 0.85), 1.0);
+    gl_FragColor = vec4(mix(sceneColor.rgb, vec3(density), 0.85), 1.0);
     return;
   }
-
-  for (int i = 0; i < 128; i++) {
-    if (i >= uMarchSteps) break;
-    float t = tNear + stride * (float(i) + jitter);
-    vec3 samplePos = ro + rd * t;
-    // Debug 4: constant density inside the shell.
-    float density = (uDebugMode == 4) ? 0.5 : cloudDensity(samplePos);
-    if (density < 0.001) continue;
-
-    // Light march — accumulates light extinction toward sun.
-    float lightDepth = lightMarch(samplePos, uLightSteps);
-    float lightTransmittance = beersLaw(lightDepth * 2.0);
-
-    // Lit + ambient.
-    vec3 litColor = uSunColor * phase * lightTransmittance + uAmbientColor;
-    litColor *= uCloudColor;
-
-    // Accumulate front-to-back with extinction.
-    float sampleExtinct = exp(-density * stride);
-    vec3 sampleContribution = litColor * density * stride * transmittance;
-    accumColor += sampleContribution;
-    transmittance *= sampleExtinct;
-
-    if (transmittance < 0.005) break;
+  // Debug 4: constant density inside the shell (skip noise).
+  if (uDebugMode == 4) {
+    density = 0.6 * uDensityMult;
   }
 
-  // Composite: clouds over scene with computed transmittance.
-  vec3 finalRgb = sceneColor.rgb * transmittance + accumColor;
+  if (density < 0.01) {
+    gl_FragColor = sceneColor;
+    return;
+  }
+  density = clamp(density, 0.0, 0.95);
+
+  // Simple lighting: sphere normal dotted with direction TO sun. Bias
+  // toward ambient so unlit clouds still read against dark night sky.
+  float litDot = max(0.0, dot(sphereDir, -uSunDirection));
+  vec3 lit = uSunColor * (0.35 + 0.65 * litDot) + uAmbientColor;
+  lit *= uCloudColor;
+
+  // Composite: clouds over scene (NormalBlending equivalent done
+  // manually).
+  vec3 finalRgb = sceneColor.rgb * (1.0 - density) + lit * density;
   gl_FragColor = vec4(finalRgb, 1.0);
 }
 `;
@@ -455,8 +439,11 @@ export class VolumetricCloudPass extends Pass {
         uSunColor: { value: new THREE.Color(1.4, 1.3, 1.15) },
         uAmbientColor: { value: new THREE.Color(0.25, 0.3, 0.4) },
         uTime: { value: 0 },
-        uMarchSteps: { value: 32 },
-        uLightSteps: { value: 4 },
+        uMarchSteps: { value: 16 },
+        // Light steps drop from 4 → 2. Lighting goes from quad-loop
+        // accurate to "rough estimate" but the per-pixel cost
+        // (16 view × 2 light = 32 noise calls) is half of before.
+        uLightSteps: { value: 2 },
         // Treat as a boolean: 1 = render clouds, 0 = pass-through.
         uEnabled: { value: 1 },
         uDebugMode: { value: 0 },

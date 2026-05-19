@@ -8,6 +8,7 @@ import type {
   ChatProvider,
 } from "../providers/streaming-provider";
 import { resolveEmoji } from "@shared/emoji-registry";
+import { stripBrackets } from "@shared/glyph-compositor.js";
 
 /**
  * Parse board button format. NEW field order:
@@ -94,7 +95,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
       // Single-slot fallback → pull an iconRef or symbolPath from it.
       const fbSlots = glyphFallback.split('+').map(s => s.trim()).filter(Boolean);
       if (fbSlots.length === 1) {
-        const slotMain = fbSlots[0].split('.')[0].split('(')[0].trim();
+        const slotMain = stripBrackets(fbSlots[0].split('.')[0].split('(')[0]);
         if (slotMain.startsWith("face:")) {
           symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
         } else if (slotMain.startsWith("symbol:")) {
@@ -110,7 +111,10 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
     if (glyph) {
       const glyphSlots = glyph.split('+').map(s => s.trim()).filter(Boolean);
       if (glyphSlots.length === 1) {
-        const slotMain = glyphSlots[0].split('.')[0].split('(')[0].trim();
+        // Brackets around an imageKey are a prompt hint, not data — strip
+        // them so the downstream emoji/registry/generator lookups see the
+        // bare key the AI intended.
+        const slotMain = stripBrackets(glyphSlots[0].split('.')[0].split('(')[0]);
         // An imageKey is a bare snake_case identifier — not an emoji, not a
         // symbol/face ref. The existing auto-symbol pipeline picks this up
         // and queues generation if no matching custom symbol exists yet.

@@ -5,7 +5,7 @@ import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
-import type { PermittedWebsite, PermittedYoutubeChannel } from '@shared/schema';
+import type { PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeVideo } from '@shared/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -98,6 +98,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [permittedYoutubeChannels, setPermittedYoutubeChannels] = useState<PermittedYoutubeChannel[]>([]);
   const [youtubeChannelInput, setYoutubeChannelInput] = useState('');
   const [resolvingChannel, setResolvingChannel] = useState(false);
+  const [permittedYoutubeVideos, setPermittedYoutubeVideos] = useState<PermittedYoutubeVideo[]>([]);
+  const [youtubeVideoInput, setYoutubeVideoInput] = useState('');
+  const [resolvingVideo, setResolvingVideo] = useState(false);
   const [accessFontSize, setAccessFontSize] = useState(100);
   const [accessHighContrast, setAccessHighContrast] = useState(false);
   const [accessReduceAnimations, setAccessReduceAnimations] = useState(false);
@@ -199,6 +202,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
+      setPermittedYoutubeVideos(Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : []);
       const acc = aac?.accessibility || {};
       setAccessFontSize(acc.fontSize ?? 100);
       setAccessHighContrast(acc.highContrast ?? false);
@@ -237,6 +241,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
       const originalPermittedYoutubeChannels = Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : [];
+      const originalPermittedYoutubeVideos = Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : [];
       const origAcc = aac?.accessibility || {};
       const origAccessFontSize = origAcc.fontSize ?? 100;
       const origAccessHighContrast = origAcc.highContrast ?? false;
@@ -268,13 +273,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
         JSON.stringify(permittedYoutubeChannels) !== JSON.stringify(originalPermittedYoutubeChannels) ||
+        JSON.stringify(permittedYoutubeVideos) !== JSON.stringify(originalPermittedYoutubeVideos) ||
         accessFontSize !== origAccessFontSize ||
         accessHighContrast !== origAccessHighContrast ||
         accessReduceAnimations !== origAccessReduceAnimations ||
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, permittedYoutubeVideos, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -305,6 +311,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
       permittedYoutubeChannels?: PermittedYoutubeChannel[];
+      permittedYoutubeVideos?: PermittedYoutubeVideo[];
       accessibility?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
@@ -357,6 +364,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       appConfig,
       permittedWebsites,
       permittedYoutubeChannels,
+      permittedYoutubeVideos,
       accessibility: {
         fontSize: accessFontSize,
         highContrast: accessHighContrast,
@@ -395,6 +403,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
+      setPermittedYoutubeVideos(Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : []);
       const accR = aac?.accessibility || {};
       setAccessFontSize(accR.fontSize ?? 100);
       setAccessHighContrast(accR.highContrast ?? false);
@@ -405,6 +414,46 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
   const handleResetToDefault = () => {
     setChatAgentPrompt(DEFAULT_AAC_PROMPT);
+  };
+
+  const handleAddYoutubeVideo = async () => {
+    const raw = youtubeVideoInput.trim();
+    if (!raw) return;
+    setResolvingVideo(true);
+    try {
+      const res = await apiRequest('POST', '/api/aac/youtube/resolve-video', { input: raw });
+      const data = await res.json();
+      if (!data.videoId) {
+        toast({
+          title: t('aacSettings.permittedYoutubeVideosResolveFailedTitle'),
+          description: t('aacSettings.permittedYoutubeVideosResolveFailedDesc'),
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (permittedYoutubeVideos.some(v => v.videoId === data.videoId)) {
+        toast({
+          title: t('aacSettings.permittedYoutubeVideosDuplicate'),
+          variant: 'destructive',
+        });
+        return;
+      }
+      const label = (data.title || raw).trim();
+      const description = (data.description || '').trim();
+      setPermittedYoutubeVideos(prev => [
+        ...prev,
+        { videoId: data.videoId, label, description },
+      ]);
+      setYoutubeVideoInput('');
+    } catch (err: any) {
+      toast({
+        title: t('aacSettings.permittedYoutubeVideosResolveFailedTitle'),
+        description: err?.message || '',
+        variant: 'destructive',
+      });
+    } finally {
+      setResolvingVideo(false);
+    }
   };
 
   const handleAddYoutubeChannel = async () => {
@@ -1279,6 +1328,117 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </div>
               <p className="text-xs text-muted-foreground">
                 {t('aacSettings.permittedYoutubeChannelsHint')}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Pinned YouTube Videos */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span className="text-xl">📺</span>
+                {t('aacSettings.permittedYoutubeVideosTitle')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.permittedYoutubeVideosDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {permittedYoutubeVideos.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeVideosEmpty')}</p>
+              )}
+              {permittedYoutubeVideos.map((vid, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="flex gap-3">
+                    <img
+                      src={`https://img.youtube.com/vi/${encodeURIComponent(vid.videoId)}/mqdefault.jpg`}
+                      alt=""
+                      className="w-24 h-[54px] object-cover rounded-md bg-black shrink-0"
+                      loading="lazy"
+                    />
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosLabel')}</Label>
+                        <Input
+                          value={vid.label}
+                          onChange={(e) =>
+                            setPermittedYoutubeVideos(prev =>
+                              prev.map((v, i) => (i === idx ? { ...v, label: e.target.value } : v)),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosVideoId')}</Label>
+                        <Input
+                          value={vid.videoId}
+                          onChange={(e) =>
+                            setPermittedYoutubeVideos(prev =>
+                              prev.map((v, i) => (i === idx ? { ...v, videoId: e.target.value } : v)),
+                            )
+                          }
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosDescriptionField')}</Label>
+                    <Input
+                      value={vid.description || ''}
+                      onChange={(e) =>
+                        setPermittedYoutubeVideos(prev =>
+                          prev.map((v, i) => (i === idx ? { ...v, description: e.target.value } : v)),
+                        )
+                      }
+                      placeholder={t('aacSettings.permittedYoutubeVideosDescriptionPlaceholder')}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setPermittedYoutubeVideos(prev => prev.filter((_, i) => i !== idx))
+                    }
+                  >
+                    <Trash2 className="w-3 h-3 me-1" />
+                    {t('aacSettings.permittedYoutubeVideosRemove')}
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder={t('aacSettings.permittedYoutubeVideosAddPlaceholder')}
+                  value={youtubeVideoInput}
+                  onChange={(e) => setYoutubeVideoInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !resolvingVideo) {
+                      e.preventDefault();
+                      handleAddYoutubeVideo();
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleAddYoutubeVideo}
+                  disabled={!youtubeVideoInput.trim() || resolvingVideo}
+                >
+                  {resolvingVideo ? (
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 me-2" />
+                  )}
+                  {t('aacSettings.permittedYoutubeVideosAdd')}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('aacSettings.permittedYoutubeVideosHint')}
               </p>
             </CardContent>
           </Card>

@@ -35,35 +35,101 @@ import {
 import { listAllVocabulary } from "@shared/glyph-registry";
 
 /**
- * Snake_case registry keys that ship with a bundled aac-icon image (the
- * ones the AAC client packages at build time). These keys ALWAYS render
- * — no symbol generation, no quota cost — so they're valid in both the
- * glyph slot AND the fallback slot.
+ * Compact list of registry keys the AI is told about explicitly. Limited
+ * to items where the meaning is non-obvious from any single emoji —
+ * pronouns/deictic pointers, abstract or relational verbs, spatial
+ * deictics, time concepts, and modifiers. Everything else (animals,
+ * food, body parts, family relations, body actions, places, vehicles,
+ * nature, feelings, etc.) has a clear emoji and is deliberately left
+ * off the list — the AI is steered toward emojis for those concepts so
+ * the prompt stays compact and Vertex's function-call serializer has
+ * less context to choke on.
  *
- * Pre-computed at module load and grouped by category so the prompt
- * doesn't drift when the registry changes. Update is automatic: adding
- * an `imagePath` to a new vocabulary item makes it appear here on next
- * server start.
+ * Modifier-only items (categories: []) are bucketed by their
+ * `modifier.transform` family so the AI sees them as a coherent group
+ * ("count", "possession", "color", etc.) rather than scattered.
  */
 function buildBundledIconsBlock(): string {
-  const itemsByCategory: Record<string, Array<{ key: string; emoji?: string }>> = {};
+  // Slot-bound items: appear inside a glyph slot. Grouped by primary
+  // category for readability.
+  const byCategory = new Map<string, Array<string>>();
+  // Modifier items: appended with `.modifier` syntax to an adjacent
+  // slot. Grouped by transform family ("count", "color", etc.) so the
+  // AI knows which ones substitute for each other.
+  const modifierGroups = new Map<string, Array<string>>();
+
+  // We deliberately do NOT show the canonical emoji next to each key.
+  // These items are exposed BECAUSE no single emoji captures them
+  // cleanly — surfacing one would tempt the AI to use the emoji
+  // standalone, defeating the point. The key alone is the contract.
   for (const v of listAllVocabulary()) {
-    if (!v.imagePath) continue;
-    // Group by top-level category — e.g. "people/me" → "people".
-    const folder = v.imagePath.split("/")[0] || "other";
-    if (!itemsByCategory[folder]) itemsByCategory[folder] = [];
-    itemsByCategory[folder].push({ key: v.key, emoji: v.emoji });
+    if (!v.exposeToAi) continue;
+    if (v.pos === "modifier" && v.categories.length === 0) {
+      // Pure modifier — bucket by transform family. `dimension` covers
+      // size/length/height/width in one group from the AI's POV.
+      const transform = v.modifier?.transform ?? "other";
+      const group =
+        transform === "dots" ? "count"
+        : transform === "hands" ? "possession"
+        : transform === "red_x" ? "negation"
+        : transform === "glow" || transform === "shrink" ? "intensity"
+        : transform === "color" ? "color"
+        : transform === "badge" ? "social"
+        : transform;
+      let arr = modifierGroups.get(group);
+      if (!arr) { arr = []; modifierGroups.set(group, arr); }
+      arr.push(v.key);
+      continue;
+    }
+    // Category-bound items. Dimension modifiers live in `what` but
+    // belong with the rest of the modifier list semantically, so route
+    // them there too.
+    if (v.pos === "modifier") {
+      const transform = v.modifier?.transform ?? "other";
+      const group =
+        transform === "dimension" ? "size_shape"
+        : transform === "halo_warm" || transform === "halo_cool" ? "temperature"
+        : "other_modifier";
+      let arr = modifierGroups.get(group);
+      if (!arr) { arr = []; modifierGroups.set(group, arr); }
+      arr.push(v.key);
+      continue;
+    }
+    const primary = v.categories[0];
+    if (!primary) continue;
+    let arr = byCategory.get(primary);
+    if (!arr) { arr = []; byCategory.set(primary, arr); }
+    arr.push(v.key);
   }
-  const lines = ["<bundled_icons>"];
-  lines.push("These registry keys have built-in bundled icons — they render instantly with no generation cost. Use them freely in glyph slots AND in fallback slots. They are the safest content for both fields.");
+
+  const lines: string[] = ["<bundled_icons>"];
+  lines.push("Registry keys with non-obvious meanings. Use them by name (not as emojis). For ANYTHING ELSE — animals, food, body parts, places, vehicles, family relations, body actions like running or dancing, etc. — pick a clear emoji directly. The renderer accepts both, so emojis are equally first-class.");
   lines.push("");
-  for (const [folder, items] of Object.entries(itemsByCategory).sort()) {
-    const rendered = items
-      .sort((a, b) => a.key.localeCompare(b.key))
-      .map(it => it.emoji ? `${it.key} (${it.emoji})` : it.key)
-      .join(", ");
-    lines.push(`- ${folder}: ${rendered}`);
+
+  const CATEGORY_HEADERS: Record<string, string> = {
+    who: "WHO (pronouns + deictic)",
+    do: "DO (abstract / relational verbs)",
+    where: "WHERE (spatial deictic)",
+    when: "WHEN (time)",
+  };
+  for (const cat of ["who", "do", "where", "when"] as const) {
+    const items = byCategory.get(cat);
+    if (!items?.length) continue;
+    lines.push(`${CATEGORY_HEADERS[cat]}:`);
+    lines.push(`  ${items.sort().join(", ")}`);
   }
+
+  if (modifierGroups.size > 0) {
+    lines.push("");
+    lines.push("MODIFIERS — append to a slot with `.modifier` syntax (e.g. `apple.color_red.big`, `cookie.two`, `book.my`). Stack multiple by chaining dots:");
+    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "other_modifier"];
+    for (const group of MODIFIER_ORDER) {
+      const items = modifierGroups.get(group);
+      if (!items?.length) continue;
+      lines.push(`  - ${group.replace("_", " ")}: ${items.sort().join(", ")}`);
+    }
+  }
+
   lines.push("</bundled_icons>");
   return lines.join("\n");
 }
@@ -100,6 +166,12 @@ export function buildInteractiveAgentPrompt(params: {
   permittedWebsites?: Array<{ url: string; label: string; description?: string; subpages?: Array<{ url: string; label: string; description?: string }> }>;
   permittedYoutubeChannels?: Array<{ channelId: string; label: string; description?: string }>;
   /**
+   * Curated pinned videos (clinician-authored playlist). The AI can request a
+   * specific one via open_app("youtube", data="<videoId>") — videoId is preferred
+   * because it's unambiguous; an exact label match also works.
+   */
+  permittedYoutubeVideos?: Array<{ videoId: string; label: string; description?: string }>;
+  /**
    * Recent videos per permitted channel (pre-fetched from RSS). When present,
    * takes precedence over `permittedYoutubeChannels` for prompt text — the AI
    * sees actual video titles so it can suggest real content.
@@ -129,7 +201,7 @@ export function buildInteractiveAgentPrompt(params: {
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
-    permittedYoutubeChannels, youtubeChannelVideos,
+    permittedYoutubeChannels, permittedYoutubeVideos, youtubeChannelVideos,
     autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
@@ -159,10 +231,15 @@ Button presses are voiced automatically by a separate TTS in the student's own v
 
   const isMuted = muteState === 'muted';
   const muteOverride = isMuted
-    ? `\nMUTED: The user has muted you (cave clicked). You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate. You cannot unmute yourself — only the user can, by tapping the cave.`
+    ? `\nMUTED: The user has muted you (cave clicked). You do NOT talk to the user. ${useDirectAudio ? "Stay silent — produce no audio output." : "Never call speak()."} Observe and provide utterance buttons the user can press to communicate. You cannot unmute yourself — only the user can, by tapping the cave.`
     : '';
 
   const speechModality = useDirectAudio ? 'spoken dialogue' : 'speak() text';
+  // In useDirectAudio (native audio) mode the speak() tool isn't
+  // declared — the model has to produce audio directly via its voice
+  // channel. Referring to a non-existent tool causes
+  // MALFORMED_FUNCTION_CALL when the model dutifully tries to call it,
+  // so every instruction that names speak() inlines this check.
 
   // ── <role> ──
 
@@ -214,18 +291,18 @@ NEVER produce text or audio such as "Let me check" or "Let me check that for you
 
     When you see "[BUTTON PRESS] I want to talk about my day", the user is replying to YOU using the option you offered them. Respond like a real conversation — speak your reply aloud, AND call rebuild_board with the same reply text in the 'response' parameter and the new follow-up buttons.
 
-    EXAMPLES (Interact Mode) — You are having a conversation.
+    EXAMPLES (Interact Mode) — You are having a conversation. Notice the fallback field is omitted when no imageKey is used.
     <examples>
       <example>
         User turn: "[BUTTON PRESS] I want to talk about my day."
         You speak: "Sure! What would you like to talk about?"
-        You call: rebuild_board(response="Sure! What would you like to talk about?", buttons="Morning|🌅|sunrise|My morning, Afternoon|🌞|sun|My afternoon, Evening|🌙|night_sky|My evening, Yesterday|📆|sun_with_left_arrow|Yesterday, Last night|🌜|moon_with_left_arrow|Last night, Weekend|📅|calendar_with_weekend_highlighted|My weekend, This week|🗓️|calendar_with_week_highlighted|This week, Something else|🔄|reload|Something else")
+        You call: rebuild_board(response="Sure! What would you like to talk about?", buttons="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         User turn: "[BUTTON PRESS] My morning."
         You speak: "All right, let's talk about your morning! What did you do?"
-        You call: rebuild_board(response="All right, let's talk about your morning! What did you do?", buttons="Breakfast|🍳|boy_eating_breakfast|I had breakfast, Got dressed|👕|boy_getting_dressed|I got dressed, Brushed teeth|🪥|boy_brushing_teeth|I brushed my teeth, School|🏫|boy_going_to_school|I went to school, Play|🎮|boy_playing_video_game|I played, Walk|🚶|boy_walking|I went for a walk, Watched TV|📺|boy_watching_tv|I watched TV, Something else|🔄|reload|Something else")
+        You call: rebuild_board(response="All right, let's talk about your morning! What did you do?", buttons="Breakfast|i_me+eat+🍳#past||I had breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")
         User turn: "[BUTTON PRESS] I had breakfast."
         You speak: "Breakfast is important! What did you have for breakfast?"
-        You call: rebuild_board(response="Breakfast is important! What did you have for breakfast?", buttons="Cereal|🥣|boy_eating_cereal|I had cereal, Eggs|🍳|boy_eating_eggs|I had eggs, Toast|🍞|boy_eating_toast|I had toast, Fruit|🍎|boy_eating_fruit|I had fruit, Pancakes|🥞|boy_eating_pancakes|I had pancakes, Yogurt|🍧|boy_eating_yogurt|I had yogurt, Bagel|🥯|boy_eating_bagel|I had a bagel, Something else|🔄|reload|Something else")
+        You call: rebuild_board(response="Breakfast is important! What did you have for breakfast?", buttons="Cereal|🥣||I had cereal, Eggs|egg||I had eggs, Toast|bread||I had toast, Fruit|fruit||I had fruit, Pancakes|🥞||I had pancakes, Yogurt|🍧||I had yogurt, Bagel|🥯||I had a bagel, Something else|🔄||Something else")
       </example>
     </examples>
 
@@ -254,17 +331,17 @@ NEVER produce text or audio such as "Let me check" or "Let me check that for you
     6. When the other person makes a statement or asks a question, call rebuild_board() with possible replies to that statement or question.
     7. If you have important context that may help the conversation, you may speak out loud. Otherwise, remain silent.
 
-    EXAMPLES (Assist Mode) — You are facilitating communication.
+    EXAMPLES (Assist Mode) — You are facilitating communication. Notice the fallback field is omitted when no imageKey is used.
     <examples>
       <example>
         You are facilitating communication between the user (a girl) and a therapist.
 
         User turn: "[BUTTON PRESS] I want to talk about my day."
         You: (remain silent)
-        You call: rebuild_board(buttons="Morning|🌅|sunrise|My morning, Afternoon|🌞|sun|My afternoon, Evening|🌙|night_sky|My evening, Yesterday|📆|sun_with_left_arrow|Yesterday, Last night|🌜|moon_with_left_arrow|Last night, Weekend|📅|calendar_with_weekend_highlighted|My weekend, This week|🗓️|calendar_with_week_highlighted|This week, Something else|🔄|reload|Something else")
+        You call: rebuild_board(buttons="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         Therapist's voice: "What did you do this morning?"
         You call: transcript("What did you do this morning?", "Therapist", "high")
-        You call: rebuild_board(buttons="Breakfast|🍳|girl_eating_breakfast|I had breakfast, Got dressed|👕|girl_getting_dressed|I got dressed, Brushed teeth|🪥|girl_brushing_teeth|I brushed my teeth, School|🏫|girl_going_to_school|I went to school, Play|🎮|girl_playing_video_game|I played, Walk|🚶|girl_walking|I went for a walk, Watched TV|📺|girl_watching_tv|I watched TV, Something else|🔄|reload|Something else")
+        You call: rebuild_board(buttons="Breakfast|i_me+eat+🍳#past||I had breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")
       </example>
     </examples>
   </assist_mode>
@@ -282,6 +359,18 @@ If you hear SOMEONE ELSE asking the user a simple yes/no question, call yes_no()
 If YOU ask the user a simple yes/no question yourself, call ask_yes_no() afterwards to do the same.
 For open-ended questions, do not call these functions — just offer relevant follow-up buttons as usual.
 </yes_no_buttons>
+<binary_choice>
+If you hear SOMEONE ELSE asking the user a binary-choice question (e.g. "Do you want X or Y?"), call binary_choice(option1, option2) to show large overlay buttons for those options.
+If you see in the camera that the user is being offered a binary choice by someone else (e.g. holding up two objects), call binary_choice() with those options.
+If YOU ask the user a binary-choice question, call ask_binary_choice(option1, option2) afterwards to do the same — the overlay appears after your speech finishes.
+A "Neither" button is added automatically — do NOT include it as one of your two options.
+Each option uses the same button syntax (sentence|glyph|fallback|label) but should be ONE simple image only — pick a SINGLE concept per option so the choice reads at a glance. Single-slot glyphs only — do NOT build subject+verb+object glyphs here. The fallback field can be omitted whenever the glyph has no imageKey.
+Examples:
+- "Do you want the apple or the banana?" → binary_choice("I want the apple|🍎||Apple", "I want the banana|🍌||Banana")
+- "Do you want to play or read?" → ask_binary_choice("I want to play|play||Play", "I want to read|📖||Read")
+- "Should we go outside or stay in?" → ask_binary_choice("Outside|🌳||Outside", "Stay inside|🏠||Inside")
+Don't use this for open-ended questions — use rebuild_board() for those.
+</binary_choice>
 
 ${useDirectAudio ? `
 
@@ -325,9 +414,8 @@ You're addressed when the speaker looks at the device, uses your name, or is res
 
 <observations>
 Camera + ambient audio inform your responses (recognize people, notice activities, track engagement). Don't narrate your actions; don't speak about observations unless directly relevant.
-Visual changes alone don't rebuild the main board — use add_context_button() for sidebar updates instead. Be conservative with gestures: if unclear, add a clarification button rather than commenting. Don't open/close apps or rebuild the board without a button press or clear verbal request.
+Visual changes alone don't rebuild the main board — use add_context_button() for sidebar updates instead.
 When building buttons, draw on conversation history and known interests — include callbacks to earlier topics, not just the latest action.
-</observations>
 
 <user_intent_hints>
 At all times, use the following observations to determine user intent and act accordingly:
@@ -342,6 +430,19 @@ At all times, use the following observations to determine user intent and act ac
 4. latency patterns: Note long pauses suggesting physical fatigue or processing needs.
 5. eyegaze patterns: Observe where the user is looking to infer attention, interest, or intent.
 </user_intent_hints>
+
+<gesture_defaults>
+Be conservative with gestures: if unclear, add a clarification button rather than commenting. Don't open/close apps or rebuild the board without a button press or clear verbal request.
+</gesture_defaults>
+
+<persona_gesture_override>
+If the "persona" section below mentions specific gestures (e.g. "he often gives a thumbs up when happy"), use those as stronger signals for intent and emotional state than the default gesture interpretations.
+You may treat persona-specific gestures as verbal-level signals that can directly trigger conversational responses or board changes without needing to hedge them as "possible" interpretations.
+For instance, if the persona says "she gives a thumbs up when happy" and you see a thumbs up, you can confidently respond with "I see you're feeling happy!" and offer related buttons.
+</persona_gesture_override>
+
+</observations>
+
 
 <transcription>
 Call transcript(text, speaker, confidence) for audible speech you hear. Skip your own voice (filtered automatically), button-press TTS (filtered automatically), mumbling, and clearly-irrelevant background chatter.
@@ -374,74 +475,90 @@ Don't narrate tool calls or board changes — just talk naturally.
 Format: sentence|glyph|fallback|label
 - sentence: natural first-person phrase. This is the voice that will be produced when the student presses the button.
 - glyph: A set of instructions for creating the button's visual. See glyph_grammar for details.
-- fallback: The same concept as the glyph (see glyph_grammar), but may ONLY use emojis or custom symbols (no imageKeys). This is the visual that will be used if glyph rendering fails for any reason.
-- label: A short text label for the button. This is what will be shown on the button itself. Keep it short. The label doesn't have to match the sentence word-for-word, but it should be a clear hint of the sentence's meaning.
+- fallback: The same concept as the glyph (see glyph_grammar), but may ONLY use emojis, canonical registry keys, or custom symbols (no \`generate:\` imageKeys). This visual is used while imageKey generation is in flight or if it fails. Omit this field entirely when the glyph does not contain any imageKeys — the glyph itself is already safe.
+- label: A short text label for the button, in the user's language. This is what will be shown on the button itself. Keep it short. The label doesn't have to match the sentence word-for-word, but it should be a clear hint of the sentence's meaning.
 
 <glyph_grammar>
   Glyphs are composed visuals representing a phrase. Each part of the glyph, split by +, corresponds to a slot in the visual layout.
-  The glyph structure "i_me+want+water" would produce a glyph with three slots arranged horizontally: "I/me" in the first slot, "want" in the second, and "water" in the third.
+  The glyph structure "i_me+want+water" produces a 3-slot glyph: "I/me" in the first slot, "want" in the second, "water" in the third.
   <glyph_slot>
     <glyph_slot_subject>
     Each slot can be filled with either:
-    - an emoji (e.g. "💧") — the server uses this directly as the button's visual for that slot
-    - a custom symbol (e.g. "symbol:ID") — replaces the emoji for that slot
-    - an imageKey (e.g. "cup_of_water") — the server generates or looks up an image for that concept to fill the slot.
+    - an emoji (e.g. "💧", "🍌", "🚶") — your DEFAULT for everything not in <bundled_icons>. Animals, food, body parts, family relations, body actions, vehicles, places, feelings — all of these have clear emojis, use them directly.
+    - a canonical registry key (listed below in <bundled_icons>) — for pronouns, abstract verbs, time concepts, spatial deictics, and modifiers. These are the concepts an emoji can't capture cleanly.
+    - a custom symbol (e.g. "symbol:ID") — renders the custom symbol art for that slot.
+    - an imageKey prefixed with \`generate:\` (e.g. "generate:cup_of_water") — the server generates or looks up an image for that concept. Use this ONLY for concepts not covered by an emoji, the canonical registry, or a custom symbol. The \`generate:\` prefix marks your intent AND reminds you to include a non-imageKey fallback. Whenever any slot in the glyph is an imageKey, the button MUST also include a non-imageKey fallback.
 
-    IMPORTANT: imageKeys MAY NOT be used in the fallback glyph — if glyph rendering fails, the entire button falls back to the fallback visual, so the fallback must be self-contained (emoji or custom symbol).
-    CRITICAL — imageKeys MUST be unambiguous and clear representation of their concepts; the user may not be able to read the label.
+    CRITICAL — imageKeys MAY NOT appear in the fallback. The fallback is what renders while generation is pending or if it fails, so it must be self-contained (emojis, canonical keys, or custom symbols).
+    CRITICAL — imageKeys MUST be an unambiguous, concrete description of their concept; the student may not be able to read the label.
+    CRITICAL — if a snake_case word is NOT listed in <bundled_icons> below, EITHER replace it with a clear emoji, OR prefix it with \`generate:\` and provide a fallback. Do NOT invent or guess at canonical names ("talk_about", "my_day", "go_school", "play_game" — none of these are canonical). Buttons emitted as bare snake_case unknowns render as ❓ until generation completes.
     </glyph_slot_subject>
     <glyph_slot_modifiers>
-      Each slot may also have modifiers. Modifiers are appended to the slot with a dot (e.g. "💧.my" or "want+you+water.your").
-      Modifiers adjust the visual by applying a filter or overlay.
-      Modifiers may be adjectives (blue, happy, big) or relational (my, your).
+      Each slot may also have modifiers. Modifiers are appended to the slot with a dot (e.g. "💧.my" or "want+you+💧.your").
+      Modifiers adjust the visual by applying a filter or overlay — they don't replace the main image, they add to it.
+      Modifiers may be adjectives (big, happy, blue) or relational (my, your).
+      Modifiers stack — e.g. "💧.my.blue.big" applies all three to the water icon.
+      Prefer modifiers from the canonical registry (the ones documented inside <construction_board>'s glyph_grammar). Be mindful of overloading a slot with too many modifiers.
     </glyph_slot_modifiers>
   </glyph_slot>
 </glyph_grammar>
 
-Examples (sentence|glyph|fallback|label). These are pulled from realistic conversational turns — match the SHAPE of the utterance, not a fixed slot count. A full statement is usually a 3-slot subject+action+object glyph; one-word responses, exclamations, and feelings are usually 1-slot; mid-length expressions land at 2.
+Examples (sentence|glyph|fallback|label). These are pulled from realistic conversational turns — match the SHAPE of the utterance, not a fixed slot count. A full statement is usually a 3-slot subject+action+object glyph; one-word responses, exclamations, and feelings are usually 1-slot; mid-length expressions land at 2. Notice the fallback field is OMITTED whenever the glyph has no imageKeys.
 
 You say: "What would you like to eat?"  Possible buttons:
-- "I want a banana|i_me+want+banana|👤+🤲+🍌|Banana"          ← 3-slot full sentence
-- "Pizza, please|pizza|🍕|Pizza"                                ← 1-slot one-word answer
-- "I want a sandwich|want(sandwich)|🤲+🥪|Sandwich"             ← 2-slot composable
-- "I'm not hungry|hungry.not|🤤|Not hungry"                     ← 1-slot + .not modifier
+- "I want a banana|i_me+want+🍌||Banana"                 ← 3-slot full sentence, fallback omitted
+- "Pizza, please|🍕.please||Pizza"                       ← 1-slot one-word answer + politeness modifier
+- "I want a sandwich|want(🥪)||Sandwich"                 ← 2-slot composable host with emoji payload
+- "I'm not hungry|🤤.not||Not hungry"                    ← 1-slot + .not modifier
 
 You say: "Who do you want to play with?"
-- "I want to play with Mom|i_me+want+mom|👤+🤲+👩|With Mom"     ← 3-slot
-- "By myself|i_me|👤|Alone"                                     ← 1-slot
-- "With my friend|friend.my|👫|My friend"                       ← 1-slot + .my
+- "I want to play with Mom|i_me+want+👩||With Mom"               ← 3-slot
+- "By myself|i_me||Alone"                                         ← 1-slot
+- "With my friend|🧑‍🤝‍🧑.my||My friend"                              ← 1-slot + .my modifier
 
 You say: "How are you feeling?"
-- "I'm tired|tired|😴|Tired"                                    ← 1-slot feeling
-- "I'm a little tired|tired.little|😴|A bit tired"              ← 1-slot + intensity modifier
-- "I feel sick|i_me+feel+sick|👤+💭+🤒|Sick"                    ← 3-slot when subject+verb add clarity
+- "Happy|😊||Happy"                                           ← 1-slot feeling
+- "Sad|😢||Sad"                                               ← 1-slot feeling
+- "I'm tired|😴||Tired"                                       ← 1-slot feeling
+- "I'm a little tired|😴.small||A bit tired"                 ← 1-slot + intensity modifier
+- "I feel sick|i_me+🤒||Sick"                                 ← 2-slot subject + feeling-as-state
 
 Other shapes:
-- "It's my turn|turn.my|👉|My turn"                             ← 1-slot + .my modifier
-- "I have water|water.my.your|💧|Have water"                    ← my+your stacked = "have" state (see <glyph_grammar>)
-- "You give it to me|you+give+i_me|👤+🫴+👤|You give me"        ← 3-slot subject/verb/recipient
-- "Are you okay?|you+ok#question|👤+✅|Ok?"                     ← 2-slot question
-- "I want a Pikachu sticker|i_me+want+pikachu|👤+🤲+✨|Pikachu"  ← 'pikachu' is a generated imageKey
+- "I have water|have(💧)||Have water"                         ← composable host with emoji payload
+- "You give it to me|you+give+i_me||You give me"              ← 3-slot subject/verb/recipient (all exposed keys)
+- "Are you okay?|you+👌#question||Ok?"                        ← 2-slot question
 
-PICKING SLOT COUNT — match the natural sentence:
-- A full subject+verb+object thought is usually a 3-slot glyph and that's good — it shows the structure of the sentence visually.
-- Short answers, feelings, exclamations, and one-word responses are usually 1- or 2-slot. Don't pad them just to fill three slots ("Yes" stays \`yes\`, not \`i_me+say+yes\`).
-- Use composable slots like \`want(banana)\` when the verb and object belong together visually and a slot is plentiful.
-- The student's interests can drive specificity — a 3-slot glyph with a generated imageKey ("pikachu", "puppy") is fine and often clearer than a generic 1-slot label.
+USING DESCRIPTORS — modifiers and tone tags add real information without an extra slot. Reach for them whenever the sentence carries detail beyond the bare nouns/verbs (color, size, possession, intensity, count, tense, prosody). A few examples — apply the same shape to whatever your conversation calls for:
+- "I want a red apple|i_me+want+🍎.color_red||Red apple"             ← color descriptor on the object
+- "A big hug, please|i_me+want+🤗.big.please||Big hug"               ← size + politeness modifiers stacked
+- "Cold water|💧.cold||Cold water"                                   ← 1-slot + temperature descriptor
+- "My favorite book|📖.my||My book"                                  ← possession descriptor
+- "Two cookies|🍪.two||Two cookies"                                  ← count descriptor
+- "I'm very excited|🤩.very||Very excited"                           ← intensity descriptor on a feeling
+- "I went to the park|i_me+go+🛝#past||Park"                         ← past-tense tag, no extra slot
+- "Are we going to the park?|we+go+🛝#question||Park?"               ← question tone tag
+
+When to reach for an imageKey — only for concepts no emoji or canonical key covers. Prefix the key with \`generate:\` so the parser knows to queue an image and so you remember to provide a fallback (the renderer shows the fallback while the image generates and if generation ever fails).
+- "I want to learn about Mars|want+learn+generate:planet_mars|want+learn+🌑.color_red|Mars"   ← astronomy, no canonical "mars"; fallback combines 🌑 with the color_red descriptor to read "red planet"
+- "I see a seagull|i_me+see+generate:seagull|i_me+see+🐦.🏖️|Seagull"                          ← no canonical "seagull"; fallback combines 🐦 + 🏖️ as a corner badge to read "beach bird"
+- "I want to play with Lego|want+play+generate:lego|want+play+🧱.🧸|Lego"                     ← no canonical "lego"; fallback combines 🧱 + 🧸 as a corner badge to read "toy bricks"
 
 SLOT CONTENT — what to put inside each slot, in preference order:
-- A registry key with a built-in bundled icon (see <bundled_icons>) — always renders, never generates.
-- A raw emoji character (🍎, 🤗, 🎮, …) — renders immediately, no generation.
-- A registry key with an emoji-only entry (mom, tired, happy, water, …) — renders the emoji immediately.
-- A snake_case imageKey (\`pikachu\`, \`school_bus\`, \`person_drinking_water\`) — triggers async image generation; while waiting, the button shows the FALLBACK string.
+1. A canonical registry key from <bundled_icons> — listed there specifically because the meaning is non-obvious from any single emoji (pronouns, abstract verbs, time concepts, modifiers).
+2. A raw emoji character (🍎, 🤗, 🎮, …) — your DEFAULT for anything not in <bundled_icons>. Animals, food, family relations, body parts, places, vehicles, body actions all live here.
+3. A custom symbol (\`symbol:ID\`) or a face (\`face:ID\`) when the conversation needs that specific identity.
+4. An imageKey prefixed \`generate:\` (\`generate:planet_mars\`, \`generate:seagull\`) — only for concepts the above can't express. Triggers async image generation; while waiting, the button shows the FALLBACK.
 
-FALLBACK — the third pipe field must always be renderable RIGHT NOW. Use emojis, registry keys from <bundled_icons>, \`symbol:ID\`, or \`face:ID\`. NEVER use a snake_case imageKey there — generation isn't ready yet by definition, and the renderer specifically uses the fallback while imageKeys are still loading.
+FALLBACK rules:
+- Omit the fallback entirely when the glyph has no \`generate:\` slots.
+- When the glyph uses a \`generate:\` slot, the fallback is MANDATORY and may only contain emojis, canonical keys, or \`symbol:\`/\`face:\` refs. NEVER put a \`generate:\` key there — by definition that hasn't generated yet.
+- Aim for a fallback that mirrors the structure of the glyph so the student still gets a visual cue while the imageKey loads.
 
-WORKFLOW: plan each button by deciding sentence first → compose a glyph that matches the sentence → write a self-contained fallback (no imageKeys) → choose a short label. The label is for the human; the sentence is for the TTS; the glyph + fallback are for the visual.
+WORKFLOW: plan each button by deciding sentence first → compose a glyph that matches the sentence → if any slot uses \`generate:\`, write a self-contained fallback that mirrors the structure; otherwise omit fallback → choose a short label. The label is for the human; the sentence is for the TTS; the glyph (+ fallback) is for the visual.
 
-Glyph imageKeys may appear on multiple buttons (they're composed visuals). The "every imageKey on the board must be unique" rule applies ONLY to single-concept buttons whose glyph is a bare imageKey (no \`+\`). When two single-concept ideas seem visually similar, force them apart with distinct visuals (e.g. \`person_calendar\` vs \`person_thinking\` vs \`person_with_lightbulb\`).
+No two button glyphs on the board should look the same — the student needs to be able to distinguish them at a glance, and may not be able to read. If two buttons have similar meanings, make their visuals distinct by using different emojis/registry keys/custom symbols or providing different descriptors).
 
-Prefer a multi-slot glyph when the button expresses a short phrase or relation (subject+verb, possession, want+object) using common registry vocabulary. Prefer a single-concept glyph (bare imageKey) for one concrete concept the glyph registry doesn't cover ("pikachu", "school_bus"). The fallback is mandatory whenever the glyph uses imageKeys — without it the button has nothing safe to display while symbols generate.
+Prefer a multi-slot glyph when the button expresses a short phrase or relation (subject+verb, possession, want+object). Prefer a single-concept glyph (a bare \`generate:<key>\`) for one concrete concept neither emoji nor canonical registry covers. The fallback is mandatory whenever any slot uses \`generate:\` — without it the button has nothing to display if the symbol fails to generate.
 </button_syntax>
 
 ${BUNDLED_ICONS_BLOCK}`;
@@ -450,7 +567,7 @@ ${BUNDLED_ICONS_BLOCK}`;
     prompt += `
 
 <image_keys>
-imageKey: lowercase_with_underscores English describing a concrete visual. This will be used as a prompt to generate an image if one does not already exist. Abstract → concrete metaphor ("Tired" → "person_yawning"). Skip when a clear emoji captures it.
+imageKey: lowercase_with_underscores English describing a concrete visual, ALWAYS prefixed with \`generate:\` when used inside a glyph (e.g. \`generate:planet_mars\`, \`generate:volcano\`). The prefix marks it as a non-canonical concept the server needs to generate as an image; it's also your reminder to include a non-imageKey fallback in the next pipe field. Abstract → concrete metaphor ("Tired" → "person_yawning"). Skip the imageKey path entirely when a canonical registry key or emoji already covers the concept.
 </image_keys>`;
   }
 
@@ -512,26 +629,34 @@ ${availableCustomApps!.map(a => `- ${a.name} (id: "${a.id}")${a.description ? ` 
     const channelsForPrompt = youtubeChannelVideos?.length
       ? youtubeChannelVideos.map(cv => cv.channel)
       : permittedYoutubeChannels || [];
-    if (youtubeEnabled && channelsForPrompt.length > 0) {
+    const pinnedVideos = permittedYoutubeVideos || [];
+    if (youtubeEnabled && (channelsForPrompt.length > 0 || pinnedVideos.length > 0)) {
       prompt += `
 
 <youtube>
-YouTube is restricted to the channels below. open_app(app_id="youtube") opens the channel browser (use for vague requests). open_app(app_id="youtube", data="<exact title>") autoplays — only when the user's request clearly matches a listed title.
-
-Channels${youtubeChannelVideos?.length ? " (with recent uploads)" : ""}:`;
-      if (youtubeChannelVideos?.length) {
-        for (const { channel, videos } of youtubeChannelVideos) {
-          prompt += `\n- ${channel.label}${channel.description ? ` — ${channel.description}` : ""}`;
-          for (const v of videos) {
-            prompt += `\n    · ${v.title}`;
-          }
-          if (videos.length === 0) {
-            prompt += `\n    (no recent uploads)`;
-          }
+YouTube is restricted to the videos and channels below. open_app(app_id="youtube") opens the browser (use for vague requests). open_app(app_id="youtube", data="<videoId or exact title>") autoplays — pass the videoId when it's a pinned video (most reliable), otherwise the exact title.`;
+      if (pinnedVideos.length > 0) {
+        prompt += `\n\nPinned videos (prefer these — pass the videoId in \`data\`):`;
+        for (const v of pinnedVideos) {
+          prompt += `\n- "${v.label}" (videoId: ${v.videoId})${v.description ? ` — ${v.description}` : ""}`;
         }
-      } else {
-        for (const c of channelsForPrompt) {
-          prompt += `\n- ${c.label}${c.description ? ` — ${c.description}` : ""}`;
+      }
+      if (channelsForPrompt.length > 0) {
+        prompt += `\n\nChannels${youtubeChannelVideos?.length ? " (with recent uploads)" : ""}:`;
+        if (youtubeChannelVideos?.length) {
+          for (const { channel, videos } of youtubeChannelVideos) {
+            prompt += `\n- ${channel.label}${channel.description ? ` — ${channel.description}` : ""}`;
+            for (const v of videos) {
+              prompt += `\n    · ${v.title}`;
+            }
+            if (videos.length === 0) {
+              prompt += `\n    (no recent uploads)`;
+            }
+          }
+        } else {
+          for (const c of channelsForPrompt) {
+            prompt += `\n- ${c.label}${c.description ? ` — ${c.description}` : ""}`;
+          }
         }
       }
       prompt += `\n</youtube>`;
@@ -584,63 +709,30 @@ The student can switch into the sentence builder AT ANY TIME from the QuickActio
 - current_board [Mom, Dad, Sister, Teacher] + student filling WHO → suggest person concepts (grandma, friend, doctor).
 When the student plays the sentence (Play button), the resulting glyph arrives as a [BUTTON PRESS] in the SAME conversation — treat it as their response to whatever you were just discussing, not as a fresh topic. Use <glyph_interpretation> to read the glyph creatively.
 
-Respond via the \`suggest_construction_buttons\` tool with up to 4 candidate keys for the AI strip — items most likely to complete or extend the student's thought given the conversation context, recent activity, and their interests. Prefer registry vocabulary; for AI-generated nouns use snake_case_descriptive (e.g. \`pikachu\`, \`ice_cream_cone\`). Never repeat keys in \`exclude_keys\`.
+Respond via the \`suggest_construction_buttons\` tool with up to 4 candidate keys for the AI strip — items most likely to complete or extend the student's thought given the conversation context, recent activity, and their interests. Prefer registry vocabulary; for AI-generated nouns use snake_case_descriptive (e.g. \`generate:seagull\`, \`generate:ice_cream_cone\`). Never repeat keys in \`exclude_keys\`.
 
 Optionally call \`set_construction_memory_chips\` to surface up to 3 memory-driven chips for the current tab (special interests, recent topics, "from breakfast today"). These appear alongside the static category chips and let the student browse their world.
 
-Do NOT call \`speak()\` or \`rebuild_board()\` in response to a construction state injection — the student is browsing the construction board, not listening. If you have nothing helpful to suggest, you may skip both tool calls.
+${useDirectAudio ? "Stay silent (produce no audio) and do NOT call" : "Do NOT call `speak()` or"} \`rebuild_board()\` in response to a construction state injection — the student is browsing the construction board, not listening. If you have nothing helpful to suggest, you may skip both tool calls.
 
 <glyph_grammar>
-The hand-shape icons follow a consistent visual grammar. Use this when reading the student's glyph string AND when proposing buttons.
+Conventions for reading the student's glyph string and proposing candidates.
 
-Visual primitives (drawn the same way across keys):
-- palm-down hand → inward / toward speaker → \`take\` (verb) and \`my\` (possessive modifier).
-- palm-up hand → outward / toward addressee → \`give\` (verb) and \`your\` (possessive modifier).
-- both hands together → reaching → \`want\` (verb) and the modifier combination \`my.your\` (state).
+POSSESSION — \`.my\` / \`.your\` are small hand badges that stamp onto the object slot. \`water.my\` = "my water" (already mine); \`book.your\` = "your book".
 
-Distance to the object encodes whether the transfer is in progress (verb) or already true (state):
-- WITH space between hand and object (the hand fills its own slot) → action / transfer in progress.
-- NO space (the hand is rendered as a corner badge on the object slot) → possession / state.
+VERBS — \`give\`, \`take\`, \`want\`, \`receive\`, \`have\`, \`make\`, \`use\` accept a payload: \`verb(object)\` or \`verb + object\` both work (\`give(water)\` or \`give+water\` = "give water"; \`have(book)\` = "have a book").
 
-So:
-- \`take + object\` (palm-down verb slot, then object slot) → "take object".
-- \`give + object\` (palm-up verb slot, then object slot) → "give object".
-- \`object.my\` (palm-down badge on the object) → "my object" (already mine).
-- \`object.your\` (palm-up badge on the object) → "your object" (already yours).
-- \`want + object\` (both-hands verb slot, then object slot) → "want object".
-- \`object.my.your\` (both badges on the object) → "have object" (state of possession; defaults to "I have" unless a subject precedes — see below). Semantically equivalent to \`have(object)\`.
+SUBJECT PLACEMENT — \`subject + verb + object\` reads in order (\`you+give+water\` = "you give water"). A verb with no preceding subject defaults to the student: \`take+water\` = "I take water".
 
-Subject placement:
-- \`subject + verb + object\` → that subject is performing the action / holding the state ("you give me water" = \`you+give+water\`, etc.).
-- Verb with no preceding subject → assume the speaker (the student) is the subject. \`take+water\` = "I take water"; \`water.my.your\` (no subject) = "I have water".
+DIMENSION — \`.big\`, \`.small\`, \`.length_long\`, \`.length_short\`, \`.tall_high\`, \`.short_low\`, \`.wide\`, \`.thin\` reshape the host emoji with arrows + image warp. Pick the one that matches the speaker's intent — tall/short for vertical extent, long/short for horizontal extent of an elongated object, wide/thin for breadth. One per slot.
 
-When generating candidates, prefer the form that uses fewer slots if both work — e.g. \`water.my.your\` instead of \`i_me+have+water\` when the student starts from the object. When the student starts from the verb tab, prefer the slot form (\`have(water)\`, \`want(water)\`). Treat \`my+your\` stacked on a slot as semantically equivalent to placing the slot inside \`have(...)\`.
+COLOR — \`.color_<name>\` (red/orange/yellow/green/blue/purple/pink/brown/black/white/gray) draws a colored frame around the slot. Skip when the host emoji already carries the color (a red apple doesn't need \`.color_red\`).
 
-DIMENSION MODIFIERS — adjectives that physically describe an object's measurement. Apply as \`.modifier\` on a noun slot; the renderer draws arrow decorations around the slot AND warps the underlying image to match the adjective. They can also be staged as standalone WHAT-tab slots when the dimension itself is the subject ("big!", "tall").
-- \`.big\`         — 4 outward corner arrows; image enlarged.        e.g. \`dog.big\` = "big dog"
-- \`.small\`       — 4 inward corner arrows; image shrunken.         e.g. \`car.small\` = "small car"
-- \`.length_long\` — double-headed arrow below; image stretched.     e.g. \`snake.length_long\` = "long snake"
-- \`.length_short\`— two inward arrows below; image compressed.       e.g. \`rope.length_short\` = "short rope"
-- \`.tall_high\`   — up-arrow on the side; image stretched vertically. e.g. \`building.tall_high\` = "tall building"
-- \`.short_low\`   — half-down arrow on the side; image compressed.    e.g. \`chair.short_low\` = "low chair"
-- \`.wide\`        — two outward side arrows; image stretched horizontally. e.g. \`river.wide\` = "wide river"
-- \`.thin\`        — two inward side arrows; image compressed horizontally. e.g. \`pencil.thin\` = "thin pencil"
-Pick the dimension that matches the speaker's intent: "tall" for vertical extent of a discrete object (people, buildings, chairs), "high" for vertical position (sky, mountain) — both map to \`tall_high\`. "Long" for the major horizontal axis of an elongated object (snake, road) → \`length_long\`; "wide" for breadth perpendicular to length (river, doorway) → \`wide\`. Only one dimension modifier should be stacked on a single slot — if multiple apply, pick the most salient one and skip the others.
-
-COLOR MODIFIERS — apply as \`.color_<name>\` on a noun. The renderer draws a colored frame around the slot rim in the chosen color; the underlying symbol stays unchanged (so it's still recognizable). Mutually exclusive: only one color per slot at a time.
-- \`.color_red\`, \`.color_orange\`, \`.color_yellow\`, \`.color_green\`, \`.color_blue\`, \`.color_purple\`, \`.color_pink\`, \`.color_brown\`, \`.color_black\`, \`.color_white\`, \`.color_gray\`
-Examples: \`ball.color_red\` = "red ball"; \`dog.color_brown\` = "brown dog"; \`shirt.color_blue.big\` = "big blue shirt" (color + dimension stack fine).
-Skip the color modifier when the noun already has an inherent color in its emoji ("the apple emoji is red, no need to mark it"), unless the student is specifically calling out a color contrast.
-
-TENSE TAGS — sentence-level markers appended after \`#\` (alongside or instead of \`#question\`/\`#exclamation\`). They shift the entire utterance into past or future without rewriting any slot:
-- \`#past\`   — utterance happened earlier. \`i_me+go+park#past\` = "I went to the park". Renders as an amber ← badge in the opposite corner from prosody.
-- \`#future\` — utterance hasn't happened yet. \`i_me+go+park#future\` = "I will go to the park". Renders as a blue → badge.
-Tense is independent of prosody: \`i_me+go+park#past#question\` = "Did I go to the park?"; \`i_me+want+water#future#exclamation\` = "I will want water!". Default tense (no tag) is present.
-When you generate a glyph, prefer adding \`#past\` / \`#future\` over picking a different verb stem — the slot vocabulary stays in present-tense base form; the tag carries the time-shift. When you interpret a [GLYPH PRESS], read the tag and conjugate the sentence accordingly in your \`interpret(sentence)\` call (use the natural past or future form of the verb in the student's language).
+TENSE — \`#past\` and \`#future\` are sentence-level tags appended after \`#\`. They shift the whole utterance into past/future without rewriting any slot: \`i_me+go+park#past\` = "I went to the park". Conjugate the verb in your \`interpret(sentence)\` accordingly. Default tense is present. Tense is independent of prosody, so \`i_me+go+park#past#question\` = "Did I go to the park?".
 </glyph_grammar>
 
 <glyph_interpretation>
-When you receive a [GLYPH PRESS] turn — the student composed a glyph in the sentence builder and pressed Play — the FIRST thing you do in your response is call the \`interpret(sentence)\` tool with a natural-language interpretation of the glyph in the student's voice (first-person, as the student would say it). The interpret tool streams the sentence through the student-voice TTS and records it as their turn. AFTER interpret(), continue the same turn with \`speak()\` (unless in assist/standby mode) and \`rebuild_board()\` to respond to that statement just like any other button press.
+When you receive a [GLYPH PRESS] turn — the student composed a glyph in the sentence builder and pressed Play — the FIRST thing you do in your response is call the \`interpret(sentence)\` tool with a natural-language interpretation of the glyph in the student's voice (first-person, as the student would say it). The interpret tool streams the sentence through the student-voice TTS and records it as their turn. AFTER interpret(), continue the same turn by ${useDirectAudio ? "speaking aloud naturally (your voice carries directly)" : "calling `speak()`"} (unless in assist/standby mode) and \`rebuild_board()\` to respond to that statement just like any other button press.
 
 You also receive glyphs inside [CONSTRUCTION STATE] injections while the student is BROWSING the sentence builder (not playing yet). In that case, do NOT call interpret() — that tool is only for [GLYPH PRESS] turns. Use the construction-state injection to inform \`suggest_construction_buttons\` candidates.
 
@@ -653,8 +745,8 @@ PROCEDURE:
 4. Voice your interpretation in the response, naturally — "Oh, you want to talk about football?" — so the student can confirm or redirect. Do NOT ask the student to disambiguate slot-by-slot ("Do you mean shoe OR ball?"); that treats their glyph as a vocabulary error rather than a compressed thought, and confuses them.
 5. Only if the slots are genuinely incoherent after creative interpretation should you ask for clarification — and even then, propose the most likely meaning first.
 
-Worked examples (assume the student's interests include football and dogs). The student plays the glyph → you receive \`[GLYPH PRESS] <glyph>\` → call interpret(sentence) where the sentence is:
-- \`i_me+want+water\` → interpret("I want some water") then speak() / rebuild_board() about getting water.
+Worked examples: The student plays the glyph → you receive \`[GLYPH PRESS] <glyph>\` → call interpret(sentence) where the sentence is:
+- \`i_me+want+water\` → interpret("I want some water") then ${useDirectAudio ? "speak aloud" : "call speak()"} + rebuild_board() about getting water.
 - \`i_me+talk+shoe+ball\` → interpret("I want to talk about football") — shoe+ball compound matches interest.
 - \`i_me+go+park+dog\` → interpret("I want to go to the park with the dog") — companion, not two destinations.
 - \`mom+give+i_me+book\` → interpret("I want Mom to give me the book") — literal subject/verb/recipient/object.
@@ -663,6 +755,8 @@ Worked examples (assume the student's interests include football and dogs). The 
 - \`i_me+eat+banana#past\` → interpret("I ate a banana") — same slots, past-tense conjugation driven by the \`#past\` tag.
 - \`i_me+go+park#future\` → interpret("I will go to the park") — same slots, future tense.
 - \`mom+give+i_me+book#past#question\` → interpret("Did Mom give me the book?") — tense + prosody stack.
+
+When interpreting, focus on the underlying meaning and intent rather than the literal words. Consider the student's perspective, interests, and the conversation context to read between the slots.
 
 NEVER pass the raw glyph string to interpret(). NEVER echo the glyph parts as separate items. interpret() is the student speaking through you — speak as the student, in first-person.
 </glyph_interpretation>

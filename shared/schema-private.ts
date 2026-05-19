@@ -551,6 +551,11 @@ export const aacSettings = pgTable("aac_settings", {
   // Permitted YouTube channels — array of { channelId, label, description? }. When empty, searches are unrestricted.
   permittedYoutubeChannels: jsonb("permitted_youtube_channels").default([]),
 
+  // Pinned YouTube videos — array of { videoId, label, description? }. A
+  // curated playlist of specific videos the AAC student can pick directly
+  // and that the AI can autoplay by id/title.
+  permittedYoutubeVideos: jsonb("permitted_youtube_videos").default([]),
+
   // Accessibility — single JSON blob so new options don't require migrations
   accessibility: jsonb("accessibility").default({}), // { fontSize?: number, highContrast?: boolean, reduceAnimations?: boolean, enhancedFocusIndicator?: boolean }
 

@@ -2,7 +2,7 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, UseDualAgentReturn } from "@/hooks/dual-agent-types";
+import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, UseDualAgentReturn } from "@/hooks/dual-agent-types";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
@@ -105,6 +105,10 @@ interface DualAgentContextType {
   // Yes/No overlay
   yesNoActive: boolean;
   dismissYesNo: () => void;
+
+  // Binary-choice overlay — two AI-supplied options + an implicit "Neither" button
+  binaryChoiceOptions: BinaryChoiceOption[] | null;
+  dismissBinaryChoice: () => void;
 
   // Focus frame
   /** True while a focus frame is being captured (glasses overlay) */
@@ -764,6 +768,9 @@ function ProviderShell({
 
     yesNoActive: agent.yesNoActive,
     dismissYesNo: agent.dismissYesNo,
+
+    binaryChoiceOptions: agent.binaryChoiceOptions,
+    dismissBinaryChoice: agent.dismissBinaryChoice,
 
     focusActive: agent.focusActive,
 

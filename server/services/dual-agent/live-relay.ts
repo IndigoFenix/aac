@@ -45,7 +45,7 @@ import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memo
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
-import type { PermittedWebsite } from "@shared/schema";
+import type { PermittedWebsite, PermittedYoutubeVideo } from "@shared/schema";
 import { isUrlPermitted, mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { fetchRecentVideosForChannels } from "../youtube/channel-search";
 import { licenseService } from "../licenseService";
@@ -54,7 +54,7 @@ import { aacSettingsRepository } from "../../repositories/aacSettingsRepository"
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { getVocabularyItem } from "@shared/glyph-registry";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
-import { parseGlyph } from "@shared/glyph-compositor.js";
+import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,32 @@ function extractStringArg(args: Record<string, any>, declaredName: string, fallb
     if (typeof val === "string" && val.length > 0) return val;
   }
   return fallback;
+}
+
+/**
+ * Find a pinned video matching `query`. Tries (in order):
+ *   1. Embedded 11-char videoId (handles "VIDEOID" or any URL the AI emitted)
+ *   2. Exact label match (case-insensitive, trimmed)
+ *   3. Substring match against label (case-insensitive)
+ * Returns null when nothing fits — caller falls through to channel search.
+ */
+function findPinnedVideoMatch(
+  query: string,
+  videos: PermittedYoutubeVideo[],
+): PermittedYoutubeVideo | null {
+  if (!videos.length || !query) return null;
+  const trimmed = query.trim();
+  const idMatch = /([A-Za-z0-9_-]{11})/.exec(trimmed);
+  if (idMatch) {
+    const byId = videos.find(v => v.videoId === idMatch[1]);
+    if (byId) return byId;
+  }
+  const lower = trimmed.toLowerCase();
+  const byLabelExact = videos.find(v => v.label.toLowerCase().trim() === lower);
+  if (byLabelExact) return byLabelExact;
+  const byLabelContains = videos.find(v => v.label.toLowerCase().includes(lower));
+  if (byLabelContains) return byLabelContains;
+  return null;
 }
 
 /** Stringify a WebSocket message for logging. Truncates large base64 strings inline
@@ -136,7 +162,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
     if (glyphFallback) {
       const fbSlots = glyphFallback.split('+').map((s: string) => s.trim()).filter(Boolean);
       if (fbSlots.length === 1) {
-        const slotMain = fbSlots[0].split('.')[0].split('(')[0].trim();
+        const slotMain = stripBrackets(fbSlots[0].split('.')[0].split('(')[0]);
         if (slotMain.startsWith("face:")) {
           symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
         } else if (slotMain.startsWith("symbol:")) {
@@ -149,21 +175,22 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
     // Legacy `icon` field — only used if the new `fallback` field didn't
     // already set an iconRef or symbolPath.
     if (iconRef === "fas fa-comment" && !symbolPath && legacyIcon) {
-      if (legacyIcon.startsWith("face:")) {
-        symbolPath = `__FACE__:${legacyIcon.substring(5).trim()}`;
-      } else if (legacyIcon.startsWith("symbol:")) {
-        symbolPath = `__SYMBOL__:${legacyIcon.substring(7).trim()}`;
+      const legacyIconStripped = stripBrackets(legacyIcon);
+      if (legacyIconStripped.startsWith("face:")) {
+        symbolPath = `__FACE__:${legacyIconStripped.substring(5).trim()}`;
+      } else if (legacyIconStripped.startsWith("symbol:")) {
+        symbolPath = `__SYMBOL__:${legacyIconStripped.substring(7).trim()}`;
       } else {
-        iconRef = legacyIcon;
+        iconRef = legacyIconStripped;
       }
     }
 
     if (glyph) {
       const glyphSlots = glyph.split('+').map((s: string) => s.trim()).filter(Boolean);
       if (glyphSlots.length === 1) {
-        const slotMain: string = glyphSlots[0].split('.')[0].split('(')[0].trim();
-        const isEmoji = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
-        if (slotMain && !isEmoji && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
+        const slotMain: string = stripBrackets(glyphSlots[0].split('.')[0].split('(')[0]);
+        const isEmojiKey = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
+        if (slotMain && !isEmojiKey && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
           imageKey = slotMain;
           if (iconRef === "fas fa-comment") {
             const emojiSwap = resolveEmoji(slotMain);
@@ -178,15 +205,16 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
       // Legacy: AI emitted `image_key` without a glyph field. Treat it as
       // a single-concept button — promote to glyph if multi-part.
       if (legacyImageKey.includes("+")) {
-        const parts = legacyImageKey.split("+").map((s: string) => s.trim()).filter(Boolean);
+        const parts = legacyImageKey.split("+").map((s: string) => stripBrackets(s)).filter(Boolean);
         if (parts.length > 1) {
           // Use this as the glyph below by reassigning to glyph.
           return assemble({ label, sentence, glyph: parts.join("+"), glyphFallback, iconRef, symbolPath, imageKey: undefined, rowSpan, colSpan });
         }
       }
-      imageKey = legacyImageKey;
+      const legacyKey = stripBrackets(legacyImageKey);
+      imageKey = legacyKey;
       if (iconRef === "fas fa-comment") {
-        const emojiSwap = resolveEmoji(legacyImageKey);
+        const emojiSwap = resolveEmoji(legacyKey);
         if (emojiSwap) {
           iconRef = emojiSwap;
           imageKey = undefined;
@@ -231,11 +259,15 @@ function assemble(b: {
  * symbol slot (and triggers fresh symbol generation for the duplicates).
  */
 /**
- * Walk a glyph string and add any slot keys or payload keys that look
- * like generation-eligible imageKeys into `into`. A key is eligible only
- * when it would otherwise render as "❓": NOT a raw emoji, NOT a
- * `symbol:`/`face:` ref, NOT in the glyph registry with a bundled
+ * Walk a glyph string and add any slot keys, payload keys, or modifier
+ * keys that look like generation-eligible imageKeys into `into`. A key is
+ * eligible only when it would otherwise render as "❓": NOT a raw emoji,
+ * NOT a `symbol:`/`face:` ref, NOT in the glyph registry with a bundled
  * image or emoji, and NOT covered by the supplementary emoji registry.
+ *
+ * Modifiers are walked too — `water.spicy` should queue generation for
+ * "spicy" so the badge resolves to a real image instead of a dot
+ * placeholder. Canonical modifiers (in the registry) skip the lookup.
  */
 function collectGlyphImageKeys(glyph: string, into: Set<string>): void {
   if (!glyph) return;
@@ -252,7 +284,293 @@ function collectGlyphImageKeys(glyph: string, into: Set<string>): void {
   for (const slot of parsed.slots) {
     addIfImageKey(slot.key);
     if (slot.payload) addIfImageKey(slot.payload);
+    for (const modKey of slot.modifiers) addIfImageKey(modKey);
   }
+}
+
+/**
+ * True when `glyphString` contains at least one slot/payload/modifier that
+ * would route to async image generation — i.e. a snake_case key that is
+ * neither a raw emoji, nor a `symbol:`/`face:` ref, nor a canonical
+ * registry entry, nor present in the supplementary emoji registry. Pure
+ * read-only check — does NOT queue generation.
+ */
+function glyphHasImageKey(glyphString: string | undefined): boolean {
+  if (!glyphString) return false;
+  const set = new Set<string>();
+  collectGlyphImageKeys(glyphString, set);
+  return set.size > 0;
+}
+
+/**
+ * Hard-coded board-button validator. Drops buttons that fail any of the
+ * structural rules below and returns the kept set plus a list of human-
+ * readable error strings the relay forwards to the AI via tool_response
+ * so it can rebuild correctly:
+ *
+ *   1. A glyph containing any imageKey MUST come with a non-empty
+ *      glyphFallback. Without it the button renders as ❓ until generation
+ *      completes (or forever, if it fails).
+ *   2. No two buttons may share an identical glyph string. The student
+ *      can't visually distinguish them.
+ *   3. No two buttons may share an identical glyphFallback string (when
+ *      both have a fallback). Same visual-collision reasoning.
+ *
+ * Filtered buttons survive; the rest of the board still renders. The AI
+ * is expected to retry / patch via a follow-up rebuild_board call when it
+ * sees the error array in the tool response.
+ */
+function validateBoardButtons<
+  T extends { label: string; glyph?: string; glyphFallback?: string }
+>(buttons: T[]): { buttons: T[]; errors: string[] } {
+  const kept: T[] = [];
+  const errors: string[] = [];
+  // Track first-seen owners so the error message can name the conflict.
+  const seenGlyph = new Map<string, string>();
+  const seenFallback = new Map<string, string>();
+
+  for (const btn of buttons) {
+    // (1) imageKey without fallback.
+    if (btn.glyph && glyphHasImageKey(btn.glyph) && !btn.glyphFallback) {
+      errors.push(
+        `Button "${btn.label}" — glyph "${btn.glyph}" contains an imageKey but no fallback was provided. ` +
+        `Wrap imageKeys in [] AND supply a fallback built from emojis or canonical registry keys.`
+      );
+      continue;
+    }
+
+    // (2) duplicate glyph.
+    if (btn.glyph) {
+      const sig = btn.glyph;
+      const owner = seenGlyph.get(sig);
+      if (owner !== undefined) {
+        errors.push(
+          `Button "${btn.label}" — glyph "${btn.glyph}" is identical to button "${owner}". ` +
+          `Each button needs a distinct visual; vary the slots or add descriptors.`
+        );
+        continue;
+      }
+    }
+
+    // (3) duplicate fallback.
+    if (btn.glyphFallback) {
+      const sig = btn.glyphFallback;
+      const owner = seenFallback.get(sig);
+      if (owner !== undefined) {
+        errors.push(
+          `Button "${btn.label}" — fallback "${btn.glyphFallback}" is identical to button "${owner}". ` +
+          `Each fallback must produce a distinct visual.`
+        );
+        continue;
+      }
+    }
+
+    // Passed all checks. Record signatures so subsequent buttons can clash
+    // with this one.
+    if (btn.glyph) seenGlyph.set(btn.glyph, btn.label);
+    if (btn.glyphFallback) seenFallback.set(btn.glyphFallback, btn.label);
+    kept.push(btn);
+  }
+
+  return { buttons: kept, errors };
+}
+
+/**
+ * Smart board merge — applies the user-facing rules from the "smooth
+ * board fixer" spec:
+ *
+ *   1. Any incoming button that's an exact duplicate of an existing
+ *      button (same label + glyph + glyphFallback + sentence) is treated
+ *      as already-present — the existing button stays put, the duplicate
+ *      is dropped. This keeps surviving buttons' IDs (and DOM nodes)
+ *      stable across rebuilds.
+ *
+ *   2. If `prev.length + toAdd.length ≤ max`, no displacement: every
+ *      existing button stays, every new one is appended.
+ *
+ *   3. If `prev.length + toAdd.length > max`, the overflow has to evict
+ *      some `prev` buttons. Only `leftover` ones (not exact-matched by
+ *      anything in `next`) are eligible to be displaced — anything the
+ *      AI explicitly kept in `next` survives. For each new button, the
+ *      best-scoring leftover (label / glyph / sentence overlap) is the
+ *      displacement target so "Apples" at slot 3 can be smoothly swapped
+ *      for "Oranges" at slot 3 rather than reshuffling the whole grid.
+ *      New buttons with no good leftover match take the next free slot
+ *      (or, if everything's already full, drop).
+ *
+ * The function mutates nothing — it returns a fresh `merged` array (in
+ * slot order, with stable IDs reused where possible) plus a diagnostic
+ * report so the caller can log what happened.
+ */
+interface MergeButton {
+  id?: string;
+  label: string;
+  iconRef: string;
+  symbolPath?: string;
+  imageKey?: string;
+  glyph?: string;
+  glyphFallback?: string;
+  sentence?: string;
+  buttonType?: "guess" | "category";
+  rowSpan?: number;
+  colSpan?: number;
+}
+
+interface MergeReport {
+  preservedIds: string[];      // prev IDs that survived untouched
+  displacedIds: string[];      // prev IDs that got evicted to make room
+  newIds: string[];            // freshly-minted IDs for incoming buttons
+  duplicatesIgnored: number;   // incoming buttons that matched existing
+}
+
+function exactDuplicate(a: MergeButton, b: MergeButton): boolean {
+  return (
+    a.label.trim().toLowerCase() === b.label.trim().toLowerCase()
+    && (a.glyph || "") === (b.glyph || "")
+    && (a.glyphFallback || "") === (b.glyphFallback || "")
+    && (a.sentence || "").trim() === (b.sentence || "").trim()
+  );
+}
+
+/**
+ * Score how likely `incoming` is meant to REPLACE `existing`. Higher =
+ * better match. 0 means no shared signature at all (we'll still allow
+ * displacement as a last resort, but ranked behind partial matches).
+ */
+function replacementScore(incoming: MergeButton, existing: MergeButton): number {
+  let score = 0;
+  if (incoming.label.trim().toLowerCase() === existing.label.trim().toLowerCase()) {
+    score += 3;
+  }
+  if (incoming.glyph && incoming.glyph === existing.glyph) {
+    score += 2;
+  }
+  if (
+    incoming.sentence
+    && existing.sentence
+    && incoming.sentence.trim() === existing.sentence.trim()
+  ) {
+    score += 2;
+  }
+  if (
+    incoming.glyphFallback
+    && incoming.glyphFallback === existing.glyphFallback
+  ) {
+    score += 1;
+  }
+  return score;
+}
+
+function smartMergeButtons(
+  prev: MergeButton[],
+  incoming: MergeButton[],
+  maxSlots: number,
+  newId: () => string,
+): { merged: MergeButton[]; report: MergeReport } {
+  const report: MergeReport = {
+    preservedIds: [],
+    displacedIds: [],
+    newIds: [],
+    duplicatesIgnored: 0,
+  };
+
+  // Pass 1 — pair up exact duplicates so we know which incoming items
+  // collapse into existing buttons.
+  const matchedPrevIdx = new Set<number>();
+  const matchedNextIdx = new Set<number>();
+  for (let ni = 0; ni < incoming.length; ni++) {
+    for (let pi = 0; pi < prev.length; pi++) {
+      if (matchedPrevIdx.has(pi)) continue;
+      if (exactDuplicate(incoming[ni], prev[pi])) {
+        matchedPrevIdx.add(pi);
+        matchedNextIdx.add(ni);
+        report.duplicatesIgnored++;
+        break;
+      }
+    }
+  }
+
+  const toAdd = incoming
+    .map((b, i) => ({ b, i }))
+    .filter(({ i }) => !matchedNextIdx.has(i))
+    .map(({ b }) => b);
+
+  // Plenty of room — nothing displaced.
+  if (prev.length + toAdd.length <= maxSlots) {
+    const merged: MergeButton[] = [];
+    for (const p of prev) {
+      merged.push(p);
+      if (p.id) report.preservedIds.push(p.id!);
+    }
+    for (const b of toAdd) {
+      const id = newId();
+      merged.push({ ...b, id });
+      report.newIds.push(id);
+    }
+    return { merged, report };
+  }
+
+  // Overflow — we need to evict (prev.length + toAdd.length - max) buttons.
+  // Leftover (unmatched prev) buttons are the natural eviction pool.
+  const leftoverIndices: number[] = [];
+  for (let pi = 0; pi < prev.length; pi++) {
+    if (!matchedPrevIdx.has(pi)) leftoverIndices.push(pi);
+  }
+
+  // Build candidate (incoming, leftover) pairs and sort by descending score.
+  // Each new button gets matched to at most one leftover; each leftover gets
+  // displaced at most once.
+  const candidates: Array<{ addIdx: number; prevIdx: number; score: number }> = [];
+  for (let ai = 0; ai < toAdd.length; ai++) {
+    for (const pi of leftoverIndices) {
+      candidates.push({ addIdx: ai, prevIdx: pi, score: replacementScore(toAdd[ai], prev[pi]) });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score);
+
+  // Pair greedy: highest scores first.
+  const addToPrev = new Map<number, number>();   // addIdx -> prevIdx (displacement target)
+  const prevToAdd = new Map<number, number>();   // prevIdx -> addIdx (reverse lookup)
+  for (const c of candidates) {
+    if (addToPrev.has(c.addIdx)) continue;
+    if (prevToAdd.has(c.prevIdx)) continue;
+    addToPrev.set(c.addIdx, c.prevIdx);
+    prevToAdd.set(c.prevIdx, c.addIdx);
+  }
+
+  // Walk prev in order, building the merged result. A displaced prev is
+  // replaced in place by its assigned incoming button so the slot index
+  // (and therefore grid position) stays put — that's what makes the
+  // client animation fade-out/fade-in at the same cell.
+  const merged: MergeButton[] = [];
+  const consumedAddIndices = new Set<number>();
+  for (let pi = 0; pi < prev.length; pi++) {
+    const replaceWith = prevToAdd.get(pi);
+    if (replaceWith !== undefined) {
+      const id = newId();
+      merged.push({ ...toAdd[replaceWith], id });
+      consumedAddIndices.add(replaceWith);
+      report.newIds.push(id);
+      if (prev[pi].id) report.displacedIds.push(prev[pi].id!);
+    } else {
+      merged.push(prev[pi]);
+      if (prev[pi].id) report.preservedIds.push(prev[pi].id!);
+    }
+  }
+
+  // Any incoming buttons that weren't paired to a leftover go into the
+  // remaining slack (slots beyond prev.length). If we're still over max,
+  // they get dropped — the AI's lowest-priority requests fall off the
+  // end first.
+  for (let ai = 0; ai < toAdd.length; ai++) {
+    if (consumedAddIndices.has(ai)) continue;
+    if (merged.length >= maxSlots) break;
+    const id = newId();
+    merged.push({ ...toAdd[ai], id });
+    report.newIds.push(id);
+  }
+
+  return { merged: merged.slice(0, maxSlots), report };
 }
 
 function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons: T[]): T[] {
@@ -423,6 +741,8 @@ export type ServerMessage =
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "interpret")
   | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
   | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
+  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice question — trigger overlay with two AI-supplied options
+  | { type: "ask_binary_choice"; data: { options: any[] } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student" } }
@@ -484,6 +804,15 @@ export interface ConstructionSuggestionsWire {
      * and a symbol generation is pending — see construction_symbol_ready).
      */
     symbolPath?: string;
+    /**
+     * Non-generate fallback key used by the client while a `generate:` key
+     * is awaiting generation (or after it fails). An emoji, canonical
+     * registry key, `symbol:ID`, or `face:ID`. The server validates that
+     * any candidate whose primary key is `generate:` carries a non-empty
+     * fallback before reaching the wire — candidates without one are
+     * rejected and surfaced as an error in the tool response.
+     */
+    fallback?: string;
   }>;
 }
 
@@ -612,6 +941,35 @@ export class LiveRelay {
 
   // Board tracking
   private lastBoardUpdateTime = 0;
+  /**
+   * Snapshot of the main board's buttons after the most recent emission.
+   * smartMergeButtons reads this on additive calls (add_buttons, and on
+   * rebuild_board's error-recovery path) so it can:
+   *   - reuse IDs for buttons that survive untouched (no remount, no
+   *     fade-in animation),
+   *   - pick low-cost displacement targets when the AI's incoming set
+   *     would overflow the grid,
+   *   - and surface a fade-out + fade-in transition in the same grid
+   *     cell when one button is genuinely replaced by another.
+   * rebuild_board normally REPLACES the board outright (the AI's
+   * intent is "show this set, nothing else"), so the merge engine is
+   * only invoked when the previous rebuild_board had validation
+   * errors — in that case the AI's follow-up is treated as a fix and
+   * gets merged with the surviving buttons from the partial board.
+   * Reset on board unload (set_board, exit-app paths) so a fresh AAC
+   * session never inherits stale slot identities.
+   */
+  private lastEmittedMainButtons: MergeButton[] = [];
+  /**
+   * Set whenever the most recent rebuild_board call dropped at least
+   * one button via validateBoardButtons. The very next rebuild_board
+   * call sees this flag, treats itself as an error fix, and uses the
+   * smart-merge path (so the AI's correction adds to / refines the
+   * partial board rather than wiping it). Reset back to false the
+   * moment a rebuild_board completes — whether it actually invoked the
+   * merge or not.
+   */
+  private rebuildBoardErrorRecoveryPending = false;
 
   // Symbol settings
   private symbolSettings = { generateSymbols: false, useApprovedSymbols: false, useUnapprovedSymbols: false };
@@ -1295,6 +1653,7 @@ export class LiveRelay {
               enabledApps: APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id)).map(a => ({ id: a.id, name: a.name, description: a.description })),
               permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
               permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+              permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
               autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
               useDirectAudio: this.useDirectAudio,
             });
@@ -1658,6 +2017,7 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
             availableCustomApps,
             permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
             permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+            permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
             youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
               ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
               : undefined,
@@ -2232,28 +2592,139 @@ The user pressed "More" — they can't find the button they need on the current 
       case "suggest_construction_buttons": {
         const rawCandidates = Array.isArray(args.candidates) ? args.candidates : [];
         const slotIndex = Number.isInteger(args.slot_index) ? args.slot_index as number : 0;
-        // Tolerate both shapes the model emits in practice:
-        //   1. {key: "water", label?: "Water"} — what the schema specifies
-        //   2. "water" — bare string (Vertex Live often ignores object schemas)
-        const candidates = rawCandidates
+        // Candidates are pipe-separated by default, matching the button
+        // glyph format the AI already uses everywhere else. Field
+        // positions mirror sentence|glyph|fallback|label, but the
+        // sentence field is unused for candidates (they fill a slot,
+        // they don't speak) so most calls look like `|🐕||Dog` or
+        // `🐕||Dog`. We tolerate every reasonable arity:
+        //   4 fields → sentence|glyph|fallback|label (ignore sentence)
+        //   3 fields → glyph|fallback|label
+        //   2 fields → glyph|label
+        //   1 field  → just the glyph
+        // We also tolerate the JSON-object schema (`{key, label, fallback}`)
+        // which Vertex sometimes emits when it does honor the schema;
+        // if both forms collide (pipes inside the JSON `key`), explicit
+        // JSON fields win where they're present.
+        const parsePipedCandidate = (raw: string): { key: string; label?: string; fallback?: string } => {
+          const t = raw.trim();
+          if (!t) return { key: "" };
+          if (!t.includes("|")) return { key: t };
+          const parts = t.split("|").map((p) => p.trim());
+          if (parts.length >= 4) {
+            return {
+              key: parts[1],
+              fallback: parts[2] || undefined,
+              label: parts[3] || undefined,
+            };
+          }
+          if (parts.length === 3) {
+            return {
+              key: parts[0],
+              fallback: parts[1] || undefined,
+              label: parts[2] || undefined,
+            };
+          }
+          // length === 2
+          return { key: parts[0], label: parts[1] || undefined };
+        };
+
+        const parsedCandidates = rawCandidates
           .map((c) => {
             if (typeof c === "string" && c.trim().length > 0) {
-              return { key: c.trim(), label: undefined as string | undefined };
+              return parsePipedCandidate(c);
             }
             if (c && typeof c === "object" && typeof c.key === "string" && c.key.trim().length > 0) {
-              return { key: c.key.trim(), label: typeof c.label === "string" ? c.label : undefined };
+              const rawKey = c.key.trim();
+              const rawLabel = typeof c.label === "string" && c.label.trim().length > 0 ? c.label.trim() : undefined;
+              const rawFallback = typeof c.fallback === "string" && c.fallback.trim().length > 0 ? c.fallback.trim() : undefined;
+              // JSON form. If the model still leaked pipes into the
+              // `key`, parse them too — but explicit JSON fields take
+              // precedence over anything inferred from the pipe split.
+              const split = parsePipedCandidate(rawKey);
+              return {
+                key: split.key,
+                label: rawLabel ?? split.label,
+                fallback: rawFallback ?? split.fallback,
+              };
             }
             return null;
           })
-          .filter((c): c is { key: string; label: string | undefined } => c !== null)
+          .filter((c): c is { key: string; label?: string; fallback?: string } =>
+            c !== null && c.key.length > 0
+          )
+          .map((c) => ({
+            key: c.key,
+            label: c.label as string | undefined,
+            fallback: c.fallback as string | undefined,
+          }))
           .slice(0, 4);
 
+        // Apply the same canonical / emoji / symbol / face / generate
+        // classification used for button glyphs. A candidate whose key
+        // reduces to a generation target (i.e. not a registry hit, not an
+        // emoji, not a symbol:/face: ref) MUST carry a fallback that is
+        // itself NOT a generation target — same rule the rebuild_board
+        // validator applies to glyph slots, so the AI sees one consistent
+        // shape across both surfaces.
+        const isGenerationTarget = (key: string): boolean => {
+          if (!key) return true;
+          if (isEmoji(key)) return false;
+          if (key.startsWith("symbol:") || key.startsWith("face:")) return false;
+          const item = getVocabularyItem(key);
+          if (item?.imagePath || item?.emoji) return false;
+          if (resolveEmoji(key)) return false;
+          return true;
+        };
+
+        const candidates: Array<{ key: string; label: string | undefined; fallback: string | undefined }> = [];
+        const constructionErrors: string[] = [];
+        for (const raw of parsedCandidates) {
+          // Normalize markers: `generate:foo` and `[foo]` both collapse to
+          // `foo` for downstream resolution. The marker itself is just
+          // the AI's hint that this is a generation target.
+          const bareKey = stripBrackets(raw.key);
+          const bareFallback = raw.fallback ? stripBrackets(raw.fallback) : undefined;
+
+          const keyIsGen = isGenerationTarget(bareKey);
+          if (keyIsGen) {
+            if (!bareFallback) {
+              constructionErrors.push(
+                `Candidate "${raw.label || raw.key}" — key "${raw.key}" needs generation but no fallback was provided. Add an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` as the candidate's \`fallback\` field.`
+              );
+              continue;
+            }
+            if (isGenerationTarget(bareFallback)) {
+              constructionErrors.push(
+                `Candidate "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target. Fallbacks must be an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` (anything that renders immediately).`
+              );
+              continue;
+            }
+          } else if (bareFallback && isGenerationTarget(bareFallback)) {
+            // Fallback supplied alongside an already-renderable key, but
+            // the fallback itself is invalid. The candidate is still
+            // usable (the primary key renders fine), so we keep it but
+            // strip the bad fallback and warn.
+            constructionErrors.push(
+              `Candidate "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target; ignored. Primary key renders fine on its own.`
+            );
+            candidates.push({ key: bareKey, label: raw.label, fallback: undefined });
+            continue;
+          }
+          candidates.push({ key: bareKey, label: raw.label, fallback: bareFallback });
+        }
+
         logLiveSession("CONSTRUCTION_SUGGEST_RAW",
-          `slot=${slotIndex} rawCount=${rawCandidates.length} validCount=${candidates.length} rawShape=${JSON.stringify(rawCandidates).substring(0, 200)}`);
+          `slot=${slotIndex} rawCount=${rawCandidates.length} validCount=${candidates.length} dropped=${constructionErrors.length} rawShape=${JSON.stringify(rawCandidates).substring(0, 200)}`);
+        if (constructionErrors.length > 0) {
+          logLiveSession("CONSTRUCTION_SUGGEST_VALIDATION", constructionErrors.join(" | "));
+        }
 
         if (candidates.length === 0) {
           logLiveSession("CONSTRUCTION_SUGGEST_REJECT", "no valid candidates after normalization");
-          return { id: call.id, name, response: { error: "No valid candidates provided" } };
+          const errorResponse: Record<string, unknown> = { error: "No valid candidates provided" };
+          if (constructionErrors.length > 0) errorResponse.dropped_candidates = constructionErrors;
+          return { id: call.id, name, response: errorResponse };
         }
 
         // Resolve symbol paths for AI-generated keys. A candidate gets a
@@ -2261,7 +2732,7 @@ The user pressed "More" — they can't find the button they need on the current 
         // registry, or in the registry but without an imagePath). Keys with
         // a built-in icon stay unresolved here — the client uses the
         // registry's imagePath/emoji directly.
-        const enriched: Array<{ key: string; label?: string; symbolPath?: string }> =
+        const enriched: Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }> =
           candidates.map((c) => ({ ...c }));
         const symbolButtons: Array<{
           label: string;
@@ -2329,7 +2800,15 @@ The user pressed "More" — they can't find the button they need on the current 
         });
         logLiveSession("CONSTRUCTION_SUGGEST",
           `slot=${slotIndex} keys=[${enriched.map(c => c.symbolPath ? `${c.key}*` : c.key).join(", ")}]`);
-        return { id: call.id, name, response: { output: "ok", count: enriched.length } };
+        const okResponse: Record<string, unknown> = { output: "ok", count: enriched.length };
+        if (constructionErrors.length > 0) {
+          // Some candidates were dropped during validation; surface the
+          // reasons so the AI can correct them on a retry (same shape as
+          // rebuild_board / add_buttons validation errors).
+          okResponse.dropped_candidates = constructionErrors;
+          okResponse.note = `${constructionErrors.length} candidate(s) were rejected (see dropped_candidates). The remaining ${enriched.length} are showing in the AI strip. Re-call suggest_construction_buttons with corrected versions if you want the dropped concepts back.`;
+        }
+        return { id: call.id, name, response: okResponse };
       }
 
       case "set_construction_memory_chips": {
@@ -2356,7 +2835,12 @@ The user pressed "More" — they can't find the button they need on the current 
       }
 
       case "add_buttons": {
-        const buttons = dedupeImageKeys(toolArgsToButtons(args.buttons));
+        const parsedButtons = dedupeImageKeys(toolArgsToButtons(args.buttons));
+        const validation = validateBoardButtons(parsedButtons);
+        const incomingAdd = validation.buttons;
+        if (validation.errors.length > 0) {
+          logLiveSession("BOARD_VALIDATION", `add_buttons dropped ${validation.errors.length} button(s): ${validation.errors.join(" | ")}`);
+        }
         const maxSlots = state?.maxBoardItems || 8;
 
         // When a prebuilt board is loaded, redirect to rebuild_board for the side panel
@@ -2368,78 +2852,88 @@ The user pressed "More" — they can't find the button they need on the current 
           };
         }
 
-        // Split buttons: those that fit go on the main board, overflow goes to context sidebar
-        let mainButtons = buttons;
-        let overflowButtons: typeof buttons = [];
+        // Same smart-merge path as rebuild_board. Previously add_buttons
+        // split overflow onto the context sidebar — that meant tapping
+        // "More" with a full board silently dropped the new suggestions.
+        // Routing through smartMergeButtons fixes that: leftover existing
+        // buttons get displaced (with fade-out / fade-in animation) so
+        // every incoming button actually lands somewhere visible.
+        const mergeResult = smartMergeButtons(
+          this.lastEmittedMainButtons,
+          incomingAdd,
+          maxSlots,
+          () => `btn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        );
+        const buttons = mergeResult.merged;
+        this.lastEmittedMainButtons = buttons;
+        if (
+          mergeResult.report.displacedIds.length > 0
+          || mergeResult.report.duplicatesIgnored > 0
+        ) {
+          logLiveSession(
+            "BOARD_MERGE",
+            `add_buttons: kept=${mergeResult.report.preservedIds.length} added=${mergeResult.report.newIds.length} displaced=${mergeResult.report.displacedIds.length} dupes=${mergeResult.report.duplicatesIgnored}`
+          );
+        }
         if (state) {
-          const available = maxSlots - state.boardButtonLabels.length;
-          if (buttons.length > available) {
-            mainButtons = buttons.slice(0, available);
-            overflowButtons = buttons.slice(available);
-            logLiveSession("ADD_BUTTONS OVERFLOW", `${overflowButtons.length} button(s) overflow to context sidebar (board ${state.boardButtonLabels.length}/${maxSlots})`);
-          }
-          state.boardButtonLabels = [...state.boardButtonLabels, ...mainButtons.map(b => b.label)];
+          state.boardButtonLabels = buttons.map(b => b.label);
         }
 
         // Resolve existing symbols from DB
-        const allButtons = [...mainButtons, ...overflowButtons];
-        const unresolvedKeys = await this.resolveExistingSymbols(allButtons);
-        this.queueMissingSymbolGeneration(allButtons, unresolvedKeys);
+        const unresolvedKeys = await this.resolveExistingSymbols(buttons);
+        this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
         // Also resolve / queue every imageKey-shaped slot in each button's
         // glyph. Per-slot generation results stream back as
         // construction_symbol_ready WS messages and the renderer swaps
         // fallback → glyph automatically as each part lands.
-        void this.resolveAndQueueGlyphParts(allButtons);
+        void this.resolveAndQueueGlyphParts(buttons);
 
-        // Add main buttons to the board
-        if (mainButtons.length > 0) {
-          this.lastBoardUpdateTime = Date.now();
+        this.lastBoardUpdateTime = Date.now();
 
-          // Evict any context-sidebar buttons that share a label with the new
-          // main buttons — collision causes ambiguous sentence playback.
-          const newMainLabelsLower = new Set(mainButtons.map(b => b.label.toLowerCase()));
-          const removedFromContext: string[] = [];
-          this.contextButtonLabels = this.contextButtonLabels.filter(label => {
-            if (newMainLabelsLower.has(label.toLowerCase())) {
-              removedFromContext.push(label);
-              return false;
-            }
-            return true;
-          });
-          for (const label of removedFromContext) {
-            this.send({ type: "context_button_remove", data: { label } });
+        // Evict any context-sidebar buttons that share a label with the new
+        // main buttons — collision causes ambiguous sentence playback.
+        const newMainLabelsLower = new Set(buttons.map(b => b.label.toLowerCase()));
+        const removedFromContext: string[] = [];
+        this.contextButtonLabels = this.contextButtonLabels.filter(label => {
+          if (newMainLabelsLower.has(label.toLowerCase())) {
+            removedFromContext.push(label);
+            return false;
           }
-
-          this.send({ type: "board_patch", data: { add: mainButtons, remove: [] } });
-          this.turnAccum.boardChanged = true;
-          this.turnAccum.boardAddLabels.push(...mainButtons.map(b => b.label));
+          return true;
+        });
+        for (const label of removedFromContext) {
+          this.send({ type: "context_button_remove", data: { label } });
         }
 
-        // Send overflow buttons to context sidebar
-        for (const btn of overflowButtons) {
-          if (this.contextButtonLabels.some(l => l.toLowerCase() === btn.label.toLowerCase())) continue;
-          this.contextButtonLabels.push(btn.label);
-          if (this.contextButtonLabels.length > 4) this.contextButtonLabels.shift();
-          this.send({ type: "context_button_add", data: {
-            label: btn.label,
-            iconRef: btn.iconRef,
-            symbolPath: btn.symbolPath,
-            imageKey: btn.imageKey,
-            glyph: btn.glyph,
-            sentence: btn.sentence,
-          }});
-        }
+        // Emit the full merged board (same shape as rebuild_board) so the
+        // client can run its AnimatePresence transitions over the entire
+        // delta in one frame.
+        this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardAddLabels.push(
+          ...mergeResult.report.newIds
+            .map((id) => buttons.find(b => b.id === id)?.label)
+            .filter((l): l is string => !!l)
+        );
 
         let stateMsg = "";
         if (state) {
           const available = maxSlots - state.boardButtonLabels.length;
           stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ")}`;
-          if (overflowButtons.length > 0) {
-            stateMsg += `. ${overflowButtons.length} button(s) moved to context sidebar.`;
+          if (mergeResult.report.displacedIds.length > 0) {
+            stateMsg += `. ${mergeResult.report.displacedIds.length} previous button(s) displaced to make room.`;
           }
         }
 
-        return { id: call.id, name, response: { output: "ok", board_state: stateMsg } };
+        const addResponse: Record<string, unknown> = { output: "ok", board_state: stateMsg };
+        if (validation.errors.length > 0) {
+          // Surface dropped-button errors so the AI can retry. The kept
+          // buttons are still on the board; this is a soft warning, not a
+          // hard reject.
+          addResponse.dropped_buttons = validation.errors;
+          addResponse.note = `${validation.errors.length} button(s) were rejected (see dropped_buttons). The remaining buttons are on the board. Call add_buttons() again with corrected versions if you want the dropped concepts back.`;
+        }
+        return { id: call.id, name, response: addResponse };
       }
 
       case "remove_buttons": {
@@ -2507,7 +3001,55 @@ The user pressed "More" — they can't find the button they need on the current 
 
         const wasPrebuiltLoaded = !!state?.loadedBoardId;
         const maxSlots = 8;
-        const buttons = dedupeImageKeys(toolArgsToButtons(args.buttons).slice(0, maxSlots));
+        const parsedRebuild = dedupeImageKeys(toolArgsToButtons(args.buttons).slice(0, maxSlots));
+        const rebuildValidation = validateBoardButtons(parsedRebuild);
+        const incomingRebuild = rebuildValidation.buttons;
+        if (rebuildValidation.errors.length > 0) {
+          logLiveSession("BOARD_VALIDATION", `rebuild_board dropped ${rebuildValidation.errors.length} button(s): ${rebuildValidation.errors.join(" | ")}`);
+        }
+
+        // Switching out of a prebuilt board clears any prior merge
+        // snapshot — the previous slots belong to a different layout
+        // and shouldn't influence what comes next. The error-recovery
+        // flag is cleared too: any pending "fix" applies only to the
+        // dynamic-board state that triggered the validation error.
+        if (wasPrebuiltLoaded) {
+          this.lastEmittedMainButtons = [];
+          this.rebuildBoardErrorRecoveryPending = false;
+        }
+
+        // rebuild_board is normally a FULL REPLACE — the AI's intent is
+        // "wipe the board and put exactly this set on it". The smart
+        // merge is reserved for error recovery: when a previous
+        // rebuild_board call had buttons dropped by validation, the
+        // AI's follow-up is treated as a fix and merged with the
+        // surviving partial board so corrected buttons rejoin the
+        // already-shown ones instead of clobbering them.
+        const isErrorRecovery = this.rebuildBoardErrorRecoveryPending;
+        this.rebuildBoardErrorRecoveryPending = false;
+        let buttons: MergeButton[];
+        if (isErrorRecovery && this.lastEmittedMainButtons.length > 0) {
+          const mergeResult = smartMergeButtons(
+            this.lastEmittedMainButtons,
+            incomingRebuild,
+            maxSlots,
+            () => `btn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          );
+          buttons = mergeResult.merged;
+          logLiveSession(
+            "BOARD_MERGE",
+            `rebuild_board (error recovery): kept=${mergeResult.report.preservedIds.length} added=${mergeResult.report.newIds.length} displaced=${mergeResult.report.displacedIds.length} dupes=${mergeResult.report.duplicatesIgnored}`
+          );
+        } else {
+          // Normal path — replace wholesale. Mint fresh IDs so the
+          // client treats every button as freshly-arrived (fade-in via
+          // the existing motion.button animation).
+          buttons = incomingRebuild.map((b, i) => ({
+            ...b,
+            id: `btn-${Date.now()}-${i}`,
+          }));
+        }
+        this.lastEmittedMainButtons = buttons;
 
         if (state) {
           state.loadedBoardId = null;
@@ -2564,7 +3106,15 @@ The user pressed "More" — they can't find the button they need on the current 
         }
 
         const stateMsg = `Main board rebuilt. ${buttons.length}/${maxSlots} buttons: ${buttons.map(b => b.label).join(", ")}`;
-        return { id: call.id, name, response: { output: "ok", board_state: stateMsg } };
+        const rebuildResponse: Record<string, unknown> = { output: "ok", board_state: stateMsg };
+        if (rebuildValidation.errors.length > 0) {
+          rebuildResponse.dropped_buttons = rebuildValidation.errors;
+          rebuildResponse.note = `${rebuildValidation.errors.length} button(s) were rejected (see dropped_buttons). The board is now showing the rest of the rebuild. Call rebuild_board() again with corrected versions of the dropped buttons — that follow-up will be MERGED with the surviving partial board (it won't wipe it), so you only need to resend the buttons you want to fix or add back.`;
+          // Arm error-recovery: the next rebuild_board call will be
+          // treated as a patch, merged with the partial board above.
+          this.rebuildBoardErrorRecoveryPending = true;
+        }
+        return { id: call.id, name, response: rebuildResponse };
       }
 
       case "set_board": {
@@ -2599,6 +3149,11 @@ The user pressed "More" — they can't find the button they need on the current 
           state.aiAddedButtonLabels = [];
           const nativeLabels = this.getNativePageButtonLabels(state);
           state.boardButtonLabels = [...nativeLabels];
+          // The prebuilt board is the new ground truth — clear the
+          // dynamic-board merge snapshot so a later switch back to a
+          // dynamic board doesn't try to thread continuity through the
+          // prebuilt buttons (those aren't ours to displace).
+          this.lastEmittedMainButtons = [];
 
           this.send({ type: "set_board", data: { board: boardData, name: match.name, boardId: match.id } });
           this.turnAccum.setBoardName = match.name;
@@ -2675,35 +3230,37 @@ The user pressed "More" — they can't find the button they need on the current 
           // key, the search will return null and we need to tell the model.
           if (appId === "youtube") {
             const channels = state?.permittedYoutubeChannels || [];
+            const videos = state?.permittedYoutubeVideos || [];
             const hasChannels = channels.length > 0;
+            const hasVideos = videos.length > 0;
             const hasApiKey = !!process.env.YOUTUBE_API_KEY;
 
-            // No data + no channels → nothing to show. Tell the AI.
-            if (!data && !hasChannels) {
+            // No data + nothing configured → nothing to show. Tell the AI.
+            if (!data && !hasChannels && !hasVideos) {
               return {
                 id: call.id,
                 name,
                 response: {
-                  output: "error: open_app(youtube) needs a `data` parameter (search query) when no permitted channels are configured. Pass e.g. 'counting songs'.",
+                  output: "error: open_app(youtube) needs a `data` parameter (search query) when no permitted channels or pinned videos are configured. Pass e.g. 'counting songs'.",
                 },
               };
             }
-            // No channels and no API key → search can't run at all.
-            if (!hasChannels && !hasApiKey) {
+            // No channels/videos and no API key → search can't run at all.
+            if (!hasChannels && !hasVideos && !hasApiKey) {
               return {
                 id: call.id,
                 name,
                 response: {
-                  output: "error: YouTube search is unavailable — no permitted channels are configured and no API key is set. Tell the student this activity isn't available and suggest something else.",
+                  output: "error: YouTube is unavailable — no permitted channels or pinned videos are configured and no API key is set. Tell the student this activity isn't available and suggest something else.",
                 },
               };
             }
-            // No data + channels → open the browse UI so the student picks
-            // a channel and video manually. Don't run a search, don't auto-play.
-            if (!data && hasChannels) {
+            // No data + channels/videos → open the browse UI so the student
+            // picks something manually. Don't run a search, don't auto-play.
+            if (!data && (hasChannels || hasVideos)) {
               this.send({
                 type: "app_open",
-                data: { appId: "youtube", appData: { channels } },
+                data: { appId: "youtube", appData: { channels, videos } },
               });
               // Clear openAppData so the post-turn handler doesn't also run a search.
               this.turnAccum.openAppData = null;
@@ -2711,12 +3268,12 @@ The user pressed "More" — they can't find the button they need on the current 
                 id: call.id,
                 name,
                 response: {
-                  output: "ok. The YouTube app is now open showing the permitted channels. The student will pick a channel and a video. Call rebuild_board() with buttons relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
+                  output: "ok. The YouTube app is now open showing the available videos and channels. The student will pick something. Call rebuild_board() with buttons relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
                 },
               };
             }
-            // Data + channels/key → search-to-play. The post-turn handler will
-            // send video_play (or inject a [SYSTEM] message if nothing matched).
+            // Data + channels/videos/key → search-to-play. The post-turn handler
+            // checks pinned videos first, then channel RSS, then API search.
             return {
               id: call.id,
               name,
@@ -2816,6 +3373,26 @@ The user pressed "More" — they can't find the button they need on the current 
 
       case "ask_yes_no": {
         this.send({ type: "ask_yes_no", data: {} });
+        return { id: call.id, name, response: { output: "ok" } };
+      }
+
+      case "binary_choice":
+      case "ask_binary_choice": {
+        const opt1Raw = args.option1;
+        const opt2Raw = args.option2;
+        if (typeof opt1Raw !== "string" || typeof opt2Raw !== "string" || !opt1Raw.trim() || !opt2Raw.trim()) {
+          return { id: call.id, name, response: { error: "option1 and option2 are required (sentence|glyph|fallback|label)" } };
+        }
+        // Each option uses the same pipe-separated button syntax as the rest
+        // of the board — reuse parseBoardButtons so glyph/fallback/imageKey
+        // are resolved the same way, then take the first parsed button per
+        // option (defensive against the model packing a comma inside one).
+        const opt1 = parseBoardButtons(opt1Raw)[0];
+        const opt2 = parseBoardButtons(opt2Raw)[0];
+        if (!opt1 || !opt2) {
+          return { id: call.id, name, response: { error: "could not parse option1/option2 — expected sentence|glyph|fallback|label" } };
+        }
+        this.send({ type: name as "binary_choice" | "ask_binary_choice", data: { options: [opt1, opt2] } });
         return { id: call.id, name, response: { output: "ok" } };
       }
 
@@ -3539,45 +4116,72 @@ The user pressed "More" — they can't find the button they need on the current 
       if (openAppData.appId === "youtube") {
         try {
           const channels = this.sessionCache?.state?.permittedYoutubeChannels || [];
-          const results = await searchYouTube(openAppData.data || "", channels);
+          const videos = this.sessionCache?.state?.permittedYoutubeVideos || [];
+          const query = (openAppData.data || "").trim();
+
+          // 1. Pinned-video direct hit. Prefer videoId; fall back to exact
+          //    label match (case-insensitive). This is the "AI picks a curated
+          //    video by id or title" path.
+          const pinnedHit = query
+            ? findPinnedVideoMatch(query, videos)
+            : null;
+          if (pinnedHit) {
+            logLiveSession(
+              "YOUTUBE_PINNED_HIT",
+              `query="${query}" matched="${pinnedHit.label}" id=${pinnedHit.videoId}`,
+            );
+            this.send({
+              type: "video_play",
+              data: {
+                videoId: pinnedHit.videoId,
+                title: pinnedHit.label,
+                channels: channels.length > 0 ? channels : undefined,
+                videos: videos.length > 0 ? videos : undefined,
+              },
+            });
+            return;
+          }
+
+          const results = await searchYouTube(query, channels);
           if (results) {
             logLiveSession(
               "YOUTUBE_SEARCH",
-              `query="${openAppData.data || "(empty)"}" result="${results.title}" id=${results.videoId}`,
+              `query="${query || "(empty)"}" result="${results.title}" id=${results.videoId}`,
             );
             this.send({
               type: "video_play",
               data: {
                 videoId: results.videoId,
                 title: results.title,
-                // Include permitted channels so the player can offer a
-                // "← channels" button to browse other approved videos.
+                // Include permitted channels + pinned videos so the player can
+                // offer a "← browse" button back to the approved content list.
                 channels: channels.length > 0 ? channels : undefined,
+                videos: videos.length > 0 ? videos : undefined,
               },
             });
-          } else if (channels.length > 0) {
+          } else if (channels.length > 0 || videos.length > 0) {
             // No title matched — fall back to browse mode instead of playing
-            // something unrelated. Student can pick from the channel list.
+            // something unrelated. Student can pick from the curated set.
             logLiveSession(
               "YOUTUBE_SEARCH_NO_MATCH_BROWSE",
-              `query="${openAppData.data || ""}" channels=${channels.length}`,
+              `query="${query}" channels=${channels.length} videos=${videos.length}`,
             );
             this.send({
               type: "app_open",
-              data: { appId: "youtube", appData: { channels } },
+              data: { appId: "youtube", appData: { channels, videos } },
             });
             this.provider?.sendContextInjection(
-              `[SYSTEM] YouTube search for "${openAppData.data || ""}" didn't match any permitted video titles. The channel browser is now open on screen so the student can pick something themselves.`,
+              `[SYSTEM] YouTube search for "${query}" didn't match any permitted video titles. The browser is now open on screen so the student can pick something themselves.`,
             );
           } else {
             // No channels and search returned null (e.g. API key missing or
             // quota exceeded). Nothing to show.
             logLiveSession(
               "YOUTUBE_SEARCH_EMPTY",
-              `query="${openAppData.data || "(empty)"}" hasKey=${!!process.env.YOUTUBE_API_KEY}`,
+              `query="${query || "(empty)"}" hasKey=${!!process.env.YOUTUBE_API_KEY}`,
             );
             this.provider?.sendContextInjection(
-              `[SYSTEM] YouTube search returned no videos for "${openAppData.data || ""}". The player is not open. Suggest a different activity.`,
+              `[SYSTEM] YouTube search returned no videos for "${query}". The player is not open. Suggest a different activity.`,
             );
           }
         } catch (err) {
@@ -3867,7 +4471,7 @@ The user pressed "More" — they can't find the button they need on the current 
     }
   }
 
-  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
+  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -3878,7 +4482,11 @@ The user pressed "More" — they can't find the button they need on the current 
         id: pageId,
         name: "Main",
         buttons: buttons.map((b, i) => ({
-          id: `btn-${Date.now()}-${i}`,
+          // Prefer the merge engine's pre-assigned id (so React reuses the
+          // existing DOM node for surviving buttons); fall back to a fresh
+          // one when this is a brand-new button or a legacy code path
+          // hasn't gone through smartMergeButtons.
+          id: b.id ?? `btn-${Date.now()}-${i}`,
           label: b.label,
           spokenText: b.label,
           ...(b.sentence ? { sentence: b.sentence } : {}),

@@ -9,15 +9,17 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { X, Play, Pause, RotateCcw, Rewind, FastForward, ChevronLeft, ChevronRight, Video } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import type { PermittedYoutubeChannel } from "@shared/schema";
+import type { PermittedYoutubeChannel, PermittedYoutubeVideo } from "@shared/schema";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface YouTubeAppProps {
-  /** Initial video to play. When omitted, app opens in browse mode (requires `channels`). */
+  /** Initial video to play. When omitted, app opens in browse mode (requires `channels` or `videos`). */
   videoId?: string;
   title?: string;
-  /** Permitted channels for browse mode. When empty and no videoId, the app shows an error. */
+  /** Permitted channels for browse mode. */
   channels?: PermittedYoutubeChannel[];
+  /** Pinned videos (curated playlist) shown as direct-play tiles in browse mode. */
+  videos?: PermittedYoutubeVideo[];
   onClose: () => void;
   /** Called with a short free-form string when the student picks/finishes a video manually. */
   sendContextOnly?: (text: string) => void;
@@ -66,6 +68,7 @@ export default function YouTubeApp({
   videoId,
   title,
   channels,
+  videos,
   onClose,
   sendContextOnly,
 }: YouTubeAppProps) {
@@ -73,9 +76,10 @@ export default function YouTubeApp({
     videoId ? { videoId, title: title || "Video" } : null,
   );
   const hasChannels = (channels?.length ?? 0) > 0;
-  // "Back to channels" is available whenever channels exist — so a student
-  // given a specific video by the AI can still browse other approved options.
-  const canReturnToBrowse = hasChannels;
+  const hasVideos = (videos?.length ?? 0) > 0;
+  // "Back to browse" is available whenever the student has curated content
+  // they could pick from — channels or pinned videos.
+  const canReturnToBrowse = hasChannels || hasVideos;
 
   const pickVideo = useCallback(
     (v: { videoId: string; title: string }, channelLabel?: string) => {
@@ -91,8 +95,8 @@ export default function YouTubeApp({
     setActiveVideo(null);
   }, []);
 
-  // No video, no channels — render a minimal "unavailable" screen.
-  if (!activeVideo && !hasChannels) {
+  // No video, no channels, no pinned videos — render a minimal "unavailable" screen.
+  if (!activeVideo && !hasChannels && !hasVideos) {
     return <UnavailableView onClose={onClose} />;
   }
 
@@ -109,7 +113,8 @@ export default function YouTubeApp({
 
   return (
     <BrowseView
-      channels={channels!}
+      channels={channels || []}
+      videos={videos || []}
       onPickVideo={pickVideo}
       onClose={onClose}
     />
@@ -128,16 +133,21 @@ const PAGE_SIZE = PAGE_ROWS * PAGE_COLS;
 
 function BrowseView({
   channels,
+  videos,
   onPickVideo,
   onClose,
 }: {
   channels: PermittedYoutubeChannel[];
+  videos: PermittedYoutubeVideo[];
   onPickVideo: (v: { videoId: string; title: string }, channelLabel?: string) => void;
   onClose: () => void;
 }) {
   const { t } = useLanguage();
+  // Auto-jump straight to the only channel iff there are no pinned videos to
+  // pick from. With pinned videos present, always show the browse view so the
+  // student sees both options.
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
-    channels.length === 1 ? channels[0].channelId : null,
+    channels.length === 1 && videos.length === 0 ? channels[0].channelId : null,
   );
   const selectedChannel = useMemo(
     () => channels.find((c) => c.channelId === selectedChannelId) || null,
@@ -148,38 +158,228 @@ function BrowseView({
     return (
       <ChannelVideosView
         channel={selectedChannel}
-        onBack={channels.length > 1 ? () => setSelectedChannelId(null) : undefined}
+        onBack={() => setSelectedChannelId(null)}
         onClose={onClose}
         onPickVideo={(v) => onPickVideo(v, selectedChannel.label)}
       />
     );
   }
 
-  return (
-    <PaginatedGrid
-      title={t("youtubeApp.chooseChannel")}
-      items={channels}
-      getKey={(ch) => ch.channelId}
-      renderItem={(ch) => (
-        <button type="button"
-          data-dwell
-          key={ch.channelId}
-          onClick={() => setSelectedChannelId(ch.channelId)}
-          className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-gray-800 hover:bg-gray-700 active:scale-95 transition-all text-center w-full h-full min-h-0 overflow-hidden"
-        >
-          <Video size={48} className="text-red-500 shrink-0" />
-          <span className="text-white text-base font-semibold line-clamp-2 w-full">
-            {ch.label}
-          </span>
-          {ch.description && (
-            <span className="text-gray-400 text-xs line-clamp-2 w-full">
-              {ch.description}
-            </span>
-          )}
-        </button>
+  const renderVideoTile = (v: PermittedYoutubeVideo) => (
+    <button type="button"
+      data-dwell
+      key={v.videoId}
+      onClick={() => onPickVideo({ videoId: v.videoId, title: v.label })}
+      className="flex flex-col gap-0 rounded-2xl overflow-hidden bg-gray-800 hover:bg-gray-700 active:scale-95 transition-all text-left w-full h-full min-h-0"
+    >
+      <div className="relative w-full flex-1 min-h-0 bg-black">
+        <img
+          src={`https://img.youtube.com/vi/${encodeURIComponent(v.videoId)}/hqdefault.jpg`}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/30 transition-colors">
+          <Play size={48} className="text-white drop-shadow-lg" />
+        </div>
+      </div>
+      <div className="px-3 py-2 shrink-0">
+        <span className="text-white text-sm font-medium line-clamp-2">{v.label}</span>
+      </div>
+    </button>
+  );
+
+  const renderChannelTile = (ch: PermittedYoutubeChannel) => (
+    <button type="button"
+      data-dwell
+      key={ch.channelId}
+      onClick={() => setSelectedChannelId(ch.channelId)}
+      className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-gray-800 hover:bg-gray-700 active:scale-95 transition-all text-center w-full h-full min-h-0 overflow-hidden"
+    >
+      <Video size={48} className="text-red-500 shrink-0" />
+      <span className="text-white text-base font-semibold line-clamp-2 w-full">
+        {ch.label}
+      </span>
+      {ch.description && (
+        <span className="text-gray-400 text-xs line-clamp-2 w-full">
+          {ch.description}
+        </span>
       )}
+    </button>
+  );
+
+  // Only one type → keep the full-screen PaginatedGrid (existing behavior).
+  if (videos.length === 0) {
+    return (
+      <PaginatedGrid
+        title={t("youtubeApp.chooseChannel")}
+        items={channels}
+        getKey={(ch) => ch.channelId}
+        renderItem={renderChannelTile}
+        onClose={onClose}
+      />
+    );
+  }
+  if (channels.length === 0) {
+    return (
+      <PaginatedGrid
+        title={t("youtubeApp.pinnedVideos")}
+        items={videos}
+        getKey={(v) => v.videoId}
+        renderItem={renderVideoTile}
+        onClose={onClose}
+      />
+    );
+  }
+
+  // Both present → split-screen "Pinned videos" + "Channels" stacked sections.
+  return (
+    <SectionedBrowseView
+      videos={videos}
+      channels={channels}
+      renderVideoTile={renderVideoTile}
+      renderChannelTile={renderChannelTile}
       onClose={onClose}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SectionedBrowseView — two stacked paginated grids: pinned videos + channels
+// ---------------------------------------------------------------------------
+
+function SectionedBrowseView({
+  videos,
+  channels,
+  renderVideoTile,
+  renderChannelTile,
+  onClose,
+}: {
+  videos: PermittedYoutubeVideo[];
+  channels: PermittedYoutubeChannel[];
+  renderVideoTile: (v: PermittedYoutubeVideo) => React.ReactNode;
+  renderChannelTile: (c: PermittedYoutubeChannel) => React.ReactNode;
+  onClose: () => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="h-full w-full bg-gray-900 flex flex-col">
+      {/* Single top header with close button */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-black/70 border-b border-gray-800 shrink-0">
+        <h2 className="text-white text-lg font-semibold truncate flex-1">
+          {t("youtubeApp.browseTitle")}
+        </h2>
+        <button type="button"
+          data-dwell
+          onClick={onClose}
+          className="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center active:scale-95 transition-transform"
+          aria-label={t("youtubeApp.close")}
+        >
+          <X size={24} />
+        </button>
+      </div>
+
+      {/* Two stacked sections, each gets ~half the available vertical space. */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <SectionGrid
+          title={t("youtubeApp.pinnedVideos")}
+          items={videos}
+          getKey={(v) => v.videoId}
+          renderItem={renderVideoTile}
+        />
+        <SectionGrid
+          title={t("youtubeApp.channelsHeading")}
+          items={channels}
+          getKey={(c) => c.channelId}
+          renderItem={renderChannelTile}
+        />
+      </div>
+    </div>
+  );
+}
+
+// One section inside SectionedBrowseView — 1 row × 3 cols paginated grid with
+// its own header label and (when needed) its own pager.
+const SECTION_COLS = 3;
+const SECTION_ROWS = 1;
+const SECTION_PAGE_SIZE = SECTION_COLS * SECTION_ROWS;
+
+function SectionGrid<T>({
+  title,
+  items,
+  getKey,
+  renderItem,
+}: {
+  title: string;
+  items: T[];
+  getKey: (item: T) => string;
+  renderItem: (item: T) => React.ReactNode;
+}) {
+  const { t } = useLanguage();
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(items.length / SECTION_PAGE_SIZE));
+  useEffect(() => {
+    if (page >= totalPages) setPage(totalPages - 1);
+  }, [page, totalPages]);
+
+  const pageItems = useMemo(
+    () => items.slice(page * SECTION_PAGE_SIZE, page * SECTION_PAGE_SIZE + SECTION_PAGE_SIZE),
+    [items, page],
+  );
+  const canPrev = page > 0;
+  const canNext = page < totalPages - 1;
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex items-center gap-2 px-4 pt-2 pb-1 shrink-0">
+        <h3 className="text-white/80 text-sm font-semibold uppercase tracking-wide flex-1">
+          {title}
+        </h3>
+        {totalPages > 1 && (
+          <span className="text-white/50 text-xs tabular-nums">
+            {page + 1} / {totalPages}
+          </span>
+        )}
+        {totalPages > 1 && (
+          <>
+            <button type="button"
+              data-dwell
+              onClick={() => canPrev && setPage(page - 1)}
+              disabled={!canPrev}
+              className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
+              aria-label={t("youtubeApp.prevPage")}
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button type="button"
+              data-dwell
+              onClick={() => canNext && setPage(page + 1)}
+              disabled={!canNext}
+              className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
+              aria-label={t("youtubeApp.nextPage")}
+            >
+              <ChevronRight size={20} />
+            </button>
+          </>
+        )}
+      </div>
+      <div
+        className="flex-1 min-h-0 px-3 pb-3 grid gap-3"
+        style={{
+          gridTemplateColumns: `repeat(${SECTION_COLS}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${SECTION_ROWS}, minmax(0, 1fr))`,
+        }}
+      >
+        {pageItems.map((item) => (
+          <div key={getKey(item)} className="min-h-0 min-w-0">
+            {renderItem(item)}
+          </div>
+        ))}
+        {Array.from({ length: SECTION_PAGE_SIZE - pageItems.length }).map((_, i) => (
+          <div key={`empty-${i}`} className="min-h-0 min-w-0" />
+        ))}
+      </div>
+    </div>
   );
 }
 

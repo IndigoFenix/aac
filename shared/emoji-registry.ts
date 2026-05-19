@@ -341,14 +341,19 @@ export function isEmoji(key: string): boolean {
  * Resolve a snake_case key (or a raw emoji) to a fallback emoji. Lookup
  * order:
  *   1. If the key IS already an emoji sequence, return it unchanged.
- *   2. Glyph-registry vocabulary item with an emoji field.
- *   3. The supplementary EXTRA_EMOJIS map.
+ *   2. A `face:<id>` reference always resolves to the 👤 silhouette —
+ *      callers with access to the face cache render the actual image,
+ *      and the emoji is the universal "we don't have a cached face for
+ *      this contact yet" placeholder (mirrors AppMiniBoard's behavior).
+ *   3. Glyph-registry vocabulary item with an emoji field.
+ *   4. The supplementary EXTRA_EMOJIS map.
  * Returns `undefined` when no emoji is known — callers should then fall
  * back to image generation or a "❓" placeholder.
  */
 export function resolveEmoji(key: string): string | undefined {
   if (!key) return undefined;
   if (isEmoji(key)) return key;
+  if (key.startsWith("face:")) return "👤";
   return REGISTRY_EMOJIS[key] ?? EXTRA_EMOJIS[key];
 }
 

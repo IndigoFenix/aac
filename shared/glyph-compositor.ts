@@ -117,6 +117,29 @@ export function parseGlyph(input: string): ParsedGlyph {
 }
 
 /**
+ * Strip the imageKey marker from a slot key. The AI is now instructed to
+ * prefix generated keys with `generate:` (e.g. `generate:planet_mars`)
+ * — that's the syntax in the current prompt. Bracket-wrapping
+ * (`[planet_mars]`) is the previous syntax and stays tolerated here so
+ * older transcripts and any model that hasn't fully picked up the new
+ * convention still parse cleanly. Either form gets reduced to the bare
+ * inner key (`planet_mars`) — the downstream resolver decides whether
+ * that's a canonical registry hit, an emoji match, or a generation
+ * target. Canonical keys wrapped in the marker (`generate:water`,
+ * `[water]`) still resolve to the canonical item — the marker is a
+ * hint, not a force.
+ */
+export function stripBrackets(s: string): string {
+  let t = s.trim();
+  if (t.toLowerCase().startsWith("generate:")) {
+    t = t.slice("generate:".length).trim();
+  } else if (t.length >= 2 && t.startsWith("[") && t.endsWith("]")) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
+/**
  * Parse a single slot string like `want(apple).please` into a ParsedSlot.
  * Tolerant of malformed input — missing payload close-paren is treated as
  * no payload; empty `()` is treated as no payload.
@@ -130,11 +153,11 @@ function parseSlot(slotStr: string): ParsedSlot {
     const close = slotStr.indexOf(")", open + 1);
     if (close > open) {
       const inner = slotStr.slice(open + 1, close).trim();
-      if (inner) payload = inner;
+      if (inner) payload = stripBrackets(inner);
       head = slotStr.slice(0, open) + slotStr.slice(close + 1);
     }
   }
-  const parts = head.split(".").map((s) => s.trim()).filter(Boolean);
+  const parts = head.split(".").map((s) => stripBrackets(s)).filter(Boolean);
   const key = parts[0] ?? "";
   const modifiers = parts.slice(1);
   const slot: ParsedSlot = {
@@ -422,6 +445,19 @@ export type HasResolvedSymbol = (key: string) => boolean;
 /** True iff `key` would render to something other than "❓" right now. */
 function canResolveKey(key: string, hasSymbol: HasResolvedSymbol): boolean {
   if (!key) return false;
+  // Explicit custom-symbol reference (e.g. `symbol:abc`). The compositor's
+  // resolver translates the prefix into a `/api/custom-symbols/<id>/image`
+  // URL; that URL is assumed to load successfully here so canResolveGlyph
+  // doesn't force the whole glyph onto its fallback string. If the image
+  // actually 404s, the per-slot onError handler marks the URL as failed
+  // and the slot renders its emoji fallback on the next pass — the
+  // fallback STRING only kicks in when there's no symbol path at all.
+  if (key.startsWith("symbol:")) return true;
+  // Face reference (e.g. `face:abc`). Treated as always resolvable for
+  // the same reason as symbol: — if the host doesn't have the face
+  // cached, resolveEmoji translates the prefix to the 👤 silhouette so
+  // the slot still renders an emoji rather than ❓.
+  if (key.startsWith("face:")) return true;
   const item = getVocabularyItem(key);
   // Registry entry with a bundled image → always renders.
   if (item?.imagePath) return true;
@@ -452,6 +488,13 @@ export function canResolveGlyph(
   for (const slot of parsed.slots) {
     if (!canResolveKey(slot.key, hasSymbol)) return false;
     if (slot.payload && !canResolveKey(slot.payload, hasSymbol)) return false;
+    // Modifier badges that aren't registry-known need their image either as
+    // a raw emoji or as a cached generated symbol — if neither is ready, the
+    // badge would draw "❓", so we treat the whole glyph as unresolved.
+    for (const modKey of slot.modifiers) {
+      if (getVocabularyItem(modKey)) continue;       // canonical modifier — always renders
+      if (!canResolveKey(modKey, hasSymbol)) return false;
+    }
   }
   return true;
 }

@@ -594,33 +594,39 @@ function frame(now: number) {
     if (shouldLogCloud) {
       const refBody = target ?? null;
       const cp = rig.camera.position;
-      const pc = refBody?.worldPosition;
-      const camDist = pc
-        ? Math.sqrt((cp.x - pc.x) ** 2 + (cp.y - pc.y) ** 2 + (cp.z - pc.z) ** 2)
-        : null;
-      const playerAlt = player.state.gravity?.altitude;
+      const pi = rig.camera.projectionMatrixInverse.elements;
+      const mw = rig.camera.matrixWorld.elements;
+      // eslint-disable-next-line no-console
+      console.log("[cloud-pass matrices]", {
+        cameraPos: [cp.x.toFixed(2), cp.y.toFixed(2), cp.z.toFixed(2)],
+        cameraQuat: [
+          rig.camera.quaternion.x.toFixed(3),
+          rig.camera.quaternion.y.toFixed(3),
+          rig.camera.quaternion.z.toFixed(3),
+          rig.camera.quaternion.w.toFixed(3),
+        ],
+        projectionInverse: [
+          [pi[0].toFixed(3), pi[4].toFixed(3), pi[8].toFixed(3), pi[12].toFixed(3)],
+          [pi[1].toFixed(3), pi[5].toFixed(3), pi[9].toFixed(3), pi[13].toFixed(3)],
+          [pi[2].toFixed(3), pi[6].toFixed(3), pi[10].toFixed(3), pi[14].toFixed(3)],
+          [pi[3].toFixed(3), pi[7].toFixed(3), pi[11].toFixed(3), pi[15].toFixed(3)],
+        ],
+        matrixWorld: [
+          [mw[0].toFixed(3), mw[4].toFixed(3), mw[8].toFixed(3), mw[12].toFixed(3)],
+          [mw[1].toFixed(3), mw[5].toFixed(3), mw[9].toFixed(3), mw[13].toFixed(3)],
+          [mw[2].toFixed(3), mw[6].toFixed(3), mw[10].toFixed(3), mw[14].toFixed(3)],
+          [mw[3].toFixed(3), mw[7].toFixed(3), mw[11].toFixed(3), mw[15].toFixed(3)],
+        ],
+      });
       // eslint-disable-next-line no-console
       console.log("[cloud-pass]", {
         target: refBody?.id ?? "(none)",
         debug: GFX.cloudDebug,
-        steps: GFX.cloudSteps,
         cloudInner: GFX.cloudInnerM,
         cloudOuter: GFX.cloudOuterM,
-        densityMult: GFX.cloudVolMult,
-        cameraPos: cp ? [cp.x.toFixed(1), cp.y.toFixed(1), cp.z.toFixed(1)] : null,
-        planetCenter: pc ? [pc.x.toFixed(0), pc.y.toFixed(0), pc.z.toFixed(0)] : "(none)",
-        planetRadius: refBody?.radius,
-        camDistFromCenter: camDist?.toFixed(1),
-        playerAltitude: playerAlt?.toFixed(1) ?? "(none)",
-        rInner: refBody ? (refBody.radius + GFX.cloudInnerM).toFixed(1) : null,
-        rOuter: refBody ? (refBody.radius + GFX.cloudOuterM).toFixed(1) : null,
-        camRelToShell: refBody && camDist !== null
-          ? (camDist < refBody.radius + GFX.cloudInnerM
-              ? "below cloud inner"
-              : camDist < refBody.radius + GFX.cloudOuterM
-                ? "INSIDE shell"
-                : "above cloud outer")
-          : "(no body)",
+        planetCenter: refBody?.worldPosition
+          ? [refBody.worldPosition.x.toFixed(0), refBody.worldPosition.y.toFixed(0), refBody.worldPosition.z.toFixed(0)]
+          : null,
       });
     }
   }

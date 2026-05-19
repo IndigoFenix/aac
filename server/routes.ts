@@ -1196,6 +1196,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resolve a YouTube video URL / videoId to a canonical 11-char videoId AND
+  // fetch its display title + description + thumbnail. No API key required
+  // (public watch-page scrape). Used by the pinned-videos clinician UI.
+  app.post("/api/aac/youtube/resolve-video", optionalAuth, async (req, res) => {
+    try {
+      const { input } = req.body || {};
+      if (typeof input !== "string" || !input.trim()) {
+        return res.status(400).json({ error: "input required" });
+      }
+      const { resolveVideoIdFromUrl, fetchVideoMetadata } = await import(
+        "./services/youtube/channel-search"
+      );
+      const videoId = resolveVideoIdFromUrl(input);
+      if (!videoId) return res.status(404).json({ error: "Could not resolve video ID from URL." });
+      const metadata = await fetchVideoMetadata(videoId);
+      return res.json({
+        videoId,
+        title: metadata.title,
+        description: metadata.description,
+        thumbnailUrl: metadata.thumbnailUrl,
+      });
+    } catch (err: any) {
+      console.error("[routes] resolve-video failed:", err?.message || err);
+      return res.status(500).json({ error: "Resolver failed" });
+    }
+  });
+
   // List recent videos from a YouTube channel (RSS-backed). Public data;
   // the client already knows the channelId because the server sent the
   // permitted-channels list to it.

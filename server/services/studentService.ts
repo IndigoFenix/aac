@@ -58,7 +58,8 @@ const AAC_SETTINGS_FIELDS = new Set([
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
-  "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "permittedYoutubeChannels",
+  "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
+  "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility",
 ]);
 

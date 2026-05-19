@@ -66,9 +66,30 @@ export interface ConstructionSuggestionsClient {
     label?: string;
     /** Resolved image URL for AI-generated keys; undefined for registry/emoji items. */
     symbolPath?: string;
+    /**
+     * Non-generate render fallback for candidates whose primary key is
+     * still awaiting (or has failed) image generation. The server only
+     * sets this when the primary key is a generation target — canonical /
+     * emoji / `symbol:` / `face:` candidates never need it. The renderer
+     * reaches for `fallback` before the universal `❓` placeholder, so a
+     * pending candidate reads as "want with a pizza icon" rather than
+     * "want with an unknown icon."
+     */
+    fallback?: string;
   }>;
   /** Monotonic counter so consumers can tell two arrivals apart. */
   receivedAt: number;
+}
+
+/** One option in a binary-choice overlay (AI-supplied, parsed server-side). */
+export interface BinaryChoiceOption {
+  label: string;
+  sentence?: string;
+  glyph?: string;
+  glyphFallback?: string;
+  iconRef?: string;
+  symbolPath?: string;
+  imageKey?: string;
 }
 
 /** AI-driven memory chips for the construction board, scoped per category. */
@@ -200,6 +221,10 @@ export interface UseDualAgentReturn {
   // Yes/No overlay
   yesNoActive: boolean;
   dismissYesNo: () => void;
+
+  // Binary-choice overlay — two AI-supplied options + an implicit "Neither"
+  binaryChoiceOptions: BinaryChoiceOption[] | null;
+  dismissBinaryChoice: () => void;
 
   // Live API only — raw PCM audio streaming
   /** Send a raw PCM audio chunk (base64 Int16 16kHz) to Gemini Live API. Only available in Live mode. */

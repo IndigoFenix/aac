@@ -9,7 +9,7 @@
 
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
 import type { ParsedGlyph } from "@shared/glyph-compositor";
-import { defaultImageResolver, useDisplayGlyph } from "@/lib/glyph-images";
+import { defaultImageResolver, markSymbolUrlFailed, useDisplayGlyph } from "@/lib/glyph-images";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export interface GlyphProps {
@@ -65,6 +65,7 @@ export function Glyph(props: GlyphProps) {
       ariaLabel={props.ariaLabel}
       onSlotPress={props.onSlotPress}
       activeSlot={props.activeSlot}
+      onImageError={markSymbolUrlFailed}
     />
   );
 }

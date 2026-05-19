@@ -23,8 +23,10 @@ import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { useFaceImageCache } from "@/hooks/useFaceImageCache";
+import { setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import YesNoOverlay from "@/components/YesNoOverlay";
+import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
 import TwoHandedObjectDetection from "@/components/TwoHandedObjectDetection";
 import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
 import { ObjectDetectionDebug } from "@/components/ObjectDetectionDebug";
@@ -70,7 +72,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -82,6 +84,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
   onYesNoChange?: (active: boolean, dismiss: () => void) => void;
+  onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, dismiss: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
@@ -92,7 +95,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -164,6 +167,10 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   }, [yesNoActive, dismissYesNo, onYesNoChange]);
 
   useEffect(() => {
+    onBinaryChoiceChange?.(binaryChoiceOptions, dismissBinaryChoice);
+  }, [binaryChoiceOptions, dismissBinaryChoice, onBinaryChoiceChange]);
+
+  useEffect(() => {
     onRestartSessionReady?.(() => {
       clearSession();
       // Small delay to let cleanup complete before reinitializing
@@ -213,6 +220,7 @@ function renderAppContent(
         videoId={activeApp.appData?.videoId}
         title={activeApp.appData?.title || "Video"}
         channels={activeApp.appData?.channels}
+        videos={activeApp.appData?.videos}
         onClose={dismissApp}
         sendContextOnly={sendContextOnlyToAi}
       />
@@ -404,6 +412,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Yes/No overlay state (bridged from DualAgentContext)
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNoRef = useRef<(() => void) | null>(null);
+
+  // Binary-choice overlay state (bridged from DualAgentContext)
+  const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null>(null);
+  const dismissBinaryChoiceRef = useRef<(() => void) | null>(null);
   const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
@@ -525,6 +537,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Face image cache (in-memory, session-scoped — no server storage)
   const faceImageCache = useFaceImageCache();
+
+  // Wire the cache into glyph-images so any `face:<id>` slot inside a
+  // glyph can render the cached data URL. Without this, glyphs fall
+  // back to the 👤 silhouette emoji (still readable, but doesn't show
+  // the actual identified contact). Cleared on unmount so a stale
+  // closure doesn't outlive this page mount.
+  useEffect(() => {
+    setFaceImageResolver(faceImageCache.getFaceImage);
+    return () => setFaceImageResolver(null);
+  }, [faceImageCache.getFaceImage]);
 
   // Person identification for AAC system (face recognition)
   const {
@@ -1336,6 +1358,30 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }}
           />
 
+          <BinaryChoiceOverlay
+            options={binaryChoiceOptions}
+            onSelect={(option) => {
+              dismissBinaryChoiceRef.current?.();
+              setBinaryChoiceOptions(null);
+              // Prefer the AI-supplied sentence; fall back to label.
+              const spoken = (option.sentence?.trim() || option.label).trim();
+              if (!spoken) return;
+              if (interpretFnRef.current) {
+                interpretFnRef.current([spoken], { [spoken]: spoken });
+              } else {
+                speak(spoken, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              }
+            }}
+            onNeither={() => {
+              dismissBinaryChoiceRef.current?.();
+              setBinaryChoiceOptions(null);
+            }}
+            onDismiss={() => {
+              dismissBinaryChoiceRef.current?.();
+              setBinaryChoiceOptions(null);
+            }}
+          />
+
           {showConstructionBoard && (
             <div className="absolute inset-0 z-30 bg-white dark:bg-gray-900">
               <SentenceConstructorBoard
@@ -1709,6 +1755,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
             onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
+            onBinaryChoiceChange={(options, dismiss) => { setBinaryChoiceOptions(options); dismissBinaryChoiceRef.current = dismiss; }}
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}

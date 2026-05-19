@@ -596,8 +596,11 @@ export const GFX = {
    *    3 = paint fbm density along ray as grayscale
    *    4 = constant density 1.0 inside the shell (no noise) */
   cloudDebug: 0,
-  /** Number of ray-march samples per pixel. Lower = faster but banded. */
-  cloudSteps: 32,
+  /** Number of ray-march samples per pixel. Lower = faster but banded.
+   *  16 is a solid default — the per-pixel cost is dominated by the
+   *  light march on each sample, so doubling steps roughly doubles
+   *  cost. Drop to 8 for low-end devices. */
+  cloudSteps: 16,
   /** Cloud layer inner / outer altitude in METERS above planet surface.
    *  Wide default band (500 m → 10 km) so the camera consistently sits
    *  INSIDE the cloud shell — shell-intersection always succeeds and

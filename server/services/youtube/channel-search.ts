@@ -405,6 +405,86 @@ export async function fetchChannelMetadata(channelId: string): Promise<ChannelMe
   }
 }
 
+// ---------------------------------------------------------------------------
+// Video URL → videoId resolver + metadata fetch (for the pinned-videos feature)
+// ---------------------------------------------------------------------------
+
+/** YouTube video IDs are always 11 chars of [A-Za-z0-9_-]. */
+const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * Resolve a YouTube video URL (watch, youtu.be, shorts, embed) or raw videoId
+ * to an 11-character videoId. Returns null when nothing matches — callers
+ * should treat that as "couldn't parse" and surface a friendly error.
+ */
+export function resolveVideoIdFromUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (VIDEO_ID_RE.test(trimmed)) return trimmed;
+
+  // watch?v= — works whether the URL has a scheme or not.
+  const vParam = /[?&]v=([A-Za-z0-9_-]{11})/.exec(trimmed);
+  if (vParam) return vParam[1];
+
+  // youtu.be/<id>, /embed/<id>, /shorts/<id>, /live/<id>
+  const pathMatch = /(?:youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/.exec(trimmed);
+  if (pathMatch) return pathMatch[1];
+
+  return null;
+}
+
+export interface VideoMetadata {
+  title: string | null;
+  description: string | null;
+  thumbnailUrl: string | null;
+}
+
+const videoMetadataCache = new Map<string, { data: VideoMetadata; fetchedAt: number }>();
+const VIDEO_METADATA_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Fetch title + description + thumbnail for a video by scraping the watch
+ * page. Soft-fails to nulls on any error — callers fall back to the clinician's
+ * input. No API key needed.
+ */
+export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata> {
+  const cached = videoMetadataCache.get(videoId);
+  if (cached && Date.now() - cached.fetchedAt < VIDEO_METADATA_TTL_MS) {
+    return cached.data;
+  }
+  const fallbackThumb = `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+  const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      const miss: VideoMetadata = { title: null, description: null, thumbnailUrl: fallbackThumb };
+      videoMetadataCache.set(videoId, { data: miss, fetchedAt: Date.now() });
+      return miss;
+    }
+    const html = await res.text();
+    const title = extractMeta(html, "og:title") || extractMeta(html, "twitter:title");
+    const description = extractMeta(html, "og:description") || extractMeta(html, "description");
+    const thumb = extractMeta(html, "og:image") || extractMeta(html, "twitter:image");
+    const data: VideoMetadata = {
+      title: title ? decodeHtmlEntities(title).trim() : null,
+      description: description ? decodeHtmlEntities(description).trim() : null,
+      thumbnailUrl: thumb || fallbackThumb,
+    };
+    videoMetadataCache.set(videoId, { data, fetchedAt: Date.now() });
+    return data;
+  } catch (err: any) {
+    console.warn("[YouTubeChannel] fetchVideoMetadata failed:", err?.message || err);
+    return { title: null, description: null, thumbnailUrl: fallbackThumb };
+  }
+}
+
 function extractMeta(html: string, name: string): string | null {
   // Match <meta property="og:title" content="..."> and <meta name="description" content="...">
   const re = new RegExp(

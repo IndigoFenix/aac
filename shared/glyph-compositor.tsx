@@ -11,11 +11,12 @@
 import * as React from "react";
 import {
   getVocabularyItem,
+  getVocabularyItemByEmoji,
   type VocabularyItem,
   type ModifierTransform,
   type DimensionPattern,
 } from "./glyph-registry.js";
-import { resolveEmoji } from "./emoji-registry.js";
+import { resolveEmoji, isEmoji } from "./emoji-registry.js";
 import {
   parseGlyph,
   computeLayout,
@@ -56,6 +57,15 @@ export interface GlyphCompositorProps {
   ariaLabel?: string;
   /** Click handler that fires with the slot index that was tapped (or null for outside-any-slot). */
   onSlotPress?: (slotIndex: number | null) => void;
+  /**
+   * Called when an `<image>` element fails to load its `href`. The
+   * compositor passes the failed URL; the host (Glyph.tsx) records it so
+   * the resolver returns null on the next render and the slot drops
+   * back to its emoji/text fallback instead of showing a broken-image
+   * glyph. Optional — when omitted the failure is silent and the slot
+   * stays empty.
+   */
+  onImageError?: (url: string) => void;
 }
 
 export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement {
@@ -69,6 +79,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     noBackground = false,
     ariaLabel,
     onSlotPress,
+    onImageError,
   } = props;
 
   const parsed: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
@@ -143,6 +154,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
             resolveImage={resolveImage}
             isActive={activeSlot === slotLayout.index}
             onPress={onSlotPress ? () => onSlotPress(slotLayout.index) : undefined}
+            onImageError={onImageError}
           />
         );
       })}
@@ -163,6 +175,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
           x={layout.tenseBadge.x}
           y={layout.tenseBadge.y}
           size={layout.tenseBadge.size}
+          rtl={rtl}
         />
       )}
     </svg>
@@ -181,11 +194,24 @@ interface SlotGroupProps {
   resolveImage?: ImageResolver;
   isActive: boolean;
   onPress?: () => void;
+  onImageError?: (url: string) => void;
 }
 
 function SlotGroup(props: SlotGroupProps): React.ReactElement {
-  const { slot, layout, rtl, resolveImage, isActive, onPress } = props;
-  const item = slot ? getVocabularyItem(slot.key) : undefined;
+  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError } = props;
+  // Resolve the slot's vocabulary item. For a snake_case/canonical key
+  // that's a direct registry lookup. For a raw-emoji key, fall back to
+  // the reverse-emoji map so non-exposed items with bundled artwork
+  // (walk → 🚶, run → 🏃) are recognized as full registry items here.
+  // Without this, the imagePath swap below would still find the URL
+  // (the resolver does its own reverse lookup) but the SlotGroup would
+  // miss the item — meaning no RTL flip, no composable payload, no
+  // emptyImagePath behavior. Pinning the item upfront makes every
+  // downstream branch see the same canonical entry.
+  let item = slot ? getVocabularyItem(slot.key) : undefined;
+  if (!item && slot && isEmoji(slot.key)) {
+    item = getVocabularyItemByEmoji(slot.key);
+  }
 
   // Collect modifier transforms applied to this slot
   const transforms = collectModifierTransforms(slot);
@@ -209,7 +235,18 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // and keeps the symbol identifiable.
   const colorValue = collectColorValue(slot);
 
-  const url = slot ? resolveImage?.({ item, key: slot.key }) ?? null : null;
+  // Composable host with an `emptyImagePath` swap: when the payload
+  // slot is unfilled, point the resolver at the empty-state image
+  // (e.g. play-empty) instead of the regular host art. This lets a
+  // container item render visibly distinct full / empty states.
+  const useEmptyImage =
+    !!item?.composable?.emptyImagePath
+    && !!slot
+    && !slot.payload;
+  const resolverItem = useEmptyImage
+    ? { ...item!, imagePath: item!.composable!.emptyImagePath }
+    : item;
+  const url = slot ? resolveImage?.({ item: resolverItem, key: slot.key }) ?? null : null;
   const imageReversible = !!item && !isNonReversible(item);
   const mainCx = mainX + mainSize / 2;
   const mainCy = mainY + mainSize / 2;
@@ -269,6 +306,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           height={mainSize}
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
           transform={mainImageTransform}
+          onError={onImageError ? () => onImageError(url) : undefined}
         />
       )}
       {slot && !url && (
@@ -300,6 +338,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           layout={layout}
           rtl={rtl}
           resolveImage={resolveImage}
+          onImageError={onImageError}
         />
       )}
 
@@ -336,7 +375,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
       )}
 
       {/* Badge-type modifiers (and `hands`, which is treated as a badge for v1) */}
-      <BadgeStack slot={slot} layout={layout} rtl={rtl} resolveImage={resolveImage} />
+      <BadgeStack slot={slot} layout={layout} rtl={rtl} resolveImage={resolveImage} onImageError={onImageError} />
 
       {/* Dot indicators at bottom for count modifiers */}
       {transforms.has("dots") && (
@@ -374,25 +413,51 @@ interface PayloadOverlayProps {
   layout: SlotLayout;
   rtl: boolean;
   resolveImage?: ImageResolver;
+  onImageError?: (url: string) => void;
 }
 
 function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
-  const { slot, host, layout, rtl, resolveImage } = props;
+  const { slot, host, layout, rtl, resolveImage, onImageError } = props;
   const composable = host.composable;
   if (!composable) return null;
 
-  // Payload is rendered at ~45% of slot size, centered or upper per facet.
+  // Payload is rendered at ~45% of slot size. Position depends on the
+  // host's facet:
+  //   - "upper"        → centered horizontally, in the upper third
+  //   - "lower-right"  → bottom-right quadrant; mirrors to lower-left in RTL
+  //   - "middle-right" → middle vertical, right-third horizontal;
+  //                       mirrors to middle-left in RTL
+  //   - "center"       → dead center (default)
+  // Non-center positions all mirror their horizontal anchor under RTL
+  // so the payload stays in step with the host image's own flip.
   const size = SLOT_UNIT * 0.45;
-  const cx = layout.x + SLOT_UNIT / 2;
-  const cy =
-    composable.position === "upper"
-      ? layout.y + SLOT_UNIT * 0.32  // upper third
-      : layout.y + SLOT_UNIT / 2;    // dead center
+  let cx: number;
+  let cy: number;
+  if (composable.position === "upper") {
+    cx = layout.x + SLOT_UNIT / 2;
+    cy = layout.y + SLOT_UNIT * 0.32;
+  } else if (composable.position === "lower-right") {
+    cx = layout.x + SLOT_UNIT * (rtl ? 0.3 : 0.7);
+    cy = layout.y + SLOT_UNIT * 0.7;
+  } else if (composable.position === "middle-right") {
+    cx = layout.x + SLOT_UNIT * (rtl ? 0.17 : 0.83);
+    cy = layout.y + SLOT_UNIT * 0.5;
+  } else {
+    cx = layout.x + SLOT_UNIT / 2;
+    cy = layout.y + SLOT_UNIT / 2;
+  }
   const x = cx - size / 2;
   const y = cy - size / 2;
 
-  // Empty payload → dashed placeholder ring so the user sees the slot is fillable.
+  // Empty payload behavior:
+  //   - If the host has an `emptyImagePath`, the SlotGroup already
+  //     swapped the host's main image to the empty pose — no further
+  //     overlay needed. The empty state is conveyed by the host art
+  //     itself.
+  //   - Otherwise, render the dashed placeholder ring so the user
+  //     sees the slot is fillable.
   if (!slot.payload) {
+    if (composable.emptyImagePath) return null;
     return (
       <g aria-hidden>
         <circle
@@ -432,6 +497,7 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
               ? `translate(${x + size}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
               : undefined
           }
+          onError={onImageError ? () => onImageError(url) : undefined}
         />
       ) : (
         <text
@@ -646,6 +712,7 @@ interface BadgeStackProps {
   layout: SlotLayout;
   rtl: boolean;
   resolveImage?: ImageResolver;
+  onImageError?: (url: string) => void;
 }
 
 const BADGE_TRANSFORMS: ReadonlyArray<ModifierTransform> = ["badge", "hands"];
@@ -662,15 +729,41 @@ function mirrorCorner(corner: CornerKey): CornerKey {
   }
 }
 
+/**
+ * Internal shape carried through BadgeStack — either a fully-resolved
+ * registry modifier (`item` present) OR a non-canonical modifier whose key
+ * we want to render as a generated/emoji badge in the same slot. The
+ * non-canonical path is what makes `water.spicy` show a "spicy" badge even
+ * though `spicy` isn't in the registry: the AI is allowed to reach for
+ * arbitrary words as modifiers and we route them through the imageKey
+ * resolver instead of silently dropping them.
+ */
+type BadgeEntry =
+  | { kind: "canonical"; key: string; item: VocabularyItem; corner: CornerKey }
+  | { kind: "unknown"; key: string; corner: CornerKey };
+
 function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
-  const { slot, layout, rtl, resolveImage } = props;
+  const { slot, layout, rtl, resolveImage, onImageError } = props;
   if (!slot) return null;
-  const badges = slot.modifiers
-    .map((k) => getVocabularyItem(k))
-    .filter((v): v is VocabularyItem =>
-      !!v?.modifier && BADGE_TRANSFORMS.includes(v.modifier.transform)
-    );
-  if (badges.length === 0) return null;
+  const entries: BadgeEntry[] = [];
+  for (const modKey of slot.modifiers) {
+    const item = getVocabularyItem(modKey);
+    if (item?.modifier && BADGE_TRANSFORMS.includes(item.modifier.transform)) {
+      entries.push({
+        kind: "canonical",
+        key: modKey,
+        item,
+        corner: item.modifier.corner ?? "top-left",
+      });
+    } else if (!item) {
+      // Non-canonical modifier — render its imageKey/emoji visual as a badge
+      // in the default top-left corner. Registry transforms (dimension,
+      // color, glow, red_x, halo, dots, shrink, hands) are handled
+      // elsewhere; only fall here if the key isn't in the registry at all.
+      entries.push({ kind: "unknown", key: modKey, corner: "top-left" });
+    }
+  }
+  if (entries.length === 0) return null;
 
   const badgeSize = SLOT_UNIT * 0.28;
   const pad = 4;
@@ -678,12 +771,11 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
 
   // Group badges by visual corner (after RTL mirroring) so multiple badges
   // at the same anchor stack predictably.
-  const groups = new Map<CornerKey, VocabularyItem[]>();
-  for (const b of badges) {
-    const ltrCorner = b.modifier!.corner ?? "top-left";
-    const visualCorner = rtl ? mirrorCorner(ltrCorner) : ltrCorner;
+  const groups = new Map<CornerKey, BadgeEntry[]>();
+  for (const e of entries) {
+    const visualCorner = rtl ? mirrorCorner(e.corner) : e.corner;
     const arr = groups.get(visualCorner) ?? [];
-    arr.push(b);
+    arr.push(e);
     groups.set(visualCorner, arr);
   }
 
@@ -704,34 +796,37 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
   return (
     <g>
       {Array.from(groups.entries()).flatMap(([corner, items]) =>
-        items.map((b, i) => {
+        items.map((entry, i) => {
           const { x, y } = computeBadgeXY(corner, i);
-          const url = resolveImage?.({ item: b, key: b.key }) ?? null;
+          const item = entry.kind === "canonical" ? entry.item : undefined;
+          const url = resolveImage?.({ item, key: entry.key }) ?? null;
           // Flip image content horizontally in RTL so a directional hand still
           // points the same way relative to the speaker/addressee axis.
-          const imageTransform = url && rtl && !isNonReversible(b)
+          const imageTransform = url && rtl && item && !isNonReversible(item)
             ? `translate(${x + badgeSize}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
             : undefined;
+          const fallbackGlyph = item?.emoji ?? resolveEmoji(entry.key) ?? "•";
           return url ? (
             <image
-              key={b.key}
+              key={entry.key}
               href={url}
               x={x}
               y={y}
               width={badgeSize}
               height={badgeSize}
               transform={imageTransform}
+              onError={onImageError ? () => onImageError(url) : undefined}
             />
           ) : (
             <text
-              key={b.key}
+              key={entry.key}
               x={x + badgeSize / 2}
               y={y + badgeSize / 2}
               textAnchor="middle"
               dominantBaseline="central"
               fontSize={badgeSize * 0.9}
             >
-              {b.emoji ?? "•"}
+              {fallbackGlyph}
             </text>
           );
         })
@@ -815,16 +910,20 @@ function ToneCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
 }
 
 /**
- * Tense corner badge — renders past (←, amber) and/or future (→, blue).
- * If both stack (rare but legal), shows "↔" to indicate temporal range.
- * Sits opposite the prosody badge so a sentence can mark tense AND
- * intonation without the two glyphs overlapping.
+ * Tense corner badge — renders past (amber arrow) and/or future (blue
+ * arrow). If both stack (rare but legal), shows "↔" to indicate temporal
+ * range. Sits opposite the prosody badge so a sentence can mark tense AND
+ * intonation without the two glyphs overlapping. In RTL the arrow
+ * direction swaps so "past" still points "behind the reader" — i.e.
+ * rightward when the reading flow runs right-to-left.
  */
-function TenseCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
-  const { tags, x, y, size } = props;
+function TenseCornerBadge(props: ToneCornerBadgeProps & { rtl?: boolean }): React.ReactElement {
+  const { tags, x, y, size, rtl = false } = props;
   const hasPast = tags.includes("past");
   const hasFuture = tags.includes("future");
-  const label = hasPast && hasFuture ? "↔" : hasPast ? "←" : "→";
+  const pastArrow = rtl ? "→" : "←";
+  const futureArrow = rtl ? "←" : "→";
+  const label = hasPast && hasFuture ? "↔" : hasPast ? pastArrow : futureArrow;
   // Amber for past (memory / earlier), blue for future (ahead / later);
   // both → muted gray, the symbol itself carries the meaning.
   const fill = hasPast && hasFuture ? "#6B7280" : hasPast ? "#D97706" : "#2563EB";

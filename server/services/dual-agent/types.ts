@@ -1,7 +1,7 @@
 // server/services/dual-agent/types.ts
 // Type definitions for the dual-agent AAC system
 
-import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel } from "@shared/schema";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeVideo } from "@shared/schema";
 import type { LLMProviderKey } from "@shared/llm-options";
 
 /**
@@ -129,6 +129,11 @@ export interface DualAgentSessionState {
   // Permitted YouTube channels (clinician-configured). When empty, YouTube searches
   // fall back to unrestricted mode (requires YOUTUBE_API_KEY to return anything).
   permittedYoutubeChannels: PermittedYoutubeChannel[];
+
+  // Pinned YouTube videos (clinician-configured curated playlist). Shown to
+  // the student as direct-play buttons; surfaced to the AI in the prompt so
+  // it can request a specific one by videoId or title via open_app("youtube", data=...).
+  permittedYoutubeVideos: PermittedYoutubeVideo[];
 
   // Avatar emotion state
   currentEmote: "happy" | "sad" | "neutral";

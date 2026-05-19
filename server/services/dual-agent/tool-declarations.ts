@@ -44,9 +44,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person words spoken when tapped (\"I want water\"); (2) glyph — composed visual encoding the sentence (slots joined by `+`, modifiers with `.`, composable hosts with `(payload)`, tone tags with `#`); slot keys may be registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), snake_case imageKeys (`pikachu`, `school_bus` — async-generated), `symbol:ID`, or `face:ID`; (3) fallback — same composition with NO imageKeys (use bundled-icon keys / emojis / `symbol:ID` / `face:ID`), shown WHILE imageKeys are still generating; (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. Match slot count to the sentence shape — a full subject+verb+object thought is usually a 3-slot glyph (e.g. \"I want a banana\" → \"i_me+want+banana\"); one-word answers and feelings are 1-slot (\"Yes\" → \"yes\", \"I'm tired\" → \"tired\"). Don't pad to three when it's unnatural. Glyph imageKeys may repeat across buttons; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Example: \"I want a banana|i_me+want+banana|👤+🤲+🍌|Banana, Pizza, please|pizza|🍕|Pizza, I'm tired|tired|😴|Tired, I want to play with Mom|i_me+want+mom|👤+🤲+👩|With Mom\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person words spoken when tapped (\"I want water\"); (2) glyph — composed visual encoding the sentence (slots joined by `+`, modifiers with `.`, composable hosts with `(payload)`, tone tags with `#`); slot keys may be registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), imageKeys prefixed `generate:` (`generate:planet_mars`, `generate:volcano` — async-generated, last resort), `symbol:ID`, or `face:ID`; (3) fallback — composed visual with NO imageKeys (bundled-icon keys / emojis / `symbol:ID` / `face:ID`), shown WHILE imageKeys are generating. OMIT the fallback field entirely (leave it empty: `||`) when the glyph contains no imageKeys; (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. **Snake_case rule: if a word isn't in <bundled_icons>, EITHER use an emoji, OR prefix with `generate:` AND provide a fallback. Never emit bare unknown snake_case (`talk_about`, `my_day`, `go_school`); the button will render as ❓.** Lean on DESCRIPTORS (color/size/count/possession/tense) when the sentence carries detail — `🍎.color_red`, `🤗.big.please`, `🍪.two`, `i_me+go+🛝#past`. Match slot count to the sentence shape — full subject+verb+object thoughts are usually 3-slot glyphs (\"I want a banana\" → \"i_me+want+🍌\"); one-word answers and feelings are 1-slot (\"I'm tired\" → \"😴\"). Don't pad to three when it's unnatural. Glyph imageKeys may repeat; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Example: \"I want a red apple|i_me+want+🍎.color_red||Red apple, Pizza, please|🍕.please||Pizza, A big hug|i_me+want+🤗.big||Big hug, I'm tired|😴||Tired, Tell me about Mars|you+say+generate:planet_mars|you+say+🌑|Mars\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person phrase voiced when pressed; (2) glyph — composed glyph encoding the sentence; slot keys may be registry keys from <bundled_icons>, raw EMOJIS, snake_case imageKeys, `symbol:ID`, or `face:ID`; (3) fallback — same composition with NO imageKeys (use bundled-icon keys / emojis / `symbol:ID` / `face:ID`); (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. Match slot count to the sentence shape — full subject+verb+object thoughts are usually 3-slot glyphs (the visual subject+action+object is the typical conversational shape); short answers and feelings are 1-slot. Don't pad to 3 when it's unnatural. Glyph imageKeys may repeat; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Aim to fill the board (6–8 buttons) unless context is unusually narrow. Example: \"I want to play|i_me+want+play|👤+🤲+🎮|Play, Let's listen to music|i_me+want+music|👤+🤲+🎵|Music, I want to draw|i_me+want+draw|👤+🤲+🎨|Draw, Let's read a book|i_me+want+book|👤+🤲+📖|Read, Outside|i_me+want+outside|👤+🤲+🌳|Outside, I'm hungry|hungry|🤤|Hungry, A hug|i_me+want+🤗|👤+🤲+🤗|Hug, I'm tired|tired|😴|Tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: sentence|glyph|fallback|label|rowSpan|colSpan. PLAN EACH BUTTON IN THIS ORDER: (1) sentence — first-person phrase voiced when pressed; (2) glyph — composed glyph encoding the sentence; slot keys may be registry keys from <bundled_icons>, raw EMOJIS, imageKeys prefixed `generate:` (`generate:volcano` — last resort, async-generated), `symbol:ID`, or `face:ID`; (3) fallback — composed glyph with NO imageKeys (bundled-icon keys / emojis / `symbol:ID` / `face:ID`). OMIT the fallback field entirely (leave it empty: `||`) when the glyph contains no imageKeys; (4) label — short on-button text. See <button_syntax> and <glyph_grammar>. **Snake_case rule: if a word isn't in <bundled_icons>, EITHER use an emoji, OR prefix with `generate:` AND provide a fallback. Never emit bare unknown snake_case (`talk_about`, `my_day`, `go_school`); the button will render as ❓.** Lean on DESCRIPTORS (color/size/count/possession/tense) when the sentence carries detail — `🍎.color_red`, `🍪.two`, `📖.my`, `i_me+go+🛝#past`. Match slot count to the sentence shape — full subject+verb+object thoughts are usually 3-slot glyphs; short answers and feelings are 1-slot. Don't pad to 3 when it's unnatural. Glyph imageKeys may repeat; single-concept imageKeys need uniqueness. rowSpan/colSpan optional. Aim to fill the board (6–8 buttons) unless context is unusually narrow. Example: \"I want to play|i_me+want+play||Play, Let's listen to music|i_me+want+🎵||Music, I want a cookie|i_me+want+🍪||Cookie, Two cookies|🍪.two||Two cookies, Outside|i_me+want+🌳||Outside, I'm hungry|🤤||Hungry, A big hug|i_me+want+🤗.big||Hug, Did we go to the park yesterday?|we+go+🛝#past#question||Park yesterday\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -79,17 +79,25 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
  *   2. records it in the session log as [BUTTON PRESS] <sentence>, so the
  *      conversation history shows the student's spoken contribution rather
  *      than the raw glyph;
- *   3. lets the model continue the same turn with speak() + rebuild_board()
- *      to respond to that statement normally.
+ *   3. lets the model continue the same turn with its normal speech path
+ *      (speak() in tool-driven audio, or direct voice in native audio)
+ *      and rebuild_board() to respond to that statement.
  *
  * This is the ONLY case where the AI voices anything on the student's
  * behalf. Do NOT call interpret() in response to a regular [BUTTON PRESS]
  * (those already carry a pre-generated sentence and are TTS'd separately).
  */
-function buildInterpretTool(_config: ToolDeclarationConfig): FunctionDeclaration {
+function buildInterpretTool(config: ToolDeclarationConfig): FunctionDeclaration {
+  // The follow-up speech path depends on the model's audio mode. In
+  // native-audio (useDirectAudio) the speak() tool isn't declared, so
+  // telling the model "call speak()" generates MALFORMED_FUNCTION_CALL
+  // when it tries. Word the instruction for the actual tool surface.
+  const followUp = config.useDirectAudio
+    ? `After calling interpret(), continue the SAME turn by speaking aloud naturally (your voice carries directly to the user) and calling rebuild_board() to respond to that statement (subject to mode rules — stay silent in assist/standby). interpret() is non-blocking; your own audio output is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`
+    : `After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`;
   return {
     name: "interpret",
-    description: `Voice a natural-language interpretation of the student's glyph through the STUDENT'S TTS voice. Call this ONLY in response to a [GLYPH PRESS] turn — never spontaneously, and never in response to a regular [BUTTON PRESS] (those already have a pre-baked sentence that TTS plays automatically). The 'sentence' argument MUST be first-person, as the student would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <glyph_interpretation> rules — read the glyph creatively using student interests, don't echo slot keys. After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`,
+    description: `Voice a natural-language interpretation of the student's glyph through the STUDENT'S TTS voice. Call this ONLY in response to a [GLYPH PRESS] turn — never spontaneously, and never in response to a regular [BUTTON PRESS] (those already have a pre-baked sentence that TTS plays automatically). The 'sentence' argument MUST be first-person, as the student would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <glyph_interpretation> rules — read the glyph creatively using student interests, don't echo slot keys. ${followUp}`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -363,6 +371,40 @@ const ASK_YES_NO: FunctionDeclaration = {
   },
 };
 
+// Binary-choice button format — same pipe-separated syntax as add_buttons /
+// rebuild_board, but the overlay is only ever one image per button, so the
+// example uses single-slot glyphs. Keep this short so the model picks ONE
+// concept per option instead of building a 3-slot subject+verb+object glyph.
+const BINARY_CHOICE_OPTION_FORMAT = "sentence|glyph|fallback|label. Use a SINGLE simple image per option — pick ONE clear concept (an emoji, a bundled-icon key, an imageKey prefixed `generate:`, `symbol:ID`, or `face:ID`). Do NOT build multi-slot subject+verb+object glyphs here. sentence is what the student would say if they picked this option (first-person). label is short on-button text. OMIT the fallback field (empty `||`) when the glyph has no imageKey. Example: \"I want the apple|🍎||Apple\" or \"I want to play|play||Play\".";
+
+const BINARY_CHOICE: FunctionDeclaration = {
+  name: "binary_choice",
+  description: `Show two large overlay buttons offering a binary choice IMMEDIATELY. Use when SOMEONE ELSE offers the user a choice between two options (e.g. "Do you want the apple or the banana?", or holds up two objects). Each option is rendered with one image — keep it visually simple. A "Neither" button is added automatically. Do NOT use for open-ended questions — use the button board for those.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      option1: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+      option2: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+    },
+    required: ["option1", "option2"],
+  },
+};
+
+const ASK_BINARY_CHOICE: FunctionDeclaration = {
+  name: "ask_binary_choice",
+  description: `Show two large overlay buttons offering a binary choice AFTER your speech finishes. Use when YOU offer the user a choice between two options. Each option is rendered with one image — keep it visually simple. A "Neither" button is added automatically. Do NOT use for open-ended questions.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      option1: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+      option2: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+    },
+    required: ["option1", "option2"],
+  },
+};
+
 function buildRequestFocusTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "request_focus",
@@ -427,7 +469,21 @@ function buildSetMemoryChipsTool(_config: ToolDeclarationConfig): FunctionDeclar
 function buildSuggestConstructionButtonsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "suggest_construction_buttons",
-    description: `Populate the AI strip on the sentence construction board with up to 4 candidate buttons for the slot the student is currently filling. Call this in response to a [CONSTRUCTION STATE] context injection — never spontaneously. When the injection includes \`payload_target\`, the student has placed a composable host (e.g. \`want\`, \`give\`, \`think\`, \`say\`) whose embedded blank is unfilled — suggest items that would fill THAT blank (what they might want/give/think-about/etc.), not the next sentence slot, and use \`slot_index\` matching the payload_target's slotIndex. Prefer glyph-registry keys when they fit; for AI-generated nouns use snake_case_descriptive (e.g. \`ice_cream_cone\`, \`bluey_character\`). Never include any key from \`exclude_keys\`. If you have no useful suggestions, omit the tool call.`,
+    description: `Populate the AI strip on the sentence construction board with up to 4 candidate buttons for the slot the student is currently filling. Call this in response to a [CONSTRUCTION STATE] context injection — never spontaneously. When the injection includes \`payload_target\`, the student has placed a composable host (e.g. \`want\`, \`give\`, \`think\`, \`say\`) whose embedded blank is unfilled — suggest items that would fill THAT blank, not the next sentence slot, and use \`slot_index\` matching the payload_target's slotIndex.
+
+Each candidate is a pipe-separated string in the same format as button glyphs: \`sentence|glyph|fallback|label\`. Construction candidates don't speak (they fill a slot), so the sentence field is unused — the typical form is \`|glyph|fallback|label\`, e.g. \`|🐕||Dog\` or \`|generate:seagull|🐦.🏖️|Seagull\`. The 3-field form \`glyph|fallback|label\` (\`🐕||Dog\`, \`generate:seagull|🐦.🏖️|Seagull\`) also works. Short answers can use \`glyph|label\` (\`🐕|Dog\`) or bare \`glyph\`.
+
+The \`glyph\` follows the SAME content rules as a button glyph slot:
+- a canonical registry key listed in <bundled_icons> (e.g. \`want\`, \`now\`, \`color_red\`);
+- a raw emoji (e.g. "🍎", "🤗") — your default for anything not in <bundled_icons>;
+- a custom symbol \`symbol:ID\` or face \`face:ID\`;
+- a generated imageKey prefixed \`generate:\` (e.g. \`generate:pikachu\`) — last resort, MUST be paired with a non-empty \`fallback\` field in the next pipe segment.
+
+When a candidate's glyph is \`generate:...\`, you MUST also supply a fallback (an emoji, a canonical key, \`symbol:ID\`, or \`face:ID\`) that renders in the AI strip while generation is pending or if it fails. Candidates with a \`generate:\` glyph but no fallback are REJECTED and dropped from the strip (the relay surfaces an error back to you so you can retry).
+
+A JSON-object form \`{ key, label?, fallback? }\` is also accepted for compatibility, but the pipe-separated string above is the preferred shape since it matches every other button format in this prompt.
+
+Never include any glyph from \`exclude_keys\`. If you have no useful suggestions, omit the tool call entirely.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -438,14 +494,9 @@ function buildSuggestConstructionButtonsTool(_config: ToolDeclarationConfig): Fu
         },
         candidates: {
           type: "array",
-          description: "Up to 4 candidate keys. Order matters — leftmost is the strongest suggestion.",
+          description: "Up to 4 candidates. Order matters — leftmost is the strongest suggestion. Each item is a pipe-separated string `sentence|glyph|fallback|label` (sentence field is unused for construction candidates, so `|glyph|fallback|label` is typical). See the tool description for the full format and content rules.",
           items: {
-            type: "object",
-            properties: {
-              key: { type: "string", description: "Registry key (snake_case) or AI-generated key. Must NOT be in exclude_keys." },
-              label: { type: "string", description: "Optional display label override. Omit for registry items (label comes from i18n)." },
-            },
-            required: ["key"],
+            type: "string",
           },
         },
       },
@@ -612,6 +663,8 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   // must be created deliberately from the Contacts panel — LEARN_FACE removed.
   declarations.push(YES_NO);
   declarations.push(ASK_YES_NO);
+  declarations.push(BINARY_CHOICE);
+  declarations.push(ASK_BINARY_CHOICE);
   // declarations.push(buildRequestFocusTool(config));
   declarations.push(SET_INTERACTION_MODE);
   declarations.push(PRIVATE_NOTE);

@@ -4,7 +4,7 @@
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
-import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel } from "@shared/schema";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeVideo } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { fetchRecentVideosForChannels } from "../youtube/channel-search";
 import { creditsForModelUsage, creditsForLiveUsage } from "../chat/cost-helpers";
@@ -459,6 +459,9 @@ export class DualAgentService {
       const ytChannels = Array.isArray(student.aacSettings?.permittedYoutubeChannels)
         ? (student.aacSettings!.permittedYoutubeChannels as PermittedYoutubeChannel[])
         : [];
+      const ytVideos = Array.isArray(student.aacSettings?.permittedYoutubeVideos)
+        ? (student.aacSettings!.permittedYoutubeVideos as PermittedYoutubeVideo[])
+        : [];
       const ytChannelVideos = ytChannels.length > 0
         ? await fetchRecentVideosForChannels(ytChannels)
         : undefined;
@@ -480,6 +483,7 @@ export class DualAgentService {
           ? (student.aacSettings!.permittedWebsites as PermittedWebsite[])
           : undefined,
         permittedYoutubeChannels: ytChannels.length > 0 ? ytChannels : undefined,
+        permittedYoutubeVideos: ytVideos.length > 0 ? ytVideos : undefined,
         youtubeChannelVideos: ytChannelVideos,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
       });
@@ -502,6 +506,9 @@ export class DualAgentService {
     const permittedYoutubeChannels: PermittedYoutubeChannel[] = Array.isArray(aacSt?.permittedYoutubeChannels)
       ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
       : [];
+    const permittedYoutubeVideos: PermittedYoutubeVideo[] = Array.isArray(aacSt?.permittedYoutubeVideos)
+      ? (aacSt!.permittedYoutubeVideos as PermittedYoutubeVideo[])
+      : [];
 
     // Create session state
     const state: DualAgentSessionState = {
@@ -516,6 +523,7 @@ export class DualAgentService {
       appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
       permittedWebsites,
       permittedYoutubeChannels,
+      permittedYoutubeVideos,
       currentEmote: "happy",
       boardButtonLabels: [],
       aiAddedButtonLabels: [],
@@ -648,6 +656,7 @@ export class DualAgentService {
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
         permittedWebsites: [], // Populated with aacSettings below
         permittedYoutubeChannels: [], // Populated with aacSettings below
+        permittedYoutubeVideos: [], // Populated with aacSettings below
         currentEmote: "neutral",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
@@ -687,6 +696,9 @@ export class DualAgentService {
           : [];
         state.permittedYoutubeChannels = Array.isArray(aacSt?.permittedYoutubeChannels)
           ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
+          : [];
+        state.permittedYoutubeVideos = Array.isArray(aacSt?.permittedYoutubeVideos)
+          ? (aacSt!.permittedYoutubeVideos as PermittedYoutubeVideo[])
           : [];
       }
 
@@ -748,6 +760,7 @@ export class DualAgentService {
           enabledApps: enabledApps.map(a => ({ id: a.id, name: a.name, description: a.description })),
           permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
           permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+          permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
           youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
             ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
             : undefined,

@@ -9,8 +9,11 @@
 
 import { useSyncExternalStore } from "react";
 import type { VocabularyItem } from "@shared/glyph-registry";
+import { getVocabularyItemByEmoji } from "@shared/glyph-registry";
 import type { ImageResolver } from "@shared/glyph-compositor";
 import { canResolveGlyph } from "@shared/glyph-compositor";
+import { isEmoji } from "@shared/emoji-registry";
+import { apiUrl } from "@/lib/queryClient";
 
 // Vite glob: { "/abs/path/to/icons/people/me.png": "/built-url/me-hash.png", ... }
 // NOTE: the Vite root for client-aac is `client-aac/`, so the icons (which
@@ -66,17 +69,79 @@ function subscribeSymbols(listener: () => void): () => void {
   return () => { symbolListeners.delete(listener); };
 }
 
-/** Register an AI-generated key's resolved image URL. Safe to call repeatedly. */
+/** Register an AI-generated key's resolved image URL. Safe to call repeatedly.
+ *
+ * The server emits server-root paths like `/api/custom-symbols/<id>/image`.
+ * In split-origin deployments (VITE_API_URL set) those need to be qualified
+ * against the API origin or the SVG `<image>` element fetches the wrong
+ * host. `apiUrl()` is the canonical helper that other render sites
+ * (`AppMiniBoard`, `DynamicBoard`'s `__SYMBOL__:` path) already use — apply
+ * it once here so every downstream consumer reads a fully-qualified URL.
+ */
 export function registerSymbolPath(key: string, symbolPath: string): void {
+  const qualified = symbolPath.startsWith("/") ? apiUrl(symbolPath) : symbolPath;
   const prev = SYMBOL_PATH_BY_KEY.get(key);
-  if (prev === symbolPath) return; // no-op: same path
-  SYMBOL_PATH_BY_KEY.set(key, symbolPath);
+  if (prev === qualified) return; // no-op: same path
+  SYMBOL_PATH_BY_KEY.set(key, qualified);
+  // A symbol path that previously failed may now have a fresh URL — clear
+  // the failure mark so the renderer tries again.
+  FAILED_SYMBOL_URLS.delete(qualified);
   notifySymbolListeners();
 }
 
 /** Has a generated symbol been registered for this key? Server-safe shape. */
 export function hasResolvedSymbol(key: string): boolean {
-  return SYMBOL_PATH_BY_KEY.has(key);
+  const url = SYMBOL_PATH_BY_KEY.get(key);
+  if (!url) return false;
+  // A URL we already know is broken (404 from S3, expired upload, etc.)
+  // doesn't count as resolved — the renderer should keep showing the
+  // emoji/fallback rather than swap to a broken-image visual.
+  return !FAILED_SYMBOL_URLS.has(url);
+}
+
+/**
+ * URLs we've tried to load and gotten a render-error from. Populated by
+ * GlyphCompositor's per-slot <image onError>. We treat the failure as
+ * permanent for the page session — re-issuing the load would just
+ * 404 again. The next server-pushed symbol_ready for the same key
+ * clears its URL out of this set in case the backing image was
+ * regenerated. Bumps the symbol-store version so subscribed glyphs
+ * re-evaluate and swap to the emoji fallback.
+ */
+const FAILED_SYMBOL_URLS = new Set<string>();
+
+export function markSymbolUrlFailed(url: string): void {
+  if (!url) return;
+  if (FAILED_SYMBOL_URLS.has(url)) return;
+  FAILED_SYMBOL_URLS.add(url);
+  notifySymbolListeners();
+}
+
+export function isSymbolUrlFailed(url: string | undefined | null): boolean {
+  return !!url && FAILED_SYMBOL_URLS.has(url);
+}
+
+/**
+ * Module-level pointer to the face-image cache's accessor. The AAC
+ * shell calls `setFaceImageResolver(cache.getFaceImage)` on mount; the
+ * glyph compositor's image resolver reads `face:<id>` slots through it
+ * so a glyph carrying a known-contact face renders the actual cached
+ * data URL instead of falling back to the 👤 silhouette.
+ *
+ * The cache itself lives in a React `useRef` (see useFaceImageCache),
+ * so storing the accessor as a module-level pointer is safe — the
+ * function closes over the ref, and the host clears the pointer on
+ * unmount.
+ */
+let faceImageResolver: ((contactId: string) => string | null) | null = null;
+
+export function setFaceImageResolver(
+  resolver: ((contactId: string) => string | null) | null,
+): void {
+  faceImageResolver = resolver;
+  // Bump the version so any glyphs currently rendering as 👤 (because
+  // the cache wasn't available yet) re-evaluate now that it is.
+  notifySymbolListeners();
 }
 
 /**
@@ -112,13 +177,61 @@ export function useDisplayGlyph(glyph?: string, fallback?: string): string | und
 /**
  * The default image resolver passed to <GlyphCompositor>. Resolution order:
  *   1. Registry item with imagePath → bundled icon URL
- *   2. Server-resolved symbolPath (AI-generated keys with custom symbols)
- *   3. null → compositor falls back to emoji/text
+ *   2. `symbol:<id>` slot → /api/custom-symbols/<id>/image (qualified)
+ *   3. `face:<id>` slot → cached face data URL (or null → 👤 fallback)
+ *   4. Server-resolved symbolPath (AI-generated imageKeys, cached by key)
+ *   5. null → compositor falls back to emoji/text
+ *
+ * URLs that have hit `<image onError>` are skipped so a broken S3 object
+ * (e.g. a long-orphaned generated symbol) doesn't keep showing the
+ * browser's broken-image glyph — the slot drops back to the canonical
+ * emoji or the fallback string instead.
  */
 export const defaultImageResolver: ImageResolver = ({ item, key }) => {
   if (item?.imagePath) {
     const url = resolveIconPath(item.imagePath);
-    if (url) return url;
+    if (url && !FAILED_SYMBOL_URLS.has(url)) return url;
   }
-  return SYMBOL_PATH_BY_KEY.get(key) ?? null;
+  // Reverse-emoji lookup: when the AI emits a slot key that's a raw
+  // emoji (the path it uses for non-exposed items like walk/run), see
+  // if a registry entry claims that emoji and ships bundled artwork.
+  // If so, render the bundled icon instead of the plain emoji glyph —
+  // bundled art can flip in RTL, emojis can't. Restricted to the
+  // non-exposed subset so emojis shared with exposed items (e.g. 🤲
+  // for want) don't accidentally claim the bundled path when the AI
+  // intended the emoji literally.
+  if (isEmoji(key)) {
+    const emojiItem = getVocabularyItemByEmoji(key);
+    if (emojiItem?.imagePath) {
+      const url = resolveIconPath(emojiItem.imagePath);
+      if (url && !FAILED_SYMBOL_URLS.has(url)) return url;
+    }
+  }
+  // Direct symbol:<id> reference — the AI emitted a custom-symbol slot
+  // by ID without going through the bracket-imageKey route. Mirrors the
+  // resolution `AppMiniBoard` / `DynamicBoard` already do at the
+  // single-button level so the glyph compositor and the legacy renderer
+  // hit the same `/api/custom-symbols/<id>/image` endpoint.
+  if (key.startsWith("symbol:")) {
+    const symbolId = key.substring(7).trim();
+    if (symbolId) {
+      const url = apiUrl(`/api/custom-symbols/${symbolId}/image`);
+      if (!FAILED_SYMBOL_URLS.has(url)) return url;
+    }
+  }
+  // face:<id> — pulled from the face-image cache the AAC shell pushes
+  // into faceImageResolver. The cache holds data URLs from biometric
+  // ID events; missing entries return null and the slot falls through
+  // to the 👤 emoji that resolveEmoji emits for `face:` keys.
+  if (key.startsWith("face:")) {
+    const contactId = key.substring(5).trim();
+    if (contactId && faceImageResolver) {
+      const dataUrl = faceImageResolver(contactId);
+      if (dataUrl && !FAILED_SYMBOL_URLS.has(dataUrl)) return dataUrl;
+    }
+    return null;
+  }
+  const symbolUrl = SYMBOL_PATH_BY_KEY.get(key);
+  if (symbolUrl && !FAILED_SYMBOL_URLS.has(symbolUrl)) return symbolUrl;
+  return null;
 };

@@ -1204,6 +1204,19 @@ export interface PermittedYoutubeChannel {
 }
 
 /**
+ * A specific YouTube video pinned by the clinician — a curated playlist entry.
+ * `videoId` is the 11-character YouTube watch ID. `description` is AI-facing.
+ * Shown to the student as a direct-play button in the YouTube browse view,
+ * and surfaced to the AI in the prompt so it can request a specific pinned
+ * video by id or title via open_app("youtube", data=...).
+ */
+export interface PermittedYoutubeVideo {
+  videoId: string;
+  label: string;
+  description?: string;
+}
+
+/**
  * Single button on an AAC communication board
  */
 export interface BoardButton {

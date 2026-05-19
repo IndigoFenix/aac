@@ -24,6 +24,7 @@ import {
   setToneTags,
   mostRecentSlot,
   resolveActiveSlot,
+  canResolveGlyph,
 } from "../../shared/glyph-compositor.js";
 
 describe("parseGlyph", () => {
@@ -136,6 +137,54 @@ describe("parseGlyph", () => {
     const g = parseGlyph("i_me+want(water)+please");
     expect(g.slots.map((s) => s.key)).toEqual(["i_me", "want", "please"]);
     expect(g.slots[1].payload).toBe("water");
+  });
+
+  it("strips [] brackets around slot keys (legacy imageKey marker)", () => {
+    // Brackets are the previous syntax — still tolerated for backward
+    // compat. The parser ignores them and resolves the inner key normally.
+    const generated = parseGlyph("[pikachu]");
+    expect(generated.slots[0].key).toBe("pikachu");
+    expect(generated.slots[0].unknown).toBe(true);
+
+    const canonical = parseGlyph("[water]");
+    expect(canonical.slots[0].key).toBe("water");
+    expect(canonical.slots[0].unknown).toBe(false);
+
+    const compound = parseGlyph("i_me+want+[planet_mars]");
+    expect(compound.slots.map((s) => s.key)).toEqual(["i_me", "want", "planet_mars"]);
+    expect(compound.slots[2].unknown).toBe(true);
+
+    const inPayload = parseGlyph("want([volcano])");
+    expect(inPayload.slots[0].payload).toBe("volcano");
+    expect(inPayload.slots[0].payloadUnknown).toBe(true);
+
+    const inModifier = parseGlyph("water.[spicy]");
+    expect(inModifier.slots[0].modifiers).toEqual(["spicy"]);
+  });
+
+  it("strips `generate:` prefix from slot keys (current imageKey marker)", () => {
+    // `generate:` is the current AI-facing syntax — the prompt steers the
+    // model toward it instead of brackets to avoid the bracket character
+    // tripping Vertex's function-call serializer. Behavior matches
+    // brackets: inner key resolves normally (canonical wins when present).
+    const generated = parseGlyph("generate:pikachu");
+    expect(generated.slots[0].key).toBe("pikachu");
+    expect(generated.slots[0].unknown).toBe(true);
+
+    const canonical = parseGlyph("generate:water");
+    expect(canonical.slots[0].key).toBe("water");
+    expect(canonical.slots[0].unknown).toBe(false);
+
+    const compound = parseGlyph("i_me+want+generate:planet_mars");
+    expect(compound.slots.map((s) => s.key)).toEqual(["i_me", "want", "planet_mars"]);
+    expect(compound.slots[2].unknown).toBe(true);
+
+    const inPayload = parseGlyph("want(generate:volcano)");
+    expect(inPayload.slots[0].payload).toBe("volcano");
+    expect(inPayload.slots[0].payloadUnknown).toBe(true);
+
+    const inModifier = parseGlyph("water.generate:spicy");
+    expect(inModifier.slots[0].modifiers).toEqual(["spicy"]);
   });
 });
 
@@ -329,9 +378,9 @@ describe("pure glyph mutations", () => {
   it("setPayload only succeeds on composable hosts", () => {
     // `want` is composable
     let g = parseGlyph("want");
-    g = setPayload(g, 0, "apple");
-    expect(g.slots[0].payload).toBe("apple");
-    expect(g.slots[0].payloadUnknown).toBe(true); // "apple" not in registry
+    g = setPayload(g, 0, "blicket_unknown_key");
+    expect(g.slots[0].payload).toBe("blicket_unknown_key");
+    expect(g.slots[0].payloadUnknown).toBe(true); // made-up key not in registry
 
     g = setPayload(g, 0, "water");
     expect(g.slots[0].payload).toBe("water");
@@ -339,7 +388,7 @@ describe("pure glyph mutations", () => {
 
     // `i_me` is not composable — should be a no-op
     const before = parseGlyph("i_me");
-    const after = setPayload(before, 0, "apple");
+    const after = setPayload(before, 0, "water");
     expect(after.slots[0].payload).toBeUndefined();
   });
 
@@ -363,5 +412,42 @@ describe("pure glyph mutations", () => {
     const reparsed = parseGlyph(str);
     expect(reparsed.slots.map((s) => s.key)).toEqual(g.slots.map((s) => s.key));
     expect(reparsed.toneTags).toEqual(g.toneTags);
+  });
+});
+
+describe("canResolveGlyph — custom symbols", () => {
+  // `symbol:<id>` is an explicit custom-symbol reference. canResolveKey
+  // treats it as resolvable so canResolveGlyph doesn't force the whole
+  // glyph onto its fallback string just because the slot isn't in the
+  // registry. The actual URL is constructed by the client resolver.
+  it("treats a bare symbol:<id> as resolvable", () => {
+    expect(canResolveGlyph("symbol:abc123")).toBe(true);
+  });
+
+  it("treats symbol:<id> as resolvable inside a multi-slot glyph", () => {
+    // i_me and want are canonical; the symbol slot would previously have
+    // tipped canResolveGlyph to false and the renderer would have used
+    // the fallback string — now it can render the glyph directly.
+    expect(canResolveGlyph("i_me+want+symbol:abc")).toBe(true);
+  });
+
+  it("treats symbol:<id> as resolvable as a payload", () => {
+    expect(canResolveGlyph("want(symbol:abc)")).toBe(true);
+  });
+
+  it("still falls back when an unknown bare key is used", () => {
+    // A snake_case key that the compositor can't resolve (no registry
+    // entry, no emoji, no cached symbol) is NOT resolvable — that's the
+    // path that forces the fallback string until generation lands.
+    expect(canResolveGlyph("pikachu")).toBe(false);
+  });
+
+  it("treats face:<id> as resolvable (renders 👤 when no cache hit)", () => {
+    // Like symbol:, face: is always resolvable. The client-side
+    // resolver may return null when no face is cached, which sends the
+    // slot to its emoji fallback — and resolveEmoji maps `face:` to
+    // 👤 so the slot never shows ❓.
+    expect(canResolveGlyph("face:contact-123")).toBe(true);
+    expect(canResolveGlyph("i_me+see+face:contact-123")).toBe(true);
   });
 });

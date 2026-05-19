@@ -40,6 +40,7 @@ import {
   type ToneTag,
 } from "@shared/glyph-compositor";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
+import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji } from "@shared/emoji-registry";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -63,6 +64,25 @@ function computeTargetSlot(glyph: ParsedGlyph, activeSlot: number | null): numbe
  * slot index, or null. When set, item presses route into the payload
  * rather than pushing a new slot.
  */
+/**
+ * What goes into a glyph slot when the student selects a vocabulary
+ * item from the construction-board grid or AI strip. For items the AI
+ * is explicitly taught about (`exposeToAi: true`) the slot keeps the
+ * snake_case key — the AI's vocabulary list says `i_me`, `want`,
+ * `play`, so the [GLYPH PRESS] should match. For everything else the
+ * slot stores the item's CANONICAL EMOJI; the AI's vocabulary is just
+ * "emoji" for those concepts, so it sees 🐈 (not "cat"), 🚶 (not
+ * "walk"), 🍌 (not "banana"), and interprets intent visually. The
+ * renderer reverse-maps emojis back to bundled artwork when one is
+ * available (see getVocabularyItemByEmoji), so the visual fidelity is
+ * the same whether the slot stores `key` or `emoji`.
+ */
+function slotKeyForSelection(item: VocabularyItem): string {
+  if (item.exposeToAi) return item.key;
+  if (item.emoji) return item.emoji;
+  return item.key;
+}
+
 function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
   // Walk from most-recent to oldest — the freshly-placed host is usually last.
   for (let i = glyph.slots.length - 1; i >= 0; i--) {
@@ -298,11 +318,19 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   const handleGridPress = useCallback(
     (item: VocabularyItem) => {
+      // For items the AI isn't taught about by snake_case key
+      // (`exposeToAi !== true`), the sentence-builder fills the slot
+      // with the item's CANONICAL EMOJI rather than the registry key.
+      // The AI subsequently sees the emoji in the [GLYPH PRESS] string
+      // and interprets intent visually — same path the AI uses when
+      // emitting bundled-art items itself (e.g. walk → 🚶). Exposed
+      // items keep their key form so the AI's vocabulary matches.
+      const selectionKey = slotKeyForSelection(item);
       setGlyph((g) => {
         // Explicit slot selection: replace that slot. Filling a composable
         // host this way leaves its payload empty for the next press.
         if (activeSlot != null && activeSlot < g.slots.length) {
-          return replaceSlot(g, activeSlot, item.key);
+          return replaceSlot(g, activeSlot, selectionKey);
         }
         // No explicit selection: if a composable host is waiting for its
         // payload AND the picked item is an acceptable type, fill the
@@ -311,10 +339,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         if (pending != null) {
           const host = getVocabularyItem(g.slots[pending].key);
           if (host?.composable?.accepts.includes(item.pos)) {
-            return setPayload(g, pending, item.key);
+            return setPayload(g, pending, selectionKey);
           }
         }
-        return pushSlot(g, item.key);
+        return pushSlot(g, selectionKey);
       });
       setActiveSlot(null);
       // If we just placed a composable host with no payload, hop to the
@@ -564,9 +592,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         modeChips: {},
         tone: "comment",
       };
+      // Canonical items get the emoji-vs-key swap (same logic as the
+      // grid). For AI-generated/synthesized keys there's nothing to
+      // swap to — keep the bare key so the generated artwork lands on
+      // it via `construction_symbol_ready`.
+      const selectionKey = item ? slotKeyForSelection(item) : synthesized.key;
       setGlyph((g) => {
         if (activeSlot != null && activeSlot < g.slots.length) {
-          return replaceSlot(g, activeSlot, synthesized.key);
+          return replaceSlot(g, activeSlot, selectionKey);
         }
         const pending = findPendingPayloadSlot(g);
         if (pending != null) {
@@ -575,10 +608,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           // will take them.
           const host = getVocabularyItem(g.slots[pending].key);
           if (host?.composable?.accepts.includes(synthesized.pos)) {
-            return setPayload(g, pending, synthesized.key);
+            return setPayload(g, pending, selectionKey);
           }
         }
-        return pushSlot(g, synthesized.key);
+        return pushSlot(g, selectionKey);
       });
       setActiveSlot(null);
     },
@@ -1100,38 +1133,83 @@ function MoreButton(props: { onPress: () => void; testId?: string; disabled?: bo
   );
 }
 
+/**
+ * Resolve a candidate key (or fallback key) to a render plan. Mirrors the
+ * glyph compositor's slot resolution chain so AI-strip suggestions and
+ * board buttons render identically.
+ *
+ *   1. `symbol:ID`        → /api/custom-symbols/ID/image
+ *   2. registry imagePath → bundled icon URL
+ *   3. server-resolved symbolPath (only for the primary key — fallbacks
+ *      never carry one)
+ *   4. emoji (registry item.emoji → resolveEmoji)
+ *   5. null → caller falls through to the next link in the chain
+ *
+ * `face:` keys are technically valid but the AI strip doesn't have a
+ * face-cache resolver wired through this component, so they degrade to
+ * the 👤 emoji via resolveEmoji ("face:" prefix shortcut in
+ * shared/emoji-registry.ts).
+ */
+function resolveCandidateRender(
+  key: string,
+  serverSymbolPath: string | undefined,
+): { url: string | null; emoji: string | null } {
+  if (!key) return { url: null, emoji: null };
+  if (key.startsWith("symbol:")) {
+    const id = key.substring(7).trim();
+    if (id) return { url: apiUrl(`/api/custom-symbols/${id}/image`), emoji: null };
+  }
+  const item = getVocabularyItem(key);
+  if (item?.imagePath) {
+    const u = resolveIconPath(item.imagePath);
+    if (u) return { url: u, emoji: null };
+  }
+  if (serverSymbolPath) return { url: serverSymbolPath, emoji: null };
+  const e = item?.emoji ?? resolveEmoji(key);
+  if (e) return { url: null, emoji: e };
+  return { url: null, emoji: null };
+}
+
 function AiCandidateButton(props: {
-  candidate: { key: string; label?: string; symbolPath?: string };
+  candidate: { key: string; label?: string; symbolPath?: string; fallback?: string };
   onPress: () => void;
 }) {
   const { t } = useLanguage();
   const { candidate } = props;
   const item = getVocabularyItem(candidate.key);
-  // Image priority:
-  //   1. server-resolved symbolPath (AI-generated keys with custom symbols)
-  //   2. registry imagePath (built-in icons)
-  //   3. emoji fallback (item.emoji → emoji-registry → ✨)
-  const url =
-    candidate.symbolPath
-    ?? (item?.imagePath ? resolveIconPath(item.imagePath) : null);
 
-  // The image element triggers an error event on 404 / network failure /
-  // CORS issues — without an explicit fallback we'd render a broken-image
-  // glyph. Track per-URL load failures so we can swap to the emoji
-  // fallback when the symbol service hands back a path that doesn't
-  // actually resolve (e.g. generation quota exhausted, generation pending
-  // but URL not live yet).
-  const [imageFailed, setImageFailed] = useState(false);
+  // Try the primary key first; if nothing renders, fall back to the
+  // server-validated fallback key. Image-load failure (404 / CORS /
+  // pending generation) also routes to the fallback path so an
+  // unresolved candidate doesn't sit with a broken-image glyph.
+  const primary = resolveCandidateRender(candidate.key, candidate.symbolPath);
+  const fb = candidate.fallback
+    ? resolveCandidateRender(candidate.fallback, undefined)
+    : { url: null, emoji: null };
+
+  const [primaryFailed, setPrimaryFailed] = useState(false);
   useEffect(() => {
-    // New URL — reset the error flag so a fresh load gets a fair attempt.
-    setImageFailed(false);
-  }, [url]);
-  const showImage = !!url && !imageFailed;
+    // New URL — give the next load a fair chance to succeed.
+    setPrimaryFailed(false);
+  }, [primary.url]);
 
-  // Emoji fallback chain — also covers raw-emoji candidate keys (the AI
-  // sometimes proposes "🤤" directly) and snake_case keys with
-  // EXTRA_EMOJIS entries (e.g. "hungry" → 🤤).
-  const fallbackEmoji = item?.emoji ?? resolveEmoji(candidate.key) ?? "✨";
+  let renderUrl: string | null = null;
+  let renderEmoji: string | null = null;
+  if (primary.url && !primaryFailed) {
+    renderUrl = primary.url;
+  } else if (fb.url) {
+    renderUrl = fb.url;
+  } else if (primary.emoji && !primaryFailed) {
+    renderEmoji = primary.emoji;
+  } else if (fb.emoji) {
+    renderEmoji = fb.emoji;
+  } else {
+    // ❓ matches the glyph compositor's "unknown slot" placeholder. Note
+    // we deliberately don't fall back to ✨ here — that's `very`'s
+    // canonical emoji, and the AI strip used to default to it which
+    // made every unresolved candidate look like a `very` suggestion.
+    renderEmoji = "❓";
+  }
 
   // Label resolution: AI-provided label → registry translation → bare key.
   let label = candidate.label;
@@ -1147,18 +1225,22 @@ function AiCandidateButton(props: {
       whileTap={{ scale: 0.95 }}
       className="flex-1 min-w-0 h-full rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/60 dark:bg-purple-900/30 flex flex-col items-center justify-center gap-1 p-2"
     >
-      {showImage ? (
+      {renderUrl ? (
         // min-h-0 lets the flex child shrink; max-h pixel cap pins the image
         // regardless of intrinsic size so the button can't grow vertically.
+        // onError demotes the primary image — the resolver above then
+        // tries the fallback key (which may itself be an emoji).
         <img
-          src={url!}
+          src={renderUrl}
           alt=""
           className="min-h-0 max-h-[50px] max-w-[80%] object-contain"
-          onError={() => setImageFailed(true)}
+          onError={() => {
+            if (renderUrl === primary.url) setPrimaryFailed(true);
+          }}
         />
       ) : (
         <span className="text-3xl leading-none" aria-hidden>
-          {fallbackEmoji}
+          {renderEmoji ?? "❓"}
         </span>
       )}
       <span className="text-xs font-medium truncate w-full text-center">

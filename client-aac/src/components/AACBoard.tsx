@@ -169,6 +169,15 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
       </div>
 
       {/* Board grid */}
+      {/*
+        AnimatePresence wraps the grid contents so a button removed by the
+        server-side smart merge fades out (exit animation on motion.button)
+        instead of disappearing instantly. AnimatePresence tracks children
+        by `key`, so each motion.button must be keyed by button.id (which
+        the server now keeps stable for surviving buttons across rebuilds).
+        Non-motion empty cells just appear/disappear with no animation —
+        that's fine, they're inert placeholders.
+      */}
       <div className="flex-1 p-4 overflow-auto">
         <div
           className="grid gap-3 h-full max-w-4xl mx-auto"
@@ -177,6 +186,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
             gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
           }}
         >
+          <AnimatePresence initial={false}>
           {Array.from({ length: rows * cols }, (_, index) => {
             const row = Math.floor(index / cols);
             const col = index % cols;
@@ -210,7 +220,8 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   key={button.id}
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.02 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.18, delay: index * 0.02 }}
                   whileHover={{ scale: 1.05, boxShadow: "0 8px 25px rgba(0,0,0,0.15)" }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => handleButtonClick(button)}
@@ -287,6 +298,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
               />
             );
           })}
+          </AnimatePresence>
         </div>
       </div>
 
