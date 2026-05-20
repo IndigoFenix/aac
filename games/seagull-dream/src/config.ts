@@ -109,10 +109,11 @@ export const PLAYER = {
   /** Running-takeoff speed, m/s. When wings are out and flapping, bird
    *  accelerates toward this. */
   runningTakeoffSpeed: 8.33, // = 30 kph
-  /** Atmospheric winged-flight upward speed cap, m/s. The spec's stated
-   *  300 kph "actual winged flight limit" applies to climbing. Diving
-   *  can exceed this (see SPEED.V_WING_DOWN below). */
-  flyUpwardCap: 83.3, // = 300 kph
+  /** Lerp rate (per second) the walking-state wingExtension converges
+   *  toward its target (0 = tucked, 1 = spread). 6 → wings finish
+   *  unfolding in ~0.3 s when triggered, so the running-takeoff feels
+   *  responsive without snapping. */
+  wingExtendRate: 6,
   /** Speed cap close to the ground/obstacles, m/s. Independent of
    *  atmospheric pressure — purely a safety brake to make low flight
    *  navigable rather than a crash sim. Raised by obstacle distance
@@ -223,153 +224,11 @@ export const PLAYER = {
   /** Finite-difference epsilon (m) for sampling terrain normal under player. */
   groundNormalEpsilon: 1.5,
   /**
-   * Flight speed multiplier at the edge of (or beyond) a planet's gravity
-   * influence. Combined with `warpFalloffPower` below, scales `flySpeed` so
-   * the player can traverse interplanetary distances without feeling glued
-   * to one body.
-   */
-  /**
-   * Cap on the warp factor (cruise speed / flySpeed). With cruise scaling
-   * linearly with distance to the nearest body, deep interstellar speeds
-   * would otherwise grow unbounded — this caps them. Default 1 M gives
-   * a 32 Mm/s max speed (≈0.1c), enough for cross-system travel.
+   * Visual warp-distortion cap. Used by the main loop's warp shader pass
+   * to normalize `lastWarpFactor → uWarp ∈ [0,1]`. Not a physics
+   * constant; purely a display parameter.
    */
   warpMaxBoost: 100_000_000,
-  /**
-   * Time constant T (seconds) for cruise speed. Cruise = distance / T
-   * (modulated by the multiplier). With distance-proportional cruise,
-   * traversal time across a domain of scale-ratio R is approximately
-   * T × ln(R). Lower = faster traversal across all scales.
-   */
-  warpTimeConstant: 3,
-  /**
-   * Global multiplier on the distance-proportional cruise speed. The
-   * underlying formula is `cruise = (distance - radius × density) / T`
-   * taken as a minimum over all bodies. This multiplier scales that
-   * cruise speed directly:
-   *
-   *   >1 → faster cruise everywhere (shorter traversal times)
-   *   <1 → slower cruise everywhere
-   *
-   * Each body's `warpDensity` (rocky 1.0, gas 0.4, star 0.2) defines
-   * the fraction of its radius that warp respects as a hard surface;
-   * star-diving works because the sun's effective surface sits at
-   * 20% of its visible radius.
-   */
-  warpGravityMultiplier: 1.0,
-  /**
-   * Curve shape for the warp ramp. Warp factor is
-   * `1 + (1 - α)^power * (warpMaxBoost - 1)` where α is the densest
-   * atmospheric density at the player's position. High power = warp drops
-   * off sharply as you enter a body's atmosphere — by α≈0.1 you've already
-   * lost most of your speed. This is what makes goal-directed travel
-   * NMS-style: punch toward a target at warp, decelerate automatically on
-   * approach, arrive at flying speed.
-   */
-  warpFalloffPower: 8,
-  /**
-   * Atmospheric drag rate (per second), scaled by local density. Legacy —
-   * the new Newtonian atmospheric flight model uses `flyDrag` (quadratic).
-   * Kept for backward-compat with any pre-existing slider bindings.
-   */
-  atmosphericDragRate: 20,
-  /**
-   * Forward thrust (m/s²) the bird's wings produce at sea-level density.
-   * Balanced against `flyDrag` so the level-flight terminal velocity
-   * (where thrust = drag) lands near `flySpeed`: T = flyDrag × flySpeed².
-   * Boosted in thin atmosphere by `flyThinAtmBoost`.
-   */
-  flyThrust: 10,
-  /**
-   * Thrust multiplier scaling factor that activates in thin atmosphere
-   * — modeled as the bird "straining" against thinner air to push
-   * upward toward space. Final thrust = `flyThrust × (1 + flyThinAtmBoost
-   * × (1 - α))`. At sea level (α=1) thrust is normal; at vacuum-edge
-   * (α≈0) thrust is `1 + flyThinAtmBoost`× normal. This is the
-   * intermediate step between atmospheric flight and warp — wings work
-   * harder as air thins, until warp takes over at the atmosphere edge.
-   */
-  flyThinAtmBoost: 3,
-  /**
-   * Quadratic atmospheric drag coefficient (1/m). Drag force per unit
-   * mass = flyDrag × |v_rel| × v_rel × α. Picked so terminal velocity at
-   * α=1 with thrust along forward is ≈ flySpeed (= sqrt(flyThrust / flyDrag)).
-   * Integrated implicitly so very high-speed entries (warp drops at the
-   * atmosphere line) don't blow up the simulation in a single frame.
-   */
-  flyDrag: 0.01,
-  /**
-   * Lift behaviour. Wings cancel gravity in atmosphere whenever the nose
-   * is pointed roughly level or up. When the player pitches into a
-   * steep dive (forward · up below the threshold), lift fades and
-   * gravity returns — high-speed dives become possible, but quadratic
-   * drag still caps the terminal velocity.
-   *
-   *   liftFactor = clamp(0, 1, forward · up + flyLiftAngle)
-   */
-  flyLiftAngle: 0.5,
-  /**
-   * Atmospheric density α below which warp drive is fully available.
-   * Between this and `warpAlphaUpper` is the transition band where
-   * warp velocity fades and is transferred into real velocity. Each
-   * body scales these thresholds by `1 / warpDensity` — so a low-
-   * density body like a star or gas giant lets you warp deeper into
-   * its atmosphere than a rocky body of the same nominal α.
-   */
-  warpAlphaLower: 0.01,
-  /**
-   * Atmospheric density α above which warp drive is fully locked out
-   * (in rocky-body units — scaled per body by `1 / warpDensity`).
-   * Past this, all warp velocity becomes real velocity and atmospheric
-   * physics takes over completely.
-   */
-  warpAlphaUpper: 0.1,
-  /**
-   * Rate (per second) at which warp velocity transfers into real
-   * velocity inside the transition band. Scaled by (1 - warpAvail) so
-   * the deeper you are in atmosphere, the faster the transfer.
-   */
-  warpAtmosphereTransferRate: 8.0,
-  /**
-   * Real-velocity forward thrust (m/s²). Small, NOT warp-scaled — this is
-   * the "normal flight engine" that lets you nudge your real trajectory
-   * over time. The warp drive is a separate system.
-   */
-  spaceThrust: 5,
-  /**
-   * Warp-drive base drag rate (per second). Pulls warpVelocity toward
-   * `forward × flySpeed × warpFactor` at this rate. Higher = warp
-   * accelerates and decelerates more sharply.
-   */
-  spaceDragRate: 1.0,
-  /**
-   * Extra warp friction (per second) scaled by warpRestriction. Near
-   * bodies (high restriction), warp velocity decays much faster — this
-   * is what makes "approach a planet → auto-decel from warp to flight
-   * speed" work. Higher = sharper braking near bodies.
-   */
-  warpFrictionRate: 60.0,
-  /**
-   * Velocity-dependent warp drag. When `|warpVelocity|` exceeds the
-   * cruise target (because warp factor just dropped — e.g. you turned
-   * toward a planet whose domain you just entered), an extra drag term
-   * proportional to the overshoot ratio kicks in. This gives a
-   * terminal-velocity feel: the more you exceed the current max, the
-   * harder the system pulls you back.
-   */
-  warpOvershootDrag: 6.0,
-  /**
-   * Rate (per second) at which the player's REAL inertial velocity
-   * bleeds away while warping. Scales with current warp speed: at full
-   * warp, real velocity is dragged toward zero at this rate; at low
-   * warp, no bleed.
-   *
-   * This is what fixes "I left atmosphere with orbital velocity and
-   * now I overshoot every target" — at warp, the carried orbital
-   * momentum decays so the warp drive actually delivers you to your
-   * destination rather than past it on an orbital trajectory.
-   */
-  warpInertiaBleedRate: 1.5,
 };
 
 // ── Three-mode speed model (wing / rocket / warp) ───────────────────────────
@@ -379,50 +238,51 @@ export const PLAYER = {
 //
 //   wing   = pressure × lerp(V_DOWN, V_UP, climbT)
 //            asymmetric: dive faster than climb, both fade in thin air
-//   rocket = V_MAX × altitude / (altitude + R_nearest)
-//            zero at any surface, saturates at V_MAX far from the body
-//   warp   = V_BASE × max(0, 1/θ - 1/π) × (1-α)^N
+//   rocket = sqrt(2 × A × h) if above MIN_FLIGHT_SPEED, else 0
+//            altitude-only; physically motivated as ballistic-coast
+//            speed under uniform acceleration A
+//   warp   = V_BASE × max(0, 1/θ - 1/π)^WARP_POWER × (1-α)^N × hillGate
 //            θ is the angular size of the biggest body in view (radians);
 //            the 1/π subtraction makes warp = 0 at any body's surface;
-//            the (1-α) gate keeps atmospheres warp-locked.
+//            the (1-α) gate keeps atmospheres warp-locked; hillGate
+//            also locks warp inside a body's hill-sphere neighborhood.
 //
 // α is summed kg/m³ atmospheric density normalized to Earth sea-level (1.225).
 
 export const SPEED = {
-  /** Wing climb speed (m/s) at α=1 sea-level pressure. Spec cap for
-   *  atmospheric flight is 300 kph (= 83.3 m/s); we keep the underlying
-   *  wing target at that value and let the asymmetric-friction model
-   *  decide how quickly upward speed is bled. The hard cap that the
-   *  upward-flight friction pulls toward is `PLAYER.flyUpwardCap`. */
-  V_WING_UP: 83.3, // = 300 kph
-  /** Wing dive speed (m/s) at α=1 sea-level pressure. Should exceed
-   *  V_WING_UP — birds dive faster than they climb. With dive friction
-   *  much gentler than climb friction the bird actually approaches this
-   *  value during sustained dives. ~600 kph. */
-  V_WING_DOWN: 167, // = 600 kph
-  /** Rocket asymptote (m/s) reached far from the nearest body. Rocket
-   *  speed at altitude h above a body of radius R is V_MAX × h/(h+R).
-   *  Smooth ramp from 0 at the surface to V_MAX at infinity. */
-  V_ROCKET_MAX: 1_000_000,
+  /** Altitude-acceleration factor (m/s²) for the flight-speed formula.
+   *  Target flight speed at altitude h is `sqrt(2 × A × h)` — the
+   *  speed required to coast ballistically up to altitude h under
+   *  uniform acceleration A. Default 8.3 is close to Earth-1g, so
+   *  the formula reads as "cruise = the speed needed to reach this
+   *  altitude under Earth-like gravity." */
+  ALTITUDE_ACCEL_FACTOR: 8.3,
+  /** Minimum cruise speed (m/s) used as the floor on the altitude
+   *  formula. Below the altitude at which `sqrt(2 × A × h)` exceeds
+   *  this value (h_min = MIN² / (2 × A)), the bird cruises at this
+   *  constant. Default 32 → low-altitude bird cruises around 32 m/s
+   *  and accelerates with altitude past ~62 m. */
+  MIN_FLIGHT_SPEED: 32,
   /** Warp coefficient. Warp = V_BASE × (1/θ - 1/π)^WARP_POWER × gate,
    *  where θ is the largest body's angular size in radians at the
-   *  player's position. With WARP_POWER=2 at a typical interstellar θ
-   *  (5-ly nearest star ≈ 3e-8 rad → impedance ≈ 3.3e7), V_BASE=100
-   *  yields ~1.1e17 m/s ≈ 12 ly/s. Close to a star (1 AU, impedance
-   *  ≈ 107) gives ~1.1e6 m/s — about 130s to traverse 1 AU. Tune
-   *  alongside WARP_POWER to land on the desired ly/s interstellar
-   *  target while keeping close-approach navigable. */
-  V_WARP_BASE: 100,
-  /** Steepness of the warp falloff with proximity. The base impedance
-   *  (1/θ - 1/π) is linear in 1/θ; raising it to a power amplifies the
-   *  dynamic range between interstellar (huge impedance) and
-   *  close-to-star (small impedance) without changing the boundary
-   *  behaviors (zero at the surface, finite floor far from any body).
-   *  Default 2 — interstellar ~10⁵× faster than close-to-star instead
-   *  of the ~10³× ratio at WARP_POWER=1. Increase further (and lower
-   *  V_WARP_BASE accordingly) if interstellar still feels slow relative
-   *  to close-to-star traversal. */
-  WARP_POWER: 2,
+   *  player's position.
+   *
+   *  Default tuning: WARP_POWER = 1, V_BASE = 1e6 → Earth-Moon ≈ 60s.
+   *  The trip-time analysis (treating warp as the dominant term):
+   *    dx/dt ≈ V_BASE × x/(2R)   (for x >> R)
+   *  integrates to `t = 2R·ln(D/R)/V_BASE`. With D = 60R (Moon distance)
+   *  and R = 6.37 Mm, t = 60s requires V_BASE ≈ 870 000. We round up
+   *  slightly to 1e6 to give a little headroom for the near-Earth
+   *  gate-dampened phase and Moon approach. */
+  V_WARP_BASE: 1_000_000,
+  /** Steepness of the warp falloff with distance (impedance exponent).
+   *  Default 1 makes vWarp linear in impedance, so each doubling of
+   *  distance roughly doubles the warp speed — a "gentle" curve where
+   *  acceleration is smooth rather than blowing up far out. Higher
+   *  values (2, 3) produce sharper acceleration with distance and
+   *  make interstellar warp much faster than close-system warp, but
+   *  feel jumpy in-system. */
+  WARP_POWER: 1,
   WARP_MULT: 1.0,
   /** Floor on angular size for true intergalactic void (no stars within
    *  the registry search radius). Caps the maximum warp speed at
@@ -434,18 +294,14 @@ export const SPEED = {
   RHO_REF_AIR: 1.225,
   /** Exponent on (1-α) gating warp's atmospheric availability. */
   WARP_GATE_POWER: 5,
-  /** p-norm exponent for blending the three modes. Higher → harder
-   *  switch between modes; lower → softer crossover. */
+  /** p-norm exponent for blending wing-frame speed with warp speed.
+   *  Higher → harder switch between modes; lower → softer crossover. */
   BLEND_POWER: 6,
-  /** Asymmetric atmospheric friction. Wings produce a target speed
-   *  (`vWing` from V_WING_UP / V_WING_DOWN); these constants control
-   *  how quickly real speed is pulled toward that target. Higher rate
-   *  = snappier response (and harder cap when climbing).
-   *
-   *  Climb friction stays firm so the bird can't exceed V_WING_UP for
-   *  long. Dive friction is much gentler so high-speed dives are
-   *  reachable; combined with V_WING_DOWN this gives a natural "stoop"
-   *  feel. Level flight interpolates between the two. */
+  /** Asymmetric friction toward the altitude-based target speed.
+   *  Climbing friction stays firm so the upward cap holds. Dive
+   *  friction is much gentler so a steep dive carries momentum
+   *  through the bottom of a swoop. Both scale with α (no drag
+   *  in vacuum). */
   WING_FRICTION_CLIMB: 3.0,
   WING_FRICTION_DIVE: 0.4,
   /** Strength of "swooping" — the carry-over of dive momentum into the
@@ -454,6 +310,49 @@ export const SPEED = {
    *  the swoop. Scaled by atmospheric density so it only happens in
    *  atmosphere worth swooping through. */
   WING_SWOOP_FACTOR: 1.6,
+  /** Flight-strain weight from vacuum/thin atmosphere. Strain rises
+   *  toward 1 as α → 0; this is the dominant contributor in deep
+   *  vacuum and drives the wings-fold-back + rockets-on phase
+   *  transition. */
+  STRAIN_VACUUM_WEIGHT: 0.7,
+  /** Flight-strain weight from climbing in atmosphere. forward·up = 1
+   *  (straight up) adds STRAIN_CLIMB_WEIGHT * α to strain; level adds
+   *  0, dive subtracts (relief). Captures "wings work hard against
+   *  gravity, glide downhill" in the strain factor. */
+  STRAIN_CLIMB_WEIGHT: 0.5,
+  /** Flight-strain weight from above-Earth gravity. (gravNorm - 1) ×
+   *  α × STRAIN_GRAVITY_WEIGHT — high-G worlds raise strain even
+   *  during level flight; low-G worlds don't reduce it (subtracted
+   *  contribution clamps at zero). */
+  STRAIN_GRAVITY_WEIGHT: 0.3,
+  /** Wing-vs-rocket visual blend. The bird is purely visual at this
+   *  point: same speed everywhere, but at low atmospheric density (or
+   *  high gravity) wings can't generate the thrust needed and rockets
+   *  fire instead. Rocket visual weight is
+   *
+   *    rocketRegimeWeight = clamp(0, 1, 1 - WING_LIFT_THRESHOLD × α / gravNorm)
+   *
+   *  Default 6 → on Earth (g/g_earth = 1) the visual transition is
+   *  centered at α ≈ 1/6 ≈ 0.17, which falls at ~15 km altitude given
+   *  Earth's scale height (~8400 m, derived from kT/μg). On Mars-like
+   *  worlds (low g, thin atm) rockets engage near the surface; on
+   *  Jupiter-like worlds (thick atm, high g) wings carry the bird
+   *  much higher. */
+  WING_LIFT_THRESHOLD: 6,
+  /** Warp inhibition exponent. Gate is `1 - (R / r)^N` where R is
+   *  the dominant body's radius and r is the player's distance from
+   *  its center. Equivalent to `1 - (g_at_player / g_surface)^(N/2)`
+   *  — gravity-derived inhibition that smoothly hands off between
+   *  hill spheres (the (R/r)² values for parent and child bodies are
+   *  near-equal at hill boundaries by construction). Default 2 is
+   *  the pure inverse-square law; higher N opens warp faster with
+   *  altitude.
+   *
+   *  With N=2 on Earth (R=6371 km): warp gate ≈ 0.03 at 100 km,
+   *  0.24 at 1000 km, 0.86 at 10 000 km, 0.996 at 100 000 km. Other
+   *  bodies scale by their own radius: Moon's gate opens proportionally
+   *  faster (R=1737 km), Sun's much slower (R=695 Mm). */
+  WARP_INHIBITION_POWER: 2,
 };
 
 export const CONTROLS = {

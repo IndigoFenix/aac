@@ -56,6 +56,34 @@ class SessionHistoryController {
     }
   }
 
+  async getSessionDebugLog(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const section = (req.query.section as string) || undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : undefined;
+
+      const result = await chatRepository.getSessionDebugLog(id, { section, limit, offset });
+      if (!result) {
+        res.status(404).json({ success: false, message: "Session not found" });
+        return;
+      }
+      res.json({
+        success: true,
+        data: result.entries,
+        pagination: {
+          total: result.total,
+          limit: limit ?? 500,
+          offset: offset ?? 0,
+          hasMore: (offset ?? 0) + result.entries.length < result.total,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error fetching session debug log:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch session debug log" });
+    }
+  }
+
   async getChatSessions(req: Request, res: Response): Promise<void> {
     try {
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 25, 1), 100);

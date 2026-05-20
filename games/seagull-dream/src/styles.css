@@ -40,115 +40,172 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; fon
 #state-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9; }
 #hint { opacity: 0.7; font-size: 11px; }
 
-#debug {
+/* ── Debug toolbar ────────────────────────────────────────────────────── */
+#debug-toolbar {
   position: fixed;
   top: 12px;
   right: 12px;
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 2px 12px;
-  padding: 8px 12px;
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 10px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  pointer-events: none;
-  backdrop-filter: blur(4px);
-  min-width: 220px;
-}
-#debug > div { display: contents; }
-#debug .k { opacity: 0.6; }
-#debug .v { text-align: right; opacity: 0.95; white-space: nowrap; }
-
-#tuning {
-  position: fixed;
-  bottom: 12px;
-  left: 12px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 6px;
-  padding: 10px 12px;
-  background: rgba(15, 23, 42, 0.55);
-  border-radius: 10px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  backdrop-filter: blur(4px);
-  min-width: 260px;
+  z-index: 10;
   pointer-events: auto;
 }
-#tuning .title {
-  font-weight: 600;
+.dbg-btn {
+  padding: 6px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.6;
-  margin-bottom: 2px;
-}
-#tuning .row {
-  display: grid;
-  grid-template-columns: 78px 1fr 56px;
-  align-items: center;
-  gap: 8px;
-}
-#tuning .lbl { opacity: 0.7; }
-#tuning .val { text-align: right; opacity: 0.95; }
-#tuning input[type="range"] {
-  width: 100%;
-  accent-color: #94a3b8;
+  letter-spacing: 0.08em;
   cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.dbg-btn:hover { background: rgba(15, 23, 42, 0.75); }
+.dbg-btn.active {
+  background: rgba(148, 163, 184, 0.4);
+  border-color: rgba(148, 163, 184, 0.8);
 }
 
-#universe-tuning {
+/* ── Debug panel ─────────────────────────────────────────────────────── */
+.dbg-panel {
   position: fixed;
-  bottom: 12px;
+  top: 50px;
   right: 12px;
-  display: flex;
+  bottom: 12px;
+  width: 360px;
+  display: none;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  background: rgba(15, 23, 42, 0.55);
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 10px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  backdrop-filter: blur(4px);
-  min-width: 260px;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
   pointer-events: auto;
+  z-index: 9;
 }
-#universe-tuning .title {
+.dbg-panel.open { display: flex; }
+
+/* readouts panel sits on the left so tuning + readouts can show side-by-side */
+#readouts-panel { right: auto; left: 12px; width: 320px; top: 50px; }
+
+.dbg-panel details {
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.dbg-panel details + details { margin-top: 2px; }
+.dbg-panel details > summary {
+  padding: 5px 8px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.6;
-  margin-bottom: 2px;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  opacity: 0.75;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  border-radius: 6px;
 }
-#universe-tuning .row {
+.dbg-panel details > summary::-webkit-details-marker { display: none; }
+.dbg-panel details > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  opacity: 0.5;
+  font-weight: 400;
+}
+.dbg-panel details[open] > summary::before { content: "▾"; }
+.dbg-panel details[open] > summary { background: rgba(148, 163, 184, 0.1); }
+.dbg-panel details > .section-body {
+  padding: 4px 8px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Slider rows */
+.dbg-row {
   display: grid;
-  grid-template-columns: 96px 1fr 56px;
+  grid-template-columns: 100px 1fr 60px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
-#universe-tuning .lbl { opacity: 0.7; }
-#universe-tuning .val { text-align: right; opacity: 0.95; }
-#universe-tuning input[type="range"] {
+.dbg-row .lbl { opacity: 0.7; overflow: hidden; text-overflow: ellipsis; }
+.dbg-row .val { text-align: right; opacity: 0.95; }
+.dbg-row input[type="range"] {
   width: 100%;
   accent-color: #94a3b8;
   cursor: pointer;
 }
-#universe-tuning input[type="number"] {
+
+/* Number input rows (generation panel) */
+.dbg-row.num {
+  grid-template-columns: 110px 1fr;
+}
+.dbg-row input[type="number"] {
   width: 100%;
-  background: rgba(0,0,0,0.25);
+  background: rgba(0, 0, 0, 0.25);
   color: inherit;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   padding: 2px 4px;
   font: inherit;
 }
-#universe-tuning .check-row {
-  display: flex;
+
+/* Readout rows */
+.dbg-readout {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px;
   align-items: center;
-  gap: 8px;
 }
-#universe-tuning button {
+.dbg-readout .k { opacity: 0.6; }
+.dbg-readout .v { text-align: right; opacity: 0.95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Pause indicator ─────────────────────────────────────────────────── */
+/* Pause is meant for making adjustments live, so the scene + debug panels
+ * stay fully visible / interactive. The overlay is just a small card
+ * pinned to the top-center so the player knows the sim is frozen. */
+#pause-overlay {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  z-index: 20;
+  pointer-events: none;
+}
+#pause-overlay.visible { display: block; }
+.pause-card {
+  padding: 10px 18px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 10px;
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  backdrop-filter: blur(4px);
+}
+.pause-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  opacity: 0.95;
+}
+.pause-hint {
   margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+/* Panel action button */
+.dbg-action {
+  margin-top: 6px;
   padding: 6px 8px;
   background: rgba(148, 163, 184, 0.25);
   color: inherit;
@@ -157,4 +214,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; fon
   font: inherit;
   cursor: pointer;
 }
-#universe-tuning button:hover { background: rgba(148, 163, 184, 0.4); }
+.dbg-action:hover { background: rgba(148, 163, 184, 0.4); }

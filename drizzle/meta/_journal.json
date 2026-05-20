@@ -743,6 +743,13 @@
       "when": 1779181009558,
       "tag": "0105_friendly_valkyrie",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1779287223948,
+      "tag": "0106_overconfident_loki",
+      "breakpoints": true
     }
   ]
 }

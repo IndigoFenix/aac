@@ -170,4 +170,11 @@ export interface LiveProvider {
   lastCloseCode: number | null;
   lastCloseWasRateLimit: boolean;
   lastCloseWasSafety: boolean;
+
+  /**
+   * Bind logger session context so provider-side events (server messages,
+   * tool calls) get attributed to the right session_debug_logs row.
+   * No-op when debugMode is false.
+   */
+  setDebugSessionContext(sessionId: string, debugMode: boolean): void;
 }

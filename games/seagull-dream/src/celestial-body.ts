@@ -243,8 +243,14 @@ function buildLuminousBody(
     orientation: new THREE.Quaternion(),
     inverseOrientation: new THREE.Quaternion(),
     velocity: new THREE.Vector3(),
-    hillRadius: orbit ? computeHillRadius(orbit, gm) : 200_000_000,
-    visualHillRadius: orbit ? computeVisualHillRadius(orbit, radiusM) : 200_000_000,
+    // For the system's central star (no orbit / no parent), the "Hill
+    // sphere" is effectively the boundary of the star's gravitational
+    // dominance against the rest of the galaxy. ~2 ly matches the
+    // Oort-cloud / interstellar-transition scale for a Sun-like star
+    // and makes interplanetary positions fall inside the star's hill
+    // so the dominant-body lookup never returns null in-system.
+    hillRadius: orbit ? computeHillRadius(orbit, gm) : 2e16,
+    visualHillRadius: orbit ? computeVisualHillRadius(orbit, radiusM) : 2e16,
     warpDensity: 0.2,
     bulkDensity: estimateBulkDensity(state, radiusM, totalMassKg(state)),
     surfaceAirDensity: 1000,  // deep stellar atmosphere

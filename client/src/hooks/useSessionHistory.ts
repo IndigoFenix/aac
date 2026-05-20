@@ -116,3 +116,33 @@ export function useChatSessionLog(sessionId: string | null) {
     enabled: !!sessionId,
   });
 }
+
+export interface DebugLogEntry {
+  id: string;
+  seq: number;
+  timestamp: string;
+  section: string;
+  content: string;
+}
+
+interface DebugLogResponse {
+  success: boolean;
+  data: DebugLogEntry[];
+  pagination: PaginationInfo;
+}
+
+export function useSessionDebugLog(sessionId: string | null, opts: { section?: string; limit?: number; offset?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.section) params.set("section", opts.section);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return useQuery<DebugLogResponse>({
+    queryKey: ["/api/admin/sessions", sessionId, "debug-log", qs],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/admin/sessions/${sessionId}/debug-log${qs ? `?${qs}` : ""}`);
+      return res.json();
+    },
+    enabled: !!sessionId,
+  });
+}

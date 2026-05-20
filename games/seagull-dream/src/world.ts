@@ -125,6 +125,22 @@ export interface World {
    * bodies are materialized.
    */
   nearestBodyAltitudeAt(worldPos: THREE.Vector3): { body: CelestialBody | null; altitude: number };
+  /**
+   * "Local-system dominant body" — the body whose Hill sphere contains
+   * the player AND whose Hill sphere is the smallest such containing
+   * sphere. This is the body that determines the player's local
+   * gravitational neighborhood:
+   *   • Inside Earth's hill but outside Moon's       → Earth
+   *   • Inside Moon's hill                            → Moon
+   *   • Outside Earth's hill but inside Sun's hill   → Sun
+   *
+   * Falls back to the geometrically nearest body when no body's hill
+   * contains the player (true interstellar void). Never returns null
+   * as long as any body is materialized. `hillFraction` is the
+   * player's altitude as a fraction of the body's hill span — clamped
+   * above 1 in the fallback case so the warp gate stays fully open.
+   */
+  dominantBodyAt(worldPos: THREE.Vector3): { body: CelestialBody | null; altitude: number; hillFraction: number };
   update(camera: THREE.PerspectiveCamera, screenHeightPx: number, dt: number): void;
   /**
    * Resolve frame transitions for the player's current position.
@@ -764,6 +780,42 @@ export function createWorld(
         }
       }
       return { body: nearest, altitude: nearest ? Math.max(0, bestAlt) : Infinity };
+    },
+    dominantBodyAt(worldPos: THREE.Vector3): { body: CelestialBody | null; altitude: number; hillFraction: number } {
+      // First pass: smallest hill sphere containing the player.
+      let dominant: CelestialBody | null = null;
+      let smallestHill = Infinity;
+      let dominantDist = 0;
+      for (const b of bodies) {
+        const dist = worldPos.distanceTo(b.worldPosition);
+        if (dist < b.hillRadius && b.hillRadius < smallestHill) {
+          smallestHill = b.hillRadius;
+          dominant = b;
+          dominantDist = dist;
+        }
+      }
+      if (dominant) {
+        const hillSpan = Math.max(1, dominant.hillRadius - dominant.radius);
+        const alt = Math.max(0, dominantDist - dominant.radius);
+        return { body: dominant, altitude: alt, hillFraction: alt / hillSpan };
+      }
+      // Fallback: no body contains the player (true interstellar void).
+      // Use the geometrically nearest body so the readouts and warp
+      // gate keep functioning. hillFraction reports above 1 so the
+      // hillGate clamps to fully-open (warp unrestricted).
+      let nearest: CelestialBody | null = null;
+      let bestDist = Infinity;
+      for (const b of bodies) {
+        const d = worldPos.distanceTo(b.worldPosition);
+        if (d < bestDist) {
+          bestDist = d;
+          nearest = b;
+        }
+      }
+      if (!nearest) return { body: null, altitude: Infinity, hillFraction: Infinity };
+      const hillSpan = Math.max(1, nearest.hillRadius - nearest.radius);
+      const alt = Math.max(0, bestDist - nearest.radius);
+      return { body: nearest, altitude: alt, hillFraction: alt / hillSpan };
     },
     gravityAt(worldPos: THREE.Vector3, out?: GravityContext): GravityContext {
       const ctx = out ?? {

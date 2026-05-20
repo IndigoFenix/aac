@@ -1,15 +1,64 @@
 // server/services/dual-agent/dual-agent-logger.ts
 // Single debug log file for the dual-agent / live-relay system.
+//
+// When called inside `runInSessionContext(sessionId, debugMode, fn)`, log
+// entries are also persisted to the `session_debug_logs` table so admins can
+// review a specific session's trace from the UI (Session History → Debug Log).
+// High-volume events (audio chunks, frame grids) are dropped at the DB
+// boundary — they still go to the file for local debugging.
 
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { AsyncLocalStorage } from "async_hooks";
+import { db } from "../../db";
+import { sessionDebugLogs } from "../../../shared/schema-private";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const LOG_FILE = join(__dirname, "..", "..", "live-session-debug.log");
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+
+// Sections that fire many times per second; dropped from DB persistence.
+// They still go to the file (where they're coalesced).
+const NOISY_SECTIONS = new Set<string>([
+  "pcm_audio",
+  "FRAME_GRID",
+  "FRAME_GRID DROPPED",
+  "GEMINI → audioChunk",
+  "MINIMAL: GEMINI → audioChunk",
+  "RAW_MSG",
+  "MINIMAL: WS ping",
+  "MINIMAL: WS pong",
+  "MINIMAL: WS RAW MESSAGE",
+]);
+
+type SessionContext = { sessionId: string; debugMode: boolean };
+const sessionContextStore = new AsyncLocalStorage<SessionContext>();
+
+/**
+ * Run `fn` with logger context bound to the given session. Any
+ * logLiveSession / logDualAgent calls inside (or in async work spawned from)
+ * `fn` will also write to `session_debug_logs` when `debugMode` is true.
+ */
+export function runInSessionContext<T>(
+  sessionId: string,
+  debugMode: boolean,
+  fn: () => T,
+): T {
+  return sessionContextStore.run({ sessionId, debugMode }, fn);
+}
+
+function persistToDb(section: string, content: string): void {
+  const ctx = sessionContextStore.getStore();
+  if (!ctx || !ctx.debugMode) return;
+  if (NOISY_SECTIONS.has(section)) return;
+  // Fire-and-forget; do not await. Logging errors must never break the relay.
+  db.insert(sessionDebugLogs)
+    .values({ sessionId: ctx.sessionId, section, content })
+    .catch(() => { /* swallow — admin will see file but not DB row */ });
+}
 
 function ensureSize(): void {
   try {
@@ -29,6 +78,7 @@ export function logDualAgent(section: string, data: Record<string, any>): void {
   } catch {
     /* ignore logging errors */
   }
+  persistToDb(section, JSON.stringify(data, null, 2));
 }
 
 // Coalesce identical consecutive entries — useful for noisy events like pcm_audio
@@ -75,4 +125,5 @@ export function logLiveSession(section: string, content: string, truncate = fals
   } catch {
     /* ignore logging errors */
   }
+  persistToDb(section, content);
 }

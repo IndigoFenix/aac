@@ -9,13 +9,14 @@ import {
   chatSessions,
   users,
   students,
+  sessionDebugLogs,
   type ChatSession,
   type InsertChatSession,
   type ChatState,
   type ChatMessage,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, ne, and, isNull, desc, or, sql, gte, lte, count } from "drizzle-orm";
+import { eq, ne, and, isNull, desc, asc, or, sql, gte, lte, count } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -359,6 +360,50 @@ export class ChatRepository {
       .from(chatSessions)
       .where(and(eq(chatSessions.id, id), isNull(chatSessions.deletedAt)));
     return (result?.log as ChatMessage[] | undefined) ?? undefined;
+  }
+
+  /**
+   * Per-session debug log entries written by dual-agent-logger when the
+   * session was initialized with debugMode=true. Ordered by insertion
+   * sequence (seq) so the trace reads chronologically even when timestamps
+   * collide. Returns null when the chat session doesn't exist.
+   */
+  async getSessionDebugLog(
+    sessionId: string,
+    opts: { section?: string; limit?: number; offset?: number } = {},
+  ): Promise<{ entries: Array<{ id: string; seq: number; timestamp: Date; section: string; content: string }>; total: number } | null> {
+    const [session] = await db
+      .select({ id: chatSessions.id })
+      .from(chatSessions)
+      .where(and(eq(chatSessions.id, sessionId), isNull(chatSessions.deletedAt)));
+    if (!session) return null;
+
+    const conds = [eq(sessionDebugLogs.sessionId, sessionId)];
+    if (opts.section) conds.push(eq(sessionDebugLogs.section, opts.section));
+
+    const limit = Math.min(Math.max(opts.limit ?? 500, 1), 5000);
+    const offset = Math.max(opts.offset ?? 0, 0);
+
+    const [totalRow] = await db
+      .select({ total: count() })
+      .from(sessionDebugLogs)
+      .where(and(...conds));
+
+    const entries = await db
+      .select({
+        id: sessionDebugLogs.id,
+        seq: sessionDebugLogs.seq,
+        timestamp: sessionDebugLogs.timestamp,
+        section: sessionDebugLogs.section,
+        content: sessionDebugLogs.content,
+      })
+      .from(sessionDebugLogs)
+      .where(and(...conds))
+      .orderBy(asc(sessionDebugLogs.seq))
+      .limit(limit)
+      .offset(offset);
+
+    return { entries, total: totalRow?.total ?? 0 };
   }
 }
 

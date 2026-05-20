@@ -91,13 +91,16 @@ export interface PlayerState {
    *  Used for partial-blend visuals — e.g. rocket plume intensity
    *  scales with `lastModeWeights.rocket`. */
   lastModeWeights: { wing: number; rocket: number; warp: number };
-  /** True while running with wings unfolded but still ground-bound —
-   *  the pre-takeoff state where the bird is accelerating toward
-   *  `runningTakeoffSpeed` to lift off. Drives the running-takeoff
-   *  wing animation while `mode === "walking"`. Cleared when the
-   *  player drops back below walk speed or successfully transitions
-   *  to flying. */
-  wingsExtended: boolean;
+  /** Wing-extension regime, 0..1. 0 = fully tucked (folded against
+   *  the body, walking-with-closed-wings pose). 1 = fully spread
+   *  (running-takeoff or flying). Walking lerps this toward 1 when
+   *  the player is aiming above ground at non-trivial speed (the
+   *  pre-takeoff running state) and toward 0 otherwise. Acts as a
+   *  REGIME variable: speedCap during walking interpolates between
+   *  `walkSpeedMax` (extension=0) and `runningTakeoffSpeed`
+   *  (extension=1), and downstream "is the bird in running takeoff"
+   *  checks treat values above ~0.7 as deployed. */
+  wingExtension: number;
   /** Progress through the jump-takeoff animation, 0..1. Only
    *  meaningful while `mode === "takeoff"`. */
   takeoffPhase: number;
@@ -135,6 +138,65 @@ export interface PlayerState {
   /** Progress through the dive-down animation (0..1). Only meaningful
    *  while `mode === "diving"`. */
   divePhase: number;
+  /** Composite flight-strain factor (0..1). Captures how hard the
+   *  bird is working to maintain flight: high in vacuum, climbing,
+   *  or high gravity; low when gliding level in dense atmosphere.
+   *  Drives wing flap intensity / rocket plume intensity so the
+   *  visual transition between regimes reads as a phase shift
+   *  rather than a sudden mode swap. Computed each airborne frame. */
+  flightStrain: number;
+  /** Visual wing-vs-rocket split (0..1). 0 = pure wing visuals (full
+   *  flap), 1 = pure rocket visuals (wings tucked, plume firing).
+   *  Driven solely by atmosphere and gravity — speed itself is the
+   *  same number either way; rockets just take over when wings can't
+   *  generate enough thrust at the local α / g. */
+  rocketRegimeWeight: number;
+  /** Most recent atmospheric α (normalized density) at the player's
+   *  position. Cached for HUD readouts. */
+  lastAtmAlpha: number;
+  /** Local gravity magnitude (m/s²) at the player's position, cached
+   *  for HUD readouts. */
+  lastGravityMag: number;
+  /** Diagnostic snapshot of the three-mode blend's intermediate
+   *  values. Updated each airborne frame; left stale in other modes
+   *  (HUD shows the last airborne sample). */
+  flightDebug: {
+    /** Inertial wingSpeed — the bird's actual flight-frame speed,
+     *  lerped toward `targetSpeed` with asymmetric friction. */
+    vWing: number;
+    /** sqrt(2 × A × h) — altitude-derived component of the target. */
+    altSpeed: number;
+    /** max(MIN_FLIGHT_SPEED, altSpeed) — the floor-clamped target. */
+    targetSpeed: number;
+    vWarp: number;
+    totalSpeed: number;
+    climbT: number;
+    forwardUp: number;
+    warpImpedance: number;
+    warpFactor: number;
+    /** Combined warp gate (atm × hill). 0 = warp locked, 1 = open. */
+    warpGate: number;
+    /** (1 - α)^WARP_GATE_POWER — atmospheric contribution to warp gate. */
+    warpAtmGate: number;
+    /** Dominant-body gravity gate: 1 - (R/r)^WARP_INHIBITION_POWER. */
+    warpDomGate: number;
+    /** altitude / (hillRadius - bodyRadius) on the dominant body
+     *  (readout-only — not used in the warp gate anymore). */
+    hillFraction: number;
+    /** ID of the local-system dominant body (smallest hill sphere
+     *  containing the player; nearest-by-distance as fallback). */
+    dominantBodyId: string | null;
+    /** Player's altitude above the dominant body's surface. */
+    dominantAlt: number;
+    /** Dominant body's hill radius (m). */
+    dominantHillRadius: number;
+    nearestBodyId: string | null;
+    nearestAlt: number;
+    nearestHillRadius: number;
+    obstacleClearance: number;
+    lowAltCap: number;
+    upwardSpeed: number;
+  };
 }
 
 export interface Player {
@@ -255,7 +317,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     lastThrustBoost: 1,
     activeMode: "wing",
     lastModeWeights: { wing: 1, rocket: 0, warp: 0 },
-    wingsExtended: false,
+    wingExtension: 0,
     takeoffPhase: 0,
     takeoffData: null,
     wingSpeed: PLAYER.flySpeed,
@@ -263,6 +325,34 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     legStridePhase: 0,
     stunnedTime: 0,
     divePhase: 0,
+    flightStrain: 0,
+    rocketRegimeWeight: 0,
+    lastAtmAlpha: 0,
+    lastGravityMag: 0,
+    flightDebug: {
+      vWing: 0,
+      altSpeed: 0,
+      targetSpeed: 0,
+      vWarp: 0,
+      totalSpeed: 0,
+      climbT: 0.5,
+      forwardUp: 0,
+      warpImpedance: 0,
+      warpFactor: 0,
+      warpGate: 0,
+      warpAtmGate: 0,
+      warpDomGate: 0,
+      hillFraction: 0,
+      dominantBodyId: null,
+      dominantAlt: Infinity,
+      dominantHillRadius: Infinity,
+      nearestBodyId: null,
+      nearestAlt: Infinity,
+      nearestHillRadius: Infinity,
+      obstacleClearance: Infinity,
+      lowAltCap: Infinity,
+      upwardSpeed: 0,
+    },
   };
 
   // ── Visual body (placeholder seagull) ────────────────────────────────────
@@ -421,6 +511,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
   const _atmReading: AtmosphericReading = { density: 0, body: null };
   const _attachReading: AtmosphericReading = { density: 0, body: null };
   const _atmUp = new THREE.Vector3();
+  const _gravTmp = new THREE.Vector3();
   const _playerLocal = new THREE.Vector3();
   const _radial = new THREE.Vector3();
   const _objDelta = new THREE.Vector3();
@@ -498,7 +589,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
   //   1. Jump takeoff: small top-center zone → 250 ms animation (`mode`
   //      flips to "takeoff").
   //   2. Running takeoff: top portion of screen, zone grows with current
-  //      walk speed. Wings unfold (`wingsExtended = true`); target speed
+  //      walk speed. Wings unfold (`wingExtension` ramps to 1); target speed
   //      shifts from walkSpeedMax to runningTakeoffSpeed. Once the bird
   //      reaches takeoff speed, `mode` flips directly to "flying".
   function updateWalking(input: Input, dt: number, planet: NonNullable<GravityContext["dominant"]>) {
@@ -527,7 +618,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     // Resolve takeoff intents BEFORE picking a target speed — the running-
     // takeoff zone widens as walkSpeed approaches walkSpeedMax, so the
     // intent has to read the current frame's speed but write the new
-    // wingsExtended flag for THIS frame's target.
+    // wingExtension lerp for THIS frame's target.
     const speedFrac = Math.min(1, Math.abs(state.walkSpeed) / PLAYER.walkSpeedMax);
 
     // Jump-takeoff zone: small top-center band. Fires immediately
@@ -549,12 +640,17 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
 
     // Extend wings when aiming high while moving forward; retract once
     // back below the threshold AND we've decelerated under walkSpeedMax
-    // (so brief mouse twitches don't fold the wings mid-run).
+    // (so brief mouse twitches don't fold the wings mid-run). The
+    // boolean intent is converted to a continuous wingExtension via
+    // a lerp so it reads as a regime variable rather than a flip.
+    let wingTarget = state.wingExtension;
     if (aimAboveGround && state.walkSpeed > PLAYER.walkSpeedMax * 0.5) {
-      state.wingsExtended = true;
+      wingTarget = 1;
     } else if (!aimAboveGround && state.walkSpeed <= PLAYER.walkSpeedMax) {
-      state.wingsExtended = false;
+      wingTarget = 0;
     }
+    state.wingExtension += (wingTarget - state.wingExtension)
+      * Math.min(1, PLAYER.wingExtendRate * dt);
 
     // Forward intent comes from how far above center the mouse is.
     // Mapping:
@@ -580,9 +676,14 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
         / Math.max(1e-6, PLAYER.walkSlopeWallAngle - PLAYER.walkSlopeSlowAngle);
       slopeScale = 1 - t;
     }
-    const speedCap = state.wingsExtended
-      ? PLAYER.runningTakeoffSpeed
-      : PLAYER.walkSpeedMax;
+    // Speed cap interpolates with wing extension so the run-up
+    // accelerates smoothly as wings unfold rather than snapping to a
+    // higher cap the instant the player triggers the run zone.
+    const speedCap = THREE.MathUtils.lerp(
+      PLAYER.walkSpeedMax,
+      PLAYER.runningTakeoffSpeed,
+      state.wingExtension,
+    );
     const targetSpeed = forwardIntent > 0
       ? forwardIntent * speedCap * slopeScale
       : forwardIntent * PLAYER.walkSpeedMax; // backing up isn't affected by extended wings
@@ -611,7 +712,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     // separate animation — the wings have already been flapping during
     // the run-up.
     if (
-      state.wingsExtended &&
+      state.wingExtension > 0.85 &&
       state.walkSpeed >= PLAYER.runningTakeoffSpeed * 0.95 &&
       aimAboveGround
     ) {
@@ -872,7 +973,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     };
     state.takeoffPhase = 0;
     state.mode = "takeoff";
-    state.wingsExtended = true; // wings unfold during the animation
+    state.wingExtension = 1; // jump-takeoff animation drives the visual sweep itself
   }
 
   // ── Takeoff animation ───────────────────────────────────────────────────
@@ -943,7 +1044,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     // the wings instantly stalling on the first flight frame).
     state.wingSpeed = launchSpeed;
     state.walkSpeed = 0;
-    state.wingsExtended = false;
+    state.wingExtension = 1; // wings stay spread for flight
   }
 
   // ── Flying / drifting ────────────────────────────────────────────────────
@@ -966,6 +1067,11 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     const alpha = _atmReading.density;
     const atmBody = _atmReading.body;
     const inAtmosphere = atmBody !== null && alpha > 0.001;
+
+    // Sample local gravity magnitude — needed for flight-strain math
+    // below. Cached on state.lastGravityMag for HUD readout too.
+    world.gravityAccelerationAt(state.position, _gravTmp);
+    state.lastGravityMag = _gravTmp.length();
 
     // "Local up" reference for atmospheric flight: away from the atm body's
     // center. In free space, fall back to body-up so yaw still makes sense.
@@ -1001,38 +1107,41 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     const targetBank = -yawInput * PLAYER.flyBankAmount * alpha;
     state.bank += (targetBank - state.bank) * Math.min(1, 4 * dt);
 
-    // ── Three-mode speed blend ──────────────────────────────────────────
-    // Each mode produces a target speed; we pick the p-norm blend and
-    // snap the warp drive to forward × totalSpeed every frame. ROCKET
-    // and WARP are inertialess (snap to target); WING is INERTIAL with
-    // asymmetric friction so a stoop carries momentum and the upward
-    // cap holds firmly. Inertia is only meaningful in atmosphere — in
-    // vacuum there's no air to coast through, so wingSpeed snaps to its
-    // target as before.
+    // ── Speed model ─────────────────────────────────────────────────────
+    // Speed is a SINGLE quantity, computed from altitude (with floor +
+    // brakes) and blended with the separate warp regime. Wing vs rocket
+    // is a purely visual choice based on what the bird would need to
+    // do to maintain this speed at the local α and gravity — they
+    // don't compete for "best speed", they share the same number.
+    //
+    //   altSpeed = sqrt(2 × A × h)      — physical: speed reached by
+    //                                     coasting up from rest under A
+    //   target   = max(MIN_FLIGHT_SPEED, altSpeed)
+    //
+    // wingSpeed (inertial) lerps toward target with asymmetric climb /
+    // dive friction so dives carry momentum past the target and climbs
+    // are anchored firmly.
     const alphaNorm = world.atmosphericAlphaAt(state.position);
     const alphaClamped = Math.max(0, Math.min(1, alphaNorm));
 
-    // WING target — pressure × asymmetric climb/dive. forwardUp = +1
-    // straight up, -1 straight down, 0 horizontal; we interpolate
-    // between the dive and climb caps so flying level is the midpoint.
-    // PLAYER.flyUpwardCap is the spec's stated 300 kph "actual winged
-    // flight limit" — we min the climb side to that, so even if
-    // V_WING_UP is tuned higher the bird won't sustain more than the
-    // spec cap on a steady climb in atmosphere.
     const forwardUp = state.forward.dot(_atmUp);
     const climbT = (forwardUp + 1) * 0.5;
-    const wingClimbCap = Math.min(SPEED.V_WING_UP, PLAYER.flyUpwardCap);
-    const wingCap = SPEED.V_WING_DOWN + (wingClimbCap - SPEED.V_WING_DOWN) * climbT;
-    const targetWing = wingCap * alphaClamped;
-    // Asymmetric friction: dive friction is gentle (carries momentum
-    // through the bottom of a swoop) and climb friction is firm
-    // (anchors the upward cap). When we're climbing AND wingSpeed is
-    // still above target — i.e. we just came out of a dive and are
-    // bleeding off swoop momentum — friction softens by WING_SWOOP_FACTOR
-    // so the swoop reads as a natural carry rather than a snap-cap.
+
+    const { body: nearestBody, altitude: nearestAlt } = world.nearestBodyAltitudeAt(state.position);
+    const altSpeed = nearestBody && nearestAlt > 0
+      ? Math.sqrt(2 * SPEED.ALTITUDE_ACCEL_FACTOR * nearestAlt)
+      : 0;
+    const targetSpeed = Math.max(SPEED.MIN_FLIGHT_SPEED, altSpeed);
+
+    // Asymmetric climb/dive friction toward `targetSpeed`. Climbs are
+    // firm (anchors the upward cap); dives are gentle (carry momentum
+    // through the bottom of a swoop); a climb whose wingSpeed is still
+    // above target gets the swoop-softened friction so swoop reads as a
+    // natural carry rather than a snap-cap. Atmosphere multiplies the
+    // friction rate — in vacuum, no drag, so wingSpeed snaps to target.
     if (alphaClamped > 0.001) {
       const isClimbing = forwardUp > 0;
-      const above = state.wingSpeed > targetWing;
+      const above = state.wingSpeed > targetSpeed;
       let friction: number;
       if (isClimbing) {
         friction = above
@@ -1041,80 +1150,178 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       } else {
         friction = SPEED.WING_FRICTION_DIVE;
       }
-      // Scale friction by alpha — thin air has thin drag. Without
-      // this, even a wisp of atmosphere would brake the bird as
-      // firmly as sea-level air.
       friction *= alphaClamped;
-      state.wingSpeed += (targetWing - state.wingSpeed) * Math.min(1, friction * dt);
+      state.wingSpeed += (targetSpeed - state.wingSpeed) * Math.min(1, friction * dt);
     } else {
-      state.wingSpeed = targetWing; // no atmosphere, no inertia
+      state.wingSpeed = targetSpeed; // no atmosphere, no inertia
     }
-    const vWing = state.wingSpeed;
 
-    // ROCKET — V_MAX × altitude / (altitude + R) on the nearest body.
-    // Zero at any surface, half at one body-radius up, asymptotes to
-    // V_MAX far away (warp takes over by then).
-    const { body: nearestBody, altitude: nearestAlt } = world.nearestBodyAltitudeAt(state.position);
-    const vRocket = nearestBody && nearestAlt > 0
-      ? SPEED.V_ROCKET_MAX * (nearestAlt / (nearestAlt + nearestBody.radius))
-      : 0;
-
-    // WARP — V_BASE × (max(0, 1/θ − 1/π))^WARP_POWER × (1 − α)^N. The
-    // 1/π subtraction makes warp = 0 at any body's surface (where θ = π)
-    // regardless of atmosphere; the (1-α) gate keeps thick atmospheres
-    // warp-locked. WARP_POWER steepens the falloff with proximity so
-    // interstellar warp is much faster than near-star warp.
+    // WARP — V_BASE × impedance^WARP_POWER × atm-gate × dominant-gate.
+    //
+    // Gating happens in two stages:
+    //   1. dominantBodyAt picks the body whose Hill sphere contains
+    //      the player AND has the smallest hill (so a moon overrides
+    //      its planet when you're inside the moon's hill). At the
+    //      moment you leave one hill, dominance flips to the parent.
+    //   2. The actual gate is gravity-derived: 1 - (R/r)^N where R is
+    //      the dominant body's radius and r is the distance from its
+    //      center. Equivalent to 1 - (g_at_player / g_surface)^(N/2).
+    //
+    // The hill sphere is (approximately) defined by where adjacent
+    // bodies' (R/r)² values match, so the dominance flip is smooth:
+    // at Earth's hill edge, (R_earth/r_earth)² ≈ (R_sun/r_sun)² (within
+    // ~20%), so the gate barely twitches as the dominant body changes.
+    //
+    // WARP_POWER steepens the impedance falloff with proximity so
+    // interstellar warp is much faster than close-approach warp.
+    const dominant = world.dominantBodyAt(state.position);
+    const dominantBody = dominant.body;
+    const hillFraction = dominant.hillFraction;
     const rawAngular = world.largestAngularSizeAt(state.position);
     const angular = Math.max(SPEED.ANGULAR_FLOOR, rawAngular);
     const warpImpedance = Math.max(0, 1 / angular - 1 / Math.PI);
     const warpFactor = Math.pow(warpImpedance, SPEED.WARP_POWER) * SPEED.WARP_MULT;
-    const warpGate = Math.pow(Math.max(0, 1 - alphaClamped), SPEED.WARP_GATE_POWER);
+    const warpAtmGate = Math.pow(Math.max(0, 1 - alphaClamped), SPEED.WARP_GATE_POWER);
+    let warpDomGate = 1;
+    if (dominantBody) {
+      const r = Math.max(dominantBody.radius, dominant.altitude + dominantBody.radius);
+      const ratio = dominantBody.radius / r;
+      warpDomGate = THREE.MathUtils.clamp(
+        1 - Math.pow(ratio, SPEED.WARP_INHIBITION_POWER),
+        0,
+        1,
+      );
+    }
+    const warpGate = warpAtmGate * warpDomGate;
     const vWarp = SPEED.V_WARP_BASE * warpFactor * warpGate;
 
-    // Smooth-max blend via p-norm.
+    // Speed = smooth-max of inertial wingSpeed and warp via p-norm.
+    // Just two real-physics regimes: in-atmosphere/local-space flight
+    // (wingSpeed) vs interstellar warp. Wing-vs-rocket is purely a
+    // visual decision below.
+    const vWing = state.wingSpeed;
     const p = SPEED.BLEND_POWER;
     const wPow = Math.pow(vWing, p);
-    const rPow = Math.pow(vRocket, p);
     const pPow = Math.pow(vWarp, p);
-    const sumPow = wPow + rPow + pPow;
+    const sumPow = wPow + pPow;
     let totalSpeed = sumPow > 0 ? Math.pow(sumPow, 1 / p) : 0;
-    state.lastModeWeights.wing = sumPow > 0 ? wPow / sumPow : 0;
-    state.lastModeWeights.rocket = sumPow > 0 ? rPow / sumPow : 0;
-    state.lastModeWeights.warp = sumPow > 0 ? pPow / sumPow : 0;
-    if (vWing >= vRocket && vWing >= vWarp) state.activeMode = "wing";
-    else if (vRocket >= vWarp) state.activeMode = "rocket";
-    else state.activeMode = "warp";
+    const warpRatio = sumPow > 0 ? pPow / sumPow : 0;
 
-    // Low-altitude safety brake. Independent of atmospheric pressure —
-    // applies to wing AND rocket regimes. Spec: "This is a special cap
-    // unrelated to atmospheric pressure and is intended to prevent
-    // crashing rather than representing physical limitations." Also:
-    // "Close-to-ground friction should be applied gradually while
-    // slowing down (don't hard-cap speed)." So we apply a friction
-    // FORCE that bleeds wingSpeed toward the cap rather than clamping
-    // totalSpeed instantly — a fast bird approaching the deck slows
-    // smoothly to the cap over a fraction of a second instead of
-    // snapping to the limit.
+    // Low-altitude safety brake. Spec: "This is a special cap unrelated
+    // to atmospheric pressure and is intended to prevent crashing rather
+    // than representing physical limitations" + "Close-to-ground friction
+    // should be applied gradually while slowing down (don't hard-cap
+    // speed)." Applies to the TOTAL three-mode speed (wing/rocket/warp
+    // blend) — not just wingSpeed — so rocket-mode approach over a moon
+    // also feels the brake. We bleed wingSpeed (the inertial component)
+    // AND clamp totalSpeed in the same step so the blend can't outrun
+    // the brake.
+    let lowAltCap = Infinity;
+    let obstacleClearance = Infinity;
     if (nearestBody && nearestBody.walkable) {
-      const clearance = computeObstacleClearance(nearestBody, state.position);
-      const cap =
-        PLAYER.flyLowAltCap * (1 + Math.max(0, clearance) / PLAYER.flyLowAltClearScale);
-      if (state.wingSpeed > cap) {
-        // Friction strength scales with how far over the cap we are —
-        // a gentle overshoot bleeds gently; a 200 kph dive into the
-        // deck bleeds hard. Capped friction rate keeps the brake
-        // smooth at any frame rate.
-        const overshootRatio = (state.wingSpeed - cap) / Math.max(1, cap);
+      obstacleClearance = computeObstacleClearance(nearestBody, state.position);
+      lowAltCap =
+        PLAYER.flyLowAltCap *
+        (1 + Math.max(0, obstacleClearance) / PLAYER.flyLowAltClearScale);
+      if (totalSpeed > lowAltCap) {
+        // Friction strength scales with how far over the cap we are.
+        const overshootRatio = (totalSpeed - lowAltCap) / Math.max(1, lowAltCap);
         const frictionRate = Math.min(
           PLAYER.flyLowAltMaxFriction,
           PLAYER.flyLowAltFrictionBase * (1 + overshootRatio),
         );
-        state.wingSpeed += (cap - state.wingSpeed) * Math.min(1, frictionRate * dt);
-        // Pull the inertialess components in line too so the blend
-        // doesn't keep them above the friction-reduced wingSpeed.
-        if (totalSpeed > state.wingSpeed) totalSpeed = state.wingSpeed;
+        const step = Math.min(1, frictionRate * dt);
+        if (state.wingSpeed > lowAltCap) {
+          state.wingSpeed += (lowAltCap - state.wingSpeed) * step;
+        }
+        totalSpeed += (lowAltCap - totalSpeed) * step;
       }
     }
+
+    // (Removed: the legacy "300 kph winged flight cap" on upward
+    // component of totalSpeed. It belonged to the wing-only model
+    // where flight speed = wingCap × α; in the new altitude-target
+    // model it was clamping the climb-rate band around ~100 m/s and
+    // preventing the bird from ever reaching altitudes where the
+    // target speed grows past it. The altitude formula itself
+    // naturally limits low-altitude speed.)
+
+    // ── Flight strain ───────────────────────────────────────────────────
+    // Single 0..1 factor used by visual systems. Captures how hard the
+    // bird is working against gravity / thin air. Combines:
+    //   vacuum   → (1 - α) contribution (wings can't push thin air)
+    //   climb    → climbT in atmosphere (gravity resistance)
+    //   gravity  → (gravNorm - 1) in atmosphere (high-G worlds)
+    const gravNorm = state.lastGravityMag / 9.81;
+    const climbContribution =
+      (climbT - 0.5) * 2 * SPEED.STRAIN_CLIMB_WEIGHT * alphaClamped; // [-W, +W] × α
+    const vacuumContribution = (1 - alphaClamped) * SPEED.STRAIN_VACUUM_WEIGHT;
+    const gravityContribution =
+      Math.max(0, gravNorm - 1) * SPEED.STRAIN_GRAVITY_WEIGHT * alphaClamped;
+    state.flightStrain = THREE.MathUtils.clamp(
+      vacuumContribution + climbContribution + gravityContribution,
+      0,
+      1,
+    );
+
+    // ── Visual wing / rocket split ──────────────────────────────────────
+    // Speed is one number; the visual question is which propulsion the
+    // bird would NEED to maintain it at the local α and gravity. Wings
+    // generate thrust proportional to α; required thrust scales with
+    // gravity. When (WING_LIFT_THRESHOLD × α) drops below gravNorm,
+    // wings can't keep up and rockets pick up the slack:
+    //
+    //   rocketRegimeWeight = clamp(0, 1, 1 - WING_LIFT_THRESHOLD × α / gravNorm)
+    //
+    // Default WING_LIFT_THRESHOLD = 6 puts the visual transition at
+    // α ≈ 1/6 ≈ 0.17 on Earth, which lands at ~15 km via Earth's
+    // ~8400 m scale height. Heavier-gravity / thinner-atm worlds shift
+    // the transition naturally — no magic per-body tuning.
+    const gravForVis = Math.max(0.01, gravNorm);
+    state.rocketRegimeWeight = THREE.MathUtils.clamp(
+      1 - (SPEED.WING_LIFT_THRESHOLD * alphaClamped) / gravForVis,
+      0,
+      1,
+    );
+
+    // lastModeWeights / activeMode: derived from warpRatio and the
+    // visual rocket weight. wing + rocket + warp sum to 1; activeMode
+    // is whichever is largest.
+    state.lastModeWeights.warp = warpRatio;
+    state.lastModeWeights.rocket = (1 - warpRatio) * state.rocketRegimeWeight;
+    state.lastModeWeights.wing = (1 - warpRatio) * (1 - state.rocketRegimeWeight);
+    if (state.lastModeWeights.warp >= state.lastModeWeights.wing && state.lastModeWeights.warp >= state.lastModeWeights.rocket) {
+      state.activeMode = "warp";
+    } else if (state.lastModeWeights.rocket >= state.lastModeWeights.wing) {
+      state.activeMode = "rocket";
+    } else {
+      state.activeMode = "wing";
+    }
+
+    // Populate debug snapshot for HUD readouts.
+    state.flightDebug.vWing = vWing;
+    state.flightDebug.targetSpeed = targetSpeed;
+    state.flightDebug.altSpeed = altSpeed;
+    state.flightDebug.vWarp = vWarp;
+    state.flightDebug.totalSpeed = totalSpeed;
+    state.flightDebug.climbT = climbT;
+    state.flightDebug.forwardUp = forwardUp;
+    state.flightDebug.warpImpedance = warpImpedance;
+    state.flightDebug.warpFactor = warpFactor;
+    state.flightDebug.warpGate = warpGate;
+    state.flightDebug.warpAtmGate = warpAtmGate;
+    state.flightDebug.warpDomGate = warpDomGate;
+    state.flightDebug.hillFraction = hillFraction;
+    state.flightDebug.dominantBodyId = dominantBody ? dominantBody.id : null;
+    state.flightDebug.dominantAlt = dominant.altitude;
+    state.flightDebug.dominantHillRadius = dominantBody ? dominantBody.hillRadius : Infinity;
+    state.flightDebug.nearestBodyId = nearestBody ? nearestBody.id : null;
+    state.flightDebug.nearestAlt = nearestAlt;
+    state.flightDebug.nearestHillRadius = nearestBody ? nearestBody.hillRadius : Infinity;
+    state.flightDebug.obstacleClearance = obstacleClearance;
+    state.flightDebug.lowAltCap = lowAltCap;
+    state.flightDebug.upwardSpeed = totalSpeed * Math.max(0, forwardUp);
+    state.lastAtmAlpha = alphaClamped;
 
     state.lastWarpFactor = Math.max(1, totalSpeed / Math.max(1, PLAYER.flySpeed));
     state.lastThrustBoost = 1;
@@ -1184,7 +1391,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
         state.takeoffData = null;
         state.divePhase = 0;
         state.wingSpeed = Math.max(PLAYER.underwaterSpeed, state.wingSpeed * 0.5);
-        state.wingsExtended = false;
+        state.wingExtension = 0;
         snapToWaterSurface(planet);
         // Push the bird below the surface a bit so the surfacing check
         // doesn't immediately bounce us back up.
@@ -1193,7 +1400,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
         return;
       }
       state.mode = "swimming";
-      state.wingsExtended = false;
+      state.wingExtension = 0;
       state.wingSpeed = 0;
       state.walkSpeed = 0;
       snapToWaterSurface(planet);
@@ -1221,7 +1428,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       bounceVelocity(state, PLAYER.bounceRetention);
       state.mode = "stunned";
       state.stunnedTime = PLAYER.stunDurationHighSpeed;
-      state.wingsExtended = false;
+      state.wingExtension = 0;
       state.bank = 0;
       // TODO: spawn dust particles in ground color (spec line 56).
     } else if (impactSpeed > PLAYER.landBounceSpeed) {
@@ -1233,7 +1440,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       state.wingSpeed *= 0.3; // most energy absorbed by the bad landing
       state.mode = "stunned";
       state.stunnedTime = PLAYER.stunDurationBadAngle;
-      state.wingsExtended = false;
+      state.wingExtension = 0;
       state.bank = 0;
     } else {
       // Good-angle low-speed: clean landing. Drop straight into the
@@ -1241,7 +1448,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       // back into the air without re-jumping. Inherits forward
       // direction tangent to the surface.
       state.mode = "walking";
-      state.wingsExtended = true;
+      state.wingExtension = 1; // soft landing into running-takeoff with wings still out
       state.walkSpeed = Math.min(impactSpeed, PLAYER.runningTakeoffSpeed);
       reTangent(state.forward, state.up);
       state.bodyRight.crossVectors(state.up, state.forward).normalize();
@@ -1319,7 +1526,7 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
           if (state.stunnedTime <= 0) {
             state.mode = "walking";
             state.walkSpeed = 0;
-            state.wingsExtended = false;
+            state.wingExtension = 0;
             return;
           }
         }
@@ -1362,18 +1569,20 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     let sweepAngle = 0;
     let flap = 0;
 
-    if (state.mode === "walking" && !state.wingsExtended) {
-      // Wings folded against the body — bird is walking with wings closed.
-      // Sweep all the way back, no flap.
-      sweepAngle = 1.45; // ≈ 83° back, fully tucked
-    } else if (state.mode === "walking" && state.wingsExtended) {
-      // Running takeoff prep: wings out, flapping. Sweep open, big flaps
-      // proportional to how close we are to takeoff speed.
+    if (state.mode === "walking") {
+      // Continuous regime: wingExtension 0 → fully tucked, 1 → spread
+      // and flapping for the running takeoff. Sweep angle slerps
+      // between the two poses; flap rate / amplitude scale with
+      // extension AND walk speed so the run-up visibly unfolds the
+      // wings rather than snapping them out.
       const speedFrac = Math.min(1, state.walkSpeed / PLAYER.runningTakeoffSpeed);
-      sweepAngle = 0;
-      const flapHz = 2.5 + speedFrac * 3.5;
-      state.flapPhase += flapHz * 2 * Math.PI * dt;
-      flap = Math.sin(state.flapPhase) * (0.4 + speedFrac * 0.4);
+      const ext = state.wingExtension;
+      sweepAngle = (1 - ext) * 1.45; // 0 → 1.45 across extension
+      if (ext > 0.05) {
+        const flapHz = 2.5 + speedFrac * 3.5;
+        state.flapPhase += flapHz * 2 * Math.PI * dt * ext;
+        flap = Math.sin(state.flapPhase) * (0.4 + speedFrac * 0.4) * ext;
+      }
     } else if (state.mode === "takeoff") {
       // 250 ms jump-takeoff animation: wings snap from folded to spread,
       // then beat once. takeoffPhase 0..1 drives both unfold and flap.
@@ -1382,21 +1591,25 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       // One big down-stroke over the whole animation (sin from 0 → π).
       flap = Math.sin(t * Math.PI) * 0.9;
     } else {
-      // Airborne (flying / drifting) — keep the existing climb/dive +
-      // rocket-tuck behaviour. forward·up controls climb vs dive amount;
-      // non-wing modes (rocket/warp) tuck the wings.
+      // Airborne (flying / drifting). Wing fold-back is driven by
+      // EITHER a steep dive (raptor-stoop pose) OR the visual
+      // rocket-regime weight (rocketRegimeWeight + warpRatio tucks
+      // the wings). Flap rate / amplitude scale with wingWeight so
+      // beats slow down + shrink together as rocket mode takes over.
+      // Strain modulates how hard the wings work while in the wing
+      // regime — thin air / high-G / climbing all increase strain.
       const forwardUp = state.forward.dot(state.up);
-      const climbStrength = Math.max(0, forwardUp);
       const diveStrength = Math.max(0, -forwardUp);
       const nonWingMode = state.lastModeWeights.rocket + state.lastModeWeights.warp;
       const sweepFrac = Math.max(diveStrength, nonWingMode);
       sweepAngle = sweepFrac * 1.25;
 
       const wingWeight = state.lastModeWeights.wing;
-      if (climbStrength > 0.02 && sweepFrac < 0.8 && wingWeight > 0.05) {
-        const flapHz = 0.8 + climbStrength * 5.0;
+      const strain = state.flightStrain;
+      if (strain > 0.02 && sweepFrac < 0.8 && wingWeight > 0.05) {
+        const flapHz = (0.8 + strain * 5.5) * wingWeight;
         state.flapPhase += flapHz * 2 * Math.PI * dt;
-        const amp = climbStrength * 0.7 * (1 - sweepFrac) * wingWeight;
+        const amp = strain * 0.7 * (1 - sweepFrac) * wingWeight;
         flap = Math.sin(state.flapPhase) * amp;
       }
     }

@@ -1667,6 +1667,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/sessions/chat/:id/log", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getChatSessionLog(req, res)
   );
+  // Full per-session debug trace (dual-agent-logger entries). Only populated
+  // for sessions started with debugMode=true; empty array otherwise.
+  app.get("/api/admin/sessions/:id/debug-log", requireAuth, requireAdminSection("sessions"), (req, res) =>
+    sessionHistoryController.getSessionDebugLog(req, res)
+  );
 
   // Activity logs (admins with the "activity-log" section permission)
   app.get("/api/admin/activity-logs", requireAuth, requireAdminSection("activity-log"), (req, res) =>

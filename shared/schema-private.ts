@@ -1633,6 +1633,33 @@ export const chatSessions = pgTable("chat_sessions", {
 ]);
 
 // =============================================================================
+// SESSION DEBUG LOGS
+// =============================================================================
+
+/**
+ * Per-session capture of dual-agent / live-relay debug events.
+ *
+ * Mirrors what `dual-agent-logger.ts` writes to `server/live-session-debug.log`,
+ * but keyed by session so admins can review a specific session's full trace
+ * (system prompt, tool declarations, glyph presses, monitor injections, state
+ * transitions, etc.) without grepping a shared rolling file.
+ *
+ * Only populated when the AAC session was started with `debugMode: true`.
+ * High-volume events (audio chunks, frame grids) are dropped at the logger
+ * boundary — see `NOISY_SECTIONS` in dual-agent-logger.ts.
+ */
+export const sessionDebugLogs = pgTable("session_debug_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade" }),
+  seq: serial("seq").notNull(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
+  section: text("section").notNull(),
+  content: text("content").notNull(),
+}, (table) => [
+  index("idx_session_debug_logs_session_seq").on(table.sessionId, table.seq),
+]);
+
+// =============================================================================
 // LETTERS OF MEDICAL NECESSITY (Insurance Bridge — LMN auto-generator)
 // =============================================================================
 

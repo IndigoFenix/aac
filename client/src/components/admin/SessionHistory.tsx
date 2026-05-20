@@ -24,14 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Eye, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import {
   useAACSessionsAdmin,
   useChatSessionsAdmin,
   useAACSessionLog,
   useChatSessionLog,
+  useSessionDebugLog,
   type AACSessionSummary,
   type ChatSessionSummary,
+  type DebugLogEntry,
   type SessionFilters,
 } from "@/hooks/useSessionHistory";
 
@@ -206,6 +208,76 @@ function LogMessage({ msg }: { msg: any }) {
   );
 }
 
+function DebugLogDialog({
+  open,
+  onOpenChange,
+  sessionId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sessionId: string | null;
+}) {
+  const [section, setSection] = useState<string>("");
+  const query = useSessionDebugLog(sessionId, { section: section || undefined, limit: 1000 });
+  const entries: DebugLogEntry[] = query.data?.data ?? [];
+
+  // Build list of unique sections seen in the result, for the filter dropdown.
+  const sections = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) set.add(e.section);
+    return Array.from(set).sort();
+  }, [entries]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>Session Debug Log</DialogTitle>
+        </DialogHeader>
+        <div className="flex items-center gap-3 pb-2 border-b">
+          <span className="text-sm text-muted-foreground">Filter:</span>
+          <Select value={section || "__all__"} onValueChange={(v) => setSection(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-72 h-8">
+              <SelectValue placeholder="All sections" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All sections</SelectItem>
+              {sections.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground ms-auto">
+            {query.data?.pagination ? `${entries.length} of ${query.data.pagination.total} entries` : null}
+          </span>
+        </div>
+        {query.isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin" />
+          </div>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No debug entries for this session. Only sessions started with debug mode enabled produce a trace.
+          </p>
+        ) : (
+          <div className="flex-1 min-h-0 overflow-y-auto font-mono text-xs">
+            {entries.map((e) => (
+              <div key={e.id} className="border-b py-2">
+                <div className="flex items-baseline gap-2 mb-1">
+                  <Badge variant="secondary" className="text-xs">{e.section}</Badge>
+                  <span className="text-muted-foreground text-xs">{new Date(e.timestamp).toISOString()}</span>
+                  <span className="text-muted-foreground text-xs">#{e.seq}</span>
+                </div>
+                <pre className="whitespace-pre-wrap break-words bg-muted/40 p-2 rounded">{e.content}</pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SessionLogDialog({
   open,
   onOpenChange,
@@ -253,6 +325,7 @@ function AACTab() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [logSession, setLogSession] = useState<string | null>(null);
+  const [debugSession, setDebugSession] = useState<string | null>(null);
 
   const queryFilters = useMemo(
     () => ({
@@ -291,7 +364,7 @@ function AACTab() {
                 <TableHead>Duration</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Cost/min</TableHead>
-                <TableHead className="w-16" />
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -320,9 +393,14 @@ function AACTab() {
                       ${formatCostPerMin(s.creditsUsed, s.started, s.ended, s.lastActivity)}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => setLogSession(s.id)}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setLogSession(s.id)} title="Conversation log">
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDebugSession(s.id)} title="Debug trace">
+                          <FileText className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -345,6 +423,11 @@ function AACTab() {
         onOpenChange={(open) => { if (!open) setLogSession(null); }}
         sessionId={logSession}
         type="aac"
+      />
+      <DebugLogDialog
+        open={!!debugSession}
+        onOpenChange={(open) => { if (!open) setDebugSession(null); }}
+        sessionId={debugSession}
       />
     </>
   );

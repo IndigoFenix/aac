@@ -13,218 +13,27 @@
       <span id="state-label">walking</span>
       <span id="hint">move mouse to walk · drift mouse up and far to take off</span>
     </div>
-    <div id="tuning">
-      <div class="title">tuning</div>
-      <div class="row">
-        <span class="lbl">fly&nbsp;speed</span>
-        <input type="range" id="t-flyspeed" min="5" max="200" step="1">
-        <span class="val" id="t-flyspeed-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">walk&nbsp;speed</span>
-        <input type="range" id="t-walkspeed" min="2" max="50" step="0.5">
-        <span class="val" id="t-walkspeed-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">space&nbsp;thrust</span>
-        <input type="range" id="t-spacethrust" min="0" max="300" step="2">
-        <span class="val" id="t-spacethrust-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">atm&nbsp;drag</span>
-        <input type="range" id="t-atmdrag" min="0" max="40" step="0.5">
-        <span class="val" id="t-atmdrag-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">grav&nbsp;align</span>
-        <input type="range" id="t-gravalign" min="0" max="20" step="0.25">
-        <span class="val" id="t-gravalign-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">pitch&nbsp;rate</span>
-        <input type="range" id="t-pitchrate" min="0.1" max="5" step="0.1">
-        <span class="val" id="t-pitchrate-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">yaw&nbsp;rate</span>
-        <input type="range" id="t-yawrate" min="0.1" max="5" step="0.1">
-        <span class="val" id="t-yawrate-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">space&nbsp;drag</span>
-        <input type="range" id="t-spacedrag" min="0" max="5" step="0.05">
-        <span class="val" id="t-spacedrag-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">atm&nbsp;start</span>
-        <input type="range" id="t-atmstart" min="0" max="3000" step="50">
-        <span class="val" id="t-atmstart-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">space&nbsp;alt</span>
-        <input type="range" id="t-spacealt" min="500" max="20000" step="100">
-        <span class="val" id="t-spacealt-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">warp&nbsp;friction</span>
-        <input type="range" id="t-warpfriction" min="0" max="200" step="1">
-        <span class="val" id="t-warpfriction-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">overshoot&nbsp;drag</span>
-        <input type="range" id="t-warpovershoot" min="0" max="30" step="0.5">
-        <span class="val" id="t-warpovershoot-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">atm&nbsp;transfer</span>
-        <input type="range" id="t-warpbleed" min="0" max="30" step="0.25">
-        <span class="val" id="t-warpbleed-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">fly&nbsp;thrust</span>
-        <input type="range" id="t-flythrust" min="0.5" max="100" step="0.5">
-        <span class="val" id="t-flythrust-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">fly&nbsp;drag</span>
-        <input type="range" id="t-flydrag" min="0.001" max="0.5" step="0.001">
-        <span class="val" id="t-flydrag-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cluster&nbsp;glow</span>
-        <input type="range" id="t-clusterglow" min="0" max="0.5" step="0.005">
-        <span class="val" id="t-clusterglow-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cluster&nbsp;scale</span>
-        <input type="range" id="t-clusterscale" min="0" max="5e-9" step="1e-11">
-        <span class="val" id="t-clusterscale-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">V&nbsp;wing&nbsp;up</span>
-        <input type="range" id="t-vwing" min="10" max="2000" step="10">
-        <span class="val" id="t-vwing-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">V&nbsp;wing&nbsp;down</span>
-        <input type="range" id="t-sigma" min="10" max="2000" step="10">
-        <span class="val" id="t-sigma-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">V&nbsp;rocket&nbsp;max</span>
-        <input type="range" id="t-vrocket" min="10000" max="10000000" step="10000">
-        <span class="val" id="t-vrocket-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">V&nbsp;warp&nbsp;base</span>
-        <input type="range" id="t-vwarp" min="1" max="100000" step="1">
-        <span class="val" id="t-vwarp-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">warp&nbsp;power</span>
-        <input type="range" id="t-warppow" min="0.5" max="4" step="0.05">
-        <span class="val" id="t-warppow-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">warp&nbsp;mult</span>
-        <input type="range" id="t-warpmult" min="1" max="100" step="1">
-        <span class="val" id="t-warpmult-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">warp&nbsp;gate&nbsp;pow</span>
-        <input type="range" id="t-warpgate" min="1" max="300" step="1">
-        <span class="val" id="t-warpgate-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">blend&nbsp;pow</span>
-        <input type="range" id="t-blend" min="2" max="20" step="0.5">
-        <span class="val" id="t-blend-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">bloom&nbsp;thr</span>
-        <input type="range" id="t-bloomthr" min="0.1" max="5" step="0.05">
-        <span class="val" id="t-bloomthr-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">bloom&nbsp;str</span>
-        <input type="range" id="t-bloomstr" min="0" max="3" step="0.05">
-        <span class="val" id="t-bloomstr-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">exposure</span>
-        <input type="range" id="t-exposure" min="0.1" max="2.5" step="0.05">
-        <span class="val" id="t-exposure-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">vol&nbsp;cloud&nbsp;mult</span>
-        <input type="range" id="t-cloudvolmult" min="0" max="5" step="0.05">
-        <span class="val" id="t-cloudvolmult-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cloud&nbsp;debug</span>
-        <input type="range" id="t-clouddebug" min="0" max="4" step="1">
-        <span class="val" id="t-clouddebug-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cloud&nbsp;steps</span>
-        <input type="range" id="t-cloudsteps" min="8" max="128" step="1">
-        <span class="val" id="t-cloudsteps-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cloud&nbsp;inner&nbsp;(m)</span>
-        <input type="range" id="t-cloudinner" min="100" max="20000" step="100">
-        <span class="val" id="t-cloudinner-v">—</span>
-      </div>
-      <div class="row">
-        <span class="lbl">cloud&nbsp;outer&nbsp;(m)</span>
-        <input type="range" id="t-cloudouter" min="200" max="30000" step="100">
-        <span class="val" id="t-cloudouter-v">—</span>
+
+    <!-- Debug toolbar: small always-visible row of buttons that toggle the
+         tuning / readouts / generation panels. The panels themselves are
+         constructed programmatically by src/debug-ui.ts. -->
+    <div id="debug-toolbar">
+      <button class="dbg-btn" data-panel="readouts">readouts</button>
+      <button class="dbg-btn" data-panel="tuning">tuning</button>
+      <button class="dbg-btn" data-panel="generation">generation</button>
+    </div>
+
+    <div id="readouts-panel" class="dbg-panel"></div>
+    <div id="tuning-panel" class="dbg-panel"></div>
+    <div id="generation-panel" class="dbg-panel"></div>
+
+    <div id="pause-overlay">
+      <div class="pause-card">
+        <div class="pause-title">paused</div>
+        <div class="pause-hint">press Esc to resume</div>
       </div>
     </div>
-    <div id="universe-tuning">
-      <div class="title">generation</div>
-      <div class="row">
-        <span class="lbl">seed</span>
-        <input type="number" id="g-seed">
-      </div>
-      <div class="row">
-        <span class="lbl">galaxy&nbsp;radius&nbsp;(ly)</span>
-        <input type="number" id="g-galradius" min="500" max="1000000" step="500">
-      </div>
-      <div class="row">
-        <span class="lbl">arms</span>
-        <input type="number" id="g-arms" min="1" max="8" step="1">
-      </div>
-      <div class="row">
-        <span class="lbl">arm&nbsp;strength</span>
-        <input type="number" id="g-armstr" min="0" max="5" step="0.1">
-      </div>
-      <div class="row">
-        <span class="lbl">ly&nbsp;→&nbsp;meters</span>
-        <input type="number" id="g-ltsm" min="1e6" max="1e12" step="1e8">
-      </div>
-      <div class="row">
-        <span class="lbl">materialize&nbsp;(ly)</span>
-        <input type="number" id="g-matly" min="0.05" max="5" step="0.05">
-      </div>
-      <div class="row">
-        <span class="lbl">dematerialize&nbsp;(ly)</span>
-        <input type="number" id="g-dematly" min="0.05" max="5" step="0.05">
-      </div>
-      <button id="g-regen">regenerate &amp; reload</button>
-    </div>
-    <div id="debug">
-      <div><span class="k">speed</span><span class="v" id="dbg-speed">—</span></div>
-      <div><span class="k">velocity</span><span class="v" id="dbg-velocity">—</span></div>
-      <div><span class="k">warp</span><span class="v" id="dbg-warp">—</span></div>
-      <div><span class="k">altitude</span><span class="v" id="dbg-altitude">—</span></div>
-      <div><span class="k">dist&nbsp;to&nbsp;center</span><span class="v" id="dbg-dist">—</span></div>
-      <div><span class="k">ground&nbsp;height</span><span class="v" id="dbg-ground">—</span></div>
-      <div><span class="k">surface&nbsp;pt</span><span class="v" id="dbg-surface">—</span></div>
-      <div><span class="k">influence</span><span class="v" id="dbg-influence">—</span></div>
-      <div><span class="k">dominant</span><span class="v" id="dbg-dominant">—</span></div>
-      <div><span class="k">position&nbsp;ok</span><span class="v" id="dbg-finite">—</span></div>
-    </div>
+
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

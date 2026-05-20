@@ -11,7 +11,7 @@ import type {
   ToolCall,
   ToolResponse,
 } from "./live-provider";
-import { logLiveSession } from "./dual-agent-logger";
+import { logLiveSession, runInSessionContext } from "./dual-agent-logger";
 import type { LiveUsage } from "./live-provider";
 
 // ---------------------------------------------------------------------------
@@ -90,6 +90,26 @@ export class GeminiLiveProvider implements LiveProvider {
 
   // Vertex AI does not support the `behavior` parameter on tool declarations
   private useVertexAI = false;
+
+  // Session context for DB-attributed debug logs. Set by the relay after
+  // initialize resolves the sessionId — used to re-enter the logger's als
+  // context inside the SDK's onmessage callback (which otherwise fires
+  // outside our async chain and loses context).
+  private debugSessionId: string | null = null;
+  private debugMode = false;
+
+  /** Bind this provider's onmessage callbacks to a session for DB log capture. */
+  setDebugSessionContext(sessionId: string, debugMode: boolean): void {
+    this.debugSessionId = sessionId;
+    this.debugMode = debugMode;
+  }
+
+  private withSession<T>(fn: () => T): T {
+    if (this.debugSessionId) {
+      return runInSessionContext(this.debugSessionId, this.debugMode, fn);
+    }
+    return fn();
+  }
 
   /**
    * On gemini-3.1-flash-live-preview, `sendClientContent` is restricted to
@@ -231,25 +251,27 @@ export class GeminiLiveProvider implements LiveProvider {
             console.log("[GeminiLiveProvider] Connected to Gemini Live API");
           },
           onmessage: (msg: LiveServerMessage) => {
-            // Debug: log raw message keys to understand what the server is sending
-            const keys = Object.keys(msg).filter(k => (msg as any)[k] != null);
-            if (keys.length > 0 && !keys.every(k => k === "serverContent")) {
-              console.log(`[GeminiLiveProvider] Server message keys: ${keys.join(", ")}`);
-            }
-            // DIAGNOSTIC: Log raw server messages
-            if (keys.length > 0) {
-              const sc = msg.serverContent;
-              const hasParts = !!(sc as any)?.modelTurn?.parts?.length;
-              const hasAudio = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.inlineData);
-              const hasText = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.text);
-              const hasFC = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.functionCall);
-              logLiveSession("RAW_MSG", `keys=[${keys.join(",")}] hasParts=${hasParts} hasAudio=${hasAudio} hasText=${hasText} hasFC=${hasFC} toolCall=${!!msg.toolCall} setupComplete=${!!msg.setupComplete}`);
-              // Log full message when MALFORMED or when it contains non-standard content
-              if ((sc as any)?.turnComplete && (sc as any)?.turnCompleteReason) {
-                logLiveSession("RAW_MSG FULL (abnormal turn)", JSON.stringify(msg, null, 2).substring(0, 2000));
+            this.withSession(() => {
+              // Debug: log raw message keys to understand what the server is sending
+              const keys = Object.keys(msg).filter(k => (msg as any)[k] != null);
+              if (keys.length > 0 && !keys.every(k => k === "serverContent")) {
+                console.log(`[GeminiLiveProvider] Server message keys: ${keys.join(", ")}`);
               }
-            }
-            this.handleServerMessage(msg);
+              // DIAGNOSTIC: Log raw server messages
+              if (keys.length > 0) {
+                const sc = msg.serverContent;
+                const hasParts = !!(sc as any)?.modelTurn?.parts?.length;
+                const hasAudio = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.inlineData);
+                const hasText = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.text);
+                const hasFC = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.functionCall);
+                logLiveSession("RAW_MSG", `keys=[${keys.join(",")}] hasParts=${hasParts} hasAudio=${hasAudio} hasText=${hasText} hasFC=${hasFC} toolCall=${!!msg.toolCall} setupComplete=${!!msg.setupComplete}`);
+                // Log full message when MALFORMED or when it contains non-standard content
+                if ((sc as any)?.turnComplete && (sc as any)?.turnCompleteReason) {
+                  logLiveSession("RAW_MSG FULL (abnormal turn)", JSON.stringify(msg, null, 2).substring(0, 2000));
+                }
+              }
+              this.handleServerMessage(msg);
+            });
           },
           onerror: (e: ErrorEvent) => {
             const msg = e.message || "WebSocket error";

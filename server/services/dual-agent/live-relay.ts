@@ -37,7 +37,7 @@ import {
   recordContactSighting,
   type FaceMatchResult,
 } from "../biometric/recognition-service";
-import { logDualAgent, logLiveSession } from "./dual-agent-logger";
+import { logDualAgent, logLiveSession, runInSessionContext } from "./dual-agent-logger";
 import { activityLogService } from "../activityLogService";
 import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
@@ -1091,13 +1091,23 @@ export class LiveRelay {
     this.authedUser = authedUser;
 
     ws.on("message", (raw) => {
-      try {
-        const msg: ClientMessage = JSON.parse(raw.toString());
-        // Log every incoming client message — truncate only base64 audio/image strings, keep objects intact
-        logLiveSession("CLIENT → SERVER", `state=${this.state} ${stringifyMsg(msg)}`);
-        this.handleClientMessage(msg);
-      } catch (err) {
-        console.error("[LiveRelay] Invalid client message:", err);
+      const handle = () => {
+        try {
+          const msg: ClientMessage = JSON.parse(raw.toString());
+          // Log every incoming client message — truncate only base64 audio/image strings, keep objects intact
+          logLiveSession("CLIENT → SERVER", `state=${this.state} ${stringifyMsg(msg)}`);
+          this.handleClientMessage(msg);
+        } catch (err) {
+          console.error("[LiveRelay] Invalid client message:", err);
+        }
+      };
+      // Bind logger context to this session so DB persistence routes to the
+      // right row. For the very first message (initialize) sessionId is null,
+      // so DB writes start once initialize sets it (see handleClientMessage).
+      if (this.sessionId) {
+        runInSessionContext(this.sessionId, this.debugMode, handle);
+      } else {
+        handle();
       }
     });
 
@@ -2090,25 +2100,34 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
       this.provider = new GeminiLiveProvider(callbacks, useVertexForLive /* useVertexAI */);
       this.currentLiveProvider = aacChatConfig.provider;
       this.currentLiveModel = aacChatConfig.model;
+      // Bind logger session context so provider-side events (SERVER → toolCall,
+      // RAW_MSG, SERVER → modelTurn, etc.) get DB-attributed too.
+      this.provider.setDebugSessionContext(state.sessionId, this.debugMode);
       await this.provider.connect(systemPrompt, providerConfig);
 
-      // Log session start
+      // Log session start. Wrap in session context so the initialize-time
+      // events (SESSION START, SYSTEM PROMPT, TOOL DECLARATIONS) make it into
+      // the per-session DB log even though the outer ws.on handler started
+      // with sessionId=null.
       const providerLabel = useVertexForLive ? `vertex:${aacChatConfig.model}` : `api-key:${aacChatConfig.model}`;
-      logLiveSession("SESSION START", [
-        `Session: ${state.sessionId}`,
-        `Student: ${msg.studentId}`,
-        `Provider: ${providerLabel}`,
-        `Model: ${providerConfig.model}`,
-        `Response Modality: ${providerConfig.responseModality || "default"}`,
-        `Interaction: ${this.muteState}`,
-        `Response: ${this.responseMode}`,
-        `DirectAudio: ${this.useDirectAudio}`,
-        `Startup: ${state.enhancedPrompt ? "thorough" : "fast"}`,
-      ].join("\n"));
-      logLiveSession("SYSTEM PROMPT", systemPrompt);
-      if (tools.length > 0) {
-        logLiveSession("TOOL DECLARATIONS", JSON.stringify(tools, null, 2));
-      }
+      runInSessionContext(state.sessionId, this.debugMode, () => {
+        logLiveSession("SESSION START", [
+          `Session: ${state.sessionId}`,
+          `Student: ${msg.studentId}`,
+          `Provider: ${providerLabel}`,
+          `Model: ${providerConfig.model}`,
+          `Response Modality: ${providerConfig.responseModality || "default"}`,
+          `Interaction: ${this.muteState}`,
+          `Response: ${this.responseMode}`,
+          `DirectAudio: ${this.useDirectAudio}`,
+          `Startup: ${state.enhancedPrompt ? "thorough" : "fast"}`,
+        ].join("\n"));
+        logLiveSession("SYSTEM PROMPT", systemPrompt);
+        if (tools.length > 0) {
+          logLiveSession("TOOL DECLARATIONS", JSON.stringify(tools, null, 2));
+        }
+      });
+
 
       // 9. Store greeting for onReady to send
       const isMuted = this.muteState === "muted";
@@ -2161,22 +2180,25 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
       };
       console.log(`[LiveRelay] Symbol settings loaded:`, JSON.stringify(this.symbolSettings));
 
-      // 10. Start timers
-      this.startTimers();
+      // 10. Start timers. Run inside session context so callbacks inherit
+      // als attribution for DB log persistence (setInterval propagates als).
+      runInSessionContext(state.sessionId, this.debugMode, () => {
+        this.startTimers();
 
-      // 11. "initialized" is sent when the provider's onReady fires (see
-      // onReady callback) so the client keeps showing the loading screen
-      // until the Gemini connection is actually established.
+        // 11. "initialized" is sent when the provider's onReady fires (see
+        // onReady callback) so the client keeps showing the loading screen
+        // until the Gemini connection is actually established.
 
-      logDualAgent("LiveRelay.initialize", {
-        sessionId: state.sessionId,
-        studentId: msg.studentId,
-        provider: providerLabel,
-        model: providerConfig.model,
-        responseModality: providerConfig.responseModality || "default",
-        muteState: this.muteState,
-        responseMode: this.responseMode,
-        useDirectAudio: this.useDirectAudio,
+        logDualAgent("LiveRelay.initialize", {
+          sessionId: state.sessionId,
+          studentId: msg.studentId,
+          provider: providerLabel,
+          model: providerConfig.model,
+          responseModality: providerConfig.responseModality || "default",
+          muteState: this.muteState,
+          responseMode: this.responseMode,
+          useDirectAudio: this.useDirectAudio,
+        });
       });
 
       console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId} (provider: ${providerLabel}, modality: ${providerConfig.responseModality || "default"}, model: ${providerConfig.model})`);
