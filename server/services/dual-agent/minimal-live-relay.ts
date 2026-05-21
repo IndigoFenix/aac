@@ -37,6 +37,7 @@ import { WebSocket } from "ws";
 import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling, type Session, type LiveServerMessage, type FunctionCall } from "@google/genai";
 import { logLiveSession } from "./dual-agent-logger";
 import { parseBoardButtons } from "./interactive-agent";
+import { T } from "../memory-schema/canonical-terms";
 
 // Convert raw 24kHz mono int16 PCM to a WAV blob (same format as production LiveRelay)
 function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
@@ -67,21 +68,21 @@ const FLUSH_INTERVAL_MS = 250;
 const MODEL = process.env.MINIMAL_RELAY_MODEL || "gemini-live-2.5-flash-native-audio";
 
 // Minimal system prompt — just enough to teach the model about rebuild_board.
-const SYSTEM_PROMPT = `You are a friendly conversational AI helping a child communicate via an AAC (Augmentative and Alternative Communication) RESPONSE BOARD.
+const SYSTEM_PROMPT = `You are a friendly conversational AI helping a user communicate via an AAC (Augmentative and Alternative Communication) ${T.board}.
 
 You have ONE tool available: rebuild_board.
 
-Whenever the conversation suggests new things the child might want to say, call rebuild_board() with up to 8 SENTENCE BUTTONs that fit the current discussion. Each SENTENCE BUTTON is a short SENTENCE the child can press to communicate.
+Whenever the conversation suggests new things the user might want to say, call rebuild_board() with up to 8 ${T.button}s that fit the current discussion. Each ${T.button} is a short SENTENCE the user can press to communicate.
 
-Talk naturally to the child while updating the RESPONSE BOARD to match the conversation.`;
+Talk naturally to the user while updating the ${T.board} to match the conversation.`;
 
 // Tool description for the minimal relay's simpler button format.
 const REBUILD_BOARD_BUTTONS_DESCRIPTION =
-  `Comma-separated SENTENCE BUTTONs in the format: label|icon|imageKey|speech. ` +
-  `The label is a short word or phrase shown on the SENTENCE BUTTON. ` +
-  `The icon is a single emoji SYMBOL representing the concept. ` +
+  `Comma-separated ${T.button}s in the format: label|icon|imageKey|speech. ` +
+  `The label is a short word or phrase shown on the ${T.button}. ` +
+  `The icon is a single emoji ${T.symbol} representing the concept. ` +
   `The imageKey is optional — leave it empty (||) when the emoji is clear enough. ` +
-  `The speech is the full SENTENCE the TTS voices when the user presses the SENTENCE BUTTON — write from the child's perspective. ` +
+  `The speech is the full SENTENCE the TTS voices when the user presses the ${T.button} — write from the user's perspective. ` +
   `Example: "Play|🎮||I want to play, Music|🎵||Put on some music, Draw|✏️||I want to draw, Tired|😴||I am tired"`;
 
 // Build a board data structure that matches what the AAC client expects.
@@ -260,7 +261,7 @@ export class MinimalLiveRelay {
           tools: [{
             functionDeclarations: [{
               name: "rebuild_board",
-              description: "Replace the RESPONSE BOARD with up to 8 new SENTENCE BUTTONs related to the current conversation. Call this whenever the topic shifts or new options become relevant.",
+              description: `Replace the ${T.board} with up to 8 new ${T.button}s related to the current conversation. Call this whenever the topic shifts or new options become relevant.`,
               parametersJsonSchema: {
                 type: "object",
                 properties: {

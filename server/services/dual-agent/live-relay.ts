@@ -28,6 +28,7 @@ import type {
 } from "./types";
 import { createEmptyAccumulator } from "./types";
 import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
+import { T } from "../memory-schema/canonical-terms";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
@@ -601,7 +602,7 @@ function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons
 }
 
 /**
- * Format a SENTENCE BUILDER state snapshot as a [SENTENCE BUILDER STATE]
+ * Format a ${T.builder} state snapshot as a [${T.builder} STATE]
  * context injection. Compact and structured so the model can quickly route
  * to the suggest_construction_buttons tool.
  */
@@ -611,14 +612,14 @@ function formatConstructionStateInjection(
 ): string {
   const filled = state.glyph ? state.glyph : "(empty)";
   const lines: string[] = [
-    "[SENTENCE BUILDER STATE]",
+    "[${T.builder} STATE]",
     `category: ${state.category}`,
     `mode_chip: ${state.modeChip}`,
     `sentence: ${filled}`,
     `target_slot: ${state.targetSlot ?? "next_empty"}`,
   ];
-  // Surface what was on the RESPONSE BOARD when the student opened the
-  // SENTENCE BUILDER. Labels are the AI's own SENTENCE BUTTON text from the
+  // Surface what was on the ${T.board} when the user opened the
+  // ${T.builder}. Labels are the AI's own ${T.button} text from the
   // most recent rebuild_board / add_buttons / loaded board, so they anchor
   // the builder state to the live conversation topic and let the model
   // bias SUGGESTIONs toward the same theme.
@@ -636,15 +637,15 @@ function formatConstructionStateInjection(
   lines.push("");
   if (state.requestGuessingMode) {
     lines.push(
-      `The student pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what SYMBOL they want here. When you've narrowed enough, call suggest_construction_buttons with the resolved SYMBOL as the single \`head_candidates\` SUGGESTION to populate the slot directly.`
+      `The user pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what SYMBOL they want here. When you've narrowed enough, call suggest_construction_buttons with the resolved SYMBOL as the single \`head_candidates\` SUGGESTION to populate the slot directly.`
     );
   } else if (state.payloadTarget) {
     lines.push(
-      `The student placed a composable host GLYPH (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 HEAD SYMBOLs in \`head_candidates\` that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Modifier suggestions don't apply to an unfilled composable blank; leave \`modifier_candidates\` empty. Skip if nothing helpful comes to mind.`
+      `The user placed a composable host GLYPH (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 HEAD SYMBOLs in \`head_candidates\` that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Modifier suggestions don't apply to an unfilled composable blank; leave \`modifier_candidates\` empty. Skip if nothing helpful comes to mind.`
     );
   } else {
     lines.push(
-      "Call suggest_construction_buttons with two SUGGESTION arrays in the SAME call: `head_candidates` (up to 4 next-glyph HEAD SYMBOLs) AND `modifier_candidates` (up to 4 MODIFIER SYMBOLs for the current HEAD SYMBOL). Fill both when each is useful — heads for what the student wants to say next, modifiers for sharpening the current GLYPH (color, size, count, possession, intensity). Either array may be empty; skip the tool call entirely only if nothing fits in either."
+      "Call suggest_construction_buttons with two SUGGESTION arrays in the SAME call: `head_candidates` (up to 4 next-glyph HEAD SYMBOLs) AND `modifier_candidates` (up to 4 MODIFIER SYMBOLs for the current HEAD SYMBOL). Fill both when each is useful — heads for what the user wants to say next, modifiers for sharpening the current GLYPH (color, size, count, possession, intensity). Either array may be empty; skip the tool call entirely only if nothing fits in either."
     );
   }
   return lines.join("\n");
@@ -739,7 +740,7 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "interpret")
-  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice (incl. yes/no) — trigger overlay with two AI-supplied SENTENCE BUTTON options
+  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice (incl. yes/no) — trigger overlay with two AI-supplied ${T.button} options
   | { type: "ask_binary_choice"; data: { options: any[] } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
@@ -774,7 +775,7 @@ export interface ConstructionStateWire {
   targetSlot: number | null;
   /** Keys already shown for this slot — AI should not repeat them. */
   excludeKeys: string[];
-  /** When true, the student has requested help — AI should enter guessing mode. */
+  /** When true, the user has requested help — AI should enter guessing mode. */
   requestGuessingMode?: boolean;
   /**
    * Set when the user has placed a composable host (e.g. `want`) whose
@@ -862,7 +863,7 @@ export interface IdentifiedFaceWire {
   confidence: number;
   /** Bounding box from the client detection, if provided. */
   boundingBox?: { x: number; y: number; w: number; h: number };
-  /** Which camera saw this face — "user" = facing the student (gesture-tracked), "environment" = elsewhere. */
+  /** Which camera saw this face — "user" = facing the user (gesture-tracked), "environment" = elsewhere. */
   cameraRole?: "user" | "environment" | "unknown";
   /** Human-readable camera label (for debug). */
   cameraLabel?: string;
@@ -1064,7 +1065,7 @@ export class LiveRelay {
   private static readonly REJECTION_COOLDOWN_MS = 15_000;
 
   // Set when we've just sent an auto-continuation prompt (because the model
-  // transcribed the student but produced no audio). Cleared when the next
+  // transcribed the user but produced no audio). Cleared when the next
   // turn completes — bounds the auto-continuation to one retry per silent
   // transcript so the model can't loop on it.
   private autoContinuationPending = false;
@@ -1326,7 +1327,7 @@ export class LiveRelay {
         if (!this.hasGreeted) {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.muteState === "muted"
-            ? `Generate 4-12 contextual SENTENCE BUTTONs using rebuild_board().`
+            ? `Generate 4-12 contextual ${T.button}s using rebuild_board().`
             : `The home board is loaded. This is a session start. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
@@ -1564,12 +1565,12 @@ export class LiveRelay {
             if (this.sessionId) {
               dualAgentService.addPendingMessage(this.sessionId, {
                 role: "user",
-                content: `[BUTTON PRESS] Home`,
+                content: `${T.tagPress} Home`,
                 timestamp: Date.now(),
               }).catch(console.error);
             }
             this.provider!.sendContextInjection(
-              `[CONTEXT] The user pressed Home. The home RESPONSE BOARD is now loaded with its native navigation SENTENCE BUTTONs. Wait for them to press one before changing the board.`
+              `[CONTEXT] The user pressed Home. The home ${T.board} is now loaded with its native navigation ${T.button}s. Wait for them to press one before changing the board.`
             );
             break;
           }
@@ -1598,18 +1599,18 @@ export class LiveRelay {
           if (this.sessionId) {
             dualAgentService.addPendingMessage(this.sessionId, {
               role: "user",
-              content: `[BUTTON PRESS] ${msg.label}`,
+              content: `${T.tagPress} ${msg.label}`,
               timestamp: Date.now(),
             }).catch(console.error);
           }
 
           // Home-menu button press: chat-style framing matching the
-          // dynamic-button path. The press is presented as the student
+          // dynamic-button path. The press is presented as the user
           // saying the label; the board-defined intent text is appended
           // as parenthetical guidance for context.
           const exitInstruction = msg.instruction
-            ? `[BUTTON PRESS] ${msg.label}\n\n(${msg.instruction})`
-            : `[BUTTON PRESS] ${msg.label}`;
+            ? `${T.tagPress} ${msg.label}\n\n(${msg.instruction})`
+            : `${T.tagPress} ${msg.label}`;
           this.lastTurnHadButtonPress = true;
           this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
@@ -1680,7 +1681,7 @@ export class LiveRelay {
             });
           }
           const override = msg.muteState === "muted"
-            ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing SENTENCE BUTTONs via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
+            ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing ${T.button}s via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
             : `[MUTE CHANGE] The user has UNMUTED you. You may now speak() directly with the user again. Greet them.`;
           // sendMessage (turnComplete=true) so the model actually reacts now —
           // muted: switch to utterance-button mode immediately;
@@ -1695,7 +1696,7 @@ export class LiveRelay {
 
         case "unknown_face_descriptors":
           this.unknownFaceDescriptors = msg.data;
-          // Fire-and-forget: match each descriptor against the student's known
+          // Fire-and-forget: match each descriptor against the user's known
           // people (self + linked users + contacts). Results populate
           // currentIdentifiedFaces, get pushed to the client for the debug
           // display, and feed the next frame_grid context string.
@@ -1721,12 +1722,12 @@ export class LiveRelay {
           this.paused = msg.paused;
           if (msg.paused) {
             this.provider!.sendContextInjection(
-              `[SYSTEM] Session PAUSED by caretaker. The student cannot see or interact with the device. Do NOT speak, update the board, or respond to any input until resumed. Ignore all silence or lack of activity — this is expected.`,
+              `[SYSTEM] Session PAUSED by caretaker. The user cannot see or interact with the device. Do NOT speak, update the board, or respond to any input until resumed. Ignore all silence or lack of activity — this is expected.`,
             );
             logLiveSession("SESSION_PAUSED", `sessionId=${this.sessionId}`);
           } else {
             this.provider!.sendContextInjection(
-              `[SYSTEM] Session RESUMED. The student can see and interact with the device again. Continue normally.`,
+              `[SYSTEM] Session RESUMED. The user can see and interact with the device again. Continue normally.`,
             );
             logLiveSession("SESSION_RESUMED", `sessionId=${this.sessionId}`);
           }
@@ -1741,7 +1742,7 @@ export class LiveRelay {
           }
           this.setState("awaiting_turn");
           this.provider!.sendMessage(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the RESPONSE BOARD. The full RESPONSE BOARD is now restored (up to 12 SENTENCE BUTTONs). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh RESPONSE BOARD of SENTENCE BUTTONs for the current context.`,
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the ${T.board}. The full ${T.board} is now restored (up to 12 ${T.button}s). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh ${T.board} of ${T.button}s for the current context.`,
             "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
@@ -1791,14 +1792,14 @@ export class LiveRelay {
           if (this.sessionId) {
             dualAgentService.addPendingMessage(this.sessionId, {
               role: "user",
-              content: `[SENTENCE COMPOSED] ${glyphString}`,
+              content: `${T.tagComposed} ${glyphString}`,
               timestamp: Date.now(),
             }).catch(err => console.error("[LiveRelay] Failed to persist glyph press:", err));
           }
           const wasIdle = this.state === "idle";
           this.setState("awaiting_turn");
-          const prompt = `[SENTENCE COMPOSED] ${glyphString}
-The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It is YOUR job to put words in their mouth: interpret the SENTENCE (see <sentence_interpretation>) and call the \`interpret\` tool with the natural-language SENTENCE — first-person, as the student would say it. The tool voices that SENTENCE in the student's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
+          const prompt = `${T.tagComposed} ${glyphString}
+The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR job to put words in their mouth: interpret the SENTENCE (see <sentence_interpretation>) and call the \`interpret\` tool with the natural-language SENTENCE — first-person, as the user would say it. The tool voices that SENTENCE in the user's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
           logLiveSession("SENTENCE_COMPOSED_IN", `glyph="${glyphString}" wasIdle=${wasIdle}`);
           this.provider.sendMessage(prompt, "user", true, { interrupt: !wasIdle });
           break;
@@ -1806,7 +1807,7 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
 
         case "construction_state": {
           // Pull current dynamic-board labels off the session state so the
-          // injection carries the conversation topic the student just pivoted
+          // injection carries the conversation topic the user just pivoted
           // away from — see formatConstructionStateInjection.
           const sessionState = this.sessionCache?.state;
           const boardLabels = sessionState?.boardButtonLabels ?? [];
@@ -1937,7 +1938,7 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
       };
 
       // Server-initiated termination: dualAgentService calls this when the
-      // student's consent is revoked mid-session (or any future cascade
+      // user's consent is revoked mid-session (or any future cascade
       // condition). Send a typed error so the AAC client can surface a
       // "consent required" prompt, then close the socket cleanly.
       cached.state.onTerminate = (reason: string) => {
@@ -1993,7 +1994,7 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
       }
 
       // 5. If direct audio, rebuild prompt with useDirectAudio flag
-      // Fetch custom apps assigned to this student (gated by license permission).
+      // Fetch custom apps assigned to this user (gated by license permission).
       let availableCustomApps: Array<{ id: string; name: string; description?: string | null }> = [];
       if (this.userId && this.studentId) {
         try {
@@ -2081,6 +2082,10 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
         activeApp: cached.state.appState?.activeApp || null,
         useDirectAudio: this.useDirectAudio,
         permittedWebsites: cached.state.permittedWebsites || [],
+        // Student's primary language steers the localized example strings
+        // baked into the tool descriptions (see prompt-examples.ts). Falls
+        // back to English when unset.
+        language: cached.monitorAgent?.getStudent?.()?.primaryLanguage || undefined,
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -2146,9 +2151,9 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
       const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
-      const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the SENTENCE BUTTONs contextually relevant." : "";
+      const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the ${T.button}s contextually relevant." : "";
       const boardHint = state.availableBoards && state.availableBoards.length > 0
-        ? ` If a custom RESPONSE BOARD from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
+        ? ` If a custom ${T.board} from the Available Custom Boards list is appropriate for this user, use set_board() instead of rebuild_board().`
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
       const contextScan = ``;
@@ -2158,10 +2163,10 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
       // transition (and greet) once presence is confirmed.
       const modeGuidance = ` Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present.`;
       const greetingPrompt = isMuted
-        ? `Generate 4-12 contextual SENTENCE BUTTONs via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
+        ? `Generate 4-12 contextual ${T.button}s via rebuild_board() using the user's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `Session start. Home RESPONSE BOARD SENTENCE BUTTONs: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the RESPONSE BOARD until a SENTENCE BUTTON is pressed.${imageHint}${personaHint}${contextScan}`
-        : `Session start. Function calls only. Home RESPONSE BOARD SENTENCE BUTTONs: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a BUTTON PRESS.${imageHint}${personaHint}${contextScan}`;
+        ? `Session start. Home ${T.board} ${T.button}s: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the ${T.board} until a ${T.button} is pressed.${imageHint}${personaHint}${contextScan}`
+        : `Session start. Function calls only. Home ${T.board} ${T.button}s: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a BUTTON PRESS.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -2250,7 +2255,7 @@ The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It 
         }).catch(err => console.error("[LiveRelay] Failed to persist [MORE]:", err));
       }
       this.provider!.sendMessage(`[MORE OPTIONS REQUESTED]
-The user pressed "More" — they can't find the SENTENCE BUTTON they need on the current RESPONSE BOARD. Use add_buttons() to add more relevant SENTENCE BUTTONs. Do NOT respond with speech — just silently add SENTENCE BUTTONs.`, "user", true, { interrupt });
+The user pressed "More" — they can't find the ${T.button} they need on the current ${T.board}. Use add_buttons() to add more relevant ${T.button}s. Do NOT respond with speech — just silently add ${T.button}s.`, "user", true, { interrupt });
       return;
     }
 
@@ -2268,7 +2273,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
     if (this.sessionId) {
       dualAgentService.addPendingMessage(this.sessionId, {
         role: "user",
-        content: `[BUTTON PRESS] ${buttonList}`,
+        content: `${T.tagPress} ${buttonList}`,
         timestamp: Date.now(),
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
     }
@@ -2285,16 +2290,16 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       });
     }
 
-    // Minimal natural framing: present the press as the student speaking.
+    // Minimal natural framing: present the press as the user speaking.
     // No system markers, no procedural instructions — the per-turn payload
     // looks like a chat message. The system prompt's
     // <how_the_student_talks_to_you> block handles the "respond aloud +
     // rebuild_board" behavior expectation.
-    const prompt = `[BUTTON PRESS] ${singleSentence || buttonList}`;
+    const prompt = `${T.tagPress} ${singleSentence || buttonList}`;
 
     // Send prompt with turnComplete=true immediately. Student TTS runs in
     // parallel. With Google Cloud TTS (~300ms) and AI response time (~1s),
-    // the student voice finishes before the AI starts speaking.
+    // the user voice finishes before the AI starts speaking.
     //
     // Track the prompt so we can retry if proactiveAudio swallows the turn.
     this.pendingRetryPrompt = prompt;
@@ -2457,12 +2462,12 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       }
 
       case "interpret": {
-        // Called in response to a [SENTENCE COMPOSED] turn — the AI has produced
-        // a natural-language interpretation of the student's composed glyph.
-        // Stream student TTS, record the sentence as the student's turn in
+        // Called in response to a ${T.tagComposed} turn — the AI has produced
+        // a natural-language interpretation of the user's composed glyph.
+        // Stream student TTS, record the sentence as the user's turn in
         // the session log, and AWAIT the TTS finish before returning so the
         // AI's subsequent speak() (typically in the same turn) is sequenced
-        // after the student's voice.
+        // after the user's voice.
         const sentence = extractStringArg(args, "sentence")?.trim() || "";
         if (!sentence) {
           logLiveSession("INTERPRET_REJECTED", "missing 'sentence' argument");
@@ -2470,18 +2475,18 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
         }
         logLiveSession("INTERPRET", `sentence="${sentence}"`);
 
-        // 1. Show the student's "speech" in the UI immediately.
+        // 1. Show the user's "speech" in the UI immediately.
         this.send({ type: "interpret", text: sentence, confidence: "high", noAudioClear: false });
         this.turnAccum.interpretText = sentence;
         this.turnAccum.interpretConfidence = "high";
 
         // 2. Record as user turn so the conversation history shows the
-        // student's contribution (the prior [SENTENCE COMPOSED] line stays in
+        // user's contribution (the prior ${T.tagComposed} line stays in
         // the log as the raw input — they bracket each other).
         if (this.sessionId) {
           dualAgentService.addPendingMessage(this.sessionId, {
             role: "user",
-            content: `[BUTTON PRESS] ${sentence}`,
+            content: `${T.tagPress} ${sentence}`,
             timestamp: Date.now(),
           }).catch(err => console.error("[LiveRelay] Failed to persist interpret sentence:", err));
         }
@@ -2496,7 +2501,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
 
         // 3. Stream student-voice TTS and AWAIT it. The follow-up speak()
         // (if any) runs in the next handler step, which the provider only
-        // invokes after this promise resolves — so the student voice
+        // invokes after this promise resolves — so the user voice
         // finishes before the AI's voice begins.
         //
         // We also pin the same promise to `this.preGenTtsPromise` so
@@ -2634,7 +2639,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
         const rawHeadCandidates = rawHeadFromNew.length > 0 ? rawHeadFromNew : rawHeadFromLegacy;
         const rawModifierCandidates = Array.isArray(args.modifier_candidates) ? args.modifier_candidates : [];
 
-        // Pipe-separated by default, matching the SENTENCE BUTTON format
+        // Pipe-separated by default, matching the ${T.button} format
         // elsewhere: speech|symbol|fallback|label (speech field unused for
         // SUGGESTIONs). We tolerate every reasonable arity:
         //   4 fields → speech|symbol|fallback|label (ignore speech)
@@ -2857,7 +2862,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
         };
         if (constructionErrors.length > 0) {
           okResponse.dropped_candidates = constructionErrors;
-          okResponse.note = `${constructionErrors.length} candidate(s) were rejected (see dropped_candidates). The remaining ${enrichedHeads.length} head and ${enrichedModifiers.length} modifier candidate(s) are showing on the SENTENCE BUILDER. Re-call suggest_construction_buttons with corrected versions if you want the dropped concepts back.`;
+          okResponse.note = `${constructionErrors.length} candidate(s) were rejected (see dropped_candidates). The remaining ${enrichedHeads.length} head and ${enrichedModifiers.length} modifier candidate(s) are showing on the ${T.builder}. Re-call suggest_construction_buttons with corrected versions if you want the dropped concepts back.`;
         }
         return { id: call.id, name, response: okResponse };
       }
@@ -2886,7 +2891,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       }
 
       case "add_buttons": {
-        const parsedButtons = dedupeImageKeys(toolArgsToButtons(args.buttons));
+        const parsedButtons = dedupeImageKeys(toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons));
         const validation = validateBoardButtons(parsedButtons);
         const incomingAdd = validation.buttons;
         if (validation.errors.length > 0) {
@@ -2899,7 +2904,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           return {
             id: call.id,
             name,
-            response: { error: "Cannot add SENTENCE BUTTONs to a prebuilt RESPONSE BOARD. Call rebuild_board() to replace it with a dynamic RESPONSE BOARD, or use add_context_button() to add to the context sidebar." },
+            response: { error: "Cannot add ${T.button}s to a prebuilt ${T.board}. Call rebuild_board() to replace it with a dynamic ${T.board}, or use add_context_button() to add to the context sidebar." },
           };
         }
 
@@ -2995,7 +3000,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           return {
             id: call.id,
             name,
-            response: { error: "Cannot remove SENTENCE BUTTONs from a prebuilt RESPONSE BOARD. Call rebuild_board() to replace it with a dynamic RESPONSE BOARD." },
+            response: { error: "Cannot remove ${T.button}s from a prebuilt ${T.board}. Call rebuild_board() to replace it with a dynamic ${T.board}." },
           };
         }
 
@@ -3023,14 +3028,25 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
         // board is currently loaded, it's unloaded first. The side panel (context
         // sidebar) is separate and managed only by add_context_button.
 
-        // Optional 'response' parameter — the model's declaration of what
-        // it intends to say aloud, alongside this board update. NOT routed
-        // through TTS; the model still produces native audio for the actual
-        // speech. Writing the response text in the tool call is meant to
-        // help the model commit to producing the audio (the function-call
-        // pathway is more reliable on this model than audio output alone).
-        // The text is logged for the monitor agent and shows up in the UI.
-        const responseText = extractStringArg(args, "response").trim();
+        // Optional `own_speech` parameter (renamed from `response` to
+        // disambiguate from "USER ${T.board}" — the board is the
+        // STUDENT'S responses, this param is the AI's own statement).
+        // Model's declaration of what it intends to say aloud alongside
+        // this board update. NOT routed through TTS; the model still
+        // produces native audio for the actual speech. Writing the
+        // speech text in the tool call is meant to help the model
+        // commit to producing the audio (the function-call pathway is
+        // more reliable on this model than audio output alone). The
+        // text is logged for the monitor agent and shows up in the UI.
+        //
+        // We deliberately do NOT use extractStringArg's "first string in
+        // args" fallback here: that path falsely promoted the `buttons`
+        // arg to "intended speech" whenever the model omitted own_speech,
+        // polluting the auto-continuation kick text with the button list.
+        // Strict lookup only — both the new name and the legacy `response`
+        // alias for back-compat with any cached/in-flight model output.
+        const rawOwnSpeech = args[T.paramOwnSpeech] ?? args.response;
+        const responseText = typeof rawOwnSpeech === "string" ? rawOwnSpeech.trim() : "";
         if (responseText) {
           // Recorded as INTENDED speech, NOT actual speech. We don't add it
           // to speakText (which tracks actual audio output via
@@ -3038,21 +3054,22 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           // gap between intended speech and produced audio to decide
           // whether to nudge.
           this.turnAccum.rebuildBoardIntendedSpeech = responseText;
-          logLiveSession("REBUILD_BOARD response param", responseText);
-          // NOTE: We deliberately do NOT send the response text to the client
-          // here. The visible header text comes from the model's actual
-          // outputTranscription as it speaks the audio. Emitting it now would
-          // double-print: rebuild_board's response → "X" appended; then the
-          // auto-continuation nudge fires → model speaks → outputTranscription
-          // chunks of "X" appended to the SAME accumulator (no `complete`
-          // event resets the buffer between the two turns). Net result: header
-          // shows "XX". The intended-speech string is kept purely for
-          // auto-continuation steering (see handleTurnComplete).
+          logLiveSession("REBUILD_BOARD own_speech param", responseText);
+          // NOTE: We deliberately do NOT send the own_speech text to the
+          // client here. The visible header text comes from the model's
+          // actual outputTranscription as it speaks the audio. Emitting
+          // it now would double-print: rebuild_board's own_speech → "X"
+          // appended; then the auto-continuation nudge fires → model
+          // speaks → outputTranscription chunks of "X" appended to the
+          // SAME accumulator (no `complete` event resets the buffer
+          // between the two turns). Net result: header shows "XX". The
+          // intended-speech string is kept purely for auto-continuation
+          // steering (see handleTurnComplete).
         }
 
         const wasPrebuiltLoaded = !!state?.loadedBoardId;
         const maxSlots = 8;
-        const parsedRebuild = dedupeImageKeys(toolArgsToButtons(args.buttons).slice(0, maxSlots));
+        const parsedRebuild = dedupeImageKeys(toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons).slice(0, maxSlots));
         const rebuildValidation = validateBoardButtons(parsedRebuild);
         const incomingRebuild = rebuildValidation.buttons;
         if (rebuildValidation.errors.length > 0) {
@@ -3160,7 +3177,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
         const rebuildResponse: Record<string, unknown> = { output: "ok", board_state: stateMsg };
         if (rebuildValidation.errors.length > 0) {
           rebuildResponse.dropped_buttons = rebuildValidation.errors;
-          rebuildResponse.note = `${rebuildValidation.errors.length} SENTENCE BUTTON(s) were rejected (see dropped_buttons). The RESPONSE BOARD is now showing the rest of the rebuild. Call rebuild_board() again with corrected versions of the dropped SENTENCE BUTTONs — that follow-up will be MERGED with the surviving partial RESPONSE BOARD (it won't wipe it), so you only need to resend the SENTENCE BUTTONs you want to fix or add back.`;
+          rebuildResponse.note = `${rebuildValidation.errors.length} ${T.button}(s) were rejected (see dropped_buttons). The ${T.board} is now showing the rest of the rebuild. Call rebuild_board() again with corrected versions of the dropped ${T.button}s — that follow-up will be MERGED with the surviving partial ${T.board} (it won't wipe it), so you only need to resend the ${T.button}s you want to fix or add back.`;
           // Arm error-recovery: the next rebuild_board call will be
           // treated as a patch, merged with the partial board above.
           this.rebuildBoardErrorRecoveryPending = true;
@@ -3220,7 +3237,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
               board_name: match.name,
               pages: boardData.pages?.length || 1,
               board_buttons: nativeLabels.join(", "),
-              note: "RESPONSE BOARD loaded. Its SENTENCE BUTTONs are shown in the main area and cannot be modified by add_buttons/remove_buttons. To replace it with a dynamic RESPONSE BOARD, call rebuild_board(). The context sidebar (left) is separate — use add_context_button() for environment observations.",
+              note: "${T.board} loaded. Its ${T.button}s are shown in the main area and cannot be modified by add_buttons/remove_buttons. To replace it with a dynamic ${T.board}, call rebuild_board(). The context sidebar (left) is separate — use add_context_button() for environment observations.",
             },
           };
         } catch (err) {
@@ -3302,11 +3319,11 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
                 id: call.id,
                 name,
                 response: {
-                  output: "error: YouTube is unavailable — no permitted channels or pinned videos are configured and no API key is set. Tell the student this activity isn't available and suggest something else.",
+                  output: "error: YouTube is unavailable — no permitted channels or pinned videos are configured and no API key is set. Tell the user this activity isn't available and suggest something else.",
                 },
               };
             }
-            // No data + channels/videos → open the browse UI so the student
+            // No data + channels/videos → open the browse UI so the user
             // picks something manually. Don't run a search, don't auto-play.
             if (!data && (hasChannels || hasVideos)) {
               this.send({
@@ -3319,7 +3336,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
                 id: call.id,
                 name,
                 response: {
-                  output: "ok. The YouTube app is now open showing the available videos and channels. The student will pick something. Call rebuild_board() with SENTENCE BUTTONs relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
+                  output: "ok. The YouTube app is now open showing the available videos and channels. The student will pick something. Call rebuild_board() with ${T.button}s relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
                 },
               };
             }
@@ -3328,7 +3345,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
             return {
               id: call.id,
               name,
-              response: { output: "ok. Looking up a video now — the player will appear on screen in a moment. Call rebuild_board() with SENTENCE BUTTONs relevant to this activity." },
+              response: { output: "ok. Looking up a video now — the player will appear on screen in a moment. Call rebuild_board() with ${T.button}s relevant to this activity." },
             };
           }
 
@@ -3339,7 +3356,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           return {
             id: call.id,
             name,
-            response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to this app activity." },
+            response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual ${T.button}s relevant to this app activity." },
           };
         }
 
@@ -3369,7 +3386,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
             name,
             response: {
               output:
-                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to this game.",
+                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide. Call rebuild_board() with contextual ${T.button}s relevant to this game.",
             },
           };
         } catch (err) {
@@ -3405,7 +3422,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           id: call.id,
           name,
           response: {
-            output: `ok. The browser is now open at ${url}. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to the site. You will receive [BROWSER] updates as the student navigates.`,
+            output: `ok. The browser is now open at ${url}. Call rebuild_board() with contextual ${T.button}s relevant to the site. You will receive [BROWSER] updates as the user navigates.`,
           },
         };
       }
@@ -3471,7 +3488,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
           const partOfDay =
             hour < 5 ? "night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 22 ? "evening" : "night";
           const presenceClause = reason ? ` ${reason}` : "";
-          const greetingNudge = `[GREET]${presenceClause} You are now in interact mode (${partOfDay}). Greet them out loud right now using your voice — one short, warm sentence appropriate to the ${partOfDay} and what you can see of their mood. Immediately after greeting, call rebuild_board() with 3-4 follow-up SENTENCE BUTTONs.`;
+          const greetingNudge = `[GREET]${presenceClause} You are now in interact mode (${partOfDay}). Greet them out loud right now using your voice — one short, warm sentence appropriate to the ${partOfDay} and what you can see of their mood. Immediately after greeting, call rebuild_board() with 3-4 follow-up ${T.button}s.`;
           logLiveSession("GREETING (interact entry)", greetingNudge);
           // sendMessage (turnComplete=true) — sendContextInjection would set
           // turnComplete=false and the nudge would just sit in the buffer until
@@ -3678,7 +3695,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
 
       const message = instruction
         ? `Board exited. The user pressed "${btn.label}". ${instruction}`
-        : `RESPONSE BOARD exited. The user pressed "${btn.label}". Use rebuild_board() to create a new RESPONSE BOARD or set_board() to load another.`;
+        : `${T.board} exited. The user pressed "${btn.label}". Use rebuild_board() to create a new ${T.board} or set_board() to load another.`;
 
       return { output: message };
     }
@@ -3965,10 +3982,10 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       } else if (buttonPressTrigger && intent) {
         continuePrompt = `[continue] You declared you would say "${intent}" but didn't speak it aloud. Say it now in your own voice.`;
       } else if (buttonPressTrigger) {
-        continuePrompt = `[continue] The user pressed a button but you didn't respond aloud. Respond now in your own voice.`;
+        continuePrompt = `[continue] The user tapped a ${T.button} but you didn't respond aloud. Respond now in your own voice.`;
       } else {
         // transcript trigger
-        continuePrompt = `[continue] You transcribed the student's speech but did not respond. Speak your reply now in your own voice. Do not repeat their words or imitate their voice.`;
+        continuePrompt = `[continue] You transcribed the user's speech but did not respond. Speak your reply now in your own voice. Do not repeat their words or imitate their voice.`;
       }
       // Reset turn state so the next TURN_COMPLETE sees a clean accumulator
       // and can't retrigger this branch unless the model transcribes anew.
@@ -4212,7 +4229,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
               data: { appId: "youtube", appData: { channels, videos } },
             });
             this.provider?.sendContextInjection(
-              `[SYSTEM] YouTube search for "${query}" didn't match any permitted video titles. The browser is now open on screen so the student can pick something themselves.`,
+              `[SYSTEM] YouTube search for "${query}" didn't match any permitted video titles. The browser is now open on screen so the user can pick something themselves.`,
             );
           } else {
             // No channels and search returned null (e.g. API key missing or
@@ -4579,9 +4596,9 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       const nativeLabels = this.getNativePageButtonLabels(state);
       const blankSlots = maxSlots - nativeLabels.length;
       const available = blankSlots - state.aiAddedButtonLabels.length;
-      parts.push(`Custom RESPONSE BOARD loaded — Fixed SENTENCE BUTTONs (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
+      parts.push(`Custom ${T.board} loaded — Fixed ${T.button}s (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
     } else if (labels.length > 0) {
-      parts.push(`Current RESPONSE BOARD SENTENCE BUTTONs (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
+      parts.push(`Current ${T.board} ${T.button}s (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
     }
 
     parts.push(`Interaction mode: ${this.muteState}`);
@@ -4611,7 +4628,7 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
       header,
       ...parts,
       `IMPORTANT: Continue the conversation naturally from where you left off.`,
-      `Do NOT greet the user again. Do NOT use rebuild_board() — the RESPONSE BOARD is already displayed correctly on the client.`,
+      `Do NOT greet the user again. Do NOT use rebuild_board() — the ${T.board} is already displayed correctly on the client.`,
     ].join("\n");
 
     this.provider!.sendContextInjection(contextText);
@@ -4686,13 +4703,13 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
 
     const parts: string[] = [
       `[BEHAVIORAL REMINDER]`,
-      `On every [BUTTON PRESS], RESPOND ALOUD to the student's SENTENCE and then call rebuild_board() — that is the expected flow. Separately: the SENTENCE BUTTON's speech is voiced by a TTS layer through the device speaker, which the mic will pick up. That re-heard audio is NOT new user speech — do not transcribe it. The transcription rule does NOT change the response rule: respond to the [BUTTON PRESS] text turn, ignore the echoed TTS audio.`,
+      `On every ${T.tagPress}, RESPOND ALOUD to the user's SENTENCE and then call rebuild_board() — that is the expected flow. Separately: the ${T.button}'s speech is voiced by a TTS layer through the device speaker, which the mic will pick up. That re-heard audio is NOT new user speech — do not transcribe it. The transcription rule does NOT change the response rule: respond to the ${T.tagPress} text turn, ignore the echoed TTS audio.`,
     ];
 
     parts.push("Visual checks: Stay silent if nothing important changed. Only report meaningful context changes.");
 
     if (isMuted) {
-      parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use RESPONSE BOARD tools.`);
+      parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use ${T.board} tools.`);
     } else if (this.useDirectAudio) {
       parts.push(`Mode: standard — You speak directly with your voice. Do NOT narrate tool calls.`);
     } else {
@@ -4706,14 +4723,14 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
     }
 
     const maxSlots = state.maxBoardItems || 12;
-    parts.push(`RESPONSE BOARD limit: ${maxSlots} SENTENCE BUTTONs max. Use ${rbRef} before ${abRef} if near the limit.`);
+    parts.push(`${T.board} limit: ${maxSlots} ${T.button}s max. Use ${rbRef} before ${abRef} if near the limit.`);
 
     if (state.availableBoards && state.availableBoards.length > 0 && !state.loadedBoardId) {
       const boardKeys = state.availableBoards.map(b => {
         const hint = b.hint ? ` (${b.hint})` : "";
         return `${b.key}${hint}`;
       }).join(", ");
-      parts.push(`Custom RESPONSE BOARDs available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose${this.useDirectAudio ? "." : ` — do NOT announce board switches with ${sRef}.`}`);
+      parts.push(`Custom ${T.board}s available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose${this.useDirectAudio ? "." : ` — do NOT announce board switches with ${sRef}.`}`);
     }
 
     return parts.join("\n");
@@ -4722,12 +4739,12 @@ The user pressed "More" — they can't find the SENTENCE BUTTON they need on the
   private buildEchoAwareness(): string {
     if (this.useDirectAudio) {
       return `AUDIO ECHO AWARENESS:
-The microphone picks up audio that came from your own speaker — your own voice playing back, and the student's BUTTON PRESS TTS playing back. That re-heard audio is NOT new user speech. Don't TRANSCRIBE it (no transcript() calls for it). This rule is about transcription only — it does NOT mean "don't respond". When a [BUTTON PRESS] text turn arrives, respond to it normally as the user's statement, even though you may hear the TTS echo right after.`;
+The microphone picks up audio that came from your own speaker — your own voice playing back, and the user's BUTTON PRESS TTS playing back. That re-heard audio is NOT new user speech. Don't TRANSCRIBE it (no transcript() calls for it). This rule is about transcription only — it does NOT mean "don't respond". When a ${T.tagPress} text turn arrives, respond to it normally as the user's statement, even though you may hear the TTS echo right after.`;
     }
 
     return `AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. Because speak() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.
-When a SENTENCE BUTTON is pressed, the student's pre-generated SENTENCE is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.`;
+When a ${T.button} is pressed, the user's pre-generated SENTENCE is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.`;
   }
 
   /** Build a TZ + local-time section for the interactive agent system prompt. */
@@ -4927,7 +4944,7 @@ When creating or referencing calendar events, interpret and speak in this local 
   // -------------------------------------------------------------------------
 
   /**
-   * Match each incoming face descriptor against the student's known people
+   * Match each incoming face descriptor against the user's known people
    * (self + linked users + contacts) via the database. Populates
    * `currentIdentifiedFaces`, pushes the list to the client for the debug
    * display, and rate-limit-bumps `recordContactSighting()` for matches.
@@ -5034,7 +5051,7 @@ When creating or referencing calendar events, interpret and speak in this local 
     const sawStudent = this.currentIdentifiedFaces.some(f => f.matched && f.entityType === "student");
     const presenceLine = sawStudent
       ? ""
-      : `\n(NOTE: the student is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
+      : `\n(NOTE: the user is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
     return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}`;
   }
 

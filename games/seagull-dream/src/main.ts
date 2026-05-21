@@ -8,9 +8,10 @@ import { onPlatformMessage, sendToParent, type PlatformMessage } from "@shared/g
 import { createWorld, createSky } from "./world";
 import { createPlayer, type Input } from "./player";
 import { createCameraRig } from "./camera";
-import { PLAYER, GALAXY, GFX, PLANET, CHUNKS, SPEED } from "./config";
+import { PLAYER, GALAXY, GFX, PLANET, CHUNKS, SPEED, READOUT } from "./config";
 import { DEFAULT_GALAXY_PARAMS } from "./galaxy";
 import { setupDebugUI } from "./debug-ui";
+import { createObjectReadout } from "./object-readout";
 
 // ── Generation overrides from URL hash ──────────────────────────────────────
 // The generation panel lets the user edit constants and press
@@ -257,6 +258,24 @@ function updateHyperMeter() {
   }
 }
 function updateLockRing() {
+  // Legacy crosshair-anchored lock ring. Hidden entirely when the
+  // object-readout takes over — the body-anchored ring + arrows in
+  // object-readout.ts replace this visual.
+  if (READOUT.enabled) {
+    if (lockVisible) {
+      lockRing.classList.remove("visible");
+      lockVisible = false;
+    }
+    if (lockEngaged) {
+      lockRing.classList.remove("engaged");
+      lockEngaged = false;
+    }
+    if (lockLabelText !== "") {
+      lockLabel.textContent = "";
+      lockLabelText = "";
+    }
+    return;
+  }
   const p = player.state.lockProgress;
   const targetId = player.state.lockedBodyId;
   const fullyLocked = p >= 1 && targetId !== null;
@@ -285,6 +304,31 @@ function updateLockRing() {
 // ── Debug UI ────────────────────────────────────────────────────────────────
 const debugUI = setupDebugUI({ player, world, input, universeSeed });
 
+// ── Object readout ──────────────────────────────────────────────────────────
+// Body-anchored lock visuals + popup property card. Replaces the legacy
+// center-of-screen lock ring when READOUT.enabled (suppressed inside
+// updateLockRing). Also exposes a `cursorOverride()` — while the gaze
+// sits on the popup, the main loop swaps the player's mouse input for
+// the focused body's projected screen position so the bird keeps
+// tracking the target while the player reads.
+const objectReadout = createObjectReadout();
+// The bird-pull hook reads the cursor override; if a synthetic cursor
+// is being fed to the player anyway (because gaze is in the popup),
+// also lerp forward toward the target as a safety net.
+player.setReadoutHook(() => {
+  const ovr = objectReadout.cursorOverride();
+  if (!ovr) return null;
+  // Convert from screen pixels back into a world direction we can lerp
+  // forward toward. Easier: just look up the locked body and aim there.
+  const lockId = player.state.lockedBodyId;
+  if (!lockId) return null;
+  for (const b of world.bodies) {
+    if (b.id !== lockId) continue;
+    return b.worldPosition.clone().sub(player.state.position).normalize();
+  }
+  return null;
+});
+
 // ── Resize ──────────────────────────────────────────────────────────────────
 function resize() {
   const w = canvas.clientWidth;
@@ -306,6 +350,17 @@ function frame(now: number) {
   prev = now;
   if (!paused) {
     world.update(rig.camera, canvas.clientHeight, dt);
+    // Eyegaze override: if the readout popup is open and the user's
+    // gaze sits on it, feed the player a SYNTHETIC cursor at the
+    // target body's projected screen position instead of the real
+    // mouse. This way reading the popup doesn't pull the bird off
+    // target. The override only lasts as long as the cursor stays in
+    // the popup; when it leaves, control returns to the real cursor.
+    const cursorOverride = objectReadout.cursorOverride();
+    if (cursorOverride) {
+      input.mouseX = THREE.MathUtils.clamp(cursorOverride.x / canvas.clientWidth, 0, 1);
+      input.mouseY = THREE.MathUtils.clamp(cursorOverride.y / canvas.clientHeight, 0, 1);
+    }
     player.update(input, dt);
     world.checkActiveSystem(player.state.position);
     world.gravityAt(player.state.position, player.state.gravity);
@@ -322,6 +377,9 @@ function frame(now: number) {
   // keep up with the gaze-driven multiplier.
   updateLockRing();
   updateHyperMeter();
+  // Object readout overlay (body-anchored ring + popup) — driven by
+  // player.state.lockedBodyId / lockProgress, owns its own DOM nodes.
+  objectReadout.update(player, world, rig.camera, canvas, input, dt);
 
   // Debug UI refresh + diagnostic console logs at fixed cadence.
   dbgTimer += dt;

@@ -515,6 +515,58 @@ export const GALAXY = {
   aggregateMaxSize: 800,
 };
 
+// ── Object-readout (body-anchored lock + popup info card) ──────────────────
+// Optional setting (on for now). When enabled, the center lock-ring is
+// suppressed and replaced with a ring drawn AROUND the candidate body in
+// world-space plus 4 arrows that animate toward it as lock builds. At full
+// lock, a popup info card appears above the body with property icons and
+// a distance indicator.
+export const READOUT = {
+  /** Master toggle. Disable to fall back to the legacy center lock-ring. */
+  enabled: true,
+  /**
+   * Minimum on-screen radius (px) for the body-anchored ring. The ring
+   * is sized to the body's apparent radius (so it hugs the disc when
+   * close), but clamps to this minimum so the ring is visible even when
+   * the body is a sub-pixel dot. Bigger value = the ring reads as
+   * "locked area" from further away.
+   */
+  ringMinPx: 38,
+  /** Maximum ring radius (px) so the ring doesn't grow off-screen once
+   *  the player is close enough to see the body's full disc. */
+  ringMaxPx: 220,
+  /** Approach distance (px from ring center) of the 4 cardinal arrows at
+   *  lockProgress = 0. They animate from this distance inward toward the
+   *  ring as the lock fills. */
+  arrowStartPx: 64,
+  /**
+   * Soft bird auto-orient pull when the readout popup is open. This is
+   * a fallback — the primary "look at target" mechanism is the cursor-
+   * in-popup override (the main loop rewrites `input.mouseX/Y` to the
+   * target's projected pixel while gaze is on the popup). The pull
+   * here just keeps very-low-input drifts from slowly walking the
+   * heading off target if the player is hovering outside the popup.
+   * Set to 0 to disable; values around 0.1–0.3 feel like a gentle
+   * magnet.
+   */
+  birdPull: 0.2,
+  /**
+   * Dwell time (ms) for popup interactive elements. Hovering a sub-
+   * object dot or the parent-up button for this long fires the
+   * selection — the standard eyegaze interaction model. Mouse clicks
+   * always fire immediately as a fallback.
+   */
+  dwellMs: 700,
+  /**
+   * Threshold (multiples of one pixel of angular size) below which the
+   * dominant-pixel collapse switches the lock target to its parent.
+   * At 1.0 the collapse triggers exactly when body & parent share a
+   * pixel; >1 gives a small hysteresis margin so the transition feels
+   * stable at the boundary.
+   */
+  collapsePixelMultiplier: 1.25,
+};
+
 // ── Render tuning (live-slider-bound) ───────────────────────────────────────
 // Active sliders only — these are the ones actually useful for iterating
 // on the current visual state. One-off diagnostic sliders are removed as

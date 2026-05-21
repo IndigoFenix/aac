@@ -35,6 +35,10 @@ import { IdentityVerificationDialog } from "./components/IdentityVerificationDia
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
 import { AdminDashboard } from "./pages/AdminDashboard";
+import AdminLoginPage from "./pages/AdminLoginPage";
+import AdminForgotPasswordPage from "./pages/AdminForgotPasswordPage";
+import AdminResetPasswordPage from "./pages/AdminResetPasswordPage";
+import AdminMfaRecoveryPage from "./pages/AdminMfaRecoveryPage";
 import LandingPage from "./components/landing-page/LandingPage";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
 
@@ -124,7 +128,9 @@ function ProtectedDashboard() {
   );
 }
 
-// Protected route that requires system admin privileges
+// Protected route that requires system admin privileges. Used for the
+// nested /admin/<section> routes — landing on one of these while unauthed
+// kicks you to the admin login (/admin), not the regular /login.
 function SystemAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isLoading } = useAuth();
 
@@ -137,7 +143,7 @@ function SystemAdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    return <Redirect to="/admin" />;
   }
 
   if (!user?.isSystemAdmin) {
@@ -145,6 +151,32 @@ function SystemAdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+// Entry point for /admin (the bare path). Unauthenticated visitors get the
+// admin login form here; authenticated system admins go straight to the
+// dashboard; authenticated non-admins are bounced to /home so the route
+// isn't usable as a side-channel landing.
+function AdminEntryRoute() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AdminLoginPage />;
+  }
+
+  if (!user?.isSystemAdmin) {
+    return <Redirect to="/home" />;
+  }
+
+  return <AdminDashboard />;
 }
 
 function Router() {
@@ -226,6 +258,21 @@ function Router() {
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
 
+      {/* Admin public auth-flow routes — must precede the bare /admin entry
+          so they take precedence inside wouter's Switch. */}
+      <Route path="/admin/forgot-password">
+        <AdminForgotPasswordPage />
+      </Route>
+      <Route path="/admin/reset-password/:token">
+        <AdminResetPasswordPage />
+      </Route>
+      <Route path="/admin/mfa-recovery">
+        <AdminMfaRecoveryPage />
+      </Route>
+      <Route path="/admin/mfa-recovery/:token">
+        <AdminMfaRecoveryPage />
+      </Route>
+
       {/* Admin routes - require system admin */}
       <Route path="/admin/personas">
         <SystemAdminRoute>
@@ -302,10 +349,10 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      {/* Bare /admin: unauthenticated visitors get the admin login form,
+          authenticated system admins get the dashboard. */}
       <Route path="/admin">
-        <SystemAdminRoute>
-          <AdminDashboard />
-        </SystemAdminRoute>
+        <AdminEntryRoute />
       </Route>
 
       {/* Authenticated home (chat/dashboard) */}

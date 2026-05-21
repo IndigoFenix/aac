@@ -138,17 +138,17 @@ export function createCelestialBody(opts: CreateCelestialBodyOpts): CelestialBod
 
   if (isLuminous) {
     return buildLuminousBody({
-      physBody, state, radiusM, gm, orbit, rotation, initialPosition, scene,
+      physBody, state, radiusM, gm, orbit, rotation, initialPosition, scene, resolved,
     });
   }
   if (isGasDominated) {
     return buildGasBody({
-      physBody, state, features, radiusM, gm, orbit, rotation, initialPosition,
+      physBody, state, features, radiusM, gm, orbit, rotation, initialPosition, resolved,
     });
   }
   return buildRockyBody({
     physBody, state, features, radiusM, gm, orbit, rotation, initialPosition,
-    forcedPalette,
+    forcedPalette, resolved,
   });
 }
 
@@ -193,12 +193,16 @@ interface BranchOpts {
   orbit: BodyOrbit | null;
   rotation: BodyRotation;
   initialPosition: THREE.Vector3;
+  /** ResolvedBody is forwarded so each branch can stamp it onto the
+   *  CelestialBody as `resolvedPhysics` — used by the object-readout to
+   *  surface authoritative property values without re-resolving. */
+  resolved: ResolvedBody;
 }
 
 function buildLuminousBody(
   o: BranchOpts & { scene: THREE.Scene },
 ): CelestialBodyCreation {
-  const { physBody, state, radiusM, gm, orbit, rotation, initialPosition, scene } = o;
+  const { physBody, state, radiusM, gm, orbit, rotation, initialPosition, scene, resolved } = o;
 
   const group = new THREE.Group();
   group.name = `body_${physBody.id}_lum`;
@@ -228,6 +232,7 @@ function buildLuminousBody(
   const body: CelestialBody = {
     id: physBody.id,
     type: "star",
+    resolvedPhysics: resolved,
     radius: radiusM,
     // System-root reach: 200 Mm preserved from previous implementation as
     // a sensible "leaves the star's domain" boundary; tuned for game-feel.
@@ -313,7 +318,7 @@ function buildLuminousBody(
 function buildGasBody(
   o: BranchOpts & { features: BodyFeatures },
 ): CelestialBodyCreation {
-  const { physBody, state, features, radiusM, gm, orbit, rotation, initialPosition } = o;
+  const { physBody, state, features, radiusM, gm, orbit, rotation, initialPosition, resolved } = o;
 
   const group = new THREE.Group();
   group.name = `body_${physBody.id}_gas`;
@@ -336,6 +341,7 @@ function buildGasBody(
   const body: CelestialBody = {
     id: physBody.id,
     type: "gas",
+    resolvedPhysics: resolved,
     radius: radiusM,
     influenceFalloff: radiusM * 4,
     gm,
@@ -514,7 +520,7 @@ function buildRockyBody(
   o: BranchOpts & { features: BodyFeatures; forcedPalette?: RockyPalette },
 ): CelestialBodyCreation {
   const {
-    physBody, state, features, radiusM, gm, orbit, rotation, initialPosition, forcedPalette,
+    physBody, state, features, radiusM, gm, orbit, rotation, initialPosition, forcedPalette, resolved,
   } = o;
 
   const palette = forcedPalette ?? selectRockyPalette(physBody, state, features);
@@ -800,6 +806,7 @@ function buildRockyBody(
   const body: CelestialBody = {
     id: physBody.id,
     type: "rocky",
+    resolvedPhysics: resolved,
     radius: radiusM,
     influenceFalloff: PLANET.influenceFalloff,
     gm,

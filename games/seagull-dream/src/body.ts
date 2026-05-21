@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { ScatterObject } from "./scatter";
 import type { CloudSystem } from "./cloud-system";
+import type { ResolvedBody } from "./physics-system/system";
 
 // A celestial body — anything with mass and position in the world. Stars,
 // rocky planets, gas planets, moons all share this shape; the differences
@@ -198,6 +199,14 @@ export interface CelestialBody {
    *  position into local before iterating. Set lookup is O(1) for
    *  add/delete on chunk lifecycle. */
   scatter?: Set<ScatterObject>;
+
+  /** Resolved physics blueprint for this body — state + features as
+   *  computed by `resolveSystem`. Set at construction time so the
+   *  object-readout / UI can present authoritative property values
+   *  (mass, temperature, atmosphere, life, etc.) without re-running the
+   *  evolution pipeline. Stars left this undefined for the system root
+   *  (`buildLuminousBody` does set it). */
+  resolvedPhysics?: ResolvedBody;
 
   /** Idempotent heavy-construction trigger. Bodies are built in two
    *  stages: an eager stage at createCelestialBody time (body record,

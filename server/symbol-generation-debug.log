@@ -7016,3 +7016,295 @@
 [2026-05-21T11:17:35.748Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
 [2026-05-21T11:17:50.458Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-05-21T11:17:50.461Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:44:17.817Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:44:17.818Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:44:19.000Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:44:19.000Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:44:47.151Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:44:47.153Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:44:48.223Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:44:48.223Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:01.426Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:01.428Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:02.478Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:02.479Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:07.599Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:07.600Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:08.926Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:08.927Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:16.455Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:16.484Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:17.702Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T13:45:17.702Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T13:45:29.639Z] [resolveImageKeys] Resolving 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (format=internal, useUnapproved=true)
+[2026-05-21T13:45:30.155Z] [resolveImageKeys] No symbol found for "race_car"
+[2026-05-21T13:45:30.976Z] [resolveImageKeys] No symbol found for "adventure_game"
+[2026-05-21T13:45:31.006Z] [resolveImageKeys] Resolving 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (format=internal, useUnapproved=true)
+[2026-05-21T13:45:31.141Z] [resolveImageKeys] No symbol found for "strategy_game"
+[2026-05-21T13:45:31.537Z] [resolveImageKeys] No symbol found for "race_car"
+[2026-05-21T13:45:32.479Z] [resolveImageKeys] No symbol found for "shooting_game"
+[2026-05-21T13:45:32.612Z] [resolveImageKeys] No symbol found for "adventure_game"
+[2026-05-21T13:45:33.098Z] [resolveImageKeys] No symbol found for "puzzle_game"
+[2026-05-21T13:45:33.100Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: race_car, adventure_game, strategy_game, shooting_game, puzzle_game
+[2026-05-21T13:45:33.101Z] [queueGeneration] Queuing 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (hasCallback=true)
+[2026-05-21T13:45:33.105Z] [resolveImageKeys] Resolving 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:45:33.897Z] [resolveImageKeys] No symbol found for "strategy_game"
+[2026-05-21T13:45:34.092Z] [processQueue] Generating "puzzle_game"...
+[2026-05-21T13:45:34.208Z] [resolveImageKeys] No symbol found for "race_car"
+[2026-05-21T13:45:34.377Z] [resolveImageKeys] No symbol found for "shooting_game"
+[2026-05-21T13:45:34.517Z] [resolveImageKeys] No symbol found for "adventure_game"
+[2026-05-21T13:45:34.681Z] [resolveImageKeys] No symbol found for "puzzle_game"
+[2026-05-21T13:45:34.683Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: race_car, adventure_game, strategy_game, shooting_game, puzzle_game
+[2026-05-21T13:45:34.685Z] [queueGeneration] Queuing 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (hasCallback=true)
+[2026-05-21T13:45:34.688Z] [resolveImageKeys] Resolving 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:45:34.698Z] [resolveImageKeys] No symbol found for "strategy_game"
+[2026-05-21T13:45:35.003Z] [resolveImageKeys] No symbol found for "race_car"
+[2026-05-21T13:45:35.019Z] [resolveImageKeys] No symbol found for "shooting_game"
+[2026-05-21T13:45:35.159Z] [resolveImageKeys] No symbol found for "adventure_game"
+[2026-05-21T13:45:35.181Z] [resolveImageKeys] No symbol found for "puzzle_game"
+[2026-05-21T13:45:35.181Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: race_car, adventure_game, strategy_game, shooting_game, puzzle_game
+[2026-05-21T13:45:35.182Z] [queueGeneration] Queuing 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (hasCallback=true)
+[2026-05-21T13:45:35.326Z] [resolveImageKeys] No symbol found for "strategy_game"
+[2026-05-21T13:45:35.485Z] [resolveImageKeys] No symbol found for "shooting_game"
+[2026-05-21T13:45:35.641Z] [resolveImageKeys] No symbol found for "puzzle_game"
+[2026-05-21T13:45:35.642Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: race_car, adventure_game, strategy_game, shooting_game, puzzle_game
+[2026-05-21T13:45:35.642Z] [queueGeneration] Queuing 5 keys: race_car, adventure_game, strategy_game, shooting_game, puzzle_game (hasCallback=true)
+[2026-05-21T13:45:58.234Z] [COST] imageKey="puzzle_game" | refinement: gemini/gemini-2.5-flash in=727 out=74 | image: openai/gpt-image-1 in=80 out=272
+[2026-05-21T13:45:58.235Z] [processQueue] Generated "puzzle_game" → 6a58bf87-3890-4c75-87cc-f52f30097bd7 (1 total)
+[2026-05-21T13:45:58.236Z] [processQueue] FULL REFINED PROMPT for "puzzle_game": A simple, bold illustration of a four-piece jigsaw puzzle, with one piece slightly separated from the others to indicate a game or activity. The puzzle pieces are rendered in flat, solid, saturated colors like blue, yellow, green, and red, each with a thick black outline. The overall composition is centered on a transparent background, instantly recognizable as an AAC symbol.
+[2026-05-21T13:46:02.407Z] [processQueue] "puzzle_game" already exists → 6a58bf87-3890-4c75-87cc-f52f30097bd7
+[2026-05-21T13:46:07.766Z] [processQueue] Generating "shooting_game"...
+[2026-05-21T13:46:26.166Z] [COST] imageKey="shooting_game" | refinement: gemini/gemini-2.5-flash in=727 out=106 | image: openai/gpt-image-1 in=115 out=272
+[2026-05-21T13:46:26.168Z] [processQueue] Generated "shooting_game" → b0107b11-cf9e-42f1-beb1-0d06b2ca13ba (2 total)
+[2026-05-21T13:46:26.168Z] [processQueue] FULL REFINED PROMPT for "shooting_game": A simple, bold illustration of a generic human figure, facing forward, holding a video game controller with both hands. The figure has a slightly stylized body, a round head with two simple black dots for eyes and a small curved line for a mouth, and no hair. A small, stylized bullet icon with motion lines emanates from the top of the controller, pointing upwards, indicating the "shooting" action. The illustration uses flat, solid colors with bold black outlines, suitable for an AAC communication board, on a transparent background.
+[2026-05-21T13:46:30.331Z] [processQueue] Generating "strategy_game"...
+[2026-05-21T13:46:50.694Z] [COST] imageKey="strategy_game" | refinement: gemini/gemini-2.5-flash in=727 out=87 | image: openai/gpt-image-1 in=94 out=272
+[2026-05-21T13:46:50.695Z] [processQueue] Generated "strategy_game" → 6fc1c0c6-be57-4dee-afb0-008931e56cd8 (3 total)
+[2026-05-21T13:46:50.695Z] [processQueue] FULL REFINED PROMPT for "strategy_game": A simple, bold AAC symbol icon of two generic human figures, facing each other across a small, square game board with a few stylized game pieces on it. The figures have simple dot eyes and small curved mouths, with no hair. One figure points a finger towards the game board, indicating thought or planning. The illustration uses flat, solid colors with bold black outlines, on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-21T13:46:55.700Z] [processQueue] Generating "adventure_game"...
+[2026-05-21T13:47:17.164Z] [COST] imageKey="adventure_game" | refinement: gemini/gemini-2.5-flash in=727 out=81 | image: openai/gpt-image-1 in=89 out=272
+[2026-05-21T13:47:17.164Z] [processQueue] Generated "adventure_game" → 4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805 (4 total)
+[2026-05-21T13:47:17.165Z] [processQueue] FULL REFINED PROMPT for "adventure_game": A simple, bold AAC symbol icon depicting an adventure game. The central image is a classic green pixelated sword with a brown hilt, pointing diagonally upwards to the right. Behind the sword, a stylized, simple brown treasure chest with a gold lock is slightly open, revealing a few gold coins. The sword and chest have thick black outlines and are rendered in flat, solid colors on a transparent background.
+[2026-05-21T13:47:21.335Z] [processQueue] Generating "race_car"...
+[2026-05-21T13:47:22.697Z] [resolveImageKeys] Resolving 1 keys: board_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:47:23.200Z] [resolveImageKeys] Resolved "board_game" → /api/custom-symbols/1d00ca46-dd23-4157-8436-b6c5879501d2/image
+[2026-05-21T13:47:23.201Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T13:47:36.078Z] [resolveImageKeys] Resolving 1 keys: which_game (format=internal, useUnapproved=true)
+[2026-05-21T13:47:36.588Z] [resolveImageKeys] No symbol found for "which_game"
+[2026-05-21T13:47:36.589Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: which_game
+[2026-05-21T13:47:36.589Z] [queueGeneration] Queuing 1 keys: which_game (hasCallback=true)
+[2026-05-21T13:47:36.591Z] [resolveImageKeys] Resolving 1 keys: which_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:47:38.148Z] [resolveImageKeys] No symbol found for "which_game"
+[2026-05-21T13:47:38.149Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: which_game
+[2026-05-21T13:47:38.149Z] [queueGeneration] Queuing 1 keys: which_game (hasCallback=true)
+[2026-05-21T13:47:38.616Z] [COST] imageKey="race_car" | refinement: gemini/gemini-2.5-flash in=727 out=101 | image: openai/gpt-image-1 in=107 out=272
+[2026-05-21T13:47:38.616Z] [processQueue] Generated "race_car" → c475ad29-91c1-43e7-9631-f2fb21866ebd (5 total)
+[2026-05-21T13:47:38.618Z] [processQueue] FULL REFINED PROMPT for "race_car": A simple, bold illustration of a race car, viewed from a slightly elevated side angle, speeding to the right. The car is sleek and low to the ground, with large wheels and a spoiler at the back. It has a prominent number "1" on the side. Use flat, solid colors: a vibrant red for the car body, black for the tires, and white for the number and a stripe. Bold black outlines define all shapes. Motion lines extend horizontally behind the car to indicate speed.
+[2026-05-21T13:47:43.425Z] [processQueue] Generating "which_game"...
+[2026-05-21T13:47:48.683Z] [resolveImageKeys] Resolving 4 keys: race_car, adventure_game, strategy_game, puzzle_game (format=internal, useUnapproved=true)
+[2026-05-21T13:47:49.197Z] [resolveImageKeys] Resolved "race_car" → __SYMBOL__:c475ad29-91c1-43e7-9631-f2fb21866ebd
+[2026-05-21T13:47:49.937Z] [resolveImageKeys] Resolving 4 keys: race_car, adventure_game, strategy_game, puzzle_game (format=internal, useUnapproved=true)
+[2026-05-21T13:47:49.995Z] [resolveImageKeys] Resolved "adventure_game" → __SYMBOL__:4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T13:47:50.474Z] [resolveImageKeys] Resolved "race_car" → __SYMBOL__:c475ad29-91c1-43e7-9631-f2fb21866ebd
+[2026-05-21T13:47:51.318Z] [resolveImageKeys] Resolved "strategy_game" → __SYMBOL__:6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T13:47:51.483Z] [resolveImageKeys] Resolved "adventure_game" → __SYMBOL__:4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T13:47:51.587Z] [resolveImageKeys] Resolved "puzzle_game" → __SYMBOL__:6a58bf87-3890-4c75-87cc-f52f30097bd7
+[2026-05-21T13:47:51.588Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-21T13:47:51.590Z] [resolveImageKeys] Resolving 4 keys: race_car, adventure_game, strategy_game, puzzle_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:47:51.676Z] [resolveImageKeys] Resolved "strategy_game" → __SYMBOL__:6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T13:47:51.914Z] [resolveImageKeys] Resolved "race_car" → /api/custom-symbols/c475ad29-91c1-43e7-9631-f2fb21866ebd/image
+[2026-05-21T13:47:51.986Z] [resolveImageKeys] Resolved "puzzle_game" → __SYMBOL__:6a58bf87-3890-4c75-87cc-f52f30097bd7
+[2026-05-21T13:47:51.987Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-21T13:47:51.989Z] [resolveImageKeys] Resolving 4 keys: race_car, adventure_game, strategy_game, puzzle_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:47:52.148Z] [resolveImageKeys] Resolved "adventure_game" → /api/custom-symbols/4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805/image
+[2026-05-21T13:47:52.302Z] [resolveImageKeys] Resolved "race_car" → /api/custom-symbols/c475ad29-91c1-43e7-9631-f2fb21866ebd/image
+[2026-05-21T13:47:52.458Z] [resolveImageKeys] Resolved "strategy_game" → /api/custom-symbols/6fc1c0c6-be57-4dee-afb0-008931e56cd8/image
+[2026-05-21T13:47:52.554Z] [resolveImageKeys] Resolved "adventure_game" → /api/custom-symbols/4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805/image
+[2026-05-21T13:47:52.950Z] [resolveImageKeys] Resolved "puzzle_game" → /api/custom-symbols/6a58bf87-3890-4c75-87cc-f52f30097bd7/image
+[2026-05-21T13:47:52.951Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-21T13:47:53.033Z] [resolveImageKeys] Resolved "strategy_game" → /api/custom-symbols/6fc1c0c6-be57-4dee-afb0-008931e56cd8/image
+[2026-05-21T13:47:54.323Z] [resolveImageKeys] Resolved "puzzle_game" → /api/custom-symbols/6a58bf87-3890-4c75-87cc-f52f30097bd7/image
+[2026-05-21T13:47:54.324Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-21T13:48:01.162Z] [COST] imageKey="which_game" | refinement: gemini/gemini-2.5-flash in=727 out=138 | image: openai/gpt-image-1 in=144 out=272
+[2026-05-21T13:48:01.168Z] [processQueue] Generated "which_game" → 7d5873d3-8251-4547-9f2e-69b8f4745a49 (6 total)
+[2026-05-21T13:48:01.171Z] [processQueue] FULL REFINED PROMPT for "which_game": A bold, simple AAC symbol icon on a transparent background. The icon features a stylized, generic human figure with a slightly oversized head, simple dot eyes, and a small curved mouth, facing forward. The figure's arms are raised slightly, palms open, in a questioning gesture. Above and slightly in front of the figure, a large, bright yellow question mark is prominently displayed, indicating "which" or "question." To the right of the figure, a classic, simple board game piece (like a pawn or a generic token) is depicted in a solid blue color, representing "game." All elements have thick black outlines and flat, solid colors, with no gradients or shadows.
+[2026-05-21T13:48:05.350Z] [processQueue] "which_game" already exists → 7d5873d3-8251-4547-9f2e-69b8f4745a49
+[2026-05-21T13:48:09.564Z] [processQueue] "puzzle_game" already exists → 6a58bf87-3890-4c75-87cc-f52f30097bd7
+[2026-05-21T13:48:10.261Z] [resolveImageKeys] Resolving 2 keys: new_game, known_game (format=internal, useUnapproved=true)
+[2026-05-21T13:48:10.823Z] [resolveImageKeys] No symbol found for "new_game"
+[2026-05-21T13:48:11.284Z] [resolveImageKeys] Resolving 2 keys: new_game, known_game (format=internal, useUnapproved=true)
+[2026-05-21T13:48:11.714Z] [resolveImageKeys] No symbol found for "known_game"
+[2026-05-21T13:48:11.716Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: new_game, known_game
+[2026-05-21T13:48:11.717Z] [queueGeneration] Queuing 2 keys: new_game, known_game (hasCallback=true)
+[2026-05-21T13:48:11.720Z] [resolveImageKeys] Resolving 2 keys: new_game, known_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:48:12.127Z] [resolveImageKeys] No symbol found for "new_game"
+[2026-05-21T13:48:13.282Z] [resolveImageKeys] No symbol found for "new_game"
+[2026-05-21T13:48:13.416Z] [resolveImageKeys] No symbol found for "known_game"
+[2026-05-21T13:48:13.417Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: new_game, known_game
+[2026-05-21T13:48:13.418Z] [queueGeneration] Queuing 2 keys: new_game, known_game (hasCallback=true)
+[2026-05-21T13:48:13.419Z] [resolveImageKeys] Resolving 2 keys: new_game, known_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:48:13.600Z] [resolveImageKeys] No symbol found for "known_game"
+[2026-05-21T13:48:13.601Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: new_game, known_game
+[2026-05-21T13:48:13.601Z] [queueGeneration] Queuing 2 keys: new_game, known_game (hasCallback=true)
+[2026-05-21T13:48:14.067Z] [resolveImageKeys] No symbol found for "new_game"
+[2026-05-21T13:48:14.227Z] [processQueue] "shooting_game" already exists → b0107b11-cf9e-42f1-beb1-0d06b2ca13ba
+[2026-05-21T13:48:15.194Z] [resolveImageKeys] No symbol found for "known_game"
+[2026-05-21T13:48:15.195Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: new_game, known_game
+[2026-05-21T13:48:15.196Z] [queueGeneration] Queuing 2 keys: new_game, known_game (hasCallback=true)
+[2026-05-21T13:48:18.396Z] [processQueue] Generating "known_game"...
+[2026-05-21T13:48:20.895Z] [resolveImageKeys] Resolving 1 keys: other_game (format=internal, useUnapproved=true)
+[2026-05-21T13:48:21.543Z] [resolveImageKeys] Resolved "other_game" → __SYMBOL__:ba83ab2d-b78a-4075-a85c-74a81f5f5e8c
+[2026-05-21T13:48:21.543Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T13:48:21.545Z] [resolveImageKeys] Resolving 1 keys: other_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:48:21.733Z] [resolveImageKeys] Resolving 1 keys: other_game (format=internal, useUnapproved=true)
+[2026-05-21T13:48:22.468Z] [resolveImageKeys] Resolved "other_game" → /api/custom-symbols/ba83ab2d-b78a-4075-a85c-74a81f5f5e8c/image
+[2026-05-21T13:48:22.469Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T13:48:22.944Z] [resolveImageKeys] Resolved "other_game" → __SYMBOL__:ba83ab2d-b78a-4075-a85c-74a81f5f5e8c
+[2026-05-21T13:48:22.945Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T13:48:22.947Z] [resolveImageKeys] Resolving 1 keys: other_game (format=api-path, useUnapproved=true)
+[2026-05-21T13:48:24.257Z] [resolveImageKeys] Resolved "other_game" → /api/custom-symbols/ba83ab2d-b78a-4075-a85c-74a81f5f5e8c/image
+[2026-05-21T13:48:24.258Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T13:48:33.868Z] [COST] imageKey="known_game" | refinement: gemini/gemini-2.5-flash in=727 out=86 | image: openai/gpt-image-1 in=93 out=272
+[2026-05-21T13:48:33.869Z] [processQueue] Generated "known_game" → def98d24-d4c1-4044-81de-b6d14dbd7e4b (7 total)
+[2026-05-21T13:48:33.870Z] [processQueue] FULL REFINED PROMPT for "known_game": A simple, bold illustration of a classic board game box, viewed from the front. The box is square with a dark blue top and a lighter blue bottom, outlined in thick black. On the top of the box, a large, stylized white question mark is centrally placed, also outlined in thick black. The overall style is flat, solid colors with no gradients or shadows, suitable for an AAC symbol icon on a transparent background.
+[2026-05-21T13:48:38.850Z] [processQueue] "known_game" already exists → def98d24-d4c1-4044-81de-b6d14dbd7e4b
+[2026-05-21T13:48:43.052Z] [processQueue] Generating "new_game"...
+[2026-05-21T13:49:07.652Z] [COST] imageKey="new_game" | refinement: gemini/gemini-2.5-flash in=727 out=108 | image: openai/gpt-image-1 in=114 out=272
+[2026-05-21T13:49:07.670Z] [processQueue] Generated "new_game" → acabc13b-dbc9-4485-9c61-0bdd194f9536 (8 total)
+[2026-05-21T13:49:07.671Z] [processQueue] FULL REFINED PROMPT for "new_game": A simple, bold AAC symbol icon depicting a generic human figure with a slightly oversized head, facing forward, holding a classic video game controller with both hands. The figure has simple dot eyes and a small curved mouth, no hair, and is wearing a plain short-sleeved shirt. The controller is grey with two black joysticks and four colored buttons (red, blue, green, yellow). The figure and controller are rendered with thick black outlines and flat, solid colors on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-21T13:49:11.854Z] [processQueue] "new_game" already exists → acabc13b-dbc9-4485-9c61-0bdd194f9536
+[2026-05-21T13:49:16.023Z] [processQueue] "known_game" already exists → def98d24-d4c1-4044-81de-b6d14dbd7e4b
+[2026-05-21T13:49:20.193Z] [processQueue] "new_game" already exists → acabc13b-dbc9-4485-9c61-0bdd194f9536
+[2026-05-21T13:49:24.571Z] [processQueue] "known_game" already exists → def98d24-d4c1-4044-81de-b6d14dbd7e4b
+[2026-05-21T13:49:28.743Z] [processQueue] "new_game" already exists → acabc13b-dbc9-4485-9c61-0bdd194f9536
+[2026-05-21T13:49:32.915Z] [processQueue] "strategy_game" already exists → 6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T13:49:37.094Z] [processQueue] "adventure_game" already exists → 4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T13:49:41.266Z] [processQueue] "race_car" already exists → c475ad29-91c1-43e7-9631-f2fb21866ebd
+[2026-05-21T13:49:45.436Z] [processQueue] "puzzle_game" already exists → 6a58bf87-3890-4c75-87cc-f52f30097bd7
+[2026-05-21T13:49:49.602Z] [processQueue] "shooting_game" already exists → b0107b11-cf9e-42f1-beb1-0d06b2ca13ba
+[2026-05-21T13:49:55.138Z] [processQueue] "strategy_game" already exists → 6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T13:49:59.333Z] [processQueue] "adventure_game" already exists → 4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T13:50:03.615Z] [processQueue] "race_car" already exists → c475ad29-91c1-43e7-9631-f2fb21866ebd
+[2026-05-21T13:50:07.788Z] [processQueue] "shooting_game" already exists → b0107b11-cf9e-42f1-beb1-0d06b2ca13ba
+[2026-05-21T13:50:11.967Z] [processQueue] "strategy_game" already exists → 6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T13:50:16.150Z] [processQueue] "adventure_game" already exists → 4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T13:50:20.335Z] [processQueue] "race_car" already exists → c475ad29-91c1-43e7-9631-f2fb21866ebd
+[2026-05-21T15:09:54.277Z] [resolveImageKeys] Resolving 1 keys: day#past#question (format=internal, useUnapproved=true)
+[2026-05-21T15:09:54.778Z] [resolveImageKeys] No symbol found for "day#past#question"
+[2026-05-21T15:09:54.779Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: day#past#question
+[2026-05-21T15:09:54.780Z] [queueGeneration] Queuing 1 keys: day#past#question (hasCallback=true)
+[2026-05-21T15:09:55.762Z] [processQueue] Generating "day#past#question"...
+[2026-05-21T15:10:14.881Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T15:10:14.882Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T15:10:18.776Z] [COST] imageKey="day#past#question" | refinement: gemini/gemini-2.5-flash in=730 out=78 | image: openai/gpt-image-1 in=84 out=272
+[2026-05-21T15:10:18.776Z] [processQueue] Generated "day#past#question" → 61cb3cb0-ce68-4740-92d7-daf01d8cce54 (1 total)
+[2026-05-21T15:10:18.777Z] [processQueue] FULL REFINED PROMPT for "day#past#question": A simple, bold AAC symbol icon on a transparent background. A stylized, generic human figure with a large head and small body, facing forward. The figure has a thought bubble above its head, containing a large, bold question mark. The figure's body is light blue, the thought bubble is light yellow, and the question mark is dark blue. All elements have thick black outlines.
+[2026-05-21T15:10:27.935Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T15:10:27.936Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T15:10:38.902Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=internal, useUnapproved=true)
+[2026-05-21T15:10:41.103Z] [resolveImageKeys] No symbol found for "favorite_show"
+[2026-05-21T15:10:41.105Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: favorite_show
+[2026-05-21T15:10:41.106Z] [queueGeneration] Queuing 1 keys: favorite_show (hasCallback=true)
+[2026-05-21T15:10:41.113Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=api-path, useUnapproved=true)
+[2026-05-21T15:10:42.245Z] [processQueue] Generating "favorite_show"...
+[2026-05-21T15:10:42.248Z] [resolveImageKeys] No symbol found for "favorite_show"
+[2026-05-21T15:10:42.249Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: favorite_show
+[2026-05-21T15:10:42.249Z] [queueGeneration] Queuing 1 keys: favorite_show (hasCallback=true)
+[2026-05-21T15:10:50.278Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=internal, useUnapproved=true)
+[2026-05-21T15:10:53.914Z] [resolveImageKeys] No symbol found for "favorite_show"
+[2026-05-21T15:10:53.914Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: favorite_show
+[2026-05-21T15:10:53.915Z] [queueGeneration] Queuing 1 keys: favorite_show (hasCallback=true)
+[2026-05-21T15:10:53.917Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=api-path, useUnapproved=true)
+[2026-05-21T15:10:55.038Z] [resolveImageKeys] No symbol found for "favorite_show"
+[2026-05-21T15:10:55.038Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: favorite_show
+[2026-05-21T15:10:55.039Z] [queueGeneration] Queuing 1 keys: favorite_show (hasCallback=true)
+[2026-05-21T15:10:59.353Z] [COST] imageKey="favorite_show" | refinement: gemini/gemini-2.5-flash in=727 out=81 | image: openai/gpt-image-1 in=88 out=272
+[2026-05-21T15:10:59.353Z] [processQueue] Generated "favorite_show" → fe0d7499-4ab7-48d4-bc35-60ab31de1848 (1 total)
+[2026-05-21T15:10:59.354Z] [processQueue] FULL REFINED PROMPT for "favorite_show": A simple, bold AAC symbol icon on a transparent background. The icon depicts a stylized, classic television set from the front, with a prominent screen. The television is a solid medium gray with a darker gray screen. A single, large, bright yellow star is centrally placed on the screen, indicating "favorite." The entire image has thick black outlines and uses flat, solid colors with no gradients or shadows.
+[2026-05-21T15:11:03.559Z] [processQueue] "favorite_show" already exists → fe0d7499-4ab7-48d4-bc35-60ab31de1848
+[2026-05-21T15:11:07.730Z] [processQueue] "favorite_show" already exists → fe0d7499-4ab7-48d4-bc35-60ab31de1848
+[2026-05-21T15:11:13.396Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=internal, useUnapproved=true)
+[2026-05-21T15:11:14.110Z] [processQueue] "favorite_show" already exists → fe0d7499-4ab7-48d4-bc35-60ab31de1848
+[2026-05-21T15:11:18.868Z] [resolveImageKeys] Resolved "favorite_show" → __SYMBOL__:fe0d7499-4ab7-48d4-bc35-60ab31de1848
+[2026-05-21T15:11:18.869Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T15:11:18.875Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=api-path, useUnapproved=true)
+[2026-05-21T15:11:21.972Z] [resolveImageKeys] Resolved "favorite_show" → /api/custom-symbols/fe0d7499-4ab7-48d4-bc35-60ab31de1848/image
+[2026-05-21T15:11:21.973Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T15:11:33.606Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T15:11:33.607Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T15:11:33.609Z] [resolveImageKeys] Resolving 1 keys: favorite_show (format=api-path, useUnapproved=true)
+[2026-05-21T15:11:38.910Z] [resolveImageKeys] Resolved "favorite_show" → /api/custom-symbols/fe0d7499-4ab7-48d4-bc35-60ab31de1848/image
+[2026-05-21T15:11:38.911Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T15:11:45.529Z] [resolveImageKeys] Resolving 1 keys: board_game (format=internal, useUnapproved=true)
+[2026-05-21T15:11:46.050Z] [resolveImageKeys] Resolved "board_game" → __SYMBOL__:1d00ca46-dd23-4157-8436-b6c5879501d2
+[2026-05-21T15:11:46.051Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T15:11:46.054Z] [resolveImageKeys] Resolving 2 keys: board_game, favorite_show (format=api-path, useUnapproved=true)
+[2026-05-21T15:11:46.985Z] [resolveImageKeys] Resolved "board_game" → /api/custom-symbols/1d00ca46-dd23-4157-8436-b6c5879501d2/image
+[2026-05-21T15:11:49.815Z] [resolveImageKeys] Resolved "favorite_show" → /api/custom-symbols/fe0d7499-4ab7-48d4-bc35-60ab31de1848/image
+[2026-05-21T15:11:49.816Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-21T15:12:13.264Z] [resolveImageKeys] Resolving 5 keys: adventure_game, shooting_game, strategy_game, racing_game, sports_game (format=internal, useUnapproved=true)
+[2026-05-21T15:12:13.763Z] [resolveImageKeys] Resolved "adventure_game" → __SYMBOL__:4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805
+[2026-05-21T15:12:14.559Z] [resolveImageKeys] Resolved "shooting_game" → __SYMBOL__:b0107b11-cf9e-42f1-beb1-0d06b2ca13ba
+[2026-05-21T15:12:16.927Z] [resolveImageKeys] Resolved "strategy_game" → __SYMBOL__:6fc1c0c6-be57-4dee-afb0-008931e56cd8
+[2026-05-21T15:12:19.174Z] [resolveImageKeys] No symbol found for "racing_game"
+[2026-05-21T15:12:20.104Z] [resolveImageKeys] No symbol found for "sports_game"
+[2026-05-21T15:12:20.105Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: racing_game, sports_game
+[2026-05-21T15:12:20.106Z] [queueGeneration] Queuing 2 keys: racing_game, sports_game (hasCallback=true)
+[2026-05-21T15:12:20.108Z] [resolveImageKeys] Resolving 5 keys: adventure_game, shooting_game, strategy_game, racing_game, sports_game (format=api-path, useUnapproved=true)
+[2026-05-21T15:12:20.381Z] [processQueue] Generating "sports_game"...
+[2026-05-21T15:12:20.425Z] [resolveImageKeys] Resolved "adventure_game" → /api/custom-symbols/4f9b8ec3-0d2f-4ffc-a0e6-c72bbcaba805/image
+[2026-05-21T15:12:20.700Z] [resolveImageKeys] Resolved "shooting_game" → /api/custom-symbols/b0107b11-cf9e-42f1-beb1-0d06b2ca13ba/image
+[2026-05-21T15:12:20.856Z] [resolveImageKeys] Resolved "strategy_game" → /api/custom-symbols/6fc1c0c6-be57-4dee-afb0-008931e56cd8/image
+[2026-05-21T15:12:21.013Z] [resolveImageKeys] No symbol found for "racing_game"
+[2026-05-21T15:12:21.173Z] [resolveImageKeys] No symbol found for "sports_game"
+[2026-05-21T15:12:21.173Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: racing_game, sports_game
+[2026-05-21T15:12:21.196Z] [queueGeneration] Queuing 2 keys: racing_game, sports_game (hasCallback=true)
+[2026-05-21T15:12:36.121Z] [COST] imageKey="sports_game" | refinement: gemini/gemini-2.5-flash in=727 out=100 | image: openai/gpt-image-1 in=105 out=272
+[2026-05-21T15:12:36.122Z] [processQueue] Generated "sports_game" → 9e6e513e-6377-440f-abd1-659331891c65 (1 total)
+[2026-05-21T15:12:36.122Z] [processQueue] FULL REFINED PROMPT for "sports_game": A simple, bold AAC symbol icon of a person playing a sports game. The figure is generic, with a large head and small dot eyes, no hair, and a simple curve for a mouth. They are depicted in mid-action, kicking a black and white soccer ball. The figure wears a simple blue shirt and red shorts. Bold black outlines define all shapes, with flat, solid colors and no gradients or shadows. The image is centered on a transparent background, instantly recognizable at small sizes.
+[2026-05-21T15:12:40.299Z] [processQueue] "sports_game" already exists → 9e6e513e-6377-440f-abd1-659331891c65
+[2026-05-21T15:12:44.470Z] [processQueue] Generating "racing_game"...
+[2026-05-21T15:12:54.133Z] [resolveImageKeys] Resolving 1 keys: forza (format=internal, useUnapproved=true)
+[2026-05-21T15:12:56.528Z] [resolveImageKeys] No symbol found for "forza"
+[2026-05-21T15:12:56.529Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: forza
+[2026-05-21T15:12:56.529Z] [queueGeneration] Queuing 1 keys: forza (hasCallback=true)
+[2026-05-21T15:12:56.532Z] [resolveImageKeys] Resolving 1 keys: forza (format=api-path, useUnapproved=true)
+[2026-05-21T15:12:57.855Z] [resolveImageKeys] No symbol found for "forza"
+[2026-05-21T15:12:57.856Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: forza
+[2026-05-21T15:12:57.857Z] [queueGeneration] Queuing 1 keys: forza (hasCallback=true)
+[2026-05-21T15:13:02.231Z] [COST] imageKey="racing_game" | refinement: gemini/gemini-2.5-flash in=727 out=96 | image: openai/gpt-image-1 in=102 out=272
+[2026-05-21T15:13:02.232Z] [processQueue] Generated "racing_game" → 06ded954-3b72-4154-8ed0-680c86f61bf4 (2 total)
+[2026-05-21T15:13:02.234Z] [processQueue] FULL REFINED PROMPT for "racing_game": A simple, bold AAC symbol icon depicting a racing game. The image features a stylized, generic race car viewed from a slightly elevated front-side angle, speeding towards the right. The car is red with a simple black stripe. Behind the car, two short, curved black motion lines indicate speed. The car has large, simple black wheels. The entire illustration is rendered with flat, solid colors and bold black outlines on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-21T15:13:06.405Z] [processQueue] Generating "forza"...
+[2026-05-21T15:13:11.077Z] [resolveImageKeys] Resolving 1 keys: forza (format=internal, useUnapproved=true)
+[2026-05-21T15:13:15.801Z] [resolveImageKeys] No symbol found for "forza"
+[2026-05-21T15:13:15.801Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: forza
+[2026-05-21T15:13:15.802Z] [queueGeneration] Queuing 1 keys: forza (hasCallback=true)
+[2026-05-21T15:13:15.804Z] [resolveImageKeys] Resolving 1 keys: forza (format=api-path, useUnapproved=true)
+[2026-05-21T15:13:18.015Z] [resolveImageKeys] No symbol found for "forza"
+[2026-05-21T15:13:18.016Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: forza
+[2026-05-21T15:13:18.018Z] [queueGeneration] Queuing 1 keys: forza (hasCallback=true)
+[2026-05-21T15:13:24.053Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T15:13:24.053Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T15:13:25.530Z] [COST] imageKey="forza" | refinement: gemini/gemini-2.5-flash in=726 out=101 | image: openai/gpt-image-1 in=108 out=272
+[2026-05-21T15:13:25.531Z] [processQueue] Generated "forza" → 810151e7-3248-4728-b4ae-a6249bc41872 (3 total)
+[2026-05-21T15:13:25.532Z] [processQueue] FULL REFINED PROMPT for "forza": A simple, bold AAC symbol icon of a stylized, generic human figure with a large head and small dots for eyes, a small curve for the mouth, and no hair. The figure is depicted from the waist up, with arms raised and hands open, palms facing forward, in a gesture of strength or power. The figure has a strong, determined expression. The illustration uses a limited palette of 3-5 saturated, flat colors, with thick black outlines around all shapes, on a transparent background.
+[2026-05-21T15:13:30.781Z] [processQueue] "forza" already exists → 810151e7-3248-4728-b4ae-a6249bc41872
+[2026-05-21T15:13:34.955Z] [processQueue] "forza" already exists → 810151e7-3248-4728-b4ae-a6249bc41872
+[2026-05-21T15:13:39.121Z] [processQueue] "forza" already exists → 810151e7-3248-4728-b4ae-a6249bc41872
+[2026-05-21T15:13:43.299Z] [processQueue] "racing_game" already exists → 06ded954-3b72-4154-8ed0-680c86f61bf4
+[2026-05-21T15:14:37.985Z] [resolveImageKeys] Resolving 1 keys: another_day (format=internal, useUnapproved=true)
+[2026-05-21T15:14:38.485Z] [resolveImageKeys] No symbol found for "another_day"
+[2026-05-21T15:14:38.486Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: another_day
+[2026-05-21T15:14:38.487Z] [queueGeneration] Queuing 1 keys: another_day (hasCallback=true)
+[2026-05-21T15:14:38.490Z] [resolveImageKeys] Resolving 1 keys: another_day (format=api-path, useUnapproved=true)
+[2026-05-21T15:14:39.563Z] [processQueue] Generating "another_day"...
+[2026-05-21T15:14:39.580Z] [resolveImageKeys] No symbol found for "another_day"
+[2026-05-21T15:14:39.581Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: another_day
+[2026-05-21T15:14:39.582Z] [queueGeneration] Queuing 1 keys: another_day (hasCallback=true)
+[2026-05-21T15:14:51.456Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T15:14:51.457Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T15:14:58.074Z] [COST] imageKey="another_day" | refinement: gemini/gemini-2.5-flash in=727 out=91 | image: openai/gpt-image-1 in=97 out=272
+[2026-05-21T15:14:58.074Z] [processQueue] Generated "another_day" → 4b202b9d-a9b1-4baf-8d66-7ea750b15c74 (1 total)
+[2026-05-21T15:14:58.075Z] [processQueue] FULL REFINED PROMPT for "another_day": A simple, bold illustration of a calendar page with the current day highlighted, and a distinct arrow pointing forward to the next day, indicating the concept of "another day." The calendar page is white with black outlines, showing minimal grid lines and a single bold number for the current day. The arrow is a solid, bright color like orange or green, with a thick black outline. The icon uses flat, solid colors and is centered on a transparent background.
+[2026-05-21T15:15:02.249Z] [processQueue] "another_day" already exists → 4b202b9d-a9b1-4baf-8d66-7ea750b15c74

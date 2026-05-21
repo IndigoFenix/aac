@@ -11,6 +11,8 @@ import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import type { AACAppDefinition } from "./types";
 import type { PermittedWebsite } from "@shared/schema";
 import { flattenPermittedWebsites } from "@shared/permitted-websites";
+import { ex } from "../memory-schema/prompt-examples";
+import { T } from "../memory-schema/canonical-terms";
 
 // ---------------------------------------------------------------------------
 // Config interface
@@ -19,7 +21,7 @@ import { flattenPermittedWebsites } from "@shared/permitted-websites";
 export interface ToolDeclarationConfig {
   enabledApps: AACAppDefinition[];
   availableBoards: Array<{ key: string; name: string }>;
-  /** Custom apps (games) assigned to this student. */
+  /** Custom apps (games) assigned to this user. */
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   hasLoadedBoard: boolean;
   faceRecognitionActive: boolean;
@@ -38,37 +40,57 @@ export interface ToolDeclarationConfig {
   useDirectAudio?: boolean;
   /** Websites the AI is permitted to open via the browser app. */
   permittedWebsites?: PermittedWebsite[];
+  /**
+   * Student's primary language code (e.g. `"he"`, `"en"`). Used to localize
+   * the example strings embedded in tool descriptions — same translation
+   * system as the system prompt (see prompt-examples.ts). Falls back to
+   * English when unset or unknown.
+   */
+  language?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-// Field-by-field description of one SENTENCE BUTTON. Comma-joined to form a list.
+// Field-by-field description of one ${T.button}. Comma-joined to form a
+// list. The inline example phrases ("I want water", "I want a banana", etc.)
+// are localized via prompt-examples.ts — same translation system as the
+// system prompt — to keep the model's audio language consistent. The
+// analytical description text itself stays English (documentation).
 // See <grammar> and <button_syntax> in the system prompt for the full spec.
-const SENTENCE_BUTTON_FORMAT =
-  "Each SENTENCE BUTTON is four pipe-separated fields: speech|sentence|fallback|label. " +
-  "(1) speech — natural-language SENTENCE the TTS voices when pressed (first-person, conversational, e.g. \"I want water\"). " +
-  "(2) sentence — visual encoding: GLYPHs joined by `+`, MODIFIER SYMBOLs attached with `.`, sentence-level OPERATORs appended with `#`. " +
-  "Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — default for anything not in <bundled_icons>), `symbol:ID` / `face:ID`, or `generate:lowercase_snake_case` (last resort, async-generated). " +
-  "(3) fallback — a `sentence` string using NO `generate:` SYMBOLs (only canonical keys, emojis, `symbol:ID`, `face:ID`). REQUIRED whenever `sentence` uses any `generate:` SYMBOL; OMIT this field entirely (empty: `||`) otherwise. " +
-  "(4) label — short on-button text. " +
-  "**Snake_case rule:** if a word isn't in <bundled_icons>, EITHER use an emoji, OR prefix with `generate:` AND provide a fallback. Never emit bare unknown snake_case (`talk_about`, `my_day`, `go_school`); it renders as ❓ until generation completes. " +
-  "Use MODIFIER SYMBOLs when the SENTENCE carries detail (color/size/count/possession/intensity) — `🍎.color_red`, `🤗.big.please`, `🍪.two`. " +
-  "Use OPERATORs for past/future/question — `i_me+go+🛝#past`. " +
-  "Match GLYPH count to the SENTENCE shape: full subject+verb+object thoughts are 3-glyph SENTENCEs (\"I want a banana\" → \"i_me+want+🍌\"); one-word answers and feelings are 1-glyph (\"I'm tired\" → \"😴\"). Don't pad. " +
-  "Optional trailing rowSpan|colSpan after the label.";
+function sentenceButtonFormat(language: string | undefined): string {
+  return (
+    "Each ${T.button} is four pipe-separated fields: speech|sentence|fallback|label. " +
+    `(1) speech — natural-language SENTENCE the TTS voices when pressed (first-person, conversational, e.g. ${ex("tool.sbf_speech_water", language)}). ` +
+    "(2) sentence — visual encoding: GLYPHs joined by `+`, MODIFIER SYMBOLs attached with `.`, sentence-level OPERATORs appended with `#`. " +
+    "Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — default for anything not in <bundled_icons>), `symbol:ID` / `face:ID`, or `generate:lowercase_snake_case` (last resort, async-generated). " +
+    "(3) fallback — a `sentence` string using NO `generate:` SYMBOLs (only canonical keys, emojis, `symbol:ID`, `face:ID`). REQUIRED whenever `sentence` uses any `generate:` SYMBOL; OMIT this field entirely (empty: `||`) otherwise. " +
+    "(4) label — short on-button text. " +
+    "**Snake_case rule:** if a word isn't in <bundled_icons>, EITHER use an emoji, OR prefix with `generate:` AND provide a fallback. Never emit bare unknown snake_case (`talk_about`, `my_day`, `go_school`); it renders as ❓ until generation completes. " +
+    "Use MODIFIER SYMBOLs when the SENTENCE carries detail (color/size/count/possession/intensity) — `🍎.color_red`, `🤗.big.please`, `🍪.two`. " +
+    "Use OPERATORs for past/future/question — `i_me+go+🛝#past`. " +
+    `Match GLYPH count to the SENTENCE shape: full subject+verb+object thoughts are 3-glyph SENTENCEs (${ex("tool.sbf_speech_three_glyph_banana", language)}); one-word answers and feelings are 1-glyph (${ex("tool.sbf_speech_one_glyph_tired", language)}). Don't pad. ` +
+    "Optional trailing rowSpan|colSpan after the label."
+  );
+}
 
-const BUTTON_FORMAT_ADD =
-  "Comma-separated SENTENCE BUTTONs (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
-  SENTENCE_BUTTON_FORMAT +
-  " Example: \"I want a red apple|i_me+want+🍎.color_red||Red apple, Pizza, please|🍕.please||Pizza, A big hug|i_me+want+🤗.big||Big hug, I'm tired|😴||Tired, Tell me about Mars|you+say+generate:planet_mars|you+say+🌑.color_red|Mars\"";
+function buttonFormatAdd(language: string | undefined): string {
+  return (
+    "Comma-separated ${T.button}s (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
+    sentenceButtonFormat(language) +
+    ` ${ex("tool.button_format_add_example", language)}`
+  );
+}
 
-const BUTTON_FORMAT_REBUILD =
-  "Comma-separated SENTENCE BUTTONs for the RESPONSE BOARD (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
-  SENTENCE_BUTTON_FORMAT +
-  " Aim to fill the RESPONSE BOARD (6–8 SENTENCE BUTTONs) with a WIDE VARIETY of options unless context is unusually narrow. " +
-  "Example: \"I want to play|i_me+want+play||Play, Let's listen to music|i_me+want+🎵||Music, I want a cookie|i_me+want+🍪||Cookie, Two cookies|🍪.two||Two cookies, Outside|i_me+want+🌳||Outside, I'm hungry|🤤||Hungry, A big hug|i_me+want+🤗.big||Hug, Did we go to the park yesterday?|we+go+🛝#past#question||Park yesterday\"";
+function buttonFormatRebuild(language: string | undefined): string {
+  return (
+    "Comma-separated ${T.button}s for the ${T.board} (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
+    sentenceButtonFormat(language) +
+    " Aim to fill the ${T.board} (6–8 ${T.button}s) with a WIDE VARIETY of options unless context is unusually narrow. " +
+    ex("tool.button_format_rebuild_example", language)
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -77,7 +99,7 @@ const BUTTON_FORMAT_REBUILD =
 function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "speak",
-    description: `Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call rebuild_board() with answer SENTENCE BUTTONs — the user cannot respond without them. Do NOT announce board changes or repeat yourself. When a [BUTTON PRESS] occurs, the student's SENTENCE is voiced automatically — do NOT repeat or paraphrase what the student said. Just respond naturally. Only call speak() once per turn.`,
+    description: `Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call rebuild_board() with answer ${T.button}s — the user cannot respond without them. Do NOT announce board changes or repeat yourself. When a ${T.tagPress} occurs, the user's SENTENCE is voiced automatically — do NOT repeat or paraphrase what the user said. Just respond naturally. Only call speak() once per turn.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -90,38 +112,38 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
 }
 
 /**
- * `interpret` — voice on behalf of the student.
+ * `interpret` — voice on behalf of the user.
  *
- * Called ONLY in response to a [SENTENCE COMPOSED] turn (the student
- * composed a SENTENCE in the SENTENCE BUILDER and pressed Play). The model
- * produces the natural-language SENTENCE in first-person — what the student
+ * Called ONLY in response to a ${T.tagComposed} turn (the user
+ * composed a SENTENCE in the ${T.builder} and pressed Play). The model
+ * produces the natural-language SENTENCE in first-person — what the user
  * would say if they could speak directly — and the relay:
- *   1. streams it through the student-voice TTS so the room hears the
- *      SENTENCE in the student's own voice;
+ *   1. streams it through the user-voice TTS so the room hears the
+ *      SENTENCE in the user's own voice;
  *   2. records it in the session log so the conversation history shows the
- *      student's spoken contribution rather than the raw composed sentence;
+ *      user's spoken contribution rather than the raw composed sentence;
  *   3. lets the model continue the same turn with its normal speech path
  *      (speak() in tool-driven audio, or direct voice in native audio)
  *      and rebuild_board() to respond to that statement.
  *
- * This is the ONLY case where the AI voices anything on the student's
- * behalf. Do NOT call interpret() in response to a regular [BUTTON PRESS]
+ * This is the ONLY case where the AI voices anything on the user's
+ * behalf. Do NOT call interpret() in response to a regular ${T.tagPress}
  * (those already carry a pre-generated SENTENCE and are TTS'd separately).
  */
 function buildInterpretTool(config: ToolDeclarationConfig): FunctionDeclaration {
   const followUp = config.useDirectAudio
-    ? `After calling interpret(), continue the SAME turn by speaking aloud naturally (your voice carries directly to the user) and calling rebuild_board() to respond to that statement (subject to mode rules — stay silent in assist/standby). interpret() is non-blocking; your own audio output is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`
-    : `After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the student TTS finishes so the room hears the student first, then your reply.`;
+    ? `After calling interpret(), continue the SAME turn by speaking aloud naturally (your voice carries directly to the user) and calling rebuild_board() to respond to that statement (subject to mode rules — stay silent in assist/standby). interpret() is non-blocking; your own audio output is sequenced AFTER the user TTS finishes so the room hears the user first, then your reply.`
+    : `After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the user TTS finishes so the room hears the user first, then your reply.`;
   return {
     name: "interpret",
-    description: `Voice a natural-language SENTENCE through the STUDENT'S TTS voice. Call this ONLY in response to a [SENTENCE COMPOSED] turn — never spontaneously, and never in response to a regular [BUTTON PRESS] (those already have a pre-baked SENTENCE that TTS plays automatically). The 'sentence' argument MUST be first-person, as the student would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using student interests, don't echo individual SYMBOLs. ${followUp}`,
+    description: `Voice a natural-language SENTENCE through the USER'S TTS voice. Call this ONLY in response to a ${T.tagComposed} turn — never spontaneously, and never in response to a regular ${T.tagPress} (those already have a pre-baked SENTENCE that TTS plays automatically). The 'sentence' argument MUST be first-person, as the user would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using user interests, don't echo individual SYMBOLs. ${followUp}`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         sentence: {
           type: "string",
-          description: "The student's intended SENTENCE in their voice. First-person, natural language. Do not include the raw composed-sentence string.",
+          description: "The user's intended SENTENCE in their voice. First-person, natural language. Do not include the raw composed-sentence string.",
         },
       },
       required: ["sentence"],
@@ -132,7 +154,7 @@ function buildInterpretTool(config: ToolDeclarationConfig): FunctionDeclaration 
 function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "transcript",
-    description: `Record clear speech you heard from a person nearby (someone speaking in their own voice through the room, not via the AAC device). Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. DO NOT transcribe your own voice echoing back through the mic, and DO NOT transcribe the device's TTS playing back the SENTENCE BUTTON the user pressed — both are device output, not new speech, and you already have the [BUTTON PRESS] text turn for the latter (respond to that turn normally, just don't call transcript() for the echo).`,
+    description: `Record clear speech you heard from a person nearby (someone speaking in their own voice through the room, not via the AAC device). Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. DO NOT transcribe your own voice echoing back through the mic, and DO NOT transcribe the device's TTS playing back the ${T.button} the user pressed — both are device output, not new speech, and you already have the ${T.tagPress} text turn for the latter (respond to that turn normally, just don't call transcript() for the echo).`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -193,12 +215,12 @@ function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration
   const max = config.maxBoardItems || 12;
   return {
     name: "add_buttons",
-    description: `Add SENTENCE BUTTONs to the RESPONSE BOARD. Max ${max} total — call remove_buttons() first if full. Do not duplicate existing SENTENCE BUTTONs or include Home/More (those are auto-added). You MAY include \`yes\` / \`no\` SENTENCE BUTTONs when they help the conversation — they render with animated icons and default green/red coloring.`,
+    description: `Add ${T.button}s to the ${T.board}. Max ${max} total — call remove_buttons() first if full. Do not duplicate existing ${T.button}s or include Home/More (those are auto-added). You MAY include \`yes\` / \`no\` ${T.button}s when they help the conversation — they render with animated icons and default green/red coloring.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        buttons: { type: "string", description: BUTTON_FORMAT_ADD },
+        buttons: { type: "string", description: buttonFormatAdd(config.language) },
       },
       required: ["buttons"],
     },
@@ -208,7 +230,7 @@ function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration
 function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "remove_buttons",
-    description: `Remove SENTENCE BUTTONs from the RESPONSE BOARD by label. Use when items are no longer relevant or you need to make room for new ones.`,
+    description: `Remove ${T.button}s from the ${T.board} by label. Use when items are no longer relevant or you need to make room for new ones.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -216,7 +238,7 @@ function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclara
         labels: {
           type: "array",
           items: { type: "string" },
-          description: "Labels of SENTENCE BUTTONs to remove.",
+          description: "Labels of ${T.button}s to remove.",
         },
       },
       required: ["labels"],
@@ -224,25 +246,27 @@ function buildRemoveButtonsTool(_config: ToolDeclarationConfig): FunctionDeclara
   };
 }
 
-function buildRebuildBoardTool(_config: ToolDeclarationConfig): FunctionDeclaration {
+function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "rebuild_board",
-    description: `Replace the RESPONSE BOARD with a fresh set of SENTENCE BUTTONs (up to 8). Use after [BUTTON PRESS] inputs or major conversation shifts. Provide a WIDE VARIETY of options.
+    description: `Replace the ${T.board} with a fresh set of ${T.button}s (up to 8). Use after ${T.tagPress} inputs or major conversation shifts. Provide a WIDE VARIETY of options.
 
-The optional 'response' parameter is where you DECLARE what you are saying aloud in this same turn. You still speak the words yourself via your normal voice output — the parameter is your written commitment to that speech, not a substitute for it. Writing it here helps you actually produce the audio.
+IMPORTANT — TWO SPEAKERS, TWO PARAMETERS:
+  • \`${T.paramOwnSpeech}\` is what YOU (the AI) say aloud in this turn — your spoken statement, your question, your reaction. Optional. NOT a TTS substitute: you still produce the audio via your voice; the text is your written commitment to speaking it.
+  • \`${T.paramUserResponseButtons}\` is the list of ${T.button}s the USER will choose from to respond. These are the user's words, not yours. NEVER put your own questions or statements into these ${T.button}s.
 
-If a custom board is currently loaded, calling this unloads it and replaces it with your new dynamic RESPONSE BOARD. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same \`generate:\` SYMBOL more than once on one RESPONSE BOARD.`,
+If a custom board is currently loaded, calling this unloads it and replaces it with your new dynamic ${T.board}. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same \`generate:\` ${T.symbol} more than once on one ${T.board}.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        response: {
+        [T.paramOwnSpeech]: {
           type: "string",
-          description: "Optional. What you are saying aloud in this turn. Speak the same words via your voice — this parameter is a declaration of your intent, not a TTS source. Useful for [BUTTON PRESS] responses (e.g. for 'I want to play' → response: 'Sure! What would you like to play with?'). The system logs this for monitoring and displays it as text in the UI alongside your spoken audio.",
+          description: `Optional. The AI's own spoken statement for this turn — what YOU are saying aloud. Speak the same words via your voice; this parameter is a declaration of your intent, not a TTS source. Useful for ${T.tagPress} responses (e.g. when the user presses 'I want to play' → \`${T.paramOwnSpeech}\`: 'Sure! What would you like to play with?'). The system logs this for monitoring and displays it as text in the UI alongside your spoken audio. Do NOT put user-response options here — those go in \`${T.paramUserResponseButtons}\`.`,
         },
-        buttons: { type: "string", description: BUTTON_FORMAT_REBUILD },
+        [T.paramUserResponseButtons]: { type: "string", description: buttonFormatRebuild(config.language) },
       },
-      required: ["buttons"],
+      required: [T.paramUserResponseButtons],
     },
   };
 }
@@ -255,7 +279,7 @@ function buildSetBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
 
   return {
     name: "set_board",
-    description: `Switch to a pre-built custom RESPONSE BOARD. Available: ${boardList}.${loadedNote} Prefer this over rebuild_board() when a custom RESPONSE BOARD fits the current activity.`,
+    description: `Switch to a pre-built custom ${T.board}. Available: ${boardList}.${loadedNote} Prefer this over rebuild_board() when a custom ${T.board} fits the current activity.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -270,12 +294,12 @@ function buildSetBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
 function buildPressButtonTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "press_button",
-    description: `Press a navigation SENTENCE BUTTON on the current custom RESPONSE BOARD to go to a sub-page. Prefer navigating to sub-pages over generating new SENTENCE BUTTONs from scratch.`,
+    description: `Press a navigation ${T.button} on the current custom ${T.board} to go to a sub-page. Prefer navigating to sub-pages over generating new ${T.button}s from scratch.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        label: { type: "string", description: "Label of the navigation SENTENCE BUTTON to press." },
+        label: { type: "string", description: "Label of the navigation ${T.button} to press." },
       },
       required: ["label"],
     },
@@ -368,44 +392,54 @@ const CALL_MONITOR: FunctionDeclaration = {
   }
 };
 
-// Binary-choice option format — same pipe-separated SENTENCE BUTTON syntax
-// as rebuild_board. All SENTENCE BUTTON rules apply (multi-glyph SENTENCEs,
+// Binary-choice option format — same pipe-separated ${T.button} syntax
+// as rebuild_board. All ${T.button} rules apply (multi-glyph SENTENCEs,
 // MODIFIER SYMBOLs, OPERATORs, animated SYMBOLs). For yes/no questions, the
-// `yes` / `no` canonical SYMBOLs auto-color the SENTENCE BUTTON green / red.
-const BINARY_CHOICE_OPTION_FORMAT =
-  "speech|sentence|fallback|label — same SENTENCE BUTTON format as rebuild_board. " +
-  "All SENTENCE BUTTON rules apply (multi-glyph SENTENCEs, MODIFIER SYMBOLs, OPERATORs, fallback when `sentence` uses `generate:`). " +
-  "speech is the first-person SENTENCE the student voices on press. label is the short on-button text. " +
-  "For yes/no questions, use the `yes` / `no` canonical SYMBOLs — they animate on hover and auto-color the SENTENCE BUTTON green / red without you setting an explicit color. " +
-  "Examples: \"Yes|yes||Yes\", \"No, thank you|no.please||No thanks\", \"I want the apple|i_me+want+🍎||Apple\", \"I want to play outside|i_me+want+play+🌳||Outside\".";
+// `yes` / `no` canonical SYMBOLs auto-color the ${T.button} green / red.
+// Inline examples are localized via prompt-examples.ts.
+function binaryChoiceOptionFormat(language: string | undefined): string {
+  return (
+    "speech|sentence|fallback|label — same ${T.button} format as rebuild_board. " +
+    "All ${T.button} rules apply (multi-glyph SENTENCEs, MODIFIER SYMBOLs, OPERATORs, fallback when `sentence` uses `generate:`). " +
+    "speech is the first-person SENTENCE the user voices on press. label is the short on-button text. " +
+    "For yes/no questions, use the `yes` / `no` canonical SYMBOLs — they animate on hover and auto-color the ${T.button} green / red without you setting an explicit color. " +
+    ex("tool.binary_choice_inline_examples", language)
+  );
+}
 
-const BINARY_CHOICE: FunctionDeclaration = {
-  name: "binary_choice",
-  description: `Show two large overlay SENTENCE BUTTONs IMMEDIATELY. Use when SOMEONE ELSE offers the user a choice between two options — either a binary choice ("Do you want the apple or the banana?", or holds up two objects) OR a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions — use the RESPONSE BOARD for those.`,
-  behavior: Behavior.NON_BLOCKING,
-  parametersJsonSchema: {
-    type: "object",
-    properties: {
-      option1: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
-      option2: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+function buildBinaryChoiceTool(config: ToolDeclarationConfig): FunctionDeclaration {
+  const optionFormat = binaryChoiceOptionFormat(config.language);
+  return {
+    name: "binary_choice",
+    description: `Show two large overlay ${T.button}s IMMEDIATELY. Use when SOMEONE ELSE offers the user a choice between two options — either a binary choice ("Do you want the apple or the banana?", or holds up two objects) OR a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions — use the ${T.board} for those.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        option1: { type: "string", description: optionFormat },
+        option2: { type: "string", description: optionFormat },
+      },
+      required: ["option1", "option2"],
     },
-    required: ["option1", "option2"],
-  },
-};
+  };
+}
 
-const ASK_BINARY_CHOICE: FunctionDeclaration = {
-  name: "ask_binary_choice",
-  description: `Show two large overlay SENTENCE BUTTONs AFTER your speech finishes. Use when YOU offer the user a choice between two options — either a binary choice or a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions.`,
-  behavior: Behavior.NON_BLOCKING,
-  parametersJsonSchema: {
-    type: "object",
-    properties: {
-      option1: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
-      option2: { type: "string", description: BINARY_CHOICE_OPTION_FORMAT },
+function buildAskBinaryChoiceTool(config: ToolDeclarationConfig): FunctionDeclaration {
+  const optionFormat = binaryChoiceOptionFormat(config.language);
+  return {
+    name: "ask_binary_choice",
+    description: `Show two large overlay ${T.button}s AFTER your speech finishes. Use when YOU offer the user a choice between two options — either a binary choice or a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        option1: { type: "string", description: optionFormat },
+        option2: { type: "string", description: optionFormat },
+      },
+      required: ["option1", "option2"],
     },
-    required: ["option1", "option2"],
-  },
-};
+  };
+}
 
 function buildRequestFocusTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
@@ -425,12 +459,12 @@ function buildRequestFocusTool(_config: ToolDeclarationConfig): FunctionDeclarat
 function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "add_context_button",
-    description: `Add ONE SENTENCE BUTTON to the context sidebar (left, 4 visible slots). Use when you notice something new in the environment — a nearby object, person, or activity the user might want to interact with. The sidebar scrolls: the oldest SENTENCE BUTTON is pushed out when full. Do NOT duplicate RESPONSE BOARD labels.`,
+    description: `Add ONE ${T.button} to the context sidebar (left, 4 visible slots). Use when you notice something new in the environment — a nearby object, person, or activity the user might want to interact with. The sidebar scrolls: the oldest ${T.button} is pushed out when full. Do NOT duplicate ${T.board} labels.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        button: { type: "string", description: "Single SENTENCE BUTTON: speech|sentence|fallback|label. See <button_syntax> for field details." },
+        button: { type: "string", description: "Single ${T.button}: speech|sentence|fallback|label. See <button_syntax> for field details." },
       },
       required: ["button"],
     },
@@ -440,7 +474,7 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
 function buildSetMemoryChipsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "set_construction_memory_chips",
-    description: `Update the memory-driven mode chips on the SENTENCE BUILDER for one category tab. 0–3 chips surface the student's special interests, recent conversation topics, or context-relevant filters (e.g. "planets", "from breakfast today", "things mom mentioned"). Pass an empty array to clear. Keys should be stable snake_case_descriptive — they'll be used as the active modeChip when tapped.`,
+    description: `Update the memory-driven mode chips on the ${T.builder} for one category tab. 0–3 chips surface the user's special interests, recent conversation topics, or context-relevant filters (e.g. "planets", "from breakfast today", "things mom mentioned"). Pass an empty array to clear. Keys should be stable snake_case_descriptive — they'll be used as the active modeChip when tapped.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -471,18 +505,18 @@ function buildSetMemoryChipsTool(_config: ToolDeclarationConfig): FunctionDeclar
 function buildSuggestConstructionButtonsTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "suggest_construction_buttons",
-    description: `Populate the SENTENCE BUILDER's AI strips with SUGGESTIONs for the student to tap. Call this in response to a [SENTENCE BUILDER STATE] context injection — never spontaneously.
+    description: `Populate the ${T.builder}'s AI strips with SUGGESTIONs for the user to tap. Call this in response to a ${T.tagBuilderState} context injection — never spontaneously.
 
 **Each SUGGESTION is exactly one SYMBOL** — never a multi-symbol GLYPH or SENTENCE. A SUGGESTION goes into ONE of two arrays:
 
 - \`head_candidates\` (up to 4) — each is a HEAD SYMBOL for the NEXT GLYPH in the SENTENCE (\`🐕\`, \`mom\`, \`generate:seagull\`). These populate the main AI strip and become the next glyph when tapped.
-- \`modifier_candidates\` (up to 4) — each is a MODIFIER SYMBOL that attaches to the student's CURRENT HEAD SYMBOL (\`color_red\`, \`my\`, \`big\`, \`two\`, \`very\`). These populate a parallel AI-modifier strip and add to the current glyph when tapped — without advancing to a new slot.
+- \`modifier_candidates\` (up to 4) — each is a MODIFIER SYMBOL that attaches to the user's CURRENT HEAD SYMBOL (\`color_red\`, \`my\`, \`big\`, \`two\`, \`very\`). These populate a parallel AI-modifier strip and add to the current glyph when tapped — without advancing to a new slot.
 
-Fill BOTH arrays when useful. Use head_candidates when the student needs the next word in their sentence; use modifier_candidates when their current glyph could be sharpened (a red apple instead of just an apple, a big hug instead of just a hug, two cookies instead of just cookies). It's fine to leave either array empty when nothing meaningful fits — just don't leave BOTH empty, in which case omit the tool call entirely.
+Fill BOTH arrays when useful. Use head_candidates when the user needs the next word in their sentence; use modifier_candidates when their current glyph could be sharpened (a red apple instead of just an apple, a big hug instead of just a hug, two cookies instead of just cookies). It's fine to leave either array empty when nothing meaningful fits — just don't leave BOTH empty, in which case omit the tool call entirely.
 
 The builder also surfaces a static, registry-driven modifier carousel; your \`modifier_candidates\` appear ABOVE that carousel as the context-aware row, so prefer modifiers that the registry can't infer from the head symbol alone (rare colors, conversation-specific adjectives, special-interest qualifiers).
 
-When the injection includes \`payload_target\`, the student has placed a composable host GLYPH (\`want\`, \`give\`, \`think\`, \`say\`) whose embedded blank is unfilled — that blank takes a HEAD SYMBOL, so put your SUGGESTIONs in \`head_candidates\` and use \`slot_index\` matching the payload_target's slotIndex. Modifier suggestions don't apply to an unfilled composable blank.
+When the injection includes \`payload_target\`, the user has placed a composable host GLYPH (\`want\`, \`give\`, \`think\`, \`say\`) whose embedded blank is unfilled — that blank takes a HEAD SYMBOL, so put your SUGGESTIONs in \`head_candidates\` and use \`slot_index\` matching the payload_target's slotIndex. Modifier suggestions don't apply to an unfilled composable blank.
 
 Each SUGGESTION is a pipe-separated string: \`speech|symbol|fallback|label\`. SUGGESTIONs don't speak (they fill a position), so the speech field is unused — the typical form is \`|symbol|fallback|label\` (e.g. \`|🐕||Dog\`, \`|generate:seagull|🐦.🏖️|Seagull\`, \`|color_red||Red\`). The 3-field form \`symbol|fallback|label\` and the 2-field \`symbol|label\` also work; a bare SYMBOL is also accepted.
 
@@ -494,14 +528,14 @@ The \`symbol\` field follows the SAME content rules as anywhere else:
 
 A JSON-object form \`{ key, label?, fallback? }\` is also accepted for compatibility, but the pipe-separated string above is the preferred shape.
 
-Never include any SYMBOL from \`exclude_keys\`. SUGGESTION labels MUST be in the student's language. \`candidates\` is also accepted as a legacy alias for \`head_candidates\` — prefer the new field names.`,
+Never include any SYMBOL from \`exclude_keys\`. SUGGESTION labels MUST be in the user's language. \`candidates\` is also accepted as a legacy alias for \`head_candidates\` — prefer the new field names.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         slot_index: {
           type: "integer",
-          description: "Which builder position the head SUGGESTIONs target. Use the `targetSlot` value from the [SENTENCE BUILDER STATE] injection. Use 0 if uncertain. (Modifier suggestions always attach to the student's currently-selected head symbol; they don't use slot_index.)",
+          description: "Which builder position the head SUGGESTIONs target. Use the `targetSlot` value from the ${T.tagBuilderState} injection. Use 0 if uncertain. (Modifier suggestions always attach to the user's currently-selected head symbol; they don't use slot_index.)",
         },
         head_candidates: {
           type: "array",
@@ -510,7 +544,7 @@ Never include any SYMBOL from \`exclude_keys\`. SUGGESTION labels MUST be in the
         },
         modifier_candidates: {
           type: "array",
-          description: "Up to 4 MODIFIER-SYMBOL SUGGESTIONs that attach to the student's current HEAD SYMBOL. Order matters. Each item is exactly one MODIFIER SYMBOL (\\`color_red\\`, \\`big\\`, \\`my\\`, \\`two\\`, \\`please\\`, …), formatted as `speech|symbol|fallback|label` (speech field unused). Empty list is fine when no modifier suggestion fits.",
+          description: "Up to 4 MODIFIER-SYMBOL SUGGESTIONs that attach to the user's current HEAD SYMBOL. Order matters. Each item is exactly one MODIFIER SYMBOL (\\`color_red\\`, \\`big\\`, \\`my\\`, \\`two\\`, \\`please\\`, …), formatted as `speech|symbol|fallback|label` (speech field unused). Empty list is fine when no modifier suggestion fits.",
           items: { type: "string" },
         },
         candidates: {
@@ -526,7 +560,7 @@ Never include any SYMBOL from \`exclude_keys\`. SUGGESTION labels MUST be in the
 
 const SET_INTERACTION_MODE: FunctionDeclaration = {
   name: "set_interaction_mode",
-  description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention; the avatar appears sleepy. Use "assist" when the user is busy with another person or in a situation where proactive speech would be intrusive. "standby" = the student is not present (not visible AND not heard) — don't proactively start conversation or treat the visible person as the student, but still respond to button presses and direct questions and update the board for them; the avatar appears resting. Use "interact" to re-engage when the student shows interest or returns.`,
+  description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention; the avatar appears sleepy. Use "assist" when the user is busy with another person or in a situation where proactive speech would be intrusive. "standby" = the user is not present (not visible AND not heard) — don't proactively start conversation or treat the visible person as the user, but still respond to button presses and direct questions and update the board for them; the avatar appears resting. Use "interact" to re-engage when the user shows interest or returns.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
@@ -597,7 +631,7 @@ const PRIVATE_NOTE: FunctionDeclaration = {
 // signal — without it, a transcript-and-no-audio turn gets re-prompted.
 const STAY_SILENT: FunctionDeclaration = {
   name: "stay_silent",
-  description: `Use this when you have decided NOT to produce a spoken response this turn. Examples of valid reasons: a voice you heard was background TV / another person's conversation not directed at you; the student is engaged with media and shouldn't be interrupted; you logged an observation but no reply is needed. Pass a brief reason — the system uses this signal to know your silence was intentional rather than a missed turn. Do NOT call stay_silent as a placeholder for "I'll think before responding" — if you intend to speak, just speak. Do NOT call it before or after speaking on the same turn.`,
+  description: `Use this when you have decided NOT to produce a spoken response this turn. Examples of valid reasons: a voice you heard was background TV / another person's conversation not directed at you; the user is engaged with media and shouldn't be interrupted; you logged an observation but no reply is needed. Pass a brief reason — the system uses this signal to know your silence was intentional rather than a missed turn. Do NOT call stay_silent as a placeholder for "I'll think before responding" — if you intend to speak, just speak. Do NOT call it before or after speaking on the same turn.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
@@ -635,9 +669,9 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
     declarations.push(buildSpeakTool(config));
   }
 
-  // Interpret is declared so the AI can voice the student's intent when
-  // they play a SENTENCE from the SENTENCE BUILDER (see [SENTENCE COMPOSED]
-  // flow). Regular [BUTTON PRESS] inputs still use pre-generated SENTENCEs,
+  // Interpret is declared so the AI can voice the user's intent when
+  // they play a SENTENCE from the ${T.builder} (see ${T.tagComposed}
+  // flow). Regular ${T.tagPress} inputs still use pre-generated SENTENCEs,
   // voiced server-side without the model's involvement.
   declarations.push(buildInterpretTool(config));
 
@@ -682,9 +716,9 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   // must be created deliberately from the Contacts panel — LEARN_FACE removed.
   // Yes/No is handled inside the binary-choice path now — the canonical
   // `yes` and `no` SYMBOLs render with the animated icons and auto-color
-  // SENTENCE BUTTONs green/red. No dedicated yes_no / ask_yes_no tools.
-  declarations.push(BINARY_CHOICE);
-  declarations.push(ASK_BINARY_CHOICE);
+  // ${T.button}s green/red. No dedicated yes_no / ask_yes_no tools.
+  declarations.push(buildBinaryChoiceTool(config));
+  declarations.push(buildAskBinaryChoiceTool(config));
   // declarations.push(buildRequestFocusTool(config));
   declarations.push(SET_INTERACTION_MODE);
   declarations.push(PRIVATE_NOTE);

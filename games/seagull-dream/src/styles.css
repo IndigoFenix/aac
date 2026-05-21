@@ -278,6 +278,248 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; fon
   opacity: 0.55;
 }
 
+/* ── Object readout (body-anchored lock + popup info card) ──────────────
+ * Ring + arrows + popup overlay rendered as DOM, positioned each frame
+ * by object-readout.ts via world-to-screen projection. */
+#object-readout {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+#object-readout.hidden { display: none; }
+
+/* Ring around the locked body. position/size are written each frame;
+ * styling is here. Blue while building lock, yellow when locked. */
+#object-readout .or-ring {
+  position: absolute;
+  border: 2px solid hsla(200, 90%, 65%, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 12px hsla(200, 90%, 60%, 0.4);
+  transition: border-color 180ms ease-out, box-shadow 180ms ease-out;
+}
+#object-readout .or-ring.locked {
+  border-color: hsla(50, 95%, 65%, 0.95);
+  box-shadow: 0 0 16px hsla(50, 95%, 55%, 0.6);
+}
+
+/* Four cardinal arrows pointing inward at the ring. Built from CSS
+ * triangle borders so they don't need any image asset. Each base class
+ * (-t/-r/-b/-l) sets the triangle direction; all four share size + the
+ * common "centered on this point" translate. */
+#object-readout .or-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  transition: filter 180ms ease-out;
+  filter: drop-shadow(0 0 4px hsla(200, 90%, 60%, 0.7));
+}
+#object-readout .or-arrow.locked {
+  filter: drop-shadow(0 0 6px hsla(50, 95%, 55%, 0.8));
+}
+#object-readout .or-arrow-t {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid hsla(200, 90%, 65%, 0.95);
+}
+#object-readout .or-arrow-r {
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 12px solid hsla(200, 90%, 65%, 0.95);
+}
+#object-readout .or-arrow-b {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 12px solid hsla(200, 90%, 65%, 0.95);
+}
+#object-readout .or-arrow-l {
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid hsla(200, 90%, 65%, 0.95);
+}
+#object-readout .or-arrow-t.locked { border-top-color: hsla(50, 95%, 65%, 0.95); }
+#object-readout .or-arrow-r.locked { border-right-color: hsla(50, 95%, 65%, 0.95); }
+#object-readout .or-arrow-b.locked { border-bottom-color: hsla(50, 95%, 65%, 0.95); }
+#object-readout .or-arrow-l.locked { border-left-color: hsla(50, 95%, 65%, 0.95); }
+
+/* Popup card — appears above the ring at full lock, with a triangle
+ * pointer at the bottom pointing down at the body. The card itself
+ * is `translate(-50%, calc(-100% - 24px))` away from its origin, with
+ * the origin already nudged up to ring-top by object-readout.ts. The
+ * 24px gap is where the pointer-triangle sits. */
+#object-readout .or-popup {
+  position: absolute;
+  /* JS writes `left = projectedX`, `top = ringTopY`. The card's bottom
+   * edge then sits at that point via the translate below; the
+   * triangle pointer below the card touches the ring. transform-origin
+   * = bottom-center so the pop-in scale animates outward from the
+   * triangle anchor. */
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid hsla(50, 95%, 65%, 0.5);
+  border-radius: 10px;
+  padding: 6px 8px 4px 8px;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: #f8fafc;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5),
+              0 0 14px hsla(50, 95%, 65%, 0.18);
+  transition: opacity 120ms ease-out, border-color 180ms ease-out;
+}
+#object-readout .or-popup.active {
+  /* Subtle highlight when gaze is inside — signals the input override
+   * is engaged. */
+  border-color: hsla(50, 95%, 75%, 0.95);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55),
+              0 0 22px hsla(50, 95%, 65%, 0.4);
+}
+#object-readout .or-popup::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 10px solid rgba(15, 23, 42, 0.94);
+  filter: drop-shadow(0 1px 0 hsla(50, 95%, 65%, 0.5));
+}
+#object-readout .or-popup.hidden { display: none; }
+
+#object-readout .or-popup,
+#object-readout .or-popup * {
+  pointer-events: auto;
+}
+
+/* Parent-up button (▲). Centered above the main row when the focused
+ * body has a parent in the orbital tree. */
+#object-readout .or-up {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 4px auto;
+  width: 26px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: hsla(50, 80%, 80%, 0.95);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  line-height: 1;
+  cursor: pointer;
+  overflow: hidden;
+}
+#object-readout .or-up.hidden { display: none; }
+#object-readout .or-up:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Main row: left icons | glyph | right icons */
+#object-readout .or-main {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+#object-readout .or-icon-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 22px;
+}
+#object-readout .or-glyph {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,0.35),
+              0 0 10px rgba(255,255,255,0.18);
+}
+#object-readout .or-glyph.has-rings {
+  outline: 2px solid hsla(40, 70%, 80%, 0.55);
+  outline-offset: 3px;
+}
+#object-readout .or-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+/* Distance line — small, centered, just above the children row. */
+#object-readout .or-distance {
+  text-align: center;
+  font-size: 10px;
+  color: hsla(200, 70%, 80%, 0.95);
+  margin-top: 4px;
+  letter-spacing: 0.04em;
+}
+
+/* Direct sub-objects — a row of small colored circles, dwell-selectable. */
+#object-readout .or-children {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 4px;
+  flex-wrap: wrap;
+  max-width: 200px;
+}
+#object-readout .or-children.empty {
+  display: none;
+}
+#object-readout .or-child {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+#object-readout .or-child:hover {
+  border-color: hsla(50, 95%, 75%, 0.95);
+}
+#object-readout .or-child-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset -2px -2px 3px rgba(0,0,0,0.35);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Dwell-fill overlay — vertical scale-Y bar that grows from 0 to 1
+ * across READOUT.dwellMs. JS sets `transform: scaleY(t)` each frame. */
+#object-readout .or-dwell-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 0;
+  background: hsla(50, 95%, 65%, 0.45);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
 /* Panel action button */
 .dbg-action {
   margin-top: 6px;

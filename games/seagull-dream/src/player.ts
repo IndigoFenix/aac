@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PLAYER, CONTROLS, SPEED } from "./config";
+import { PLAYER, CONTROLS, SPEED, READOUT } from "./config";
 import type { World, GravityContext, AtmosphericReading } from "./world";
 import type { CelestialBody } from "./body";
 
@@ -224,6 +224,14 @@ export interface Player {
    *  (`checkActiveSystem`), which mutates `state.position` and would
    *  otherwise leave `object.position` at the pre-rebase value. */
   sync(): void;
+  /**
+   * Install a hook that returns a unit world-space direction the bird
+   * should gently orient toward, or null to disable. The hook is read
+   * each airborne frame; while it returns a vector, `forward` lerps
+   * toward it at READOUT.birdPull per second. Used by the object-
+   * readout overlay so the bird faces the focused body during approach.
+   */
+  setReadoutHook(hook: (() => THREE.Vector3 | null) | null): void;
 }
 
 export function createPlayer(world: World, scene: THREE.Scene): Player {
@@ -516,6 +524,15 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
   let thrustSpawnAccumulator = 0;
 
   let takeoffHeld = 0;
+
+  // Object-readout auto-orient hook. When set + returning a unit vector,
+  // the airborne update lerps `forward` toward that direction at the
+  // configured pull rate so the bird visibly faces the focused body
+  // during approach. The hook is consulted AFTER the player's own
+  // pitch/yaw input has been applied — pull is gentle so the user can
+  // still steer away.
+  let readoutHook: (() => THREE.Vector3 | null) | null = null;
+  const _readoutPullDir = new THREE.Vector3();
 
   // ── Reusable temporaries ─────────────────────────────────────────────────
   const tmpUp = new THREE.Vector3();
@@ -1106,6 +1123,24 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     state.forward.applyQuaternion(tmpQuat).normalize();
     state.bodyRight.applyQuaternion(tmpQuat).normalize();
     state.bodyRight.addScaledVector(state.forward, -state.bodyRight.dot(state.forward)).normalize();
+
+    // ── Object-readout auto-orient pull ────────────────────────────────
+    // When the readout popup is open the hook returns a unit world-space
+    // direction toward the focused body. We lerp `forward` toward that
+    // direction at a soft rate so the bird visibly faces the body during
+    // approach without overriding the player's own steering.
+    if (readoutHook) {
+      const dir = readoutHook();
+      if (dir) {
+        _readoutPullDir.copy(dir);
+        const k = Math.min(1, READOUT.birdPull * dt);
+        state.forward.lerp(_readoutPullDir, k).normalize();
+        // Re-orthogonalize bodyRight against the new forward so the
+        // basis stays valid (avoids tweaking pitch/yaw input axes mid-
+        // frame).
+        state.bodyRight.addScaledVector(state.forward, -state.bodyRight.dot(state.forward)).normalize();
+      }
+    }
 
     // Gravity-align — ONLY when in atmosphere. Outside atmosphere the body
     // keeps whatever orientation the player has set; "down" doesn't exist.
@@ -2001,6 +2036,9 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       updateThrustParticles(dt);
     },
     sync: syncObjectTransform,
+    setReadoutHook(hook) {
+      readoutHook = hook;
+    },
   };
 
   // ── Leg extension ───────────────────────────────────────────────────────
