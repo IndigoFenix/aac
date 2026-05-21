@@ -86,6 +86,10 @@ export const sessions = pgTable(
 // `permissions` is a list of admin-section keys this admin can access; the
 // wildcard `"*"` grants every section. Migrated legacy system admins land
 // with `["*"]`; future admins added via the management UI get an explicit list.
+//
+// Auth fields (password, MFA, authProvider, googleId) live on this row — the
+// legacy `users` row is gone for admins as of migration 0107. System-admin
+// login no longer touches the `users` table.
 export const adminUsers = pgTable("admin_users", {
   id: varchar("id").primaryKey().notNull(),
   email: varchar("email").unique(),
@@ -97,9 +101,48 @@ export const adminUsers = pgTable("admin_users", {
     .$type<string[]>()
     .notNull()
     .default(sql`'["*"]'::jsonb`),
+  password: text("password"),
+  authProvider: text("auth_provider").default("email").notNull(),
+  googleId: text("google_id").unique(),
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  mfaSecret: text("mfa_secret"),
+  mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
+  lastActiveAt: timestamp("last_active_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Password reset tokens for admins. Separate from the regular `password_reset_tokens`
+// table (which FKs to users.id) because admins live in their own table after 0107.
+export const adminPasswordResetTokens = pgTable("admin_password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminUserId: varchar("admin_user_id")
+    .references(() => adminUsers.id, { onDelete: "cascade" })
+    .notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_admin_password_reset_tokens_admin_user_id").on(table.adminUserId),
+  index("idx_admin_password_reset_tokens_expires_at").on(table.expiresAt),
+]);
+
+// MFA recovery tokens for admins. Parallel to `mfa_recovery_tokens` but FK'd
+// to admin_users — used by the admin-specific MFA-recovery email path.
+export const adminMfaRecoveryTokens = pgTable("admin_mfa_recovery_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminUserId: varchar("admin_user_id")
+    .references(() => adminUsers.id, { onDelete: "cascade" })
+    .notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_admin_mfa_recovery_tokens_admin_user_id").on(table.adminUserId),
+  index("idx_admin_mfa_recovery_tokens_expires_at").on(table.expiresAt),
+]);
 
 // =============================================================================
 // PUBLIC TABLES — Identity Providers
@@ -945,6 +988,10 @@ export const insertApiProviderSchemaWithValidation = insertApiProviderSchema.ext
 
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type UpsertAdminUser = typeof adminUsers.$inferInsert;
+export type AdminPasswordResetToken = typeof adminPasswordResetTokens.$inferSelect;
+export type InsertAdminPasswordResetToken = typeof adminPasswordResetTokens.$inferInsert;
+export type AdminMfaRecoveryToken = typeof adminMfaRecoveryTokens.$inferSelect;
+export type InsertAdminMfaRecoveryToken = typeof adminMfaRecoveryTokens.$inferInsert;
 
 // Identity provider types
 export type IdentityProvider = typeof identityProviders.$inferSelect;

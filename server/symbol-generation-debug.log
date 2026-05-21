@@ -6849,3 +6849,170 @@
 [2026-05-19T20:39:16.499Z] [processQueue] Generating "eat#question"...
 [2026-05-19T20:39:30.246Z] [processQueue] Failed "eat#question": 400 Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_fe2db2557f484974833414bfa0aad426. safety_violations=[self-harm].
 [2026-05-19T20:39:34.440Z] [processQueue] Generating "vegetables"...
+[2026-05-21T10:12:36.525Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:12:36.526Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:12:37.862Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:12:37.863Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:12:59.850Z] [resolveImageKeys] Resolving 1 keys: something_else (format=internal, useUnapproved=true)
+[2026-05-21T10:13:00.514Z] [resolveImageKeys] No symbol found for "something_else"
+[2026-05-21T10:13:00.515Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: something_else
+[2026-05-21T10:13:00.516Z] [queueGeneration] Queuing 1 keys: something_else (hasCallback=true)
+[2026-05-21T10:13:00.521Z] [resolveImageKeys] Resolving 1 keys: something_else (format=api-path, useUnapproved=true)
+[2026-05-21T10:13:00.751Z] [resolveImageKeys] Resolving 1 keys: something_else (format=internal, useUnapproved=true)
+[2026-05-21T10:13:01.737Z] [processQueue] Generating "something_else"...
+[2026-05-21T10:13:01.780Z] [resolveImageKeys] No symbol found for "something_else"
+[2026-05-21T10:13:01.781Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: something_else
+[2026-05-21T10:13:01.782Z] [queueGeneration] Queuing 1 keys: something_else (hasCallback=true)
+[2026-05-21T10:13:02.408Z] [resolveImageKeys] No symbol found for "something_else"
+[2026-05-21T10:13:02.409Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: something_else
+[2026-05-21T10:13:02.409Z] [queueGeneration] Queuing 1 keys: something_else (hasCallback=true)
+[2026-05-21T10:13:02.411Z] [resolveImageKeys] Resolving 1 keys: something_else (format=api-path, useUnapproved=true)
+[2026-05-21T10:13:03.529Z] [resolveImageKeys] No symbol found for "something_else"
+[2026-05-21T10:13:03.529Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: something_else
+[2026-05-21T10:13:03.530Z] [queueGeneration] Queuing 1 keys: something_else (hasCallback=true)
+[2026-05-21T10:13:12.858Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:13:12.858Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:13:14.300Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:13:14.301Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:13:18.810Z] [resolveImageKeys] Resolving 2 keys: sweet_treat, salty_snack (format=internal, useUnapproved=true)
+[2026-05-21T10:13:20.101Z] [resolveImageKeys] Resolving 2 keys: sweet_treat, salty_snack (format=internal, useUnapproved=true)
+[2026-05-21T10:13:20.466Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:21.739Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:22.670Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:22.671Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: sweet_treat, salty_snack
+[2026-05-21T10:13:22.671Z] [queueGeneration] Queuing 2 keys: sweet_treat, salty_snack (hasCallback=true)
+[2026-05-21T10:13:22.675Z] [resolveImageKeys] Resolving 2 keys: sweet_treat, salty_snack (format=api-path, useUnapproved=true)
+[2026-05-21T10:13:22.681Z] [COST] imageKey="something_else" | refinement: gemini/gemini-2.5-flash in=727 out=125 | image: openai/gpt-image-1 in=131 out=272
+[2026-05-21T10:13:22.682Z] [processQueue] Generated "something_else" → 6724d700-0054-4225-a35b-74a0054fb63b (1 total)
+[2026-05-21T10:13:22.684Z] [processQueue] FULL REFINED PROMPT for "something_else": A bold black outlined AAC symbol icon on a transparent background, depicting a simple, generic human figure with a slightly stylized body and larger head. The figure is standing, facing forward, with both arms extended outwards to the sides, palms open and facing forward, indicating an "else" or "other" gesture. The figure has simple dot eyes and a small curved mouth. The figure is rendered in flat, solid colors with no gradients or shadows, using a limited palette of 3-5 saturated colors. The icon is centered and fills about 70-80% of the canvas, instantly recognizable at small sizes.
+[2026-05-21T10:13:22.851Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:22.851Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: sweet_treat, salty_snack
+[2026-05-21T10:13:22.852Z] [queueGeneration] Queuing 2 keys: sweet_treat, salty_snack (hasCallback=true)
+[2026-05-21T10:13:22.854Z] [resolveImageKeys] Resolving 2 keys: sweet_treat, salty_snack (format=api-path, useUnapproved=true)
+[2026-05-21T10:13:23.024Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:23.464Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:23.620Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:23.620Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: sweet_treat, salty_snack
+[2026-05-21T10:13:23.621Z] [queueGeneration] Queuing 2 keys: sweet_treat, salty_snack (hasCallback=true)
+[2026-05-21T10:13:23.717Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:23.717Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: sweet_treat, salty_snack
+[2026-05-21T10:13:23.718Z] [queueGeneration] Queuing 2 keys: sweet_treat, salty_snack (hasCallback=true)
+[2026-05-21T10:13:26.870Z] [processQueue] Generating "salty_snack"...
+[2026-05-21T10:13:33.870Z] [resolveImageKeys] Resolving 4 keys: sweet_treat, salty_snack, bamba, bisli (format=internal, useUnapproved=true)
+[2026-05-21T10:13:35.032Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:36.127Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:36.286Z] [resolveImageKeys] No symbol found for "bamba"
+[2026-05-21T10:13:36.443Z] [resolveImageKeys] No symbol found for "bisli"
+[2026-05-21T10:13:36.444Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: sweet_treat, salty_snack, bamba, bisli
+[2026-05-21T10:13:36.446Z] [queueGeneration] Queuing 4 keys: sweet_treat, salty_snack, bamba, bisli (hasCallback=true)
+[2026-05-21T10:13:36.450Z] [resolveImageKeys] Resolving 4 keys: sweet_treat, salty_snack, bamba, bisli (format=api-path, useUnapproved=true)
+[2026-05-21T10:13:36.672Z] [resolveImageKeys] No symbol found for "sweet_treat"
+[2026-05-21T10:13:36.844Z] [resolveImageKeys] No symbol found for "salty_snack"
+[2026-05-21T10:13:37.040Z] [resolveImageKeys] No symbol found for "bamba"
+[2026-05-21T10:13:37.211Z] [resolveImageKeys] No symbol found for "bisli"
+[2026-05-21T10:13:37.212Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: sweet_treat, salty_snack, bamba, bisli
+[2026-05-21T10:13:37.213Z] [queueGeneration] Queuing 4 keys: sweet_treat, salty_snack, bamba, bisli (hasCallback=true)
+[2026-05-21T10:13:49.153Z] [COST] imageKey="salty_snack" | refinement: gemini/gemini-2.5-flash in=727 out=54 | image: openai/gpt-image-1 in=62 out=272
+[2026-05-21T10:13:49.153Z] [processQueue] Generated "salty_snack" → 349c1524-36f8-4025-8fc7-f069f07a729c (2 total)
+[2026-05-21T10:13:49.154Z] [processQueue] FULL REFINED PROMPT for "salty_snack": A simple, bold illustration of a yellow pretzel with a few white salt crystals visible on its surface. The pretzel is depicted in a classic twisted shape, centered on a transparent background. It has thick, black outlines and uses flat, solid colors with no gradients or shadows.
+[2026-05-21T10:13:53.321Z] [processQueue] Generating "bisli"...
+[2026-05-21T10:14:05.499Z] [resolveImageKeys] Resolving 3 keys: salty_snack, bamba, bisli (format=internal, useUnapproved=true)
+[2026-05-21T10:14:06.227Z] [resolveImageKeys] Resolved "salty_snack" → __SYMBOL__:349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:14:06.505Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:06.506Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:07.024Z] [resolveImageKeys] No symbol found for "bamba"
+[2026-05-21T10:14:08.586Z] [resolveImageKeys] No symbol found for "bisli"
+[2026-05-21T10:14:08.589Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: bamba, bisli
+[2026-05-21T10:14:08.590Z] [queueGeneration] Queuing 2 keys: bamba, bisli (hasCallback=true)
+[2026-05-21T10:14:08.594Z] [resolveImageKeys] Resolving 3 keys: salty_snack, bamba, bisli (format=api-path, useUnapproved=true)
+[2026-05-21T10:14:08.760Z] [resolveImageKeys] Resolved "salty_snack" → /api/custom-symbols/349c1524-36f8-4025-8fc7-f069f07a729c/image
+[2026-05-21T10:14:09.069Z] [resolveImageKeys] No symbol found for "bamba"
+[2026-05-21T10:14:09.227Z] [resolveImageKeys] No symbol found for "bisli"
+[2026-05-21T10:14:09.228Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: bamba, bisli
+[2026-05-21T10:14:09.234Z] [queueGeneration] Queuing 2 keys: bamba, bisli (hasCallback=true)
+[2026-05-21T10:14:10.216Z] [COST] imageKey="bisli" | refinement: gemini/gemini-2.5-flash in=727 out=63 | image: openai/gpt-image-1 in=69 out=272
+[2026-05-21T10:14:10.216Z] [processQueue] Generated "bisli" → b6ef8338-e9fe-4b10-abad-f4deb59888da (3 total)
+[2026-05-21T10:14:10.217Z] [processQueue] FULL REFINED PROMPT for "bisli": A simple, bold illustration of a single, stylized Bisli snack piece. The Bisli piece is depicted in its iconic, ridged, and slightly curved shape, colored a uniform golden-yellow. It has a thick, black outline and no internal details, shadows, or gradients, rendered on a transparent background.
+[2026-05-21T10:14:14.383Z] [processQueue] "bisli" already exists → b6ef8338-e9fe-4b10-abad-f4deb59888da
+[2026-05-21T10:14:18.543Z] [processQueue] Generating "bamba"...
+[2026-05-21T10:14:25.866Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:25.867Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:27.130Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:27.130Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:39.856Z] [COST] imageKey="bamba" | refinement: gemini/gemini-2.5-flash in=727 out=63 | image: openai/gpt-image-1 in=68 out=272
+[2026-05-21T10:14:39.857Z] [processQueue] Generated "bamba" → 9afccbce-add9-429b-9b76-babf73e6a3fc (4 total)
+[2026-05-21T10:14:39.858Z] [processQueue] FULL REFINED PROMPT for "bamba": A simple, bold AAC symbol icon of a single Bamba peanut snack puff. The puff is depicted in its classic, slightly curved, elongated shape, colored a light, creamy yellow-orange. It has a thick, dark black outline and no internal details, rendered with flat, solid colors on a transparent background.
+[2026-05-21T10:14:41.267Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:41.268Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:42.359Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:42.360Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:44.301Z] [processQueue] "bisli" already exists → b6ef8338-e9fe-4b10-abad-f4deb59888da
+[2026-05-21T10:14:48.192Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:48.192Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:49.143Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:49.144Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:49.648Z] [processQueue] "bamba" already exists → 9afccbce-add9-429b-9b76-babf73e6a3fc
+[2026-05-21T10:14:53.812Z] [processQueue] "bamba" already exists → 9afccbce-add9-429b-9b76-babf73e6a3fc
+[2026-05-21T10:14:58.205Z] [processQueue] "salty_snack" already exists → 349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:14:58.408Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:58.409Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:14:59.593Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:14:59.594Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:15:02.395Z] [processQueue] Generating "sweet_treat"...
+[2026-05-21T10:15:06.627Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:15:06.628Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:15:07.858Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:15:07.859Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:15:18.128Z] [COST] imageKey="sweet_treat" | refinement: gemini/gemini-2.5-flash in=727 out=57 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-21T10:15:18.152Z] [processQueue] Generated "sweet_treat" → 25fcd029-1a0d-4592-8c71-d649ac64d455 (5 total)
+[2026-05-21T10:15:18.153Z] [processQueue] FULL REFINED PROMPT for "sweet_treat": A simple, bold illustration of a cupcake with a single cherry on top, centered on a transparent background. The cupcake has a light brown base, white frosting, and a red cherry, all outlined in thick black lines. Flat, solid colors are used, with no gradients or shadows.
+[2026-05-21T10:15:18.880Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:15:18.881Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:15:22.371Z] [processQueue] "bisli" already exists → b6ef8338-e9fe-4b10-abad-f4deb59888da
+[2026-05-21T10:15:26.538Z] [processQueue] "bamba" already exists → 9afccbce-add9-429b-9b76-babf73e6a3fc
+[2026-05-21T10:15:26.875Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:15:26.876Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:15:30.721Z] [processQueue] "salty_snack" already exists → 349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:15:34.915Z] [processQueue] "sweet_treat" already exists → 25fcd029-1a0d-4592-8c71-d649ac64d455
+[2026-05-21T10:15:39.106Z] [processQueue] "salty_snack" already exists → 349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:15:43.283Z] [processQueue] "sweet_treat" already exists → 25fcd029-1a0d-4592-8c71-d649ac64d455
+[2026-05-21T10:15:48.122Z] [processQueue] "salty_snack" already exists → 349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:15:52.298Z] [processQueue] "sweet_treat" already exists → 25fcd029-1a0d-4592-8c71-d649ac64d455
+[2026-05-21T10:15:56.479Z] [processQueue] "salty_snack" already exists → 349c1524-36f8-4025-8fc7-f069f07a729c
+[2026-05-21T10:16:00.555Z] [resolveImageKeys] Resolving 1 keys: my_day (format=api-path, useUnapproved=true)
+[2026-05-21T10:16:00.895Z] [processQueue] "sweet_treat" already exists → 25fcd029-1a0d-4592-8c71-d649ac64d455
+[2026-05-21T10:16:01.369Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-21T10:16:01.369Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T10:16:05.460Z] [processQueue] "sweet_treat" already exists → 25fcd029-1a0d-4592-8c71-d649ac64d455
+[2026-05-21T10:16:09.644Z] [processQueue] "something_else" already exists → 6724d700-0054-4225-a35b-74a0054fb63b
+[2026-05-21T10:16:13.831Z] [processQueue] "something_else" already exists → 6724d700-0054-4225-a35b-74a0054fb63b
+[2026-05-21T10:16:18.075Z] [processQueue] "something_else" already exists → 6724d700-0054-4225-a35b-74a0054fb63b
+[2026-05-21T10:16:44.945Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T10:16:44.947Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T10:16:44.951Z] [resolveImageKeys] Resolving 1 keys: something_else (format=api-path, useUnapproved=true)
+[2026-05-21T10:16:45.665Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-21T10:16:45.666Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-21T11:14:59.921Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:14:59.923Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:15:44.145Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:15:44.147Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:16:14.518Z] [resolveImageKeys] Resolving 3 keys: toy_car, building_blocks, action_figure (format=api-path, useUnapproved=true)
+[2026-05-21T11:16:15.015Z] [resolveImageKeys] Resolved "toy_car" → /api/custom-symbols/c70f3382-144f-40c5-9527-9ac9adf97baa/image
+[2026-05-21T11:16:15.934Z] [resolveImageKeys] No symbol found for "building_blocks"
+[2026-05-21T11:16:16.088Z] [resolveImageKeys] Resolved "action_figure" → /api/custom-symbols/9f9c2ef8-1512-40a9-87ae-1c2bbf053915/image
+[2026-05-21T11:16:16.089Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: building_blocks
+[2026-05-21T11:16:16.091Z] [queueGeneration] Queuing 1 keys: building_blocks (hasCallback=true)
+[2026-05-21T11:16:16.277Z] [processQueue] Generating "building_blocks"...
+[2026-05-21T11:16:39.729Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:16:39.731Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:16:43.042Z] [COST] imageKey="building_blocks" | refinement: gemini/gemini-2.5-flash in=727 out=93 | image: openai/gpt-image-1 in=98 out=272
+[2026-05-21T11:16:43.044Z] [processQueue] Generated "building_blocks" → cce446c4-4417-45f8-94ad-0b8759572711 (1 total)
+[2026-05-21T11:16:43.046Z] [processQueue] FULL REFINED PROMPT for "building_blocks": A simple, bold illustration of three building blocks stacked in a pyramid shape on a transparent background. The blocks are flat, solid colors: one red square block at the bottom, one blue square block next to it, and one yellow square block on top, centered. All shapes have thick black outlines. No gradients, shadows, highlights, or 3D effects. The blocks are instantly recognizable, centered, and fill about 70% of the square canvas.
+[2026-05-21T11:16:47.390Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:16:47.391Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:17:12.499Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:17:12.500Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:17:35.747Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:17:35.748Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-21T11:17:50.458Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-21T11:17:50.461Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

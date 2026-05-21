@@ -102,7 +102,10 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
       "[BOARD]", "[/BOARD]",
       "[ENHANCED_PROMPT]", "[/ENHANCED_PROMPT]",
       "[CALL_MONITOR]", "[INTERPRET]", "[/INTERPRET]",
-      "[TRANSCRIPT]", "[PEOPLE PRESENT]", "[BUTTON PRESS]",
+      "[TRANSCRIPT]", "[PEOPLE PRESENT]",
+      "[BUTTON PRESS]", "[SENTENCE PRESS]",
+      "[GLYPH PRESS]", "[SENTENCE COMPOSED]",
+      "[CONSTRUCTION STATE]", "[SENTENCE BUILDER STATE]",
       "[SYSTEM]", "[/SYSTEM]",
     ];
     for (const tok of FRAMING_TOKENS) {

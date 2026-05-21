@@ -59,23 +59,20 @@ describe("Admin-first login", () => {
       lastName: user.lastName,
     } as any);
 
-    const pseudo = adaptAdminAsUser(admin, user);
+    const pseudo = adaptAdminAsUser(admin);
 
     expect(isCustomerSupport(pseudo)).toBe(true);
   });
 
-  it("admin pseudo-user carries MFA fields from the source user row", async () => {
-    const user = await makeUser({ isSystemAdmin: true });
+  it("admin pseudo-user carries MFA fields from the admin row", async () => {
     const admin = await adminUserRepository.create({
-      id: user.id,
-      email: user.email!,
-    } as any);
-
-    const pseudo = adaptAdminAsUser(admin, {
-      ...user,
+      id: "admin-mfa",
+      email: "admin-mfa@test.local",
       mfaEnabled: true,
       mfaSecret: "encrypted-secret",
     } as any);
+
+    const pseudo = adaptAdminAsUser(admin);
 
     expect(pseudo.mfaEnabled).toBe(true);
     expect(pseudo.mfaSecret).toBe("encrypted-secret");

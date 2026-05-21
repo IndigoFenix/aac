@@ -162,12 +162,21 @@ function tuningSections(): Section[] {
         { label: "alt accel A", target: S, field: "ALTITUDE_ACCEL_FACTOR", min: 0.5, max: 30, step: 0.1, format: fmt1 },
         { label: "min flight V", target: S, field: "MIN_FLIGHT_SPEED", min: 0, max: 500, step: 1, format: fmtInt },
         { label: "wing lift thr", target: S, field: "WING_LIFT_THRESHOLD", min: 1, max: 30, step: 0.25, format: fmt2 },
-        { label: "V warp", target: S, field: "V_WARP_BASE", min: 1000, max: 1e8, step: 1000, format: fmtSpeedV },
-        { label: "warp pow", target: S, field: "WARP_POWER", min: 0.25, max: 4, step: 0.05, format: fmt2 },
-        { label: "warp mult", target: S, field: "WARP_MULT", min: 0.1, max: 100, step: 0.1, format: fmt2 },
-        { label: "warp atm pow", target: S, field: "WARP_GATE_POWER", min: 1, max: 300, step: 1, format: fmt1 },
+        { label: "hyper gain", target: S, field: "HYPER_GAIN_RATE", min: 0.05, max: 5, step: 0.05, format: fmt2 },
+        { label: "hyper loss", target: S, field: "HYPER_LOSS_RATE", min: 0.1, max: 20, step: 0.1, format: fmt2 },
+        { label: "lock brake", target: S, field: "HYPER_BRAKE_RATE", min: 0.1, max: 20, step: 0.1, format: fmt2 },
+        { label: "hyper center", target: S, field: "HYPER_CENTER_THRESHOLD", min: 0.02, max: 0.5, step: 0.01, format: fmt2 },
+        { label: "hyper max V", target: S, field: "HYPER_MAX_SPEED", min: 1e9, max: 1e18, step: 1e9, format: fmtSpeedV },
+        { label: "gal cap boost", target: S, field: "GALACTIC_DENSITY_BOOST", min: 1, max: 1e6, step: 1, format: (v) => v >= 1000 ? `${(v/1000).toFixed(0)}k×` : `${v.toFixed(0)}×` },
+        { label: "gal ref dens", target: S, field: "GALACTIC_REFERENCE_DENSITY", min: 1e-4, max: 10, step: 1e-3, format: fmtExp },
+        { label: "hyper accel", target: S, field: "HYPER_ACCEL_RATE", min: 0.05, max: 5, step: 0.05, format: fmt2 },
+        { label: "warp atm gate", target: S, field: "WARP_GATE_POWER", min: 0.5, max: 20, step: 0.1, format: fmt2 },
         { label: "warp inhibit N", target: S, field: "WARP_INHIBITION_POWER", min: 0.5, max: 8, step: 0.1, format: fmt2 },
-        { label: "blend pow", target: S, field: "BLEND_POWER", min: 2, max: 20, step: 0.5, format: fmt1 },
+        { label: "lock cone cos", target: S, field: "HYPER_CONE_COS", min: 0.5, max: 0.999, step: 0.001, format: fmt3 },
+        { label: "lock time", target: S, field: "HYPER_LOCK_TIME", min: 0.25, max: 6, step: 0.1, format: fmt1 },
+        { label: "lock decay", target: S, field: "HYPER_LOCK_DECAY", min: 0.1, max: 3, step: 0.05, format: fmt2 },
+        { label: "lock approach", target: S, field: "LOCK_APPROACH_RATE", min: 0.05, max: 5, step: 0.05, format: fmt2 },
+        { label: "lock boost", target: S, field: "LOCK_APPROACH_BOOST", min: 0.5, max: 100, step: 0.5, format: (v) => `${v.toFixed(1)}×` },
         { label: "climb fric", target: S, field: "WING_FRICTION_CLIMB", min: 0.1, max: 20, step: 0.1, format: fmt2 },
         { label: "dive fric", target: S, field: "WING_FRICTION_DIVE", min: 0.05, max: 10, step: 0.05, format: fmt2 },
         { label: "swoop fac", target: S, field: "WING_SWOOP_FACTOR", min: 0.5, max: 5, step: 0.1, format: fmt2 },
@@ -201,23 +210,19 @@ function tuningSections(): Section[] {
         { label: "fog density", target: G, field: "fogDensityMult", min: 0, max: 5, step: 0.05, format: fmtX },
         { label: "atm shell", target: G, field: "atmShellMult", min: 0, max: 5, step: 0.05, format: fmtX },
         { label: "starfield", target: G, field: "starfieldMult", min: 0, max: 5, step: 0.05, format: fmtX },
-        { label: "cloud sphere", target: G, field: "cloudMult", min: 0, max: 2, step: 0.05, format: fmtX },
         // warpMaxBoost is purely a visual-shader normalizer for the warp
         // distortion pass — keep its slider with the render controls.
         { label: "warp shader", target: P, field: "warpMaxBoost", min: 1, max: 1e9, step: 1e6, format: fmtBoost },
       ],
     },
     {
-      title: "Volumetric clouds",
+      title: "Clouds",
       sliders: [
-        { label: "vol mult", target: G, field: "cloudVolMult", min: 0, max: 5, step: 0.05, format: fmtX },
-        { label: "debug mode", target: G, field: "cloudDebug", min: 0, max: 4, step: 1, format: (v) => {
-          const labels = ["normal", "no-depth", "shell", "density", "constant"];
-          return labels[Math.max(0, Math.min(4, Math.floor(v)))];
-        }},
-        { label: "steps", target: G, field: "cloudSteps", min: 8, max: 128, step: 1, format: fmtInt },
-        { label: "inner (m)", target: G, field: "cloudInnerM", min: 100, max: 20000, step: 100, format: fmtInt },
-        { label: "outer (m)", target: G, field: "cloudOuterM", min: 200, max: 30000, step: 100, format: fmtInt },
+        { label: "opacity", target: G, field: "cloudMult", min: 0, max: 2, step: 0.05, format: fmtX },
+        { label: "sprite size", target: G, field: "cloudSpriteOversize", min: 0.5, max: 3, step: 0.05, format: fmtX },
+        { label: "min density", target: G, field: "cloudMinDensity", min: 0, max: 0.3, step: 0.01, format: fmt3 },
+        { label: "wind mult", target: G, field: "cloudWindMult", min: 0, max: 5, step: 0.1, format: fmtX },
+        { label: "fog boost", target: G, field: "cloudFogBoost", min: 0, max: 2, step: 0.05, format: fmtX },
       ],
     },
     {
@@ -239,6 +244,23 @@ function readoutSections(player: Player, world: World, input: { mouseX: number; 
   const dirToCenter = new THREE.Vector3();
   const displayVel = new THREE.Vector3();
   return [
+    {
+      title: "Hyperspeed",
+      open: true,
+      readouts: [
+        { label: "hyper mult", fn: () => {
+          const m = s.hyperMult;
+          if (m < 100) return `${m.toFixed(1)}×`;
+          return `${m.toExponential(1)}×`;
+        }},
+        { label: "desired", fn: () => fmtSpeedV(s.flightDebug.desiredSpeed) },
+        { label: "locked body", fn: () => s.lockedBodyId ?? "—" },
+        { label: "lock progress", fn: () => fmt2(s.lockProgress) },
+        { label: "warp inhibit", fn: () => fmt3(s.flightDebug.warpInhibition) },
+        { label: "gal density", fn: () => world.galacticDensityAt(s.position).toExponential(2) },
+        { label: "warp gate", fn: () => fmt3(s.flightDebug.warpGate) },
+      ],
+    },
     {
       title: "Mode & state",
       open: true,
@@ -303,14 +325,6 @@ function readoutSections(player: Player, world: World, input: { mouseX: number; 
           if (s.gravity.dominant) displayVel.sub(s.gravity.dominant.velocity);
           return fmtSpeed(displayVel.length());
         }},
-        { label: "warp share", fn: () => {
-          // Fraction of total speed contributed by the warp engine
-          // (vs the altitude-based target). 0 = no warp, 1 = warp-dominated.
-          const w = s.flightDebug.vWarp;
-          const t = s.flightDebug.totalSpeed;
-          if (t < 1) return "—";
-          return fmt2(Math.min(1, w / t));
-        }},
         { label: "walk speed", fn: () => fmtSpeed(s.walkSpeed) },
         { label: "upward spd", fn: () => fmtSpeed(s.flightDebug.upwardSpeed) },
       ],
@@ -340,15 +354,12 @@ function readoutSections(player: Player, world: World, input: { mouseX: number; 
         { label: "rocket vis", fn: () => fmt2(s.rocketRegimeWeight) },
         { label: "alt speed", fn: () => fmtSpeed(s.flightDebug.altSpeed) },
         { label: "target speed", fn: () => fmtSpeed(s.flightDebug.targetSpeed) },
-        { label: "wing speed", fn: () => fmtSpeed(s.flightDebug.vWing) },
-        { label: "vWarp", fn: () => fmtSpeedV(s.flightDebug.vWarp) },
+        { label: "desired", fn: () => fmtSpeedV(s.flightDebug.desiredSpeed) },
+        { label: "wing speed", fn: () => fmtSpeedV(s.flightDebug.vWing) },
         { label: "total speed", fn: () => fmtSpeedV(s.flightDebug.totalSpeed) },
         { label: "fwd·up", fn: () => fmt2(s.flightDebug.forwardUp) },
         { label: "climbT", fn: () => fmt2(s.flightDebug.climbT) },
-        { label: "warp θ⁻¹−π⁻¹", fn: () => s.flightDebug.warpImpedance.toExponential(2) },
-        { label: "warp factor", fn: () => s.flightDebug.warpFactor.toExponential(2) },
-        { label: "warp atm gate", fn: () => fmt3(s.flightDebug.warpAtmGate) },
-        { label: "warp dom gate", fn: () => fmt3(s.flightDebug.warpDomGate) },
+        { label: "warp inhibit", fn: () => fmt3(s.flightDebug.warpInhibition) },
         { label: "warp gate", fn: () => fmt3(s.flightDebug.warpGate) },
         { label: "low-alt cap", fn: () => fmtSpeed(s.flightDebug.lowAltCap) },
         { label: "obstacle clr", fn: () => fmtMeters(s.flightDebug.obstacleClearance) },

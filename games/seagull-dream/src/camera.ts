@@ -21,12 +21,26 @@ import type { PlayerState } from "./player";
 // another smooth blend during takeoff. All transitions go through the
 // `cameraOffset` lerp so the user never sees a snap.
 
+// Each profile has:
+//   back       — camera distance behind the bird (along -forward)
+//   height     — camera height above the bird (along up)
+//   lookAhead  — distance along +forward to the look-at point
+//   lookHeight — height OFFSET of the look-at point (along up). If
+//                lookHeight == height, the camera's view direction is
+//                EXACTLY along bird forward → screen center = motion
+//                direction (no parallax tilt). Lower lookHeight tilts
+//                the view downward (useful when walking, so the player
+//                can aim at ground points).
+//   smooth     — per-second rate the camera offset lerps toward the
+//                target offset.
+
 // "Walk stand" — the bird is barely moving. Camera sits high and close,
 // looking steeply down so the mouse aim picks ground points.
 const WALK_STAND = {
   back: 1.5,
   height: 7,
   lookAhead: 4,
+  lookHeight: 0, // look at ground for walking-aim
   smooth: 4,
 };
 
@@ -37,6 +51,7 @@ const WALK_RUN = {
   back: 5,
   height: 3,
   lookAhead: 6,
+  lookHeight: 3, // matches height → view parallel to forward
   smooth: 4,
 };
 
@@ -44,6 +59,7 @@ const FLY = {
   back: 6,
   height: 2,
   lookAhead: 8,
+  lookHeight: 2, // matches height → screen center == bird forward
   smooth: 6,
 };
 
@@ -89,11 +105,12 @@ export function createCameraRig(): CameraRig {
   // WALK_RUN → FLY across the 250 ms animation. Flying & drifting use
   // FLY directly. The blended profile is written into a scratch object
   // and returned (single allocation, mutated each frame).
-  const _profile = { back: 0, height: 0, lookAhead: 0, smooth: 0 };
+  const _profile = { back: 0, height: 0, lookAhead: 0, lookHeight: 0, smooth: 0 };
   function lerpProfile(a: typeof FLY, b: typeof FLY, t: number) {
     _profile.back = a.back + (b.back - a.back) * t;
     _profile.height = a.height + (b.height - a.height) * t;
     _profile.lookAhead = a.lookAhead + (b.lookAhead - a.lookAhead) * t;
+    _profile.lookHeight = a.lookHeight + (b.lookHeight - a.lookHeight) * t;
     _profile.smooth = a.smooth + (b.smooth - a.smooth) * t;
     return _profile;
   }
@@ -160,9 +177,16 @@ export function createCameraRig(): CameraRig {
 
       camera.position.copy(state.position).add(cameraOffset);
 
+      // Look point sits along the forward axis (lookAhead) AND at
+      // lookHeight along the smoothed up — putting it at the same
+      // height as the camera (when lookHeight == height) makes the
+      // view direction PARALLEL to bird forward, so screen center
+      // exactly maps to motion direction. The bird itself sits
+      // below screen center by atan(height / (back+lookAhead)).
       targetLook
         .copy(state.position)
-        .addScaledVector(state.forward, profile.lookAhead);
+        .addScaledVector(state.forward, profile.lookAhead)
+        .addScaledVector(smoothedUp, profile.lookHeight);
 
       // camera.up = smoothedUp keeps the camera's orientation and
       // position in the same reference, so the horizon reads correctly.

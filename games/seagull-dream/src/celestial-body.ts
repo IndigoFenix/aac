@@ -37,6 +37,8 @@ import {
 import type { ResolvedBody } from "./physics-system/system";
 import type { Body, BodyState } from "./physics-system/body";
 import type { BodyFeatures } from "./physics-system/features";
+import { deriveCloudField, type CloudFieldParams } from "./cloud-field";
+import { createCloudSystem, type CloudSystem } from "./cloud-system";
 
 // Unified celestial-body creator.
 //
@@ -767,6 +769,22 @@ function buildRockyBody(
   const surfaceAirDensity = atm.surfacePressureBar > 0
     ? deriveSurfaceAirDensity(atm.surfacePressureBar, scaleHeightM, surfaceGravityMs2)
     : 0;
+
+  // Cloud field — derived from the regime-blended Atmosphere data and the
+  // body's rotation / banding. Created eagerly so the body has a stable
+  // reference; the actual CloudSystem (sprites, GPU buffers) is built
+  // lazily inside materialize() alongside the terrain meshes.
+  const cloudField: CloudFieldParams = deriveCloudField({
+    atmosphere: atm,
+    planetRadiusM: radiusM,
+    bandCount: features.atmosphericBandCount,
+    bandingIntensity: features.atmosphericBanding,
+    rotationPeriodHours: features.rotation.periodHours,
+    seed,
+  });
+  let cloudSystem: CloudSystem | null = null;
+  const _cloudCamLocal = new THREE.Vector3();
+
   // Sky color: the palette wins. The previous "stylized vs default"
   // detector excluded EARTHLIKE_BLUE because its skyDay literally
   // equals the detector's reference #87ceeb — Earth then fell through
@@ -885,6 +903,15 @@ function buildRockyBody(
         if (!root.mesh) continue;  // root still pending — its center isn't set yet
         updateNode(root);
       }
+      // Cloud sprites — same local-camera vector as the terrain LOD walk.
+      // performance.now() drives wind drift so the field is smooth across
+      // frames without needing world simTime here.
+      if (cloudSystem) {
+        _cloudCamLocal.copy(cameraWorldPos)
+          .sub(this.worldPosition)
+          .applyQuaternion(this.inverseOrientation);
+        cloudSystem.update(_cloudCamLocal, performance.now() * 0.001);
+      }
       // TODO(features): volcano emission, life biosignatures (city
       // lights on night side for intelligent stage), tectonic crack
       // overlays. features.tectonicActivity / features.tidalHeatFlux /
@@ -941,22 +968,15 @@ function buildRockyBody(
         group.add(ocean);
       }
 
-      // Cloud shell — translucent sphere at cloudBaseAltitude with fBm
-      // noise modulated by coverage. Skipped if the body has no
-      // meaningful clouds.
-      if (body.cloudBaseAltitude !== undefined
-          && body.cloudCoverage !== undefined
-          && body.cloudCoverage > 0.01
-          && body.cloudColor) {
-        const cloudShell = buildCloudShell({
-          radiusM,
-          cloudBaseM: body.cloudBaseAltitude,
-          cloudThicknessM: body.cloudThickness ?? 4000,
-          coverage: body.cloudCoverage,
-          color: body.cloudColor,
-          seed,
-        });
-        group.add(cloudShell);
+      // Cloud system — hierarchical billboard puffs driven by the body's
+      // CloudField. Replaces the old buildCloudShell sphere mesh. The
+      // system is per-body and parented to `group` so it rotates with
+      // the planet; the body.update closure feeds it the camera-local
+      // position every frame.
+      if (cloudField.layers.length > 0) {
+        cloudSystem = createCloudSystem({ field: cloudField });
+        group.add(cloudSystem.group);
+        body.cloudSystem = cloudSystem;
       }
 
       // Atmosphere halo shell — backface-rendered sphere at the visible
@@ -1155,153 +1175,6 @@ function buildAtmosphereShell(opts: AtmosphereShellOpts): THREE.Mesh {
   // Render after the body itself so the limb glow correctly overdraws
   // the planet silhouette edge.
   mesh.renderOrder = 1;
-  return mesh;
-}
-
-// ── Cloud shell ─────────────────────────────────────────────────────────────
-//
-// Translucent sphere at the cloud base altitude, with shader-generated
-// fBm noise threshold-clipped by cloud coverage. Coverage 1.0 → fully
-// opaque deck (Venus). Coverage 0.5 → patchy clouds (Earth). Coverage
-// 0.1 → wisps (Mars). Rendered double-sided so both ground-view (from
-// below the deck) and orbital-view (from above) look right.
-
-interface CloudShellOpts {
-  radiusM: number;
-  cloudBaseM: number;
-  cloudThicknessM: number;
-  coverage: number;
-  color: THREE.Color;
-  seed: number;
-}
-
-function buildCloudShell(opts: CloudShellOpts): THREE.Mesh {
-  const { radiusM, cloudBaseM, coverage, color, seed } = opts;
-  const shellRadius = radiusM + cloudBaseM;
-
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uSeed: { value: seed },
-      uCoverage: { value: coverage },
-      uColor: { value: color.clone() },
-      uOpacity: { value: 0 },
-      uShellRadius: { value: shellRadius },
-      uPlanetRadius: { value: radiusM },
-    },
-    // The cloud sphere wraps around the camera when the bird is below
-    // the deck — every visible fragment is back-face cloud noise,
-    // creating an enveloping haze instead of an overhead deck. We
-    // compute the camera-to-fragment angle relative to the planet
-    // outward direction (essentially "is this cloud fragment above
-    // or below the player's horizon?") in the fragment shader and
-    // suppress fragments that lie BELOW the player when the camera
-    // is well under the deck. Result: looking up at the bird's
-    // altitude shows a proper cloud ceiling; looking down doesn't
-    // show cloud noise wrapped under your feet.
-    vertexShader: `
-      varying vec3 vLocalPos;
-      varying vec3 vWorldPos;
-      varying vec3 vPlanetCenter;
-      void main() {
-        vLocalPos = position;
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldPos = wp.xyz;
-        vPlanetCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-        gl_Position = projectionMatrix * viewMatrix * wp;
-      }
-    `,
-    fragmentShader: `
-      uniform float uSeed;
-      uniform float uCoverage;
-      uniform vec3 uColor;
-      uniform float uOpacity;
-      uniform float uShellRadius;
-      uniform float uPlanetRadius;
-      varying vec3 vLocalPos;
-      varying vec3 vWorldPos;
-      varying vec3 vPlanetCenter;
-
-      // Stable hash + value noise — same family used elsewhere in this
-      // file for surface detail and gas bands.
-      float cloudHash(vec3 p) {
-        p = fract(p * 0.3183099 + uSeed * 0.1);
-        p *= 17.0;
-        return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-      }
-      float cloudNoise(vec3 p) {
-        vec3 i = floor(p);
-        vec3 f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        float n000 = cloudHash(i);
-        float n100 = cloudHash(i + vec3(1.0, 0.0, 0.0));
-        float n010 = cloudHash(i + vec3(0.0, 1.0, 0.0));
-        float n110 = cloudHash(i + vec3(1.0, 1.0, 0.0));
-        float n001 = cloudHash(i + vec3(0.0, 0.0, 1.0));
-        float n101 = cloudHash(i + vec3(1.0, 0.0, 1.0));
-        float n011 = cloudHash(i + vec3(0.0, 1.0, 1.0));
-        float n111 = cloudHash(i + vec3(1.0, 1.0, 1.0));
-        return mix(
-          mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
-          mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
-          f.z
-        );
-      }
-      float fbm(vec3 p) {
-        float n = 0.0;
-        float amp = 0.5;
-        float freq = 1.0;
-        for (int i = 0; i < 4; i++) {
-          n += amp * cloudNoise(p * freq);
-          freq *= 2.0;
-          amp *= 0.5;
-        }
-        return n;
-      }
-
-      void main() {
-        // NOTE: this sphere-based cloud approach hits z-fighting at
-        // planetary scale (depth precision can't separate a sphere at
-        // R+2km from terrain at R+0..8km). Replaced by VolumetricCloudPass
-        // (a post-process ray-march). This shader stays in the file but
-        // the mesh is disabled by default (cloudMult = 0 in GFX).
-        vec3 C = cameraPosition;
-        vec3 O = vPlanetCenter;
-        vec3 F = vWorldPos;
-        vec3 d = F - C;
-        float dLenSq = dot(d, d);
-        float tMin = dot(O - C, d) / max(dLenSq, 1e-6);
-        if (tMin > 0.0 && tMin < 1.0) {
-          vec3 closest = C + tMin * d;
-          float distOC = length(closest - O);
-          if (distOC < uPlanetRadius) discard;
-        }
-        float n = fbm(vLocalPos * 8e-7);
-        float threshold = mix(0.7, 0.15, uCoverage);
-        float density = smoothstep(threshold, threshold + 0.2, n);
-        if (density < 0.01) discard;
-        gl_FragColor = vec4(uColor, density * uOpacity);
-      }
-    `,
-    side: THREE.DoubleSide,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.NormalBlending,
-  });
-  Object.defineProperty(material, "opacity", {
-    get() { return (material.uniforms.uOpacity.value as number); },
-    set(v: number) { material.uniforms.uOpacity.value = v; },
-    configurable: true,
-  });
-
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(shellRadius, 96, 64),
-    material,
-  );
-  mesh.name = "cloud_shell";
-  mesh.frustumCulled = false;
-  // Render late so the cloud sphere ends up after terrain/halos. With
-  // depth test off we rely on render order alone for layering.
-  mesh.renderOrder = 2;
   return mesh;
 }
 

@@ -15,6 +15,7 @@ import {
   type VocabularyItem,
   type ModifierTransform,
   type DimensionPattern,
+  type AnimatedSpriteFacet,
 } from "./glyph-registry.js";
 import { resolveEmoji, isEmoji } from "./emoji-registry.js";
 import {
@@ -66,6 +67,14 @@ export interface GlyphCompositorProps {
    * stays empty.
    */
   onImageError?: (url: string) => void;
+  /**
+   * Optional renderer for SYMBOLs carrying an `animatedSprite` facet. The
+   * compositor wraps whatever this returns in a `<foreignObject>` sized to
+   * the slot so the host can plug in any animation driver (the AAC client
+   * uses a hover-driven sprite component; other consumers can leave this
+   * unset to get the static `imagePath`/emoji fallback).
+   */
+  renderAnimatedSymbol?: (facet: AnimatedSpriteFacet, key: string) => React.ReactNode;
 }
 
 export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement {
@@ -80,6 +89,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     ariaLabel,
     onSlotPress,
     onImageError,
+    renderAnimatedSymbol,
   } = props;
 
   const parsed: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
@@ -155,6 +165,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
             isActive={activeSlot === slotLayout.index}
             onPress={onSlotPress ? () => onSlotPress(slotLayout.index) : undefined}
             onImageError={onImageError}
+            renderAnimatedSymbol={renderAnimatedSymbol}
           />
         );
       })}
@@ -195,10 +206,11 @@ interface SlotGroupProps {
   isActive: boolean;
   onPress?: () => void;
   onImageError?: (url: string) => void;
+  renderAnimatedSymbol?: (facet: AnimatedSpriteFacet, key: string) => React.ReactNode;
 }
 
 function SlotGroup(props: SlotGroupProps): React.ReactElement {
-  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError } = props;
+  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol } = props;
   // Resolve the slot's vocabulary item. For a snake_case/canonical key
   // that's a direct registry lookup. For a raw-emoji key, fall back to
   // the reverse-emoji map so non-exposed items with bundled artwork
@@ -296,8 +308,24 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
         />
       )}
 
-      {/* Main symbol — image, then emoji fallback, then placeholder */}
-      {slot && url && (
+      {/* Main symbol — animated sprite first (when the SYMBOL declares one
+          and the host wired a renderer), then static image, then emoji
+          fallback, then placeholder. The animated branch is wrapped in a
+          <foreignObject> sized to the slot so any animation driver works.
+          The dimension warp / RTL flip are encoded as SVG `transform` on
+          the foreignObject so they still apply uniformly. */}
+      {slot && item?.animatedSprite && renderAnimatedSymbol && (
+        <foreignObject
+          x={mainX}
+          y={mainY}
+          width={mainSize}
+          height={mainSize}
+          transform={mainImageTransform}
+        >
+          {renderAnimatedSymbol(item.animatedSprite, slot.key)}
+        </foreignObject>
+      )}
+      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && url && (
         <image
           href={url}
           x={mainX}
@@ -309,7 +337,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           onError={onImageError ? () => onImageError(url) : undefined}
         />
       )}
-      {slot && !url && (
+      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && (
         <text
           x={layout.x + SLOT_UNIT / 2}
           y={layout.y + SLOT_UNIT / 2}

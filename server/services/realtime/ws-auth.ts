@@ -34,8 +34,7 @@ export async function authenticateUpgrade(req: IncomingMessage): Promise<User | 
         if (identity?.kind === "admin") {
           const admin = await adminUserRepository.getById(identity.id);
           if (!admin) return resolve(null);
-          const sourceUser = await storage.getUser(admin.id);
-          return resolve(adaptAdminAsUser(admin, sourceUser ?? undefined));
+          return resolve(adaptAdminAsUser(admin));
         }
 
         const user = await storage.getUser(identity.id);

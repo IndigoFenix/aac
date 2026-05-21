@@ -601,7 +601,7 @@ function dedupeImageKeys<T extends { label: string; imageKey?: string }>(buttons
 }
 
 /**
- * Format a construction-board state snapshot as a [CONSTRUCTION STATE]
+ * Format a SENTENCE BUILDER state snapshot as a [SENTENCE BUILDER STATE]
  * context injection. Compact and structured so the model can quickly route
  * to the suggest_construction_buttons tool.
  */
@@ -611,17 +611,17 @@ function formatConstructionStateInjection(
 ): string {
   const filled = state.glyph ? state.glyph : "(empty)";
   const lines: string[] = [
-    "[CONSTRUCTION STATE]",
+    "[SENTENCE BUILDER STATE]",
     `category: ${state.category}`,
     `mode_chip: ${state.modeChip}`,
-    `glyph: ${filled}`,
+    `sentence: ${filled}`,
     `target_slot: ${state.targetSlot ?? "next_empty"}`,
   ];
-  // Surface what was on the dynamic AAC board when the student pivoted to
-  // the sentence builder. Labels are the AI's own button text from the
-  // most recent rebuild_board / add_buttons / loaded board, so they
-  // anchor the construction-state to the live conversation topic and let
-  // the model bias suggestions toward the same theme.
+  // Surface what was on the RESPONSE BOARD when the student opened the
+  // SENTENCE BUILDER. Labels are the AI's own SENTENCE BUTTON text from the
+  // most recent rebuild_board / add_buttons / loaded board, so they anchor
+  // the builder state to the live conversation topic and let the model
+  // bias SUGGESTIONs toward the same theme.
   if (currentBoardLabels.length > 0) {
     lines.push(`current_board: [${currentBoardLabels.join(", ")}]`);
   }
@@ -630,21 +630,21 @@ function formatConstructionStateInjection(
   }
   if (state.payloadTarget) {
     lines.push(
-      `payload_target: slot ${state.payloadTarget.slotIndex} (${state.payloadTarget.hostKey}) — needs a filler of type [${state.payloadTarget.accepts.join(", ")}]; suggestions should come from [${state.payloadTarget.suggestCategories.join(", ")}]`
+      `payload_target: slot ${state.payloadTarget.slotIndex} (${state.payloadTarget.hostKey}) — needs a SYMBOL of type [${state.payloadTarget.accepts.join(", ")}]; SUGGESTIONs should come from [${state.payloadTarget.suggestCategories.join(", ")}]`
     );
   }
   lines.push("");
   if (state.requestGuessingMode) {
     lines.push(
-      `The student pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what they want to put in the target slot. When you've narrowed enough, call suggest_construction_buttons with the resolved key as the single candidate to populate the slot directly.`
+      `The student pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what SYMBOL they want here. When you've narrowed enough, call suggest_construction_buttons with the resolved SYMBOL as the single \`head_candidates\` SUGGESTION to populate the slot directly.`
     );
   } else if (state.payloadTarget) {
     lines.push(
-      `The student placed a composable host (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 candidates that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Skip if nothing helpful comes to mind.`
+      `The student placed a composable host GLYPH (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 HEAD SYMBOLs in \`head_candidates\` that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Modifier suggestions don't apply to an unfilled composable blank; leave \`modifier_candidates\` empty. Skip if nothing helpful comes to mind.`
     );
   } else {
     lines.push(
-      "Call suggest_construction_buttons with up to 4 candidates for the target slot. Skip if nothing helpful comes to mind."
+      "Call suggest_construction_buttons with two SUGGESTION arrays in the SAME call: `head_candidates` (up to 4 next-glyph HEAD SYMBOLs) AND `modifier_candidates` (up to 4 MODIFIER SYMBOLs for the current HEAD SYMBOL). Fill both when each is useful — heads for what the student wants to say next, modifiers for sharpening the current GLYPH (color, size, count, possession, intensity). Either array may be empty; skip the tool call entirely only if nothing fits in either."
     );
   }
   return lines.join("\n");
@@ -739,9 +739,7 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "interpret")
-  | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
-  | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
-  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice question — trigger overlay with two AI-supplied options
+  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice (incl. yes/no) — trigger overlay with two AI-supplied SENTENCE BUTTON options
   | { type: "ask_binary_choice"; data: { options: any[] } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
@@ -792,28 +790,41 @@ export interface ConstructionStateWire {
 }
 
 /** AI's suggestion payload — routed back to the construction board's AI strip. */
+/** One SUGGESTION delivered on the wire — same shape for heads and modifiers. */
+interface ConstructionCandidateWire {
+  key: string;
+  label?: string;
+  /**
+   * Resolved image URL for AI-generated keys (i.e. keys not in the glyph
+   * registry). When undefined, the client renders the SUGGESTION using
+   * the registry's imagePath/emoji (or a placeholder if the key is
+   * unknown and a symbol generation is pending — see
+   * construction_symbol_ready).
+   */
+  symbolPath?: string;
+  /**
+   * Non-generate fallback key used by the client while a `generate:` key
+   * is awaiting generation (or after it fails). An emoji, canonical
+   * registry key, `symbol:ID`, or `face:ID`. The server validates that
+   * any SUGGESTION whose primary key is `generate:` carries a non-empty
+   * fallback before reaching the wire — SUGGESTIONs without one are
+   * rejected and surfaced as an error in the tool response.
+   */
+  fallback?: string;
+}
+
 export interface ConstructionSuggestionsWire {
   targetSlot: number;
-  candidates: Array<{
-    key: string;
-    label?: string;
-    /**
-     * Resolved image URL for AI-generated keys (i.e. keys not in the glyph
-     * registry). When undefined, the client renders the candidate using the
-     * registry's imagePath/emoji (or a placeholder if the key is unknown
-     * and a symbol generation is pending — see construction_symbol_ready).
-     */
-    symbolPath?: string;
-    /**
-     * Non-generate fallback key used by the client while a `generate:` key
-     * is awaiting generation (or after it fails). An emoji, canonical
-     * registry key, `symbol:ID`, or `face:ID`. The server validates that
-     * any candidate whose primary key is `generate:` carries a non-empty
-     * fallback before reaching the wire — candidates without one are
-     * rejected and surfaced as an error in the tool response.
-     */
-    fallback?: string;
-  }>;
+  /** HEAD-SYMBOL SUGGESTIONs for the next GLYPH (main AI strip). */
+  headCandidates: ConstructionCandidateWire[];
+  /** MODIFIER-SYMBOL SUGGESTIONs for the current HEAD SYMBOL. */
+  modifierCandidates: ConstructionCandidateWire[];
+  /**
+   * @deprecated Legacy alias for `headCandidates`. Kept on the wire so
+   * older clients keep rendering heads correctly; new code reads
+   * `headCandidates` directly.
+   */
+  candidates: ConstructionCandidateWire[];
 }
 
 /**
@@ -1315,7 +1326,7 @@ export class LiveRelay {
         if (!this.hasGreeted) {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.muteState === "muted"
-            ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
+            ? `Generate 4-12 contextual SENTENCE BUTTONs using rebuild_board().`
             : `The home board is loaded. This is a session start. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
@@ -1558,7 +1569,7 @@ export class LiveRelay {
               }).catch(console.error);
             }
             this.provider!.sendContextInjection(
-              `[CONTEXT] The user pressed Home. The home board is now loaded with its native navigation buttons. Wait for them to press one of the home buttons before changing the board.`
+              `[CONTEXT] The user pressed Home. The home RESPONSE BOARD is now loaded with its native navigation SENTENCE BUTTONs. Wait for them to press one before changing the board.`
             );
             break;
           }
@@ -1669,7 +1680,7 @@ export class LiveRelay {
             });
           }
           const override = msg.muteState === "muted"
-            ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing utterance-style buttons via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
+            ? `[MUTE CHANGE] The user has MUTED you. Effective immediately and until the user unmutes by tapping the cave: do NOT call speak(). Do NOT talk to the user. Switch to producing SENTENCE BUTTONs via rebuild_board() so the user can speak through them. You cannot unmute yourself.`
             : `[MUTE CHANGE] The user has UNMUTED you. You may now speak() directly with the user again. Greet them.`;
           // sendMessage (turnComplete=true) so the model actually reacts now —
           // muted: switch to utterance-button mode immediately;
@@ -1730,7 +1741,7 @@ export class LiveRelay {
           }
           this.setState("awaiting_turn");
           this.provider!.sendMessage(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. The full board is now restored (up to 12 buttons). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh set of communication buttons for the current context.`,
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the RESPONSE BOARD. The full RESPONSE BOARD is now restored (up to 12 SENTENCE BUTTONs). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh RESPONSE BOARD of SENTENCE BUTTONs for the current context.`,
             "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
@@ -1764,15 +1775,15 @@ export class LiveRelay {
           // produced its interpretation.
           const glyphString = msg.glyph?.trim() || "";
           if (!glyphString) {
-            logLiveSession("GLYPH_PRESS_EMPTY", "ignoring blank glyph_press");
+            logLiveSession("SENTENCE_COMPOSED_EMPTY", "ignoring blank glyph_press");
             break;
           }
           if (this.state === "initializing" || this.state === "closed") {
-            logLiveSession("GLYPH_PRESS_DROPPED", `state=${this.state} glyph="${glyphString}"`);
+            logLiveSession("SENTENCE_COMPOSED_DROPPED", `state=${this.state} glyph="${glyphString}"`);
             break;
           }
           if (!this.provider) {
-            logLiveSession("GLYPH_PRESS_DROPPED", `no provider — glyph="${glyphString}"`);
+            logLiveSession("SENTENCE_COMPOSED_DROPPED", `no provider — glyph="${glyphString}"`);
             break;
           }
           // Persist the raw glyph press in the session log so the next
@@ -1780,15 +1791,15 @@ export class LiveRelay {
           if (this.sessionId) {
             dualAgentService.addPendingMessage(this.sessionId, {
               role: "user",
-              content: `[GLYPH PRESS] ${glyphString}`,
+              content: `[SENTENCE COMPOSED] ${glyphString}`,
               timestamp: Date.now(),
             }).catch(err => console.error("[LiveRelay] Failed to persist glyph press:", err));
           }
           const wasIdle = this.state === "idle";
           this.setState("awaiting_turn");
-          const prompt = `[GLYPH PRESS] ${glyphString}
-The student composed this glyph in the sentence builder and pressed Play. It is YOUR job to put words in their mouth: interpret the glyph (see <glyph_interpretation>) and call the \`interpret\` tool with the natural-language sentence — first-person, as the student would say it. The tool voices that sentence in the student's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
-          logLiveSession("GLYPH_PRESS_IN", `glyph="${glyphString}" wasIdle=${wasIdle}`);
+          const prompt = `[SENTENCE COMPOSED] ${glyphString}
+The student composed this SENTENCE in the SENTENCE BUILDER and pressed Play. It is YOUR job to put words in their mouth: interpret the SENTENCE (see <sentence_interpretation>) and call the \`interpret\` tool with the natural-language SENTENCE — first-person, as the student would say it. The tool voices that SENTENCE in the student's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
+          logLiveSession("SENTENCE_COMPOSED_IN", `glyph="${glyphString}" wasIdle=${wasIdle}`);
           this.provider.sendMessage(prompt, "user", true, { interrupt: !wasIdle });
           break;
         }
@@ -2135,9 +2146,9 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
       const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
-      const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
+      const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the SENTENCE BUTTONs contextually relevant." : "";
       const boardHint = state.availableBoards && state.availableBoards.length > 0
-        ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
+        ? ` If a custom RESPONSE BOARD from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
       const contextScan = ``;
@@ -2147,10 +2158,10 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
       // transition (and greet) once presence is confirmed.
       const modeGuidance = ` Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present.`;
       const greetingPrompt = isMuted
-        ? `Generate 4-12 contextual utterance buttons via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
+        ? `Generate 4-12 contextual SENTENCE BUTTONs via rebuild_board() using the student's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `Session start. Home board buttons: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the board until a button is pressed.${imageHint}${personaHint}${contextScan}`
-        : `Session start. Function calls only. Home board buttons: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a button press.${imageHint}${personaHint}${contextScan}`;
+        ? `Session start. Home RESPONSE BOARD SENTENCE BUTTONs: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the RESPONSE BOARD until a SENTENCE BUTTON is pressed.${imageHint}${personaHint}${contextScan}`
+        : `Session start. Function calls only. Home RESPONSE BOARD SENTENCE BUTTONs: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a BUTTON PRESS.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -2239,7 +2250,7 @@ The student composed this glyph in the sentence builder and pressed Play. It is 
         }).catch(err => console.error("[LiveRelay] Failed to persist [MORE]:", err));
       }
       this.provider!.sendMessage(`[MORE OPTIONS REQUESTED]
-The user pressed "More" — they can't find the button they need on the current board. Use add_buttons() to add more relevant options to the board. Do NOT respond with speech — just silently add buttons.`, "user", true, { interrupt });
+The user pressed "More" — they can't find the SENTENCE BUTTON they need on the current RESPONSE BOARD. Use add_buttons() to add more relevant SENTENCE BUTTONs. Do NOT respond with speech — just silently add SENTENCE BUTTONs.`, "user", true, { interrupt });
       return;
     }
 
@@ -2446,7 +2457,7 @@ The user pressed "More" — they can't find the button they need on the current 
       }
 
       case "interpret": {
-        // Called in response to a [GLYPH PRESS] turn — the AI has produced
+        // Called in response to a [SENTENCE COMPOSED] turn — the AI has produced
         // a natural-language interpretation of the student's composed glyph.
         // Stream student TTS, record the sentence as the student's turn in
         // the session log, and AWAIT the TTS finish before returning so the
@@ -2465,7 +2476,7 @@ The user pressed "More" — they can't find the button they need on the current 
         this.turnAccum.interpretConfidence = "high";
 
         // 2. Record as user turn so the conversation history shows the
-        // student's contribution (the prior [GLYPH PRESS] line stays in
+        // student's contribution (the prior [SENTENCE COMPOSED] line stays in
         // the log as the raw input — they bracket each other).
         if (this.sessionId) {
           dualAgentService.addPendingMessage(this.sessionId, {
@@ -2612,18 +2623,24 @@ The user pressed "More" — they can't find the button they need on the current 
       }
 
       case "suggest_construction_buttons": {
-        const rawCandidates = Array.isArray(args.candidates) ? args.candidates : [];
         const slotIndex = Number.isInteger(args.slot_index) ? args.slot_index as number : 0;
-        // Candidates are pipe-separated by default, matching the button
-        // glyph format the AI already uses everywhere else. Field
-        // positions mirror sentence|glyph|fallback|label, but the
-        // sentence field is unused for candidates (they fill a slot,
-        // they don't speak) so most calls look like `|🐕||Dog` or
-        // `🐕||Dog`. We tolerate every reasonable arity:
-        //   4 fields → sentence|glyph|fallback|label (ignore sentence)
-        //   3 fields → glyph|fallback|label
-        //   2 fields → glyph|label
-        //   1 field  → just the glyph
+
+        // Two SUGGESTION arrays — head_candidates (next-glyph HEAD SYMBOLs)
+        // and modifier_candidates (MODIFIER SYMBOLs for the current head).
+        // `candidates` is the deprecated single-array form, kept as an
+        // alias for head_candidates so older model outputs still work.
+        const rawHeadFromNew = Array.isArray(args.head_candidates) ? args.head_candidates : [];
+        const rawHeadFromLegacy = Array.isArray(args.candidates) ? args.candidates : [];
+        const rawHeadCandidates = rawHeadFromNew.length > 0 ? rawHeadFromNew : rawHeadFromLegacy;
+        const rawModifierCandidates = Array.isArray(args.modifier_candidates) ? args.modifier_candidates : [];
+
+        // Pipe-separated by default, matching the SENTENCE BUTTON format
+        // elsewhere: speech|symbol|fallback|label (speech field unused for
+        // SUGGESTIONs). We tolerate every reasonable arity:
+        //   4 fields → speech|symbol|fallback|label (ignore speech)
+        //   3 fields → symbol|fallback|label
+        //   2 fields → symbol|label
+        //   1 field  → just the symbol
         // We also tolerate the JSON-object schema (`{key, label, fallback}`)
         // which Vertex sometimes emits when it does honor the schema;
         // if both forms collide (pipes inside the JSON `key`), explicit
@@ -2651,43 +2668,41 @@ The user pressed "More" — they can't find the button they need on the current 
           return { key: parts[0], label: parts[1] || undefined };
         };
 
-        const parsedCandidates = rawCandidates
-          .map((c) => {
-            if (typeof c === "string" && c.trim().length > 0) {
-              return parsePipedCandidate(c);
-            }
-            if (c && typeof c === "object" && typeof c.key === "string" && c.key.trim().length > 0) {
-              const rawKey = c.key.trim();
-              const rawLabel = typeof c.label === "string" && c.label.trim().length > 0 ? c.label.trim() : undefined;
-              const rawFallback = typeof c.fallback === "string" && c.fallback.trim().length > 0 ? c.fallback.trim() : undefined;
-              // JSON form. If the model still leaked pipes into the
-              // `key`, parse them too — but explicit JSON fields take
-              // precedence over anything inferred from the pipe split.
-              const split = parsePipedCandidate(rawKey);
-              return {
-                key: split.key,
-                label: rawLabel ?? split.label,
-                fallback: rawFallback ?? split.fallback,
-              };
-            }
-            return null;
-          })
-          .filter((c): c is { key: string; label?: string; fallback?: string } =>
-            c !== null && c.key.length > 0
-          )
-          .map((c) => ({
-            key: c.key,
-            label: c.label as string | undefined,
-            fallback: c.fallback as string | undefined,
-          }))
-          .slice(0, 4);
+        const parseRawArray = (
+          rawArr: unknown[],
+        ): Array<{ key: string; label?: string; fallback?: string }> =>
+          rawArr
+            .map((c) => {
+              if (typeof c === "string" && c.trim().length > 0) {
+                return parsePipedCandidate(c);
+              }
+              if (c && typeof c === "object" && typeof (c as any).key === "string" && (c as any).key.trim().length > 0) {
+                const rawKey = (c as any).key.trim();
+                const rawLabel = typeof (c as any).label === "string" && (c as any).label.trim().length > 0 ? (c as any).label.trim() : undefined;
+                const rawFallback = typeof (c as any).fallback === "string" && (c as any).fallback.trim().length > 0 ? (c as any).fallback.trim() : undefined;
+                const split = parsePipedCandidate(rawKey);
+                return {
+                  key: split.key,
+                  label: rawLabel ?? split.label,
+                  fallback: rawFallback ?? split.fallback,
+                };
+              }
+              return null;
+            })
+            .filter((c): c is { key: string; label?: string; fallback?: string } =>
+              c !== null && c.key.length > 0,
+            )
+            .slice(0, 4);
+
+        const parsedHeadCandidates = parseRawArray(rawHeadCandidates);
+        const parsedModifierCandidates = parseRawArray(rawModifierCandidates);
 
         // Apply the same canonical / emoji / symbol / face / generate
-        // classification used for button glyphs. A candidate whose key
+        // classification used for button SENTENCEs. A candidate whose key
         // reduces to a generation target (i.e. not a registry hit, not an
         // emoji, not a symbol:/face: ref) MUST carry a fallback that is
         // itself NOT a generation target — same rule the rebuild_board
-        // validator applies to glyph slots, so the AI sees one consistent
+        // validator applies to GLYPHs, so the AI sees one consistent
         // shape across both surfaces.
         const isGenerationTarget = (key: string): boolean => {
           if (!key) return true;
@@ -2699,91 +2714,101 @@ The user pressed "More" — they can't find the button they need on the current 
           return true;
         };
 
-        const candidates: Array<{ key: string; label: string | undefined; fallback: string | undefined }> = [];
-        const constructionErrors: string[] = [];
-        for (const raw of parsedCandidates) {
-          // Normalize markers: `generate:foo` and `[foo]` both collapse to
-          // `foo` for downstream resolution. The marker itself is just
-          // the AI's hint that this is a generation target.
-          const bareKey = stripBrackets(raw.key);
-          const bareFallback = raw.fallback ? stripBrackets(raw.fallback) : undefined;
+        // Run validation on one parsed array; returns the cleaned candidates
+        // plus a list of human-readable error strings (one per rejection).
+        // The `kindLabel` string is woven into error messages so the model
+        // can tell which array a rejection came from on retry.
+        const validateBatch = (
+          parsed: Array<{ key: string; label?: string; fallback?: string }>,
+          kindLabel: string,
+        ): {
+          cleaned: Array<{ key: string; label: string | undefined; fallback: string | undefined }>;
+          errors: string[];
+        } => {
+          const cleaned: Array<{ key: string; label: string | undefined; fallback: string | undefined }> = [];
+          const errors: string[] = [];
+          for (const raw of parsed) {
+            const bareKey = stripBrackets(raw.key);
+            const bareFallback = raw.fallback ? stripBrackets(raw.fallback) : undefined;
 
-          const keyIsGen = isGenerationTarget(bareKey);
-          if (keyIsGen) {
-            if (!bareFallback) {
-              constructionErrors.push(
-                `Candidate "${raw.label || raw.key}" — key "${raw.key}" needs generation but no fallback was provided. Add an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` as the candidate's \`fallback\` field.`
+            const keyIsGen = isGenerationTarget(bareKey);
+            if (keyIsGen) {
+              if (!bareFallback) {
+                errors.push(
+                  `${kindLabel} "${raw.label || raw.key}" — key "${raw.key}" needs generation but no fallback was provided. Add an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` as the candidate's \`fallback\` field.`,
+                );
+                continue;
+              }
+              if (isGenerationTarget(bareFallback)) {
+                errors.push(
+                  `${kindLabel} "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target. Fallbacks must be an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` (anything that renders immediately).`,
+                );
+                continue;
+              }
+            } else if (bareFallback && isGenerationTarget(bareFallback)) {
+              errors.push(
+                `${kindLabel} "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target; ignored. Primary key renders fine on its own.`,
               );
+              cleaned.push({ key: bareKey, label: raw.label, fallback: undefined });
               continue;
             }
-            if (isGenerationTarget(bareFallback)) {
-              constructionErrors.push(
-                `Candidate "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target. Fallbacks must be an emoji, canonical key, \`symbol:ID\`, or \`face:ID\` (anything that renders immediately).`
-              );
-              continue;
-            }
-          } else if (bareFallback && isGenerationTarget(bareFallback)) {
-            // Fallback supplied alongside an already-renderable key, but
-            // the fallback itself is invalid. The candidate is still
-            // usable (the primary key renders fine), so we keep it but
-            // strip the bad fallback and warn.
-            constructionErrors.push(
-              `Candidate "${raw.label || raw.key}" — fallback "${raw.fallback}" is itself a generation target; ignored. Primary key renders fine on its own.`
-            );
-            candidates.push({ key: bareKey, label: raw.label, fallback: undefined });
-            continue;
+            cleaned.push({ key: bareKey, label: raw.label, fallback: bareFallback });
           }
-          candidates.push({ key: bareKey, label: raw.label, fallback: bareFallback });
-        }
+          return { cleaned, errors };
+        };
+
+        const headBatch = validateBatch(parsedHeadCandidates, "Head candidate");
+        const modifierBatch = validateBatch(parsedModifierCandidates, "Modifier candidate");
+        const headCandidates = headBatch.cleaned;
+        const modifierCandidates = modifierBatch.cleaned;
+        const constructionErrors = [...headBatch.errors, ...modifierBatch.errors];
 
         logLiveSession("CONSTRUCTION_SUGGEST_RAW",
-          `slot=${slotIndex} rawCount=${rawCandidates.length} validCount=${candidates.length} dropped=${constructionErrors.length} rawShape=${JSON.stringify(rawCandidates).substring(0, 200)}`);
+          `slot=${slotIndex} rawHead=${rawHeadCandidates.length} rawMod=${rawModifierCandidates.length} validHead=${headCandidates.length} validMod=${modifierCandidates.length} dropped=${constructionErrors.length}`);
         if (constructionErrors.length > 0) {
           logLiveSession("CONSTRUCTION_SUGGEST_VALIDATION", constructionErrors.join(" | "));
         }
 
-        if (candidates.length === 0) {
-          logLiveSession("CONSTRUCTION_SUGGEST_REJECT", "no valid candidates after normalization");
-          const errorResponse: Record<string, unknown> = { error: "No valid candidates provided" };
+        if (headCandidates.length === 0 && modifierCandidates.length === 0) {
+          logLiveSession("CONSTRUCTION_SUGGEST_REJECT", "no valid candidates in either array");
+          const errorResponse: Record<string, unknown> = { error: "No valid candidates provided in head_candidates or modifier_candidates" };
           if (constructionErrors.length > 0) errorResponse.dropped_candidates = constructionErrors;
           return { id: call.id, name, response: errorResponse };
         }
 
         // Resolve symbol paths for AI-generated keys. A candidate gets a
-        // symbolPath if its key has no built-in icon (i.e. not in the glyph
-        // registry, or in the registry but without an imagePath). Keys with
-        // a built-in icon stay unresolved here — the client uses the
-        // registry's imagePath/emoji directly.
-        const enriched: Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }> =
-          candidates.map((c) => ({ ...c }));
+        // symbolPath if its key has no built-in icon. Heads and modifiers
+        // share the resolution pipeline — both go through the same
+        // registry / emoji / generation gating.
+        const enrichedHeads: Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }> =
+          headCandidates.map((c) => ({ ...c }));
+        const enrichedModifiers: Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }> =
+          modifierCandidates.map((c) => ({ ...c }));
+
+        type ResolveTarget = { arr: typeof enrichedHeads; idx: number };
         const symbolButtons: Array<{
           label: string;
           iconRef: string;
           imageKey?: string;
           symbolPath?: string;
         }> = [];
-        const indexByImageKey = new Map<string, number>();
-        for (let i = 0; i < enriched.length; i++) {
-          const c = enriched[i];
-          const reg = getVocabularyItem(c.key);
-          // Skip keys we can already render without touching the symbol
-          // pipeline: registry items with a bundled icon, registry items
-          // with an inline emoji, raw emoji keys, and EXTRA_EMOJIS hits
-          // (which together cover everything `resolveEmoji` knows about).
-          // Without this filter, common keys like "car", "mom", "happy"
-          // get routed through `resolveImageKeys` → if a stale/broken
-          // custom_symbols row exists for the key, the broken URL is
-          // cached client-side via `construction_symbol_ready` and shows
-          // as a broken image on EVERY subsequent glyph that uses the key.
-          if (reg?.imagePath) continue;
-          if (resolveEmoji(c.key)) continue;
-          symbolButtons.push({
-            label: c.label || c.key,
-            iconRef: reg?.emoji || "",
-            imageKey: c.key,
-          });
-          indexByImageKey.set(c.key, i);
-        }
+        const targetByImageKey = new Map<string, ResolveTarget>();
+        const collectResolvable = (arr: typeof enrichedHeads) => {
+          for (let i = 0; i < arr.length; i++) {
+            const c = arr[i];
+            const reg = getVocabularyItem(c.key);
+            if (reg?.imagePath) continue;
+            if (resolveEmoji(c.key)) continue;
+            symbolButtons.push({
+              label: c.label || c.key,
+              iconRef: reg?.emoji || "",
+              imageKey: c.key,
+            });
+            targetByImageKey.set(c.key, { arr, idx: i });
+          }
+        };
+        collectResolvable(enrichedHeads);
+        collectResolvable(enrichedModifiers);
 
         const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
         if (symbolButtons.length > 0 && (generateSymbols || useApprovedSymbols || useUnapprovedSymbols)) {
@@ -2792,15 +2817,13 @@ The user pressed "More" — they can't find the button they need on the current 
             ? await resolveImageKeys(symbolButtons, { symbolPathFormat: "api-path", useUnapproved })
             : symbolButtons.filter(b => b.imageKey).map(b => b.imageKey!);
 
-          // Copy resolved paths back onto the candidate list.
           for (const btn of symbolButtons) {
             if (btn.imageKey && btn.symbolPath) {
-              const idx = indexByImageKey.get(btn.imageKey)!;
-              enriched[idx].symbolPath = btn.symbolPath;
+              const target = targetByImageKey.get(btn.imageKey)!;
+              target.arr[target.idx].symbolPath = btn.symbolPath;
             }
           }
 
-          // Queue generation for the rest; push a live update when each lands.
           if (generateSymbols && unresolved.length > 0) {
             queueSymbolGeneration(unresolved, (imageKey, symbol) => {
               logLiveSession("CONSTRUCTION_SYMBOL_READY",
@@ -2818,17 +2841,23 @@ The user pressed "More" — they can't find the button they need on the current 
 
         this.send({
           type: "construction_suggestions",
-          data: { targetSlot: slotIndex, candidates: enriched },
+          data: {
+            targetSlot: slotIndex,
+            candidates: enrichedHeads,            // legacy field — heads only, for compat
+            headCandidates: enrichedHeads,
+            modifierCandidates: enrichedModifiers,
+          },
         });
         logLiveSession("CONSTRUCTION_SUGGEST",
-          `slot=${slotIndex} keys=[${enriched.map(c => c.symbolPath ? `${c.key}*` : c.key).join(", ")}]`);
-        const okResponse: Record<string, unknown> = { output: "ok", count: enriched.length };
+          `slot=${slotIndex} heads=[${enrichedHeads.map(c => c.symbolPath ? `${c.key}*` : c.key).join(", ")}] modifiers=[${enrichedModifiers.map(c => c.symbolPath ? `${c.key}*` : c.key).join(", ")}]`);
+        const okResponse: Record<string, unknown> = {
+          output: "ok",
+          headCount: enrichedHeads.length,
+          modifierCount: enrichedModifiers.length,
+        };
         if (constructionErrors.length > 0) {
-          // Some candidates were dropped during validation; surface the
-          // reasons so the AI can correct them on a retry (same shape as
-          // rebuild_board / add_buttons validation errors).
           okResponse.dropped_candidates = constructionErrors;
-          okResponse.note = `${constructionErrors.length} candidate(s) were rejected (see dropped_candidates). The remaining ${enriched.length} are showing in the AI strip. Re-call suggest_construction_buttons with corrected versions if you want the dropped concepts back.`;
+          okResponse.note = `${constructionErrors.length} candidate(s) were rejected (see dropped_candidates). The remaining ${enrichedHeads.length} head and ${enrichedModifiers.length} modifier candidate(s) are showing on the SENTENCE BUILDER. Re-call suggest_construction_buttons with corrected versions if you want the dropped concepts back.`;
         }
         return { id: call.id, name, response: okResponse };
       }
@@ -2870,7 +2899,7 @@ The user pressed "More" — they can't find the button they need on the current 
           return {
             id: call.id,
             name,
-            response: { error: "Cannot add buttons to a prebuilt board. Call rebuild_board() to replace it with a dynamic board, or use add_context_button() to add to the context sidebar." },
+            response: { error: "Cannot add SENTENCE BUTTONs to a prebuilt RESPONSE BOARD. Call rebuild_board() to replace it with a dynamic RESPONSE BOARD, or use add_context_button() to add to the context sidebar." },
           };
         }
 
@@ -2966,7 +2995,7 @@ The user pressed "More" — they can't find the button they need on the current 
           return {
             id: call.id,
             name,
-            response: { error: "Cannot remove buttons from a prebuilt board. Call rebuild_board() to replace it with a dynamic board." },
+            response: { error: "Cannot remove SENTENCE BUTTONs from a prebuilt RESPONSE BOARD. Call rebuild_board() to replace it with a dynamic RESPONSE BOARD." },
           };
         }
 
@@ -3131,7 +3160,7 @@ The user pressed "More" — they can't find the button they need on the current 
         const rebuildResponse: Record<string, unknown> = { output: "ok", board_state: stateMsg };
         if (rebuildValidation.errors.length > 0) {
           rebuildResponse.dropped_buttons = rebuildValidation.errors;
-          rebuildResponse.note = `${rebuildValidation.errors.length} button(s) were rejected (see dropped_buttons). The board is now showing the rest of the rebuild. Call rebuild_board() again with corrected versions of the dropped buttons — that follow-up will be MERGED with the surviving partial board (it won't wipe it), so you only need to resend the buttons you want to fix or add back.`;
+          rebuildResponse.note = `${rebuildValidation.errors.length} SENTENCE BUTTON(s) were rejected (see dropped_buttons). The RESPONSE BOARD is now showing the rest of the rebuild. Call rebuild_board() again with corrected versions of the dropped SENTENCE BUTTONs — that follow-up will be MERGED with the surviving partial RESPONSE BOARD (it won't wipe it), so you only need to resend the SENTENCE BUTTONs you want to fix or add back.`;
           // Arm error-recovery: the next rebuild_board call will be
           // treated as a patch, merged with the partial board above.
           this.rebuildBoardErrorRecoveryPending = true;
@@ -3191,7 +3220,7 @@ The user pressed "More" — they can't find the button they need on the current 
               board_name: match.name,
               pages: boardData.pages?.length || 1,
               board_buttons: nativeLabels.join(", "),
-              note: "Board loaded. Its buttons are shown in the main area and cannot be modified by add_buttons/remove_buttons. To replace this board with a dynamic one, call rebuild_board(). The context sidebar (left) is separate — use add_context_button() for environment observations.",
+              note: "RESPONSE BOARD loaded. Its SENTENCE BUTTONs are shown in the main area and cannot be modified by add_buttons/remove_buttons. To replace it with a dynamic RESPONSE BOARD, call rebuild_board(). The context sidebar (left) is separate — use add_context_button() for environment observations.",
             },
           };
         } catch (err) {
@@ -3290,7 +3319,7 @@ The user pressed "More" — they can't find the button they need on the current 
                 id: call.id,
                 name,
                 response: {
-                  output: "ok. The YouTube app is now open showing the available videos and channels. The student will pick something. Call rebuild_board() with buttons relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
+                  output: "ok. The YouTube app is now open showing the available videos and channels. The student will pick something. Call rebuild_board() with SENTENCE BUTTONs relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
                 },
               };
             }
@@ -3299,7 +3328,7 @@ The user pressed "More" — they can't find the button they need on the current 
             return {
               id: call.id,
               name,
-              response: { output: "ok. Looking up a video now — the player will appear on screen in a moment. Call rebuild_board() with buttons relevant to this activity." },
+              response: { output: "ok. Looking up a video now — the player will appear on screen in a moment. Call rebuild_board() with SENTENCE BUTTONs relevant to this activity." },
             };
           }
 
@@ -3310,7 +3339,7 @@ The user pressed "More" — they can't find the button they need on the current 
           return {
             id: call.id,
             name,
-            response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual buttons relevant to this app activity." },
+            response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to this app activity." },
           };
         }
 
@@ -3340,7 +3369,7 @@ The user pressed "More" — they can't find the button they need on the current 
             name,
             response: {
               output:
-                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide. Call rebuild_board() with contextual buttons relevant to this game.",
+                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to this game.",
             },
           };
         } catch (err) {
@@ -3376,7 +3405,7 @@ The user pressed "More" — they can't find the button they need on the current 
           id: call.id,
           name,
           response: {
-            output: `ok. The browser is now open at ${url}. Call rebuild_board() with contextual buttons relevant to the site. You will receive [BROWSER] updates as the student navigates.`,
+            output: `ok. The browser is now open at ${url}. Call rebuild_board() with contextual SENTENCE BUTTONs relevant to the site. You will receive [BROWSER] updates as the student navigates.`,
           },
         };
       }
@@ -3385,16 +3414,6 @@ The user pressed "More" — they can't find the button they need on the current 
       case "call_monitor": {
         const reason = args.reason as string || "unspecified";
         this.turnAccum.callMonitorReason = reason;
-        return { id: call.id, name, response: { output: "ok" } };
-      }
-
-      case "yes_no": {
-        this.send({ type: "yes_no", data: {} });
-        return { id: call.id, name, response: { output: "ok" } };
-      }
-
-      case "ask_yes_no": {
-        this.send({ type: "ask_yes_no", data: {} });
         return { id: call.id, name, response: { output: "ok" } };
       }
 
@@ -3452,7 +3471,7 @@ The user pressed "More" — they can't find the button they need on the current 
           const partOfDay =
             hour < 5 ? "night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 22 ? "evening" : "night";
           const presenceClause = reason ? ` ${reason}` : "";
-          const greetingNudge = `[GREET]${presenceClause} You are now in interact mode (${partOfDay}). Greet them out loud right now using your voice — one short, warm sentence appropriate to the ${partOfDay} and what you can see of their mood. Immediately after greeting, call rebuild_board() with 3-4 follow-up buttons.`;
+          const greetingNudge = `[GREET]${presenceClause} You are now in interact mode (${partOfDay}). Greet them out loud right now using your voice — one short, warm sentence appropriate to the ${partOfDay} and what you can see of their mood. Immediately after greeting, call rebuild_board() with 3-4 follow-up SENTENCE BUTTONs.`;
           logLiveSession("GREETING (interact entry)", greetingNudge);
           // sendMessage (turnComplete=true) — sendContextInjection would set
           // turnComplete=false and the nudge would just sit in the buffer until
@@ -3659,7 +3678,7 @@ The user pressed "More" — they can't find the button they need on the current 
 
       const message = instruction
         ? `Board exited. The user pressed "${btn.label}". ${instruction}`
-        : `Board exited. The user pressed "${btn.label}". Use rebuild_board() to create a new board or set_board() to load another.`;
+        : `RESPONSE BOARD exited. The user pressed "${btn.label}". Use rebuild_board() to create a new RESPONSE BOARD or set_board() to load another.`;
 
       return { output: message };
     }
@@ -4560,9 +4579,9 @@ The user pressed "More" — they can't find the button they need on the current 
       const nativeLabels = this.getNativePageButtonLabels(state);
       const blankSlots = maxSlots - nativeLabels.length;
       const available = blankSlots - state.aiAddedButtonLabels.length;
-      parts.push(`Custom board loaded — Fixed buttons (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
+      parts.push(`Custom RESPONSE BOARD loaded — Fixed SENTENCE BUTTONs (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
     } else if (labels.length > 0) {
-      parts.push(`Current AAC board buttons (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
+      parts.push(`Current RESPONSE BOARD SENTENCE BUTTONs (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
     }
 
     parts.push(`Interaction mode: ${this.muteState}`);
@@ -4592,7 +4611,7 @@ The user pressed "More" — they can't find the button they need on the current 
       header,
       ...parts,
       `IMPORTANT: Continue the conversation naturally from where you left off.`,
-      `Do NOT greet the user again. Do NOT use rebuild_board() — the board is already displayed correctly on the client.`,
+      `Do NOT greet the user again. Do NOT use rebuild_board() — the RESPONSE BOARD is already displayed correctly on the client.`,
     ].join("\n");
 
     this.provider!.sendContextInjection(contextText);
@@ -4667,13 +4686,13 @@ The user pressed "More" — they can't find the button they need on the current 
 
     const parts: string[] = [
       `[BEHAVIORAL REMINDER]`,
-      `On every [BUTTON PRESS], RESPOND ALOUD to the student's statement and then call rebuild_board() — that is the expected flow. Separately: the button's sentence is voiced by a TTS layer through the device speaker, which the mic will pick up. That re-heard audio is NOT new user speech — do not transcribe it. The transcription rule does NOT change the response rule: respond to the [BUTTON PRESS] text turn, ignore the echoed TTS audio.`,
+      `On every [BUTTON PRESS], RESPOND ALOUD to the student's SENTENCE and then call rebuild_board() — that is the expected flow. Separately: the SENTENCE BUTTON's speech is voiced by a TTS layer through the device speaker, which the mic will pick up. That re-heard audio is NOT new user speech — do not transcribe it. The transcription rule does NOT change the response rule: respond to the [BUTTON PRESS] text turn, ignore the echoed TTS audio.`,
     ];
 
     parts.push("Visual checks: Stay silent if nothing important changed. Only report meaningful context changes.");
 
     if (isMuted) {
-      parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use board tools.`);
+      parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use RESPONSE BOARD tools.`);
     } else if (this.useDirectAudio) {
       parts.push(`Mode: standard — You speak directly with your voice. Do NOT narrate tool calls.`);
     } else {
@@ -4681,20 +4700,20 @@ The user pressed "More" — they can't find the button they need on the current 
     }
 
     if (this.useDirectAudio) {
-      parts.push(`Echo: You will hear your own voice echoed back through the mic — ignore it. Button press sentences are also echoed via TTS — ignore those too.`);
+      parts.push(`Echo: You will hear your own voice echoed back through the mic — ignore it. BUTTON PRESS speech is also echoed via TTS — ignore those too.`);
     } else {
       parts.push(`Echo: Speech you hear shortly after your own ${sRef} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
     }
 
     const maxSlots = state.maxBoardItems || 12;
-    parts.push(`Board limit: ${maxSlots} buttons max. Use ${rbRef} before ${abRef} if near the limit.`);
+    parts.push(`RESPONSE BOARD limit: ${maxSlots} SENTENCE BUTTONs max. Use ${rbRef} before ${abRef} if near the limit.`);
 
     if (state.availableBoards && state.availableBoards.length > 0 && !state.loadedBoardId) {
       const boardKeys = state.availableBoards.map(b => {
         const hint = b.hint ? ` (${b.hint})` : "";
         return `${b.key}${hint}`;
       }).join(", ");
-      parts.push(`Custom boards available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose${this.useDirectAudio ? "." : ` — do NOT announce board switches with ${sRef}.`}`);
+      parts.push(`Custom RESPONSE BOARDs available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose${this.useDirectAudio ? "." : ` — do NOT announce board switches with ${sRef}.`}`);
     }
 
     return parts.join("\n");
@@ -4703,12 +4722,12 @@ The user pressed "More" — they can't find the button they need on the current 
   private buildEchoAwareness(): string {
     if (this.useDirectAudio) {
       return `AUDIO ECHO AWARENESS:
-The microphone picks up audio that came from your own speaker — your own voice playing back, and the student's button-press TTS playing back. That re-heard audio is NOT new user speech. Don't TRANSCRIBE it (no transcript() calls for it). This rule is about transcription only — it does NOT mean "don't respond". When a [BUTTON PRESS] text turn arrives, respond to it normally as the user's statement, even though you may hear the TTS echo right after.`;
+The microphone picks up audio that came from your own speaker — your own voice playing back, and the student's BUTTON PRESS TTS playing back. That re-heard audio is NOT new user speech. Don't TRANSCRIBE it (no transcript() calls for it). This rule is about transcription only — it does NOT mean "don't respond". When a [BUTTON PRESS] text turn arrives, respond to it normally as the user's statement, even though you may hear the TTS echo right after.`;
     }
 
     return `AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. Because speak() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.
-When a button is pressed, the student's pre-generated sentence is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.`;
+When a SENTENCE BUTTON is pressed, the student's pre-generated SENTENCE is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.`;
   }
 
   /** Build a TZ + local-time section for the interactive agent system prompt. */

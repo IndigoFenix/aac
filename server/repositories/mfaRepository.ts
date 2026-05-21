@@ -4,6 +4,7 @@
 import {
   mfaRecoveryTokens,
   users,
+  adminUsers,
   type MfaRecoveryToken,
   type User,
 } from "@shared/schema";
@@ -11,6 +12,7 @@ import { db } from "../db";
 import { eq, and, gt, isNull, lt } from "drizzle-orm";
 import crypto from "crypto";
 import { hydrateRecords } from "../external-storage";
+import { adaptAdminAsUser } from "../services/adminAuthService";
 
 export class MfaRepository {
   /**
@@ -136,9 +138,34 @@ export class MfaRepository {
   }
 
   /**
+   * Whether a given id belongs to an admin (admin_users) rather than a
+   * regular user. Used to route MFA writes to the correct table.
+   */
+  private async isAdminId(id: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: adminUsers.id })
+      .from(adminUsers)
+      .where(eq(adminUsers.id, id));
+    return !!row;
+  }
+
+  /**
    * Update user MFA settings
    */
   async enableMfa(userId: string, encryptedSecret: string): Promise<boolean> {
+    if (await this.isAdminId(userId)) {
+      const [updated] = await db
+        .update(adminUsers)
+        .set({
+          mfaEnabled: true,
+          mfaSecret: encryptedSecret,
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, userId))
+        .returning();
+      return !!updated;
+    }
+
     const [updated] = await db
       .update(users)
       .set({
@@ -156,6 +183,19 @@ export class MfaRepository {
    * Disable MFA for a user
    */
   async disableMfa(userId: string): Promise<boolean> {
+    if (await this.isAdminId(userId)) {
+      const [updated] = await db
+        .update(adminUsers)
+        .set({
+          mfaEnabled: false,
+          mfaSecret: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, userId))
+        .returning();
+      return !!updated;
+    }
+
     const [updated] = await db
       .update(users)
       .set({
@@ -173,6 +213,18 @@ export class MfaRepository {
    * Set admin MFA enforcement for a user
    */
   async setMfaEnforcement(userId: string, enforced: boolean): Promise<boolean> {
+    if (await this.isAdminId(userId)) {
+      const [updated] = await db
+        .update(adminUsers)
+        .set({
+          mfaEnforcedByAdmin: enforced,
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, userId))
+        .returning();
+      return !!updated;
+    }
+
     const [updated] = await db
       .update(users)
       .set({
@@ -186,9 +238,13 @@ export class MfaRepository {
   }
 
   /**
-   * Get user by ID (for MFA operations)
+   * Get user by ID (for MFA operations). Returns an adapted admin pseudo-user
+   * when the id belongs to admin_users, otherwise the regular users row.
    */
   async getUserById(userId: string): Promise<User | undefined> {
+    const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.id, userId));
+    if (admin) return adaptAdminAsUser(admin);
+
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user) return undefined;
     const [hydrated] = await hydrateRecords("users", [user]);
@@ -196,13 +252,18 @@ export class MfaRepository {
   }
 
   /**
-   * Get user by email (for MFA recovery)
+   * Get user by email (for MFA recovery). Returns an adapted admin pseudo-user
+   * when the email belongs to admin_users, otherwise the regular users row.
    */
   async getUserByEmail(email: string): Promise<User | undefined> {
+    const normalized = email.toLowerCase();
+    const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, normalized));
+    if (admin) return adaptAdminAsUser(admin);
+
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.email, email.toLowerCase()));
+      .where(eq(users.email, normalized));
     if (!user) return undefined;
     const [hydrated] = await hydrateRecords("users", [user]);
     return hydrated;

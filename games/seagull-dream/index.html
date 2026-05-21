@@ -9,6 +9,16 @@
   <body>
     <canvas id="scene"></canvas>
     <div id="crosshair"></div>
+    <!-- Hyperspeed multiplier readout: appears near the crosshair when
+         hyperMult > ~1.5 so the player has a clear cue that holding
+         their gaze on the center of motion is speeding them up. -->
+    <div id="hyper-meter"></div>
+    <!-- Lock-on ring: fills around the crosshair as the player keeps
+         a body in their forward cone. At full lock the ring goes amber
+         and the body's approach speed-cap is active. -->
+    <div id="lock-ring">
+      <div id="lock-label"></div>
+    </div>
     <div id="hud">
       <span id="state-label">walking</span>
       <span id="hint">move mouse to walk · drift mouse up and far to take off</span>

@@ -263,40 +263,8 @@ export const SPEED = {
    *  constant. Default 32 → low-altitude bird cruises around 32 m/s
    *  and accelerates with altitude past ~62 m. */
   MIN_FLIGHT_SPEED: 32,
-  /** Warp coefficient. Warp = V_BASE × (1/θ - 1/π)^WARP_POWER × gate,
-   *  where θ is the largest body's angular size in radians at the
-   *  player's position.
-   *
-   *  Default tuning: WARP_POWER = 1, V_BASE = 1e6 → Earth-Moon ≈ 60s.
-   *  The trip-time analysis (treating warp as the dominant term):
-   *    dx/dt ≈ V_BASE × x/(2R)   (for x >> R)
-   *  integrates to `t = 2R·ln(D/R)/V_BASE`. With D = 60R (Moon distance)
-   *  and R = 6.37 Mm, t = 60s requires V_BASE ≈ 870 000. We round up
-   *  slightly to 1e6 to give a little headroom for the near-Earth
-   *  gate-dampened phase and Moon approach. */
-  V_WARP_BASE: 1_000_000,
-  /** Steepness of the warp falloff with distance (impedance exponent).
-   *  Default 1 makes vWarp linear in impedance, so each doubling of
-   *  distance roughly doubles the warp speed — a "gentle" curve where
-   *  acceleration is smooth rather than blowing up far out. Higher
-   *  values (2, 3) produce sharper acceleration with distance and
-   *  make interstellar warp much faster than close-system warp, but
-   *  feel jumpy in-system. */
-  WARP_POWER: 1,
-  WARP_MULT: 1.0,
-  /** Floor on angular size for true intergalactic void (no stars within
-   *  the registry search radius). Caps the maximum warp speed at
-   *  V_BASE × (1/floor − 1/π)^WARP_POWER. Inside a galaxy, the registry
-   *  walk always returns a non-zero contribution well above this floor —
-   *  it only activates in cosmic voids between galaxies. */
-  ANGULAR_FLOOR: 1e-9,
   /** Earth sea-level air density (kg/m³) — reference for atmospheric α. */
   RHO_REF_AIR: 1.225,
-  /** Exponent on (1-α) gating warp's atmospheric availability. */
-  WARP_GATE_POWER: 5,
-  /** p-norm exponent for blending wing-frame speed with warp speed.
-   *  Higher → harder switch between modes; lower → softer crossover. */
-  BLEND_POWER: 6,
   /** Asymmetric friction toward the altitude-based target speed.
    *  Climbing friction stays firm so the upward cap holds. Dive
    *  friction is much gentler so a steep dive carries momentum
@@ -325,6 +293,89 @@ export const SPEED = {
    *  during level flight; low-G worlds don't reduce it (subtracted
    *  contribution clamps at zero). */
   STRAIN_GRAVITY_WEIGHT: 0.3,
+  // ── Hyperspeed (gaze-driven multiplier) ────────────────────────────────
+  /** Atmospheric α below which hyperspeed can build. Above this, the
+   *  player is in atmosphere and the multiplier rapidly decays back
+   *  to 1. */
+  HYPER_SPACE_ALPHA: 0.05,
+  /** Normalized mouse offset from screen center (range 0..√2) below
+   *  which the gaze counts as "centered" — i.e. the player is looking
+   *  in their direction of motion and intends to keep going. Default
+   *  0.15 ≈ a 30% diameter circle at screen center. */
+  HYPER_CENTER_THRESHOLD: 0.15,
+  /** Per-second exponential growth rate of hyperMult while gaze is
+   *  centered. Default 0.5 ≈ ×1.65 per second; reaches 100× in ~9 s
+   *  and 10⁶× in ~28 s of sustained focus. */
+  HYPER_GAIN_RATE: 0.5,
+  /** Per-second decay rate per unit of gaze-offset beyond the
+   *  centered band. Decay magnitude = HYPER_LOSS_RATE × (gazeOffset −
+   *  HYPER_CENTER_THRESHOLD). Pointing the mouse 5% off-center gives
+   *  a gentle ~0.1/s decay; pointing it at the screen edge gives a
+   *  sharp ~2.5/s decay. Default 2.0 — larger values bias the loop
+   *  toward intent (any slight drift kills speed fast). */
+  HYPER_LOSS_RATE: 10,
+  /** Per-second decay rate of hyperMult while the lock-on approach
+   *  cap is actively reducing desired speed. This makes the brake
+   *  REAL — the slowdown consumes the stored hyperMult so that
+   *  losing the lock doesn't snap the bird back to full speed.
+   *  Default 5.0 → ~0.7% remaining after 1 s of braking, so a few
+   *  seconds of locked approach drains a huge hyperMult to ~1.
+   *  Set high enough that it dominates HYPER_GAIN_RATE when both
+   *  fire simultaneously (centered gaze on a locked target). */
+  HYPER_BRAKE_RATE: 0.5,
+  /** Hard cap on effective hyperspeed (m/s) at galactic-core
+   *  density. Default 1e16 ≈ 10 trillion km/s. The effective cap
+   *  scales UP in sparse regions (outer arms, intergalactic space)
+   *  by a factor of `densityBoost` — at density 0 you get
+   *  `HYPER_MAX_SPEED × GALACTIC_DENSITY_BOOST`. */
+  HYPER_MAX_SPEED: 1e16,
+  /** Maximum boost on HYPER_MAX_SPEED in zero-density regions.
+   *  Default 1000 → intergalactic cap is 1e19 m/s. Tunable for
+   *  pacing of cross-galaxy travel. */
+  GALACTIC_DENSITY_BOOST: 1000,
+  /** Reference star density (stars/ly³) at which the cap equals
+   *  HYPER_MAX_SPEED (no boost). Default 0.1 — roughly the disc
+   *  density at solar position. Lower local density → higher
+   *  effective cap; higher local density → cap at base. */
+  GALACTIC_REFERENCE_DENSITY: 0.1,
+  /** Per-second rate at which the inertial wingSpeed lerps toward
+   *  the desired (baseSpeed × hyperMult) target. Provides momentum
+   *  so brief friction spikes (passing a body) don't crash speed. */
+  HYPER_ACCEL_RATE: 0.5,
+  /** Exponent on (R/r) for the warp gate falloff. Default 2 = inverse
+   *  square — friction matches the gravitational scaling so
+   *  near-body braking is firm without ever fully stopping the bird
+   *  unless it tries to sit on the surface. */
+  WARP_INHIBITION_POWER: 2,
+  /** Exponent on (1 - α) for the atmospheric warp gate. Larger N =
+   *  hyperMult is suppressed deeper into thin atmospheres. Default 5
+   *  means at α=0.5 only ~3% of hyperMult bonus is allowed; at
+   *  α=0.17 (≈15 km on Earth) ~40% is allowed. In vacuum the gate
+   *  is fully open. Ensures the natural altitude-driven climb still
+   *  reaches the bird's baseSpeed in atmosphere. */
+  WARP_GATE_POWER: 5,
+  // ── Lock-on (approach-cap, no reorient) ────────────────────────────────
+  /** Half-angle (radians) of the forward-cone used to pick a lock
+   *  candidate. ≈ cos(15°). Larger = looser intent detection. */
+  HYPER_CONE_COS: 0.9659258, // cos(15°)
+  /** Seconds the player must steadily face the same candidate body
+   *  to build a full lock (lockProgress 0 → 1). */
+  HYPER_LOCK_TIME: 1.5,
+  /** Seconds for lockProgress to decay to 0 when the player looks
+   *  away. Faster than build time so cancel is responsive. */
+  HYPER_LOCK_DECAY: 0.4,
+  /** Per-second rate at which the locked target's distance gates
+   *  the maximum allowed desired speed: max_v = RATE × distance ×
+   *  BOOST. With RATE = 0.5, time to decay from cruise distance D
+   *  to D_exit is `ln(D / D_exit) / (RATE × BOOST)`. Earth-Moon
+   *  (3.84×10⁸ → exit ~10⁶ m) ≈ 12 s at BOOST=1, ≈ 1.2 s at BOOST=10. */
+  LOCK_APPROACH_RATE: 0.5,
+  /** Multiplier on the lock-on approach cap. Increase to make
+   *  locked approaches faster without changing the shape of the
+   *  exponential-decay curve (or the per-second BRAKE_RATE that
+   *  drains hyperMult while the cap is active). Default 1; bump to
+   *  5-20 if approaches feel slow. */
+  LOCK_APPROACH_BOOST: 1,
   /** Wing-vs-rocket visual blend. The bird is purely visual at this
    *  point: same speed everywhere, but at low atmospheric density (or
    *  high gravity) wings can't generate the thrust needed and rockets
@@ -348,11 +399,10 @@ export const SPEED = {
    *  the pure inverse-square law; higher N opens warp faster with
    *  altitude.
    *
-   *  With N=2 on Earth (R=6371 km): warp gate ≈ 0.03 at 100 km,
-   *  0.24 at 1000 km, 0.86 at 10 000 km, 0.996 at 100 000 km. Other
-   *  bodies scale by their own radius: Moon's gate opens proportionally
-   *  faster (R=1737 km), Sun's much slower (R=695 Mm). */
-  WARP_INHIBITION_POWER: 2,
+   *  Note: this constant is declared once above (in the hyperspeed
+   *  block). This trailing definition is intentionally left out — the
+   *  friction term reads SPEED.WARP_INHIBITION_POWER from the earlier
+   *  entry. */
 };
 
 export const CONTROLS = {
@@ -485,31 +535,29 @@ export const GFX = {
   fogDensityMult: 1.0,
   atmShellMult: 1.0,
   starfieldMult: 1.0,
-  /** Density multiplier on the VOLUMETRIC cloud pass. 0 = no clouds,
-   *  >1 = thicker clouds. */
-  cloudVolMult: 1.0,
-  /** Cloud debug mode passed to the volumetric pass:
-   *    0 = normal volumetric rendering
-   *    1 = bypass scene-depth clip (clouds visible even behind geometry)
-   *    2 = paint shell-intersection mask as solid red
-   *    3 = paint fbm density along ray as grayscale
-   *    4 = constant density 1.0 inside the shell (no noise) */
-  cloudDebug: 0,
-  /** Number of ray-march samples per pixel. Lower = faster but banded.
-   *  16 is a solid default — the per-pixel cost is dominated by the
-   *  light march on each sample, so doubling steps roughly doubles
-   *  cost. Drop to 8 for low-end devices. */
-  cloudSteps: 16,
-  /** Cloud layer inner / outer altitude in METERS above planet surface.
-   *  Wide default band (500 m → 10 km) so the camera consistently sits
-   *  INSIDE the cloud shell — shell-intersection always succeeds and
-   *  cloud rendering is robust as the player walks / flies through
-   *  varied terrain altitudes. Real cloud layers are thinner, but for
-   *  rendering correctness at planetary scale a wider band avoids
-   *  boundary-case shell-misses. */
-  cloudInnerM: 500,
-  cloudOuterM: 10000,
-  /** Legacy sphere-clouds opacity. Disabled by default — kept so the
-   *  sphere mesh isn't a surprise visual artifact. */
-  cloudMult: 0.0,
+  // ── Cloud system (cloud-field.ts + cloud-system.ts) ───────────────────
+  // The post-process VolumetricCloudPass has been replaced by a per-body
+  // hierarchical billboard system. These sliders tune the runtime; the
+  // density-field structure (layers, banding, clumps) is derived per-body
+  // from the physics-system atmosphere and isn't user-tunable here.
+  //
+  /** Overall opacity multiplier on the cloud sprite material. 0 = clouds
+   *  invisible; 1 = full opacity. Useful for isolating other visual
+   *  issues without removing the cloud system entirely. */
+  cloudMult: 1.0,
+  /** Sprite oversize multiplier — scales each billboard's render size
+   *  relative to its cell extent. 1.0 = exact cell size (visible grid);
+   *  ~1.4 = adjacent cells overlap into a continuous mass. */
+  cloudSpriteOversize: 1.4,
+  /** Minimum sample density below which a cell emits no sprite. Lower
+   *  values render more wispy clouds but cost more sort/fill work. */
+  cloudMinDensity: 0.04,
+  /** Wind drift speed multiplier — scales the derived jet speed per
+   *  body. 0 = clouds static; 1 = derived speed; >1 = exaggerated drift
+   *  (useful when debugging banding). */
+  cloudWindMult: 1.0,
+  /** Fog modulation strength — when the camera enters a dense cloud
+   *  cell, the sky pass adds this × density × tier-scale to the
+   *  FogExp2 density so visibility drops naturally. 0 disables. */
+  cloudFogBoost: 0.6,
 };

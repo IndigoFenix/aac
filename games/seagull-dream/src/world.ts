@@ -3,11 +3,13 @@ import { SKY, GALAXY, SPEED, GFX } from "./config";
 import type { CelestialBody } from "./body";
 import { advanceBodyTransform, atmosphericDensityForBody, windAt } from "./body";
 import { generateSolarSystem, type SolarSystem } from "./solar-system";
+import { computeCloudPixelsPerUnit } from "./cloud-system";
 import {
   generateUniverse,
   projectGalaxy,
   findNearestStar,
   largestAngularSizeFromRegistry,
+  densityAt,
   DEFAULT_GALAXY_PARAMS,
   type GalaxyParams,
   type Universe,
@@ -125,6 +127,14 @@ export interface World {
    * bodies are materialized.
    */
   nearestBodyAltitudeAt(worldPos: THREE.Vector3): { body: CelestialBody | null; altitude: number };
+  /**
+   * Star density at the player's current galactic position, in
+   * stars/ly³. Same formula that drives star generation — bulge +
+   * disc + arms + clumps. Used by the hyperdrive cap so the player
+   * can go faster in sparse regions (outer arms, intergalactic
+   * space) than in dense regions (galactic core, spiral arms).
+   */
+  galacticDensityAt(worldPos: THREE.Vector3): number;
   /**
    * "Local-system dominant body" — the body whose Hill sphere contains
    * the player AND whose Hill sphere is the smallest such containing
@@ -384,18 +394,22 @@ export function createWorld(
     if (!visible) return;
     // When visible, snap every material to fully opaque + depth-writing
     // so we're never in the dark-overlay state for a single frame.
-    // EXCEPT: cloud_shell and atmosphere_halo are translucent shells
-    // whose opacity drives the alpha of their full-screen contribution,
-    // and the live-tuning multipliers (GFX.cloudMult, GFX.atmShellMult)
-    // need to scale them so the player can dial each layer down to
-    // isolate visual issues. Detect by mesh.name.
+    // EXCEPT: atmosphere_halo is a translucent shell whose opacity
+    // drives the alpha of its full-screen contribution; GFX.atmShellMult
+    // lets the player dial it down to isolate visual issues. Detect
+    // by mesh.name. Clouds are Points (not Mesh) so they bypass this
+    // entirely; their opacity is handled by setRuntimeOpts in
+    // updateHalos.
     body.group.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
       const mat = mesh.material;
       let opacityValue = 1;
-      if (mesh.name === "cloud_shell") opacityValue = GFX.cloudMult;
-      else if (mesh.name === "atmosphere_halo") opacityValue = GFX.atmShellMult;
+      // atmosphere_halo is the only special-cased Mesh — its shader's
+      // uOpacity drives the limb-glow visibility. The cloud system uses
+      // Points (not isMesh), so it never enters this traverse; its
+      // opacity is set via setRuntimeOpts in updateHalos.
+      if (mesh.name === "atmosphere_halo") opacityValue = GFX.atmShellMult;
       if (Array.isArray(mat)) {
         for (const m of mat) {
           m.opacity = opacityValue;
@@ -405,9 +419,6 @@ export function createWorld(
         mat.opacity = opacityValue;
         mat.depthWrite = true;
       }
-      // Live cloud color override — when on, force the cloud_shell
-      // shader's uColor uniform to the slider RGB. Lets the user see
-      // exactly where clouds are by setting them to pure red.
     });
   }
 
@@ -421,6 +432,9 @@ export function createWorld(
     const fovRad = camera.fov * Math.PI / 180;
     const pxPerRad = screenHeightPx / fovRad;
     const sysStar = activeSystem?.star;
+    // Cloud uniforms / runtime opts are computed once per frame and
+    // pushed into every body's CloudSystem inside the body loop below.
+    const cloudPixelsPerUnit = computeCloudPixelsPerUnit(camera, screenHeightPx);
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i];
 
@@ -432,6 +446,21 @@ export function createWorld(
       const safeDist = Math.max(dist, b.radius);
       const angularSize = 2 * Math.atan(b.radius / safeDist);
       const pixelSize = angularSize * pxPerRad;
+
+      // Cloud system: push the per-frame uniforms + GFX-driven opts. The
+      // CloudSystem's group is a child of body.group, so its visibility
+      // tracks body.group.visible (set later in setBodyMeshOpacity).
+      if (b.cloudSystem) {
+        b.cloudSystem.setRuntimeOpts({
+          opacity: GFX.cloudMult,
+          spriteOversize: GFX.cloudSpriteOversize,
+          minDensity: GFX.cloudMinDensity,
+          windMult: GFX.cloudWindMult,
+        });
+        const pts = b.cloudSystem.group.children[0] as THREE.Points;
+        const mat = pts.material as THREE.ShaderMaterial;
+        mat.uniforms.uPixelsPerUnit.value = cloudPixelsPerUnit;
+      }
 
       // Trigger heavy construction (sphere meshes, materials, ocean,
       // scatter, terrain root chunks) the first time the body's
@@ -779,7 +808,36 @@ export function createWorld(
           nearest = b;
         }
       }
-      return { body: nearest, altitude: nearest ? Math.max(0, bestAlt) : Infinity };
+      if (nearest) {
+        return { body: nearest, altitude: Math.max(0, bestAlt) };
+      }
+      // Galactic-mode fallback: no system materialized, so altitude
+      // comes from distance to the nearest registry star (unmaterialized).
+      // Without this, baseSpeed clamps at MIN_FLIGHT_SPEED everywhere
+      // in interstellar space and hyperMult-driven travel feels broken.
+      _galacticTmp.copy(worldPos)
+        .divideScalar(GALAXY.lyToSceneMeters)
+        .add(sceneAnchorGalactic);
+      const result = findNearestStar(universe, _galacticTmp, 100);
+      if (result) {
+        return {
+          body: null,
+          altitude: result.distanceLy * GALAXY.lyToSceneMeters,
+        };
+      }
+      return { body: null, altitude: Infinity };
+    },
+    galacticDensityAt(worldPos: THREE.Vector3): number {
+      // Player's galactic position = scene anchor + scene offset / ly_to_m.
+      _galacticTmp.copy(worldPos)
+        .divideScalar(GALAXY.lyToSceneMeters)
+        .add(sceneAnchorGalactic);
+      return densityAt(
+        universe.params,
+        _galacticTmp.x,
+        _galacticTmp.y,
+        _galacticTmp.z,
+      );
     },
     dominantBodyAt(worldPos: THREE.Vector3): { body: CelestialBody | null; altitude: number; hillFraction: number } {
       // First pass: smallest hill sphere containing the player.
@@ -1132,6 +1190,8 @@ export function createSky(scene: THREE.Scene): Sky {
   const _atmosphereColor = new THREE.Color();
   const _ambientColor = new THREE.Color();
   const _playerGalactic = new THREE.Vector3();
+  const _cloudCamLocal = new THREE.Vector3();
+  const _cloudFog = { density: 0, color: new THREE.Color() };
 
   return {
     scene,
@@ -1250,6 +1310,30 @@ export function createSky(scene: THREE.Scene): Sky {
           scene.fog.density = baseDensity * (1 - atmosphereT) * GFX.fogDensityMult;
         } else {
           scene.fog.density = 0;
+        }
+
+        // Cloud fog modulation — when the camera is inside a dense cloud
+        // cell, boost fog density and tint toward the cloud color. The
+        // billboard sprites alone can't render proper enveloping haze
+        // (Points don't accept fragments from inside the sprite as fog);
+        // shifting the scene's FogExp2 makes "flying through a cumulus"
+        // feel right by collapsing visibility while you're inside.
+        if (ctx.dominant?.cloudSystem && GFX.cloudFogBoost > 0) {
+          _cloudCamLocal.copy(cameraPos)
+            .sub(ctx.dominant.worldPosition)
+            .applyQuaternion(ctx.dominant.inverseOrientation);
+          ctx.dominant.cloudSystem.fogContribution(_cloudCamLocal, _cloudFog);
+          if (_cloudFog.density > 0.01) {
+            // Density boost is per-meter; pick so a fully dense cell
+            // (density=1) gives visibility ~100 m at full boost.
+            const cloudFogDensity = _cloudFog.density * GFX.cloudFogBoost * 0.01;
+            scene.fog.density += cloudFogDensity;
+            // Tint the fog color toward the cloud color in proportion
+            // to how much of the total density the cloud contributes.
+            const totalDensity = scene.fog.density;
+            const t = THREE.MathUtils.clamp(cloudFogDensity / Math.max(1e-6, totalDensity), 0, 1);
+            scene.fog.color.lerp(_cloudFog.color, t);
+          }
         }
       }
 

@@ -102,11 +102,9 @@ interface DualAgentContextType {
   emote: "happy" | "sad" | "neutral";
   speakingVolume: number;
 
-  // Yes/No overlay
-  yesNoActive: boolean;
-  dismissYesNo: () => void;
-
-  // Binary-choice overlay — two AI-supplied options + an implicit "Neither" button
+  // Binary-choice overlay — two AI-supplied SENTENCE BUTTON options + an
+  // implicit "Neither". Yes/no questions are surfaced through this same
+  // overlay (using the canonical `yes` / `no` SYMBOLs).
   binaryChoiceOptions: BinaryChoiceOption[] | null;
   dismissBinaryChoice: () => void;
 
@@ -765,9 +763,6 @@ function ProviderShell({
 
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,
-
-    yesNoActive: agent.yesNoActive,
-    dismissYesNo: agent.dismissYesNo,
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
     dismissBinaryChoice: agent.dismissBinaryChoice,

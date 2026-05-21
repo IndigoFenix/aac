@@ -3,16 +3,12 @@
  *
  * Bridges the `admin_users` table into the Passport login flow. The session's
  * identity is stored as a tagged value (`{ kind: 'admin' | 'user', id }`).
- * When a user logs in via Passport (local or Google), we check whether the
- * authenticated email matches an `admin_users` row; if so, the session is
- * established under the admin identity instead of the regular user. The
- * downstream code (`requireAdmin`, `isCustomerSupport`, license checks, etc.)
- * reads `user.isSystemAdmin` — we set that flag on the adapted pseudo-user so
+ * `admin_users` is fully self-contained as of migration 0107: password, MFA
+ * secret, auth_provider, and google_id all live on the admin row, and the
+ * legacy `users` row for each admin has been dropped. Downstream code
+ * (`requireAdmin`, `isCustomerSupport`, license checks, etc.) reads
+ * `user.isSystemAdmin` — we set that flag on the adapted pseudo-user so
  * those checks continue to work without modification.
- *
- * Existing system admins keep their `users` row so password + MFA verification
- * continues to operate against it; the admin row carries the same `id` (set
- * by migration 0104), so audit/log references remain stable.
  */
 
 import type { User, AdminUser } from "@shared/schema";
@@ -34,51 +30,47 @@ export type AdminPseudoUser = User & {
 };
 
 /**
- * Wraps an `admin_users` row in a `User`-shaped object. The optional
- * `sourceUser` parameter is the matching `users` row (if one exists) — its
- * MFA/credit/auth-provider fields are carried over so flows that read those
- * fields off `req.user` still see consistent values.
+ * Wraps an `admin_users` row in a `User`-shaped object. Auth fields
+ * (password, MFA, authProvider, googleId) come straight from the admin row;
+ * student/clinician-specific User fields (credits, biometric, etc.) get
+ * sensible defaults since admins don't carry that state.
  */
-export function adaptAdminAsUser(admin: AdminUser, sourceUser?: User): AdminPseudoUser {
+export function adaptAdminAsUser(admin: AdminUser): AdminPseudoUser {
   const now = new Date();
-  // Start from the source user (if any) so fields we don't explicitly override
-  // (MFA, credits, biometric, etc.) keep their values.
-  const base: any = sourceUser ? { ...sourceUser } : {};
   return {
-    ...base,
     id: admin.id,
-    email: admin.email ?? base.email ?? null,
-    firstName: admin.firstName ?? base.firstName ?? null,
-    lastName: admin.lastName ?? base.lastName ?? null,
-    fullName: base.fullName ?? null,
-    profileImageUrl: admin.profileImageUrl ?? base.profileImageUrl ?? null,
+    email: admin.email ?? null,
+    firstName: admin.firstName ?? null,
+    lastName: admin.lastName ?? null,
+    fullName: null,
+    profileImageUrl: admin.profileImageUrl ?? null,
     userType: "admin",
     isAdmin: true,
     isSystemAdmin: true,
-    isActive: base.isActive ?? true,
-    onboardingStep: base.onboardingStep ?? 3,
-    credits: base.credits ?? 0,
-    subscriptionType: base.subscriptionType ?? "enterprise",
-    referralCode: base.referralCode ?? null,
-    referredById: base.referredById ?? null,
-    mfaEnabled: base.mfaEnabled ?? false,
-    mfaSecret: base.mfaSecret ?? null,
-    mfaEnforcedByAdmin: base.mfaEnforcedByAdmin ?? false,
-    password: base.password ?? null,
-    authProvider: base.authProvider ?? "email",
-    googleId: base.googleId ?? null,
-    phone: base.phone ?? null,
-    phoneVerifiedAt: base.phoneVerifiedAt ?? null,
-    biometricDataId: base.biometricDataId ?? null,
-    externalStorage: base.externalStorage ?? null,
-    chatMemory: base.chatMemory ?? {},
-    chatCreditsUsed: base.chatCreditsUsed ?? 0,
-    chatCreditsUpdated: base.chatCreditsUpdated ?? now,
-    subscriptionExpiresAt: base.subscriptionExpiresAt ?? null,
-    lastActiveAt: base.lastActiveAt ?? now,
-    genCapOverride: base.genCapOverride ?? null,
-    dlCapOverride: base.dlCapOverride ?? null,
-    storedBoardsCap: base.storedBoardsCap ?? null,
+    isActive: true,
+    onboardingStep: 3,
+    credits: 0,
+    subscriptionType: "enterprise",
+    referralCode: null,
+    referredById: null,
+    mfaEnabled: admin.mfaEnabled ?? false,
+    mfaSecret: admin.mfaSecret ?? null,
+    mfaEnforcedByAdmin: admin.mfaEnforcedByAdmin ?? false,
+    password: admin.password ?? null,
+    authProvider: admin.authProvider ?? "email",
+    googleId: admin.googleId ?? null,
+    phone: null,
+    phoneVerifiedAt: null,
+    biometricDataId: null,
+    externalStorage: null,
+    chatMemory: {},
+    chatCreditsUsed: 0,
+    chatCreditsUpdated: now,
+    subscriptionExpiresAt: null,
+    lastActiveAt: admin.lastActiveAt ?? now,
+    genCapOverride: null,
+    dlCapOverride: null,
+    storedBoardsCap: null,
     createdAt: admin.createdAt ?? now,
     updatedAt: admin.updatedAt ?? now,
     adminPermissions: admin.permissions ?? ["*"],
@@ -87,16 +79,18 @@ export function adaptAdminAsUser(admin: AdminUser, sourceUser?: User): AdminPseu
 }
 
 /**
- * Given a freshly-authenticated regular user (returned by a Passport strategy
- * or impersonation flow), return the identity that should actually be stored
- * in the session. If the user's email matches an `admin_users` row, returns
- * the adapted admin pseudo-user; otherwise returns the user unchanged.
+ * Given a freshly-authenticated regular user, return the identity that should
+ * actually be stored in the session. Kept for the rare path where a Passport
+ * strategy or impersonation flow returns a bare `users` row whose email also
+ * happens to belong to an admin — we promote to the admin identity. Direct
+ * admin lookups (LocalStrategy/Google) call `adaptAdminAsUser` themselves.
  */
 export async function resolveLoginIdentity(user: User): Promise<User | AdminPseudoUser> {
   if (!user?.email) return user;
+  if ((user as any)?._identityKind === "admin") return user as AdminPseudoUser;
   const admin = await adminUserRepository.getByEmail(user.email);
   if (!admin) return user;
-  return adaptAdminAsUser(admin, user);
+  return adaptAdminAsUser(admin);
 }
 
 /**

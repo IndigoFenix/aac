@@ -56,7 +56,10 @@ export async function setupUserAuth(app: Express) {
   const { supportContext } = await import("./middleware/auth");
   app.use(supportContext);
 
-  // Local Strategy for email/password login
+  // Local Strategy for email/password login.
+  // admin_users is checked first: admin auth is fully self-contained on that
+  // table (password, MFA, authProvider). A matching admin short-circuits the
+  // regular `users` lookup entirely — there is no `users` row to fall back on.
   passport.use(new LocalStrategy(
     {
       usernameField: 'email',
@@ -64,6 +67,22 @@ export async function setupUserAuth(app: Express) {
     },
     async (email, password, done) => {
       try {
+        const admin = await adminUserRepository.getByEmail(email);
+        if (admin) {
+          if (admin.authProvider === 'google') {
+            return done(null, false, { message: 'Please sign in with Google for this account' });
+          }
+          if (!admin.password) {
+            return done(null, false, { message: 'Invalid login credentials' });
+          }
+          const isValidAdminPassword = await bcrypt.compare(password, admin.password);
+          if (!isValidAdminPassword) {
+            return done(null, false, { message: 'Invalid login credentials' });
+          }
+          await adminUserRepository.update(admin.id, { lastActiveAt: new Date() } as any);
+          return done(null, adaptAdminAsUser(admin));
+        }
+
         const user = await storage.getUserByEmail(email);
         if (!user) {
           return done(null, false, { message: 'No account found with this email address' });
@@ -139,15 +158,12 @@ export async function setupUserAuth(app: Express) {
         // Check if user exists by email
         if (email) {
           // Admin-first: a Google-verified email matching an admin_users row
-          // logs in under the admin identity. If a matching users row also
-          // exists we adapt that as the source for MFA/credit fields; if not,
-          // the admin signs in with admin_users as the sole identity (the
-          // normal path for admins added via the management UI who never
-          // needed a regular user row).
+          // logs in under the admin identity. admin_users holds its own
+          // authProvider/googleId/MFA state — no users-row fallback needed.
           const adminMatch = await adminUserRepository.getByEmail(email);
           if (adminMatch) {
-            const matchingUser = await storage.getUserByEmail(email);
-            return done(null, adaptAdminAsUser(adminMatch, matchingUser ?? undefined));
+            await adminUserRepository.update(adminMatch.id, { lastActiveAt: new Date() } as any);
+            return done(null, adaptAdminAsUser(adminMatch));
           }
 
           let user = await storage.getUserByEmail(email);
@@ -222,10 +238,7 @@ export async function setupUserAuth(app: Express) {
         if (!admin) {
           return done(null, false);
         }
-        // Carry over MFA/credits/etc. from the legacy users row when it
-        // exists (the migrated admin and its source user share the same id).
-        const sourceUser = await storage.getUser(admin.id);
-        return done(null, adaptAdminAsUser(admin, sourceUser ?? undefined));
+        return done(null, adaptAdminAsUser(admin));
       }
 
       const user = await storage.getUser(identity.id);

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
@@ -7,9 +8,8 @@ import { onPlatformMessage, sendToParent, type PlatformMessage } from "@shared/g
 import { createWorld, createSky } from "./world";
 import { createPlayer, type Input } from "./player";
 import { createCameraRig } from "./camera";
-import { PLAYER, GALAXY, GFX, PLANET, CHUNKS } from "./config";
+import { PLAYER, GALAXY, GFX, PLANET, CHUNKS, SPEED } from "./config";
 import { DEFAULT_GALAXY_PARAMS } from "./galaxy";
-import { VolumetricCloudPass } from "./cloud-volume";
 import { setupDebugUI } from "./debug-ui";
 
 // ── Generation overrides from URL hash ──────────────────────────────────────
@@ -86,13 +86,12 @@ world.gravityAt(player.state.position, player.state.gravity);
 player.sync();
 
 // ── Post-process pipeline ───────────────────────────────────────────────────
-const sceneTarget = new THREE.WebGLRenderTarget(
-  canvas.clientWidth,
-  canvas.clientHeight,
-  { type: THREE.HalfFloatType },
-);
-sceneTarget.depthTexture = new THREE.DepthTexture(canvas.clientWidth, canvas.clientHeight);
-sceneTarget.depthTexture.type = THREE.UnsignedShortType;
+// Clouds were previously rendered as a post-process volumetric pass that
+// ray-marched a sphere shell, reading scene color + depth via `sceneTarget`.
+// That whole system has been replaced by the hierarchical billboard cloud
+// renderer (cloud-system.ts), which lives INSIDE the scene as a child of
+// each body's group — so the post-process pipeline no longer needs the
+// extra scene render target. A standard RenderPass kicks off the chain.
 
 const hdrTarget = new THREE.WebGLRenderTarget(
   canvas.clientWidth,
@@ -101,9 +100,8 @@ const hdrTarget = new THREE.WebGLRenderTarget(
 );
 const composer = new EffectComposer(renderer, hdrTarget);
 
-const cloudPass = new VolumetricCloudPass();
-cloudPass.setSceneTarget(sceneTarget);
-composer.addPass(cloudPass);
+const renderPass = new RenderPass(scene, rig.camera);
+composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(canvas.clientWidth, canvas.clientHeight),
@@ -146,6 +144,11 @@ const warpPass = new ShaderPass({
     }
   `,
 });
+// Radial-blur warp post-process. Six-sample radial smear from screen
+// center — single fullscreen pass, so it's much cheaper than a
+// per-vertex starfield stretch and produces a stronger "warp tunnel"
+// feel. Strength driven from hyperMult by the main loop.
+// Commented out due to lag
 // composer.addPass(warpPass);
 
 composer.addPass(new OutputPass());
@@ -215,6 +218,70 @@ let lastMode = "";
 let lastDominantId: string | null = null;
 let warnedNonFinite = false;
 
+// ── Lock-on ring + hyperspeed meter ─────────────────────────────────────────
+const lockRing = document.getElementById("lock-ring") as HTMLDivElement;
+const lockLabel = document.getElementById("lock-label") as HTMLDivElement;
+const hyperMeter = document.getElementById("hyper-meter") as HTMLDivElement;
+let lockVisible = false;
+let lockEngaged = false;
+let lockLabelText = "";
+let hyperMeterVisible = false;
+let hyperMeterText = "";
+let crosshairGaining = false;
+
+function updateHyperMeter() {
+  const m = player.state.hyperMult;
+  // Show the meter once the mult is visibly above 1.
+  const shouldShow = m > 1.5;
+  if (shouldShow !== hyperMeterVisible) {
+    hyperMeter.classList.toggle("visible", shouldShow);
+    hyperMeterVisible = shouldShow;
+  }
+  if (shouldShow) {
+    const next = m < 100
+      ? `×${m.toFixed(1)}`
+      : `×${m.toExponential(1)}`;
+    if (next !== hyperMeterText) {
+      hyperMeter.textContent = next;
+      hyperMeterText = next;
+    }
+  }
+  // Crosshair glow while gaze is in the center band (intent active).
+  const mxn = (input.mouseX - 0.5) * 2;
+  const myn = (input.mouseY - 0.5) * 2;
+  const gazeOff = Math.hypot(mxn, myn);
+  const gaining = gazeOff < SPEED.HYPER_CENTER_THRESHOLD;
+  if (gaining !== crosshairGaining) {
+    crosshair.classList.toggle("gaining", gaining);
+    crosshairGaining = gaining;
+  }
+}
+function updateLockRing() {
+  const p = player.state.lockProgress;
+  const targetId = player.state.lockedBodyId;
+  const fullyLocked = p >= 1 && targetId !== null;
+  // Show the ring once lock has any progress.
+  const shouldShow = p > 0.01;
+  if (shouldShow !== lockVisible) {
+    lockRing.classList.toggle("visible", shouldShow);
+    lockVisible = shouldShow;
+  }
+  if (fullyLocked !== lockEngaged) {
+    lockRing.classList.toggle("engaged", fullyLocked);
+    lockEngaged = fullyLocked;
+  }
+  lockRing.style.setProperty("--p", String(p));
+  const labelText = fullyLocked
+    ? `LOCKED → ${targetId ? targetId.slice(-6) : ""}`
+    : (targetId && p > 0.05)
+      ? `LOCK ${Math.round(p * 100)}%`
+      : "";
+  if (labelText !== lockLabelText) {
+    lockLabel.textContent = labelText;
+    lockLabelText = labelText;
+  }
+}
+
 // ── Debug UI ────────────────────────────────────────────────────────────────
 const debugUI = setupDebugUI({ player, world, input, universeSeed });
 
@@ -224,7 +291,6 @@ function resize() {
   const h = canvas.clientHeight;
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  sceneTarget.setSize(w, h);
   rig.camera.aspect = w / h;
   rig.camera.updateProjectionMatrix();
 }
@@ -235,8 +301,6 @@ window.addEventListener("resize", resize);
 let prev = performance.now();
 let dbgTimer = 0;
 const DBG_INTERVAL = 0.1; // seconds — don't thrash the DOM every frame
-let cloudDiagAccum = 0;
-
 function frame(now: number) {
   const dt = Math.min(0.05, (now - prev) / 1000);
   prev = now;
@@ -253,6 +317,11 @@ function frame(now: number) {
     stateLabel.textContent = player.state.mode;
     lastMode = player.state.mode;
   }
+
+  // Lock ring + hyperspeed meter run every frame so the visual cues
+  // keep up with the gaze-driven multiplier.
+  updateLockRing();
+  updateHyperMeter();
 
   // Debug UI refresh + diagnostic console logs at fixed cadence.
   dbgTimer += dt;
@@ -293,11 +362,12 @@ function frame(now: number) {
     }
   }
 
-  // Drive the warp distortion shader from current warp factor.
-  const warpNorm = Math.min(
-    1,
-    Math.max(0, (player.state.lastWarpFactor - 1) / Math.max(1, PLAYER.warpMaxBoost - 1)),
-  );
+  // Drive the warp distortion shader from hyperMult. Log scaling on
+  // [1, 1e10] so a modest mult (~10×) gives a hint of distortion and
+  // peak mult (~1e10+) saturates. Cheaper than per-vertex streak
+  // shader and produces a stronger directional motion feel because
+  // the smear runs through the whole scene, not just stars.
+  const warpNorm = Math.min(1, Math.max(0, Math.log10(player.state.hyperMult) / 10));
   (warpPass.uniforms as Record<string, { value: number }>).uWarp.value = warpNorm;
 
   // Push live tuning values into the bloom pass + tonemap each frame.
@@ -306,86 +376,9 @@ function frame(now: number) {
   bloomPass.radius = GFX.bloomRadius;
   renderer.toneMappingExposure = GFX.exposure;
 
-  // ── Volumetric cloud pass uniforms ────────────────────────────────────
-  // rig.update() above sets position/quat but DOESN'T update matrixWorld
-  // (three.js does that inside renderer.render(), which runs later) — so
-  // force it here before the cloud pass reads from camera matrices.
-  rig.camera.updateMatrixWorld(true);
-  cloudDiagAccum += dt;
-  const shouldLogCloud = cloudDiagAccum >= 1.0;
-  if (shouldLogCloud) cloudDiagAccum = 0;
-  {
-    const star = world.star;
-    const dom = player.state.gravity.dominant;
-    const home = world.homePlanet;
-    const target =
-      dom && dom.cloudBaseAltitude !== undefined && dom.cloudColor
-        ? dom
-        : home && home.cloudBaseAltitude !== undefined && home.cloudColor
-          ? home
-          : null;
-
-    cloudPass.setEnabled(true);
-    cloudPass.setTime(performance.now() / 1000);
-    cloudPass.setDebugMode(GFX.cloudDebug);
-    cloudPass.setMarchSteps(GFX.cloudSteps);
-    cloudPass.setCloudAltitudes(GFX.cloudInnerM, GFX.cloudOuterM);
-
-    if (target && target.cloudColor) {
-      const refBody = dom ?? target;
-      const sunDir = new THREE.Vector3();
-      if (star) {
-        sunDir.copy(star.worldPosition).sub(refBody.worldPosition).normalize();
-      } else {
-        sunDir.set(0, 1, 0);
-      }
-      cloudPass.setParams({
-        planetCenter: refBody.worldPosition,
-        planetRadius: refBody.radius,
-        cloudInner: GFX.cloudInnerM,
-        cloudOuter: GFX.cloudOuterM,
-        color: target.cloudColor,
-        coverage: target.cloudCoverage ?? 0.5,
-        densityMult: GFX.cloudVolMult ?? 1,
-        sunDirection: sunDir,
-        sunColor: new THREE.Color(1.4, 1.3, 1.15),
-        ambientColor: new THREE.Color(0.25, 0.3, 0.4),
-        cameraPosition: rig.camera.position,
-        cameraProjectionInverse: rig.camera.projectionMatrixInverse,
-        cameraMatrixWorld: rig.camera.matrixWorld,
-        cameraNear: rig.camera.near,
-        cameraFar: rig.camera.far,
-      });
-    } else {
-      cloudPass.setParams({
-        cameraPosition: rig.camera.position,
-        cameraProjectionInverse: rig.camera.projectionMatrixInverse,
-        cameraMatrixWorld: rig.camera.matrixWorld,
-        cameraNear: rig.camera.near,
-        cameraFar: rig.camera.far,
-        densityMult: GFX.cloudVolMult ?? 1,
-      });
-    }
-
-    if (shouldLogCloud) {
-      const refBody = target ?? null;
-      const cp = rig.camera.position;
-      // eslint-disable-next-line no-console
-      console.log("[cloud-pass]", {
-        target: refBody?.id ?? "(none)",
-        debug: GFX.cloudDebug,
-        cloudInner: GFX.cloudInnerM,
-        cloudOuter: GFX.cloudOuterM,
-        cameraPos: [cp.x.toFixed(2), cp.y.toFixed(2), cp.z.toFixed(2)],
-      });
-    }
-  }
-
-  renderer.setRenderTarget(sceneTarget);
-  renderer.clear();
-  renderer.render(scene, rig.camera);
-  renderer.setRenderTarget(null);
-
+  // Clouds now render inside the scene as a child of each body's group,
+  // driven by the cloud-system module — no post-process integration needed.
+  // composer.render() walks RenderPass → bloom → warp → output in order.
   composer.render();
   requestAnimationFrame(frame);
 }

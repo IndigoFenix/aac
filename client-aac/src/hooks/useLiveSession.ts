@@ -183,20 +183,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
 
-  // Yes/No overlay state
-  const [yesNoActive, setYesNoActive] = useState(false);
-  const dismissYesNo = useCallback(() => setYesNoActive(false), []);
-
-  // Binary-choice overlay state — non-null array of two options shows the overlay
+  // Binary-choice overlay state — non-null array of two options shows the
+  // overlay. Yes/No questions go through this same path now (the canonical
+  // `yes` / `no` SYMBOLs render with animated icons and auto-color the
+  // SENTENCE BUTTON green / red), so there's no separate yes_no surface.
   const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<BinaryChoiceOption[] | null>(null);
   const dismissBinaryChoice = useCallback(() => setBinaryChoiceOptions(null), []);
 
   // Focus frame active state — briefly true when AI requests a focus frame
   const [focusActive, setFocusActive] = useState(false);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Deferred ask_yes_no: show overlay after TTS playback completes
-  const pendingAskYesNoRef = useRef(false);
   // Deferred ask_binary_choice: same pattern — buffered options until TTS ends
   const pendingAskBinaryChoiceRef = useRef<BinaryChoiceOption[] | null>(null);
 
@@ -226,12 +222,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     autoPlay: autoPlayAudio,
     pitchByTag,
     onPlaybackEnd: () => {
-      // Show deferred yes/no overlay after TTS finishes
-      if (pendingAskYesNoRef.current) {
-        pendingAskYesNoRef.current = false;
-        setYesNoActive(true);
-      }
-      // Same for deferred binary-choice overlay
+      // Show deferred binary-choice overlay after TTS finishes.
       if (pendingAskBinaryChoiceRef.current) {
         const opts = pendingAskBinaryChoiceRef.current;
         pendingAskBinaryChoiceRef.current = null;
@@ -610,15 +601,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setActiveApp({ appId: "youtube", appData: msg.data });
           break;
 
-        case "yes_no":
-          setYesNoActive(true);
-          break;
-
-        case "ask_yes_no":
-          // Deferred yes/no — show overlay after TTS playback completes
-          pendingAskYesNoRef.current = true;
-          break;
-
         case "binary_choice": {
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
           if (opts.length >= 2) setBinaryChoiceOptions(opts.slice(0, 2));
@@ -725,18 +707,38 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "construction_suggestions": {
           const data = msg.data;
-          if (data && Array.isArray(data.candidates)) {
+          if (data) {
+            // Normalize both the new shape (headCandidates +
+            // modifierCandidates) and the legacy shape (just candidates).
+            // Older server builds only emit `candidates`; new builds emit
+            // all three, with `candidates` carrying the heads for compat.
+            const headCandidates = Array.isArray(data.headCandidates)
+              ? data.headCandidates
+              : Array.isArray(data.candidates)
+              ? data.candidates
+              : [];
+            const modifierCandidates = Array.isArray(data.modifierCandidates)
+              ? data.modifierCandidates
+              : [];
             // Register any pre-resolved symbol paths so the compositor
-            // (used for the glyph display itself, not just the AI strip)
-            // can render AI-generated payloads too.
-            for (const c of data.candidates) {
+            // (used for the GLYPH display itself, not just the AI strips)
+            // can render AI-generated payloads too. Walk BOTH arrays so a
+            // generated modifier symbol gets cached the same as a head.
+            for (const c of headCandidates) {
+              if (c.symbolPath && typeof c.key === "string") {
+                registerSymbolPath(c.key, c.symbolPath);
+              }
+            }
+            for (const c of modifierCandidates) {
               if (c.symbolPath && typeof c.key === "string") {
                 registerSymbolPath(c.key, c.symbolPath);
               }
             }
             setConstructionSuggestions({
               targetSlot: typeof data.targetSlot === "number" ? data.targetSlot : 0,
-              candidates: data.candidates,
+              headCandidates,
+              modifierCandidates,
+              candidates: headCandidates,
               receivedAt: Date.now(),
             });
           }
@@ -745,23 +747,34 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "construction_symbol_ready": {
           // A queued auto-symbol finished generating. Patch any AI-strip
-          // candidate whose `key` matches the imageKey so the freshly
+          // SUGGESTION whose `key` matches the imageKey so the freshly
           // generated image swaps in without a re-suggest round-trip.
+          // Heads and modifiers share the same generation pipeline, so
+          // walk both arrays.
           const data = msg.data;
           if (data && typeof data.imageKey === "string" && typeof data.symbolPath === "string") {
             registerSymbolPath(data.imageKey, data.symbolPath);
             setConstructionSuggestions((prev) => {
               if (!prev) return prev;
               let changed = false;
-              const candidates = prev.candidates.map((c) => {
-                if (c.key === data.imageKey && c.symbolPath !== data.symbolPath) {
-                  changed = true;
-                  return { ...c, symbolPath: data.symbolPath };
-                }
-                return c;
-              });
+              const patch = (arr: typeof prev.headCandidates) =>
+                arr.map((c) => {
+                  if (c.key === data.imageKey && c.symbolPath !== data.symbolPath) {
+                    changed = true;
+                    return { ...c, symbolPath: data.symbolPath };
+                  }
+                  return c;
+                });
+              const headCandidates = patch(prev.headCandidates);
+              const modifierCandidates = patch(prev.modifierCandidates);
               return changed
-                ? { ...prev, candidates, receivedAt: Date.now() }
+                ? {
+                    ...prev,
+                    headCandidates,
+                    modifierCandidates,
+                    candidates: headCandidates,
+                    receivedAt: Date.now(),
+                  }
                 : prev;
             });
           }
@@ -791,12 +804,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Turn complete — keep text visible. Mark that the next "text" message
           // should start a fresh accumulation instead of appending.
           textAccumRef.current = ""; // Reset accumulator but don't clear display
-          // Fallback: if deferred ask_yes_no is pending but no TTS is playing
-          // (e.g. silent mode), show overlay immediately
-          if (pendingAskYesNoRef.current && !audioPlayer.isPlaying) {
-            pendingAskYesNoRef.current = false;
-            setYesNoActive(true);
-          }
+          // Fallback: if a deferred ask_binary_choice is pending but no TTS
+          // is playing (e.g. silent mode), show the overlay immediately.
           if (pendingAskBinaryChoiceRef.current && !audioPlayer.isPlaying) {
             const opts = pendingAskBinaryChoiceRef.current;
             pendingAskBinaryChoiceRef.current = null;
@@ -1272,11 +1281,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     monitorError,
     monitorConsecutiveFailures,
 
-    // Yes/No overlay
-    yesNoActive,
-    dismissYesNo,
-
-    // Binary-choice overlay
+    // Binary-choice overlay (yes/no now routed through this same surface)
     binaryChoiceOptions,
     dismissBinaryChoice,
 

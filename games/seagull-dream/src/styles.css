@@ -22,6 +22,81 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #87ceeb; fon
 }
 #crosshair::before { left: 50%; top: -8px; width: 1px; height: 6px; }
 #crosshair::after  { top: 50%; left: -8px; height: 1px; width: 6px; }
+/* When the player is in the "gaining" zone (mouse near center, hyperMult
+ * actively growing), the crosshair glows cyan to signal intent capture. */
+#crosshair.gaining {
+  border-color: rgba(100, 220, 255, 0.95);
+  box-shadow: 0 0 12px rgba(100, 220, 255, 0.7),
+              inset 0 0 4px rgba(100, 220, 255, 0.6);
+}
+
+/* ── Hyperspeed meter ───────────────────────────────────────────────────
+ * Compact ×N readout positioned just below the crosshair. Hidden when
+ * mult is near 1 (no visible boost yet); fades in and brightens as the
+ * multiplier climbs. */
+#hyper-meter {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, 24px);
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(100, 220, 255, 0.4);
+  color: rgba(180, 235, 255, 0.95);
+  font: 600 11px ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  text-shadow: 0 0 6px rgba(100, 220, 255, 0.7);
+}
+#hyper-meter.visible { opacity: 1; }
+
+/* ── Hyperjump lock-on ring ─────────────────────────────────────────────
+ * The conic-gradient sweep is driven by --p (0..1) representing
+ * lockProgress. When inactive, the ring is hidden via opacity.
+ * When engaged (p=1, jump active), the ring glows. */
+#lock-ring {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 88px;
+  height: 88px;
+  margin-left: -44px;
+  margin-top: -44px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  transform: translate(0, 0);
+  --p: 0;
+  --hue: 200;
+  background: conic-gradient(
+    hsla(var(--hue), 90%, 65%, 0.9) 0deg,
+    hsla(var(--hue), 90%, 65%, 0.9) calc(var(--p) * 360deg),
+    transparent calc(var(--p) * 360deg)
+  );
+  -webkit-mask: radial-gradient(circle, transparent 36px, black 38px, black 43px, transparent 45px);
+          mask: radial-gradient(circle, transparent 36px, black 38px, black 43px, transparent 45px);
+}
+#lock-ring.visible { opacity: 1; }
+#lock-ring.engaged {
+  --hue: 50;
+  filter: drop-shadow(0 0 8px hsla(50, 95%, 65%, 0.9));
+}
+#lock-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  font: 10px ui-monospace, "SF Mono", Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  color: hsla(var(--hue), 80%, 70%, 0.95);
+  text-shadow: 0 0 6px hsla(var(--hue), 100%, 50%, 0.6);
+}
 
 #hud {
   position: fixed;

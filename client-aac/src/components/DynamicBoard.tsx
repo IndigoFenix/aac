@@ -8,6 +8,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
+import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -97,13 +98,10 @@ function getEmojiForLabel(label: string): string {
   return "💬";
 }
 
-function getButtonColor(color?: string): string {
-  const colorMap: { [key: string]: string } = {
-    yellow: "#FEF3C7", blue: "#DBEAFE", green: "#D1FAE5",
-    red: "#FEE2E2", orange: "#FFEDD5", purple: "#EDE9FE",
-    pink: "#FCE7F3", white: "#FFFFFF", gray: "#F3F4F6",
-  };
-  return colorMap[color?.toLowerCase() || "white"] || color || "#FFFFFF";
+// Background-color resolver — defers to the shared SentenceButton helper
+// so the yes/no auto-coloring applies uniformly across surfaces.
+function getButtonColor(color?: string, glyph?: string): string {
+  return resolveButtonBackground(color, glyph);
 }
 
 /** Create a BoardButton from a patch add entry */
@@ -445,7 +443,7 @@ export default function DynamicBoard({
           animate={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 1.5 }}
           className="flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden"
-          style={{ backgroundColor: getButtonColor(button.color) }}
+          style={{ backgroundColor: getButtonColor(button.color, button.glyph) }}
         >
           <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
             {renderIcon(button)}
@@ -476,35 +474,61 @@ export default function DynamicBoard({
         ? "border-amber-400 border-2"
         : "border-gray-200";
 
+    // Nav buttons (Back / Home) keep their inline renderer — they don't
+    // voice a SENTENCE, the icon area is a fixed Font Awesome glyph (back
+    // arrow / home house) instead of a SYMBOL, and they shouldn't pick up
+    // the yes/no auto-color behavior.
+    if (isBackButton) {
+      return (
+        <motion.button
+          data-dwell
+          data-dwell-cell={`grid-${index}`}
+          key={`btn-${button.label}-${index}`}
+          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: isEntering ? 0.3 : 0.15 }}
+          onClick={() => handleButtonClick(button)}
+          className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
+          style={{ backgroundColor: getButtonColor(button.color, button.glyph) }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
+            <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700`} style={{ fontSize: iconFontSize }} />
+          </div>
+          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
+            <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
+              {button.label}
+            </span>
+          </div>
+        </motion.button>
+      );
+    }
+
+    // Every other occupied slot is a SENTENCE BUTTON — routed through the
+    // shared SentenceButton component so the binary-choice overlay and
+    // the RESPONSE BOARD share one set of rules (glyph rendering,
+    // animated SYMBOLs, default green/red for yes/no, etc.).
     return (
-      <motion.button
-        data-dwell
-        data-dwell-cell={`grid-${index}`}
+      <SentenceButton
         key={`btn-${button.label}-${index}`}
-        initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: isEntering ? 0.3 : 0.15 }}
+        variant="board"
+        button={button}
         onClick={() => handleButtonClick(button)}
-        className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
-        style={{ backgroundColor: getButtonColor(button.color) }}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
-          {isBackButton
-            ? <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700`} style={{ fontSize: iconFontSize }} />
-            : renderIcon(button)}
-        </div>
-        <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
-          <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
-            {button.label}
-          </span>
-        </div>
-        {/* Action type indicator */}
-        {isLinkButton && (
-          <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: '0.55em' }}>▶</span>
-        )}
-      </motion.button>
+        borderClassName={borderClass}
+        getFaceImage={getFaceImage ?? undefined}
+        iconFontSize={iconFontSize}
+        textFontSize={textFontSize}
+        iconFlex={level.iconFlex}
+        textFlex={level.textFlex}
+        entering={isEntering}
+        extraButtonProps={{ "data-dwell-cell": `grid-${index}` }}
+        cornerIndicator={
+          isLinkButton ? (
+            <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>
+          ) : null
+        }
+      />
     );
   };
 

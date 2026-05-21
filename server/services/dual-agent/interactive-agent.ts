@@ -11,37 +11,39 @@ import { resolveEmoji } from "@shared/emoji-registry";
 import { stripBrackets } from "@shared/glyph-compositor.js";
 
 /**
- * Parse board button format. NEW field order:
- *   sentence|glyph|fallback|label[|rowSpan|colSpan]
+ * Parse the SENTENCE BUTTON wire format. Field order:
+ *   speech|sentence|fallback|label[|rowSpan|colSpan]
  *
  * Fields:
- *   - sentence: natural first-person phrase voiced when pressed.
- *   - glyph:    composed glyph string (slots joined by `+`, modifiers with
- *               `.`, composable hosts with `(payload)`, tone tags with `#`).
- *               Slot keys may be emojis, snake_case imageKeys (server may
- *               auto-generate images), `symbol:ID`, or `face:ID`.
- *   - fallback: same glyph syntax, but slots may ONLY be emojis,
- *               `symbol:ID`, or `face:ID` — no imageKeys. Used when
- *               `glyph` rendering can't complete (e.g. all slots are
- *               waiting on generation).
+ *   - speech:   natural first-person SENTENCE the TTS voices when pressed.
+ *               (The variable below is still called `sentence` for backwards
+ *               compatibility; it carries the speech.)
+ *   - sentence: visual encoding — GLYPHs joined by `+`, MODIFIER SYMBOLs
+ *               attached with `.`, sentence-level OPERATORs appended with
+ *               `#`. SYMBOLs may be canonical registry keys, raw emojis,
+ *               `generate:snake_case` (async-generated), `symbol:ID`, or
+ *               `face:ID`. (The variable below is still called `glyph`.)
+ *   - fallback: same `sentence` encoding but with NO `generate:` SYMBOLs.
+ *               Used while generated SYMBOLs are loading or if generation
+ *               fails.
  *   - label:    short on-button text. May begin with "[GUESS]" for
- *               guessing-mode buttons.
+ *               guessing-mode SENTENCE BUTTONs.
  *
  * For backward compat with the renderer's existing visual priority chain,
- * the parser ALSO derives `iconRef`, `symbolPath`, and `imageKey` from
- * the glyph/fallback fields when they're single-slot:
+ * the parser ALSO derives `iconRef`, `symbolPath`, and `imageKey` from the
+ * sentence/fallback fields when they're a single-SYMBOL SENTENCE:
  *   - fallback is a bare emoji → iconRef = emoji
  *   - fallback is `symbol:ID`  → symbolPath = `__SYMBOL__:ID`
  *   - fallback is `face:ID`    → symbolPath = `__FACE__:ID`
- *   - glyph is a bare snake_case key → imageKey = key (single-concept
- *     button — same as legacy imageKey, may trigger symbol generation)
+ *   - sentence is a bare snake_case key → imageKey = key (single-concept
+ *     SENTENCE — same as legacy imageKey, may trigger symbol generation)
  *
  * Examples:
- *   "I want water|i_me+want+water|👤+🤲+💧|Water"
- *   "I want a hug|i_me+want+hug|🤗|Hug"
- *   "It's my turn|turn.my|👉|My turn"
- *   "Hello!|hello|👋|Hi"           (single-concept)
- *   "Big button|big|🎯|Press!|2|2" (rowSpan/colSpan trailing)
+ *   "I want water|i_me+want+💧||Water"
+ *   "I want a hug|i_me+want+🤗||Hug"
+ *   "It's my turn|turn.my||My turn"
+ *   "Hello!|hello||Hi"           (single-SYMBOL)
+ *   "Big button|big||Press!|2|2" (rowSpan/colSpan trailing)
  */
 export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
   const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> = [];

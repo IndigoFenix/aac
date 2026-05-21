@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { PLAYER, CONTROLS, SPEED } from "./config";
 import type { World, GravityContext, AtmosphericReading } from "./world";
+import type { CelestialBody } from "./body";
 
 // Player physics in a space-first world.
 //
@@ -151,6 +152,20 @@ export interface PlayerState {
    *  same number either way; rockets just take over when wings can't
    *  generate enough thrust at the local α / g. */
   rocketRegimeWeight: number;
+  /** ID of the body the player has locked onto (or null). Lock applies
+   *  an extra distance-proportional speed cap so approaches smoothly
+   *  brake — it does NOT reorient the bird. */
+  lockedBodyId: string | null;
+  /** Lock-on progress, 0..1. Climbs while the player keeps the same
+   *  candidate body in the forward cone, decays when they look away.
+   *  Lock's approach cap is active at 1. */
+  lockProgress: number;
+  /** Gaze-driven hyperspeed multiplier. Starts at 1. Grows
+   *  exponentially while the player looks at the center of the screen
+   *  (their direction of motion); decays faster when off-center or in
+   *  atmosphere. Effective desired speed = baseSpeed × hyperMult,
+   *  capped at HYPER_MAX_SPEED. */
+  hyperMult: number;
   /** Most recent atmospheric α (normalized density) at the player's
    *  position. Cached for HUD readouts. */
   lastAtmAlpha: number;
@@ -168,20 +183,21 @@ export interface PlayerState {
     altSpeed: number;
     /** max(MIN_FLIGHT_SPEED, altSpeed) — the floor-clamped target. */
     targetSpeed: number;
-    vWarp: number;
+    /** baseSpeed × hyperMult, capped at HYPER_MAX_SPEED. */
+    desiredSpeed: number;
     totalSpeed: number;
     climbT: number;
     forwardUp: number;
-    warpImpedance: number;
-    warpFactor: number;
-    /** Combined warp gate (atm × hill). 0 = warp locked, 1 = open. */
+    /** (R/r)^N inhibition factor from the dominant body. 0 = no
+     *  inhibition (deep space), 1 = at surface. Drives the warp
+     *  friction. */
+    warpInhibition: number;
+    /** Combined gate (atm × gravFactor) on the hyperMult contribution.
+     *  0 = baseSpeed only (atm or surface), 1 = full multiplier (deep
+     *  space). */
     warpGate: number;
-    /** (1 - α)^WARP_GATE_POWER — atmospheric contribution to warp gate. */
-    warpAtmGate: number;
-    /** Dominant-body gravity gate: 1 - (R/r)^WARP_INHIBITION_POWER. */
-    warpDomGate: number;
     /** altitude / (hillRadius - bodyRadius) on the dominant body
-     *  (readout-only — not used in the warp gate anymore). */
+     *  (readout-only — not used in the friction formula). */
     hillFraction: number;
     /** ID of the local-system dominant body (smallest hill sphere
      *  containing the player; nearest-by-distance as fallback). */
@@ -327,21 +343,21 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     divePhase: 0,
     flightStrain: 0,
     rocketRegimeWeight: 0,
+    lockedBodyId: null,
+    lockProgress: 0,
+    hyperMult: 1,
     lastAtmAlpha: 0,
     lastGravityMag: 0,
     flightDebug: {
       vWing: 0,
       altSpeed: 0,
       targetSpeed: 0,
-      vWarp: 0,
+      desiredSpeed: 0,
       totalSpeed: 0,
       climbT: 0.5,
       forwardUp: 0,
-      warpImpedance: 0,
-      warpFactor: 0,
+      warpInhibition: 0,
       warpGate: 0,
-      warpAtmGate: 0,
-      warpDomGate: 0,
       hillFraction: 0,
       dominantBodyId: null,
       dominantAlt: Infinity,
@@ -1128,7 +1144,12 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     const climbT = (forwardUp + 1) * 0.5;
 
     const { body: nearestBody, altitude: nearestAlt } = world.nearestBodyAltitudeAt(state.position);
-    const altSpeed = nearestBody && nearestAlt > 0
+    // altitude may be > 0 even when nearestBody is null (galactic mode
+    // fallback returns distance to nearest registry star). Use the
+    // altitude value directly so baseSpeed grows with distance in
+    // interstellar space too — otherwise targetSpeed stays clamped at
+    // MIN_FLIGHT_SPEED and hyperMult-driven travel feels broken.
+    const altSpeed = nearestAlt > 0 && Number.isFinite(nearestAlt)
       ? Math.sqrt(2 * SPEED.ALTITUDE_ACCEL_FACTOR * nearestAlt)
       : 0;
     const targetSpeed = Math.max(SPEED.MIN_FLIGHT_SPEED, altSpeed);
@@ -1139,73 +1160,159 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     // above target gets the swoop-softened friction so swoop reads as a
     // natural carry rather than a snap-cap. Atmosphere multiplies the
     // friction rate — in vacuum, no drag, so wingSpeed snaps to target.
-    if (alphaClamped > 0.001) {
-      const isClimbing = forwardUp > 0;
-      const above = state.wingSpeed > targetSpeed;
-      let friction: number;
-      if (isClimbing) {
-        friction = above
-          ? SPEED.WING_FRICTION_CLIMB / Math.max(0.1, SPEED.WING_SWOOP_FACTOR)
-          : SPEED.WING_FRICTION_CLIMB;
+    // ── Lock-on candidate (separate from hyperMult — only adds an
+    //    approach-cap as you near the locked body). ──────────────────────
+    // Same forward-cone candidate-picker as before; lock builds while
+    // the player keeps the same body in the cone, decays when they
+    // look away. Doesn't reorient — only caps desired speed during
+    // approach.
+    const inSpace = alphaClamped < SPEED.HYPER_SPACE_ALPHA;
+    if (inSpace) {
+      const candidate = pickLockCandidate(
+        state.position,
+        state.forward,
+        world.bodies,
+        SPEED.HYPER_CONE_COS,
+        state.lockedBodyId,
+      );
+      if (candidate && state.lockedBodyId === candidate.id) {
+        state.lockProgress = Math.min(1, state.lockProgress + dt / SPEED.HYPER_LOCK_TIME);
+      } else if (candidate) {
+        state.lockedBodyId = candidate.id;
+        state.lockProgress = 0;
       } else {
-        friction = SPEED.WING_FRICTION_DIVE;
+        state.lockProgress = Math.max(0, state.lockProgress - dt / SPEED.HYPER_LOCK_DECAY);
+        if (state.lockProgress <= 0) state.lockedBodyId = null;
       }
-      friction *= alphaClamped;
-      state.wingSpeed += (targetSpeed - state.wingSpeed) * Math.min(1, friction * dt);
     } else {
-      state.wingSpeed = targetSpeed; // no atmosphere, no inertia
+      // In atmosphere — drop any lock fast.
+      state.lockProgress = Math.max(0, state.lockProgress - dt / SPEED.HYPER_LOCK_DECAY);
+      if (state.lockProgress <= 0) state.lockedBodyId = null;
     }
 
-    // WARP — V_BASE × impedance^WARP_POWER × atm-gate × dominant-gate.
+    // ── Warp-inhibition gate (gravity- and atmosphere-derived). ─────────
+    // The hyperMult multiplier is gated by space-emptiness — in dense
+    // atmosphere or deep in a body's gravity well, the multiplier's
+    // contribution is suppressed and the desired speed reverts to
+    // baseSpeed. In deep space, the multiplier is fully available.
     //
-    // Gating happens in two stages:
-    //   1. dominantBodyAt picks the body whose Hill sphere contains
-    //      the player AND has the smallest hill (so a moon overrides
-    //      its planet when you're inside the moon's hill). At the
-    //      moment you leave one hill, dominance flips to the parent.
-    //   2. The actual gate is gravity-derived: 1 - (R/r)^N where R is
-    //      the dominant body's radius and r is the distance from its
-    //      center. Equivalent to 1 - (g_at_player / g_surface)^(N/2).
+    //   atmFactor  = (1 - α)^WARP_GATE_POWER         — 0 in atm, 1 in vacuum
+    //   gravFactor = 1 - (R_dom / r_dom)^N           — 0 at surface, 1 at infinity
+    //   spaceMult  = atmFactor × gravFactor          — fully open in deep space
     //
-    // The hill sphere is (approximately) defined by where adjacent
-    // bodies' (R/r)² values match, so the dominance flip is smooth:
-    // at Earth's hill edge, (R_earth/r_earth)² ≈ (R_sun/r_sun)² (within
-    // ~20%), so the gate barely twitches as the dominant body changes.
-    //
-    // WARP_POWER steepens the impedance falloff with proximity so
-    // interstellar warp is much faster than close-approach warp.
+    // The hill sphere is approximately the locus where (R/r)² matches
+    // between parent and child bodies, so the gravFactor flips smoothly
+    // when the dominant body changes — no flicker.
     const dominant = world.dominantBodyAt(state.position);
     const dominantBody = dominant.body;
     const hillFraction = dominant.hillFraction;
-    const rawAngular = world.largestAngularSizeAt(state.position);
-    const angular = Math.max(SPEED.ANGULAR_FLOOR, rawAngular);
-    const warpImpedance = Math.max(0, 1 / angular - 1 / Math.PI);
-    const warpFactor = Math.pow(warpImpedance, SPEED.WARP_POWER) * SPEED.WARP_MULT;
-    const warpAtmGate = Math.pow(Math.max(0, 1 - alphaClamped), SPEED.WARP_GATE_POWER);
+    let warpInhibition = 0;
     let warpDomGate = 1;
     if (dominantBody) {
       const r = Math.max(dominantBody.radius, dominant.altitude + dominantBody.radius);
       const ratio = dominantBody.radius / r;
-      warpDomGate = THREE.MathUtils.clamp(
-        1 - Math.pow(ratio, SPEED.WARP_INHIBITION_POWER),
-        0,
-        1,
-      );
+      warpInhibition = Math.pow(ratio, SPEED.WARP_INHIBITION_POWER);
+      warpDomGate = 1 - warpInhibition;
     }
-    const warpGate = warpAtmGate * warpDomGate;
-    const vWarp = SPEED.V_WARP_BASE * warpFactor * warpGate;
+    const atmFactor = Math.pow(Math.max(0, 1 - alphaClamped), SPEED.WARP_GATE_POWER);
+    const spaceMult = THREE.MathUtils.clamp(atmFactor * warpDomGate, 0, 1);
 
-    // Speed = smooth-max of inertial wingSpeed and warp via p-norm.
-    // Just two real-physics regimes: in-atmosphere/local-space flight
-    // (wingSpeed) vs interstellar warp. Wing-vs-rocket is purely a
-    // visual decision below.
-    const vWing = state.wingSpeed;
-    const p = SPEED.BLEND_POWER;
-    const wPow = Math.pow(vWing, p);
-    const pPow = Math.pow(vWarp, p);
-    const sumPow = wPow + pPow;
-    let totalSpeed = sumPow > 0 ? Math.pow(sumPow, 1 / p) : 0;
-    const warpRatio = sumPow > 0 ? pPow / sumPow : 0;
+    // ── HyperMult — gaze-driven speed multiplier (intent). ──────────────
+    // Gain scales with spaceMult: hyperMult only builds when it would
+    // actually contribute to speed (high enough altitude / thin enough
+    // atmosphere). Without this, the player can "load up" hyperMult
+    // while hovering near an airless body's surface where it has no
+    // visible effect, then shoot off when they climb and the gate opens.
+    // Decay rate scales with how far off-center the gaze is — slight
+    // drift bleeds slowly, looking at the screen edge bleeds sharply.
+    {
+      const mxn = (input.mouseX - 0.5) * 2;
+      const myn = (input.mouseY - 0.5) * 2;
+      const gazeOffset = Math.hypot(mxn, myn);
+      if (inSpace && gazeOffset < SPEED.HYPER_CENTER_THRESHOLD) {
+        // Gain rate × sqrt(spaceMult) — softer suppression than linear
+        // so low-orbit flight still builds hyperMult at a reasonable
+        // pace (sqrt(0.05) = 0.22 → ~22% gain rate at 154 km on Earth)
+        // while ground-level (spaceMult ≈ 0) still gets no growth.
+        const gainScale = Math.sqrt(spaceMult);
+        state.hyperMult *= Math.exp(SPEED.HYPER_GAIN_RATE * gainScale * dt);
+      } else {
+        // Decay rate × gaze offset × (1 + log10(mult)): higher current
+        // hyperMult bleeds faster for the same gaze drift, so a sharp
+        // u-turn drops out of hyperdrive quickly regardless of current
+        // speed. log scaling keeps decay manageable at low mult while
+        // making interstellar speeds responsive to intent.
+        const off = Math.max(0, gazeOffset - SPEED.HYPER_CENTER_THRESHOLD);
+        const speedScale = 1 + Math.log10(state.hyperMult);
+        state.hyperMult *= Math.exp(-SPEED.HYPER_LOSS_RATE * off * speedScale * dt);
+      }
+      if (state.hyperMult < 1) state.hyperMult = 1;
+    }
+
+    const effectiveHyperMult = 1 + (state.hyperMult - 1) * spaceMult;
+
+    // Galactic-density cap: cap is HYPER_MAX_SPEED at the reference
+    // density (rough solar-position disc density), boosted up to
+    // ×GALACTIC_DENSITY_BOOST in sparse regions (outer arms,
+    // intergalactic). Lower local density → higher cap → faster
+    // cross-galaxy travel. The boost factor is interpolated linearly
+    // in `ref / (ref + local)` so it asymptotes smoothly.
+    const localGalacticDensity = world.galacticDensityAt(state.position);
+    const densityFactor = SPEED.GALACTIC_REFERENCE_DENSITY
+      / (SPEED.GALACTIC_REFERENCE_DENSITY + localGalacticDensity);
+    const densityBoost = 1 + (SPEED.GALACTIC_DENSITY_BOOST - 1) * densityFactor;
+    const effectiveMaxSpeed = SPEED.HYPER_MAX_SPEED * densityBoost;
+
+    // Desired speed = baseSpeed × (gated) hyperMult, capped at the
+    // density-scaled hyper limit.
+    let desiredSpeed = Math.min(targetSpeed * effectiveHyperMult, effectiveMaxSpeed);
+
+    // Lock-on approach cap: caps both desired AND wingSpeed itself.
+    // When the cap is actively reducing speed, it CONSUMES hyperMult
+    // at HYPER_BRAKE_RATE — the brake is real. If lock breaks, the
+    // bird's accumulated hyperMult is already low, so speed doesn't
+    // snap back up. Without this, releasing the lock instantly
+    // re-accelerates the bird because hyperMult is still huge.
+    let lockBlendedCap = Infinity;
+    if (state.lockedBodyId && state.lockProgress > 0) {
+      const tgt = findBodyById(world.bodies, state.lockedBodyId);
+      if (tgt) {
+        const distToTarget = state.position.distanceTo(tgt.worldPosition);
+        const lockCap = SPEED.LOCK_APPROACH_RATE * SPEED.LOCK_APPROACH_BOOST
+          * Math.max(0, distToTarget - tgt.radius);
+        lockBlendedCap = Math.min(effectiveMaxSpeed, lockCap / state.lockProgress);
+        if (lockBlendedCap < desiredSpeed) {
+          // Brake is actively engaged — consume hyperMult so the
+          // slowdown is permanent, not just a temporary cap. Scale
+          // decay rate by 1 + log10(hyperMult) so massive stored
+          // mults drain fast (so they can't "store up" while the
+          // bird approaches slowly and then erupt when lock breaks)
+          // while small mults still drain at the tuned BRAKE_RATE.
+          const brakeScale = 1 + Math.log10(state.hyperMult);
+          state.hyperMult *= Math.exp(-SPEED.HYPER_BRAKE_RATE * brakeScale * dt);
+          if (state.hyperMult < 1) state.hyperMult = 1;
+          // Recompute desired with the now-reduced hyperMult, then
+          // apply the cap. Subsequent frames see the lower hyperMult
+          // and naturally lower desired.
+          const newEffective = 1 + (state.hyperMult - 1) * spaceMult;
+          desiredSpeed = Math.min(targetSpeed * newEffective, effectiveMaxSpeed);
+          if (lockBlendedCap < desiredSpeed) desiredSpeed = lockBlendedCap;
+        }
+      }
+    }
+
+    // Inertial integration — accelerate toward desired. No friction
+    // term: the gate above already suppresses hyperMult near bodies, so
+    // baseSpeed is always achievable (atm cap = baseSpeed) and the only
+    // way to slow is the desired dropping (gate closing or lock cap).
+    const accelStep = 1 - Math.exp(-SPEED.HYPER_ACCEL_RATE * dt);
+    state.wingSpeed += (desiredSpeed - state.wingSpeed) * accelStep;
+    if (state.wingSpeed < 0) state.wingSpeed = 0;
+    // Hard cap on actual speed when locked — prevents momentum
+    // overshoot on approach.
+    if (state.wingSpeed > lockBlendedCap) state.wingSpeed = lockBlendedCap;
+
+    let totalSpeed = state.wingSpeed;
 
     // Low-altitude safety brake. Spec: "This is a special cap unrelated
     // to atmospheric pressure and is intended to prevent crashing rather
@@ -1284,9 +1391,12 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
       1,
     );
 
-    // lastModeWeights / activeMode: derived from warpRatio and the
-    // visual rocket weight. wing + rocket + warp sum to 1; activeMode
-    // is whichever is largest.
+    // lastModeWeights / activeMode: warp share derived from how much
+    // of the current speed is above the natural baseSpeed (i.e. how
+    // much hyperMult is contributing). wing + rocket + warp sum to 1.
+    const warpRatio = totalSpeed > 1
+      ? Math.max(0, Math.min(1, 1 - targetSpeed / totalSpeed))
+      : 0;
     state.lastModeWeights.warp = warpRatio;
     state.lastModeWeights.rocket = (1 - warpRatio) * state.rocketRegimeWeight;
     state.lastModeWeights.wing = (1 - warpRatio) * (1 - state.rocketRegimeWeight);
@@ -1299,18 +1409,15 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
     }
 
     // Populate debug snapshot for HUD readouts.
-    state.flightDebug.vWing = vWing;
+    state.flightDebug.vWing = state.wingSpeed;
     state.flightDebug.targetSpeed = targetSpeed;
     state.flightDebug.altSpeed = altSpeed;
-    state.flightDebug.vWarp = vWarp;
+    state.flightDebug.desiredSpeed = desiredSpeed;
     state.flightDebug.totalSpeed = totalSpeed;
     state.flightDebug.climbT = climbT;
     state.flightDebug.forwardUp = forwardUp;
-    state.flightDebug.warpImpedance = warpImpedance;
-    state.flightDebug.warpFactor = warpFactor;
-    state.flightDebug.warpGate = warpGate;
-    state.flightDebug.warpAtmGate = warpAtmGate;
-    state.flightDebug.warpDomGate = warpDomGate;
+    state.flightDebug.warpInhibition = warpInhibition;
+    state.flightDebug.warpGate = spaceMult;
     state.flightDebug.hillFraction = hillFraction;
     state.flightDebug.dominantBodyId = dominantBody ? dominantBody.id : null;
     state.flightDebug.dominantAlt = dominant.altitude;
@@ -1854,6 +1961,21 @@ export function createPlayer(world: World, scene: THREE.Scene): Player {
         state.divePhase = 0;
       }
 
+      // Decay hyperMult in any mode where it can't actually do work
+      // (walking on a surface, takeoff anim, swim/dive/underwater,
+      // stunned). Without this, hyperMult is preserved across mode
+      // transitions: build it up during flight → land → walk around
+      // → take off → bird shoots off at the previously-accumulated
+      // mult. Decay rate uses HYPER_LOSS_RATE × 1.0 (full off-center
+      // intensity) so it drains fast.
+      if (
+        state.mode !== "flying" &&
+        state.mode !== "drifting"
+      ) {
+        state.hyperMult *= Math.exp(-SPEED.HYPER_LOSS_RATE * dt);
+        if (state.hyperMult < 1) state.hyperMult = 1;
+      }
+
       if (state.mode === "walking" && ctx.dominant) {
         updateWalking(input, dt, ctx.dominant);
       } else if (state.mode === "takeoff" && ctx.dominant) {
@@ -2023,6 +2145,79 @@ function computeObstacleClearance(
     if (alt < minAlt) minAlt = alt;
   }
   return minAlt;
+}
+
+// ── Hyperjump lock-on helpers ─────────────────────────────────────────────
+//
+// `pickLockCandidate` returns the body the player's `forward` vector most
+// plausibly indicates intent toward: within a forward-cone of `coneCos`,
+// scored by `angularRadius × dot²` so a larger body in the gaze cone wins
+// over a smaller one even slightly closer to dead-center.
+const _hypTmpDir = new THREE.Vector3();
+function pickLockCandidate(
+  position: THREE.Vector3,
+  forward: THREE.Vector3,
+  bodies: readonly CelestialBody[],
+  baseConeCos: number,
+  currentLockId: string | null,
+): CelestialBody | null {
+  // A body counts as "in the gaze cone" when the gaze direction falls
+  // inside the body's angular extent PLUS a small buffer for gaze
+  // imprecision. This means the cone scales with how big the body
+  // appears: a sub-pixel star uses the tight `baseConeCos`; a body
+  // that fills the screen lets the player gaze anywhere on it and
+  // still hold lock. Without this, approaching any body until it
+  // fills the screen breaks the lock the moment gaze drifts off the
+  // body's center direction (Moon at 30% of screen = 30° angular
+  // radius → fixed 15° cone is exceeded → lock decays → speed cap
+  // released → kicked out of system from accumulated hyperMult).
+  let best: CelestialBody | null = null;
+  let bestScore = -Infinity;
+  for (const b of bodies) {
+    _hypTmpDir.copy(b.worldPosition).sub(position);
+    const dist = _hypTmpDir.length();
+    if (dist < 1 || dist <= b.radius) continue;
+    _hypTmpDir.divideScalar(dist);
+    const dot = forward.dot(_hypTmpDir);
+    // Effective cone = the WIDER of (a) the base intent cone and
+    // (b) the body's own angular extent + buffer. asin is safe
+    // because radius < dist here.
+    const angularRadius = Math.asin(b.radius / dist);
+    const effectiveConeCos = Math.min(
+      baseConeCos,
+      Math.cos(angularRadius + LOCK_CONE_BUFFER),
+    );
+    if (dot < effectiveConeCos) continue;
+    // Score by angular footprint × alignment, with a hysteresis
+    // bonus for the currently-locked body so candidate doesn't
+    // oscillate when several bodies are roughly in the cone.
+    const ar = b.radius / dist;
+    let score = ar * dot * dot;
+    if (currentLockId !== null && b.id === currentLockId) {
+      score *= LOCK_HYSTERESIS;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = b;
+    }
+  }
+  return best;
+}
+
+// Buffer (radians) added to a body's angular radius before testing the
+// forward-cone. Default ~3° — accommodates gaze imprecision without
+// extending the cone so far that a body off to the side gets locked.
+const LOCK_CONE_BUFFER = 0.05;
+// Score multiplier for the currently-locked body, biasing the picker
+// toward staying locked once a target is acquired. ×1.5 keeps the
+// existing target unless a competitor's raw score is ≥ 1.5× higher.
+const LOCK_HYSTERESIS = 1.5;
+
+function findBodyById(bodies: readonly CelestialBody[], id: string): CelestialBody | null {
+  for (const b of bodies) {
+    if (b.id === id) return b;
+  }
+  return null;
 }
 
 function reTangent(forward: THREE.Vector3, up: THREE.Vector3): void {

@@ -266,6 +266,14 @@ export class MfaService {
         return { success: true };
       }
 
+      // Admins don't use the self-service recovery email path: the
+      // mfa_recovery_tokens table FKs to users.id and admins no longer have
+      // a users row (migration 0107). MFA for a stuck admin is reset by
+      // another admin through the management UI / direct DB update.
+      if ((user as any)?._identityKind === "admin") {
+        return { success: true };
+      }
+
       // Create recovery token
       const { token, expiresAt } = await mfaRepository.createRecoveryToken(
         user.id,
@@ -370,7 +378,8 @@ export class MfaService {
   }
 
   /**
-   * Send MFA recovery email
+   * Send MFA recovery email. Delegates to `emailService.sendMfaRecoveryEmail`
+   * so the admin-specific recovery flow can reuse the same template.
    */
   private async sendRecoveryEmail(data: {
     email: string;
@@ -378,126 +387,7 @@ export class MfaService {
     recoveryLink: string;
     expiresAt: Date;
   }): Promise<{ success: boolean; error?: string }> {
-    const { email, firstName, recoveryLink, expiresAt } = data;
-
-    const expiryTime = expiresAt.toLocaleString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-      month: "short",
-      day: "numeric",
-    });
-
-    const subject = "Disable Two-Factor Authentication - CliniAACian";
-
-    const text = `
-MFA Recovery Request
-
-${firstName ? `Hi ${firstName},` : "Hello,"}
-
-We received a request to disable two-factor authentication on your CliniAACian account.
-
-Click the link below to disable MFA:
-${recoveryLink}
-
-This link will expire at ${expiryTime}.
-
-If you didn't request this, please secure your account immediately by changing your password.
-
----
-CliniAACian - AAC Tools for Healthcare & Education
-    `.trim();
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Disable Two-Factor Authentication</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    <tr>
-      <td>
-        <!-- Header -->
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #dc2626; border-radius: 12px 12px 0 0; padding: 30px; text-align: center;">
-          <tr>
-            <td>
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">CliniAACian</h1>
-              <p style="color: #fecaca; margin: 10px 0 0 0; font-size: 14px;">MFA Recovery</p>
-            </td>
-          </tr>
-        </table>
-
-        <!-- Content -->
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 40px 30px;">
-          <tr>
-            <td>
-              <p style="color: #3f3f46; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
-                ${firstName ? `Hi <strong>${firstName}</strong>,` : "Hello,"}
-              </p>
-
-              <p style="color: #3f3f46; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
-                We received a request to disable two-factor authentication on your CliniAACian account.
-              </p>
-
-              <!-- Warning -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #fef2f2; border-radius: 8px; padding: 16px; margin: 20px 0;">
-                <tr>
-                  <td>
-                    <p style="color: #991b1b; font-size: 14px; line-height: 1.5; margin: 0;">
-                      <strong>Warning:</strong> Disabling MFA will reduce the security of your account.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- CTA Button -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
-                <tr>
-                  <td align="center">
-                    <a href="${recoveryLink}" style="display: inline-block; background-color: #dc2626; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 32px; border-radius: 8px; font-size: 16px;">
-                      Disable Two-Factor Authentication
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="color: #71717a; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">
-                This link will expire at <strong>${expiryTime}</strong>.
-              </p>
-
-              <p style="color: #71717a; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">
-                If you didn't request this, please secure your account immediately by changing your password.
-              </p>
-            </td>
-          </tr>
-        </table>
-
-        <!-- Footer -->
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f5; border-radius: 0 0 12px 12px; padding: 20px; text-align: center;">
-          <tr>
-            <td>
-              <p style="color: #71717a; font-size: 12px; margin: 0;">
-                CliniAACian - AAC Tools for Healthcare & Education
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-    `.trim();
-
-    return emailService.sendEmail({
-      to: email,
-      subject,
-      text,
-      html,
-    });
+    return emailService.sendMfaRecoveryEmail(data);
   }
 }
 

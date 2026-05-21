@@ -58,25 +58,45 @@ export interface ConstructionStateClient {
   };
 }
 
-/** AI's suggestion payload received from the server, populates the AI strip. */
+/** One SUGGESTION delivered to the SENTENCE BUILDER. */
+export interface ConstructionCandidateClient {
+  key: string;
+  label?: string;
+  /** Resolved image URL for AI-generated keys; undefined for registry/emoji items. */
+  symbolPath?: string;
+  /**
+   * Non-generate render fallback for SUGGESTIONs whose primary key is
+   * still awaiting (or has failed) image generation. The server only
+   * sets this when the primary key is a generation target — canonical /
+   * emoji / `symbol:` / `face:` SUGGESTIONs never need it. The renderer
+   * reaches for `fallback` before the universal `❓` placeholder, so a
+   * pending SUGGESTION reads as "want with a pizza icon" rather than
+   * "want with an unknown icon."
+   */
+  fallback?: string;
+}
+
+/** AI's SUGGESTION payload received from the server, populates the AI strips. */
 export interface ConstructionSuggestionsClient {
   targetSlot: number;
-  candidates: Array<{
-    key: string;
-    label?: string;
-    /** Resolved image URL for AI-generated keys; undefined for registry/emoji items. */
-    symbolPath?: string;
-    /**
-     * Non-generate render fallback for candidates whose primary key is
-     * still awaiting (or has failed) image generation. The server only
-     * sets this when the primary key is a generation target — canonical /
-     * emoji / `symbol:` / `face:` candidates never need it. The renderer
-     * reaches for `fallback` before the universal `❓` placeholder, so a
-     * pending candidate reads as "want with a pizza icon" rather than
-     * "want with an unknown icon."
-     */
-    fallback?: string;
-  }>;
+  /**
+   * HEAD-SYMBOL SUGGESTIONs — feed the main AI strip and fill the next
+   * GLYPH slot when tapped. Older server builds may only send this under
+   * the deprecated `candidates` field; the hook normalizes both shapes
+   * into `headCandidates`.
+   */
+  headCandidates: ConstructionCandidateClient[];
+  /**
+   * MODIFIER-SYMBOL SUGGESTIONs — feed a parallel AI strip above the
+   * static modifier carousel and attach to the student's current HEAD
+   * SYMBOL when tapped. Empty when the AI didn't propose any modifiers.
+   */
+  modifierCandidates: ConstructionCandidateClient[];
+  /**
+   * @deprecated Legacy alias for `headCandidates`. Kept on the wire so
+   * existing consumers don't break; new code should read `headCandidates`.
+   */
+  candidates: ConstructionCandidateClient[];
   /** Monotonic counter so consumers can tell two arrivals apart. */
   receivedAt: number;
 }
@@ -218,11 +238,9 @@ export interface UseDualAgentReturn {
   stopAudio: () => void;
   clearSession: () => void;
 
-  // Yes/No overlay
-  yesNoActive: boolean;
-  dismissYesNo: () => void;
-
-  // Binary-choice overlay — two AI-supplied options + an implicit "Neither"
+  // Binary-choice overlay — two AI-supplied SENTENCE BUTTON options + an
+  // implicit "Neither". Yes/no questions are surfaced through this same
+  // overlay (using the canonical `yes` / `no` SYMBOLs).
   binaryChoiceOptions: BinaryChoiceOption[] | null;
   dismissBinaryChoice: () => void;
 

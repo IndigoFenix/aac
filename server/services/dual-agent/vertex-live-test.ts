@@ -146,16 +146,6 @@ async function testWithTools() {
         parameters: { type: "object" as const, properties: { reason: { type: "string" as const } }, required: ["reason"] },
       },
       {
-        name: "yes_no",
-        description: "Show Yes/No overlay buttons.",
-        parameters: { type: "object" as const, properties: {} },
-      },
-      {
-        name: "ask_yes_no",
-        description: "Show Yes/No after speech finishes.",
-        parameters: { type: "object" as const, properties: {} },
-      },
-      {
         name: "request_focus",
         description: "Request a high-res close-up frame.",
         parameters: { type: "object" as const, properties: { reason: { type: "string" as const } }, required: ["reason"] },

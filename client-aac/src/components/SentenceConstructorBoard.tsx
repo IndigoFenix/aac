@@ -179,9 +179,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     exclamation: false,
   });
 
-  // AI strip state — populated by suggest_construction_buttons tool replies.
+  // AI head strip — HEAD-SYMBOL SUGGESTIONs that fill the next GLYPH when tapped.
   const [aiCandidates, setAiCandidates] = useState<
-    Array<{ key: string; label?: string }>
+    Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }>
+  >([]);
+  // AI modifier strip — MODIFIER-SYMBOL SUGGESTIONs that attach to the
+  // student's current HEAD SYMBOL when tapped. Lives alongside the static
+  // modifier carousel as the context-aware row.
+  const [aiModifierCandidates, setAiModifierCandidates] = useState<
+    Array<{ key: string; label?: string; symbolPath?: string; fallback?: string }>
   >([]);
   const [aiThinking, setAiThinking] = useState(false);
   const [excludeKeys, setExcludeKeys] = useState<string[]>([]);
@@ -381,16 +387,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // injection. The AI's existing <guessing_mode> behavior handles the rest.
   const handleHelpPress = useCallback(() => {
     if (activeSlot != null) {
-      // Re-suggest path.
+      // Re-suggest path. Exclude what's currently in BOTH AI strips so the
+      // next round genuinely surfaces new ideas (head and modifier alike).
       setExcludeKeys((prev) => {
         const seen = new Set(prev);
         for (const c of aiCandidates) seen.add(c.key);
+        for (const c of aiModifierCandidates) seen.add(c.key);
         return Array.from(seen);
       });
       return;
     }
     setPendingHelpRequest(true);
-  }, [activeSlot, aiCandidates]);
+  }, [activeSlot, aiCandidates, aiModifierCandidates]);
 
   // ── AI strip wiring ──────────────────────────────────────────────────────
   // Send state on every relevant change. The relay forwards it to the live
@@ -450,18 +458,22 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   ]);
 
   // Consume incoming suggestions when their receivedAt is newer than what we
-  // last processed. Replace the AI strip wholesale.
+  // last processed. Replace both AI strips wholesale. The head strip reads
+  // from `headCandidates` (legacy server builds populate `candidates` only;
+  // the hook normalizes both into `headCandidates`).
   useEffect(() => {
     const incoming = constructionSuggestions;
     console.log("[construction] suggestions effect", {
       hasIncoming: !!incoming,
       receivedAt: incoming?.receivedAt,
       lastReceived: lastReceivedAtRef.current,
-      candidateCount: incoming?.candidates.length,
+      headCount: incoming?.headCandidates.length,
+      modifierCount: incoming?.modifierCandidates.length,
     });
     if (!incoming || incoming.receivedAt <= lastReceivedAtRef.current) return;
     lastReceivedAtRef.current = incoming.receivedAt;
-    setAiCandidates(incoming.candidates);
+    setAiCandidates(incoming.headCandidates);
+    setAiModifierCandidates(incoming.modifierCandidates);
     setAiThinking(false);
   }, [constructionSuggestions]);
 
@@ -521,6 +533,30 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [effectiveActiveSlot, activeModifierKeys]
   );
 
+  // AI-modifier press: same toggle add/remove flow as the static carousel.
+  // For canonical registry modifiers, we route through handleModifierPress
+  // so the existing color-mutex / dimension-mutex semantics still hold.
+  // For AI-only / generated modifier symbols (rare), we fall back to the
+  // raw key path since there's no VocabularyItem to consult — `addModifier`
+  // operates by key, so the GLYPH stores the SUGGESTION verbatim and the
+  // compositor's registered symbol path renders it.
+  const handleAiModifierPress = useCallback(
+    (candidate: { key: string }) => {
+      if (effectiveActiveSlot == null) return;
+      const item = getVocabularyItem(candidate.key);
+      if (item) {
+        handleModifierPress(item);
+        return;
+      }
+      setGlyph((g) =>
+        activeModifierKeys.has(candidate.key)
+          ? removeModifier(g, effectiveActiveSlot, candidate.key)
+          : addModifier(g, effectiveActiveSlot, candidate.key)
+      );
+    },
+    [effectiveActiveSlot, activeModifierKeys, handleModifierPress]
+  );
+
   const handleModifierMore = useCallback(() => {
     setModifierPage((p) => p + 1);
   }, []);
@@ -559,13 +595,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [effectiveActiveSlot]
   );
 
-  // "More" press: hide the current candidates, exclude them next round.
+  // "More" press: hide the current SUGGESTIONs, exclude them next round.
   // After MORE_ESCALATION_THRESHOLD presses without a selection, escalate to
-  // guessing mode by flagging the next state injection.
+  // guessing mode by flagging the next state injection. Excludes from BOTH
+  // strips so a refresh actually surfaces new modifiers too.
   const handleAiMore = useCallback(() => {
     setExcludeKeys((prev) => {
       const seen = new Set(prev);
       for (const c of aiCandidates) seen.add(c.key);
+      for (const c of aiModifierCandidates) seen.add(c.key);
       return Array.from(seen);
     });
     setMorePressCount((n) => {
@@ -576,7 +614,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       }
       return next;
     });
-  }, [aiCandidates]);
+  }, [aiCandidates, aiModifierCandidates]);
 
   // AI-strip press: routes through the same fill/replace logic as the grid
   // — selected slot → replace; pending payload host → fill payload;
@@ -780,7 +818,49 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           )}
         </div>
 
-        {/* Modifier zone — only rendered when there are applicable modifiers OR colors. */}
+        {/* AI-modifier strip — context-aware MODIFIER SUGGESTIONs delivered
+            by suggest_construction_buttons.modifier_candidates. Only renders
+            when the AI actually proposed something AND there's an active
+            HEAD SYMBOL to attach modifiers to (otherwise the press is a
+            no-op). Sits above the static modifier carousel so the AI row
+            reads as "modifiers picked for this conversation" vs the
+            registry-bundled row below. */}
+        {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
+          <div
+            className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0"
+            data-testid="ai-modifier-strip"
+          >
+            <span className="self-center text-xl select-none" aria-hidden>
+              ✨
+            </span>
+            {aiModifierCandidates.map((m) => (
+              <ModifierButton
+                key={m.key}
+                item={
+                  getVocabularyItem(m.key) ?? {
+                    // Synthesized item for AI-only / generated modifier
+                    // SYMBOLs that aren't in the canonical registry. The
+                    // GLYPH stores the bare key; the compositor's
+                    // registered symbol path renders it.
+                    key: m.key,
+                    tKey: `aac.modifier.${m.key}`,
+                    pos: "modifier",
+                    categories: [],
+                    modeChips: {},
+                    tone: "comment",
+                    label: m.label,
+                  } as unknown as VocabularyItem
+                }
+                active={activeModifierKeys.has(m.key)}
+                onPress={() => handleAiModifierPress(m)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Modifier zone — registry-driven MODIFIER SYMBOLs applicable to
+            the active HEAD SYMBOL. Only rendered when there are applicable
+            modifiers OR colors. */}
         {(modifierItems.length > 0 || colorOptions.length > 0) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
             {modifierItems.map((m) => (

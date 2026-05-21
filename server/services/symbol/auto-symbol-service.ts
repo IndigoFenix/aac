@@ -81,17 +81,17 @@ export const IMAGE_KEY_PROMPT_RULES = `The imageKey is an unambiguous English ke
 /** Image key rules formatted for the SyntAACx board creator prompt */
 export const IMAGE_KEY_BOARD_PROMPT = `**Image Key:** The imageKey field is used to look up or auto-generate symbol images. REQUIRED for every content button — NEVER omit imageKey. Every content button MUST have both iconRef (emoji fallback) AND imageKey (symbol generation).${IMAGE_KEY_RULES}`;
 
-/** Image key rules formatted for the AAC live button format instruction */
-export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: sentence|glyph|fallback|label.
-- sentence: first-person phrase spoken when the button is pressed ("I want water").
-- glyph: composed glyph. Slot keys may be registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), snake_case imageKeys, \`symbol:ID\`, or \`face:ID\`. See <glyph_grammar>. Match slot count to the sentence — full subject+verb+object thoughts are usually 3-slot; short answers and feelings are 1-slot.
-- fallback: same composition with NO imageKeys (use bundled-icon keys / emojis / \`symbol:ID\` / \`face:ID\`). Shown WHILE imageKeys generate.
+/** SENTENCE BUTTON format reminder for the AAC live agent. */
+export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — SENTENCE BUTTON format: speech|sentence|fallback|label.
+- speech: first-person SENTENCE the TTS voices when pressed ("I want water").
+- sentence: visual encoding — GLYPHs joined by \`+\`, MODIFIER SYMBOLs attached with \`.\`, sentence-level OPERATORs appended with \`#\`. SYMBOLs may be canonical registry keys from <bundled_icons>, raw EMOJIS (🍎, 🤗), \`generate:snake_case\` (last resort), \`symbol:ID\`, or \`face:ID\`. See <grammar>. Match GLYPH count to the SENTENCE — full subject+verb+object thoughts are 3-glyph SENTENCEs; short answers and feelings are 1-glyph.
+- fallback: same encoding with NO \`generate:\` SYMBOLs (only bundled-icon keys, emojis, \`symbol:ID\`, \`face:ID\`). Shown WHILE generated SYMBOLs are loading. OMIT (empty \`||\`) when the SENTENCE has no \`generate:\` SYMBOLs.
 - label: short on-button text.
 
 Examples:
-- "I want a banana|i_me+want+banana|👤+🤲+🍌|Banana"   (3-slot subject+verb+object)
-- "I'm tired|tired|😴|Tired"                            (1-slot feeling)
-- "I want a hug|i_me+want+🤗|👤+🤲+🤗|Hug"             (raw emoji as a slot)
+- "I want a banana|i_me+want+🍌||Banana"               (3-glyph subject+verb+object, no fallback needed)
+- "I'm tired|😴||Tired"                                (1-glyph feeling)
+- "I want a hug|i_me+want+🤗||Hug"                    (raw emoji as a SYMBOL)
 ${IMAGE_KEY_PROMPT_RULES}`;
 
 // ---------------------------------------------------------------------------

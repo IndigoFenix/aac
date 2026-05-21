@@ -153,6 +153,37 @@ export interface ComposableFacet {
   emptyImagePath?: string;
 }
 
+/**
+ * Animated-sprite facet — declares that a SYMBOL has a hover-animated visual
+ * sourced from a spritesheet. The compositor renders these via a
+ * <foreignObject> wrapping an AnimatedSymbol component so the animation
+ * driver can live in regular React state without leaving SVG land.
+ *
+ * The registry stores only metadata (sheet id + frame layout); the client
+ * maps `sheet` to an actual asset URL so server code can import this file
+ * without resolving Vite/Webpack asset bundles.
+ */
+export interface AnimatedSpriteFacet {
+  /**
+   * Client-side asset bundle id. The AnimatedSymbol component maps this to
+   * an imported asset URL (e.g. `"yes-no-sprites"` → the bundled PNG).
+   */
+  sheet: string;
+  /** Total columns × rows in the spritesheet. */
+  cols: number;
+  rows: number;
+  /** Which row of the sheet this item's frames live on (0-indexed). */
+  row: number;
+  /**
+   * Frame indices (column positions on `row`) to cycle through when the
+   * SENTENCE BUTTON is hovered or dwelled on. Index 0 is the resting frame
+   * shown when not animating.
+   */
+  frames: number[];
+  /** ms per frame. Defaults to 130 when unset. */
+  frameDuration?: number;
+}
+
 export interface VocabularyItem {
   /** Stable kebab-or-snake key. Appears in the glyph string. */
   key: string;
@@ -178,6 +209,14 @@ export interface VocabularyItem {
   dimensionValue?: DimensionValueFacet;
   /** When present, this item is a host with an embedded payload slot. */
   composable?: ComposableFacet;
+  /**
+   * When present, the compositor renders the SYMBOL as a hover-animated
+   * sprite instead of a static image. Takes precedence over `imagePath`
+   * in surfaces that support animation (the GlyphCompositor); other
+   * surfaces (modifier carousel, plain icon previews) fall back to
+   * `imagePath` or `emoji`.
+   */
+  animatedSprite?: AnimatedSpriteFacet;
   /**
    * True when the item's visual carries a semantic left/right direction
    * (motion verbs like run / walk, pointing gestures, time-flow arrows
@@ -717,9 +756,11 @@ const VOCAB: VocabularyItem[] = [
   // `hello`, `thank_you`) that ends up queued for image generation and
   // renders as ❓ until the symbol arrives.
   { key: "yes", tKey: "aac.glyph.yes", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "✅" },
+    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "✅", exposeToAi: true,
+    animatedSprite: { sheet: "yes-no-sprites", cols: 3, rows: 2, row: 0, frames: [0, 1, 2, 1] } },
   { key: "no", tKey: "aac.glyph.no", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "❌" },
+    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "❌", exposeToAi: true,
+    animatedSprite: { sheet: "yes-no-sprites", cols: 3, rows: 2, row: 1, frames: [0, 1, 0, 2] } },
   { key: "maybe", tKey: "aac.glyph.maybe", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "social"] }, tone: "social", emoji: "🤷" },
   { key: "hello", tKey: "aac.glyph.hello", pos: "noun", categories: ["what"],

@@ -9,8 +9,20 @@
 
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
 import type { ParsedGlyph } from "@shared/glyph-compositor";
+import type { AnimatedSpriteFacet } from "@shared/glyph-registry";
 import { defaultImageResolver, markSymbolUrlFailed, useDisplayGlyph } from "@/lib/glyph-images";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { AnimatedSymbol } from "@/components/AnimatedSymbol";
+
+/**
+ * Renderer wired into the compositor for SYMBOLs with an `animatedSprite`
+ * facet. Defined once here so every Glyph mount shares the same identity,
+ * and so the asset-import side (AnimatedSymbol → Vite-bundled PNGs) stays
+ * isolated from the shared compositor.
+ */
+const renderAnimatedSymbolAac = (facet: AnimatedSpriteFacet, _key: string) => (
+  <AnimatedSymbol facet={facet} size="100%" />
+);
 
 export interface GlyphProps {
   /**
@@ -66,6 +78,7 @@ export function Glyph(props: GlyphProps) {
       onSlotPress={props.onSlotPress}
       activeSlot={props.activeSlot}
       onImageError={markSymbolUrlFailed}
+      renderAnimatedSymbol={renderAnimatedSymbolAac}
     />
   );
 }

@@ -33,6 +33,7 @@ import {
   consentController,
   crmChatController,
   adminUsersController,
+  adminAuthController,
 } from "./controllers";
 
 import {
@@ -225,6 +226,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MFA recovery complete (public) — rate-limited.
   app.post("/auth/mfa/recovery/complete", authRateLimiter, (req, res) =>
     authController.mfaRecoveryComplete(req, res)
+  );
+
+  // ============= ADMIN AUTH FLOWS =============
+  // Mirrors the regular forgot/reset/recovery endpoints but operates against
+  // admin_users + the admin-specific token tables. Same rate-limit policy.
+  app.post("/auth/admin/forgot-password", passwordResetRateLimiter, (req, res) =>
+    adminAuthController.forgotPassword(req, res)
+  );
+  app.get("/auth/admin/reset-password/:token", (req, res) =>
+    adminAuthController.validateResetToken(req, res)
+  );
+  app.post("/auth/admin/reset-password", passwordResetRateLimiter, (req, res) =>
+    adminAuthController.resetPassword(req, res)
+  );
+  app.post("/auth/admin/mfa/recovery/request", passwordResetRateLimiter, (req, res) =>
+    adminAuthController.mfaRecoveryRequest(req, res)
+  );
+  app.get("/auth/admin/mfa/recovery/:token", (req, res) =>
+    adminAuthController.mfaRecoveryValidate(req, res)
+  );
+  app.post("/auth/admin/mfa/recovery/complete", authRateLimiter, (req, res) =>
+    adminAuthController.mfaRecoveryComplete(req, res)
   );
 
   // ============= IDENTITY / EXTERNAL AUTH ROUTES =============

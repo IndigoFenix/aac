@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { ScatterObject } from "./scatter";
+import type { CloudSystem } from "./cloud-system";
 
 // A celestial body — anything with mass and position in the world. Stars,
 // rocky planets, gas planets, moons all share this shape; the differences
@@ -183,6 +184,12 @@ export interface CelestialBody {
    *  fades out once the player is close enough to see the real geometry.
    *  Stars don't get a halo (their emissive disc is already bright). */
   haloColor?: THREE.Color;
+
+  /** Per-body cloud renderer. Created lazily by `materialize()` for bodies
+   *  with a meaningful cloud field; null/undefined for airless or thin-
+   *  atmosphere bodies. The system's group lives under `body.group`, so
+   *  the planet's rotation carries clouds with it automatically. */
+  cloudSystem?: CloudSystem;
 
   /** Active scatter objects (trees / rocks) for this body. Streamed in/out
    *  by the terrain quadtree: each leaf chunk at depth ≥ MIN_SCATTER_DEPTH

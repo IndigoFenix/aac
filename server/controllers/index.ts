@@ -5,6 +5,7 @@ export { inviteCodeController, InviteCodeController } from "./inviteCodeControll
 export { savedLocationController, SavedLocationController } from "./savedLocationController";
 export { adminController, AdminController } from "./adminController";
 export { adminUsersController } from "./adminUsersController";
+export { adminAuthController } from "./adminAuthController";
 export { creditPackageController, CreditPackageController } from "./creditPackageController";
 export { interpretationController, InterpretationController } from "./interpretationController";
 export { boardController, BoardController } from "./boardController";

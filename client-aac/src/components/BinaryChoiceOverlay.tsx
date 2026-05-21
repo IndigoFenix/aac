@@ -1,14 +1,16 @@
 // client-aac/src/components/BinaryChoiceOverlay.tsx
 // Large prominent two-option overlay triggered when someone offers the
-// student a binary choice (e.g. "Do you want the apple or the banana?").
-// Mirrors YesNoOverlay's animation and auto-dismiss behavior, but the two
-// option buttons are AI-supplied (glyph + label) and there's a "Neither"
-// button instead of "Skip".
+// student a binary choice (e.g. "Do you want the apple or the banana?",
+// or a simple yes/no question via `yes`/`no` SYMBOLs). The two option
+// buttons are rendered through the shared SentenceButton component so
+// every SENTENCE BUTTON rule applies — multi-glyph SENTENCEs, modifier
+// SYMBOLs, animated SYMBOLs, default green/red coloring for yes/no.
+// "Neither" is the always-present escape; auto-dismisses after 30s.
 
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { Glyph } from "@/components/Glyph";
+import { SentenceButton } from "@/components/SentenceButton";
 import type { BinaryChoiceOption } from "@/hooks/dual-agent-types";
 
 interface BinaryChoiceOverlayProps {
@@ -50,37 +52,21 @@ export default function BinaryChoiceOverlay({ options, onSelect, onNeither, onDi
           transition={{ duration: 0.15 }}
         >
           <div className="flex flex-col items-center gap-3">
-            {/* Two options side by side */}
+            {/* Two options side by side, rendered as full SENTENCE BUTTONs.
+                The shared component handles glyph rendering, animated
+                SYMBOLs, and auto-green/red coloring for yes/no — no
+                option-specific tinting needed here. */}
             <div className="flex items-center justify-center gap-6">
               {options.slice(0, 2).map((opt, i) => (
-                <motion.button
+                <SentenceButton
                   key={i}
-                  data-dwell={`choice-${i}`}
-                  className="flex flex-col items-center justify-center rounded-3xl shadow-2xl border-4 border-blue-400 bg-blue-50 text-blue-900 font-bold select-none p-3"
-                  style={{ width: "min(45vw, 300px)", height: "min(45vw, 300px)", fontSize: "clamp(1.1rem, 3.5vw, 1.8rem)" }}
-                  initial={{ scale: 0.3, y: 120, opacity: 0 }}
-                  animate={{ scale: 1, y: 0, opacity: 1 }}
-                  exit={{ scale: 0.3, y: 120, opacity: 0 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 25, delay: i * 0.05 }}
+                  variant="overlay"
+                  button={opt}
+                  ariaLabel={opt.label}
+                  overlayEntranceDelay={i * 0.05}
+                  extraButtonProps={{ "data-dwell": `choice-${i}` }}
                   onClick={() => onSelect(opt)}
-                >
-                  <div
-                    className="mb-2 flex items-center justify-center"
-                    style={{ width: "min(28vw, 180px)", height: "min(28vw, 180px)" }}
-                  >
-                    {opt.glyph ? (
-                      <Glyph
-                        glyph={opt.glyph}
-                        fallback={opt.glyphFallback}
-                        noBackground
-                        ariaLabel={opt.label}
-                      />
-                    ) : opt.iconRef ? (
-                      <i className={`${opt.iconRef} text-6xl`} />
-                    ) : null}
-                  </div>
-                  {opt.label}
-                </motion.button>
+                />
               ))}
             </div>
 
