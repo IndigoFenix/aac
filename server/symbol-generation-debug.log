@@ -7308,3 +7308,556 @@
 [2026-05-21T15:14:58.074Z] [processQueue] Generated "another_day" → 4b202b9d-a9b1-4baf-8d66-7ea750b15c74 (1 total)
 [2026-05-21T15:14:58.075Z] [processQueue] FULL REFINED PROMPT for "another_day": A simple, bold illustration of a calendar page with the current day highlighted, and a distinct arrow pointing forward to the next day, indicating the concept of "another day." The calendar page is white with black outlines, showing minimal grid lines and a single bold number for the current day. The arrow is a solid, bright color like orange or green, with a thick black outline. The icon uses flat, solid colors and is centered on a transparent background.
 [2026-05-21T15:15:02.249Z] [processQueue] "another_day" already exists → 4b202b9d-a9b1-4baf-8d66-7ea750b15c74
+[2026-05-24T07:34:58.322Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T07:34:58.323Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T07:34:58.326Z] [resolveImageKeys] Resolving 1 keys: sentence (format=api-path, useUnapproved=true)
+[2026-05-24T07:34:59.766Z] [resolveImageKeys] No symbol found for "sentence"
+[2026-05-24T07:34:59.767Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: sentence
+[2026-05-24T07:34:59.768Z] [queueGeneration] Queuing 1 keys: sentence (hasCallback=true)
+[2026-05-24T07:35:04.508Z] [processQueue] Generating "sentence"...
+[2026-05-24T07:35:19.867Z] [COST] imageKey="sentence" | refinement: gemini/gemini-2.5-flash in=726 out=66 | image: openai/gpt-image-1 in=72 out=272
+[2026-05-24T07:35:19.868Z] [processQueue] Generated "sentence" → f039ed8f-0ba3-4565-a5f3-0f072e614b63 (1 total)
+[2026-05-24T07:35:19.872Z] [processQueue] FULL REFINED PROMPT for "sentence": A bold AAC symbol icon of a speech bubble with three horizontal lines inside, representing text or a sentence. The speech bubble is white with a thick black outline, and the three lines are solid black. The icon uses flat, solid colors and has no gradients, shadows, or 3D effects, rendered on a transparent background.
+[2026-05-24T07:35:29.003Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T07:35:29.005Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T07:35:29.009Z] [resolveImageKeys] Resolving 1 keys: cars (format=api-path, useUnapproved=true)
+[2026-05-24T07:35:29.925Z] [resolveImageKeys] No symbol found for "cars"
+[2026-05-24T07:35:29.926Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cars
+[2026-05-24T07:35:29.927Z] [queueGeneration] Queuing 1 keys: cars (hasCallback=true)
+[2026-05-24T07:35:31.310Z] [processQueue] Generating "cars"...
+[2026-05-24T07:35:45.852Z] [COST] imageKey="cars" | refinement: gemini/gemini-2.5-flash in=726 out=76 | image: openai/gpt-image-1 in=82 out=272
+[2026-05-24T07:35:45.852Z] [processQueue] Generated "cars" → f56a63f4-5e2f-47bc-aefd-12f3ae3c231e (1 total)
+[2026-05-24T07:35:45.853Z] [processQueue] FULL REFINED PROMPT for "cars": A simple, bold illustration of three stylized cars, shown from a side profile view, arranged horizontally across the frame. Each car has a distinct, saturated color (e.g., red, blue, yellow), with black outlines for the body, windows, and wheels. The cars are depicted with minimal detail, focusing on their iconic shapes, and are centered on a transparent background.
+[2026-05-24T07:36:38.994Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T07:36:38.994Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:37:14.470Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:37:14.471Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:37:26.017Z] [resolveImageKeys] Resolving 1 keys: my_day (format=internal, useUnapproved=true)
+[2026-05-24T08:37:26.636Z] [resolveImageKeys] Resolved "my_day" → __SYMBOL__:d4c49758-247d-4393-9ded-94d418c01b82
+[2026-05-24T08:37:26.638Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T08:37:26.641Z] [resolveImageKeys] Resolving 1 keys: my_day (format=api-path, useUnapproved=true)
+[2026-05-24T08:37:27.888Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-24T08:37:27.889Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T08:37:37.138Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:37:37.139Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:37:37.142Z] [resolveImageKeys] Resolving 1 keys: my_day (format=api-path, useUnapproved=true)
+[2026-05-24T08:37:37.856Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-24T08:37:37.857Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T08:44:51.937Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:44:51.938Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:44:53.057Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:44:53.059Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:44:53.062Z] [resolveImageKeys] Resolving 1 keys: new_thing (format=api-path, useUnapproved=true)
+[2026-05-24T08:44:54.343Z] [resolveImageKeys] No symbol found for "new_thing"
+[2026-05-24T08:44:54.345Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: new_thing
+[2026-05-24T08:44:54.347Z] [queueGeneration] Queuing 1 keys: new_thing (hasCallback=true)
+[2026-05-24T08:44:56.374Z] [processQueue] Generating "new_thing"...
+[2026-05-24T08:45:03.951Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:45:03.952Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:45:18.731Z] [COST] imageKey="new_thing" | refinement: gemini/gemini-2.5-flash in=727 out=67 | image: openai/gpt-image-1 in=76 out=272
+[2026-05-24T08:45:18.731Z] [processQueue] Generated "new_thing" → aa5b87f6-6561-4e8e-b6f6-3b1cd7c7a786 (1 total)
+[2026-05-24T08:45:18.732Z] [processQueue] FULL REFINED PROMPT for "new_thing": A bold, simple AAC symbol icon on a transparent background depicting a bright green sprout emerging from a small brown patch of earth. The sprout has two simple green leaves. A single, curved yellow arrow points upwards and to the right from the sprout, indicating newness or growth. The illustration uses thick black outlines and flat, solid colors.
+[2026-05-24T08:45:49.723Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:45:49.723Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:45:49.725Z] [resolveImageKeys] Resolving 3 keys: computer_game, do, homework (format=api-path, useUnapproved=true)
+[2026-05-24T08:45:50.372Z] [resolveImageKeys] No symbol found for "computer_game"
+[2026-05-24T08:45:51.302Z] [resolveImageKeys] No symbol found for "do"
+[2026-05-24T08:45:51.456Z] [resolveImageKeys] No symbol found for "homework"
+[2026-05-24T08:45:51.457Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: computer_game, do, homework
+[2026-05-24T08:45:51.458Z] [queueGeneration] Queuing 3 keys: computer_game, do, homework (hasCallback=true)
+[2026-05-24T08:45:51.613Z] [processQueue] Generating "homework"...
+[2026-05-24T08:46:06.715Z] [COST] imageKey="homework" | refinement: gemini/gemini-2.5-flash in=726 out=88 | image: openai/gpt-image-1 in=95 out=272
+[2026-05-24T08:46:06.716Z] [processQueue] Generated "homework" → d0cc124c-b233-46b9-a042-353b033c0c46 (1 total)
+[2026-05-24T08:46:06.721Z] [processQueue] FULL REFINED PROMPT for "homework": A simple, bold AAC symbol icon of a stack of three books with a pencil resting diagonally across the top book. The books are rectangular, shown from the side, with distinct spine colors (e.g., blue, green, red). The pencil is yellow with a pink eraser and a dark gray tip. The entire illustration has thick black outlines and uses flat, solid colors on a transparent background, suitable for instant recognition at small sizes.
+[2026-05-24T08:46:11.834Z] [processQueue] Generating "do"...
+[2026-05-24T08:46:28.839Z] [COST] imageKey="do" | refinement: gemini/gemini-2.5-flash in=726 out=94 | image: openai/gpt-image-1 in=98 out=272
+[2026-05-24T08:46:28.841Z] [processQueue] Generated "do" → 5594a41b-1779-4996-8f4b-32211c15c2ba (2 total)
+[2026-05-24T08:46:28.843Z] [processQueue] FULL REFINED PROMPT for "do": A simple, bold AAC symbol illustration of a generic human figure with a slightly oversized head and no hair, facing forward. The figure's arms are extended forward and slightly bent at the elbows, with open hands palms-down, as if performing an action. The figure is colored light blue, with a bold black outline around all shapes. The illustration uses flat, solid colors with no gradients, shadows, highlights, or 3D effects, on a transparent background.
+[2026-05-24T08:46:33.023Z] [processQueue] Generating "computer_game"...
+[2026-05-24T08:46:39.200Z] [resolveImageKeys] Resolving 2 keys: my_opinion, a_story (format=api-path, useUnapproved=true)
+[2026-05-24T08:46:39.805Z] [resolveImageKeys] No symbol found for "my_opinion"
+[2026-05-24T08:46:40.950Z] [resolveImageKeys] No symbol found for "a_story"
+[2026-05-24T08:46:40.951Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: my_opinion, a_story
+[2026-05-24T08:46:40.952Z] [queueGeneration] Queuing 2 keys: my_opinion, a_story (hasCallback=true)
+[2026-05-24T08:46:46.741Z] [COST] imageKey="computer_game" | refinement: gemini/gemini-2.5-flash in=727 out=101 | image: openai/gpt-image-1 in=107 out=272
+[2026-05-24T08:46:46.742Z] [processQueue] Generated "computer_game" → cc2bd57e-f069-4b76-b075-2eb25723839d (3 total)
+[2026-05-24T08:46:46.742Z] [processQueue] FULL REFINED PROMPT for "computer_game": A simple, bold illustration of a classic video game controller, shown from a slightly angled front view. The controller has a prominent directional pad on the left, four action buttons on the right, and two central buttons. All shapes have bold black outlines and are filled with flat, solid colors: the controller body is dark gray, the directional pad is light gray, and the action buttons are red, blue, green, and yellow. The icon is centered on a transparent background, instantly recognizable at small sizes.
+[2026-05-24T08:46:50.912Z] [processQueue] Generating "a_story"...
+[2026-05-24T08:47:05.955Z] [COST] imageKey="a_story" | refinement: gemini/gemini-2.5-flash in=727 out=86 | image: openai/gpt-image-1 in=93 out=272
+[2026-05-24T08:47:05.956Z] [processQueue] Generated "a_story" → fed6186f-4248-4999-b06c-a60468d0fa09 (4 total)
+[2026-05-24T08:47:05.956Z] [processQueue] FULL REFINED PROMPT for "a_story": A simple, bold AAC symbol icon of an open book with a red cover, lying flat and open to reveal two blank white pages. The book is centered on a transparent background, outlined in thick black, with flat, solid colors and no gradients or shadows. A single, stylized yellow star is depicted above the right page, and a small, simple blue speech bubble is depicted above the left page, indicating a narrative or tale.
+[2026-05-24T08:47:10.135Z] [processQueue] Generating "my_opinion"...
+[2026-05-24T08:47:38.036Z] [COST] imageKey="my_opinion" | refinement: gemini/gemini-2.5-flash in=727 out=74 | image: openai/gpt-image-1 in=81 out=272
+[2026-05-24T08:47:38.037Z] [processQueue] Generated "my_opinion" → 637467f9-a674-4034-b5be-6690d0f3e0f9 (5 total)
+[2026-05-24T08:47:38.037Z] [processQueue] FULL REFINED PROMPT for "my_opinion": A simple, bold AAC symbol icon depicting a generic human head in profile, facing right. A thought bubble emerges from the top of the head, containing a single, large, stylized question mark. The head has a simple dot for an eye and a small curved line for a mouth. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-24T08:59:02.376Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:59:02.379Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:59:39.048Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:59:39.048Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:59:50.729Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T08:59:50.730Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T08:59:50.733Z] [resolveImageKeys] Resolving 1 keys: hot_chocolate (format=api-path, useUnapproved=true)
+[2026-05-24T08:59:51.605Z] [resolveImageKeys] No symbol found for "hot_chocolate"
+[2026-05-24T08:59:51.605Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: hot_chocolate
+[2026-05-24T08:59:51.606Z] [queueGeneration] Queuing 1 keys: hot_chocolate (hasCallback=true)
+[2026-05-24T08:59:53.126Z] [processQueue] Generating "hot_chocolate"...
+[2026-05-24T09:00:04.994Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:00:04.994Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:00:10.478Z] [COST] imageKey="hot_chocolate" | refinement: gemini/gemini-2.5-flash in=727 out=83 | image: openai/gpt-image-1 in=90 out=272
+[2026-05-24T09:00:10.481Z] [processQueue] Generated "hot_chocolate" → 7189014b-c1b1-4968-84fc-bcb4e104b271 (1 total)
+[2026-05-24T09:00:10.483Z] [processQueue] FULL REFINED PROMPT for "hot_chocolate": A simple, bold illustration of a steaming mug of hot chocolate. The mug is shown from the side, filled to the brim with dark brown hot chocolate, topped with a swirl of white whipped cream. Two simple, wavy steam lines rise from the top of the mug. The mug itself is a solid, warm brown color. The entire illustration has thick black outlines and uses flat, solid colors on a transparent background.
+[2026-05-24T09:00:12.682Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:00:12.684Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:00:29.250Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:00:29.253Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:00:50.111Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:00:50.112Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:01:02.089Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:01:02.091Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:42:18.415Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:42:18.416Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:42:19.519Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:42:19.520Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T09:43:06.725Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T09:43:06.726Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T11:26:44.381Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T11:26:44.383Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T11:26:53.688Z] [resolveImageKeys] Resolving 1 keys: my_day (format=internal, useUnapproved=true)
+[2026-05-24T11:26:54.246Z] [resolveImageKeys] Resolved "my_day" → __SYMBOL__:d4c49758-247d-4393-9ded-94d418c01b82
+[2026-05-24T11:26:54.247Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T11:26:54.250Z] [resolveImageKeys] Resolving 2 keys: my_day, interest (format=api-path, useUnapproved=true)
+[2026-05-24T11:26:55.205Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-24T11:26:58.645Z] [resolveImageKeys] No symbol found for "interest"
+[2026-05-24T11:26:58.646Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: interest
+[2026-05-24T11:26:58.651Z] [queueGeneration] Queuing 1 keys: interest (hasCallback=true)
+[2026-05-24T11:26:59.106Z] [processQueue] Generating "interest"...
+[2026-05-24T11:27:13.146Z] [resolveImageKeys] Resolving 2 keys: movies, sport (format=internal, useUnapproved=true)
+[2026-05-24T11:27:13.747Z] [resolveImageKeys] No symbol found for "movies"
+[2026-05-24T11:27:14.568Z] [resolveImageKeys] No symbol found for "sport"
+[2026-05-24T11:27:14.569Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: movies, sport
+[2026-05-24T11:27:14.570Z] [queueGeneration] Queuing 2 keys: movies, sport (hasCallback=true)
+[2026-05-24T11:27:14.572Z] [resolveImageKeys] Resolving 2 keys: movies, sport (format=api-path, useUnapproved=true)
+[2026-05-24T11:27:17.486Z] [resolveImageKeys] No symbol found for "movies"
+[2026-05-24T11:27:20.359Z] [COST] imageKey="interest" | refinement: gemini/gemini-2.5-flash in=726 out=101 | image: openai/gpt-image-1 in=107 out=272
+[2026-05-24T11:27:20.361Z] [processQueue] Generated "interest" → e65568c2-0727-4d5a-b29b-80d0d5a736b5 (1 total)
+[2026-05-24T11:27:20.362Z] [processQueue] FULL REFINED PROMPT for "interest": A simple AAC symbol icon depicting the concept of "interest." A generic human figure, with a slightly stylized large head, has wide, curious eyes (simple dots) and an open mouth (small curve) indicating surprise and engagement. The figure's head is tilted slightly, and one hand is raised with an index finger pointing upwards, as if asking a question or indicating focus. The illustration uses bold black outlines and flat, solid, saturated colors, with no gradients or shadows, on a transparent background.
+[2026-05-24T11:27:22.322Z] [resolveImageKeys] No symbol found for "sport"
+[2026-05-24T11:27:22.323Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: movies, sport
+[2026-05-24T11:27:22.324Z] [queueGeneration] Queuing 2 keys: movies, sport (hasCallback=true)
+[2026-05-24T11:27:24.540Z] [processQueue] Generating "sport"...
+[2026-05-24T11:27:41.784Z] [COST] imageKey="sport" | refinement: gemini/gemini-2.5-flash in=726 out=63 | image: openai/gpt-image-1 in=70 out=272
+[2026-05-24T11:27:41.784Z] [processQueue] Generated "sport" → 6f418f2f-b387-40bb-b9e7-0ad414741322 (2 total)
+[2026-05-24T11:27:41.785Z] [processQueue] FULL REFINED PROMPT for "sport": A simple, bold AAC symbol icon depicting a red soccer ball with black pentagons, shown from a slightly angled side view. The ball has two short, curved black motion lines on either side to indicate movement. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition on a transparent background.
+[2026-05-24T11:27:45.968Z] [processQueue] "sport" already exists → 6f418f2f-b387-40bb-b9e7-0ad414741322
+[2026-05-24T11:27:50.166Z] [processQueue] Generating "movies"...
+[2026-05-24T11:28:04.250Z] [COST] imageKey="movies" | refinement: gemini/gemini-2.5-flash in=726 out=82 | image: openai/gpt-image-1 in=88 out=272
+[2026-05-24T11:28:04.251Z] [processQueue] Generated "movies" → b0671e7b-cddf-409b-9e92-469c0e14643a (3 total)
+[2026-05-24T11:28:04.251Z] [processQueue] FULL REFINED PROMPT for "movies": A simple, bold illustration of a classic film clapperboard, shown from the front, open with the top board slightly angled up. The clapperboard is black with white stripes on the top board and white text boxes on the main board, all outlined in thick black. The background is transparent. The icon uses flat, solid colors with no gradients or shadows, and has thick black outlines around all shapes.
+[2026-05-24T11:28:08.436Z] [processQueue] "movies" already exists → b0671e7b-cddf-409b-9e92-469c0e14643a
+[2026-05-24T11:28:21.083Z] [resolveImageKeys] Resolving 2 keys: internet, tech_news (format=internal, useUnapproved=true)
+[2026-05-24T11:28:21.996Z] [resolveImageKeys] No symbol found for "internet"
+[2026-05-24T11:28:23.003Z] [resolveImageKeys] No symbol found for "tech_news"
+[2026-05-24T11:28:23.004Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: internet, tech_news
+[2026-05-24T11:28:23.005Z] [queueGeneration] Queuing 2 keys: internet, tech_news (hasCallback=true)
+[2026-05-24T11:28:23.009Z] [resolveImageKeys] Resolving 2 keys: internet, tech_news (format=api-path, useUnapproved=true)
+[2026-05-24T11:28:23.334Z] [processQueue] Generating "tech_news"...
+[2026-05-24T11:28:23.359Z] [resolveImageKeys] No symbol found for "internet"
+[2026-05-24T11:28:23.534Z] [resolveImageKeys] No symbol found for "tech_news"
+[2026-05-24T11:28:23.535Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: internet, tech_news
+[2026-05-24T11:28:23.536Z] [queueGeneration] Queuing 2 keys: internet, tech_news (hasCallback=true)
+[2026-05-24T11:28:35.902Z] [COST] imageKey="tech_news" | refinement: gemini/gemini-2.5-flash in=727 out=81 | image: openai/gpt-image-1 in=87 out=272
+[2026-05-24T11:28:35.903Z] [processQueue] Generated "tech_news" → 882e80f3-c37e-4cda-a56c-2628d1d5b36e (1 total)
+[2026-05-24T11:28:35.904Z] [processQueue] FULL REFINED PROMPT for "tech_news": A bold AAC symbol icon depicting a generic human figure with a simple, round head and dot eyes, holding a rectangular tablet device. The tablet screen shows a simplified newspaper icon with a few horizontal lines representing text. The figure is centered, with a slight tilt of the head towards the tablet, indicating engagement. The illustration uses a limited palette of saturated colors, with strong black outlines and no gradients or shadows.
+[2026-05-24T11:28:40.094Z] [processQueue] "tech_news" already exists → 882e80f3-c37e-4cda-a56c-2628d1d5b36e
+[2026-05-24T11:28:44.274Z] [processQueue] Generating "internet"...
+[2026-05-24T11:29:02.067Z] [COST] imageKey="internet" | refinement: gemini/gemini-2.5-flash in=726 out=66 | image: openai/gpt-image-1 in=74 out=272
+[2026-05-24T11:29:02.068Z] [processQueue] Generated "internet" → 48f3f263-a07e-489c-8623-db6b927aceae (2 total)
+[2026-05-24T11:29:02.069Z] [processQueue] FULL REFINED PROMPT for "internet": A bold, simple illustration of a stylized globe with a prominent black outline. The globe is blue with light blue landmasses, centered on the canvas. A curved, light gray line with small, light gray circles representing data points wraps around the globe, symbolizing connectivity. The icon uses flat, solid colors and has no background.
+[2026-05-24T11:29:06.248Z] [processQueue] "internet" already exists → 48f3f263-a07e-489c-8623-db6b927aceae
+[2026-05-24T11:29:13.786Z] [resolveImageKeys] Resolving 5 keys: internet, tech_news, social_media, email, online_shopping (format=internal, useUnapproved=true)
+[2026-05-24T11:29:14.329Z] [resolveImageKeys] Resolved "internet" → __SYMBOL__:48f3f263-a07e-489c-8623-db6b927aceae
+[2026-05-24T11:29:15.313Z] [resolveImageKeys] Resolved "tech_news" → __SYMBOL__:882e80f3-c37e-4cda-a56c-2628d1d5b36e
+[2026-05-24T11:29:15.480Z] [resolveImageKeys] No symbol found for "social_media"
+[2026-05-24T11:29:15.646Z] [resolveImageKeys] No symbol found for "email"
+[2026-05-24T11:29:15.813Z] [resolveImageKeys] No symbol found for "online_shopping"
+[2026-05-24T11:29:15.813Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: social_media, email, online_shopping
+[2026-05-24T11:29:15.813Z] [queueGeneration] Queuing 3 keys: social_media, email, online_shopping (hasCallback=true)
+[2026-05-24T11:29:15.816Z] [resolveImageKeys] Resolving 5 keys: internet, tech_news, social_media, email, online_shopping (format=api-path, useUnapproved=true)
+[2026-05-24T11:29:15.982Z] [processQueue] Generating "online_shopping"...
+[2026-05-24T11:29:16.149Z] [resolveImageKeys] Resolved "internet" → /api/custom-symbols/48f3f263-a07e-489c-8623-db6b927aceae/image
+[2026-05-24T11:29:16.312Z] [resolveImageKeys] Resolved "tech_news" → /api/custom-symbols/882e80f3-c37e-4cda-a56c-2628d1d5b36e/image
+[2026-05-24T11:29:16.476Z] [resolveImageKeys] No symbol found for "social_media"
+[2026-05-24T11:29:16.639Z] [resolveImageKeys] No symbol found for "email"
+[2026-05-24T11:29:16.802Z] [resolveImageKeys] No symbol found for "online_shopping"
+[2026-05-24T11:29:16.803Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: social_media, email, online_shopping
+[2026-05-24T11:29:16.821Z] [queueGeneration] Queuing 3 keys: social_media, email, online_shopping (hasCallback=true)
+[2026-05-24T11:29:31.212Z] [COST] imageKey="online_shopping" | refinement: gemini/gemini-2.5-flash in=727 out=90 | image: openai/gpt-image-1 in=97 out=272
+[2026-05-24T11:29:31.213Z] [processQueue] Generated "online_shopping" → 92de3b55-0bcb-48af-bd7a-00d15f1a4943 (1 total)
+[2026-05-24T11:29:31.213Z] [processQueue] FULL REFINED PROMPT for "online_shopping": A simple, bold AAC symbol icon depicting online shopping. The icon features a stylized, generic human figure, seen from the chest up, with simple dot eyes and a small curved mouth. The figure holds a tablet or smartphone in both hands, clearly displaying a shopping cart icon on its screen. The shopping cart is a simple, universally recognized outline. The figure and device are rendered with thick black outlines and flat, solid colors, on a transparent background.
+[2026-05-24T11:29:36.878Z] [processQueue] "online_shopping" already exists → 92de3b55-0bcb-48af-bd7a-00d15f1a4943
+[2026-05-24T11:29:41.621Z] [processQueue] Generating "email"...
+[2026-05-24T11:29:59.422Z] [COST] imageKey="email" | refinement: gemini/gemini-2.5-flash in=726 out=82 | image: openai/gpt-image-1 in=88 out=272
+[2026-05-24T11:29:59.423Z] [processQueue] Generated "email" → 186d1a5a-080a-4bfb-afc4-0c61d71ec5fc (2 total)
+[2026-05-24T11:29:59.424Z] [processQueue] FULL REFINED PROMPT for "email": A simple, bold illustration of a white envelope with a blue "at" symbol (@) centered on its front, depicted from a slightly angled front view. The envelope has a triangular flap on top, outlined in black. The "at" symbol is solid blue with a thick black outline. The entire icon has a thick black outline, flat solid colors, and no gradients or shadows, on a transparent background.
+[2026-05-24T11:30:03.603Z] [processQueue] Generating "social_media"...
+[2026-05-24T11:30:17.947Z] [COST] imageKey="social_media" | refinement: gemini/gemini-2.5-flash in=727 out=74 | image: openai/gpt-image-1 in=82 out=272
+[2026-05-24T11:30:17.949Z] [processQueue] Generated "social_media" → d4152907-b457-4725-9f51-d8f03cd27be8 (3 total)
+[2026-05-24T11:30:17.950Z] [processQueue] FULL REFINED PROMPT for "social_media": A simple, bold illustration of a white square speech bubble icon with a black outline, containing a white stylized "at" symbol (@) in its center, also with a black outline. The speech bubble has a small, triangular tail pointing downwards from its bottom right. The icon is rendered with flat, solid colors on a transparent background, suitable for an AAC communication board.
+[2026-05-24T11:30:22.140Z] [processQueue] "email" already exists → 186d1a5a-080a-4bfb-afc4-0c61d71ec5fc
+[2026-05-24T11:30:26.323Z] [processQueue] "social_media" already exists → d4152907-b457-4725-9f51-d8f03cd27be8
+[2026-05-24T12:35:03.236Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:35:03.237Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:35:03.243Z] [resolveImageKeys] Resolving 1 keys: news (format=api-path, useUnapproved=true)
+[2026-05-24T12:35:03.903Z] [resolveImageKeys] No symbol found for "news"
+[2026-05-24T12:35:03.904Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: news
+[2026-05-24T12:35:03.904Z] [queueGeneration] Queuing 1 keys: news (hasCallback=true)
+[2026-05-24T12:35:04.699Z] [processQueue] Generating "news"...
+[2026-05-24T12:35:20.486Z] [COST] imageKey="news" | refinement: gemini/gemini-2.5-flash in=726 out=75 | image: openai/gpt-image-1 in=82 out=272
+[2026-05-24T12:35:20.487Z] [processQueue] Generated "news" → aa8598e9-8554-4140-9938-72ec4e11ffb7 (1 total)
+[2026-05-24T12:35:20.489Z] [processQueue] FULL REFINED PROMPT for "news": A simple, bold AAC symbol icon of a television screen displaying a news report. The television is a grey rectangle with a slightly darker grey screen. On the screen, a simple white microphone is depicted, angled slightly to the right, with a few white sound waves emanating from its top. The entire icon has thick black outlines and uses flat, solid colors on a transparent background.
+[2026-05-24T12:35:33.874Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:35:33.875Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:37:20.972Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:37:20.972Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:37:51.713Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:37:51.714Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:37:51.720Z] [resolveImageKeys] Resolving 1 keys: neighborhood (format=api-path, useUnapproved=true)
+[2026-05-24T12:37:52.453Z] [resolveImageKeys] No symbol found for "neighborhood"
+[2026-05-24T12:37:52.454Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: neighborhood
+[2026-05-24T12:37:52.455Z] [queueGeneration] Queuing 1 keys: neighborhood (hasCallback=true)
+[2026-05-24T12:37:53.279Z] [processQueue] Generating "neighborhood"...
+[2026-05-24T12:38:07.955Z] [COST] imageKey="neighborhood" | refinement: gemini/gemini-2.5-flash in=726 out=105 | image: openai/gpt-image-1 in=112 out=272
+[2026-05-24T12:38:07.956Z] [processQueue] Generated "neighborhood" → 7e199b4f-2539-48d9-941d-366aa6649904 (1 total)
+[2026-05-24T12:38:07.959Z] [processQueue] FULL REFINED PROMPT for "neighborhood": A simple, bold illustration of a neighborhood, featuring three stylized houses with triangular roofs and square bodies, each with a single square window and a rectangular door. The houses are arranged in a row, slightly overlapping, with a curved gray path leading in front of them. A small, simple green tree with a round canopy stands between two of the houses. The illustration uses flat, solid colors: red, blue, and yellow for the houses, green for the tree, and gray for the path, all outlined in bold black.
+[2026-05-24T12:38:18.371Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:38:18.372Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:39:46.489Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:39:46.489Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:39:46.493Z] [resolveImageKeys] Resolving 2 keys: history, internet (format=api-path, useUnapproved=true)
+[2026-05-24T12:39:47.145Z] [resolveImageKeys] No symbol found for "history"
+[2026-05-24T12:39:48.089Z] [resolveImageKeys] Resolved "internet" → /api/custom-symbols/48f3f263-a07e-489c-8623-db6b927aceae/image
+[2026-05-24T12:39:48.089Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: history
+[2026-05-24T12:39:48.092Z] [queueGeneration] Queuing 1 keys: history (hasCallback=true)
+[2026-05-24T12:39:48.304Z] [processQueue] Generating "history"...
+[2026-05-24T12:40:03.015Z] [COST] imageKey="history" | refinement: gemini/gemini-2.5-flash in=726 out=123 | image: openai/gpt-image-1 in=130 out=272
+[2026-05-24T12:40:03.015Z] [processQueue] Generated "history" → 11732072-c2eb-4a13-858d-5e251826ac92 (1 total)
+[2026-05-24T12:40:03.017Z] [processQueue] FULL REFINED PROMPT for "history": A simple, bold AAC symbol icon depicting the concept of "history." The icon features a stylized, open book with a scroll unfurling from its pages, indicating the passage of time and recorded events. The book is shown from a slightly angled front view, with a dark brown cover and light beige pages, outlined in thick black. The scroll is light beige with a subtle, dark brown line representing text, unfurling to the right, also with a thick black outline. The overall image is clean, uses flat, solid colors, and is centered on a transparent background, ensuring instant recognition at small sizes.
+[2026-05-24T12:40:03.794Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T12:40:03.795Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T12:40:17.483Z] [resolveImageKeys] Resolving 1 keys: your_day (format=internal, useUnapproved=true)
+[2026-05-24T12:40:18.016Z] [resolveImageKeys] No symbol found for "your_day"
+[2026-05-24T12:40:18.016Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: your_day
+[2026-05-24T12:40:18.017Z] [queueGeneration] Queuing 1 keys: your_day (hasCallback=true)
+[2026-05-24T12:40:18.022Z] [resolveImageKeys] Resolving 1 keys: your_day (format=api-path, useUnapproved=true)
+[2026-05-24T12:40:18.991Z] [processQueue] Generating "your_day"...
+[2026-05-24T12:40:19.059Z] [resolveImageKeys] No symbol found for "your_day"
+[2026-05-24T12:40:19.059Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: your_day
+[2026-05-24T12:40:19.060Z] [queueGeneration] Queuing 1 keys: your_day (hasCallback=true)
+[2026-05-24T12:40:36.328Z] [COST] imageKey="your_day" | refinement: gemini/gemini-2.5-flash in=727 out=116 | image: openai/gpt-image-1 in=123 out=272
+[2026-05-24T12:40:36.330Z] [processQueue] Generated "your_day" → 60aa9d04-4992-4e47-a53a-4cbc5bac7f7a (1 total)
+[2026-05-24T12:40:36.331Z] [processQueue] FULL REFINED PROMPT for "your_day": A simple AAC symbol icon depicting a bright yellow sun with a smiling face in the upper left corner, casting rays downwards towards a green grassy hill in the lower right corner. A simple, generic human figure with a large head and small body stands on the hill, facing forward with arms slightly out, indicating the start of a day. The sun has simple black outlines for its rays and facial features (two dots for eyes, a small curved line for a smile), and the figure has a simple black outline. The hill is a solid green, and the sun is a solid yellow.
+[2026-05-24T12:40:37.089Z] [resolveImageKeys] Resolving 1 keys: your_day (format=internal, useUnapproved=true)
+[2026-05-24T12:40:37.589Z] [resolveImageKeys] Resolved "your_day" → __SYMBOL__:60aa9d04-4992-4e47-a53a-4cbc5bac7f7a
+[2026-05-24T12:40:37.590Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T12:40:37.595Z] [resolveImageKeys] Resolving 1 keys: your_day (format=api-path, useUnapproved=true)
+[2026-05-24T12:40:38.724Z] [resolveImageKeys] Resolved "your_day" → /api/custom-symbols/60aa9d04-4992-4e47-a53a-4cbc5bac7f7a/image
+[2026-05-24T12:40:38.724Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T12:40:40.527Z] [processQueue] "your_day" already exists → 60aa9d04-4992-4e47-a53a-4cbc5bac7f7a
+[2026-05-24T13:13:42.923Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T13:13:42.938Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T13:30:20.325Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T13:30:20.327Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T13:31:36.727Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T13:31:36.729Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T13:32:51.709Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T13:32:51.710Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T13:33:12.304Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T13:33:12.305Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T13:33:23.946Z] [resolveImageKeys] Resolving 5 keys: thriller_book, fantasy_book, history_book, scifi_book, comic_book (format=internal, useUnapproved=true)
+[2026-05-24T13:33:24.474Z] [resolveImageKeys] No symbol found for "thriller_book"
+[2026-05-24T13:33:25.317Z] [resolveImageKeys] No symbol found for "fantasy_book"
+[2026-05-24T13:33:26.842Z] [resolveImageKeys] No symbol found for "history_book"
+[2026-05-24T13:33:31.177Z] [resolveImageKeys] No symbol found for "scifi_book"
+[2026-05-24T13:33:31.345Z] [resolveImageKeys] No symbol found for "comic_book"
+[2026-05-24T13:33:31.346Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: thriller_book, fantasy_book, history_book, scifi_book, comic_book
+[2026-05-24T13:33:31.347Z] [queueGeneration] Queuing 5 keys: thriller_book, fantasy_book, history_book, scifi_book, comic_book (hasCallback=true)
+[2026-05-24T13:33:31.351Z] [resolveImageKeys] Resolving 5 keys: thriller_book, fantasy_book, history_book, scifi_book, comic_book (format=api-path, useUnapproved=true)
+[2026-05-24T13:33:31.525Z] [processQueue] Generating "comic_book"...
+[2026-05-24T13:33:31.684Z] [resolveImageKeys] No symbol found for "thriller_book"
+[2026-05-24T13:33:31.850Z] [resolveImageKeys] No symbol found for "fantasy_book"
+[2026-05-24T13:33:32.016Z] [resolveImageKeys] No symbol found for "history_book"
+[2026-05-24T13:33:32.183Z] [resolveImageKeys] No symbol found for "scifi_book"
+[2026-05-24T13:33:32.361Z] [resolveImageKeys] No symbol found for "comic_book"
+[2026-05-24T13:33:32.363Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: thriller_book, fantasy_book, history_book, scifi_book, comic_book
+[2026-05-24T13:33:32.364Z] [queueGeneration] Queuing 5 keys: thriller_book, fantasy_book, history_book, scifi_book, comic_book (hasCallback=true)
+[2026-05-24T13:33:54.337Z] [resolveImageKeys] Resolving 2 keys: favorite_author, favorite_book (format=internal, useUnapproved=true)
+[2026-05-24T13:33:54.385Z] [COST] imageKey="comic_book" | refinement: gemini/gemini-2.5-flash in=727 out=93 | image: openai/gpt-image-1 in=99 out=272
+[2026-05-24T13:33:54.386Z] [processQueue] Generated "comic_book" → c99d6dd2-2090-4874-8a5f-3d7d029a67cd (1 total)
+[2026-05-24T13:33:54.387Z] [processQueue] FULL REFINED PROMPT for "comic_book": A simple, bold AAC symbol icon of an open comic book. The comic book is shown from a slightly angled front view, revealing two pages with distinct panels. Each panel contains a simple, abstract shape or line drawing, resembling a speech bubble and an action line. The comic book has a red cover and white pages, with thick black outlines around all shapes and panels. The illustration uses flat, solid colors with no gradients or shadows, centered on a transparent background.
+[2026-05-24T13:33:54.907Z] [resolveImageKeys] No symbol found for "favorite_author"
+[2026-05-24T13:33:55.945Z] [resolveImageKeys] No symbol found for "favorite_book"
+[2026-05-24T13:33:55.946Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: favorite_author, favorite_book
+[2026-05-24T13:33:55.947Z] [queueGeneration] Queuing 2 keys: favorite_author, favorite_book (hasCallback=true)
+[2026-05-24T13:33:55.950Z] [resolveImageKeys] Resolving 4 keys: favorite_author, favorite_book, let_us, movies_now (format=api-path, useUnapproved=true)
+[2026-05-24T13:33:59.414Z] [resolveImageKeys] No symbol found for "favorite_author"
+[2026-05-24T13:34:01.524Z] [processQueue] "comic_book" already exists → c99d6dd2-2090-4874-8a5f-3d7d029a67cd
+[2026-05-24T13:34:01.604Z] [resolveImageKeys] No symbol found for "favorite_book"
+[2026-05-24T13:34:01.944Z] [resolveImageKeys] No symbol found for "let_us"
+[2026-05-24T13:34:02.207Z] [resolveImageKeys] No symbol found for "movies_now"
+[2026-05-24T13:34:02.208Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: favorite_author, favorite_book, let_us, movies_now
+[2026-05-24T13:34:02.209Z] [queueGeneration] Queuing 4 keys: favorite_author, favorite_book, let_us, movies_now (hasCallback=true)
+[2026-05-24T13:34:05.706Z] [processQueue] Generating "favorite_book"...
+[2026-05-24T13:34:21.313Z] [COST] imageKey="favorite_book" | refinement: gemini/gemini-2.5-flash in=727 out=90 | image: openai/gpt-image-1 in=96 out=272
+[2026-05-24T13:34:21.314Z] [processQueue] Generated "favorite_book" → 81a7af93-3cd3-4d52-8f70-6f1184d1f649 (2 total)
+[2026-05-24T13:34:21.316Z] [processQueue] FULL REFINED PROMPT for "favorite_book": A simple, bold illustration of an open book, viewed from a slightly elevated angle, with its pages spread open and a small, stylized heart icon floating above the center of the open pages. The book has a solid color cover, and the pages are a light off-white color. The heart is a solid red. All shapes have thick black outlines, and the image uses flat, solid colors on a transparent background, suitable for an AAC symbol.
+[2026-05-24T13:34:25.499Z] [processQueue] Generating "movies_now"...
+[2026-05-24T13:34:42.413Z] [COST] imageKey="movies_now" | refinement: gemini/gemini-2.5-flash in=727 out=92 | image: openai/gpt-image-1 in=98 out=272
+[2026-05-24T13:34:42.414Z] [processQueue] Generated "movies_now" → a140f411-76e9-439a-9398-5f2aee289a82 (3 total)
+[2026-05-24T13:34:42.415Z] [processQueue] FULL REFINED PROMPT for "movies_now": A bold, simple AAC symbol icon depicting a classic film clapperboard, open with the top part angled slightly upwards, revealing the "SCENE" and "TAKE" sections. The clapperboard is black with white text areas, and the iconic diagonal stripes on the clapper are black and white. The clapperboard is centered on a transparent background, rendered with thick black outlines and flat, solid colors, suitable for instant recognition at small sizes.
+[2026-05-24T13:34:46.607Z] [processQueue] Generating "let_us"...
+[2026-05-24T13:34:55.541Z] [resolveImageKeys] Resolving 6 keys: its_called, adventure_book, sad_book, funny_book, new_book, old_book (format=internal, useUnapproved=true)
+[2026-05-24T13:34:56.080Z] [resolveImageKeys] No symbol found for "its_called"
+[2026-05-24T13:34:57.730Z] [resolveImageKeys] No symbol found for "adventure_book"
+[2026-05-24T13:35:04.716Z] [resolveImageKeys] No symbol found for "sad_book"
+[2026-05-24T13:35:08.976Z] [COST] imageKey="let_us" | refinement: gemini/gemini-2.5-flash in=727 out=70 | image: openai/gpt-image-1 in=76 out=272
+[2026-05-24T13:35:08.977Z] [processQueue] Generated "let_us" → 8dfef24e-3ead-4069-815c-8e46fa200a69 (4 total)
+[2026-05-24T13:35:08.978Z] [processQueue] FULL REFINED PROMPT for "let_us": A simple, bold illustration of two generic human figures, facing each other, with their hands clasped together in the center. Both figures have simple dot eyes and small curved mouths. The figures are rendered in flat, solid colors with bold black outlines, on a transparent background. The composition is centered, with the figures filling most of the square canvas.
+[2026-05-24T13:35:09.784Z] [resolveImageKeys] No symbol found for "funny_book"
+[2026-05-24T13:35:10.542Z] [resolveImageKeys] Resolved "new_book" → __SYMBOL__:81beea35-4ce3-446d-891f-7e9653b527c4
+[2026-05-24T13:35:11.143Z] [resolveImageKeys] No symbol found for "old_book"
+[2026-05-24T13:35:11.144Z] [resolveImageKeys] Done. Resolved 1, unresolved 5: its_called, adventure_book, sad_book, funny_book, old_book
+[2026-05-24T13:35:11.145Z] [queueGeneration] Queuing 5 keys: its_called, adventure_book, sad_book, funny_book, old_book (hasCallback=true)
+[2026-05-24T13:35:11.148Z] [resolveImageKeys] Resolving 6 keys: its_called, adventure_book, sad_book, funny_book, new_book, old_book (format=api-path, useUnapproved=true)
+[2026-05-24T13:35:11.647Z] [resolveImageKeys] No symbol found for "its_called"
+[2026-05-24T13:35:11.889Z] [resolveImageKeys] No symbol found for "adventure_book"
+[2026-05-24T13:35:12.056Z] [resolveImageKeys] No symbol found for "sad_book"
+[2026-05-24T13:35:12.227Z] [resolveImageKeys] No symbol found for "funny_book"
+[2026-05-24T13:35:12.395Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-24T13:35:12.563Z] [resolveImageKeys] No symbol found for "old_book"
+[2026-05-24T13:35:12.563Z] [resolveImageKeys] Done. Resolved 1, unresolved 5: its_called, adventure_book, sad_book, funny_book, old_book
+[2026-05-24T13:35:12.566Z] [queueGeneration] Queuing 5 keys: its_called, adventure_book, sad_book, funny_book, old_book (hasCallback=true)
+[2026-05-24T13:35:13.158Z] [processQueue] "favorite_book" already exists → 81a7af93-3cd3-4d52-8f70-6f1184d1f649
+[2026-05-24T13:35:17.349Z] [processQueue] Generating "old_book"...
+[2026-05-24T13:35:32.954Z] [COST] imageKey="old_book" | refinement: gemini/gemini-2.5-flash in=727 out=84 | image: openai/gpt-image-1 in=89 out=272
+[2026-05-24T13:35:32.954Z] [processQueue] Generated "old_book" → 2f621f5c-3d63-4008-9ff6-9082428bbe9d (5 total)
+[2026-05-24T13:35:32.956Z] [processQueue] FULL REFINED PROMPT for "old_book": A simple, bold illustration of an old book, closed and viewed from a slightly angled front-side perspective. The book has a dark brown cover with a subtle texture, a yellowed page block visible from the side, and a few simple, horizontal lines on the spine to suggest age. It features thick black outlines around all shapes and uses flat, solid colors with no gradients or shadows, rendered on a transparent background.
+[2026-05-24T13:35:37.146Z] [processQueue] Generating "funny_book"...
+[2026-05-24T13:35:53.371Z] [COST] imageKey="funny_book" | refinement: gemini/gemini-2.5-flash in=727 out=91 | image: openai/gpt-image-1 in=97 out=272
+[2026-05-24T13:35:53.373Z] [processQueue] Generated "funny_book" → 2b44d314-7e86-4eaf-b386-c6f4c24d2f10 (6 total)
+[2026-05-24T13:35:53.375Z] [processQueue] FULL REFINED PROMPT for "funny_book": A simple, bold illustration of an open book with a bright yellow cover and white pages. The book is slightly tilted, as if in motion, and has a large, smiling cartoon face on its front cover, with simple black dots for eyes and a wide, curved smile. Small, curved motion lines emanate from the book, suggesting a humorous or playful quality. The illustration uses flat, solid colors with bold black outlines, suitable for an AAC symbol.
+[2026-05-24T13:35:57.568Z] [processQueue] Generating "sad_book"...
+[2026-05-24T13:36:12.114Z] [COST] imageKey="sad_book" | refinement: gemini/gemini-2.5-flash in=727 out=85 | image: openai/gpt-image-1 in=90 out=272
+[2026-05-24T13:36:12.115Z] [processQueue] Generated "sad_book" → 1db270c1-2477-4721-89fc-63208acbda0a (7 total)
+[2026-05-24T13:36:12.118Z] [processQueue] FULL REFINED PROMPT for "sad_book": A simple, bold AAC symbol icon of a book with a sad face. The book is closed, shown from the front, with a dark blue cover and a lighter blue spine. On the front cover, there are two simple black dots for eyes and a small, downward-curved black line for a mouth, clearly indicating sadness. The entire illustration has thick black outlines and uses flat, solid colors on a transparent background.
+[2026-05-24T13:36:16.310Z] [processQueue] Generating "adventure_book"...
+[2026-05-24T13:36:30.385Z] [COST] imageKey="adventure_book" | refinement: gemini/gemini-2.5-flash in=727 out=83 | image: openai/gpt-image-1 in=90 out=272
+[2026-05-24T13:36:30.388Z] [processQueue] Generated "adventure_book" → ac6c3ee3-fee2-45e3-b658-0ff503909fa7 (8 total)
+[2026-05-24T13:36:30.390Z] [processQueue] FULL REFINED PROMPT for "adventure_book": A simple, bold illustration of an open book, viewed from a slightly elevated front angle. The book has a dark blue cover with a yellow starburst shape on the left page and a simple, stylized brown mountain peak on the right page, indicating adventure. The pages are white with minimal, thin black horizontal lines representing text. The entire illustration has thick black outlines and uses flat, solid colors on a transparent background.
+[2026-05-24T13:36:34.573Z] [processQueue] Generating "its_called"...
+[2026-05-24T13:36:48.953Z] [COST] imageKey="its_called" | refinement: gemini/gemini-2.5-flash in=727 out=90 | image: openai/gpt-image-1 in=96 out=272
+[2026-05-24T13:36:48.955Z] [processQueue] Generated "its_called" → 6058809f-cef3-4b33-a82f-093f93e37633 (9 total)
+[2026-05-24T13:36:48.956Z] [processQueue] FULL REFINED PROMPT for "its_called": A simple AAC symbol icon illustrating "its called." A generic, non-gender-specific human figure with a slightly oversized head and no hair is depicted from the chest up, facing forward. The figure has simple dot eyes and a small curved mouth. One hand is raised to the side of the mouth, palm facing inwards, as if speaking or calling out. The figure and hand are outlined in bold black, filled with a solid light blue color.
+[2026-05-24T13:36:53.138Z] [processQueue] "old_book" already exists → 2f621f5c-3d63-4008-9ff6-9082428bbe9d
+[2026-05-24T13:36:57.323Z] [processQueue] "funny_book" already exists → 2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-24T13:37:01.512Z] [processQueue] "sad_book" already exists → 1db270c1-2477-4721-89fc-63208acbda0a
+[2026-05-24T13:37:05.701Z] [processQueue] "adventure_book" already exists → ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-24T13:37:09.879Z] [processQueue] "its_called" already exists → 6058809f-cef3-4b33-a82f-093f93e37633
+[2026-05-24T13:37:14.067Z] [processQueue] Generating "favorite_author"...
+[2026-05-24T13:37:29.199Z] [COST] imageKey="favorite_author" | refinement: gemini/gemini-2.5-flash in=727 out=95 | image: openai/gpt-image-1 in=101 out=272
+[2026-05-24T13:37:29.201Z] [processQueue] Generated "favorite_author" → 57e43ebf-90a8-481d-9f4e-8ae5522a02f3 (10 total)
+[2026-05-24T13:37:29.203Z] [processQueue] FULL REFINED PROMPT for "favorite_author": A simple AAC symbol icon of a stylized, generic human figure with a large head, simple dot eyes, and a small curved mouth, holding an open book in one hand and a pen in the other, both positioned as if writing. The figure wears a simple, non-descript shirt. The book is open to show blank pages, and the pen is held poised above it. The illustration uses bold black outlines and flat, solid colors, centered on a transparent background.
+[2026-05-24T13:37:33.383Z] [processQueue] "favorite_author" already exists → 57e43ebf-90a8-481d-9f4e-8ae5522a02f3
+[2026-05-24T13:37:37.563Z] [processQueue] Generating "scifi_book"...
+[2026-05-24T13:37:53.029Z] [COST] imageKey="scifi_book" | refinement: gemini/gemini-2.5-flash in=728 out=98 | image: openai/gpt-image-1 in=105 out=272
+[2026-05-24T13:37:53.030Z] [processQueue] Generated "scifi_book" → e2e3124f-cd96-45ab-9e07-c166adafe28a (11 total)
+[2026-05-24T13:37:53.031Z] [processQueue] FULL REFINED PROMPT for "scifi_book": A simple, bold illustration of a closed book with a stylized, futuristic design. The book is shown from the side, with a thick spine and two covers. The front cover features a simple, iconic representation of a rocket ship or a planet with rings, rendered in flat, solid colors. The book has a thick black outline, and all internal shapes are filled with distinct, saturated colors, such as a dark blue for the book cover and a contrasting bright color for the scifi emblem.
+[2026-05-24T13:37:57.216Z] [processQueue] Generating "history_book"...
+[2026-05-24T13:38:12.549Z] [COST] imageKey="history_book" | refinement: gemini/gemini-2.5-flash in=727 out=76 | image: openai/gpt-image-1 in=83 out=272
+[2026-05-24T13:38:12.549Z] [processQueue] Generated "history_book" → c45eb36d-8016-4870-aabe-7b3be1b35ad9 (12 total)
+[2026-05-24T13:38:12.550Z] [processQueue] FULL REFINED PROMPT for "history_book": A simple, bold illustration of an open book, viewed from a slightly angled front perspective, with a brown cover and white pages. The book has a prominent, stylized "H" on the left page, rendered in a dark brown color, indicating "history." The illustration uses flat, solid colors with bold black outlines, suitable for an AAC communication board, on a transparent background.
+[2026-05-24T13:38:16.732Z] [processQueue] Generating "fantasy_book"...
+[2026-05-24T13:38:34.727Z] [COST] imageKey="fantasy_book" | refinement: gemini/gemini-2.5-flash in=727 out=80 | image: openai/gpt-image-1 in=86 out=272
+[2026-05-24T13:38:34.728Z] [processQueue] Generated "fantasy_book" → b560c9bd-8710-4182-aa30-3e9d5a623166 (13 total)
+[2026-05-24T13:38:34.729Z] [processQueue] FULL REFINED PROMPT for "fantasy_book": A simple, bold illustration of an open book with a stylized castle silhouette on the left page and a wizard hat on the right page, both in black. The book has a dark blue cover and white pages, with thick black outlines around all shapes. The book is centered and shown from a slightly open, front-facing angle, with no gradients, shadows, highlights, or 3D effects.
+[2026-05-24T13:38:38.906Z] [processQueue] Generating "thriller_book"...
+[2026-05-24T13:38:54.481Z] [COST] imageKey="thriller_book" | refinement: gemini/gemini-2.5-flash in=727 out=99 | image: openai/gpt-image-1 in=105 out=272
+[2026-05-24T13:38:54.482Z] [processQueue] Generated "thriller_book" → 396cf4db-3625-4945-867b-b483e9f1a1bf (14 total)
+[2026-05-24T13:38:54.482Z] [processQueue] FULL REFINED PROMPT for "thriller_book": A simple, bold illustration of a closed book, viewed from the front, slightly angled to show the spine and front cover. The book has a dark, solid color cover, like deep blue or black, with a single, stark white question mark symbol centrally placed on the front cover. The book has a thick, bold black outline, and the question mark also has a bold black outline. The image uses flat, solid colors with no gradients or shadows, suitable for an AAC communication board icon.
+[2026-05-24T13:38:58.667Z] [processQueue] "scifi_book" already exists → e2e3124f-cd96-45ab-9e07-c166adafe28a
+[2026-05-24T13:39:02.844Z] [processQueue] "history_book" already exists → c45eb36d-8016-4870-aabe-7b3be1b35ad9
+[2026-05-24T13:39:07.033Z] [processQueue] "fantasy_book" already exists → b560c9bd-8710-4182-aa30-3e9d5a623166
+[2026-05-24T13:39:11.205Z] [processQueue] "thriller_book" already exists → 396cf4db-3625-4945-867b-b483e9f1a1bf
+[2026-05-24T15:46:01.157Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T15:46:01.158Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T15:46:01.160Z] [resolveImageKeys] Resolving 1 keys: my_day (format=api-path, useUnapproved=true)
+[2026-05-24T15:46:02.137Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-24T15:46:02.138Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T15:46:24.909Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T15:46:24.911Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T15:46:24.918Z] [resolveImageKeys] Resolving 4 keys: science_fiction, adventure, drama, characters (format=api-path, useUnapproved=true)
+[2026-05-24T15:46:28.298Z] [resolveImageKeys] No symbol found for "science_fiction"
+[2026-05-24T15:46:29.860Z] [resolveImageKeys] No symbol found for "adventure"
+[2026-05-24T15:46:31.902Z] [resolveImageKeys] No symbol found for "drama"
+[2026-05-24T15:46:32.062Z] [resolveImageKeys] No symbol found for "characters"
+[2026-05-24T15:46:32.062Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: science_fiction, adventure, drama, characters
+[2026-05-24T15:46:32.063Z] [queueGeneration] Queuing 4 keys: science_fiction, adventure, drama, characters (hasCallback=true)
+[2026-05-24T15:46:32.223Z] [processQueue] Generating "characters"...
+[2026-05-24T15:46:51.498Z] [COST] imageKey="characters" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=67 | image: openai/gpt-image-1 in=72 out=272
+[2026-05-24T15:46:51.499Z] [processQueue] Generated "characters" → f3d2899d-b2f9-44dd-a58b-cae1f5436bde (1 total)
+[2026-05-24T15:46:51.499Z] [processQueue] FULL REFINED PROMPT for "characters": A group of three simple, generic human figures standing together, facing forward. The figures have bold black outlines, flat solid colors, and minimal features (dots for eyes, small curve for mouth). The figures are non-gender-specific with no hair. They are centered on a transparent background, suitable for an AAC communication board icon.
+[2026-05-24T15:46:55.687Z] [processQueue] Generating "drama"...
+[2026-05-24T15:47:09.018Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T15:47:09.020Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T15:47:09.025Z] [resolveImageKeys] Resolving 2 keys: authors, plot (format=api-path, useUnapproved=true)
+[2026-05-24T15:47:18.864Z] [resolveImageKeys] No symbol found for "authors"
+[2026-05-24T15:47:22.720Z] [COST] imageKey="drama" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=49 | image: openai/gpt-image-1 in=57 out=272
+[2026-05-24T15:47:22.721Z] [processQueue] Generated "drama" → 544c472f-501e-439c-83ff-c4ba8cabd97a (2 total)
+[2026-05-24T15:47:22.721Z] [processQueue] FULL REFINED PROMPT for "drama": A simple AAC icon of two generic stylized human figures, one with arms raised in exasperation and a downturned mouth, and the other with hands covering their face, both depicted with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-24T15:47:33.135Z] [resolveImageKeys] No symbol found for "plot"
+[2026-05-24T15:47:33.136Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: authors, plot
+[2026-05-24T15:47:33.137Z] [queueGeneration] Queuing 2 keys: authors, plot (hasCallback=true)
+[2026-05-24T15:47:33.613Z] [processQueue] Generating "adventure"...
+[2026-05-24T15:47:49.614Z] [COST] imageKey="adventure" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=93 | image: openai/gpt-image-1 in=100 out=272
+[2026-05-24T15:47:49.614Z] [processQueue] Generated "adventure" → 3c8fe6c5-204d-4a57-b6fd-f3e8f8ebe5fb (3 total)
+[2026-05-24T15:47:49.615Z] [processQueue] FULL REFINED PROMPT for "adventure": A bold AAC icon of a simple, generic human figure standing on a stylized green hill, facing a tall, pointed brown mountain with a white snow cap. The figure wears a simple blue shirt and brown pants, holding a red flag on a stick, planted firmly on the hill. The sun is a bright yellow circle in the upper corner, with simple rays extending from it. The overall style is flat, solid colors with thick black outlines, on a transparent background.
+[2026-05-24T15:47:53.802Z] [processQueue] Generating "plot"...
+[2026-05-24T15:48:10.533Z] [COST] imageKey="plot" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=85 | image: openai/gpt-image-1 in=89 out=272
+[2026-05-24T15:48:10.534Z] [processQueue] Generated "plot" → 62db51f0-bcb5-4e01-bb1b-29d0cfe08c28 (4 total)
+[2026-05-24T15:48:10.534Z] [processQueue] FULL REFINED PROMPT for "plot": A simple, bold AAC icon of a graph with a line plot. The graph has a horizontal x-axis and a vertical y-axis, both marked with small tick lines. A single line, colored bright blue, rises and falls across the graph, indicating data points. The line is thick and clearly visible, with no labels or numbers. The illustration uses flat, solid colors and bold black outlines on a transparent background.
+[2026-05-24T15:48:14.716Z] [processQueue] Generating "authors"...
+[2026-05-24T15:48:29.186Z] [COST] imageKey="authors" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=87 | image: openai/gpt-image-1 in=93 out=272
+[2026-05-24T15:48:29.186Z] [processQueue] Generated "authors" → aeea4ba1-14b5-4b01-a54e-894505537ffa (5 total)
+[2026-05-24T15:48:29.189Z] [processQueue] FULL REFINED PROMPT for "authors": A simple AAC icon illustration of two generic human figures, one standing and one seated, both holding open books. The standing figure has a simple, generic face with dot eyes and a small curved mouth, and is wearing a simple shirt and pants. The seated figure is at a desk with a simple pen in hand, looking at the open book. Both figures are rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-24T15:48:33.582Z] [processQueue] Generating "science_fiction"...
+[2026-05-24T15:48:49.372Z] [COST] imageKey="science_fiction" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=54 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-24T15:48:49.373Z] [processQueue] Generated "science_fiction" → 9821447c-3a88-4e1d-9356-572f91e52738 (6 total)
+[2026-05-24T15:48:49.374Z] [processQueue] FULL REFINED PROMPT for "science_fiction": A stylized, flat AAC icon depicting a silver flying saucer spaceship with a domed top and a row of small, dark windows, hovering above a stylized green planet with a single white ring, all rendered with bold black outlines and solid, saturated colors on a transparent background.
+[2026-05-24T16:09:54.913Z] [resolveImageKeys] Resolving 1 keys: what_happened_today (format=internal, useUnapproved=true)
+[2026-05-24T16:09:55.553Z] [resolveImageKeys] No symbol found for "what_happened_today"
+[2026-05-24T16:09:55.554Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: what_happened_today
+[2026-05-24T16:09:55.556Z] [queueGeneration] Queuing 1 keys: what_happened_today (hasCallback=true)
+[2026-05-24T16:09:55.561Z] [resolveImageKeys] Resolving 1 keys: what_happened_today (format=api-path, useUnapproved=true)
+[2026-05-24T16:09:56.608Z] [processQueue] Generating "what_happened_today"...
+[2026-05-24T16:09:56.702Z] [resolveImageKeys] No symbol found for "what_happened_today"
+[2026-05-24T16:09:56.704Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: what_happened_today
+[2026-05-24T16:09:56.706Z] [queueGeneration] Queuing 1 keys: what_happened_today (hasCallback=true)
+[2026-05-24T16:10:13.091Z] [COST] imageKey="what_happened_today" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=44 | image: openai/gpt-image-1 in=51 out=272
+[2026-05-24T16:10:13.092Z] [processQueue] Generated "what_happened_today" → 5d68f97f-4b66-40dc-9502-21b4dfd96226 (1 total)
+[2026-05-24T16:10:13.093Z] [processQueue] FULL REFINED PROMPT for "what_happened_today": A generic human figure with a slightly stylized head and simple dot eyes, standing with arms slightly out, looking confused or questioning, with a thought bubble above their head containing a simple question mark, in flat AAC icon style.
+[2026-05-24T16:10:17.268Z] [processQueue] "what_happened_today" already exists → 5d68f97f-4b66-40dc-9502-21b4dfd96226
+[2026-05-24T16:10:28.443Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:10:28.445Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:10:28.450Z] [resolveImageKeys] Resolving 2 keys: normal_day, something_else (format=api-path, useUnapproved=true)
+[2026-05-24T16:10:29.193Z] [resolveImageKeys] No symbol found for "normal_day"
+[2026-05-24T16:10:30.291Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:10:30.292Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: normal_day
+[2026-05-24T16:10:30.297Z] [queueGeneration] Queuing 1 keys: normal_day (hasCallback=true)
+[2026-05-24T16:10:36.626Z] [processQueue] Generating "normal_day"...
+[2026-05-24T16:10:52.753Z] [COST] imageKey="normal_day" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=54 | image: openai/gpt-image-1 in=62 out=272
+[2026-05-24T16:10:52.754Z] [processQueue] Generated "normal_day" → 05141432-b015-4314-adb7-00ed40724993 (1 total)
+[2026-05-24T16:10:52.755Z] [processQueue] FULL REFINED PROMPT for "normal_day": A simple AAC icon depicting a bright yellow sun with radiating rays in the upper left corner, a green grassy hill in the lower right, and a single stylized white cloud floating in the sky, all rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-24T16:13:29.414Z] [resolveImageKeys] Resolving 1 keys: sports_shoes (format=internal, useUnapproved=true)
+[2026-05-24T16:13:30.075Z] [resolveImageKeys] No symbol found for "sports_shoes"
+[2026-05-24T16:13:30.075Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: sports_shoes
+[2026-05-24T16:13:30.076Z] [queueGeneration] Queuing 1 keys: sports_shoes (hasCallback=true)
+[2026-05-24T16:13:30.079Z] [resolveImageKeys] Resolving 3 keys: normal_day, something_else, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:13:31.037Z] [processQueue] Generating "sports_shoes"...
+[2026-05-24T16:13:31.139Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:13:34.748Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:13:37.935Z] [resolveImageKeys] No symbol found for "sports_shoes"
+[2026-05-24T16:13:37.936Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: sports_shoes
+[2026-05-24T16:13:37.941Z] [queueGeneration] Queuing 1 keys: sports_shoes (hasCallback=true)
+[2026-05-24T16:13:43.293Z] [resolveImageKeys] Resolving 1 keys: sports_shoes (format=internal, useUnapproved=true)
+[2026-05-24T16:13:43.882Z] [resolveImageKeys] No symbol found for "sports_shoes"
+[2026-05-24T16:13:43.883Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: sports_shoes
+[2026-05-24T16:13:43.884Z] [queueGeneration] Queuing 1 keys: sports_shoes (hasCallback=true)
+[2026-05-24T16:13:43.889Z] [resolveImageKeys] Resolving 3 keys: normal_day, something_else, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:13:45.737Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:13:46.245Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:13:46.408Z] [resolveImageKeys] No symbol found for "sports_shoes"
+[2026-05-24T16:13:46.409Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: sports_shoes
+[2026-05-24T16:13:46.418Z] [queueGeneration] Queuing 1 keys: sports_shoes (hasCallback=true)
+[2026-05-24T16:13:47.220Z] [COST] imageKey="sports_shoes" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=45 | image: openai/gpt-image-1 in=52 out=272
+[2026-05-24T16:13:47.221Z] [processQueue] Generated "sports_shoes" → a313c93d-7032-47d7-971f-b19c98afcd38 (1 total)
+[2026-05-24T16:13:47.222Z] [processQueue] FULL REFINED PROMPT for "sports_shoes": A pair of athletic sports shoes, side view, with laces tied, in flat AAC icon style. The shoes are predominantly white with a colored stripe or accent, bold black outlines around all shapes, and flat, solid colors.
+[2026-05-24T16:13:51.389Z] [processQueue] "sports_shoes" already exists → a313c93d-7032-47d7-971f-b19c98afcd38
+[2026-05-24T16:13:53.570Z] [resolveImageKeys] Resolving 1 keys: sports_shoes (format=internal, useUnapproved=true)
+[2026-05-24T16:13:54.246Z] [resolveImageKeys] Resolved "sports_shoes" → __SYMBOL__:a313c93d-7032-47d7-971f-b19c98afcd38
+[2026-05-24T16:13:54.247Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T16:13:54.252Z] [resolveImageKeys] Resolving 3 keys: normal_day, something_else, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:13:55.963Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:13:56.130Z] [processQueue] "sports_shoes" already exists → a313c93d-7032-47d7-971f-b19c98afcd38
+[2026-05-24T16:13:56.308Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:13:56.661Z] [resolveImageKeys] Resolved "sports_shoes" → /api/custom-symbols/a313c93d-7032-47d7-971f-b19c98afcd38/image
+[2026-05-24T16:13:56.662Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-24T16:14:00.313Z] [processQueue] "sports_shoes" already exists → a313c93d-7032-47d7-971f-b19c98afcd38
+[2026-05-24T16:14:07.466Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:14:07.466Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:14:07.469Z] [resolveImageKeys] Resolving 3 keys: normal_day, something_else, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:14:08.199Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:14:09.891Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:14:10.062Z] [resolveImageKeys] Resolved "sports_shoes" → /api/custom-symbols/a313c93d-7032-47d7-971f-b19c98afcd38/image
+[2026-05-24T16:14:10.063Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-24T16:14:25.926Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:14:25.927Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:14:25.931Z] [resolveImageKeys] Resolving 3 keys: normal_day, something_else, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:14:26.844Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:14:28.580Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:14:28.737Z] [resolveImageKeys] Resolved "sports_shoes" → /api/custom-symbols/a313c93d-7032-47d7-971f-b19c98afcd38/image
+[2026-05-24T16:14:28.738Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-24T16:14:55.276Z] [resolveImageKeys] Resolving 1 keys: what_happened_today (format=internal, useUnapproved=true)
+[2026-05-24T16:14:55.944Z] [resolveImageKeys] Resolved "what_happened_today" → __SYMBOL__:5d68f97f-4b66-40dc-9502-21b4dfd96226
+[2026-05-24T16:14:55.944Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T16:14:55.946Z] [resolveImageKeys] Resolving 2 keys: what_happened_today, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:14:56.992Z] [resolveImageKeys] Resolved "what_happened_today" → /api/custom-symbols/5d68f97f-4b66-40dc-9502-21b4dfd96226/image
+[2026-05-24T16:14:57.246Z] [resolveImageKeys] Resolved "sports_shoes" → /api/custom-symbols/a313c93d-7032-47d7-971f-b19c98afcd38/image
+[2026-05-24T16:14:57.246Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-24T16:15:12.743Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:15:12.743Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:15:12.746Z] [resolveImageKeys] Resolving 2 keys: normal_day, sports_shoes (format=api-path, useUnapproved=true)
+[2026-05-24T16:15:15.538Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:15:16.807Z] [resolveImageKeys] Resolved "sports_shoes" → /api/custom-symbols/a313c93d-7032-47d7-971f-b19c98afcd38/image
+[2026-05-24T16:15:16.808Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-24T16:16:50.406Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:16:50.407Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:16:56.559Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:16:56.560Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:17:18.270Z] [resolveImageKeys] Resolving 1 keys: aac_device (format=api-path, useUnapproved=true)
+[2026-05-24T16:17:18.902Z] [resolveImageKeys] No symbol found for "aac_device"
+[2026-05-24T16:17:18.903Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: aac_device
+[2026-05-24T16:17:18.904Z] [queueGeneration] Queuing 1 keys: aac_device (hasCallback=true)
+[2026-05-24T16:17:19.998Z] [processQueue] Generating "aac_device"...
+[2026-05-24T16:17:20.929Z] [resolveImageKeys] Resolving 1 keys: aac_device (format=api-path, useUnapproved=true)
+[2026-05-24T16:17:22.162Z] [resolveImageKeys] No symbol found for "aac_device"
+[2026-05-24T16:17:22.163Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: aac_device
+[2026-05-24T16:17:22.164Z] [queueGeneration] Queuing 1 keys: aac_device (hasCallback=true)
+[2026-05-24T16:17:33.262Z] [COST] imageKey="aac_device" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=60 | image: openai/gpt-image-1 in=66 out=272
+[2026-05-24T16:17:33.263Z] [processQueue] Generated "aac_device" → c8ae7125-e0c4-4f94-b94b-f3af6947c2b2 (1 total)
+[2026-05-24T16:17:33.264Z] [processQueue] FULL REFINED PROMPT for "aac_device": A simple, bold AAC symbol icon of a gray rectangular communication device with a black screen displaying a grid of four colored squares (red, blue, green, yellow) and a small speaker icon in the top right corner, all rendered with flat, solid colors and thick black outlines on a transparent background.
+[2026-05-24T16:17:38.645Z] [processQueue] "aac_device" already exists → c8ae7125-e0c4-4f94-b94b-f3af6947c2b2
+[2026-05-24T16:17:39.789Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:17:39.790Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:18:20.976Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:18:20.977Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:18:20.980Z] [resolveImageKeys] Resolving 2 keys: lunch, normal_day (format=api-path, useUnapproved=true)
+[2026-05-24T16:18:21.817Z] [resolveImageKeys] No symbol found for "lunch"
+[2026-05-24T16:18:22.716Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:18:22.717Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: lunch
+[2026-05-24T16:18:22.722Z] [queueGeneration] Queuing 1 keys: lunch (hasCallback=true)
+[2026-05-24T16:18:24.110Z] [processQueue] Generating "lunch"...
+[2026-05-24T16:18:33.582Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:18:33.584Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:18:39.723Z] [COST] imageKey="lunch" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=54 | image: openai/gpt-image-1 in=60 out=272
+[2026-05-24T16:18:39.725Z] [processQueue] Generated "lunch" → 0065e129-e578-4ece-ba6b-f885b99eb8a6 (1 total)
+[2026-05-24T16:18:39.729Z] [processQueue] FULL REFINED PROMPT for "lunch": A simple AAC icon of a brown paper bag with a folded top, a red apple peeking out from the top, and a small blue sandwich wrapped in wax paper visible inside the opening, all rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-24T16:18:45.041Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:18:45.042Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:18:45.044Z] [resolveImageKeys] Resolving 1 keys: something_else (format=api-path, useUnapproved=true)
+[2026-05-24T16:18:45.906Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:18:45.906Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-24T16:19:00.226Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-24T16:19:00.227Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-24T16:19:00.230Z] [resolveImageKeys] Resolving 2 keys: something_else, normal_day (format=api-path, useUnapproved=true)
+[2026-05-24T16:19:01.728Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-24T16:19:03.093Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
+[2026-05-24T16:19:03.094Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 

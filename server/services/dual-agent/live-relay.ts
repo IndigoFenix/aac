@@ -304,6 +304,46 @@ function glyphHasImageKey(glyphString: string | undefined): boolean {
 }
 
 /**
+ * Collect modifier slots that aren't in the canonical registry's modifier
+ * vocabulary. The model frequently invents modifiers like `.new`, `.old`,
+ * `.sad`, `.funny`, `.adventure`, `.american` — none of which are real
+ * modifier SYMBOLs. The compositor has no image for them so the slot
+ * renders as a meaningless dot. We reject these so the AI gets feedback
+ * and can rebuild with a real modifier (or carry the quality in the
+ * speech field instead).
+ *
+ * A modifier is valid when the registry entry exists AND carries a
+ * `modifier` facet — same gate the compositor uses to decide whether to
+ * actually render the badge.
+ */
+function collectInvalidModifiers(glyph: string | undefined): string[] {
+  if (!glyph) return [];
+  const bad: string[] = [];
+  const seen = new Set<string>();
+  const parsed = parseGlyph(glyph);
+  for (const slot of parsed.slots) {
+    for (const modKey of slot.modifiers) {
+      if (!modKey) continue;
+      // Strip a possible `generate:` prefix so we evaluate the bare key.
+      // The AI shouldn't be using `generate:` in modifier position at all,
+      // but we want a clear "this isn't a modifier" error rather than a
+      // generation attempt for the inner string.
+      const bareKey = stripBrackets(modKey);
+      if (seen.has(bareKey)) continue;
+      seen.add(bareKey);
+      const item = getVocabularyItem(bareKey);
+      // A registry hit only counts as a modifier when it actually carries
+      // a modifier facet — `apple` has a registry entry but isn't a
+      // modifier; `.apple` would render nonsensically.
+      if (!item || !item.modifier) {
+        bad.push(modKey);
+      }
+    }
+  }
+  return bad;
+}
+
+/**
  * Hard-coded board-button validator. Drops buttons that fail any of the
  * structural rules below and returns the kept set plus a list of human-
  * readable error strings the relay forwards to the AI via tool_response
@@ -312,9 +352,17 @@ function glyphHasImageKey(glyphString: string | undefined): boolean {
  *   1. A glyph containing any imageKey MUST come with a non-empty
  *      glyphFallback. Without it the button renders as ❓ until generation
  *      completes (or forever, if it fails).
- *   2. No two buttons may share an identical glyph string. The student
+ *   2. The glyphFallback itself MUST NOT contain any imageKey. The fallback
+ *      is what renders WHILE generation is pending, so anything that needs
+ *      generation (`generate:`, bare unknown snake_case, non-canonical
+ *      modifier on a head) leaves the slot blank → ❓.
+ *   3. Modifier slots in EITHER the glyph or the fallback must be from the
+ *      canonical registry's modifier vocabulary. Invented modifiers like
+ *      `.new`, `.old`, `.sad`, `.funny` have no image and render as a
+ *      meaningless dot.
+ *   4. No two buttons may share an identical glyph string. The student
  *      can't visually distinguish them.
- *   3. No two buttons may share an identical glyphFallback string (when
+ *   5. No two buttons may share an identical glyphFallback string (when
  *      both have a fallback). Same visual-collision reasoning.
  *
  * Filtered buttons survive; the rest of the board still renders. The AI
@@ -340,7 +388,45 @@ function validateBoardButtons<
       continue;
     }
 
-    // (2) duplicate glyph.
+    // (2) imageKey IN the fallback. The fallback must render immediately —
+    // anything generation-eligible there leaves the slot blank (❓).
+    if (btn.glyphFallback && glyphHasImageKey(btn.glyphFallback)) {
+      const fallbackImageKeys = new Set<string>();
+      collectGlyphImageKeys(btn.glyphFallback, fallbackImageKeys);
+      errors.push(
+        `Button "${btn.label}" — fallback "${btn.glyphFallback}" contains ${fallbackImageKeys.size === 1 ? "a key" : "keys"} ` +
+        `that would route to image generation: ${[...fallbackImageKeys].map(k => `\`${k}\``).join(", ")}. ` +
+        `The fallback must render immediately, so it can use ONLY emojis, canonical registry keys, ` +
+        `\`symbol:ID\`, \`face:ID\`, and canonical modifiers. NEVER \`generate:\` in the fallback. ` +
+        `Mirror the shape of the sentence (e.g. \`i_me+want+generate:planet_mars\` → fallback \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept).`
+      );
+      continue;
+    }
+
+    // (3) Non-canonical modifiers in glyph or fallback. These have no
+    // registry entry → render as a meaningless dot.
+    const badGlyphMods = collectInvalidModifiers(btn.glyph);
+    const badFallbackMods = collectInvalidModifiers(btn.glyphFallback);
+    if (badGlyphMods.length > 0 || badFallbackMods.length > 0) {
+      const parts: string[] = [];
+      if (badGlyphMods.length > 0) {
+        parts.push(`glyph "${btn.glyph}" uses non-canonical modifier${badGlyphMods.length === 1 ? "" : "s"}: ${badGlyphMods.map(m => `\`.${m}\``).join(", ")}`);
+      }
+      if (badFallbackMods.length > 0) {
+        parts.push(`fallback "${btn.glyphFallback}" uses non-canonical modifier${badFallbackMods.length === 1 ? "" : "s"}: ${badFallbackMods.map(m => `\`.${m}\``).join(", ")}`);
+      }
+      errors.push(
+        `Button "${btn.label}" — ${parts.join("; ")}. ` +
+        `Modifiers must come from the canonical registry's modifier list (see <bundled_icons>: count, possession, ` +
+        `negation, intensity, size_shape, temperature, color, social). Words like \`.new\`, \`.old\`, \`.sad\`, ` +
+        `\`.funny\` are NOT modifiers — they render as a dot. Use a different HEAD SYMBOL that already encodes ` +
+        `the quality (😢 for "sad", 👴 for "old", 🆕 for "new"), or carry the quality in the speech field, ` +
+        `or compose two GLYPHs (e.g. "sad book" → \`📖+😢\`).`
+      );
+      continue;
+    }
+
+    // (4) duplicate glyph.
     if (btn.glyph) {
       const sig = btn.glyph;
       const owner = seenGlyph.get(sig);
@@ -353,7 +439,7 @@ function validateBoardButtons<
       }
     }
 
-    // (3) duplicate fallback.
+    // (5) duplicate fallback.
     if (btn.glyphFallback) {
       const sig = btn.glyphFallback;
       const owner = seenFallback.get(sig);
@@ -611,12 +697,33 @@ function formatConstructionStateInjection(
   currentBoardLabels: readonly string[] = [],
 ): string {
   const filled = state.glyph ? state.glyph : "(empty)";
+  // Identify the "current" HEAD SYMBOL — the one a MODIFIER SUGGESTION
+  // would attach to when tapped. The client uses the explicit
+  // `activeSlot` selection when present, else the most-recent slot
+  // (see `resolveActiveSlot` in glyph-compositor.ts). Mirror that here so
+  // the AI knows which slot its modifier_candidates target.
+  const parsed = state.glyph ? parseGlyph(state.glyph) : null;
+  const slotCount = parsed?.slots.length ?? 0;
+  const activeSlotIndex =
+    state.activeSlot != null && state.activeSlot < slotCount
+      ? state.activeSlot
+      : slotCount > 0
+        ? slotCount - 1
+        : null;
+  const activeSlot = activeSlotIndex != null ? parsed!.slots[activeSlotIndex] : null;
+  const activeHeadDesc = activeSlot
+    ? activeSlot.modifiers.length > 0
+      ? `slot ${activeSlotIndex} = ${activeSlot.key} (already has modifiers: ${activeSlot.modifiers.join(", ")})`
+      : `slot ${activeSlotIndex} = ${activeSlot.key}`
+    : "(none — sentence is empty)";
+
   const lines: string[] = [
-    "[${T.builder} STATE]",
+    `${T.tagBuilderState}`,
     `category: ${state.category}`,
     `mode_chip: ${state.modeChip}`,
     `sentence: ${filled}`,
-    `target_slot: ${state.targetSlot ?? "next_empty"}`,
+    `target_slot: ${state.targetSlot ?? "next_empty"} (where head_candidates go)`,
+    `active_head_symbol: ${activeHeadDesc} (where modifier_candidates attach)`,
   ];
   // Surface what was on the ${T.board} when the user opened the
   // ${T.builder}. Labels are the AI's own ${T.button} text from the
@@ -631,22 +738,39 @@ function formatConstructionStateInjection(
   }
   if (state.payloadTarget) {
     lines.push(
-      `payload_target: slot ${state.payloadTarget.slotIndex} (${state.payloadTarget.hostKey}) — needs a SYMBOL of type [${state.payloadTarget.accepts.join(", ")}]; SUGGESTIONs should come from [${state.payloadTarget.suggestCategories.join(", ")}]`
+      `payload_target: slot ${state.payloadTarget.slotIndex} (${state.payloadTarget.hostKey}) — needs a ${T.symbol} of type [${state.payloadTarget.accepts.join(", ")}]; ${T.suggestion}s should come from [${state.payloadTarget.suggestCategories.join(", ")}]`
     );
   }
   lines.push("");
   if (state.requestGuessingMode) {
     lines.push(
-      `The user pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what SYMBOL they want here. When you've narrowed enough, call suggest_construction_buttons with the resolved SYMBOL as the single \`head_candidates\` SUGGESTION to populate the slot directly.`
+      `The user pressed Help — enter guessing mode (see <guessing_mode>) to narrow down what ${T.symbol} they want here. When you've narrowed enough, call suggest_construction_buttons with the resolved ${T.symbol} as the single \`head_candidates\` ${T.suggestion} to populate the slot directly.`
     );
   } else if (state.payloadTarget) {
     lines.push(
-      `The user placed a composable host GLYPH (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 HEAD SYMBOLs in \`head_candidates\` that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Modifier suggestions don't apply to an unfilled composable blank; leave \`modifier_candidates\` empty. Skip if nothing helpful comes to mind.`
+      `The user placed a composable host ${T.glyph} (\`${state.payloadTarget.hostKey}\`) and the embedded blank is unfilled. Call suggest_construction_buttons with up to 4 ${T.headSymbol}s in \`head_candidates\` that could fill that blank — what they might ${state.payloadTarget.hostKey}. Use \`slot_index: ${state.payloadTarget.slotIndex}\`. Modifier suggestions don't apply to an unfilled composable blank; leave \`modifier_candidates\` empty. Skip if nothing helpful comes to mind.`
     );
   } else {
-    lines.push(
-      "Call suggest_construction_buttons with two SUGGESTION arrays in the SAME call: `head_candidates` (up to 4 next-glyph HEAD SYMBOLs) AND `modifier_candidates` (up to 4 MODIFIER SYMBOLs for the current HEAD SYMBOL). Fill both when each is useful — heads for what the user wants to say next, modifiers for sharpening the current GLYPH (color, size, count, possession, intensity). Either array may be empty; skip the tool call entirely only if nothing fits in either."
-    );
+    // Two-array call. Tell the AI EXPLICITLY when each array is relevant:
+    //   - head_candidates: always, unless the sentence is at max length.
+    //   - modifier_candidates: only when there IS an active head SYMBOL
+    //     to attach a modifier to (otherwise there's nothing to modify).
+    // Without this nudge the model treats modifier_candidates as an
+    // afterthought and almost always leaves it empty even when the
+    // current head is a perfect modifier target (e.g. a noun that
+    // could take color/size/count/possession).
+    if (activeSlot) {
+      lines.push(
+        `Call suggest_construction_buttons with two ${T.suggestion} arrays in the SAME call:`,
+        `  • \`head_candidates\` (up to 4 ${T.headSymbol}s) — what the user wants to say NEXT, after slot ${activeSlotIndex}. Goes into slot ${state.targetSlot ?? "next_empty"}.`,
+        `  • \`modifier_candidates\` (up to 4 ${T.modifierSymbol}s) — properties of \`${activeSlot.key}\` worth surfacing right now: color (\`color_red\`, \`color_blue\`…), size (\`big\`, \`small\`), count (\`one\`, \`two\`, \`many\`), possession (\`my\`, \`your\`), intensity (\`very\`, \`a_little\`), or any conversation-specific qualifier. Tapping one ADDS it to slot ${activeSlotIndex} without advancing.`,
+        `Fill BOTH when each makes sense — modifiers are easy to skip but often the single most useful suggestion (a red apple, a big hug, two cookies). Either array may be empty; skip the tool call entirely only if nothing fits in either.`,
+      );
+    } else {
+      lines.push(
+        `Call suggest_construction_buttons with \`head_candidates\` (up to 4 ${T.headSymbol}s) for slot ${state.targetSlot ?? "next_empty"} — what the user might want to say first. The sentence is empty, so there's no ${T.headSymbol} to attach modifiers to; leave \`modifier_candidates\` empty. Skip the tool call entirely if no head suggestion fits.`,
+      );
+    }
   }
   return lines.join("\n");
 }
@@ -1325,12 +1449,22 @@ export class LiveRelay {
         this.flushPendingHomeBoardSend();
 
         if (!this.hasGreeted) {
-          console.log("[LiveRelay] Reconnected before greeting — re-prompting");
-          const prompt = this.muteState === "muted"
-            ? `Generate 4-12 contextual ${T.button}s using rebuild_board().`
-            : `The home board is loaded. This is a session start. Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present. Do NOT change the board until the user presses a button.`;
-          this.setState("awaiting_turn");
-          this.provider!.sendMessage(prompt, "user");
+          // MUTED: re-trigger initial board build. UNMUTED: stay silent and
+          // wait for the next frame_grid — sending an empty-context "observe
+          // and call set_interaction_mode" prompt here would reproduce the
+          // MALFORMED_FUNCTION_CALL + 15s heartbeat-wait gap on every
+          // reconnect (same root cause as the initial-connection skip above).
+          if (this.muteState === "muted") {
+            console.log("[LiveRelay] Reconnected before greeting (muted) — re-prompting board build");
+            this.setState("awaiting_turn");
+            this.provider!.sendMessage(
+              `Generate 4-12 contextual ${T.button}s using rebuild_board().`,
+              "user",
+            );
+          } else {
+            console.log("[LiveRelay] Reconnected before greeting (unmuted) — staying idle until first frame_grid");
+            this.setState("idle");
+          }
         } else {
           this.injectReconnectionContext();
           this.setState("idle");
@@ -1653,7 +1787,8 @@ export class LiveRelay {
           const student = this.sessionCache?.monitorAgent?.getStudent?.();
           if (state && student) {
             const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-            const persona = state.enhancedPrompt || rawPersona;
+            const sections = state.enhancedSections;
+            const persona = sections?.persona || rawPersona;
             const computeAge = (bd: string | null | undefined) => {
               if (!bd) return undefined;
               const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
@@ -1663,7 +1798,7 @@ export class LiveRelay {
               studentName: student.name,
               persona,
               language: student.primaryLanguage || undefined,
-              memoryContext: state.enhancedPrompt ? undefined : state.memoryContext,
+              memoryContext: state.memoryContext,
               muteState: this.muteState,
               studentAge: computeAge(student.birthDate),
               studentGender: student.gender || undefined,
@@ -1678,6 +1813,12 @@ export class LiveRelay {
               permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
               autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
               useDirectAudio: this.useDirectAudio,
+              sessionGoals: sections?.sessionGoals,
+              personaGestureOverrides: sections?.gestureOverrides,
+              interactModeExamples: sections?.interactModeExamples,
+              assistModeExamples: sections?.assistModeExamples,
+              sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+              safetyNotes: sections?.safetyNotes,
             });
           }
           const override = msg.muteState === "muted"
@@ -2016,7 +2157,8 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         const student = cached.monitorAgent.getStudent();
         if (student) {
           const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-          const persona = state.enhancedPrompt || rawPersona;
+          const sections = state.enhancedSections;
+          const persona = sections?.persona || rawPersona;
           const computeAge = (bd: string | null | undefined) => {
             if (!bd) return undefined;
             const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
@@ -2026,7 +2168,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             studentName: student.name,
             persona,
             language: student.primaryLanguage || undefined,
-            memoryContext: state.enhancedPrompt ? undefined : state.memoryContext,
+            memoryContext: state.memoryContext,
             muteState: this.muteState,
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
@@ -2045,6 +2187,12 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
               : undefined,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
             useDirectAudio: true,
+            sessionGoals: sections?.sessionGoals,
+            personaGestureOverrides: sections?.gestureOverrides,
+            interactModeExamples: sections?.interactModeExamples,
+            assistModeExamples: sections?.assistModeExamples,
+            sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+            safetyNotes: sections?.safetyNotes,
           });
         }
       }
@@ -2136,7 +2284,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           `Interaction: ${this.muteState}`,
           `Response: ${this.responseMode}`,
           `DirectAudio: ${this.useDirectAudio}`,
-          `Startup: ${state.enhancedPrompt ? "thorough" : "fast"}`,
+          `Startup: ${state.enhancedSections ? "thorough" : "fast"}`,
         ].join("\n"));
         logLiveSession("SYSTEM PROMPT", systemPrompt);
         if (tools.length > 0) {
@@ -2155,25 +2303,32 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       const boardHint = state.availableBoards && state.availableBoards.length > 0
         ? ` If a custom ${T.board} from the Available Custom Boards list is appropriate for this user, use set_board() instead of rebuild_board().`
         : "";
-      const homeBoardButtons = this.getNativePageButtonLabels(state);
-      const contextScan = ``;
-      // Greeting is deferred to the first set_interaction_mode("interact") call
-      // (see handleToolCalls) — by that point face recognition has resolved and
-      // the AI knows who, if anyone, to address. Start in STANDBY and only
-      // transition (and greet) once presence is confirmed.
-      const modeGuidance = ` Default to STANDBY; do NOT greet yet. Observe the camera/audio and call set_interaction_mode() once you can identify who (if anyone) is present.`;
-      const greetingPrompt = isMuted
-        ? `Generate 4-12 contextual ${T.button}s via rebuild_board() using the user's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`
-        : this.useDirectAudio
-        ? `Session start. Home ${T.board} ${T.button}s: ${homeBoardButtons.join(", ")}.${modeGuidance} Don't change the ${T.board} until a ${T.button} is pressed.${imageHint}${personaHint}${contextScan}`
-        : `Session start. Function calls only. Home ${T.board} ${T.button}s: ${homeBoardButtons.join(", ")}.${modeGuidance} Wait for a BUTTON PRESS.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
-      // Do NOT include the initial frame in the greeting prompt — sending it via
-      // sendFrameWithPrompt consistently triggers MALFORMED_FUNCTION_CALL on the
-      // first turn. The frame will be sent separately as passive context shortly
-      // after via frame_grid.
-      this.pendingGreeting = { prompt: greetingPrompt };
+      // In MUTED mode we DO need an initial prompt: the AI's job is to surface
+      // utterance ${T.button}s for the user to speak through, so we kick that
+      // off immediately. The prompt gives a clear action ("Generate 4-12
+      // ${T.button}s"), so the model has something concrete to do even without
+      // visual context.
+      //
+      // In UNMUTED mode we deliberately send NOTHING at session start. Empirically
+      // (live-session log 2026-05-24 @11:26 around line 25984) the previous
+      // "Session start. Default to STANDBY; observe and call set_interaction_mode
+      // once you can identify who is present" prompt caused the model to emit a
+      // MALFORMED_FUNCTION_CALL on the very first turn — there was no visual
+      // input yet for it to observe, so it fumbled, and the discarded turn was
+      // then followed by a ~15s idle wait for the next heartbeat frame. By
+      // skipping the empty first-turn prompt entirely, the model sits silent
+      // until the FIRST frame_grid arrives, which becomes its first input — no
+      // malformed turn, no wakeup gap. Greeting still triggers normally on the
+      // first set_interaction_mode("interact") call (see handleToolCalls).
+      if (isMuted) {
+        const contextScan = ``;
+        const greetingPrompt = `Generate 4-12 contextual ${T.button}s via rebuild_board() using the user's profile/interests.${imageHint}${boardHint}${personaHint}${contextScan}`;
+        this.pendingGreeting = { prompt: greetingPrompt };
+      } else {
+        this.pendingGreeting = null;
+      }
 
       // Resolve local storage config
       const aacStudentSettings = cached.monitorAgent.getStudent?.()?.aacSettings;
@@ -2536,6 +2691,45 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         } else {
           logLiveSession("INTERPRET_TTS_SKIPPED", "no studentVoice configured");
         }
+
+        // 4. Re-inject the interpreted SENTENCE as a [BUTTON PRESS] user turn
+        // so the model produces a reply + new ${T.board} just like any
+        // clinician-curated ${T.button} press.
+        //
+        // WHY: Gemini Live (especially native-audio) treats a function call
+        // as the natural end of its turn. Empirically (live-session log
+        // 2026-05-24 @11:30 around the make(🎮)+now composition) the model
+        // calls interpret() and then emits `generationComplete` with zero
+        // audio — it never produces the speak + rebuild_board the system
+        // prompt asks for. Re-injecting [BUTTON PRESS] gives the model a
+        // fresh user turn that exactly matches the response pattern it
+        // already executes correctly for clinician-curated presses.
+        //
+        // Timing: this runs AFTER the await on student-voice TTS above, so
+        // the user's voice finishes before the model starts producing its
+        // reply audio. The follow-up uses sendMessage(turnComplete=true) so
+        // it triggers a fresh generation; the SILENT tool response (sent
+        // earlier in handleToolCalls) doesn't.
+        //
+        // We also set the same `lastTurnHadButtonPress` + `pendingRetryPrompt`
+        // flags the real button-press path sets — that way the existing
+        // auto-continuation logic (handleTurnComplete around line 4051)
+        // recognizes a silent response and re-prompts the model with a
+        // "[continue] You declared you would say X but didn't speak it"
+        // nudge. Without these flags, the model frequently writes own_speech
+        // but produces zero audio output (log 2026-05-24 @12:37 line 45166:
+        // `audioOutputTokens=0`) and we never recover.
+        if (this.provider && this.provider.isConnected) {
+          const followUp = `${T.tagPress} ${sentence}`;
+          logLiveSession(
+            "INTERPRET_FOLLOWUP_INJECTED",
+            `text="${followUp.substring(0, 200)}"`,
+          );
+          this.lastTurnHadButtonPress = true;
+          this.pendingRetryPrompt = followUp;
+          this.provider.sendMessage(followUp, "user", true);
+        }
+
         return { id: call.id, name, response: { output: "ok" } };
       }
 
@@ -2634,10 +2828,46 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         // and modifier_candidates (MODIFIER SYMBOLs for the current head).
         // `candidates` is the deprecated single-array form, kept as an
         // alias for head_candidates so older model outputs still work.
-        const rawHeadFromNew = Array.isArray(args.head_candidates) ? args.head_candidates : [];
-        const rawHeadFromLegacy = Array.isArray(args.candidates) ? args.candidates : [];
-        const rawHeadCandidates = rawHeadFromNew.length > 0 ? rawHeadFromNew : rawHeadFromLegacy;
-        const rawModifierCandidates = Array.isArray(args.modifier_candidates) ? args.modifier_candidates : [];
+        // Defensive parsing: the model frequently confuses this tool's
+        // ARRAY-of-strings schema with the COMMA-joined-string format used
+        // by rebuild_board.user_response_buttons. It then passes a single
+        // entry like
+        //   ["generate:word||מילה,generate:sentence||משפט,..."]
+        // (4 candidates in one comma-joined string) instead of
+        //   ["generate:word||מילה", "generate:sentence||משפט", ...].
+        // Be lenient: when an entry contains BOTH a comma AND a pipe, split
+        // it on commas to recover the intended candidates. Each segment is
+        // then validated as a normal piped candidate. Confirmed in
+        // live-session log 2026-05-24 @12:39 line 51460.
+        const flattenCommaJoined = (arr: unknown[]): string[] => {
+          const out: string[] = [];
+          for (const entry of arr) {
+            if (typeof entry !== "string") {
+              // Pass non-strings through unchanged; parseRawArray handles
+              // the JSON-object form separately.
+              out.push(entry as any);
+              continue;
+            }
+            const t = entry.trim();
+            if (t.includes(",") && t.includes("|")) {
+              // Comma+pipe = the model collapsed multiple candidates into
+              // one string. Split on commas (but only at the top level —
+              // pipes inside each segment carry speech|symbol|fallback|label).
+              for (const seg of t.split(",")) {
+                const segTrim = seg.trim();
+                if (segTrim.length > 0) out.push(segTrim);
+              }
+            } else {
+              out.push(t);
+            }
+          }
+          return out;
+        };
+
+        const rawHeadFromNew = Array.isArray(args.head_candidates) ? flattenCommaJoined(args.head_candidates) : [];
+        const rawHeadFromLegacy = Array.isArray(args.candidates) ? flattenCommaJoined(args.candidates) : [];
+        const rawHeadCandidates: unknown[] = rawHeadFromNew.length > 0 ? rawHeadFromNew : rawHeadFromLegacy;
+        const rawModifierCandidates: unknown[] = Array.isArray(args.modifier_candidates) ? flattenCommaJoined(args.modifier_candidates) : [];
 
         // Pipe-separated by default, matching the ${T.button} format
         // elsewhere: speech|symbol|fallback|label (speech field unused for

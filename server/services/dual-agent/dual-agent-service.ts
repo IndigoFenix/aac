@@ -449,13 +449,16 @@ export class DualAgentService {
     }
 
     // Build the function-calling prompt with contacts + boards + symbols + demographics.
-    // If thorough startup generated an enhanced prompt, use it as the persona instead
-    // of the raw custom prompt — the enhanced prompt already has student-specific context woven in.
+    // If thorough startup produced structured sections, weave each one into
+    // the prompt at the appropriate location (persona, session_goals,
+    // gesture_overrides, localized_examples, safety_notes). Otherwise fall
+    // back to the raw clinician persona.
     let interactivePrompt = "";
     const student = monitorAgent.getStudent?.();
     if (student) {
       const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-      const persona = initResult.enhancedPrompt || rawPersona;
+      const sections = initResult.enhancedSections;
+      const persona = sections?.persona || rawPersona;
       const ytChannels = Array.isArray(student.aacSettings?.permittedYoutubeChannels)
         ? (student.aacSettings!.permittedYoutubeChannels as PermittedYoutubeChannel[])
         : [];
@@ -469,7 +472,10 @@ export class DualAgentService {
         studentName: student.firstName || student.name?.split(' ')[0] || "",
         persona,
         language: student.primaryLanguage || undefined,
-        memoryContext: initResult.enhancedPrompt ? undefined : initResult.initialContext,
+        // Always populate <memory> — enhancer sections are stylistic guidance;
+        // the ground-truth interests/notes/people listing must remain visible
+        // to the live AI as the authoritative source.
+        memoryContext: initResult.initialContext,
         muteState,
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
@@ -486,6 +492,12 @@ export class DualAgentService {
         permittedYoutubeVideos: ytVideos.length > 0 ? ytVideos : undefined,
         youtubeChannelVideos: ytChannelVideos,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+        sessionGoals: sections?.sessionGoals,
+        personaGestureOverrides: sections?.gestureOverrides,
+        interactModeExamples: sections?.interactModeExamples,
+        assistModeExamples: sections?.assistModeExamples,
+        sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+        safetyNotes: sections?.safetyNotes,
       });
     }
 
@@ -535,7 +547,7 @@ export class DualAgentService {
       availableBoards,
       cachedDiagnosis,
       memoryContext: initResult.initialContext,
-      enhancedPrompt: initResult.enhancedPrompt,
+      enhancedSections: initResult.enhancedSections,
       privacyOptions: monitorAgent.getPrivacyOptions(),
       remoteStorageEnabled,
     };
@@ -664,7 +676,7 @@ export class DualAgentService {
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
         memoryContext: chatState?.memoryContext,
-        enhancedPrompt: chatState?.enhancedPrompt,
+        enhancedSections: chatState?.enhancedSections,
         remoteStorageEnabled: true, // If loaded from DB, storage was enabled
       };
 
@@ -704,7 +716,9 @@ export class DualAgentService {
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
       if (student) {
-        const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const sections = state.enhancedSections;
+        const personaPrompt = sections?.persona || rawPersona;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
 
         // Fetch and cache contacts for prompt
@@ -746,6 +760,7 @@ export class DualAgentService {
           studentName: student.firstName || student.name.split(' ')[0] || "",
           persona: personaPrompt,
           language: student.primaryLanguage || undefined,
+          memoryContext: state.memoryContext,
           muteState: state.muteState,
           studentAge: computeAge(student.birthDate),
           studentGender: student.gender || undefined,
@@ -765,6 +780,12 @@ export class DualAgentService {
             ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
             : undefined,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+          sessionGoals: sections?.sessionGoals,
+          personaGestureOverrides: sections?.gestureOverrides,
+          interactModeExamples: sections?.interactModeExamples,
+          assistModeExamples: sections?.assistModeExamples,
+          sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+          safetyNotes: sections?.safetyNotes,
         });
       }
 
@@ -812,7 +833,7 @@ export class DualAgentService {
         memoryState: {},
         muteState: state.muteState,
         memoryContext: state.memoryContext,
-        enhancedPrompt: state.enhancedPrompt,
+        enhancedSections: state.enhancedSections,
       };
 
       if (existingSession.length > 0) {

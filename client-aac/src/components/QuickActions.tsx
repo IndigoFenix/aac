@@ -19,7 +19,7 @@ interface QuickActionsProps {
 }
 
 export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, onSpeak, inSentenceBuilder = false }: QuickActionsProps) {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
 
   const quickActions: Array<{ id: "yes" | "no"; labelKey: string; color: string }> = [
     { id: "yes", labelKey: "quickActions.yes", color: "#D1FAE5" },
@@ -57,7 +57,9 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
   // existing screens are unaffected.
   const showSpeakSlot = !!onSpeak;
   const speakLabel = inSentenceBuilder ? t("quickActions.back") : t("quickActions.speak");
-  const speakIcon = inSentenceBuilder ? "◀" : "💬";
+  // Back arrow points opposite reading direction (away from "forward") —
+  // ▶ in RTL so it still reads as "go back", ◀ in LTR.
+  const speakIcon = inSentenceBuilder ? (isRTL ? "▶" : "◀") : "💬";
   const speakColor = inSentenceBuilder ? "#E5E7EB" : "#FEF3C7";
 
   return (

@@ -3,6 +3,7 @@
 
 import { passwordResetRepository } from "../repositories/passwordResetRepository";
 import { userRepository } from "../repositories";
+import { adminUserRepository } from "../repositories/adminUserRepository";
 import { emailService } from "./emailService";
 import bcrypt from "bcryptjs";
 
@@ -33,9 +34,20 @@ export class PasswordResetService {
     baseUrl: string = "https://aivota.ai"
   ): Promise<PasswordResetResult> {
     try {
+      const normalizedEmail = email.toLowerCase();
+
+      // Admin emails: silent success. Admins have a users shell row but its
+      // password is intentionally NULL — resetting it would not let the admin
+      // log in (LocalStrategy short-circuits on admin_users). Admins use the
+      // dedicated /auth/admin/forgot-password path instead.
+      const adminMatch = await adminUserRepository.getByEmail(normalizedEmail);
+      if (adminMatch) {
+        return { success: true };
+      }
+
       // Find user by email
-      const user = await userRepository.getUserByEmail(email.toLowerCase());
-      
+      const user = await userRepository.getUserByEmail(normalizedEmail);
+
       if (!user) {
         // Don't reveal if user exists or not
         console.log(`Password reset requested for non-existent email: ${email}`);

@@ -818,72 +818,87 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           )}
         </div>
 
-        {/* AI-modifier strip — context-aware MODIFIER SUGGESTIONs delivered
-            by suggest_construction_buttons.modifier_candidates. Only renders
-            when the AI actually proposed something AND there's an active
-            HEAD SYMBOL to attach modifiers to (otherwise the press is a
-            no-op). Sits above the static modifier carousel so the AI row
-            reads as "modifiers picked for this conversation" vs the
-            registry-bundled row below. */}
-        {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
-          <div
-            className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0"
-            data-testid="ai-modifier-strip"
-          >
-            <span className="self-center text-xl select-none" aria-hidden>
-              ✨
-            </span>
-            {aiModifierCandidates.map((m) => (
-              <ModifierButton
-                key={m.key}
-                item={
-                  getVocabularyItem(m.key) ?? {
-                    // Synthesized item for AI-only / generated modifier
-                    // SYMBOLs that aren't in the canonical registry. The
-                    // GLYPH stores the bare key; the compositor's
-                    // registered symbol path renders it.
-                    key: m.key,
-                    tKey: `aac.modifier.${m.key}`,
-                    pos: "modifier",
-                    categories: [],
-                    modeChips: {},
-                    tone: "comment",
-                    label: m.label,
-                  } as unknown as VocabularyItem
-                }
-                active={activeModifierKeys.has(m.key)}
-                onPress={() => handleAiModifierPress(m)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Modifier zone — registry-driven MODIFIER SYMBOLs applicable to
-            the active HEAD SYMBOL. Only rendered when there are applicable
-            modifiers OR colors. */}
-        {(modifierItems.length > 0 || colorOptions.length > 0) && (
+        {/* Modifier row — combines two sub-groups in a single horizontal
+            band so they don't burn two vertical rows on small screens:
+              left:  AI-modifier sub-group (context-aware ✨ SUGGESTIONs from
+                     suggest_construction_buttons.modifier_candidates), shown
+                     only when the AI actually proposed something AND there's
+                     an active HEAD SYMBOL to attach modifiers to.
+              right: registry-driven modifiers + More / ColorPicker buttons.
+            When only one sub-group has content, it spans the row. The
+            divider only renders when both sides have content. */}
+        {(
+          (aiModifierCandidates.length > 0 && effectiveActiveSlot != null) ||
+          modifierItems.length > 0 ||
+          colorOptions.length > 0
+        ) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
-            {modifierItems.map((m) => (
-              <ModifierButton
-                key={m.key}
-                item={m}
-                active={activeModifierKeys.has(m.key)}
-                onPress={() => handleModifierPress(m)}
-              />
-            ))}
-            {allModifiers.length > MODIFIERS_PER_PAGE && (
-              <MoreButton onPress={handleModifierMore} testId="modifier-more" />
+            {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
+              <div
+                className="flex items-center gap-2 shrink-0"
+                data-testid="ai-modifier-strip"
+              >
+                <span className="self-center text-xl select-none" aria-hidden>
+                  ✨
+                </span>
+                {aiModifierCandidates.map((m) => (
+                  <ModifierButton
+                    key={m.key}
+                    item={
+                      getVocabularyItem(m.key) ?? {
+                        // Synthesized item for AI-only / generated modifier
+                        // SYMBOLs that aren't in the canonical registry. The
+                        // GLYPH stores the bare key; the compositor's
+                        // registered symbol path renders it.
+                        key: m.key,
+                        tKey: `aac.modifier.${m.key}`,
+                        pos: "modifier",
+                        categories: [],
+                        modeChips: {},
+                        tone: "comment",
+                        label: m.label,
+                      } as unknown as VocabularyItem
+                    }
+                    active={activeModifierKeys.has(m.key)}
+                    onPress={() => handleAiModifierPress(m)}
+                  />
+                ))}
+              </div>
             )}
-            {colorOptions.length > 0 && (
-              <ColorPickerButton
-                active={colorPickerOpen}
-                activeColorValue={
-                  activeColorKey
-                    ? getVocabularyItem(activeColorKey)?.modifier?.colorValue
-                    : undefined
-                }
-                onPress={() => setColorPickerOpen((o) => !o)}
+            {aiModifierCandidates.length > 0
+              && effectiveActiveSlot != null
+              && (modifierItems.length > 0 || colorOptions.length > 0)
+              && (
+              <div
+                className="self-stretch w-px bg-gray-300 dark:bg-gray-600 shrink-0"
+                aria-hidden
               />
+            )}
+            {(modifierItems.length > 0 || colorOptions.length > 0) && (
+              <div className="flex items-center gap-2 shrink-0">
+                {modifierItems.map((m) => (
+                  <ModifierButton
+                    key={m.key}
+                    item={m}
+                    active={activeModifierKeys.has(m.key)}
+                    onPress={() => handleModifierPress(m)}
+                  />
+                ))}
+                {allModifiers.length > MODIFIERS_PER_PAGE && (
+                  <MoreButton onPress={handleModifierMore} testId="modifier-more" />
+                )}
+                {colorOptions.length > 0 && (
+                  <ColorPickerButton
+                    active={colorPickerOpen}
+                    activeColorValue={
+                      activeColorKey
+                        ? getVocabularyItem(activeColorKey)?.modifier?.colorValue
+                        : undefined
+                    }
+                    onPress={() => setColorPickerOpen((o) => !o)}
+                  />
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1037,11 +1052,22 @@ function useItemLabel(item: VocabularyItem): string {
   return translated === item.tKey ? item.key : translated;
 }
 
+/**
+ * RTL image-flip style. Matches the sentence display in `glyph-compositor.tsx`,
+ * which mirrors slot images via `scale(-1, 1)` in RTL. Buttons are plain
+ * `<img>` (not SVG `<image>`), so the equivalent is a CSS `scaleX(-1)`
+ * transform applied at render. The compositor's `isNonReversible` helper
+ * currently always returns false, so every item is flipped; mirroring that
+ * here keeps the on-button visual consistent with the assembled glyph above.
+ */
+const RTL_IMG_STYLE: React.CSSProperties = { transform: "scaleX(-1)" };
+
 function ModifierButton(props: {
   item: VocabularyItem;
   onPress: () => void;
   active?: boolean;
 }) {
+  const { isRTL } = useLanguage();
   const { item, active } = props;
   const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
   const label = useItemLabel(item);
@@ -1060,7 +1086,12 @@ function ModifierButton(props: {
       aria-label={label}
     >
       {url ? (
-        <img src={url} alt="" className="w-10 h-10 object-contain" />
+        <img
+          src={url}
+          alt=""
+          className="w-10 h-10 object-contain"
+          style={isRTL ? RTL_IMG_STYLE : undefined}
+        />
       ) : (
         <span className="text-2xl" aria-hidden>
           {item.emoji ?? "•"}
@@ -1072,6 +1103,7 @@ function ModifierButton(props: {
 
 
 function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
+  const { isRTL } = useLanguage();
   const { item } = props;
   const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
   const label = useItemLabel(item);
@@ -1083,7 +1115,12 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
       className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center gap-1 p-2 min-h-0"
     >
       {url ? (
-        <img src={url} alt="" className="max-h-[60%] max-w-[80%] object-contain" />
+        <img
+          src={url}
+          alt=""
+          className="max-h-[60%] max-w-[80%] object-contain"
+          style={isRTL ? RTL_IMG_STYLE : undefined}
+        />
       ) : (
         <span className="text-4xl" aria-hidden>
           {item.emoji ?? "❓"}
@@ -1255,7 +1292,7 @@ function AiCandidateButton(props: {
   candidate: { key: string; label?: string; symbolPath?: string; fallback?: string };
   onPress: () => void;
 }) {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { candidate } = props;
   const item = getVocabularyItem(candidate.key);
 
@@ -1315,6 +1352,7 @@ function AiCandidateButton(props: {
           src={renderUrl}
           alt=""
           className="min-h-0 max-h-[50px] max-w-[80%] object-contain"
+          style={isRTL ? RTL_IMG_STYLE : undefined}
           onError={() => {
             if (renderUrl === primary.url) setPrimaryFailed(true);
           }}

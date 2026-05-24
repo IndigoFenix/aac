@@ -87,16 +87,23 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     if (WRITABLE_COLUMNS.has(k)) filtered[k] = v;
   }
 
-  // Sanitize the chatAgentPrompt persona on write. The persona is concatenated
-  // raw into the AAC live + monitor system prompts under "# CUSTOM
-  // INSTRUCTIONS"; without this the field is a clinician-controllable prompt
-  // injection slot. We strip the framing tokens the live + monitor pipelines
-  // use as control delimiters (so a malicious persona can't fake them) and
-  // cap the length. Leave the rest of the text as-is — clinicians are
-  // supposed to be able to customize the AI's tone.
+  // Sanitize the chatAgentPrompt persona on write. The persona is fed into
+  // the thorough-startup enhancer (wrapped in a per-session nonced
+  // <<UNTRUSTED-...>> marker) and — when the enhancer fails or fast-startup
+  // is selected — concatenated raw into the live <persona> block. Without
+  // this gate the field is a clinician-controllable prompt-injection slot.
+  // We defang two families of tokens:
+  //   1. Bracketed protocol markers ([CONTEXT], [BUTTON PRESS], etc.) used
+  //      by the live relay's turn injections and the monitor command stream.
+  //   2. XML-style section tags (<persona>, <session_goals>,
+  //      <student_safety>, etc.) used by buildInteractiveAgentPrompt to
+  //      wrap the persona output. A clinician string containing a literal
+  //      </persona> would close the wrapper early and let anything after it
+  //      land in the live system prompt as a sibling section.
+  // We also cap the length to 8 KB (well above any legitimate persona).
   if (typeof filtered.chatAgentPrompt === "string") {
     let p = filtered.chatAgentPrompt;
-    const FRAMING_TOKENS = [
+    const BRACKETED_FRAMING_TOKENS = [
       "[CONTEXT]", "[/CONTEXT]",
       "[UPDATE_PROMPT]", "[/UPDATE_PROMPT]",
       "[BOARD]", "[/BOARD]",
@@ -108,9 +115,31 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
       "[CONSTRUCTION STATE]", "[SENTENCE BUILDER STATE]",
       "[SYSTEM]", "[/SYSTEM]",
     ];
-    for (const tok of FRAMING_TOKENS) {
+    for (const tok of BRACKETED_FRAMING_TOKENS) {
       p = p.split(tok).join(tok.replace(/\[/g, "(").replace(/\]/g, ")"));
     }
+    // XML-style section tags used by buildInteractiveAgentPrompt. Matches
+    // both `<name>` and `</name>` (with optional attributes/whitespace) and
+    // defangs by swapping the angle brackets for parens.
+    const RESERVED_XML_TAGS = [
+      "persona", "session_goals", "memory", "security", "student_safety",
+      "student_specific_examples", "persona_gesture_override",
+      "gesture_defaults", "role", "communication", "presence", "speakers",
+      "addressed_to_you", "observations", "user_intent_hints",
+      "transcription", "ambient_audio", "board", "zones",
+      "speech_coordination", "grammar", "button_syntax", "bundled_icons",
+      "voice_identity", "environment", "mode_selection_rules",
+      "interact_mode", "assist_mode", "standby_mode", "mode_behavior_rules",
+      "binary_choice", "sentence_builder", "examples", "example",
+      "bad_examples", "bad_example",
+    ];
+    const xmlTagPattern = new RegExp(
+      `</?(?:${RESERVED_XML_TAGS.join("|")})\\b[^>]*>`,
+      "gi",
+    );
+    p = p.replace(xmlTagPattern, (m) =>
+      m.replace(/[<>]/g, (c) => (c === "<" ? "(" : ")")),
+    );
     // Hard cap to keep injection bandwidth small; 8 KB is well above any
     // legitimate clinician persona.
     if (p.length > 8000) p = p.slice(0, 8000);

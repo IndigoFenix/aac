@@ -122,6 +122,7 @@ function buildBundledIconsBlock(): string {
   if (modifierGroups.size > 0) {
     lines.push("");
     lines.push("MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`). Stack by chaining: `🤗.big.please`.");
+    lines.push("**This list is EXHAUSTIVE. The renderer has no image for any modifier not listed here.** Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot. If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).");
     const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "other_modifier"];
     for (const group of MODIFIER_ORDER) {
       const items = modifierGroups.get(group);
@@ -134,6 +135,17 @@ function buildBundledIconsBlock(): string {
   return lines.join("\n");
 }
 const BUNDLED_ICONS_BLOCK = buildBundledIconsBlock();
+
+/**
+ * The canonical SYMBOL key inventory, formatted as a <bundled_icons> block.
+ * Exported so the thorough-startup enhancer can show the LLM exactly which
+ * snake_case keys are real — without this it tends to invent fake ones
+ * (`good`, `happy`, `talk_about`, `let_us`, `play_game`) that the live model
+ * then dutifully tries to render, producing ❓ tiles.
+ */
+export function getBundledIconsBlock(): string {
+  return BUNDLED_ICONS_BLOCK;
+}
 
 // ============================================================================
 // PROMPT ASSEMBLY HELPERS
@@ -182,6 +194,25 @@ export function buildInteractiveAgentPrompt(params: {
   }>;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
+  /**
+   * Optional structured sections produced by the thorough-startup enhancer
+   * (see EnhancedPromptSections in dual-agent/types.ts). When present, each
+   * section is injected at a specific location in the prompt:
+   *   - sessionGoals          → new `<session_goals>` block after `<persona>`
+   *   - personaGestureOverrides → replaces the static body of `<persona_gesture_override>`
+   *   - interactModeExamples  → REPLACES `ex("interact_mode.dialogue")`
+   *   - assistModeExamples    → REPLACES `ex("assist_mode.dialogue")`
+   *   - sentenceInterpretationExamples → REPLACES `ex("sentence_interpretation.worked_examples")`
+   *   - safetyNotes           → new `<student_safety>` block after `<security>`
+   * The `persona` parameter above carries the persona section (the enhancer's
+   * `persona` already takes the place of the raw clinician prompt).
+   */
+  sessionGoals?: string;
+  personaGestureOverrides?: string;
+  interactModeExamples?: string;
+  assistModeExamples?: string;
+  sentenceInterpretationExamples?: string;
+  safetyNotes?: string;
 }): string {
   // ──────────────────────────────────────────────────────────────────────────
   // DIAGNOSTIC: minimal-prompt mode.
@@ -203,6 +234,8 @@ export function buildInteractiveAgentPrompt(params: {
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
     permittedYoutubeChannels, permittedYoutubeVideos, youtubeChannelVideos,
     autoSymbolsEnabled = false, useDirectAudio = false,
+    sessionGoals, personaGestureOverrides, safetyNotes,
+    interactModeExamples, assistModeExamples, sentenceInterpretationExamples,
   } = params;
 
   // Age-aware gender word. "boy"/"girl" applied to an adult age (e.g. "39
@@ -292,10 +325,10 @@ NEVER produce text or audio such as "Let me check" or "Let me check that for you
 
     When you see "${T.tagPress} I want to talk about my day", the user is replying to YOU using a ${T.button} you offered. Respond like a real conversation — speak your reply aloud, AND call rebuild_board with that same reply text in the \`${T.paramOwnSpeech}\` parameter plus a fresh ${T.board} of follow-up ${T.button}s.
 
-    EXAMPLES (Interact Mode) — A natural conversation flow. Note: the fallback field is OMITTED whenever the SENTENCE uses no \`generate:\` SYMBOLs.
+    EXAMPLES (Interact Mode)${interactModeExamples ? " — themed on this user's interests / upcoming events" : ""} — A natural conversation flow. Note: the fallback field is OMITTED whenever the SENTENCE uses no \`generate:\` SYMBOLs.
     <examples>
       <example>
-${ex("interact_mode.dialogue", language)}
+${interactModeExamples ?? ex("interact_mode.dialogue", language)}
       </example>
     </examples>
 
@@ -322,10 +355,10 @@ ${ex("interact_mode.bad_echo", language)}
     6. When the other person makes a statement or asks a question, call rebuild_board() with possible replies as ${T.button}s.
     7. If you have important context that may help the conversation, you may speak out loud. Otherwise, remain silent.
 
-    EXAMPLES (Assist Mode) — You are facilitating communication.
+    EXAMPLES (Assist Mode)${assistModeExamples ? " — themed on this user's interests / upcoming events" : ""} — You are facilitating communication.
     <examples>
       <example>
-${ex("assist_mode.dialogue", language)}
+${assistModeExamples ?? ex("assist_mode.dialogue", language)}
       </example>
     </examples>
   </assist_mode>
@@ -413,9 +446,11 @@ Be conservative with gestures: if unclear, add a clarification button rather tha
 </gesture_defaults>
 
 <persona_gesture_override>
-If the "persona" section below mentions specific gestures (e.g. "he often gives a thumbs up when happy"), use those as stronger signals for intent and emotional state than the default gesture interpretations.
+${personaGestureOverrides
+  ? `Specific gestures for THIS user. Treat them as verbal-level signals — respond directly, don't hedge as "possible" interpretations.\n\n${personaGestureOverrides}`
+  : `If the <persona> section below mentions specific gestures (e.g. "he often gives a thumbs up when happy"), use those as stronger signals for intent and emotional state than the default gesture interpretations.
 You may treat persona-specific gestures as verbal-level signals that can directly trigger conversational responses or board changes without needing to hedge them as "possible" interpretations.
-For instance, if the persona says "she gives a thumbs up when happy" and you see a thumbs up, you can confidently respond with "I see you're feeling happy!" and offer related buttons.
+For instance, if the persona says "she gives a thumbs up when happy" and you see a thumbs up, you can confidently respond with "I see you're feeling happy!" and offer related buttons.`}
 </persona_gesture_override>
 
 </observations>
@@ -449,13 +484,21 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
 </speech_coordination>
 
 <grammar>
-  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. A SYMBOL is one of:
-    1. \`symbol:ID\` or \`face:ID\` — a custom SYMBOL stored for this user. FIRST choice when one fits.
-    2. A canonical registry key from <bundled_icons> — used for pronouns, abstract verbs, time concepts, spatial deictics, and ALL modifier SYMBOLs.
-    3. A raw emoji (🍎, 🤗, 🎮, …) — your DEFAULT for everything not in <bundled_icons>: animals, food, body parts, family relations, body actions, vehicles, places, feelings.
-    4. \`generate:lowercase_snake_case\` (e.g. \`generate:planet_mars\`, \`generate:seagull\`) — LAST resort, only when 1–3 can't express the concept. Triggers async image generation. Any SENTENCE that uses a \`generate:\` SYMBOL MUST supply a fallback.
+  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. Choose them in this STRICT preference order — generation is a last resort, not the default:
 
-  NEVER emit a bare snake_case word that isn't in <bundled_icons> (\`talk_about\`, \`my_day\`, \`go_school\` are not canonical). EITHER use an emoji, OR prefix with \`generate:\` AND supply a fallback. Unknown bare snake_case renders as ❓ until generation completes.
+    1. \`symbol:ID\` / \`face:ID\` — a custom SYMBOL or face stored for this user. FIRST CHOICE when one fits.
+    2. **EMOJI + canonical modifier** — your DEFAULT. Almost any concrete-noun-with-a-quality can be expressed as an emoji HEAD with one or more canonical MODIFIERs from <bundled_icons>. Examples:
+         • "red apple"   → \`🍎.color_red\`     (NOT \`generate:red_apple\`)
+         • "big book"    → \`📖.big\`           (NOT \`generate:big_book\`)
+         • "my dog"      → \`🐕.my\`            (NOT \`generate:my_dog\`)
+         • "two cookies" → \`🍪.two\`           (NOT \`generate:two_cookies\`)
+         • "cold water"  → \`💧.cold\`          (NOT \`generate:cold_water\`)
+       This is BY FAR the most common case. Reach for an emoji + modifier BEFORE considering generation.
+    3. A canonical registry key from <bundled_icons> — for pronouns, abstract verbs, time concepts, deictics, and ALL modifier SYMBOLs.
+    4. A raw emoji (🍎, 🤗, 🎮, …) — for concrete nouns not covered by a custom symbol.
+    5. \`generate:<key>\` — LAST RESORT. See <generation_rules> below. Only when (1)–(4) cannot express the concept.
+
+  NEVER emit a bare snake_case word that isn't in <bundled_icons> (\`talk_about\`, \`my_day\`, \`go_school\`, \`adventure_book\` are not canonical). Bare unknown snake_case renders as ❓.
 
   GLYPH: one phrase. A GLYPH is a HEAD SYMBOL followed by zero or more MODIFIER SYMBOLs joined with \`.\`:
     - \`🍎\`              — head 🍎, no modifiers
@@ -463,7 +506,11 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
     - \`🍪.two\`          — head 🍪 + count modifier ("two cookies")
     - \`📖.my\`           — head 📖 + possession modifier ("my book")
     - \`🤗.big.please\`   — modifiers stack
-  MODIFIER SYMBOLs are adjectives, adverbs, or prepositions. Most come from the canonical registry — see <bundled_icons>.
+
+  **CRITICAL — MODIFIER SYMBOLs are ALWAYS from the canonical registry, full stop.** The complete list is in <bundled_icons>: count, possession, negation, intensity, size_shape, temperature, color, social. Words like \`.new\`, \`.old\`, \`.sad\`, \`.funny\`, \`.adventure\`, \`.american\`, \`.scary\` are NOT modifiers — the renderer has no image for them, so the slot shows as a meaningless dot. Emojis are not modifiers either (\`.✨\`, \`.😢\` are also invalid — modifiers are registry keys, not emoji). If you need an adjective the registry doesn't have:
+    - Pick a different HEAD SYMBOL that ALREADY encodes the quality (😢 for "sad", 😂 for "funny", 👴 for "old man", 😨 for "scary", ✨ for "new").
+    - Or drop the adjective from the visual entirely and put it in the spoken \`speech\` field only — the user hears "sad book" even if the icon just shows 📖.
+  Never invent a modifier outside the registry, and never compose multiple GLYPHs just to attach an adjective — one phrase = one GLYPH (HEAD + canonical modifiers).
 
   SENTENCE: up to 3 GLYPHS joined with \`+\`:
     - 1-glyph: \`😴\` ("tired"), \`🍎.color_red\` ("red apple")
@@ -474,9 +521,40 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
   OPERATOR: sentence-level tag appended with \`#\`. Multiple operators may stack:
     - \`#past\`     — \`i_me+go+🛝#past\` = "I went to the playground"
     - \`#future\`   — \`i_me+go+🛝#future\` = "I will go to the playground"
-    - \`#question\` — \`mom+give+i_me+📖#past#question\` = "Did Mom give me the book?"
+    - \`#question\` — \`mom+give+📖#past#question\` = "Did Mom give me the book?" (recipient implied)
   Operators modify the WHOLE sentence — they never substitute for a GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.
 </grammar>
+
+<generation_rules>
+\`generate:<key>\` triggers async image generation. It is the LAST RESORT. Most concepts can be expressed without it — see the SYMBOL preference order above. Reach for generation only when no emoji + canonical-modifier combo can convey the meaning.
+
+**WHEN to generate (rarely — concrete, specific, photographable things):**
+  - Specific scientific objects: \`generate:planet_mars\`, \`generate:black_hole\`, \`generate:saturn_rings\`.
+  - Specific animals where the right emoji is missing: \`generate:seagull\`, \`generate:t_rex\`, \`generate:triceratops\`, \`generate:octopus_giant\`.
+  - Specific tools or instruments: \`generate:violin\`, \`generate:telescope\`, \`generate:microscope\`, \`generate:keyboard_piano\`.
+  - Specific people not covered by a \`face:ID\`.
+
+**WHEN NOT to generate (almost always):**
+  - **Adjectival qualities** ("sad book", "old chair", "new toy", "scary movie", "funny story") — these are qualities OF an object, not objects. The right answer is an emoji HEAD with a canonical modifier (\`📖.big\`), or a different emoji that already encodes the quality (😢 for "sad").
+  - **Phrases or abstractions** (\`generate:its_called\`, \`generate:what_is_it\`, \`generate:my_day\`, \`generate:something_new\`) — these have no clear picture; the image generator cannot draw an idea.
+  - **Anything that's already a normal emoji** (\`🍎\`, \`🐕\`, \`🚗\`). Just use the emoji.
+  - **Compound "<quality>_<noun>"** keys like \`generate:adventure_book\`, \`generate:funny_book\`, \`generate:new_book\`, \`generate:sad_book\`. The "_<noun>" suffix is almost always a sign you should be using emoji + modifier instead. The generation pipeline produces poor results for these, and they fragment what should be a stable visual for the noun.
+
+**Generation key format:**
+  - lowercase_snake_case, English.
+  - Read like an image-search query: a SHORT, CONCRETE NOUN PHRASE depicting a specific physical thing.
+  - To avoid ambiguity on words with multiple meanings, include categories that distinguish it from possible synonyms — e.g. "planet_mars" not just "mars", "animal_bat" not just "bat".
+  - Good: \`generate:planet_mars\`, \`generate:seagull\`, \`generate:t_rex\`, \`generate:violin\`, \`generate:telescope\`, \`generate:triceratops\`.
+  - Bad: \`generate:its_called\`, \`generate:funny\`, \`generate:adventure_book\`, \`generate:new_book\`, \`generate:my_favorite\`, \`generate:talk_about\`.
+
+**Fallback for a generated SENTENCE — ALWAYS required, NEVER contains \`generate:\`:**
+  - The fallback is what the user sees IMMEDIATELY while the image is generating (and if generation fails). A \`generate:\` in the fallback throws an error.
+  - Fallback may only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers on the above.
+  - Mirror the SHAPE of the \`sentence\` field so the visual reads the same. The fallback's job is to approximate the generated concept by combining an existing emoji with a canonical modifier — "Mars" has no emoji, but a red planet (\`🌑.color_red\`) reads as the same idea. Example:
+        sentence  = \`i_me+want+generate:planet_mars\`
+        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)
+  - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
+</generation_rules>
 
 <button_syntax>
 Each ${T.button} is four pipe-separated fields:
@@ -484,8 +562,9 @@ Each ${T.button} is four pipe-separated fields:
   \`speech|sentence|fallback|label\`
 
   - speech: the natural-language SENTENCE as the TTS voices it (first-person, conversational).
-  - sentence: the visual encoding — GLYPHs joined by \`+\`, with operators appended via \`#\`. Follows <grammar> above.
-  - fallback: a \`sentence\` string that uses NO \`generate:\` SYMBOLs. REQUIRED whenever \`sentence\` contains any \`generate:\` SYMBOL; OMIT this field entirely (\`||\`) otherwise. Mirror the structure of \`sentence\` so the user still sees a visual cue while the generated image loads. NEVER put \`generate:\` in the fallback.
+  - sentence: the visual encoding — GLYPHs joined by \`+\`, with operators appended via \`#\`. Follows <grammar> above. Most buttons should use emoji + canonical modifier here, NOT a \`generate:\` key (see <generation_rules>).
+  - fallback: the visual the button shows IMMEDIATELY while a \`generate:\` image is being produced (and as the permanent visual if generation fails). REQUIRED whenever \`sentence\` contains ANY \`generate:\` SYMBOL; OMIT this field entirely (\`||\`) otherwise.
+      **The fallback must NEVER contain \`generate:\` and must NEVER contain a non-canonical modifier (\`.new\`, \`.old\`, \`.sad\`, etc.).** A \`generate:\` in the fallback leaves the button blank (❓); a non-canonical modifier renders as a meaningless dot. Use only: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, and canonical modifiers from <bundled_icons>. Mirror the shape of \`sentence\` (e.g. \`i_me+want+generate:planet_mars\` → \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept). See <generation_rules>.
   - label: short on-button text in ${languageName}. The user sees this; not voiced.
 
 <examples>
@@ -515,7 +594,7 @@ ${BUNDLED_ICONS_BLOCK}`;
     prompt += `
 
 <generated_symbols>
-A generated SYMBOL is lowercase_with_underscores English describing a concrete visual, ALWAYS prefixed with \`generate:\` (e.g. \`generate:planet_mars\`, \`generate:volcano\`). The prefix marks it as non-canonical and reminds you to supply a fallback in the next pipe field. Abstract → concrete metaphor ("Tired" → "person_yawning"). Skip this path entirely when a custom symbol, canonical key, or emoji already covers the concept.
+Generation is enabled. A generated SYMBOL is lowercase_with_underscores English describing a CONCRETE PHYSICAL OBJECT, ALWAYS prefixed with \`generate:\` (e.g. \`generate:planet_mars\`, \`generate:volcano\`). The prefix marks it as non-canonical and reminds you to supply a fallback in the next pipe field. See <generation_rules> above — generation is the LAST resort. Skip it entirely when an emoji + canonical modifier, a custom symbol, or a canonical key already covers the concept. Generation keys must depict specific things you could photograph, not adjectives or abstract phrases.
 </generated_symbols>`;
   }
 
@@ -538,13 +617,13 @@ ${cachedSymbols.map(s => `- ${s.key || s.id}${s.description ? ` — ${s.descript
 The sidebar (add_context_button) is independent of board mode.
 </board_modes>
 
-<custom_boards>
+<prebuilt_boards>
 Pre-built ${T.board}s available via set_board(board_key):
 ${availableBoards.map(b => `- ${b.name}: (key: "${b.key}")${b.hint ? ` — ${b.hint}` : ''}`).join('\n')}`;
     if (loadedBoardName) {
       prompt += `\n\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''} (PREBUILT MODE — navigate via press_button, don't rebuild_board unless leaving the custom board entirely)`;
     }
-    prompt += `\n</custom_boards>`;
+    prompt += `\n</prebuilt_boards>`;
   }
 
   prompt += `\n</board>`;
@@ -694,7 +773,9 @@ OPERATORS — \`#past\` and \`#future\` are sentence-level. They shift the whole
 <sentence_interpretation>
 A ${T.tagComposed} <sentence> turn means the user played a SENTENCE built in the ${T.builder}.
 
-The FIRST thing you do in your response is call \`interpret(sentence)\` where \`sentence\` is the natural-language SENTENCE in the user's voice — first-person, as the user would say it. The tool streams that speech through the user-voice TTS and records it as the user's turn. AFTER interpret(), continue the SAME turn by ${useDirectAudio ? "speaking aloud naturally (your voice carries directly)" : "calling `speak()`"} (unless in assist/standby) and \`rebuild_board()\` to respond just like any other ${T.tagPress}.
+Your job on a ${T.tagComposed} turn is to call \`interpret(sentence)\` where \`sentence\` is the natural-language SENTENCE in the user's voice — first-person, as the user would say it. The tool streams that speech through the user-voice TTS and records it as the user's turn. That is the ONLY thing you do in this turn — do not also call ${useDirectAudio ? "produce audio" : "speak()"} or \`rebuild_board()\` here.
+
+After interpret() runs, the system automatically delivers a follow-up \`${T.tagPress} <your interpreted sentence>\` user turn. You then respond to that ${T.tagPress} normally — ${useDirectAudio ? "speak your reply aloud" : "call speak()"} (unless in assist/standby) and call \`rebuild_board()\` with follow-up ${T.button}s. Treat it exactly like any other clinician-curated ${T.button} press.
 
 You also see in-progress SENTENCEs inside ${T.tagBuilderState} injections while the user is BROWSING the builder. In that case, do NOT call interpret() — that tool is only for ${T.tagComposed} turns. Use the builder state to inform \`suggest_construction_buttons\` instead.
 
@@ -703,12 +784,12 @@ INTERPRET CREATIVELY. Don't read the SENTENCE back literally. A composed SENTENC
 PROCEDURE:
 1. Decode each GLYPH literally — HEAD SYMBOL + MODIFIER SYMBOLs (using <sentence_builder_grammar>).
 2. Look at the COMBINATION of GLYPHs. Adjacent GLYPHs may compose into a single idea — \`shoe+ball\` → "soccer ball / football"; \`fish+stick\` → "fish stick" or "fishing rod"; \`water+horse\` → "hippopotamus"; \`cat+water\` → bathing the cat, the cat drinking, or fish.
-3. Cross-reference with the user's interests, recent activities, what is on camera, and the conversation so far. If the user loves football and emits \`i_me+talk+shoe+ball\`, "talk about football" is overwhelmingly more likely than "talk about a shoe AND a ball."
+3. Cross-reference with the user's interests, recent activities, what is on camera, and the conversation so far. If the user loves football and emits \`talk+shoe+ball\`, "talk about football" is overwhelmingly more likely than "talk about a shoe AND a ball."
 4. Voice your interpretation naturally — "Oh, you want to talk about football?" — so the user can confirm or redirect. Do NOT ask them to disambiguate symbol-by-symbol ("Do you mean shoe OR ball?"); that treats their SENTENCE as a vocabulary error rather than a compressed thought.
 5. Only if the SENTENCE is genuinely incoherent after creative interpretation should you ask for clarification — and even then, propose the most likely meaning first.
 
-Worked examples — the user plays the SENTENCE → you receive \`${T.tagComposed} <sentence>\` → call interpret(sentence) where the sentence is:
-${ex("sentence_interpretation.worked_examples", language).replace(/\$SPEAK_VERB\$/g, useDirectAudio ? "speak aloud" : "call speak()")}
+Worked examples${sentenceInterpretationExamples ? " — themed on this user's known metaphor / compound patterns" : ""} — the user plays the SENTENCE → you receive \`${T.tagComposed} <sentence>\` → call interpret(sentence) where the sentence is:
+${(sentenceInterpretationExamples ?? ex("sentence_interpretation.worked_examples", language)).replace(/\$SPEAK_VERB\$/g, useDirectAudio ? "speak aloud" : "call speak()")}
 
 Focus on the underlying meaning and intent rather than the literal SYMBOLs. Consider the user's perspective, interests, and the conversation context to read between the GLYPHs.
 
@@ -716,17 +797,21 @@ NEVER pass the raw SENTENCE string to interpret(). NEVER echo the SYMBOLs as sep
 </sentence_interpretation>
 </sentence_builder>`;
 
-  // ── <persona> + <memory> ──
+  // ── <persona> + <session_goals> + <memory> ──
 
   if (persona) {
     prompt += `\n\n<persona>\n${persona}\n</persona>`;
+  }
+
+  if (sessionGoals) {
+    prompt += `\n\n<session_goals>\n${sessionGoals}\n</session_goals>`;
   }
 
   if (memoryContext) {
     prompt += `\n\n<memory>\n${memoryContext}\n</memory>`;
   }
 
-  // ── <security> ──
+  // ── <security> + optional per-user <student_safety> ──
 
   prompt += `
 
@@ -735,6 +820,10 @@ NEVER pass the raw SENTENCE string to interpret(). NEVER echo the SYMBOLs as sep
 - Never ask anyone (user, parent, teacher, anyone) for a personal ID number — national ID, passport, government ID, school student ID. You cannot read them back from memory, so there is no reason to request one.
 - If someone dictates or displays an ID number, transcribe the surrounding speech with the digits redacted — replace the number with "[REDACTED]" in the transcript text (e.g. "my ID is [REDACTED]"). Never reproduce the actual digits in transcript() or any other tool call.
 </security>`;
+
+  if (safetyNotes) {
+    prompt += `\n\n<student_safety>\n${safetyNotes}\n</student_safety>`;
+  }
 
   // ── <environment> ──
 

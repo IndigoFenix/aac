@@ -1,15 +1,17 @@
--- Migration 0107: separate admin auth from users
+-- Migration 0107: separate admin auth from users (revised)
 --
--- admin_users becomes a fully self-contained identity. The legacy `users` row
--- for each admin is dropped — login (password + Google + MFA) now reads/writes
--- admin_users directly. Before dropping the users rows we also clean up the
--- auth-scaffolding tables (recovery + reset tokens, external identity links)
--- whose FK would otherwise block the DELETE.
+-- admin_users becomes a fully self-contained identity for *authentication*:
+-- password, MFA secret, auth_provider, and google_id all live on the admin row.
+-- LocalStrategy / Google strategy / MFA / recovery all read and write here.
 --
--- If the DELETE step trips on FK refs from other tables (e.g. an admin issued
--- invites, created licenses, etc.), the whole migration rolls back. The fix
--- in that case is to reassign or null those refs before re-running — see the
--- "FK fallout" note in the PR description.
+-- The legacy `users` row is intentionally **kept** as an empty "shell": it
+-- anchors FK references from chat_sessions, audit logs, and anything created
+-- while an admin is in customer-support mode acting on behalf of a tenant.
+-- We just NULL out the auth fields so the shell cannot be used for login —
+-- belt-and-braces, since LocalStrategy already short-circuits on admin_users.
+--
+-- New admins that don't have a paired users row get a dummy one created on
+-- first login (see ensureAdminShellUser in adminAuthService).
 
 ALTER TABLE "admin_users" ADD COLUMN "password" text;--> statement-breakpoint
 ALTER TABLE "admin_users" ADD COLUMN "auth_provider" text DEFAULT 'email' NOT NULL;--> statement-breakpoint
@@ -20,9 +22,8 @@ ALTER TABLE "admin_users" ADD COLUMN "mfa_secret" text;--> statement-breakpoint
 ALTER TABLE "admin_users" ADD COLUMN "mfa_enforced_by_admin" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "admin_users" ADD COLUMN "last_active_at" timestamp;--> statement-breakpoint
 
--- Backfill auth state from the legacy users row (matched by shared id). This
--- is a no-op for any admin_users row that lacks a paired users row (e.g. an
--- admin added via the new management UI on a fresh environment).
+-- Backfill auth state from the legacy users row (matched by shared id).
+-- No-op for any admin_users row without a paired users row.
 UPDATE "admin_users" a SET
   password = u.password,
   auth_provider = COALESCE(u.auth_provider, 'email'),
@@ -34,16 +35,14 @@ UPDATE "admin_users" a SET
   updated_at = now()
 FROM "users" u WHERE u.id = a.id;--> statement-breakpoint
 
--- Clean up FK refs that would otherwise block deleting the users rows. These
--- are pure auth scaffolding — tokens belonging to an admin who is being
--- migrated off the users table are no longer meaningful.
-DELETE FROM "mfa_recovery_tokens" WHERE user_id IN (SELECT id FROM "admin_users");--> statement-breakpoint
-DELETE FROM "password_reset_tokens" WHERE user_id IN (SELECT id FROM "admin_users");--> statement-breakpoint
-DELETE FROM "user_external_identities" WHERE user_id IN (SELECT id FROM "admin_users");--> statement-breakpoint
-
--- Drop the legacy users row for every admin. If this fails on an FK
--- constraint, that constraint points at a table that still considers the
--- admin a "user" (e.g. created_by_user_id on a license). Resolve by either
--- (a) repointing/nullifying those refs first, or (b) accepting CASCADE on
--- the offending FK — then re-run the migration.
-DELETE FROM "users" WHERE id IN (SELECT id FROM "admin_users");
+-- Clear auth-bearing fields on the admin's users shell row. Nothing on this
+-- row can be used to log in any longer — admin login goes through admin_users.
+-- The row itself stays so existing FK references survive.
+UPDATE "users" SET
+  password = NULL,
+  google_id = NULL,
+  mfa_enabled = false,
+  mfa_secret = NULL,
+  mfa_enforced_by_admin = false,
+  updated_at = now()
+WHERE id IN (SELECT id FROM "admin_users");

@@ -130,13 +130,10 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
  * behalf. Do NOT call interpret() in response to a regular ${T.tagPress}
  * (those already carry a pre-generated SENTENCE and are TTS'd separately).
  */
-function buildInterpretTool(config: ToolDeclarationConfig): FunctionDeclaration {
-  const followUp = config.useDirectAudio
-    ? `After calling interpret(), continue the SAME turn by speaking aloud naturally (your voice carries directly to the user) and calling rebuild_board() to respond to that statement (subject to mode rules — stay silent in assist/standby). interpret() is non-blocking; your own audio output is sequenced AFTER the user TTS finishes so the room hears the user first, then your reply.`
-    : `After calling interpret(), continue the SAME turn with speak() + rebuild_board() to respond to that statement (subject to mode rules — assist mode skips speak()). interpret() is non-blocking; speak() is sequenced AFTER the user TTS finishes so the room hears the user first, then your reply.`;
+function buildInterpretTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "interpret",
-    description: `Voice a natural-language SENTENCE through the USER'S TTS voice. Call this ONLY in response to a ${T.tagComposed} turn — never spontaneously, and never in response to a regular ${T.tagPress} (those already have a pre-baked SENTENCE that TTS plays automatically). The 'sentence' argument MUST be first-person, as the user would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using user interests, don't echo individual SYMBOLs. ${followUp}`,
+    description: `Voice a natural-language SENTENCE through the USER'S TTS voice. Call this ONLY in response to a ${T.tagComposed} turn — never spontaneously, and never in response to a regular ${T.tagPress} (those already have a pre-baked SENTENCE that TTS plays automatically). The 'sentence' argument MUST be first-person, as the user would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using user interests, don't echo individual SYMBOLs. After interpret() runs the user's TTS, the system delivers a follow-up ${T.tagPress} with the same sentence — you respond to THAT (speak + rebuild_board) on the next turn. Do NOT also try to speak or rebuild_board inside the interpret turn itself. Your reply audio is sequenced AFTER the user's TTS finishes so the room hears the user's voice first, then your reply — you don't need to time it yourself, the system holds your audio until the user voice is done.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -539,12 +536,12 @@ Never include any SYMBOL from \`exclude_keys\`. SUGGESTION labels MUST be in the
         },
         head_candidates: {
           type: "array",
-          description: "Up to 4 HEAD-SYMBOL SUGGESTIONs for the next GLYPH. Order matters — leftmost is strongest. Each item is exactly one SYMBOL, as a pipe-separated string `speech|symbol|fallback|label` (speech field unused). Empty list is fine when no head suggestion fits.",
+          description: "ARRAY of up to 4 strings. EACH ARRAY ELEMENT is ONE candidate — DO NOT put multiple candidates in one element separated by commas (that's the format rebuild_board uses; here it's an actual JSON array). Order matters — leftmost is strongest. Each element is one SYMBOL formatted as pipe-separated `speech|symbol|fallback|label` (speech field unused). Example: `[\"|🐕||Dog\", \"|🐈||Cat\", \"|🐦||Bird\"]` — three array elements, NOT one string. Empty list is fine when no head suggestion fits.",
           items: { type: "string" },
         },
         modifier_candidates: {
           type: "array",
-          description: "Up to 4 MODIFIER-SYMBOL SUGGESTIONs that attach to the user's current HEAD SYMBOL. Order matters. Each item is exactly one MODIFIER SYMBOL (\\`color_red\\`, \\`big\\`, \\`my\\`, \\`two\\`, \\`please\\`, …), formatted as `speech|symbol|fallback|label` (speech field unused). Empty list is fine when no modifier suggestion fits.",
+          description: "ARRAY of up to 4 strings. EACH ARRAY ELEMENT is ONE modifier candidate — DO NOT put multiple candidates in one element separated by commas. Order matters. Each element is one MODIFIER SYMBOL (\\`color_red\\`, \\`big\\`, \\`my\\`, \\`two\\`, \\`please\\`, …), formatted as `speech|symbol|fallback|label` (speech field unused). Example: `[\"|color_red||Red\", \"|big||Big\"]` — two array elements. Empty list is fine when no modifier suggestion fits.",
           items: { type: "string" },
         },
         candidates: {

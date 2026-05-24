@@ -288,22 +288,22 @@ const EXAMPLES: Record<string, ExampleEntry> = {
   // is supposed to voice in the student's own language.
   "sentence_interpretation.worked_examples": {
     en: `- \`i_me+want+💧\` → interpret("I want some water") then $SPEAK_VERB$ + rebuild_board() about getting water.
-- \`i_me+talk+shoe+ball\` → interpret("I want to talk about football") — shoe+ball compound matches interest.
-- \`i_me+go+park+🐕\` → interpret("I want to go to the park with the dog") — companion, not two destinations.
-- \`mom+give+i_me+📖\` → interpret("I want Mom to give me the book") — literal subject/verb/recipient/object.
+- \`talk+shoe+ball\` → interpret("I want to talk about football") — shoe+ball compound matches interest; subject defaults to user.
+- \`go+park+🐕\` → interpret("I want to go to the park with the dog") — companion, not two destinations.
+- \`mom+give+📖\` → interpret("I want Mom to give me the book") — recipient (me) is implied when omitted.
 - \`tired+i_me\` → interpret("I'm tired") — feeling + subject; no verb needed.
 - \`📖.your\` → interpret("Do you have the book?") — 1-glyph SENTENCE with possession modifier.
 - \`i_me+eat+🍌#past\` → interpret("I ate a banana") — operator-driven past tense.
 - \`i_me+go+park#future\` → interpret("I will go to the park").
-- \`mom+give+i_me+📖#past#question\` → interpret("Did Mom give me the book?") — operators stack.`,
+- \`mom+give+📖#past#question\` → interpret("Did Mom give me the book?") — operators stack on a 3-glyph SENTENCE.`,
     he: `- \`i_me+want+💧\` → interpret("אני רוצה קצת מים") then $SPEAK_VERB$ + rebuild_board() about getting water.
-- \`i_me+talk+shoe+ball\` → interpret("אני רוצה לדבר על כדורגל") — shoe+ball compound matches interest.
-- \`i_me+go+park+🐕\` → interpret("אני רוצה ללכת לפארק עם הכלב") — companion, not two destinations.
-- \`mom+give+i_me+📖\` → interpret("אני רוצה שאמא תיתן לי את הספר") — literal subject/verb/recipient/object.
+- \`talk+shoe+ball\` → interpret("אני רוצה לדבר על כדורגל") — shoe+ball compound matches interest; subject defaults to user.
+- \`go+park+🐕\` → interpret("אני רוצה ללכת לפארק עם הכלב") — companion, not two destinations.
+- \`mom+give+📖\` → interpret("אני רוצה שאמא תיתן לי את הספר") — recipient (me) is implied when omitted.
 - \`tired+i_me\` → interpret("אני עייף") — feeling + subject; no verb needed.
 - \`📖.your\` → interpret("יש לך את הספר?") — 1-glyph SENTENCE with possession modifier.
 - \`i_me+eat+🍌#past\` → interpret("אכלתי בננה") — operator-driven past tense.
 - \`i_me+go+park#future\` → interpret("אני אלך לפארק").
-- \`mom+give+i_me+📖#past#question\` → interpret("האם אמא נתנה לי את הספר?") — operators stack.`,
+- \`mom+give+📖#past#question\` → interpret("האם אמא נתנה לי את הספר?") — operators stack on a 3-glyph SENTENCE.`,
   },
 };

@@ -75,6 +75,56 @@ export interface PendingMessage {
 }
 
 /**
+ * Structured output of the thorough-startup prompt enhancer.
+ *
+ * The enhancer LLM converts the clinician-written `chatAgentPrompt` plus
+ * student data, calendar events, and recent notes into tag-delimited
+ * sections. Each section is injected at a specific location in the
+ * Interactive Agent's system prompt by `buildInteractiveAgentPrompt`,
+ * REPLACING the static template content where applicable:
+ *
+ * - `persona`                       → replaces the raw chatAgentPrompt inside
+ *                                     `<persona>`. Personality, relationship,
+ *                                     communication profile.
+ * - `sessionGoals`                  → new `<session_goals>` block right after
+ *                                     `<persona>`. Specific aims for THIS
+ *                                     session derived from events / notes /
+ *                                     time of day.
+ * - `gestureOverrides`              → replaces the static body of
+ *                                     `<persona_gesture_override>`.
+ * - `interactModeExamples`          → REPLACES `ex("interact_mode.dialogue")`
+ *                                     inside `<interact_mode>`. Worked
+ *                                     dialogues themed on this user's
+ *                                     interests / upcoming events.
+ * - `assistModeExamples`            → REPLACES `ex("assist_mode.dialogue")`
+ *                                     inside `<assist_mode>`. Facilitating
+ *                                     between the user and a third party
+ *                                     (therapist, parent, teacher) on topics
+ *                                     the user is likely to discuss.
+ * - `sentenceInterpretationExamples` → REPLACES
+ *                                     `ex("sentence_interpretation.worked_examples")`
+ *                                     inside `<sentence_interpretation>`.
+ *                                     Must include any metaphor / compound
+ *                                     SENTENCE patterns this user is noted
+ *                                     to use (e.g. `shoe+ball` → football).
+ * - `safetyNotes`                   → new `<student_safety>` block after
+ *                                     `<security>`. Allergies, behavioral
+ *                                     triggers, redaction categories.
+ *
+ * Every field is optional. Missing sections fall back to the static default
+ * in the prompt builder.
+ */
+export interface EnhancedPromptSections {
+  persona?: string;
+  sessionGoals?: string;
+  gestureOverrides?: string;
+  interactModeExamples?: string;
+  assistModeExamples?: string;
+  sentenceInterpretationExamples?: string;
+  safetyNotes?: string;
+}
+
+/**
  * Session state for dual-agent system
  */
 export interface DualAgentSessionState {
@@ -155,8 +205,13 @@ export interface DualAgentSessionState {
   // Memory context from fast startup (chatMemory fields)
   memoryContext?: string;
 
-  // Enhanced prompt from thorough startup (LLM-generated, replaces raw persona)
-  enhancedPrompt?: string;
+  // Structured enhanced-prompt sections from thorough startup. Each section
+  // is independently parsed from the enhancer LLM's tagged output and
+  // injected at a specific location in the Interactive Agent's system prompt
+  // (see buildInteractiveAgentPrompt). When present, the persona section
+  // replaces the raw chatAgentPrompt; other sections augment or override
+  // specific blocks in the system prompt.
+  enhancedSections?: EnhancedPromptSections;
 
   // Privacy settings — gate monitor access to sensitive student data
   privacyOptions?: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean };

@@ -12,7 +12,7 @@ import createMemoryStore from "memorystore";
 import { identityProviderRepository } from "./repositories/identityProviderRepository";
 import { adminUserRepository } from "./repositories/adminUserRepository";
 import { identityService } from "./services/identityService";
-import { adaptAdminAsUser, resolveLoginIdentity, type SessionIdentity } from "./services/adminAuthService";
+import { adaptAdminAsUser, ensureAdminShellUser, resolveLoginIdentity, type SessionIdentity } from "./services/adminAuthService";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -80,6 +80,8 @@ export async function setupUserAuth(app: Express) {
             return done(null, false, { message: 'Invalid login credentials' });
           }
           await adminUserRepository.update(admin.id, { lastActiveAt: new Date() } as any);
+          // Make sure the admin has a users shell row for FK anchors / support mode.
+          await ensureAdminShellUser(admin);
           return done(null, adaptAdminAsUser(admin));
         }
 
@@ -163,6 +165,7 @@ export async function setupUserAuth(app: Express) {
           const adminMatch = await adminUserRepository.getByEmail(email);
           if (adminMatch) {
             await adminUserRepository.update(adminMatch.id, { lastActiveAt: new Date() } as any);
+            await ensureAdminShellUser(adminMatch);
             return done(null, adaptAdminAsUser(adminMatch));
           }
 

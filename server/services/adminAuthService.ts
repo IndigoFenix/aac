@@ -12,6 +12,8 @@
  */
 
 import type { User, AdminUser } from "@shared/schema";
+import { users } from "@shared/schema";
+import { db } from "../db";
 import { adminUserRepository } from "../repositories/adminUserRepository";
 
 export type SessionIdentity =
@@ -98,4 +100,35 @@ export async function resolveLoginIdentity(user: User): Promise<User | AdminPseu
  */
 export function isAdminIdentity(user: unknown): user is AdminPseudoUser {
   return !!(user && typeof user === "object" && (user as any)._identityKind === "admin");
+}
+
+/**
+ * Make sure an admin has a `users` shell row anchored to their admin_users.id.
+ *
+ * Admin auth itself lives entirely on admin_users — this shell row exists only
+ * so other tables (chat_sessions, audit-style FKs, anything created while in
+ * customer-support mode) can attach to the admin's identity. The row carries
+ * no password / MFA / Google linkage; it's a stub.
+ *
+ * Idempotent via ON CONFLICT DO NOTHING — safe to call on every admin login.
+ */
+export async function ensureAdminShellUser(admin: AdminUser): Promise<void> {
+  if (!admin?.id || !admin.email) return;
+  await db
+    .insert(users)
+    .values({
+      id: admin.id,
+      email: admin.email,
+      firstName: admin.firstName ?? null,
+      lastName: admin.lastName ?? null,
+      profileImageUrl: admin.profileImageUrl ?? null,
+      userType: "admin",
+      isAdmin: true,
+      isSystemAdmin: true,
+      onboardingStep: 3,
+      // No password / google_id / mfa state on the shell.
+      password: null,
+      authProvider: "email",
+    } as any)
+    .onConflictDoNothing({ target: users.id });
 }

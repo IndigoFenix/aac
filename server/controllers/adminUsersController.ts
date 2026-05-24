@@ -8,6 +8,7 @@
 import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { adminUserRepository } from "../repositories/adminUserRepository";
+import { ensureAdminShellUser } from "../services/adminAuthService";
 import { sanitizeAdminPermissions } from "@shared/admin-sections";
 
 function formatAdmin(row: any) {
@@ -56,6 +57,9 @@ class AdminUsersController {
         lastName: typeof lastName === "string" ? lastName : null,
         permissions: sanitized.length === 0 ? ["*"] : sanitized,
       } as any);
+
+      // Anchor a shell users row for FK refs / support mode. Idempotent.
+      await ensureAdminShellUser(created);
 
       const actor = req.user as any;
       console.log(`[Admins] ${actor?.email ?? "(unknown)"} created admin ${created.email}`);
