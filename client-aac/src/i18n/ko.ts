@@ -744,4 +744,11 @@ export const ko: Translations = {
     prevPage: "이전 페이지",
     nextPage: "다음 페이지",
   },
+
+  eyegaze: {
+    connected: "연결됨",
+    notDetected: "감지되지 않음",
+    driverNotFound: "시선 추적기 드라이버를 찾을 수 없음",
+    locateDriver: "드라이버 찾기…",
+  },
 };

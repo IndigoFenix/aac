@@ -128,6 +128,34 @@ describe("applyCorsPolicy", () => {
     });
   });
 
+  it("always allows the desktop app origin (app://aac), even when not in ALLOWED_ORIGINS", async () => {
+    // The Electron client's origin is fixed and unforgeable by web pages, so it
+    // is allowed regardless of per-deployment config.
+    process.env.ALLOWED_ORIGINS = "https://aivota.ai";
+    await withApp(async (port) => {
+      const res = await probe(port, {
+        Host: "aac-q80a.onrender.com",
+        "X-Forwarded-Proto": "https",
+        Origin: "app://aac",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers["access-control-allow-origin"]).toBe("app://aac");
+    });
+  });
+
+  it("allows the desktop app origin even with no ALLOWED_ORIGINS configured in prod", async () => {
+    // ALLOWED_ORIGINS + APP_URL both unset (deleted in beforeEach).
+    await withApp(async (port) => {
+      const res = await probe(port, {
+        Host: "aac-q80a.onrender.com",
+        "X-Forwarded-Proto": "https",
+        Origin: "app://aac",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers["access-control-allow-origin"]).toBe("app://aac");
+    });
+  });
+
   it("supports wildcard subdomain entries in ALLOWED_ORIGINS", async () => {
     process.env.ALLOWED_ORIGINS = "https://*.aivota.ai";
     await withApp(async (port) => {

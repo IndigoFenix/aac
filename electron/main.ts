@@ -1,8 +1,8 @@
-import { app, BrowserWindow, protocol, ipcMain, session } from "electron";
+import { app, BrowserWindow, protocol, ipcMain, session, dialog } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { HardwareBridgeManager } from "./hardware/bridge-manager";
+import { GazeSidecarSupervisor, GazeSupervisorPaths } from "./hardware/gaze-sidecar-supervisor";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,7 +20,33 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
-let hardwareManager: HardwareBridgeManager | null = null;
+let gazeSupervisor: GazeSidecarSupervisor | null = null;
+
+/**
+ * Resolve where the gaze sidecar + its runtime/node_modules live, for dev
+ * (running from the repo) vs packaged (shipped under resources/gaze-sidecar).
+ */
+function gazeSupervisorPaths(): GazeSupervisorPaths {
+  if (app.isPackaged) {
+    const base = path.join(process.resourcesPath, "gaze-sidecar");
+    return {
+      userDataDir: app.getPath("userData"),
+      sidecarScript: path.join(base, "gaze-sidecar.cjs"),
+      // "sidecar_modules" (not "node_modules") because electron-builder strips a
+      // folder named node_modules from extraResources. NODE_PATH treats this dir
+      // as a module search root regardless of its name.
+      sidecarNodeModules: path.join(base, "sidecar_modules"),
+      ia32Runtime: path.join(base, "runtime", "win32-ia32", "node.exe"),
+    };
+  }
+  const appRoot = path.join(__dirname, "..");
+  return {
+    userDataDir: app.getPath("userData"),
+    sidecarScript: path.join(appRoot, "electron", "sidecar", "gaze-sidecar.cjs"),
+    sidecarNodeModules: path.join(appRoot, "node_modules"),
+    ia32Runtime: path.join(appRoot, "electron", "sidecar", "runtime", "win32-ia32", "node.exe"),
+  };
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -125,9 +151,9 @@ app.on("ready", async () => {
     callback({ responseHeaders: headers });
   });
 
-  // Start hardware bridge manager
-  hardwareManager = new HardwareBridgeManager();
-  await hardwareManager.start();
+  // Create the gaze sidecar supervisor. It stays idle until the renderer calls
+  // gaze:ensure (when a student's settings select an eye tracker).
+  gazeSupervisor = new GazeSidecarSupervisor(gazeSupervisorPaths());
 
   createWindow();
 });
@@ -135,12 +161,46 @@ app.on("ready", async () => {
 // IPC handlers
 ipcMain.handle("app:getVersion", () => app.getVersion());
 ipcMain.handle("app:getPlatform", () => process.platform);
-ipcMain.handle("hardware:status", () => {
-  return hardwareManager?.getStatus() ?? {};
+
+// ── Gaze sidecar IPC ──
+// The renderer drives these when a student's eye-tracking settings are active.
+ipcMain.handle("gaze:ensure", (_e, device: string) => {
+  return gazeSupervisor?.ensure(device) ?? null;
+});
+ipcMain.handle("gaze:status", () => {
+  return gazeSupervisor?.getStatus() ?? null;
+});
+ipcMain.handle("gaze:stop", () => {
+  gazeSupervisor?.stop();
+  return gazeSupervisor?.getStatus() ?? null;
+});
+ipcMain.handle("gaze:setDll", (_e, device: string, dllPath: string) => {
+  return gazeSupervisor?.setDll(device, dllPath) ?? null;
+});
+ipcMain.handle("gaze:clearDll", (_e, device: string) => {
+  return gazeSupervisor?.clearDll(device) ?? null;
+});
+// Open a native file dialog to pick the DLL, then start the sidecar with it.
+ipcMain.handle("gaze:locateDll", async (_e, device: string) => {
+  const dialogOptions = {
+    title: "Locate the eye-tracker driver (.dll)",
+    properties: ["openFile" as const],
+    filters: [
+      { name: "Eye tracker DLL", extensions: ["dll"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
+  if (result.canceled || !result.filePaths.length) {
+    return gazeSupervisor?.getStatus() ?? null;
+  }
+  return gazeSupervisor?.setDll(device, result.filePaths[0]) ?? null;
 });
 
 app.on("window-all-closed", () => {
-  hardwareManager?.stop();
+  gazeSupervisor?.stop();
   if (process.platform !== "darwin") {
     app.quit();
   }

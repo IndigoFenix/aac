@@ -60,6 +60,23 @@
       background: #e94560; color: white; font-size: 12px; cursor: pointer;
     }
 
+    /* ── DLL Bar ── */
+    #dll-bar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 6px 16px; background: #11294a; flex-shrink: 0;
+      font-size: 12px; border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    #dll-bar button {
+      padding: 4px 12px; border: none; border-radius: 4px;
+      background: #3b82f6; color: white; font-size: 12px; cursor: pointer;
+    }
+    #dll-bar button.secondary { background: #0f3460; }
+    #dll-path {
+      font-family: monospace; color: #9fb3c8; margin-left: auto;
+      max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      direction: rtl; text-align: left; /* keep the filename visible when truncated */
+    }
+
     /* ── Button Grid ── */
     #grid {
       flex: 1; display: grid; padding: 16px; gap: 12px;
@@ -151,6 +168,14 @@
     <button id="btn-cursor" style="background:#0f3460">Show Cursor</button>
   </div>
 
+  <!-- DLL picker bar -->
+  <div id="dll-bar">
+    <button id="btn-select-dll">📁 Select DLL…</button>
+    <button id="btn-clear-dll" class="secondary">Auto-detect</button>
+    <button id="btn-open-log" class="secondary">📝 Open Log</button>
+    <span id="dll-path" title="">DLL: (auto-detect)</span>
+  </div>
+
   <!-- Button grid -->
   <div id="grid"></div>
 
@@ -230,6 +255,7 @@ function connectWebSocket() {
       if (msg.type === "status") {
         bridgeStatus = msg;
         updateStatusBar();
+        if (msg.dllPath) setDllDisplay(msg.dllPath);
 
         if (msg.code === "connected") {
           // Bridge has Tobii hardware — switch to tobii source
@@ -579,6 +605,82 @@ document.getElementById("btn-cursor").addEventListener("click", () => {
   document.body.style.cursor = cursorShown ? "default" : "none";
   document.getElementById("btn-cursor").textContent = cursorShown ? "Hide Cursor" : "Show Cursor";
 });
+
+/* ============================================================================
+   DLL PICKER — choose tobii_stream_engine.dll via the native file dialog
+   ============================================================================
+   Uses the IPC bridge exposed in preload.js. The chosen path is persisted by
+   the main process and the Tobii bridge reconnects live (no app restart).
+*/
+
+const dllPathEl = document.getElementById("dll-path");
+
+function setDllDisplay(pathStr) {
+  if (pathStr) {
+    dllPathEl.textContent = "DLL: " + pathStr;
+    dllPathEl.title = pathStr;
+  } else {
+    dllPathEl.textContent = "DLL: (auto-detect)";
+    dllPathEl.title = "";
+  }
+}
+
+// Reflect a reconnect result in the status bar + DLL display
+function applyReconnectResult(result) {
+  if (!result) return;
+  if (result.connected) {
+    gazeSource = "tobii";
+    setDllDisplay(result.dllPath);
+  } else if (result.status) {
+    bridgeStatus = result.status;
+    // reconnect failed — fall back to mouse so the UI stays usable
+    if (gazeSource !== "tobii") enableMouseFallback();
+  }
+  updateStatusBar();
+}
+
+const btnSelectDll = document.getElementById("btn-select-dll");
+const btnClearDll = document.getElementById("btn-clear-dll");
+
+if (window.electronAPI?.selectDll) {
+  btnSelectDll.addEventListener("click", async () => {
+    const chosen = await window.electronAPI.selectDll();
+    if (!chosen) return; // dialog cancelled
+    btnSelectDll.textContent = "Connecting…";
+    btnSelectDll.disabled = true;
+    try {
+      const result = await window.electronAPI.setDll(chosen);
+      applyReconnectResult(result);
+    } finally {
+      btnSelectDll.textContent = "📁 Select DLL…";
+      btnSelectDll.disabled = false;
+    }
+  });
+
+  btnClearDll.addEventListener("click", async () => {
+    btnClearDll.disabled = true;
+    try {
+      const result = await window.electronAPI.clearDll();
+      applyReconnectResult(result);
+      if (!result?.connected) setDllDisplay(null);
+    } finally {
+      btnClearDll.disabled = false;
+    }
+  });
+
+  // Open the debug log file
+  document.getElementById("btn-open-log").addEventListener("click", () => {
+    window.electronAPI.openLog?.();
+  });
+
+  // Show the saved/active DLL on launch
+  window.electronAPI.getTobiiInfo().then((info) => {
+    setDllDisplay(info?.currentDllPath || info?.savedDllPath || null);
+  }).catch(() => {});
+} else {
+  // Running outside Electron (e.g. opened in a browser) — hide the picker
+  document.getElementById("dll-bar").style.display = "none";
+}
 
 // ── Initial status ──
 updateStatusBar();

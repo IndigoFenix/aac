@@ -53,6 +53,7 @@ import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
 import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
+import { useGazeSidecar } from "@/hooks/useGazeSidecar";
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
 
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -490,6 +491,18 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     enabled: eyegazeSettings.enabled && !isCursorControlMode,
     rawFaces,
     preferredProvider: eyegazeSettings.provider,
+  });
+
+  // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned
+  // by the Electron main process. "auto" includes Tobii in its probe order, so we
+  // start the sidecar for both. The sidecar reports if it can't find the DLL.
+  const gazeSidecarDevice =
+    eyegazeSettings.enabled && (eyegazeSettings.provider === "tobii" || eyegazeSettings.provider === "auto")
+      ? "tobii"
+      : null;
+  const { status: gazeSidecarStatus, locateDll: locateGazeDll } = useGazeSidecar({
+    enabled: eyegazeSettings.enabled,
+    device: gazeSidecarDevice,
   });
 
   // Eyegaze provider detection notification
@@ -1283,7 +1296,31 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             ) : (
               <EyeOff className="w-4 h-4" />
             )}
-            {eyegazeNotification.name} {eyegazeNotification.type === "connected" ? "connected" : "not detected"}
+            {eyegazeNotification.name} {eyegazeNotification.type === "connected" ? t("eyegaze.connected") : t("eyegaze.notDetected")}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Eye-tracker driver (DLL) not found — offer to locate it manually.
+          Strings match the (currently un-localized) eyegaze hardware UI above. */}
+      <AnimatePresence>
+        {gazeSidecarStatus?.needsDll && (
+          <motion.div
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white"
+          >
+            <EyeOff className="w-4 h-4" />
+            <span>{t("eyegaze.driverNotFound")}</span>
+            <button
+              type="button"
+              onClick={() => { void locateGazeDll(); }}
+              className="px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+            >
+              {t("eyegaze.locateDriver")}
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

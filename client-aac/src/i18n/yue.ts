@@ -744,4 +744,11 @@ export const yue: Translations = {
     prevPage: "上一頁",
     nextPage: "下一頁",
   },
+
+  eyegaze: {
+    connected: "已連接",
+    notDetected: "偵測唔到",
+    driverNotFound: "搵唔到眼動儀驅動程式",
+    locateDriver: "搵驅動程式…",
+  },
 };

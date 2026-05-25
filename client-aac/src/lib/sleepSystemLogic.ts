@@ -134,8 +134,8 @@ export interface DataFlowConfig {
 }
 
 /**
- * Boundary score within Resting that separates the light tier (full grid,
- * continuous PCM) from the deep tier (smaller grid, VAD-gated PCM).
+ * @deprecated Resting is no longer split into light/deep tiers. Kept exported
+ * so any external reference still compiles; `dataFlowForState` ignores it.
  */
 export const RESTING_DEEP_BOUNDARY = 0.30;
 
@@ -144,8 +144,15 @@ export const RESTING_DEEP_BOUNDARY = 0.30;
  * should be in effect. Single source of truth for gating decisions.
  *
  * See planning-docs/aac-sleep-system-plan.md "Per-State Data Flow" table.
+ *
+ * RESTING is now a single tier: no heartbeat frames (so we stop paying for a
+ * full frame_grid every 15-30s while nobody's using the device), but motion
+ * still triggers frames, and PCM is VAD-gated so audio only streams when the
+ * client's audioActivityMonitor detects speech/sound. The server pairs this
+ * with the lightweight resting session profile (small prompt, 4 tools, tight
+ * compression) — see LiveRelay.switchSessionProfile.
  */
-export function dataFlowForState(state: SleepState, score: number): DataFlowConfig {
+export function dataFlowForState(state: SleepState, _score: number): DataFlowConfig {
   switch (state) {
     case "hibernation":
       return {
@@ -171,24 +178,15 @@ export function dataFlowForState(state: SleepState, score: number): DataFlowConf
         sessionActive: true,
       };
     case "resting":
-      if (score < RESTING_DEEP_BOUNDARY) {
-        // Resting-deep: heartbeat off, motion-only sends, smaller grid, VAD-gated PCM
-        return {
-          heartbeatMs: null,
-          heartbeatAudioMs: 0,
-          pcmMode: "vad-gated",
-          gridCols: 3,
-          gridRows: 3,
-          motionTriggerEnabled: true,
-          bufferLocally: false,
-          sessionActive: true,
-        };
-      }
-      // Resting-light: longer heartbeat, no attached audio, full grid, continuous PCM
+      // Single resting tier: heartbeat OFF, motion frames ON, PCM VAD-gated.
+      // The model only "sees" the room when something moves, and only "hears"
+      // it when the audioActivityMonitor flags speech/sound — so a quiet
+      // session costs almost nothing, but a sudden noise or someone
+      // addressing the device still wakes it.
       return {
-        heartbeatMs: 30000,
+        heartbeatMs: null,
         heartbeatAudioMs: 0,
-        pcmMode: "continuous",
+        pcmMode: "vad-gated",
         gridCols: 4,
         gridRows: 4,
         motionTriggerEnabled: true,

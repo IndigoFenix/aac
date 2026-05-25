@@ -744,4 +744,11 @@ export const zh: Translations = {
     prevPage: "上一页",
     nextPage: "下一页",
   },
+
+  eyegaze: {
+    connected: "已连接",
+    notDetected: "未检测到",
+    driverNotFound: "未找到眼动仪驱动程序",
+    locateDriver: "定位驱动程序…",
+  },
 };

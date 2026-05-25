@@ -677,6 +677,8 @@ export class DualAgentService {
         monitorConsecutiveFailures: 0,
         memoryContext: chatState?.memoryContext,
         enhancedSections: chatState?.enhancedSections,
+        sessionSummary: chatState?.sessionSummary,
+        summarizedMsgCount: chatState?.summarizedMsgCount,
         remoteStorageEnabled: true, // If loaded from DB, storage was enabled
       };
 
@@ -786,6 +788,7 @@ export class DualAgentService {
           assistModeExamples: sections?.assistModeExamples,
           sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
           safetyNotes: sections?.safetyNotes,
+          sessionSummary: state.sessionSummary,
         });
       }
 
@@ -828,12 +831,14 @@ export class DualAgentService {
 
       const chatState = {
         history: state.messages,
-        conversationSummary: "",
+        conversationSummary: state.sessionSummary ?? "",
         openedTopics: [],
         memoryState: {},
         muteState: state.muteState,
         memoryContext: state.memoryContext,
         enhancedSections: state.enhancedSections,
+        sessionSummary: state.sessionSummary,
+        summarizedMsgCount: state.summarizedMsgCount,
       };
 
       if (existingSession.length > 0) {

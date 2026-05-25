@@ -27,6 +27,14 @@ export interface ToolDeclarationConfig {
   faceRecognitionActive: boolean;
   cachedSymbols?: Array<{ id: string; name: string }>;
   isMutedMode?: boolean;
+  /**
+   * RESTING-mode minimal tool set. When true, buildToolDeclarations returns
+   * ONLY the four tools the model needs while the session is resting:
+   * wake_up, transcript, update_context, private_note (+ speak when not
+   * useDirectAudio, so it can answer a direct question briefly). Everything
+   * board/conversation-related is omitted — see buildRestingAgentPrompt.
+   */
+  restingMode?: boolean;
 
   // Enriched context for detailed tool descriptions
   maxBoardItems?: number;
@@ -569,6 +577,26 @@ const SET_INTERACTION_MODE: FunctionDeclaration = {
   },
 };
 
+// wake_up — RESTING-mode-only tool. Distinct from set_interaction_mode:
+// set_interaction_mode chooses the AI's behavioral mode (interact/assist/
+// standby) WITHIN an active session; wake_up escalates the whole SESSION
+// PROFILE from the lightweight resting configuration (tiny prompt, 4 tools,
+// tight compression) back to the full awake configuration. The relay handles
+// the call by reconnecting with the full prompt + toolset; the model then
+// picks its interaction mode normally.
+const WAKE_UP: FunctionDeclaration = {
+  name: "wake_up",
+  description: `Escalate the session from RESTING mode back to full interaction. Call this ONLY when the user is settling in to actually USE the device — they look at it and address you, press a button, or clearly want to communicate through the board. The system reconnects with the full companion tools; you then choose your interaction mode (interact/assist/standby) normally. Do NOT call this for background activity, passing voices, or a single direct question you can answer briefly without waking.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Brief reason you're waking the session (e.g. 'Daniel turned to the device and said my name', 'button pressed')." },
+    },
+    required: ["reason"],
+  },
+};
+
 // Sleep system tools — let the AI manage its own engagement level.
 // See planning-docs/aac-sleep-system-plan.md.
 const SLEEP: FunctionDeclaration = {
@@ -661,6 +689,24 @@ const DEBUG_MESSAGE: FunctionDeclaration = {
 
 export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   const declarations: FunctionDeclaration[] = [];
+
+  // RESTING profile: tiny tool set. The model watches/waits, can answer a
+  // direct question (speak — only in tool-driven audio; native audio speaks
+  // without a tool), records context, and escalates via wake_up. Everything
+  // board/conversation-related is intentionally absent.
+  if (config.restingMode) {
+    declarations.push(WAKE_UP);
+    if (!config.useDirectAudio) {
+      declarations.push(buildSpeakTool(config));
+    }
+    declarations.push(buildTranscriptTool(config));
+    declarations.push(buildContextTool(config));
+    declarations.push(PRIVATE_NOTE);
+    if (process.env.AAC_DEBUG_INTROSPECTION === "1") {
+      declarations.push(DEBUG_MESSAGE);
+    }
+    return [{ functionDeclarations: declarations }];
+  }
 
   if (!config.isMutedMode && !config.useDirectAudio) {
     declarations.push(buildSpeakTool(config));

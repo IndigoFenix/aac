@@ -9,30 +9,40 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 
 /**
+ * The Electron desktop AAC client's origin. This is a fixed scheme/host that
+ * only the packaged app can emit — a web page cannot forge an `app://` Origin
+ * header — so it is ALWAYS safe to allow, in every environment, regardless of
+ * `ALLOWED_ORIGINS`. Including it unconditionally avoids the footgun of the
+ * desktop client silently failing CORS on a backend whose env wasn't configured.
+ */
+export const DESKTOP_APP_ORIGIN = "app://aac";
+
+/**
  * Resolve the CORS origin allowlist. Reads `ALLOWED_ORIGINS` (comma-separated)
  * if set; otherwise falls back to a development list. In production, NOT
  * setting `ALLOWED_ORIGINS` is a configuration mistake — the function still
- * works but logs a warning.
+ * works but logs a warning. The desktop app origin is always appended.
  */
 export function resolveAllowedOrigins(): string[] {
+  const withDesktop = (origins: string[]): string[] =>
+    origins.includes(DESKTOP_APP_ORIGIN) ? origins : [...origins, DESKTOP_APP_ORIGIN];
+
   const env = process.env.ALLOWED_ORIGINS;
-  if (env) return env.split(",").map((s) => s.trim()).filter(Boolean);
+  if (env) return withDesktop(env.split(",").map((s) => s.trim()).filter(Boolean));
   if (process.env.NODE_ENV === "production") {
     console.warn(
       "[security] ALLOWED_ORIGINS not set in production — falling back to APP_URL only. " +
       "Set ALLOWED_ORIGINS as a comma-separated list of allowed origins.",
     );
-    if (process.env.APP_URL) return [process.env.APP_URL];
-    // Last-resort: deny all credentialed cross-origin in prod when nothing is configured.
-    return [];
+    // Even with nothing configured, the desktop client's fixed origin is allowed.
+    return withDesktop(process.env.APP_URL ? [process.env.APP_URL] : []);
   }
-  // Development defaults. Electron AAC client uses `app://aac` origin.
-  return [
+  // Development defaults.
+  return withDesktop([
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5000",
-    "app://aac",
-  ];
+  ]);
 }
 
 /**

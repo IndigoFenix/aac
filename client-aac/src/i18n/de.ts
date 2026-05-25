@@ -744,4 +744,11 @@ export const de: Translations = {
     prevPage: "Vorherige Seite",
     nextPage: "N\u00e4chste Seite",
   },
+
+  eyegaze: {
+    connected: "verbunden",
+    notDetected: "nicht erkannt",
+    driverNotFound: "Eyetracker-Treiber nicht gefunden",
+    locateDriver: "Treiber suchen\u2026",
+  },
 };

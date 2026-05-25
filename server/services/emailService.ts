@@ -1,10 +1,12 @@
 // server/services/emailService.ts
-// Email service using SMTP for sending transactional emails
+// Email service for sending transactional emails.
+//
+// Transport: Resend HTTP API (https://resend.com). We deliberately do NOT use
+// SMTP here — our production host (Render) blocks outbound SMTP egress on ports
+// 25/465/587, so SMTP connections silently time out (IPv4) or hit ENETUNREACH
+// (IPv6, no egress route). Resend sends over HTTPS:443, which is never blocked.
 
-import nodemailer from "nodemailer";
-import type { Transporter } from "nodemailer";
-import dns from "node:dns/promises";
-import net from "node:net";
+import { Resend } from "resend";
 
 interface EmailOptions {
   to: string;
@@ -50,16 +52,20 @@ interface PasswordResetEmailData {
 }
 
 class EmailService {
-  private transporter: Transporter | null = null;
+  private resend: Resend | null = null;
   private isConfigured: boolean = false;
   private fromAddress: string;
 
   constructor() {
-    // Gmail SMTP rewrites the From header to the authenticated user unless the
-    // address is configured as a verified "Send mail as" alias in that account.
-    // SMTP_FROM lets ops override per-environment; SMTP_USER is the safe default
-    // since it's always an accepted From for the authenticated identity.
-    this.fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER || "cs@aivota.ai";
+    // Resend requires the From address to be on a domain verified in the Resend
+    // dashboard. EMAIL_FROM is the canonical knob; SMTP_FROM/SMTP_USER are kept
+    // as fallbacks so existing environments keep working without a rename.
+    // Format may be a bare "addr@domain" or "Display Name <addr@domain>".
+    this.fromAddress =
+      process.env.EMAIL_FROM ||
+      process.env.SMTP_FROM ||
+      process.env.SMTP_USER ||
+      "cs@aivota.ai";
     this.initialize();
   }
 
@@ -102,122 +108,23 @@ class EmailService {
   }
 
   private initialize(): void {
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+    const apiKey = process.env.RESEND_API_KEY;
 
-    if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    if (!apiKey) {
       console.warn(
-        "Email service: SMTP not configured. Email sending disabled.",
-        "Missing env vars:",
-        !SMTP_HOST && "SMTP_HOST",
-        !SMTP_PORT && "SMTP_PORT",
-        !SMTP_USER && "SMTP_USER",
-        !SMTP_PASS && "SMTP_PASS"
+        "Email service: RESEND_API_KEY not set. Email sending disabled."
       );
       return;
     }
 
     try {
-      const port = parseInt(SMTP_PORT, 10);
-      // Accept any obviously-truthy value so a misformatted "True"/"1"/"yes"
-      // in the platform env editor still turns on debug instead of silently
-      // doing nothing.
-      const debug = ["true", "1", "yes", "on"].includes(
-        (process.env.EMAIL_DEBUG || "").trim().toLowerCase()
-      );
-      this.transporter = nodemailer.createTransport({
-        host: SMTP_HOST,
-        port,
-        secure: port === 465, // implicit TLS on 465; STARTTLS upgrade elsewhere
-        // For non-secure ports (587 etc.) force the STARTTLS upgrade — without
-        // this nodemailer would technically allow a plaintext fallback if the
-        // server stopped advertising STARTTLS. We never want creds on the wire
-        // unencrypted.
-        requireTLS: port !== 465,
-        auth: {
-          user: SMTP_USER,
-          pass: SMTP_PASS,
-        },
-        connectionTimeout: 10000, // 10s to establish connection
-        greetingTimeout: 10000,   // 10s for SMTP greeting
-        socketTimeout: 15000,     // 15s for socket inactivity
-        // EMAIL_DEBUG=true emits per-command SMTP traffic to console — invaluable
-        // for diagnosing where a "Connection timeout" actually originates
-        // (DNS, TCP handshake, TLS, AUTH, ...).
-        logger: debug,
-        debug,
-      });
-
-      // Prevent unhandled error events from crashing the process
-      this.transporter.on("error", (err) => {
-        console.error("Email service: Transporter error:", err.message);
-      });
-
+      this.resend = new Resend(apiKey);
       this.isConfigured = true;
       console.log(
-        `Email service: SMTP configured (host=${SMTP_HOST} port=${port} user=${SMTP_USER} from=${this.fromAddress} debug=${debug})`
+        `Email service: Resend configured (from=${this.fromAddress})`
       );
-
-      // Fire a one-shot reachability probe in the background so we can tell
-      // (post-mortem in CloudWatch) whether failures are at DNS, TCP, or
-      // higher protocol layers. Single attempt — never retried — and we never
-      // throw so the app boots even if the network is unreachable.
-      void this.runReachabilityProbe(SMTP_HOST, port);
     } catch (error) {
-      console.error("Email service: Failed to configure SMTP:", error);
-    }
-  }
-
-  /**
-   * One-shot diagnostic: resolve DNS + open a raw TCP socket to the SMTP
-   * host:port. Logs timings and any error. Does NOT speak SMTP — just proves
-   * whether the underlying network path is alive. Run once at boot.
-   */
-  private async runReachabilityProbe(host: string, port: number): Promise<void> {
-    const t0 = Date.now();
-    try {
-      const dnsStart = Date.now();
-      const addrs = await dns.lookup(host, { all: true });
-      const dnsMs = Date.now() - dnsStart;
-      console.log(
-        `Email service: probe DNS resolved ${host} → ${addrs.map((a) => a.address).join(",")} in ${dnsMs}ms`
-      );
-
-      const target = addrs[0]?.address;
-      if (!target) {
-        console.error(`Email service: probe DNS returned no addresses for ${host}`);
-        return;
-      }
-
-      await new Promise<void>((resolve) => {
-        const tcpStart = Date.now();
-        const socket = new net.Socket();
-        let settled = false;
-        const finish = (label: string, err?: unknown) => {
-          if (settled) return;
-          settled = true;
-          const ms = Date.now() - tcpStart;
-          if (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(
-              `Email service: probe TCP ${label} to ${host}:${port} (${target}) after ${ms}ms — ${msg}`
-            );
-          } else {
-            console.log(
-              `Email service: probe TCP ${label} to ${host}:${port} (${target}) in ${ms}ms`
-            );
-          }
-          socket.destroy();
-          resolve();
-        };
-        socket.setTimeout(10000);
-        socket.once("connect", () => finish("connected"));
-        socket.once("timeout", () => finish("timeout"));
-        socket.once("error", (err) => finish("error", err));
-        socket.connect(port, target);
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Email service: probe failed in ${Date.now() - t0}ms — ${msg}`);
+      console.error("Email service: Failed to configure Resend:", error);
     }
   }
 
@@ -225,22 +132,16 @@ class EmailService {
    * Check if email service is ready to send emails
    */
   isReady(): boolean {
-    return this.isConfigured && this.transporter !== null;
+    return this.isConfigured && this.resend !== null;
   }
 
   /**
-   * Verify SMTP connection
+   * Verify the email transport is configured. Resend is a stateless HTTP API
+   * with no connection to open, so this just reports configuration status —
+   * kept for API compatibility with prior callers.
    */
   async verifyConnection(): Promise<boolean> {
-    if (!this.transporter) return false;
-
-    try {
-      await this.transporter.verify();
-      return true;
-    } catch (error) {
-      console.error("Email service: SMTP verification failed:", error);
-      return false;
-    }
+    return this.isReady();
   }
 
   /**
@@ -254,7 +155,7 @@ class EmailService {
 
     const start = Date.now();
     try {
-      const result = await this.transporter!.sendMail({
+      const { data, error } = await this.resend!.emails.send({
         from: this.fromAddress,
         to: options.to,
         subject: options.subject,
@@ -262,20 +163,27 @@ class EmailService {
         html: options.html,
       });
 
+      if (error) {
+        // Resend resolves (does not throw) on API-level errors — name/message
+        // pinpoint the cause (e.g. "validation_error" for an unverified From
+        // domain, "missing_api_key", rate limits).
+        const errorMsg = `${error.name ? `${error.name}: ` : ""}${error.message || String(error)}`;
+        console.error(
+          `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}`
+        );
+        return { success: false, error: errorMsg };
+      }
+
       console.log(
-        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${result.messageId}`
+        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${data?.id}`
       );
-      return { success: true, messageId: result.messageId };
+      return { success: true, messageId: data?.id };
     } catch (error: any) {
-      // Surface the error code/command alongside the message — nodemailer
-      // attaches `code` ("ETIMEDOUT", "ECONNECTION", "EAUTH", ...) and `command`
-      // (the SMTP verb that was in flight) which together pinpoint the phase.
+      // Network/unexpected errors (Resend SDK throws only on transport-level
+      // failures, which should be rare over HTTPS:443).
       const errorMsg = error?.message || String(error);
-      const code = error?.code ? ` code=${error.code}` : "";
-      const command = error?.command ? ` command=${error.command}` : "";
-      const responseCode = error?.responseCode ? ` responseCode=${error.responseCode}` : "";
       console.error(
-        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${code}${command}${responseCode}`
+        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}`
       );
       return { success: false, error: errorMsg };
     }

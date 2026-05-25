@@ -18,6 +18,44 @@
 const { WebSocketServer, WebSocket } = require("ws");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+
+// ============================================================================
+// LOGGING — mirror to console AND append to a file so the log can be shared
+// ============================================================================
+
+let LOG_FILE = path.join(os.tmpdir(), "tobii-bridge-debug.log");
+
+/** Point logging at a specific file (called by main.js with the userData path). */
+function setLogFile(p) {
+  if (!p) return;
+  LOG_FILE = p;
+  try { fs.writeFileSync(LOG_FILE, ""); } catch { /* ignore */ } // fresh log per launch
+}
+
+function log(...args) {
+  const line = "[" + new Date().toISOString() + "] " +
+    args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+  console.log(line);
+  try { fs.appendFileSync(LOG_FILE, line + "\n"); } catch { /* ignore */ }
+}
+
+/**
+ * tobii_error_t — maps the integer return codes to readable names.
+ * Codes 0-17 are stable across Stream Engine versions; higher codes may vary.
+ */
+const TOBII_ERRORS = {
+  0: "NO_ERROR", 1: "INTERNAL", 2: "INSUFFICIENT_LICENSE", 3: "NOT_SUPPORTED",
+  4: "NOT_AVAILABLE", 5: "CONNECTION_FAILED", 6: "TIMED_OUT", 7: "ALLOCATION_FAILED",
+  8: "INVALID_PARAMETER", 9: "CALIBRATION_ALREADY_STARTED", 10: "CALIBRATION_NOT_STARTED",
+  11: "ALREADY_SUBSCRIBED", 12: "NOT_SUBSCRIBED", 13: "OPERATION_FAILED",
+  14: "CONFLICTING_API_INSTANCES", 15: "CALIBRATION_BUSY", 16: "CALLBACK_IN_PROGRESS",
+  17: "TOO_MANY_SUBSCRIBERS", 18: "CONNECTION_FAILED_DRIVER", 19: "UNAUTHORIZED",
+};
+function tobiiErr(code) {
+  const name = TOBII_ERRORS[code];
+  return name ? `${code} (TOBII_ERROR_${name})` : `${code} (unknown)`;
+}
 
 // ============================================================================
 // CONFIGURATION — Change these if needed
@@ -96,6 +134,7 @@ class TobiiBridge {
     this._device = null;
     this._pollTimer = null;
     this._deviceUrl = null;
+    this._dllPath = null;
     this._connected = false;
     this._gazeCallback = null; // koffi registered callback — must prevent GC
   }
@@ -104,15 +143,28 @@ class TobiiBridge {
     return this._connected;
   }
 
-  async start() {
-    // Step 1: Find the DLL
-    const dllPath = findTobiiDLL();
+  /** The DLL path currently in use (null if not connected). */
+  get dllPath() {
+    return this._dllPath;
+  }
+
+  /**
+   * Connect to the Tobii device.
+   * @param {string|null} explicitDllPath - If provided and the file exists, this
+   *   DLL is used directly. Otherwise the DLL_SEARCH_PATHS list is searched.
+   */
+  async start(explicitDllPath) {
+    // Step 1: Find the DLL — prefer an explicitly chosen path, else auto-detect
+    const dllPath = (explicitDllPath && fs.existsSync(explicitDllPath))
+      ? explicitDllPath
+      : findTobiiDLL();
     if (!dllPath) {
       this._emitStatus("dll_not_found",
-        "Tobii Stream Engine DLL not found. See DLL_SEARCH_PATHS in tobii-bridge.js. " +
-        "You can also copy tobii_stream_engine.dll into this app's folder.");
+        "Tobii Stream Engine DLL not found. Use the \"Select DLL\" button to pick " +
+        "tobii_stream_engine.dll, or copy it into this app's folder.");
       return false;
     }
+    this._dllPath = dllPath;
 
     // Step 2: Load koffi
     try {
@@ -163,7 +215,8 @@ class TobiiBridge {
     this._startPolling();
 
     this._connected = true;
-    this._emitStatus("connected", `Connected to Tobii device: ${this._deviceUrl}`);
+    this._emitStatus("connected", `Connected to Tobii device: ${this._deviceUrl}`,
+      { dllPath: this._dllPath });
     return true;
   }
 
@@ -183,6 +236,13 @@ class TobiiBridge {
       try { this._fn_api_destroy(this._api); } catch (e) { /* ignore */ }
     }
 
+    // Release the registered FFI callback so reconnects don't exhaust koffi's
+    // limited callback pool.
+    if (this._koffi && this._gazeCallback) {
+      try { this._koffi.unregister(this._gazeCallback); } catch (e) { /* ignore */ }
+    }
+    this._gazeCallback = null;
+
     this._connected = false;
     this._device = null;
     this._api = null;
@@ -193,79 +253,113 @@ class TobiiBridge {
   _loadLibrary(dllPath) {
     const koffi = this._koffi;
 
+    // tobii_stream_engine.dll has sibling dependency DLLs. The Windows loader
+    // searches the app directory by default, NOT the DLL's own folder, so a load
+    // from an arbitrary path can fail with a missing-dependency error. Prepend
+    // the DLL's directory to PATH so its dependencies resolve.
+    const dllDir = path.dirname(dllPath);
+    const pathParts = (process.env.PATH || "").split(path.delimiter);
+    if (!pathParts.includes(dllDir)) {
+      process.env.PATH = dllDir + path.delimiter + (process.env.PATH || "");
+    }
+
     // Load the native library
+    log(`[TobiiBridge] koffi version: ${koffi.version || "unknown"}; process.arch=${process.arch}`);
+    log(`[TobiiBridge] Loading DLL: ${dllPath}`);
     this._lib = koffi.load(dllPath);
 
-    // ── Struct definitions ──
-    // tobii_gaze_point_t: the data we get from the gaze subscription
-    //   int64_t timestamp_us;
-    //   int validity;          // 0 = INVALID, 1 = VALID
-    //   float position_xy[2];  // normalized 0.0 - 1.0
-    this._GazePointStruct = koffi.struct("tobii_gaze_point_t", {
-      timestamp_us: "int64",
-      validity: "int",
-      position_xy: koffi.array("float", 2),
-    });
+    // ── Type definitions ──
+    // koffi registers named types (struct/proto/opaque) GLOBALLY for the whole
+    // process. Defining them again on a reconnect throws "Duplicate type name",
+    // so define them exactly once and reuse the handles on every (re)load.
+    if (!TobiiBridge._types) {
+      TobiiBridge._types = {
+        // Opaque HANDLE types (tobii_api_t, tobii_device_t). Using opaque named
+        // types — NOT void* — is what lets koffi marshal the output handles back.
+        // The void*/alloc attempts crashed or returned null; this is the
+        // documented opaque-type pattern (see koffi doc/pages/output.md).
+        api: koffi.opaque("tobii_api_t"),
+        device: koffi.opaque("tobii_device_t"),
+        // tobii_gaze_point_t:
+        //   int64_t timestamp_us; int validity (0/1); float position_xy[2] (0-1)
+        gazePoint: koffi.struct("tobii_gaze_point_t", {
+          timestamp_us: "int64",
+          validity: "int",
+          position_xy: koffi.array("float", 2),
+        }),
+        // URL receiver: called once per found device with the device URL string
+        urlReceiver: koffi.proto(
+          "void tobii_url_receiver(const char* url, void* user_data)"
+        ),
+        // Gaze point callback: called when new gaze data is available
+        gazeCallback: koffi.proto(
+          "void tobii_gaze_cb(const tobii_gaze_point_t* gaze_point, void* user_data)"
+        ),
+      };
+    }
+    const T = TobiiBridge._types;
+    this._GazePointStruct = T.gazePoint;
+    this._UrlReceiverProto = T.urlReceiver;
+    this._GazeCallbackProto = T.gazeCallback;
 
-    // ── Callback prototypes ──
-    // URL receiver: called once per found device with the device URL string
-    this._UrlReceiverProto = koffi.proto(
-      "void tobii_url_receiver(const char* url, void* user_data)"
-    );
+    // Pointer types derived from the opaque handles. koffi.pointer(type, 2) is a
+    // double pointer (the "2" is the indirection level) used for output handles.
+    const apiPtr = koffi.pointer(T.api);            // tobii_api_t*
+    const apiPtrPtr = koffi.pointer(T.api, 2);      // tobii_api_t**  (output)
+    const devicePtr = koffi.pointer(T.device);      // tobii_device_t*
+    const devicePtrPtr = koffi.pointer(T.device, 2); // tobii_device_t** (output)
 
-    // Gaze point callback: called when new gaze data is available
-    this._GazeCallbackProto = koffi.proto(
-      "void tobii_gaze_cb(const tobii_gaze_point_t* gaze_point, void* user_data)"
-    );
-
-    // ── Function declarations ──
+    // ── Function declarations (tied to THIS lib handle — recreate each load) ──
     const lib = this._lib;
 
-    this._fn_api_create = lib.func(
-      "int tobii_api_create(void** api, void* alloc, void* log)"
-    );
+    // Output handles: koffi.out() on the double-pointer copies the created handle
+    // back into the JS array's [0] slot after the call.
+    this._fn_api_create = lib.func("tobii_api_create", "int",
+      [koffi.out(apiPtrPtr), "void *", "void *"]);
 
-    this._fn_enumerate = lib.func(
-      "int tobii_enumerate_local_device_urls(void* api, tobii_url_receiver* receiver, void* user_data)"
-    );
+    // Callback params must be an explicit pointer to the registered proto type.
+    this._fn_enumerate = lib.func("tobii_enumerate_local_device_urls", "int",
+      [apiPtr, koffi.pointer(this._UrlReceiverProto), "void *"]);
 
-    this._fn_device_create = lib.func(
-      "int tobii_device_create(void* api, const char* url, int field_of_use, void** device)"
-    );
+    this._fn_device_create = lib.func("tobii_device_create", "int",
+      [apiPtr, "str", "int", koffi.out(devicePtrPtr)]);
 
-    this._fn_gaze_subscribe = lib.func(
-      "int tobii_gaze_point_subscribe(void* device, tobii_gaze_cb* callback, void* user_data)"
-    );
+    this._fn_gaze_subscribe = lib.func("tobii_gaze_point_subscribe", "int",
+      [devicePtr, koffi.pointer(this._GazeCallbackProto), "void *"]);
 
-    this._fn_process_callbacks = lib.func(
-      "int tobii_device_process_callbacks(void* device)"
-    );
+    this._fn_process_callbacks = lib.func("tobii_device_process_callbacks", "int",
+      [devicePtr]);
 
-    this._fn_gaze_unsubscribe = lib.func(
-      "int tobii_gaze_point_unsubscribe(void* device)"
-    );
+    this._fn_gaze_unsubscribe = lib.func("tobii_gaze_point_unsubscribe", "int",
+      [devicePtr]);
 
-    this._fn_device_destroy = lib.func(
-      "int tobii_device_destroy(void* device)"
-    );
+    this._fn_device_destroy = lib.func("tobii_device_destroy", "int",
+      [devicePtr]);
 
-    this._fn_api_destroy = lib.func(
-      "int tobii_api_destroy(void* api)"
-    );
+    this._fn_api_destroy = lib.func("tobii_api_destroy", "int",
+      [apiPtr]);
 
-    console.log("[TobiiBridge] Library loaded successfully");
+    log("[TobiiBridge] Library loaded successfully");
   }
 
   // ── Internal: Initialize API ──
 
   _initAPI() {
+    // koffi.out() on the tobii_api_t** parameter copies the created handle back
+    // into apiOut[0] after the call.
     const apiOut = [null];
+    log("[TobiiBridge] >>> calling tobii_api_create");
     const err = this._fn_api_create(apiOut, null, null);
-    if (err !== 0) {
-      throw new Error(`tobii_api_create returned error code ${err}`);
-    }
     this._api = apiOut[0];
-    console.log("[TobiiBridge] API initialized");
+    log(`[TobiiBridge] tobii_api_create -> err=${tobiiErr(err)}, api=${this._api ? "non-null" : "NULL"}`);
+    if (err !== 0) {
+      throw new Error(`tobii_api_create returned error code ${tobiiErr(err)}`);
+    }
+    if (!this._api) {
+      throw new Error("tobii_api_create reported success but returned a NULL api handle " +
+        "(koffi did not write the out-parameter back)");
+    }
+    log("[TobiiBridge] API initialized");
   }
 
   // ── Internal: Find and connect to device ──
@@ -273,16 +367,23 @@ class TobiiBridge {
   _connectDevice() {
     // Enumerate devices — the callback receives each device URL
     let foundUrl = null;
+    // koffi.register's second arg must be a POINTER to the callback prototype
+    // (koffi.pointer(proto)), not the bare proto — otherwise koffi throws
+    // "Unexpected <name> type, expected <callback> * type".
     const urlCallback = this._koffi.register((url, _userData) => {
       if (!foundUrl) {
         foundUrl = url;
         console.log(`[TobiiBridge] Found device: ${url}`);
       }
-    }, this._UrlReceiverProto);
+    }, this._koffi.pointer(this._UrlReceiverProto));
 
+    log(`[TobiiBridge] enumerating devices (api=${this._api ? "non-null" : "NULL"})...`);
     const err = this._fn_enumerate(this._api, urlCallback, null);
+    // The url receiver is only needed for the duration of the enumerate call.
+    try { this._koffi.unregister(urlCallback); } catch (e) { /* ignore */ }
+    log(`[TobiiBridge] tobii_enumerate_local_device_urls -> err=${tobiiErr(err)}, foundUrl=${foundUrl || "(none)"}`);
     if (err !== 0) {
-      throw new Error(`tobii_enumerate_local_device_urls returned error code ${err}`);
+      throw new Error(`tobii_enumerate_local_device_urls returned error code ${tobiiErr(err)}`);
     }
 
     if (!foundUrl) {
@@ -294,44 +395,60 @@ class TobiiBridge {
     // Create device handle
     // field_of_use: 1 = TOBII_FIELD_OF_USE_INTERACTIVE (required for consumer trackers)
     const deviceOut = [null];
+    log(`[TobiiBridge] >>> calling tobii_device_create (url=${foundUrl})`);
     const err2 = this._fn_device_create(this._api, foundUrl, 1, deviceOut);
-    if (err2 !== 0) {
-      throw new Error(`tobii_device_create returned error code ${err2}`);
-    }
     this._device = deviceOut[0];
-    console.log("[TobiiBridge] Device connected");
+    log(`[TobiiBridge] tobii_device_create -> err=${tobiiErr(err2)}, device=${this._device ? "non-null" : "NULL"}`);
+    if (err2 !== 0) {
+      throw new Error(`tobii_device_create returned error code ${tobiiErr(err2)}`);
+    }
+    log("[TobiiBridge] Device connected");
   }
 
   // ── Internal: Subscribe to gaze data ──
 
   _subscribeGaze() {
-    // Register the gaze callback — koffi will call this from C
+    // Register the gaze callback — koffi will call this from C. The body MUST
+    // NOT throw: an exception propagating back into native code crashes the
+    // process, so everything is wrapped in try/catch.
+    this._gazeFired = false;
     this._gazeCallback = this._koffi.register((gazePoint, _userData) => {
-      if (!gazePoint) return;
+      try {
+        if (!gazePoint) return;
 
-      // gazePoint is a decoded tobii_gaze_point_t struct:
-      //   .timestamp_us (int64)
-      //   .validity (int: 0=invalid, 1=valid)
-      //   .position_xy (float[2]: normalized 0-1)
-      const data = {
-        gazePoint: {
-          x: gazePoint.position_xy[0], // 0.0 - 1.0 (normalized)
-          y: gazePoint.position_xy[1], // 0.0 - 1.0 (normalized)
-        },
-        validity: gazePoint.validity === 1 ? 1.0 : 0.0,
-        timestamp: gazePoint.timestamp_us,
-      };
+        // koffi passes pointer arguments to callbacks as opaque External objects
+        // (it can't know how to decode them). Decode it into the struct here.
+        const gp = this._koffi.decode(gazePoint, this._GazePointStruct);
 
-      if (this.onGaze) {
-        this.onGaze(data);
+        if (!this._gazeFired) {
+          this._gazeFired = true;
+          log(`[TobiiBridge] first gaze callback OK: validity=${gp.validity} xy=[${gp.position_xy[0]},${gp.position_xy[1]}]`);
+        }
+
+        // gp is the decoded tobii_gaze_point_t:
+        //   .timestamp_us (int64), .validity (0/1), .position_xy (float[2], 0-1)
+        const data = {
+          gazePoint: {
+            x: gp.position_xy[0],
+            y: gp.position_xy[1],
+          },
+          validity: gp.validity === 1 ? 1.0 : 0.0,
+          timestamp: gp.timestamp_us,
+        };
+
+        if (this.onGaze) this.onGaze(data);
+      } catch (e) {
+        log(`[TobiiBridge] ERROR inside gaze callback: ${e && e.message}`);
       }
-    }, this._GazeCallbackProto);
+    }, this._koffi.pointer(this._GazeCallbackProto));
 
+    log("[TobiiBridge] >>> calling tobii_gaze_point_subscribe");
     const err = this._fn_gaze_subscribe(this._device, this._gazeCallback, null);
+    log(`[TobiiBridge] tobii_gaze_point_subscribe -> err=${tobiiErr(err)}`);
     if (err !== 0) {
-      throw new Error(`tobii_gaze_point_subscribe returned error code ${err}`);
+      throw new Error(`tobii_gaze_point_subscribe returned error code ${tobiiErr(err)}`);
     }
-    console.log("[TobiiBridge] Subscribed to gaze data");
+    log("[TobiiBridge] Subscribed to gaze data");
   }
 
   // ── Internal: Poll for callbacks ──
@@ -339,19 +456,25 @@ class TobiiBridge {
   _startPolling() {
     // tobii_device_process_callbacks is non-blocking — it processes any pending
     // callbacks from the device. We call it on a timer (~60fps).
+    log("[TobiiBridge] >>> starting poll loop (tobii_device_process_callbacks)");
+    let firstPoll = true;
     this._pollTimer = setInterval(() => {
       try {
         this._fn_process_callbacks(this._device);
+        if (firstPoll) {
+          firstPoll = false;
+          log("[TobiiBridge] first process_callbacks OK");
+        }
       } catch (e) {
-        console.error("[TobiiBridge] process_callbacks error:", e.message);
+        log(`[TobiiBridge] process_callbacks error: ${e && e.message}`);
       }
     }, POLL_INTERVAL_MS);
   }
 
-  _emitStatus(code, message) {
-    console.log(`[TobiiBridge] ${code}: ${message}`);
+  _emitStatus(code, message, extra = {}) {
+    log(`[TobiiBridge] STATUS ${code}: ${message}`);
     if (this.onStatus) {
-      this.onStatus({ code, message });
+      this.onStatus({ code, message, ...extra });
     }
   }
 }
@@ -368,7 +491,9 @@ class TobiiBridge {
  *   - wss: The WebSocket server (always started, even if bridge fails)
  *   - status: Current status string
  */
-async function startTobiiBridge() {
+async function startTobiiBridge(initialDllPath, options = {}) {
+  if (options.logFile) setLogFile(options.logFile);
+  log(`[TobiiBridge] === startup === logFile=${LOG_FILE}`);
   const clients = new Set();
   let lastStatus = { code: "starting", message: "Initializing..." };
   let lastGaze = null;
@@ -426,7 +551,7 @@ async function startTobiiBridge() {
     broadcast(gazeData);
   };
 
-  const success = await bridge.start();
+  const success = await bridge.start(initialDllPath);
 
   if (!success) {
     console.log("[TobiiBridge] Hardware connection failed — renderer will use mouse fallback");
@@ -435,6 +560,29 @@ async function startTobiiBridge() {
       code: "fallback",
       message: "Tobii not connected. Using mouse as gaze source. Check the log for details.",
     });
+  }
+
+  /**
+   * Stop the current connection and reconnect, optionally with a new DLL path.
+   * Lets the user point the app at a hand-picked tobii_stream_engine.dll without
+   * restarting the whole app. Pass null to fall back to auto-detection.
+   * @param {string|null} dllPath
+   * @returns {Promise<{connected:boolean, dllPath:string|null, status:object}>}
+   */
+  async function reconnectWithDll(dllPath) {
+    console.log(`[TobiiBridge] Reconnecting with DLL: ${dllPath || "(auto-detect)"}`);
+    try { bridge.stop(); } catch { /* ignore */ }
+
+    const ok = await bridge.start(dllPath || undefined);
+    if (!ok) {
+      broadcast({
+        type: "status",
+        code: "fallback",
+        message: lastStatus.message ||
+          "Tobii not connected with the selected DLL. Using mouse as gaze source.",
+      });
+    }
+    return { connected: bridge.connected, dllPath: bridge.dllPath, status: lastStatus };
   }
 
   // Provide an HTTP status endpoint for probing (matches what createTobiiProvider expects)
@@ -457,7 +605,13 @@ async function startTobiiBridge() {
     console.log(`[TobiiBridge] HTTP status at http://127.0.0.1:${WS_PORT + 1}/status`);
   });
 
-  return { bridge, wss, statusServer };
+  return { bridge, wss, statusServer, reconnectWithDll };
 }
 
-module.exports = { TobiiBridge, startTobiiBridge, WS_PORT };
+module.exports = {
+  TobiiBridge,
+  startTobiiBridge,
+  WS_PORT,
+  setLogFile,
+  getLogFile: () => LOG_FILE,
+};

@@ -744,4 +744,11 @@ export const es: Translations = {
     prevPage: "P\u00e1gina anterior",
     nextPage: "P\u00e1gina siguiente",
   },
+
+  eyegaze: {
+    connected: "conectado",
+    notDetected: "no detectado",
+    driverNotFound: "No se encontr\u00f3 el controlador del rastreador ocular",
+    locateDriver: "Buscar controlador\u2026",
+  },
 };

@@ -744,4 +744,11 @@ export const fr: Translations = {
     prevPage: "Page pr\u00e9c\u00e9dente",
     nextPage: "Page suivante",
   },
+
+  eyegaze: {
+    connected: "connecté",
+    notDetected: "non détecté",
+    driverNotFound: "Pilote du suiveur oculaire introuvable",
+    locateDriver: "Localiser le pilote…",
+  },
 };

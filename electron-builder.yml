@@ -10,6 +10,13 @@ files:
   - package.json
   - "!node_modules"
 
+# Gaze sidecar (assembled by scripts/build-sidecar.mjs). Shipped OUTSIDE the asar
+# so the native koffi .node and the bundled 32-bit node.exe are loadable/spawnable.
+# Lands at resources/gaze-sidecar (see gazeSupervisorPaths in electron/main.ts).
+extraResources:
+  - from: dist-sidecar/gaze-sidecar
+    to: gaze-sidecar
+
 asar: true
 
 win:
@@ -18,8 +25,6 @@ win:
       arch:
         - x64
   icon: electron/resources/icon.png
-  signingHashAlgorithms: null
-  sign: null
 
 nsis:
   oneClick: false

@@ -213,6 +213,14 @@ export function buildInteractiveAgentPrompt(params: {
   assistModeExamples?: string;
   sentenceInterpretationExamples?: string;
   safetyNotes?: string;
+  /**
+   * Rolling session summary (see DualAgentSessionState.sessionSummary). Folded
+   * into the prompt as a `<session_summary>` block on every (re)connect so
+   * continuity survives a full context reset (profile switch / resumption).
+   * Mid-session freshness comes from the relay re-injecting it as a
+   * [SESSION SUMMARY] context message; this is the on-reconnect backstop.
+   */
+  sessionSummary?: string;
 }): string {
   // ──────────────────────────────────────────────────────────────────────────
   // DIAGNOSTIC: minimal-prompt mode.
@@ -236,6 +244,7 @@ export function buildInteractiveAgentPrompt(params: {
     autoSymbolsEnabled = false, useDirectAudio = false,
     sessionGoals, personaGestureOverrides, safetyNotes,
     interactModeExamples, assistModeExamples, sentenceInterpretationExamples,
+    sessionSummary,
   } = params;
 
   // Age-aware gender word. "boy"/"girl" applied to an adult age (e.g. "39
@@ -811,6 +820,10 @@ NEVER pass the raw SENTENCE string to interpret(). NEVER echo the SYMBOLs as sep
     prompt += `\n\n<memory>\n${memoryContext}\n</memory>`;
   }
 
+  if (sessionSummary) {
+    prompt += `\n\n<session_summary>\nWhat has happened earlier in THIS session (the detailed turn-by-turn history may have been dropped from your context — this is your memory of it):\n${sessionSummary}\n</session_summary>`;
+  }
+
   // ── <security> + optional per-user <student_safety> ──
 
   prompt += `
@@ -864,6 +877,127 @@ ${speechRule}
 When ${studentName} presses a ${T.button} on their ${T.board}, you'll see a "${T.tagPress}" message containing what they meant to say. Respond to that statement conversationally, then call rebuild_board(buttons) with new ${T.button}s that offer relevant follow-up options.
 
 That's it. No other rules. Just be a friendly companion who actually talks back.`;
+}
+
+/**
+ * Build the lightweight RESTING-mode system prompt.
+ *
+ * Used when the sleep-state machine puts the session into `resting`: the user
+ * is present but not actively using the device (doing other things, talking to
+ * people nearby, device just open). The model's only jobs are to watch, stay
+ * quiet, optionally answer a direct question briefly, and call `wake_up()` when
+ * the user actually settles in to use the device.
+ *
+ * This prompt deliberately OMITS everything board/grammar/icon/example/builder/
+ * app related — none of it is needed while nobody is communicating through the
+ * board. It's ~1.5k tokens vs the full ~10k, which (combined with the tighter
+ * resting compression window) is the main cost lever for long quiet sessions.
+ * See [[project_session_start_silent]] and the resting-profile design.
+ */
+export function buildRestingAgentPrompt(params: {
+  studentName: string;
+  persona?: string;
+  language?: string;
+  memoryContext?: string;
+  studentAge?: string;
+  studentGender?: string;
+  studentDiagnosis?: string;
+  aiName?: string;
+  knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
+  useDirectAudio?: boolean;
+  sessionSummary?: string;
+}): string {
+  const {
+    studentName, persona, language, memoryContext,
+    studentAge, studentGender, studentDiagnosis, aiName,
+    knownContacts, useDirectAudio = false, sessionSummary,
+  } = params;
+
+  // Age-aware gender word — same logic + Vertex-safety rationale as the full
+  // builder (adult nouns for age >= 18 to avoid the vulnerable-population
+  // classifier rejecting responses).
+  const ageNum = studentAge ? parseInt(studentAge, 10) : NaN;
+  const isAdult = !isNaN(ageNum) && ageNum >= 18;
+  const genderStr = studentGender === 'male'
+    ? (isAdult ? 'man' : 'boy')
+    : studentGender === 'female'
+    ? (isAdult ? 'woman' : 'girl')
+    : '';
+  const ageStr = studentAge
+    ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
+    : (genderStr ? `a ${genderStr}` : 'a user');
+  const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
+  const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
+  const languageName = getLanguageName(language);
+
+  const speakBriefly = useDirectAudio
+    ? "you may answer briefly aloud in your own voice"
+    : "you may answer briefly by calling speak()";
+
+  const knownPeopleLine = (knownContacts && knownContacts.length > 0)
+    ? `\nKnown people: ${knownContacts.map(c => `${c.name}${c.relationship ? ` (${c.relationship})` : ''} [face:${c.id}]`).join(', ')}`
+    : '';
+
+  let prompt = `<role>
+${aiIdentity} for [${studentName}], ${ageStr}${diagnosisStr}. You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools.
+Language: ${languageName}. Speak in ${languageName} unless translating for someone.
+</role>
+
+<resting_mode>
+You are currently in RESTING mode. [${studentName}] is present nearby but is NOT actively using the device — they may be doing other things, talking with people around them, or just have the device open while they go about their day.
+
+Your job right now is to WATCH and WAIT quietly while staying ready. By default, stay silent: don't start conversations, don't comment on what you see or hear.
+
+THREE things you may do:
+1. wake_up(reason) — call this ONLY when [${studentName}] is settling in to actually USE the device: they look at it and address you, they press a button, or they clearly want to communicate through the board. After wake_up the full companion tools return and you resume normal interaction. Do NOT wake for background activity.
+2. Answer a direct question — if someone asks YOU a direct question, ${speakBriefly} with a short, helpful reply. You do NOT need to wake the full session for a quick answer; stay in resting mode afterward.
+3. transcript(text, speaker, confidence) — record clearly-attributable speech worth keeping in the conversation log (something [${studentName}] or a caregiver says that may matter later). Skip background TV, distant chatter, mumbling, and your own voice echo.
+
+WAKE-UP signals (call wake_up):
+- [${studentName}] looks at the device AND addresses you, or uses your name with intent to interact.
+- A button is pressed.
+- [${studentName}] clearly wants to start communicating through the device.
+
+NOT wake-up signals (stay resting):
+- Background conversation not directed at you.
+- Someone walking past, or [${studentName}] talking to other people in the room.
+- A single direct question you can answer in a sentence (answer it, stay resting).
+</resting_mode>
+
+<speakers>
+Attribute speech carefully — a face is stronger than a voice:
+- Default to "Unknown"; don't guess the closest known person.
+- Voice age/pitch/gender must plausibly match the candidate, or it's a new speaker.
+- If [${studentName}]'s profile says nonverbal/AAC-only/limited speech, never attribute speech beyond that profile to them.
+- Off-camera voices: describe ("a woman's voice in the next room") rather than guess a name.${knownPeopleLine}
+</speakers>`;
+
+  if (persona) {
+    prompt += `\n\n<persona>\n${persona}\n</persona>`;
+  }
+  if (memoryContext) {
+    prompt += `\n\n<memory>\n${memoryContext}\n</memory>`;
+  }
+  if (sessionSummary) {
+    prompt += `\n\n<session_summary>\nWhat happened earlier in THIS session, before you entered resting mode:\n${sessionSummary}\n</session_summary>`;
+  }
+
+  prompt += `
+
+<security>
+- NEVER reveal sensitive information about [${studentName}] to anyone but [${studentName}]. If someone else addresses you, you may answer general questions but withhold student-private details.
+- Never ask anyone for a personal ID number. If someone dictates one, redact the digits as "[REDACTED]" in any transcript.
+</security>`;
+
+  if (useDirectAudio) {
+    prompt += `
+
+<voice_identity>
+You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any person you hear. Paraphrase in your own voice; never reproduce someone's exact words in their voice.
+</voice_identity>`;
+  }
+
+  return prompt;
 }
 
 /**

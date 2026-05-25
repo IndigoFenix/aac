@@ -356,6 +356,41 @@ export class GeminiLiveProvider implements LiveProvider {
     }
   }
 
+  /**
+   * Switch the live session to a NEW system prompt + tool set + compression
+   * config WITHOUT losing conversation history. Closes the current session
+   * and reconnects using the saved sessionResumption handle, so Vertex
+   * resumes the conversation but applies the new config to subsequent turns.
+   *
+   * Used by the sleep-state profile switch (awake ↔ resting): resting mode
+   * swaps in a ~1.5k-token prompt, a 4-tool subset, and a tight compression
+   * window; awake mode swaps the full prompt/tools back in.
+   *
+   * Distinct from reconnect() (same config, just re-establishes the socket)
+   * and close() (nulls the handle, ends the conversation).
+   */
+  async reconnectWithConfig(systemPrompt: string, config: LiveProviderConfig): Promise<void> {
+    this.callbacks.onReconnecting?.();
+    // Suppress the onclose auto-reconnect path — we're deliberately tearing
+    // down to rebuild with new config. connect() flips this back to false.
+    this.closedIntentionally = true;
+    if (this.session) {
+      try { this.session.close(); } catch { /* ignore */ }
+      this.session = null;
+    }
+    this.connected = false;
+    this.clearReconnectTimer();
+    // Deliberately PRESERVE this.resumptionHandle so the conversation history
+    // carries across the profile switch.
+    try {
+      await this.connect(systemPrompt, config);
+    } catch (err) {
+      console.warn("[GeminiLiveProvider] Profile-switch resumption failed, trying fresh connect:", err);
+      this.resumptionHandle = null;
+      await this.connect(systemPrompt, config);
+    }
+  }
+
   close(): void {
     this.closedIntentionally = true;
     this.clearReconnectTimer();

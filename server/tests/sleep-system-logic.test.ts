@@ -226,34 +226,21 @@ describe("dataFlowForState — Awake / Waking", () => {
   });
 });
 
-describe("dataFlowForState — Resting (graduated)", () => {
-  it("Resting-light (score >= 0.30): 30s heartbeat, no audio attached, full grid", () => {
-    const flow = dataFlowForState("resting", 0.40);
-    expect(flow.heartbeatMs).toBe(30000);
-    expect(flow.heartbeatAudioMs).toBe(0);
-    expect(flow.pcmMode).toBe("continuous");
-    expect(flow.gridCols).toBe(4);
-    expect(flow.gridRows).toBe(4);
-  });
-
-  it("Resting-deep (score < 0.30): heartbeat off, VAD-gated PCM, 3x3 grid", () => {
-    const flow = dataFlowForState("resting", 0.20);
-    expect(flow.heartbeatMs).toBeNull();
-    expect(flow.heartbeatAudioMs).toBe(0);
-    expect(flow.pcmMode).toBe("vad-gated");
-    expect(flow.gridCols).toBe(3);
-    expect(flow.gridRows).toBe(3);
-    expect(flow.motionTriggerEnabled).toBe(true); // motion-only sends still allowed
-  });
-
-  it("Resting boundary at exactly RESTING_DEEP_BOUNDARY uses light tier", () => {
-    const flow = dataFlowForState("resting", RESTING_DEEP_BOUNDARY);
-    expect(flow.heartbeatMs).toBe(30000); // light tier
-  });
-
-  it("Resting just below boundary uses deep tier", () => {
-    const flow = dataFlowForState("resting", RESTING_DEEP_BOUNDARY - 0.001);
-    expect(flow.heartbeatMs).toBeNull(); // deep tier
+describe("dataFlowForState — Resting (single tier)", () => {
+  // Resting is no longer split into light/deep. One config regardless of
+  // score: heartbeat OFF, motion frames ON, full grid, VAD-gated PCM. Pairs
+  // with the server's lightweight resting session profile.
+  it("heartbeat off, motion frames on, full grid, VAD-gated PCM — regardless of score", () => {
+    for (const score of [0.40, 0.20, 0.05, RESTING_DEEP_BOUNDARY]) {
+      const flow = dataFlowForState("resting", score);
+      expect(flow.heartbeatMs).toBeNull();
+      expect(flow.heartbeatAudioMs).toBe(0);
+      expect(flow.pcmMode).toBe("vad-gated");
+      expect(flow.gridCols).toBe(4);
+      expect(flow.gridRows).toBe(4);
+      expect(flow.motionTriggerEnabled).toBe(true);
+      expect(flow.sessionActive).toBe(true);
+    }
   });
 });
 

@@ -213,6 +213,17 @@ export interface DualAgentSessionState {
   // specific blocks in the system prompt.
   enhancedSections?: EnhancedPromptSections;
 
+  // Rolling session summary. A bounded (~1.5k token) digest of what has
+  // happened this session, produced periodically by the MonitorAgent and
+  // injected as a [SESSION SUMMARY] context message so it survives Gemini's
+  // sliding-window compression (it stays recent) while older turn-by-turn
+  // detail is evicted. Also folded into the system prompt on every reconnect
+  // (profile switch / resumption) so continuity survives a full context reset.
+  // `summarizedMsgCount` marks how many of state.messages were folded into the
+  // current summary, so the next pass only summarizes what's new.
+  sessionSummary?: string;
+  summarizedMsgCount?: number;
+
   // Privacy settings — gate monitor access to sensitive student data
   privacyOptions?: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean };
 

@@ -35,9 +35,13 @@ Check these things:
 
 1. Is the Tobii device plugged in and recognized by Windows?
 2. Is "Tobii Experience" (or "Tobii Eye Tracking Core") software installed and running?
-3. The app needs tobii_stream_engine.dll. Open tobii-bridge.js and check the
-   DLL_SEARCH_PATHS array. You may need to add the path where YOUR Tobii
-   software installed the DLL.
+3. The app needs tobii_stream_engine.dll. The EASIEST fix: click the
+   "Select DLL…" button in the bar near the top of the app, browse to the
+   DLL, and the app reconnects immediately (no restart). Your choice is
+   remembered for next launch. Click "Auto-detect" to forget it again.
+
+   If you prefer to hard-code paths instead, open tobii-bridge.js and edit
+   the DLL_SEARCH_PATHS array.
 
    To find the DLL, search your PC:
    - Open File Explorer

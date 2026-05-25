@@ -181,6 +181,16 @@ resource "aws_ecs_task_definition" "main" {
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_SECRET::"
         },
         {
+          # Email transport is the Resend HTTP API (SMTP is blocked outbound on
+          # our hosts). SMTP_* below are retained as fallbacks only.
+          name      = "RESEND_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:RESEND_API_KEY::"
+        },
+        {
+          name      = "EMAIL_FROM"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:EMAIL_FROM::"
+        },
+        {
           name      = "SMTP_PASS"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
         },

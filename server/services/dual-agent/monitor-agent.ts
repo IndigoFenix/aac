@@ -684,6 +684,116 @@ ${outputSpec}`;
   }
 
   /**
+   * Produce a rolling session summary. Folds the previous summary together
+   * with the recent conversation turns into a fresh, bounded (~1.5k token)
+   * digest in canonical terminology. The relay injects the result as a
+   * [SESSION SUMMARY] context message (so it survives Gemini's sliding-window
+   * compression) and folds it into the system prompt on reconnect.
+   *
+   * Rolling: the new summary SUBSUMES the previous one. As older turn-by-turn
+   * detail is evicted by compression, the summary (always re-injected recent)
+   * carries the important earlier context forward.
+   *
+   * Cheap single Haiku call, no tools. Returns undefined on failure (caller
+   * keeps the prior summary).
+   */
+  async produceSessionSummary(
+    previousSummary: string | undefined,
+    recentMessages: Array<{ role: string; content: string }>,
+  ): Promise<string | undefined> {
+    if (recentMessages.length === 0) return previousSummary;
+    try {
+      const student = this.student;
+      const studentName = student?.name || "the user";
+      const language = (student as any)?.primaryLanguage || "en";
+      const languageName = getLanguageName(language);
+
+      // Render recent turns compactly. Cap length so a runaway history doesn't
+      // blow up the summarizer's own input.
+      const transcript = recentMessages
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n")
+        .slice(-12000);
+
+      const nonce = randomBytes(8).toString("hex");
+      const open = `[SUMMARY-${nonce}]`;
+      const close = `[/SUMMARY-${nonce}]`;
+
+      const systemPrompt = `You maintain a rolling SESSION SUMMARY for an AAC (Augmentative and Alternative Communication) session with ${studentName}. The live AI companion reads this summary to remember what happened earlier in the session after the detailed turn-by-turn history is dropped from its context window.
+
+## Canonical terminology
+Use the AAC system's exact terms when referring to its parts: ${T.board} (the buttons the user picks from), ${T.button}, ${T.builder}, ${T.symbol}, ${T.glyph}, ${T.sentence}. Refer to the person as "the user". Don't reuse these terms for anything else.
+
+## Your task
+Merge the PREVIOUS SUMMARY (if any) with the RECENT CONVERSATION below into a single updated summary. The new summary REPLACES the previous one, so it must carry forward anything still relevant from the previous summary PLUS what's new.
+
+Keep (these are why the summary exists):
+- The user's expressed goals, wants, preferences, and interests surfaced this session.
+- Topics already covered or discussed (so the AI doesn't re-ask).
+- Important observations about the environment / people present.
+- Open commitments the AI made ("we'll talk about X later", "I'll help with Y").
+- The current activity and who is around, if known.
+
+Drop (recoverable or noise):
+- Verbatim turn-by-turn dialogue.
+- Routine background chatter and ambient noise.
+- Mode-switching history.
+
+Rules:
+- Write in ${languageName}.
+- Be concise — at most ~250 words. A digest, not a transcript.
+- Plain prose or short dashed bullets. No markdown headers.
+- If nothing meaningful has happened, output a one-line note saying so.
+
+## Output format
+Output ONLY the summary between ${open} and ${close} tags (exact strings, with the nonce). Emit nothing outside the tags.
+
+## Previous summary
+${previousSummary?.trim() || "(none yet — this is the first summary)"}
+
+## Recent conversation
+${transcript}`;
+
+      const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
+      const gpt = new GPT({
+        provider: llmConfig?.provider || 'claude',
+        model: llmConfig?.model || 'claude-haiku-4-5-20251001',
+      });
+
+      const inputItems: GPTInputItem[] = [{
+        type: 'message',
+        role: 'user',
+        content: 'Produce the updated rolling session summary.',
+      }];
+
+      const response = await gpt.getStructuredResponse(
+        inputItems,
+        'session-summary',
+        undefined,
+        [],
+        1024,
+        0,
+        { temperature: 0.3 },
+        false, 1,
+        systemPrompt,
+      );
+
+      const text = response.content || '';
+      const match = text.match(new RegExp(`\\[SUMMARY-${nonce}\\]([\\s\\S]*?)\\[/SUMMARY-${nonce}\\]`));
+      const summary = match?.[1]?.trim();
+      if (summary) {
+        console.log(`[MonitorAgent] Produced session summary (${summary.length} chars from ${recentMessages.length} new msgs)`);
+        return summary;
+      }
+      console.warn("[MonitorAgent] Session summary: no tagged output, keeping previous");
+      return previousSummary;
+    } catch (err) {
+      console.error("[MonitorAgent] produceSessionSummary failed:", err);
+      return previousSummary;
+    }
+  }
+
+  /**
    * Process pending messages that have accumulated while Monitor was busy
    * This syncs the Interactive Agent's messages with the database
    */

@@ -1,6 +1,8 @@
 node_modules
 dist
 dist-electron
+dist-sidecar
+electron/sidecar/runtime
 release
 .DS_Store
 server/public

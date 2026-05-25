@@ -115,6 +115,13 @@ export interface LiveProvider {
   connect(systemPrompt: string, config: LiveProviderConfig): Promise<void>;
   /** Reconnect (session resumption if available, otherwise fresh + history replay) */
   reconnect(): Promise<void>;
+  /**
+   * Reconnect with a NEW system prompt + tools + compression config, preserving
+   * conversation history via session resumption. Used for sleep-state profile
+   * switches (awake ↔ resting). Optional — providers that don't support it can
+   * omit it; callers should feature-check.
+   */
+  reconnectWithConfig?(systemPrompt: string, config: LiveProviderConfig): Promise<void>;
   /** Close the session and clean up */
   close(): void;
   /** Whether the session is currently connected and ready */

@@ -744,4 +744,11 @@ export const he: Translations = {
     prevPage: "עמוד קודם",
     nextPage: "עמוד הבא",
   },
+
+  eyegaze: {
+    connected: "מחובר",
+    notDetected: "לא זוהה",
+    driverNotFound: "מנהל ההתקן של עוקב העיניים לא נמצא",
+    locateDriver: "אתר מנהל התקן…",
+  },
 };

@@ -451,9 +451,14 @@ function DualAgentProviderInner({
       return;
     }
     if (flow.pcmMode === "vad-gated") {
-      // Resting-deep — only forward if a meaningful voice contribution is active.
+      // Resting — only forward when the audio is interesting: human speech
+      // (voice contribution) OR a sudden loud sound (noise contribution).
+      // Everything else (ambient hum, silence) is dropped so a quiet resting
+      // session streams almost no audio. A door slam or someone addressing
+      // the device still gets through and can wake the session.
       const voice = contributionsRef.current.voice ?? 0;
-      if (voice < 0.05) {
+      const noise = contributionsRef.current.noise ?? 0;
+      if (voice < 0.05 && noise < 0.05) {
         pcmGatedCountRef.current++;
         return;
       }

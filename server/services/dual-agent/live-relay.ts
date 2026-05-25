@@ -42,7 +42,7 @@ import { logDualAgent, logLiveSession, runInSessionContext } from "./dual-agent-
 import { activityLogService } from "../activityLogService";
 import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
-import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
+import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
@@ -1119,6 +1119,29 @@ export class LiveRelay {
   private consecutiveSafetyBlocks = 0;
   private static readonly MAX_RECONNECT_BEFORE_RESET = 2;
 
+  // Sleep-state session profile. "awake" = full prompt + tools + loose
+  // compression; "resting" = lightweight prompt + 4-tool subset + tight
+  // compression. Switched via switchSessionProfile() on a reconnect.
+  private sessionProfile: "awake" | "resting" = "awake";
+  private profileSwitchPending: "awake" | "resting" | null = null;
+  private useVertexForLive = false;
+  private geminiVoiceName: string | undefined;
+  private awakeTools: import("./live-provider").LiveProviderConfig["tools"] | null = null;
+  // Compression windows per profile (triggerTokens → targetTokens). Awake is
+  // lower than the old 100k/50k so long sessions stop re-billing ~100k of
+  // context every turn. Resting is tight — the lightweight prompt is small so
+  // there's little structural floor to protect.
+  private static readonly AWAKE_COMPRESSION_TRIGGER = 30_000;
+  private static readonly AWAKE_COMPRESSION_TARGET = 15_000;
+  private static readonly RESTING_COMPRESSION_TRIGGER = 12_000;
+  private static readonly RESTING_COMPRESSION_TARGET = 6_000;
+
+  // Rolling session summary. Produced by the monitor every N new conversation
+  // messages and injected as a [SESSION SUMMARY] context message so it
+  // survives compression. summaryInFlight guards against overlapping calls.
+  private summaryInFlight = false;
+  private static readonly SUMMARY_EVERY_N_MESSAGES = 20;
+
   // Timers
   private boardReminderTimer: ReturnType<typeof setInterval> | null = null;
   private behavioralReminderTimer: ReturnType<typeof setInterval> | null = null;
@@ -1276,6 +1299,23 @@ export class LiveRelay {
     // Process them on the next tick so the current call stack unwinds first.
     if (newState === "idle" && prev !== "idle" && this.pendingClientMessages.length > 0) {
       setImmediate(() => this.drainPendingMessages());
+    }
+    // Apply a deferred sleep-state profile switch now that we're idle. The
+    // switch reconnects the provider, so run it after the call stack unwinds.
+    if (newState === "idle" && prev !== "idle"
+        && this.profileSwitchPending && this.profileSwitchPending !== this.sessionProfile) {
+      const target = this.profileSwitchPending;
+      this.profileSwitchPending = null;
+      setImmediate(() => {
+        this.switchSessionProfile(target).catch(err =>
+          logLiveSession("PROFILE_SWITCH_ERROR", `deferred ${target}: ${(err as Error).message}`));
+      });
+    }
+    // Roll the session summary forward when enough new turns have landed.
+    // Fire-and-forget; runs after the stack unwinds so it never blocks the
+    // turn from finishing.
+    if (newState === "idle" && prev !== "idle") {
+      setImmediate(() => this.maybeProduceSessionSummary());
     }
   }
 
@@ -1819,6 +1859,7 @@ export class LiveRelay {
               assistModeExamples: sections?.assistModeExamples,
               sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
               safetyNotes: sections?.safetyNotes,
+              sessionSummary: state.sessionSummary,
             });
           }
           const override = msg.muteState === "muted"
@@ -1970,6 +2011,17 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
 
         case "client_sleep_state_change":
           this.recordSleepStateChange(msg.state, msg.source);
+          // Map the client sleep-state machine onto the server session profile
+          // (prompt/tools/compression). resting + asleep → lightweight resting
+          // profile; awake + waking → full profile. hibernation closes the
+          // session via its own path, so no profile switch here.
+          if (msg.state === "resting" || msg.state === "asleep") {
+            this.switchSessionProfile("resting").catch(err =>
+              logLiveSession("PROFILE_SWITCH_ERROR", `resting: ${(err as Error).message}`));
+          } else if (msg.state === "awake" || msg.state === "waking") {
+            this.switchSessionProfile("awake").catch(err =>
+              logLiveSession("PROFILE_SWITCH_ERROR", `awake: ${(err as Error).message}`));
+          }
           break;
       }
     } catch (err) {
@@ -2193,6 +2245,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             assistModeExamples: sections?.assistModeExamples,
             sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
             safetyNotes: sections?.safetyNotes,
+            sessionSummary: state.sessionSummary,
           });
         }
       }
@@ -2241,6 +2294,9 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
 
       const callbacks = this.buildProviderCallbacks();
       const tools = buildToolDeclarations(toolConfig);
+      // Cache the full awake tool set so switchSessionProfile("awake") can
+      // restore it without rebuilding the whole toolConfig.
+      this.awakeTools = tools;
 
       // 7. Build system prompt
       const echoAwareness = this.buildEchoAwareness();
@@ -2254,8 +2310,8 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         model: aacChatConfig.model,
         temperature: 0.7,
         tools,
-        compressionTriggerTokens: 100_000,
-        compressionTargetTokens: 50_000,
+        compressionTriggerTokens: LiveRelay.AWAKE_COMPRESSION_TRIGGER,
+        compressionTargetTokens: LiveRelay.AWAKE_COMPRESSION_TARGET,
         responseModality: "AUDIO",
         proactiveAudio: true,
         voiceName: geminiVoice,
@@ -2264,6 +2320,11 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       this.provider = new GeminiLiveProvider(callbacks, useVertexForLive /* useVertexAI */);
       this.currentLiveProvider = aacChatConfig.provider;
       this.currentLiveModel = aacChatConfig.model;
+      // Remember the bits switchSessionProfile() needs to rebuild a connection
+      // for a different sleep-state profile without re-running handleInitialize.
+      this.useVertexForLive = useVertexForLive;
+      this.sessionProfile = "awake";
+      this.geminiVoiceName = geminiVoice;
       // Bind logger session context so provider-side events (SERVER → toolCall,
       // RAW_MSG, SERVER → modelTurn, etc.) get DB-attributed too.
       this.provider.setDebugSessionContext(state.sessionId, this.debugMode);
@@ -3745,6 +3806,21 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         return { id: call.id, name, response: { output: "ok" } };
       }
 
+      case "wake_up": {
+        // RESTING → awake escalation requested by the model. Tell the client
+        // to resume awake data-flow (heartbeat frames, continuous audio) and
+        // queue the server-side profile switch (full prompt + tools + loose
+        // compression). The switch is applied on next idle by
+        // handleTurnComplete's drain — switching mid-turn would drop this
+        // turn's reply.
+        const reason = extractStringArg(args, "reason").trim() || "unspecified";
+        logLiveSession("WAKE_UP TOOL", reason);
+        this.send({ type: "sleep_state_change", data: { state: "awake", source: "ai" } });
+        this.recordSleepStateChange("awake", "ai");
+        this.profileSwitchPending = "awake";
+        return { id: call.id, name, response: { output: "waking to full interaction" } };
+      }
+
       case "sleep": {
         logLiveSession("SLEEP TOOL", "AI requested transition to Asleep");
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
@@ -4184,6 +4260,10 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     if (
       !wasAutoContinuationPending &&
       this.muteState === "unmuted" &&
+      // In RESTING profile the model is SUPPOSED to stay silent — it
+      // transcribes background speech without replying. Don't nag it to
+      // "respond" after a resting-mode transcript().
+      this.sessionProfile === "awake" &&
       noAudioThisTurn &&
       !this.turnAccum.staySilentReason &&
       this.provider &&
@@ -4964,6 +5044,173 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     }
 
     return parts.join("\n");
+  }
+
+  /**
+   * Switch the live session between sleep-state profiles (awake ↔ resting).
+   *
+   * Rebuilds the system prompt, tool set, and compression window for the
+   * target profile and reconnects via the provider's reconnectWithConfig
+   * (which preserves conversation history through session resumption).
+   *
+   * If a turn is in flight, the switch is deferred to the next idle
+   * (handleTurnComplete drains `profileSwitchPending`) — switching mid-turn
+   * would drop the model's response.
+   */
+  /**
+   * Produce + inject a fresh rolling session summary when enough new
+   * conversation messages have accumulated. Fire-and-forget: the monitor's
+   * Haiku call runs async; on completion the summary is stored on state and
+   * injected as a [SESSION SUMMARY] context message (recent → survives the
+   * sliding window while older detail is evicted). Folded into the system
+   * prompt on the next reconnect (see switchSessionProfile / prompt builders).
+   *
+   * Source is state.messages (the monitor-processed log), so the summary
+   * trails live turns slightly — that's fine, it's a rolling digest.
+   */
+  private maybeProduceSessionSummary(): void {
+    const state = this.sessionCache?.state;
+    const monitor = this.sessionCache?.monitorAgent;
+    if (!state || !monitor?.produceSessionSummary) return;
+    if (this.summaryInFlight) return;
+
+    const total = state.messages.length;
+    const summarized = state.summarizedMsgCount ?? 0;
+    if (total - summarized < LiveRelay.SUMMARY_EVERY_N_MESSAGES) return;
+
+    const newMessages = state.messages.slice(summarized).map(m => ({
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    }));
+    const markCount = total;
+    this.summaryInFlight = true;
+    monitor.produceSessionSummary(state.sessionSummary, newMessages)
+      .then(summary => {
+        this.summaryInFlight = false;
+        if (!summary || summary === state.sessionSummary) {
+          // No change — still advance the marker so we don't re-summarize the
+          // same batch every turn.
+          state.summarizedMsgCount = markCount;
+          return;
+        }
+        state.sessionSummary = summary;
+        state.summarizedMsgCount = markCount;
+        if (this.provider?.isConnected) {
+          this.provider.sendContextInjection(`[SESSION SUMMARY]\n${summary}`);
+        }
+        logLiveSession("SESSION_SUMMARY_INJECTED", `${summary.length} chars, summarized ${markCount} msgs`);
+      })
+      .catch(err => {
+        this.summaryInFlight = false;
+        logLiveSession("SESSION_SUMMARY_ERROR", (err as Error).message);
+      });
+  }
+
+  async switchSessionProfile(target: "awake" | "resting"): Promise<void> {
+    if (this.sessionProfile === target && !this.profileSwitchPending) return;
+    if (!this.provider?.reconnectWithConfig) {
+      logLiveSession("PROFILE_SWITCH_SKIP", "provider missing reconnectWithConfig");
+      return;
+    }
+    if (this.state !== "idle") {
+      this.profileSwitchPending = target;
+      logLiveSession("PROFILE_SWITCH_DEFERRED", `state=${this.state} target=${target}`);
+      return;
+    }
+    this.profileSwitchPending = null;
+    if (this.sessionProfile === target) return;
+
+    const state = this.sessionCache?.state;
+    const student = this.sessionCache?.monitorAgent?.getStudent?.();
+    if (!state || !student || !this.currentLiveModel) {
+      logLiveSession("PROFILE_SWITCH_SKIP", "no state/student/model");
+      return;
+    }
+
+    const computeAge = (bd: string | null | undefined) => {
+      if (!bd) return undefined;
+      const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      return age > 0 ? String(age) : undefined;
+    };
+    const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const sections = state.enhancedSections;
+    const persona = sections?.persona || rawPersona;
+
+    let basePrompt: string;
+    let tools: import("./live-provider").LiveProviderConfig["tools"];
+    let triggerTokens: number;
+    let targetTokens: number;
+
+    if (target === "resting") {
+      basePrompt = buildRestingAgentPrompt({
+        studentName: student.name,
+        persona,
+        language: student.primaryLanguage || undefined,
+        memoryContext: state.memoryContext,
+        studentAge: computeAge(student.birthDate),
+        studentGender: student.gender || undefined,
+        studentDiagnosis: state.cachedDiagnosis || undefined,
+        aiName: student.aacSettings?.aiName || undefined,
+        knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
+        useDirectAudio: this.useDirectAudio,
+        sessionSummary: state.sessionSummary,
+      });
+      tools = buildToolDeclarations({
+        enabledApps: [],
+        availableBoards: [],
+        hasLoadedBoard: false,
+        faceRecognitionActive: (state.cachedContacts?.length || 0) > 0,
+        useDirectAudio: this.useDirectAudio,
+        language: student.primaryLanguage || undefined,
+        restingMode: true,
+      });
+      triggerTokens = LiveRelay.RESTING_COMPRESSION_TRIGGER;
+      targetTokens = LiveRelay.RESTING_COMPRESSION_TARGET;
+    } else {
+      // awake — reuse the current full interactive prompt + the cached full
+      // tool set built at init. interactivePrompt is kept current by mute
+      // changes; awakeTools rarely drifts (custom apps don't change mid-session).
+      // Append the latest rolling summary inline (interactivePrompt may have
+      // been built before the most recent summary was produced).
+      basePrompt = state.sessionSummary
+        ? `${state.interactivePrompt}\n\n<session_summary>\nWhat has happened earlier in THIS session (detailed history may have aged out of your context — this is your memory of it):\n${state.sessionSummary}\n</session_summary>`
+        : state.interactivePrompt;
+      tools = this.awakeTools ?? buildToolDeclarations({
+        enabledApps: [],
+        availableBoards: [],
+        hasLoadedBoard: false,
+        faceRecognitionActive: (state.cachedContacts?.length || 0) > 0,
+        useDirectAudio: this.useDirectAudio,
+        language: student.primaryLanguage || undefined,
+      });
+      triggerTokens = LiveRelay.AWAKE_COMPRESSION_TRIGGER;
+      targetTokens = LiveRelay.AWAKE_COMPRESSION_TARGET;
+    }
+
+    const echoAwareness = this.buildEchoAwareness();
+    const tzSection = this.buildTimezoneSection();
+    const systemPrompt = basePrompt + "\n\n" + echoAwareness + (tzSection ? "\n\n" + tzSection : "");
+
+    const providerConfig: LiveProviderConfig = {
+      model: this.currentLiveModel,
+      temperature: 0.7,
+      tools,
+      compressionTriggerTokens: triggerTokens,
+      compressionTargetTokens: targetTokens,
+      responseModality: "AUDIO",
+      proactiveAudio: true,
+      voiceName: this.geminiVoiceName,
+    };
+
+    const from = this.sessionProfile;
+    this.sessionProfile = target;
+    logLiveSession("PROFILE_SWITCH", `${from} → ${target} (compression trigger=${triggerTokens}/${targetTokens}, tools=${tools?.[0]?.functionDeclarations?.length ?? 0})`);
+    try {
+      await this.provider.reconnectWithConfig(systemPrompt, providerConfig);
+    } catch (err) {
+      logLiveSession("PROFILE_SWITCH_ERROR", `${from}→${target}: ${(err as Error).message}`);
+      this.sessionProfile = from; // revert on failure
+    }
   }
 
   private buildEchoAwareness(): string {

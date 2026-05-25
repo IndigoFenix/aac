@@ -742,6 +742,13 @@ export const en = {
     prevPage: "Previous page",
     nextPage: "Next page",
   },
+
+  eyegaze: {
+    connected: "connected",
+    notDetected: "not detected",
+    driverNotFound: "Eye tracker driver not found",
+    locateDriver: "Locate driver…",
+  },
 };
 
 export type Translations = typeof en;
