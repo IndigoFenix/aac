@@ -285,6 +285,7 @@ export const en = {
     toggleQuestion: "Question mark",
     toggleExclamation: "Exclamation mark",
     modifiersEmpty: "Select a slot to add modifiers",
+    noPeople: "No people added yet",
     help: "Help",
     play: "Say it",
     tabs: {

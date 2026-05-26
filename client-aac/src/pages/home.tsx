@@ -22,6 +22,7 @@ import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { useFaceImageCache } from "@/hooks/useFaceImageCache";
+import { usePeopleDirectory } from "@/hooks/usePeopleDirectory";
 import { setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
@@ -52,6 +53,7 @@ import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
 import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
+import { createPortal } from "react-dom";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
 import { useGazeSidecar } from "@/hooks/useGazeSidecar";
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
@@ -500,7 +502,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     eyegazeSettings.enabled && (eyegazeSettings.provider === "tobii" || eyegazeSettings.provider === "auto")
       ? "tobii"
       : null;
-  const { status: gazeSidecarStatus, locateDll: locateGazeDll } = useGazeSidecar({
+  const { status: gazeSidecarStatus, locateDll: locateGazeDll, openLog: openGazeLog } = useGazeSidecar({
     enabled: eyegazeSettings.enabled,
     device: gazeSidecarDevice,
   });
@@ -537,18 +539,34 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     }
   }, [eyeGaze.failedProvider]);
 
-  // Face image cache (in-memory, session-scoped — no server storage)
+  // Face image cache (in-memory, session-scoped — no server storage).
+  // Populated only by live camera identification.
   const faceImageCache = useFaceImageCache();
 
-  // Wire the cache into glyph-images so any `face:<id>` slot inside a
-  // glyph can render the cached data URL. Without this, glyphs fall
-  // back to the 👤 silhouette emoji (still readable, but doesn't show
-  // the actual identified contact). Cleared on unmount so a stale
-  // closure doesn't outlive this page mount.
+  // Full selectable-people directory (all contacts/linked users/student),
+  // with stored-photo URLs. Used by the sentence builder's person list and
+  // as the stored-photo fallback when the camera hasn't seen someone.
+  const peopleDirectory = usePeopleDirectory(studentId, useDualAgent);
+
+  // Combined face resolver: prefer the live-camera capture (freshest, shows
+  // the person as they look right now), then fall back to the contact's
+  // stored photo. Used everywhere a `face:<id>` needs an image — main board,
+  // app boards, and the sentence builder — so faces render consistently even
+  // before the camera has identified someone this session.
+  const resolveFaceImage = useCallback(
+    (contactId: string): string | null =>
+      faceImageCache.getFaceImage(contactId) ?? peopleDirectory.getPhotoUrl(contactId),
+    [faceImageCache.getFaceImage, peopleDirectory.getPhotoUrl],
+  );
+
+  // Wire the resolver into glyph-images so any `face:<id>` slot inside a
+  // glyph can render. Without this, glyphs fall back to the 👤 silhouette
+  // emoji (still readable, but doesn't show the actual contact). Cleared on
+  // unmount so a stale closure doesn't outlive this page mount.
   useEffect(() => {
-    setFaceImageResolver(faceImageCache.getFaceImage);
+    setFaceImageResolver(resolveFaceImage);
     return () => setFaceImageResolver(null);
-  }, [faceImageCache.getFaceImage]);
+  }, [resolveFaceImage]);
 
   // Person identification for AAC system (face recognition)
   const {
@@ -619,6 +637,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Get current identified person (non-blocking getter for dual-agent)
   const getIdentifiedPerson = useCallback(() => {
     return currentIdentification?.person || null;
+  }, [currentIdentification]);
+
+  // People identified as present at least once this session. The sentence
+  // builder's person list surfaces these first so whoever is in the room is
+  // easiest to pick.
+  const [presentPersonIds, setPresentPersonIds] = useState<string[]>([]);
+  useEffect(() => {
+    const id = currentIdentification?.person?.id;
+    if (!id) return;
+    setPresentPersonIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, [currentIdentification]);
 
   // Get serialized gesture/expression context for dual-agent AI
@@ -1301,29 +1329,52 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         )}
       </AnimatePresence>
 
-      {/* Eye-tracker driver (DLL) not found — offer to locate it manually.
-          Strings match the (currently un-localized) eyegaze hardware UI above. */}
-      <AnimatePresence>
-        {gazeSidecarStatus?.needsDll && (
-          <motion.div
-            initial={{ y: -60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -60, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white"
-          >
-            <EyeOff className="w-4 h-4" />
-            <span>{t("eyegaze.driverNotFound")}</span>
-            <button
-              type="button"
-              onClick={() => { void locateGazeDll(); }}
-              className="px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+      {/* Eye-tracker sidecar status banner. Portaled to <body> and given a very
+          high z-index so it sits ABOVE (and is not blurred by) the wake/pause
+          overlay, whose transformed/filtered ancestor would otherwise contain
+          this fixed element inside the blurred subtree. Shows whenever a DLL-
+          based tracker is selected but not yet connected, surfacing the real
+          status (driver not found, device error, connecting…) so the issue is
+          diagnosable in the field. The sidecar's own messages are English. */}
+      {createPortal(
+        <AnimatePresence>
+          {gazeSidecarStatus && gazeSidecarStatus.device && gazeSidecarStatus.sidecarCode !== "connected" && (
+            <motion.div
+              initial={{ y: -60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -60, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              style={{ zIndex: 2147483646 }}
+              className="fixed top-2 left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white"
             >
-              {t("eyegaze.locateDriver")}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <EyeOff className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                {gazeSidecarStatus.needsDll
+                  ? t("eyegaze.driverNotFound")
+                  : (gazeSidecarStatus.lastError || gazeSidecarStatus.sidecarMessage || "Connecting to eye tracker…")}
+              </span>
+              {gazeSidecarStatus.needsDll && (
+                <button
+                  type="button"
+                  onClick={() => { void locateGazeDll(); }}
+                  className="shrink-0 px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                >
+                  {t("eyegaze.locateDriver")}
+                </button>
+              )}
+              {/* Debug affordance (English): open the sidecar log file. */}
+              <button
+                type="button"
+                onClick={() => { void openGazeLog(); }}
+                className="shrink-0 px-3 py-1 rounded-full bg-black/20 hover:bg-black/30 transition-colors"
+              >
+                Open log
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       {/* Main 3-Section Board Layout */}
       <main className={`flex-1 flex flex-col relative ${
@@ -1385,11 +1436,18 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           />
 
           {showConstructionBoard && (
-            <div className="absolute inset-0 z-30 bg-white dark:bg-gray-900">
+            // data-dwell-trap confines eyegaze dwell selection to the sentence
+            // builder while it's open — gaze over its empty areas resolves to
+            // "nothing" instead of falling through to the board buttons behind.
+            <div className="absolute inset-0 z-30 bg-white dark:bg-gray-900" data-dwell-trap>
               <SentenceConstructorBoard
                 sendConstructionState={stableSendConstructionState}
                 constructionSuggestions={constructionSuggestionsState}
                 constructionMemoryChips={constructionMemoryChipsState}
+                people={peopleDirectory.people}
+                getFaceImage={resolveFaceImage}
+                getPersonName={peopleDirectory.getName}
+                presentPersonIds={presentPersonIds}
                 onPlay={(glyphString) => {
                   // Hand the composed glyph to the AI. The relay sends it as
                   // a [GLYPH PRESS] turn; the AI calls interpret(sentence)
@@ -1441,7 +1499,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 language={currentLanguage}
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 suppressLocalSpeech={aiSessionActive}
-                getFaceImage={faceImageCache.getFaceImage}
+                getFaceImage={resolveFaceImage}
               />
             );
           })()}
@@ -1471,7 +1529,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 language={currentLanguage}
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
-                getFaceImage={faceImageCache.getFaceImage}
+                getFaceImage={resolveFaceImage}
                 suppressLocalSpeech={aiSessionActive}
               />
             </div>
@@ -1499,6 +1557,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         {/* Bottom Row: Quick Actions */}
         <QuickActions
           onAction={(action, text) => {
+            // While the sentence builder is open, the board/home/back end
+            // button just dismisses it (returns to the board underneath)
+            // rather than navigating. The Speak button already toggles it.
+            if (showConstructionBoard && action === "home") {
+              setShowConstructionBoard(false);
+              return;
+            }
             if (action === "more") {
               // "More" = user can't find the right button. Ask AI to add
               // more options but NOT respond with speech.
@@ -1549,6 +1614,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }
           }}
           onBack={() => {
+            // Back also dismisses the sentence builder when it's open.
+            if (showConstructionBoard) {
+              setShowConstructionBoard(false);
+              return;
+            }
             // Call the prebuilt board's back function
             const goBack = (window as any).__prebuiltBoardGoBack;
             if (goBack) {
@@ -1727,7 +1797,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           getGestureContext={getGestureContext}
           getUnmatchedFaceDescriptors={getUnmatchedDescriptors}
           debugMode={debugMode}
-          getFaceImage={faceImageCache.getFaceImage}
+          getFaceImage={resolveFaceImage}
         >
           <AvatarSpriteProvider>
           <DualAgentBridge

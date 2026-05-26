@@ -243,11 +243,15 @@ function parseGazepoint(raw: unknown): GazeData | null {
 // ─── Factory Functions ──────────────────────────────────────────
 
 export function createTobiiProvider(port = 49152): WebSocketBridgeProvider {
+  // Use 127.0.0.1, NOT "localhost": our gaze sidecar binds the IPv4 loopback,
+  // and on Windows "localhost" often resolves to ::1 (IPv6) first, so a
+  // localhost connection would never reach the sidecar. (This is why the
+  // standalone tobii-test, which used 127.0.0.1, connected but the app didn't.)
   return new WebSocketBridgeProvider({
     type: "tobii",
     deviceName: "Tobii Eye Tracker",
-    url: `ws://localhost:${port}`,
-    probeUrl: `http://localhost:${port}/status`,
+    url: `ws://127.0.0.1:${port}`,
+    probeUrl: `http://127.0.0.1:${port}/status`,
     parser: parseTobii,
   });
 }

@@ -48,6 +48,13 @@ export interface GlyphProps {
   ariaLabel?: string;
   onSlotPress?: (slotIndex: number | null) => void;
   activeSlot?: number | null;
+  /**
+   * Render a single, unmodified SYMBOL nearly edge-to-edge so it fills its
+   * button instead of floating in a too-small box. Defaults to true for the
+   * AAC client (every board/builder surface wants this); pass false to keep
+   * the conservative rim padding. See GlyphCompositor.fillSlot.
+   */
+  fillSlot?: boolean;
 }
 
 export function Glyph(props: GlyphProps) {
@@ -79,6 +86,7 @@ export function Glyph(props: GlyphProps) {
       activeSlot={props.activeSlot}
       onImageError={markSymbolUrlFailed}
       renderAnimatedSymbol={renderAnimatedSymbolAac}
+      fillSlot={props.fillSlot ?? true}
     />
   );
 }

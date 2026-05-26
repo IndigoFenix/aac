@@ -287,6 +287,7 @@ export const ru: Translations = {
     toggleQuestion: "Знак вопроса",
     toggleExclamation: "Восклицательный знак",
     modifiersEmpty: "Выберите слот, чтобы добавить модификаторы",
+    noPeople: "Пока нет людей",
     help: "Помощь",
     play: "Сказать",
     tabs: {

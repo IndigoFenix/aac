@@ -287,6 +287,7 @@ export const ko: Translations = {
     toggleQuestion: "물음표",
     toggleExclamation: "느낌표",
     modifiersEmpty: "슬롯을 선택하여 수정자를 추가하세요",
+    noPeople: "아직 추가된 사람이 없습니다",
     help: "도움",
     play: "말하기",
     tabs: {

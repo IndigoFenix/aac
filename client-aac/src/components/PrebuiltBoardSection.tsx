@@ -315,9 +315,10 @@ export default function PrebuiltBoardSection({
               <motion.button
                 key={button.id}
                 onClick={() => handleButtonClick(button)}
-                className="flex flex-col items-center justify-center p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden min-h-0"
+                className="flex flex-col items-center justify-center rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden min-h-0"
                 style={{
                   backgroundColor: getButtonColor(button.color),
+                  padding: 5,
                   ...(isSpanning ? {
                     gridColumn: `span ${btnColSpan}`,
                     gridRow: `span ${btnRowSpan}`,
@@ -326,25 +327,24 @@ export default function PrebuiltBoardSection({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <div className="flex-[3] flex items-center justify-center min-h-0 w-full overflow-hidden">
+                <div className="icon-fill-area">
                   {button.symbolPath ? (
                     <img
                       src={resolveStaticIconPath(button.symbolPath)}
                       alt={button.label}
-                      className="object-contain"
-                      style={{ width: "55%", height: "55%", maxHeight: "100%" }}
+                      className="icon-fill-img"
                     />
                   ) : button.iconRef && isDisplayableIcon(button.iconRef) ? (
-                    <span style={{ fontSize: iconFontSize, lineHeight: 1 }}>{button.iconRef}</span>
+                    <span className="icon-fill-emoji">{button.iconRef}</span>
                   ) : button.iconRef ? (
-                    <i className={button.iconRef} style={{ fontSize: iconFontSize, lineHeight: 1 }} />
+                    <i className={`${button.iconRef} icon-fill-emoji`} />
                   ) : (
-                    <span style={{ fontSize: iconFontSize, lineHeight: 1 }}>
+                    <span className="icon-fill-emoji">
                       {getEmojiForLabel(button.label)}
                     </span>
                   )}
                 </div>
-                <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
+                <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2 shrink-0" style={{ fontSize: textFontSize, marginTop: 2, maxHeight: "40%" }}>
                   {button.label}
                 </span>
                 {isLink && (

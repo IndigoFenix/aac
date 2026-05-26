@@ -56,6 +56,7 @@ import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-s
 import { getVocabularyItem } from "@shared/glyph-registry";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
+import { validateBoardButtons, collectGlyphImageKeys } from "./board-button-validator";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
@@ -259,209 +260,6 @@ function assemble(b: {
  * label-derived slug to subsequent duplicates so each routes to its own
  * symbol slot (and triggers fresh symbol generation for the duplicates).
  */
-/**
- * Walk a glyph string and add any slot keys, payload keys, or modifier
- * keys that look like generation-eligible imageKeys into `into`. A key is
- * eligible only when it would otherwise render as "❓": NOT a raw emoji,
- * NOT a `symbol:`/`face:` ref, NOT in the glyph registry with a bundled
- * image or emoji, and NOT covered by the supplementary emoji registry.
- *
- * Modifiers are walked too — `water.spicy` should queue generation for
- * "spicy" so the badge resolves to a real image instead of a dot
- * placeholder. Canonical modifiers (in the registry) skip the lookup.
- */
-function collectGlyphImageKeys(glyph: string, into: Set<string>): void {
-  if (!glyph) return;
-  const parsed = parseGlyph(glyph);
-  const addIfImageKey = (key: string) => {
-    if (!key) return;
-    if (isEmoji(key)) return;
-    if (key.startsWith("symbol:") || key.startsWith("face:")) return;
-    const item = getVocabularyItem(key);
-    if (item?.imagePath || item?.emoji) return;
-    if (resolveEmoji(key)) return;
-    into.add(key);
-  };
-  for (const slot of parsed.slots) {
-    addIfImageKey(slot.key);
-    if (slot.payload) addIfImageKey(slot.payload);
-    for (const modKey of slot.modifiers) addIfImageKey(modKey);
-  }
-}
-
-/**
- * True when `glyphString` contains at least one slot/payload/modifier that
- * would route to async image generation — i.e. a snake_case key that is
- * neither a raw emoji, nor a `symbol:`/`face:` ref, nor a canonical
- * registry entry, nor present in the supplementary emoji registry. Pure
- * read-only check — does NOT queue generation.
- */
-function glyphHasImageKey(glyphString: string | undefined): boolean {
-  if (!glyphString) return false;
-  const set = new Set<string>();
-  collectGlyphImageKeys(glyphString, set);
-  return set.size > 0;
-}
-
-/**
- * Collect modifier slots that aren't in the canonical registry's modifier
- * vocabulary. The model frequently invents modifiers like `.new`, `.old`,
- * `.sad`, `.funny`, `.adventure`, `.american` — none of which are real
- * modifier SYMBOLs. The compositor has no image for them so the slot
- * renders as a meaningless dot. We reject these so the AI gets feedback
- * and can rebuild with a real modifier (or carry the quality in the
- * speech field instead).
- *
- * A modifier is valid when the registry entry exists AND carries a
- * `modifier` facet — same gate the compositor uses to decide whether to
- * actually render the badge.
- */
-function collectInvalidModifiers(glyph: string | undefined): string[] {
-  if (!glyph) return [];
-  const bad: string[] = [];
-  const seen = new Set<string>();
-  const parsed = parseGlyph(glyph);
-  for (const slot of parsed.slots) {
-    for (const modKey of slot.modifiers) {
-      if (!modKey) continue;
-      // Strip a possible `generate:` prefix so we evaluate the bare key.
-      // The AI shouldn't be using `generate:` in modifier position at all,
-      // but we want a clear "this isn't a modifier" error rather than a
-      // generation attempt for the inner string.
-      const bareKey = stripBrackets(modKey);
-      if (seen.has(bareKey)) continue;
-      seen.add(bareKey);
-      const item = getVocabularyItem(bareKey);
-      // A registry hit only counts as a modifier when it actually carries
-      // a modifier facet — `apple` has a registry entry but isn't a
-      // modifier; `.apple` would render nonsensically.
-      if (!item || !item.modifier) {
-        bad.push(modKey);
-      }
-    }
-  }
-  return bad;
-}
-
-/**
- * Hard-coded board-button validator. Drops buttons that fail any of the
- * structural rules below and returns the kept set plus a list of human-
- * readable error strings the relay forwards to the AI via tool_response
- * so it can rebuild correctly:
- *
- *   1. A glyph containing any imageKey MUST come with a non-empty
- *      glyphFallback. Without it the button renders as ❓ until generation
- *      completes (or forever, if it fails).
- *   2. The glyphFallback itself MUST NOT contain any imageKey. The fallback
- *      is what renders WHILE generation is pending, so anything that needs
- *      generation (`generate:`, bare unknown snake_case, non-canonical
- *      modifier on a head) leaves the slot blank → ❓.
- *   3. Modifier slots in EITHER the glyph or the fallback must be from the
- *      canonical registry's modifier vocabulary. Invented modifiers like
- *      `.new`, `.old`, `.sad`, `.funny` have no image and render as a
- *      meaningless dot.
- *   4. No two buttons may share an identical glyph string. The student
- *      can't visually distinguish them.
- *   5. No two buttons may share an identical glyphFallback string (when
- *      both have a fallback). Same visual-collision reasoning.
- *
- * Filtered buttons survive; the rest of the board still renders. The AI
- * is expected to retry / patch via a follow-up rebuild_board call when it
- * sees the error array in the tool response.
- */
-function validateBoardButtons<
-  T extends { label: string; glyph?: string; glyphFallback?: string }
->(buttons: T[]): { buttons: T[]; errors: string[] } {
-  const kept: T[] = [];
-  const errors: string[] = [];
-  // Track first-seen owners so the error message can name the conflict.
-  const seenGlyph = new Map<string, string>();
-  const seenFallback = new Map<string, string>();
-
-  for (const btn of buttons) {
-    // (1) imageKey without fallback.
-    if (btn.glyph && glyphHasImageKey(btn.glyph) && !btn.glyphFallback) {
-      errors.push(
-        `Button "${btn.label}" — glyph "${btn.glyph}" contains an imageKey but no fallback was provided. ` +
-        `Wrap imageKeys in [] AND supply a fallback built from emojis or canonical registry keys.`
-      );
-      continue;
-    }
-
-    // (2) imageKey IN the fallback. The fallback must render immediately —
-    // anything generation-eligible there leaves the slot blank (❓).
-    if (btn.glyphFallback && glyphHasImageKey(btn.glyphFallback)) {
-      const fallbackImageKeys = new Set<string>();
-      collectGlyphImageKeys(btn.glyphFallback, fallbackImageKeys);
-      errors.push(
-        `Button "${btn.label}" — fallback "${btn.glyphFallback}" contains ${fallbackImageKeys.size === 1 ? "a key" : "keys"} ` +
-        `that would route to image generation: ${[...fallbackImageKeys].map(k => `\`${k}\``).join(", ")}. ` +
-        `The fallback must render immediately, so it can use ONLY emojis, canonical registry keys, ` +
-        `\`symbol:ID\`, \`face:ID\`, and canonical modifiers. NEVER \`generate:\` in the fallback. ` +
-        `Mirror the shape of the sentence (e.g. \`i_me+want+generate:planet_mars\` → fallback \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept).`
-      );
-      continue;
-    }
-
-    // (3) Non-canonical modifiers in glyph or fallback. These have no
-    // registry entry → render as a meaningless dot.
-    const badGlyphMods = collectInvalidModifiers(btn.glyph);
-    const badFallbackMods = collectInvalidModifiers(btn.glyphFallback);
-    if (badGlyphMods.length > 0 || badFallbackMods.length > 0) {
-      const parts: string[] = [];
-      if (badGlyphMods.length > 0) {
-        parts.push(`glyph "${btn.glyph}" uses non-canonical modifier${badGlyphMods.length === 1 ? "" : "s"}: ${badGlyphMods.map(m => `\`.${m}\``).join(", ")}`);
-      }
-      if (badFallbackMods.length > 0) {
-        parts.push(`fallback "${btn.glyphFallback}" uses non-canonical modifier${badFallbackMods.length === 1 ? "" : "s"}: ${badFallbackMods.map(m => `\`.${m}\``).join(", ")}`);
-      }
-      errors.push(
-        `Button "${btn.label}" — ${parts.join("; ")}. ` +
-        `Modifiers must come from the canonical registry's modifier list (see <bundled_icons>: count, possession, ` +
-        `negation, intensity, size_shape, temperature, color, social). Words like \`.new\`, \`.old\`, \`.sad\`, ` +
-        `\`.funny\` are NOT modifiers — they render as a dot. Use a different HEAD SYMBOL that already encodes ` +
-        `the quality (😢 for "sad", 👴 for "old", 🆕 for "new"), or carry the quality in the speech field, ` +
-        `or compose two GLYPHs (e.g. "sad book" → \`📖+😢\`).`
-      );
-      continue;
-    }
-
-    // (4) duplicate glyph.
-    if (btn.glyph) {
-      const sig = btn.glyph;
-      const owner = seenGlyph.get(sig);
-      if (owner !== undefined) {
-        errors.push(
-          `Button "${btn.label}" — glyph "${btn.glyph}" is identical to button "${owner}". ` +
-          `Each button needs a distinct visual; vary the slots or add descriptors.`
-        );
-        continue;
-      }
-    }
-
-    // (5) duplicate fallback.
-    if (btn.glyphFallback) {
-      const sig = btn.glyphFallback;
-      const owner = seenFallback.get(sig);
-      if (owner !== undefined) {
-        errors.push(
-          `Button "${btn.label}" — fallback "${btn.glyphFallback}" is identical to button "${owner}". ` +
-          `Each fallback must produce a distinct visual.`
-        );
-        continue;
-      }
-    }
-
-    // Passed all checks. Record signatures so subsequent buttons can clash
-    // with this one.
-    if (btn.glyph) seenGlyph.set(btn.glyph, btn.label);
-    if (btn.glyphFallback) seenFallback.set(btn.glyphFallback, btn.label);
-    kept.push(btn);
-  }
-
-  return { buttons: kept, errors };
-}
-
 /**
  * Smart board merge — applies the user-facing rules from the "smooth
  * board fixer" spec:
@@ -2828,6 +2626,21 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           return { id: call.id, name, response: { error: "No valid button provided" } };
         }
         const btn = ctxButtons[0];
+
+        // Structural validation — same gate rebuild_board/add_buttons use.
+        // Without it a malformed context button (imageKey with no fallback,
+        // non-canonical modifier, or nothing displayable) would render as a
+        // blank FontAwesome speech-bubble in the sidebar. Bounce it back to
+        // the AI with the reason so it rebuilds, and never put it on screen.
+        const ctxValidation = validateBoardButtons([btn]);
+        if (ctxValidation.buttons.length === 0) {
+          logLiveSession("BOARD_VALIDATION", `add_context_button rejected: ${ctxValidation.errors.join(" | ")}`);
+          return { id: call.id, name, response: {
+            error: `Context ${T.button} rejected — it would not render. Fix and call add_context_button() again.`,
+            problems: ctxValidation.errors,
+          }};
+        }
+
         const labelLower = btn.label.toLowerCase();
 
         // Reject collision with main board — same label on both sidebars makes

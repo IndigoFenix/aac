@@ -135,24 +135,37 @@ interface SentenceButtonProps {
 }
 
 /**
+ * True for a string that should be rendered as a fill-the-box emoji/character
+ * (one grapheme, possibly a multi-codepoint emoji) rather than a fixed-size
+ * label. Multi-grapheme strings (rare — e.g. "ABC") fall back to fixed sizing
+ * so they don't overflow the container width.
+ */
+function isSingleVisual(str: string): boolean {
+  const cps = [...str];
+  if (cps.length === 1) return true;
+  // Emoji sequences (ZWJ joins, flags, skin tones) read as one visual but are
+  // several code points. Cap at 4 so a real multi-word label isn't blown up.
+  return cps.length <= 4 && /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{27BF}]/u.test(str);
+}
+
+/**
  * Render the icon area inside the button frame. Resolves in priority order:
  *   glyph (preferred) → __FACE__ → __SYMBOL__ → static path → imageKey w/ spinner
  *   → iconRef → emoji fallback. The Glyph branch handles animated SYMBOLs
  *   (yes/no) automatically via the AAC Glyph wrapper.
+ *
+ * Every branch fills its container (`.icon-fill-area`): images via
+ * `.icon-fill-img` (object-fit contain), single emoji/chars via
+ * `.icon-fill-emoji` (cqmin font size), and the glyph SVG via 100%/100%.
+ * `iconFontSize` is only used for the rare multi-character / FontAwesome
+ * fallbacks that can't safely fill (they'd overflow width).
  */
 function renderIcon(
   button: SentenceButtonInput,
   iconFontSize: string,
   getFaceImage: ((id: string) => string | null) | undefined,
 ): ReactNode {
-  const imgStyle = {
-    maxWidth: "100%",
-    maxHeight: "100%",
-    width: "auto",
-    height: "auto",
-    objectFit: "contain" as const,
-  };
-  const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
+  const fixedEmojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
 
   // Glyph wins over everything except the __FACE__/__SYMBOL__ pseudo-paths.
   if (
@@ -176,9 +189,9 @@ function renderIcon(
     const contactId = button.symbolPath.substring(9);
     const cached = getFaceImage?.(contactId);
     if (cached) {
-      return <img src={cached} alt={button.label} className="rounded-full" style={imgStyle} />;
+      return <img src={cached} alt={button.label} className="icon-fill-img rounded-full" />;
     }
-    return <span style={emojiStyle}>👤</span>;
+    return <span className="icon-fill-emoji">👤</span>;
   }
   if (button.symbolPath?.startsWith("__SYMBOL__:")) {
     const symbolId = button.symbolPath.substring(11);
@@ -186,13 +199,13 @@ function renderIcon(
       <img
         src={apiUrl(`/api/custom-symbols/${symbolId}/image`)}
         alt={button.label}
-        style={imgStyle}
+        className="icon-fill-img"
         loading="lazy"
       />
     );
   }
   if (button.symbolPath) {
-    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} style={imgStyle} />;
+    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
   }
   // Legacy single-concept imageKey path — show the emoji with a small
   // spinner badge while the symbol generates. New buttons with a `glyph`
@@ -202,14 +215,7 @@ function renderIcon(
       ? button.iconRef
       : "💬";
     return (
-      <span
-        style={{
-          ...emojiStyle,
-          ...(emoji.length > 2 ? { fontSize: `calc(${iconFontSize} * 0.5)` } : {}),
-          position: "relative",
-          display: "inline-block",
-        }}
-      >
+      <span className="icon-fill-emoji" style={{ position: "relative", display: "inline-block" }}>
         {emoji}
         <span
           style={{
@@ -242,16 +248,18 @@ function renderIcon(
     );
   }
   if (button.iconRef) {
-    const isEmojiOrText =
-      [...button.iconRef].length === 1 ||
-      /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/u.test(button.iconRef);
-    if (isEmojiOrText) {
-      const style = button.iconRef.length > 2 ? { ...emojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` } : emojiStyle;
-      return <span style={style}>{button.iconRef}</span>;
+    if (isSingleVisual(button.iconRef)) {
+      return <span className="icon-fill-emoji">{button.iconRef}</span>;
     }
-    return <i className={button.iconRef} style={emojiStyle} />;
+    // Multi-character text or a FontAwesome class — fixed size so it can't
+    // overflow the container width.
+    const isFontAwesome = button.iconRef.startsWith("fa");
+    if (isFontAwesome) {
+      return <i className={button.iconRef} style={fixedEmojiStyle} />;
+    }
+    return <span style={{ ...fixedEmojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` }}>{button.iconRef}</span>;
   }
-  return <span style={emojiStyle}>💬</span>;
+  return <span className="icon-fill-emoji">💬</span>;
 }
 
 export function SentenceButton(props: SentenceButtonProps) {
@@ -263,8 +271,6 @@ export function SentenceButton(props: SentenceButtonProps) {
     getFaceImage,
     iconFontSize,
     textFontSize,
-    iconFlex = 3,
-    textFlex = 1,
     entering = false,
     overlayEntranceDelay = 0,
     ariaLabel,
@@ -302,8 +308,8 @@ export function SentenceButton(props: SentenceButtonProps) {
         {...extraButtonProps}
       >
         <div
-          className="mb-2 flex items-center justify-center"
-          style={{ width: "min(28vw, 180px)", height: "min(28vw, 180px)" }}
+          className="icon-fill-area mb-2"
+          style={{ flex: "0 0 auto", width: "min(28vw, 180px)", height: "min(28vw, 180px)" }}
         >
           {renderIcon(button, "min(28vw, 180px)", getFaceImage)}
         </div>
@@ -323,23 +329,23 @@ export function SentenceButton(props: SentenceButtonProps) {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: entering ? 0.3 : 0.15 }}
       className={
-        "flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative " +
+        "flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative " +
         (borderClassName ?? "border-gray-200")
       }
-      style={{ backgroundColor: background }}
+      style={{ backgroundColor: background, padding: 5 }}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       {...extraButtonProps}
     >
-      <div
-        className="flex items-center justify-center min-h-0 w-full overflow-hidden"
-        style={{ flex: `${iconFlex} 1 0px` }}
-      >
+      {/* Icon grows to consume all vertical space the label doesn't need, so a
+          single image/emoji/glyph fills the cell with only the ~5px button
+          padding around it. The label is a content-height strip below it. */}
+      <div className="icon-fill-area">
         {renderIcon(button, iconFontSize ?? "2rem", getFaceImage)}
       </div>
       <div
-        className="flex items-center justify-center w-full overflow-hidden"
-        style={{ flex: `${textFlex} 1 0px` }}
+        className="flex items-center justify-center w-full overflow-hidden shrink-0"
+        style={{ maxHeight: "40%", marginTop: 2 }}
       >
         <span
           className="font-medium text-center text-gray-800 leading-tight line-clamp-2"

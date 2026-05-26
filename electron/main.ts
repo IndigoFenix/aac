@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, ipcMain, session, dialog } from "electron";
+import { app, BrowserWindow, protocol, ipcMain, session, dialog, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -75,6 +75,17 @@ function createWindow() {
     mainWindow.loadURL("app://aac/index.html");
   }
 
+  // Allow opening DevTools in the PACKAGED app for field debugging (eye tracker,
+  // network, console). F12 or Ctrl+Shift+I toggles it.
+  mainWindow.webContents.on("before-input-event", (_event, input) => {
+    if (input.type !== "keyDown") return;
+    const isF12 = input.key === "F12";
+    const isInspect = input.control && input.shift && input.key.toLowerCase() === "i";
+    if (isF12 || isInspect) {
+      mainWindow?.webContents.toggleDevTools();
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -130,10 +141,27 @@ app.on("ready", async () => {
     },
   );
 
-  // Fix cross-origin cookie issue: the renderer (app:// or localhost) makes
-  // requests to the remote API server. The server sets SameSite=Lax cookies,
-  // which Chromium blocks for cross-site requests. Rewrite Set-Cookie headers
-  // to SameSite=None so they're stored and sent properly.
+  // Fix cross-origin cookies: the renderer's origin is `app://aac`, but it talks
+  // to the remote API over https. For the session cookie to be STORED and SENT
+  // cross-site it must be `SameSite=None; Secure`. Chromium silently drops a
+  // `SameSite=None` cookie that lacks `Secure`, and treats a cookie with no
+  // SameSite attribute as Lax (also not sent cross-site). The server only emits
+  // the right attributes when NODE_ENV=production; we normalize here so the
+  // desktop app works regardless of the backend's env. Without this, login
+  // appears to succeed (user is in the response body) but the session cookie is
+  // never persisted, so every later authenticated request comes back 401.
+  const forceCrossSiteCookie = (cookie: string): string => {
+    let c = cookie;
+    if (/;\s*SameSite=/i.test(c)) {
+      c = c.replace(/SameSite=(Lax|Strict)/i, "SameSite=None");
+    } else {
+      c = `${c}; SameSite=None`;
+    }
+    if (!/;\s*Secure/i.test(c)) {
+      c = `${c}; Secure`;
+    }
+    return c;
+  };
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders;
     if (headers) {
@@ -141,11 +169,7 @@ app.on("ready", async () => {
         (k) => k.toLowerCase() === "set-cookie",
       );
       for (const key of cookieKeys) {
-        headers[key] = headers[key].map((cookie: string) =>
-          cookie
-            .replace(/SameSite=Lax/i, "SameSite=None")
-            .replace(/SameSite=Strict/i, "SameSite=None"),
-        );
+        headers[key] = headers[key].map(forceCrossSiteCookie);
       }
     }
     callback({ responseHeaders: headers });
@@ -169,6 +193,12 @@ ipcMain.handle("gaze:ensure", (_e, device: string) => {
 });
 ipcMain.handle("gaze:status", () => {
   return gazeSupervisor?.getStatus() ?? null;
+});
+// Open the gaze sidecar log file (written by the supervisor) for field debugging.
+ipcMain.handle("gaze:openLog", async () => {
+  const logPath = path.join(app.getPath("userData"), "gaze-sidecar.log");
+  const err = await shell.openPath(logPath);
+  return { logPath, opened: !err, error: err || null };
 });
 ipcMain.handle("gaze:stop", () => {
   gazeSupervisor?.stop();

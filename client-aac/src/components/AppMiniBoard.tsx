@@ -18,22 +18,21 @@ interface AppMiniBoardProps {
 }
 
 function renderButtonIcon(button: BoardButton, getFaceImage?: (contactId: string) => string | null) {
-  const imgClass = "max-w-full max-h-full w-auto h-auto object-contain";
   if (button.symbolPath?.startsWith("__FACE__:")) {
     const contactId = button.symbolPath.substring(9);
     const cached = getFaceImage?.(contactId);
-    if (cached) return <img src={cached} alt={button.label} className={`rounded-full ${imgClass}`} />;
-    return <span className="text-2xl leading-none">👤</span>;
+    if (cached) return <img src={cached} alt={button.label} className="icon-fill-img rounded-full" />;
+    return <span className="icon-fill-emoji">👤</span>;
   }
   if (button.symbolPath?.startsWith("__SYMBOL__:")) {
     const symbolId = button.symbolPath.substring(11);
-    return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className={imgClass} loading="lazy" />;
+    return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="icon-fill-img" loading="lazy" />;
   }
   if (button.symbolPath) {
-    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className={imgClass} />;
+    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
   }
   if (button.iconRef) {
-    return <span className="text-2xl leading-none">{button.iconRef}</span>;
+    return <span className="icon-fill-emoji">{button.iconRef}</span>;
   }
   return null;
 }
@@ -61,7 +60,7 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             data-dwell
             key={button.label + i}
             className="flex-1 flex flex-col items-center justify-center rounded-xl shadow-md border border-white/20 select-none overflow-hidden"
-            style={{ backgroundColor: button.color || "#3B82F6" }}
+            style={{ backgroundColor: button.color || "#3B82F6", padding: 5 }}
             onClick={() => handleClick(button)}
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -70,10 +69,10 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             whileTap={{ scale: 0.95 }}
             transition={{ delay: i * 0.05 }}
           >
-            <div className="flex items-center justify-center flex-1 min-h-0 w-full overflow-hidden">
+            <div className="icon-fill-area">
               {renderButtonIcon(button, getFaceImage)}
             </div>
-            <span className="text-xs font-semibold text-white mt-1 px-1 text-center leading-tight line-clamp-2">
+            <span className="text-xs font-semibold text-white mt-0.5 px-1 text-center leading-tight line-clamp-2 shrink-0" style={{ maxHeight: "40%" }}>
               {button.label}
             </span>
           </motion.button>

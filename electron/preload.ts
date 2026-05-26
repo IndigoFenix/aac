@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     locateDll: (device: string) => ipcRenderer.invoke("gaze:locateDll", device),
     setDll: (device: string, dllPath: string) => ipcRenderer.invoke("gaze:setDll", device, dllPath),
     clearDll: (device: string) => ipcRenderer.invoke("gaze:clearDll", device),
+    openLog: () => ipcRenderer.invoke("gaze:openLog"),
   },
 });

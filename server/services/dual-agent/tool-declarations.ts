@@ -469,7 +469,7 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
     parametersJsonSchema: {
       type: "object",
       properties: {
-        button: { type: "string", description: "Single ${T.button}: speech|sentence|fallback|label. See <button_syntax> for field details." },
+        button: { type: "string", description: `Single ${T.button}: speech|sentence|fallback|label. See <button_syntax> for field details. The fallback is REQUIRED whenever the sentence uses any \`generate:\` ${T.symbol}, and must itself render immediately (emoji / canonical key / \`symbol:ID\` / \`face:ID\` — never \`generate:\`). A ${T.button} with nothing displayable is rejected.` },
       },
       required: ["button"],
     },

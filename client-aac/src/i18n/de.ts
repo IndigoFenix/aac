@@ -287,6 +287,7 @@ export const de: Translations = {
     toggleQuestion: "Fragezeichen",
     toggleExclamation: "Ausrufezeichen",
     modifiersEmpty: "Wähle einen Platz aus, um Modifikatoren hinzuzufügen",
+    noPeople: "Noch keine Personen",
     help: "Hilfe",
     play: "Sagen",
     tabs: {

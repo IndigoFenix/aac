@@ -442,14 +442,14 @@ export default function DynamicBoard({
           initial={{ opacity: 1, scale: 1 }}
           animate={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 1.5 }}
-          className="flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden"
-          style={{ backgroundColor: getButtonColor(button.color, button.glyph) }}
+          className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden"
+          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
         >
-          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
+          <div className="icon-fill-area">
             {renderIcon(button)}
           </div>
-          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
-            <span className="font-medium text-center text-gray-800 leading-tight" style={{ fontSize: textFontSize }}>
+          <div className="flex items-center justify-center w-full overflow-hidden shrink-0" style={{ maxHeight: "40%", marginTop: 2 }}>
+            <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
               {button.label}
             </span>
           </div>
@@ -488,15 +488,15 @@ export default function DynamicBoard({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: isEntering ? 0.3 : 0.15 }}
           onClick={() => handleButtonClick(button)}
-          className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
-          style={{ backgroundColor: getButtonColor(button.color, button.glyph) }}
+          className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
+          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
-            <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700`} style={{ fontSize: iconFontSize }} />
+          <div className="icon-fill-area">
+            <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700 icon-fill-emoji`} />
           </div>
-          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
+          <div className="flex items-center justify-center w-full overflow-hidden shrink-0" style={{ maxHeight: "40%", marginTop: 2 }}>
             <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
               {button.label}
             </span>
@@ -533,8 +533,9 @@ export default function DynamicBoard({
   };
 
   const renderIcon = (button: BoardButton) => {
-    // Images constrained to the icon area: height fills the flex-basis:0 container, width scales proportionally
-    const imgStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" as const };
+    // Icons fill their `.icon-fill-area` container: images via object-fit,
+    // single emoji/chars via cqmin font-size. `emojiStyle` is kept only for
+    // the multi-character / FontAwesome fallbacks that must stay fixed-size.
     const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
 
     // Glyph wins over everything except __FACE__/__SYMBOL__ pseudo-paths
@@ -550,8 +551,8 @@ export default function DynamicBoard({
       );
     }
 
-    const renderLoadingOverlay = (emoji: string, halfSize = false) => (
-      <span style={{ ...emojiStyle, ...(halfSize ? { fontSize: `calc(${iconFontSize} * 0.5)` } : {}), position: "relative" as const, display: "inline-block" }}>
+    const renderLoadingOverlay = (emoji: string, _halfSize = false) => (
+      <span className="icon-fill-emoji" style={{ position: "relative" as const, display: "inline-block" }}>
         {emoji}
         {/* Solid-blue spinner on a white circular backdrop. The previous
          * 10x10 / 50%-alpha / top:-2 right:-6 placement was clipped by the
@@ -579,32 +580,35 @@ export default function DynamicBoard({
       const contactId = button.symbolPath.substring(9);
       const cached = getFaceImage?.(contactId);
       if (cached) {
-        return <img src={cached} alt={button.label} className="rounded-full" style={imgStyle} />;
+        return <img src={cached} alt={button.label} className="icon-fill-img rounded-full" />;
       }
-      return <span style={emojiStyle}>👤</span>;
+      return <span className="icon-fill-emoji">👤</span>;
     }
     // Resolve __SYMBOL__:symbolId to custom symbol image
     if (button.symbolPath?.startsWith("__SYMBOL__:")) {
       const symbolId = button.symbolPath.substring(11);
-      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} style={imgStyle} loading="lazy" />;
+      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="icon-fill-img" loading="lazy" />;
     }
     if (button.symbolPath) {
-      return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} style={imgStyle} />;
+      return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
     }
     // Show emoji with loading spinner while symbol is being generated
     if ((button as any).imageKey) {
       const emoji = button.iconRef && isDisplayableIcon(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
-      return renderLoadingOverlay(emoji, emoji.length > 2);
+      return renderLoadingOverlay(emoji);
     }
     if (button.iconRef && isDisplayableIcon(button.iconRef)) {
-      // If icon contains multiple emojis (e.g. "🏞️🌳"), halve the font size
-      const style = button.iconRef.length > 2 ? { ...emojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` } : emojiStyle;
-      return <span style={style}>{button.iconRef}</span>;
+      // Single emoji/char fills the box; multi-emoji strings (e.g. "🏞️🌳")
+      // stay fixed-size so they don't overflow the width.
+      if (button.iconRef.length > 2) {
+        return <span style={{ ...emojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` }}>{button.iconRef}</span>;
+      }
+      return <span className="icon-fill-emoji">{button.iconRef}</span>;
     }
     if (button.iconRef) {
-      return <i className={button.iconRef} style={emojiStyle} />;
+      return <i className={`${button.iconRef} icon-fill-emoji`} />;
     }
-    return <span style={emojiStyle}>{getEmojiForLabel(button.label)}</span>;
+    return <span className="icon-fill-emoji">{getEmojiForLabel(button.label)}</span>;
   };
 
   return (

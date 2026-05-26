@@ -287,6 +287,7 @@ export const zh: Translations = {
     toggleQuestion: "问号",
     toggleExclamation: "感叹号",
     modifiersEmpty: "选择一个位置以添加修饰语",
+    noPeople: "还没有添加人物",
     help: "帮助",
     play: "说出来",
     tabs: {

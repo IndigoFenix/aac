@@ -75,6 +75,16 @@ export interface GlyphCompositorProps {
    * unset to get the static `imagePath`/emoji fallback).
    */
   renderAnimatedSymbol?: (facet: AnimatedSpriteFacet, key: string) => React.ReactNode;
+  /**
+   * Economize space: when the glyph is a single SYMBOL with no modifiers /
+   * payload (the common "one image/emoji" button case), render that symbol
+   * nearly edge-to-edge (≈0.94 of the slot) instead of the default ≈0.7 that
+   * leaves room for badges/arrows. Opt-in so surfaces that need the rim space
+   * (the clinician client) keep the conservative default; the AAC client
+   * passes it so single-symbol buttons fill their cell. Multi-slot and
+   * modified glyphs are unaffected — they still need the surrounding room.
+   */
+  fillSlot?: boolean;
 }
 
 export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement {
@@ -90,10 +100,21 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     onSlotPress,
     onImageError,
     renderAnimatedSymbol,
+    fillSlot = false,
   } = props;
 
   const parsed: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
   const layout = computeLayout(parsed, rtl);
+
+  // A single, unmodified SYMBOL can be rendered nearly full-bleed — there are
+  // no badges/arrows/payload that need the slot's rim. This is the case that
+  // otherwise leaves a single emoji/image floating in a too-small box.
+  const firstSlot = parsed.slots[0];
+  const fillBoost =
+    fillSlot &&
+    parsed.slots.length === 1 &&
+    (firstSlot?.modifiers?.length ?? 0) === 0 &&
+    !firstSlot?.payload;
   const tone = dominantToneFamily(parsed);
   const bg = TONE_COLORS[tone];
 
@@ -166,6 +187,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
             onPress={onSlotPress ? () => onSlotPress(slotLayout.index) : undefined}
             onImageError={onImageError}
             renderAnimatedSymbol={renderAnimatedSymbol}
+            fillBoost={fillBoost}
           />
         );
       })}
@@ -207,10 +229,12 @@ interface SlotGroupProps {
   onPress?: () => void;
   onImageError?: (url: string) => void;
   renderAnimatedSymbol?: (facet: AnimatedSpriteFacet, key: string) => React.ReactNode;
+  /** Render this (single, unmodified) symbol nearly full-bleed — see fillSlot. */
+  fillBoost?: boolean;
 }
 
 function SlotGroup(props: SlotGroupProps): React.ReactElement {
-  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol } = props;
+  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol, fillBoost } = props;
   // Resolve the slot's vocabulary item. For a snake_case/canonical key
   // that's a direct registry lookup. For a raw-emoji key, fall back to
   // the reverse-emoji map so non-exposed items with bundled artwork
@@ -231,7 +255,14 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   const hasGlow = transforms.has("glow");
   const isShrunken = transforms.has("shrink");
   const mainScale = isShrunken ? 0.5 : 1.0;
-  const mainSize = SLOT_UNIT * 0.7 * mainScale;
+  // Fraction of the slot the main symbol occupies. Default 0.7 leaves rim room
+  // for badges/arrows/dots; fillBoost (single unmodified symbol) goes nearly
+  // edge-to-edge so the icon actually fills its button. Emoji text is sized a
+  // touch smaller than the image frac since the glyph ink already nearly fills
+  // its font box.
+  const mainFrac = fillBoost ? 0.94 : 0.7;
+  const emojiFrac = fillBoost ? 0.92 : 0.6;
+  const mainSize = SLOT_UNIT * mainFrac * mainScale;
   const mainX = layout.x + (SLOT_UNIT - mainSize) / 2;
   const mainY = layout.y + (SLOT_UNIT - mainSize) / 2;
 
@@ -343,7 +374,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           y={layout.y + SLOT_UNIT / 2}
           textAnchor="middle"
           dominantBaseline="central"
-          fontSize={SLOT_UNIT * 0.6 * mainScale}
+          fontSize={SLOT_UNIT * emojiFrac * mainScale}
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
           transform={dimensionScale ? `translate(${layout.x + SLOT_UNIT / 2} ${layout.y + SLOT_UNIT / 2}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-(layout.x + SLOT_UNIT / 2)} ${-(layout.y + SLOT_UNIT / 2)})` : undefined}
         >

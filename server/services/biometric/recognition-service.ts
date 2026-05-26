@@ -684,6 +684,172 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
   return peopleWithEmbeddings;
 }
 
+/**
+ * One selectable person for the AAC sentence-builder "person list". Unlike
+ * `getKnownPeopleForStudent` (which is the face-MATCHING pool and therefore
+ * filters to people who actually have an embedding), this is the full
+ * directory the student can pick from — every active contact, every linked
+ * user, and the student — whether or not we can recognise them on camera.
+ * Carries no embeddings (the client never needs them here); `hasPhoto`
+ * tells the client whether a stored photo can be fetched via the photo
+ * endpoint, so it can show a real face instead of the 👤 silhouette.
+ */
+export interface PersonDirectoryEntry {
+  id: string;
+  type: EntityType;
+  name: string;
+  relationship?: string;
+  hasPhoto: boolean;
+}
+
+/**
+ * Full selectable-people directory for a student's sentence builder. Mirrors
+ * the three sources of `getKnownPeopleForStudent` but keeps people who lack
+ * embeddings (they're still selectable — they just won't be auto-identified
+ * on camera). Dedupes by biometricDataId the same way so a contact that is
+ * also a linked user appears once.
+ */
+export async function getPeopleDirectoryForStudent(
+  studentId: string,
+): Promise<PersonDirectoryEntry[]> {
+  const byKey = new Map<string, PersonDirectoryEntry>();
+  const seenBdIds = new Set<string>();
+
+  // 1. The student themselves
+  const [student] = await db
+    .select({
+      id: students.id,
+      name: students.name,
+      bdId: students.biometricDataId,
+      faceImageUrl: biometricData.faceImageUrl,
+    })
+    .from(students)
+    .leftJoin(biometricData, eq(biometricData.id, students.biometricDataId))
+    .where(eq(students.id, studentId));
+
+  if (student) {
+    if (student.bdId) seenBdIds.add(student.bdId);
+    byKey.set(`student:${student.id}`, {
+      id: student.id,
+      type: "student",
+      name: student.name,
+      relationship: "student",
+      hasPhoto: !!student.faceImageUrl,
+    });
+  }
+
+  // 2. Users linked to this student
+  const linkedUsers = await db
+    .select({
+      userId: userStudents.userId,
+      role: userStudents.role,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      fullName: users.fullName,
+      bdId: users.biometricDataId,
+      faceImageUrl: biometricData.faceImageUrl,
+    })
+    .from(userStudents)
+    .innerJoin(users, eq(users.id, userStudents.userId))
+    .leftJoin(biometricData, eq(biometricData.id, users.biometricDataId))
+    .where(and(eq(userStudents.studentId, studentId), eq(userStudents.isActive, true)));
+
+  for (const u of linkedUsers) {
+    if (u.bdId) seenBdIds.add(u.bdId);
+    const name =
+      u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Unknown";
+    byKey.set(`user:${u.userId}`, {
+      id: u.userId,
+      type: "user",
+      name,
+      relationship: u.role || "caregiver",
+      hasPhoto: !!u.faceImageUrl,
+    });
+  }
+
+  // 3. Active contacts — skip those already represented via a linked record
+  const contacts = await db
+    .select({
+      id: studentContacts.id,
+      name: studentContacts.name,
+      relationship: studentContacts.relationship,
+      bdId: studentContacts.biometricDataId,
+      faceImageUrl: biometricData.faceImageUrl,
+    })
+    .from(studentContacts)
+    .leftJoin(biometricData, eq(biometricData.id, studentContacts.biometricDataId))
+    .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
+
+  for (const c of contacts) {
+    if (c.bdId && seenBdIds.has(c.bdId)) continue;
+    if (c.bdId) seenBdIds.add(c.bdId);
+    byKey.set(`contact:${c.id}`, {
+      id: c.id,
+      type: "contact",
+      name: c.name,
+      relationship: c.relationship || undefined,
+      hasPhoto: !!c.faceImageUrl,
+    });
+  }
+
+  return Array.from(byKey.values());
+}
+
+/**
+ * Resolve the stored face-image S3 key for a person (by their AAC-facing id)
+ * but ONLY when that person belongs to the given student — so the AAC photo
+ * endpoint can't be used to fetch an arbitrary biometric photo by guessing
+ * ids. Returns null when the person isn't in the student's directory or has
+ * no stored photo. The id may be a student id, a linked user id, or a
+ * student_contacts id (matching the ids emitted by the directory above and
+ * the `face:ID` refs the AI uses).
+ */
+export async function getPersonFaceImageUrlForStudent(
+  studentId: string,
+  personId: string,
+): Promise<string | null> {
+  // Student themselves
+  if (personId === studentId) {
+    const [row] = await db
+      .select({ faceImageUrl: biometricData.faceImageUrl })
+      .from(students)
+      .leftJoin(biometricData, eq(biometricData.id, students.biometricDataId))
+      .where(eq(students.id, studentId));
+    return row?.faceImageUrl ?? null;
+  }
+
+  // Linked user
+  const [linked] = await db
+    .select({ faceImageUrl: biometricData.faceImageUrl })
+    .from(userStudents)
+    .innerJoin(users, eq(users.id, userStudents.userId))
+    .leftJoin(biometricData, eq(biometricData.id, users.biometricDataId))
+    .where(
+      and(
+        eq(userStudents.studentId, studentId),
+        eq(userStudents.isActive, true),
+        eq(userStudents.userId, personId),
+      ),
+    );
+  if (linked) return linked.faceImageUrl ?? null;
+
+  // Contact owned by this student
+  const [contact] = await db
+    .select({ faceImageUrl: biometricData.faceImageUrl })
+    .from(studentContacts)
+    .leftJoin(biometricData, eq(biometricData.id, studentContacts.biometricDataId))
+    .where(
+      and(
+        eq(studentContacts.id, personId),
+        eq(studentContacts.studentId, studentId),
+        eq(studentContacts.isActive, true),
+      ),
+    );
+  if (contact) return contact.faceImageUrl ?? null;
+
+  return null;
+}
+
 export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson[]> {
   const people: KnownPerson[] = [];
 

@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import type { CSSProperties } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { YesNoSprite } from "@/components/YesNoSprite";
 
@@ -62,23 +63,34 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
   const speakIcon = inSentenceBuilder ? (isRTL ? "▶" : "◀") : "💬";
   const speakColor = inSentenceBuilder ? "#E5E7EB" : "#FEF3C7";
 
+  // Definite row height (responsive, capped) so the buttons have a real box
+  // for their icons to fill — `grid-auto-rows: 1fr` makes the single row take
+  // the whole container height so each button stretches to fill it.
+  const rowStyle: CSSProperties = { height: "clamp(6rem, 16.5dvh, 10.5rem)", gridAutoRows: "1fr" };
+  // Shared button shell: fills its grid cell; icon area grows, label is a
+  // content-height strip below it — same fill model as the board buttons.
+  const btnClass =
+    "h-full flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border overflow-hidden";
+  const labelClass = "text-xs font-semibold text-center leading-tight line-clamp-2 shrink-0";
+
   return (
     <div
       className={`grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 ${
         showSpeakSlot ? "grid-cols-5" : "grid-cols-4"
       }`}
+      style={rowStyle}
     >
       {/* 1st button: More (AI mode) or Back (DB mode) */}
       {boardMode === 'ai' ? (
         <motion.button
           data-dwell
           onClick={() => onAction("more", t("quickActions.more"))}
-          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
+          className={`${btnClass} border-gray-200 dark:border-gray-600 bg-gray-200 dark:bg-gray-700`}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-xl">➕</span>
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">
+          <div className="icon-fill-area"><span className="icon-fill-emoji">➕</span></div>
+          <span className={`${labelClass} text-gray-700 dark:text-gray-300`}>
             {t("quickActions.more")}
           </span>
         </motion.button>
@@ -86,12 +98,12 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         <motion.button
           data-dwell
           onClick={onBack}
-          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
+          className={`${btnClass} border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700`}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-xl">◀</span>
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">
+          <div className="icon-fill-area"><span className="icon-fill-emoji">◀</span></div>
+          <span className={`${labelClass} text-gray-700 dark:text-gray-300`}>
             {t("quickActions.back")}
           </span>
         </motion.button>
@@ -103,13 +115,13 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
           data-dwell
           key={action.id}
           onClick={() => handleAction(action)}
-          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
+          className={`${btnClass} border-gray-200 dark:border-gray-600`}
           style={{ backgroundColor: action.color }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <YesNoSprite variant={action.id} size={36} />
-          <span className="text-xs font-semibold text-gray-800 mt-0.5">
+          <div className="icon-fill-area"><YesNoSprite variant={action.id} size="92cqmin" /></div>
+          <span className={`${labelClass} text-gray-800`}>
             {t(action.labelKey)}
           </span>
         </motion.button>
@@ -119,13 +131,13 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
       <motion.button
         data-dwell
         onClick={() => onAction(endButton.id, t(endButton.labelKey))}
-        className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
+        className={`${btnClass} border-gray-200 dark:border-gray-600`}
         style={{ backgroundColor: endButton.color }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        <span className="text-xl">{endButton.emoji}</span>
-        <span className="text-xs font-semibold text-gray-800 mt-0.5">
+        <div className="icon-fill-area"><span className="icon-fill-emoji">{endButton.emoji}</span></div>
+        <span className={`${labelClass} text-gray-800`}>
           {t(endButton.labelKey)}
         </span>
       </motion.button>
@@ -136,13 +148,13 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
           data-dwell
           data-testid="quick-speak"
           onClick={onSpeak}
-          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
+          className={`${btnClass} border-gray-200 dark:border-gray-600`}
           style={{ backgroundColor: speakColor }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-xl">{speakIcon}</span>
-          <span className="text-xs font-semibold text-gray-800 mt-0.5">
+          <div className="icon-fill-area"><span className="icon-fill-emoji">{speakIcon}</span></div>
+          <span className={`${labelClass} text-gray-800`}>
             {speakLabel}
           </span>
         </motion.button>

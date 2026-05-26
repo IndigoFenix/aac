@@ -17,6 +17,7 @@ import {
   findMatchingFace,
   recordContactSighting,
   getKnownPeopleForStudent,
+  getPeopleDirectoryForStudent,
 } from '../../services/biometric/recognition-service.js';
 import { studentContacts } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -107,6 +108,32 @@ describe('Face recognition pipeline', () => {
     const sister = known.find(p => p.id === c1.id);
     expect(sister).toBeDefined();
     expect(sister!.faceEmbedding).toHaveLength(EMBEDDING_DIM);
+  });
+
+  it('lists ALL active contacts in the people directory — even those with no face embedding', async () => {
+    // The sentence-builder person list must surface everyone the student can
+    // talk about, not just the camera-matchable pool. A contact with no
+    // enrolled face is excluded from getKnownPeopleForStudent but must still
+    // appear in the directory.
+    const withFace = await createContact({
+      studentId, name: 'Grandma', relationship: 'grandparent',
+    } as any);
+    await enrollContactFace(withFace.id, makeEmbedding(3));
+    const noFace = await createContact({
+      studentId, name: 'Bus Driver', relationship: 'other',
+    } as any);
+
+    const known = await getKnownPeopleForStudent(studentId);
+    expect(known.find(p => p.id === noFace.id)).toBeUndefined(); // no embedding → not in matching pool
+
+    const directory = await getPeopleDirectoryForStudent(studentId);
+    const ids = directory.map(p => p.id);
+    expect(ids).toContain(withFace.id);
+    expect(ids).toContain(noFace.id);
+    // Includes the student themselves as a selectable person.
+    expect(ids).toContain(studentId);
+    // No photo uploaded → hasPhoto is false.
+    expect(directory.find(p => p.id === noFace.id)!.hasPhoto).toBe(false);
   });
 
   it('bumps timesIdentified when recordContactSighting fires', async () => {

@@ -287,6 +287,7 @@ export const he: Translations = {
     toggleQuestion: "סימן שאלה",
     toggleExclamation: "סימן קריאה",
     modifiersEmpty: "בחר משבצת כדי להוסיף מתאמים",
+    noPeople: "עדיין לא נוספו אנשים",
     help: "עזרה",
     play: "אמור זאת",
     tabs: {

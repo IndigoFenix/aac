@@ -144,6 +144,15 @@ const CHIP_ICON: Record<string, string> = {
   frequency: "📊",
 };
 
+/** One selectable person for the "photos" person list. */
+export interface ConstructionPerson {
+  id: string;
+  type: "student" | "user" | "contact";
+  name: string;
+  relationship?: string;
+  hasPhoto: boolean;
+}
+
 export interface SentenceConstructorBoardProps {
   /** Called when the user presses Play with the current glyph string. */
   onPlay?: (glyphString: string) => void;
@@ -158,6 +167,14 @@ export interface SentenceConstructorBoardProps {
   constructionSuggestions?: ConstructionSuggestionsClient | null;
   /** AI-driven memory chips per category. */
   constructionMemoryChips?: Partial<Record<ConstructionStateClient["category"], ConstructionMemoryChipsClient>>;
+  /** Full selectable-people directory — the "who → photos" person list. */
+  people?: ConstructionPerson[];
+  /** Resolve a `face:<id>` to an image URL (camera capture or stored photo). */
+  getFaceImage?: (contactId: string) => string | null;
+  /** Resolve a person id to a display name (so `face:<id>` shows "Mom"). */
+  getPersonName?: (personId: string) => string | null;
+  /** People seen on camera this session — surfaced first in the person list. */
+  presentPersonIds?: string[];
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -169,6 +186,23 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const sendConstructionState = props.sendConstructionState ?? ctx?.sendConstructionState;
   const constructionSuggestions = props.constructionSuggestions ?? ctx?.constructionSuggestions ?? null;
   const constructionMemoryChips = props.constructionMemoryChips ?? ctx?.constructionMemoryChips ?? {};
+  const people = props.people ?? [];
+  const getFaceImage = props.getFaceImage ?? ctx?.getFaceImage;
+  const getPersonName = props.getPersonName;
+  const presentPersonIds = props.presentPersonIds ?? [];
+
+  // Ordered person list for the "who → photos" mode chip: people seen this
+  // session first (most likely the student wants to talk about who's here),
+  // then the rest alphabetically. Stable across renders for eyegaze.
+  const orderedPeople = useMemo(() => {
+    const present = new Set(presentPersonIds);
+    return [...people].sort((a, b) => {
+      const ap = present.has(a.id) ? 0 : 1;
+      const bp = present.has(b.id) ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return a.name.localeCompare(b.name);
+    });
+  }, [people, presentPersonIds]);
 
   const [activeTab, setActiveTab] = useState<GlyphCategory>("who");
   const [modeChip, setModeChip] = useState<string>(defaultModeChip("who"));
@@ -358,6 +392,33 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         setActiveTab(nextTab);
         setModeChip(defaultModeChip(nextTab));
       }
+    },
+    [activeSlot]
+  );
+
+  // Person press (from the "who → photos" person list): insert a `face:<id>`
+  // slot. Same fill/replace logic as the grid. The displayed glyph resolves
+  // the face image through the shared face resolver, so the picked person
+  // shows their photo in the preview immediately.
+  const handlePersonPress = useCallback(
+    (personId: string) => {
+      const selectionKey = `face:${personId}`;
+      setGlyph((g) => {
+        if (activeSlot != null && activeSlot < g.slots.length) {
+          return replaceSlot(g, activeSlot, selectionKey);
+        }
+        const pending = findPendingPayloadSlot(g);
+        if (pending != null) {
+          const host = getVocabularyItem(g.slots[pending].key);
+          // A person is a noun-like payload; composable hosts that accept
+          // "noun" take them.
+          if (host?.composable?.accepts.includes("noun")) {
+            return setPayload(g, pending, selectionKey);
+          }
+        }
+        return pushSlot(g, selectionKey);
+      });
+      setActiveSlot(null);
     },
     [activeSlot]
   );
@@ -938,6 +999,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 <AiCandidateButton
                   key={`${c.key}-${i}`}
                   candidate={c}
+                  getFaceImage={getFaceImage}
+                  getPersonName={getPersonName}
                   onPress={() => handleAiCandidatePress(c)}
                 />
               );
@@ -951,8 +1014,35 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           />
         </div>
 
-        {/* Main grid — absorbs remaining vertical space */}
+        {/* Main grid — absorbs remaining vertical space. The "who → photos"
+            mode chip swaps the static vocabulary grid for the person list
+            (known contacts/users, present-in-session first). */}
         <div className="flex-1 min-h-0 p-3 overflow-hidden">
+          {activeTab === "who" && modeChip === "photos" ? (
+            <div
+              className="grid gap-2 w-full h-full"
+              style={{
+                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
+                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+              }}
+            >
+              {orderedPeople.length === 0 ? (
+                <div className="col-span-9 row-span-2 flex items-center justify-center text-sm text-gray-400">
+                  {t("construction.noPeople")}
+                </div>
+              ) : (
+                orderedPeople.map((person) => (
+                  <PersonButton
+                    key={person.id}
+                    person={person}
+                    faceUrl={getFaceImage?.(person.id) ?? null}
+                    present={presentPersonIds.includes(person.id)}
+                    onPress={() => handlePersonPress(person.id)}
+                  />
+                ))
+              )}
+            </div>
+          ) : (
           <div
             className="grid gap-2 w-full h-full"
             style={{
@@ -979,6 +1069,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               />
             )}
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1078,25 +1169,23 @@ function ModifierButton(props: {
       aria-pressed={active ?? false}
       whileTap={{ scale: 0.94 }}
       className={[
-        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
+        "w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center overflow-hidden",
         active
           ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
           : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
       ].join(" ")}
+      style={{ padding: 6 }}
       aria-label={label}
     >
-      {url ? (
-        <img
-          src={url}
-          alt=""
-          className="w-10 h-10 object-contain"
-          style={isRTL ? RTL_IMG_STYLE : undefined}
-        />
-      ) : (
-        <span className="text-2xl" aria-hidden>
-          {item.emoji ?? "•"}
-        </span>
-      )}
+      <div className="icon-fill-area">
+        {url ? (
+          <img src={url} alt="" className="icon-fill-img" style={isRTL ? RTL_IMG_STYLE : undefined} />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden>
+            {item.emoji ?? "•"}
+          </span>
+        )}
+      </div>
     </motion.button>
   );
 }
@@ -1112,22 +1201,70 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
       data-dwell
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
-      className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center gap-1 p-2 min-h-0"
+      className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center min-h-0 overflow-hidden"
+      style={{ padding: 5 }}
     >
-      {url ? (
-        <img
-          src={url}
-          alt=""
-          className="max-h-[60%] max-w-[80%] object-contain"
-          style={isRTL ? RTL_IMG_STYLE : undefined}
-        />
-      ) : (
-        <span className="text-4xl" aria-hidden>
-          {item.emoji ?? "❓"}
-        </span>
-      )}
-      <span className="text-xs font-medium truncate w-full text-center">
+      <div className="icon-fill-area">
+        {url ? (
+          <img src={url} alt="" className="icon-fill-img" style={isRTL ? RTL_IMG_STYLE : undefined} />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden>
+            {item.emoji ?? "❓"}
+          </span>
+        )}
+      </div>
+      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
         {label}
+      </span>
+    </motion.button>
+  );
+}
+
+/**
+ * Person tile for the "who → photos" person list. Shows the contact's face
+ * (live camera capture or stored photo) or a 👤 silhouette when no image is
+ * available, with their name below and a subtle ring when they've been seen
+ * on camera this session. Pressing it inserts a `face:<id>` slot.
+ */
+function PersonButton(props: {
+  person: ConstructionPerson;
+  faceUrl: string | null;
+  present: boolean;
+  onPress: () => void;
+}) {
+  const { person, faceUrl, present } = props;
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [faceUrl]);
+  const showImage = !!faceUrl && !failed;
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`person-${person.id}`}
+      onClick={props.onPress}
+      whileTap={{ scale: 0.95 }}
+      className={[
+        "rounded-xl border-2 flex flex-col items-center justify-center gap-1 p-2 min-h-0",
+        present
+          ? "border-green-500 bg-green-50 dark:bg-green-900/30"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      aria-label={person.name}
+      title={person.name}
+    >
+      <div className="icon-fill-area">
+        {showImage ? (
+          <img
+            src={faceUrl!}
+            alt=""
+            className="icon-fill-img rounded-full"
+            onError={() => setFailed(true)}
+          />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden>👤</span>
+        )}
+      </div>
+      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
+        {person.name}
       </span>
     </motion.button>
   );
@@ -1263,19 +1400,26 @@ function MoreButton(props: { onPress: () => void; testId?: string; disabled?: bo
  *   4. emoji (registry item.emoji → resolveEmoji)
  *   5. null → caller falls through to the next link in the chain
  *
- * `face:` keys are technically valid but the AI strip doesn't have a
- * face-cache resolver wired through this component, so they degrade to
- * the 👤 emoji via resolveEmoji ("face:" prefix shortcut in
+ * `face:<id>` keys resolve through `getFaceImage` (the shared camera +
+ * stored-photo resolver). When no image is available they degrade to the
+ * 👤 emoji via resolveEmoji ("face:" prefix shortcut in
  * shared/emoji-registry.ts).
  */
 function resolveCandidateRender(
   key: string,
   serverSymbolPath: string | undefined,
+  getFaceImage?: (contactId: string) => string | null,
 ): { url: string | null; emoji: string | null } {
   if (!key) return { url: null, emoji: null };
   if (key.startsWith("symbol:")) {
     const id = key.substring(7).trim();
     if (id) return { url: apiUrl(`/api/custom-symbols/${id}/image`), emoji: null };
+  }
+  if (key.startsWith("face:")) {
+    const id = key.substring(5).trim();
+    const url = id ? getFaceImage?.(id) ?? null : null;
+    // No cached/stored face → 👤 silhouette (resolveEmoji handles "face:").
+    return { url, emoji: url ? null : resolveEmoji(key) ?? null };
   }
   const item = getVocabularyItem(key);
   if (item?.imagePath) {
@@ -1290,19 +1434,21 @@ function resolveCandidateRender(
 
 function AiCandidateButton(props: {
   candidate: { key: string; label?: string; symbolPath?: string; fallback?: string };
+  getFaceImage?: (contactId: string) => string | null;
+  getPersonName?: (personId: string) => string | null;
   onPress: () => void;
 }) {
   const { t, isRTL } = useLanguage();
-  const { candidate } = props;
+  const { candidate, getFaceImage, getPersonName } = props;
   const item = getVocabularyItem(candidate.key);
 
   // Try the primary key first; if nothing renders, fall back to the
   // server-validated fallback key. Image-load failure (404 / CORS /
   // pending generation) also routes to the fallback path so an
   // unresolved candidate doesn't sit with a broken-image glyph.
-  const primary = resolveCandidateRender(candidate.key, candidate.symbolPath);
+  const primary = resolveCandidateRender(candidate.key, candidate.symbolPath, getFaceImage);
   const fb = candidate.fallback
-    ? resolveCandidateRender(candidate.fallback, undefined)
+    ? resolveCandidateRender(candidate.fallback, undefined, getFaceImage)
     : { url: null, emoji: null };
 
   const [primaryFailed, setPrimaryFailed] = useState(false);
@@ -1329,8 +1475,13 @@ function AiCandidateButton(props: {
     renderEmoji = "❓";
   }
 
-  // Label resolution: AI-provided label → registry translation → bare key.
+  // Label resolution: AI-provided label → person name (for `face:<id>`) →
+  // registry translation → bare key. The face branch keeps the student from
+  // ever seeing a raw "face:abc123" id on the button.
   let label = candidate.label;
+  if (!label && candidate.key.startsWith("face:")) {
+    label = getPersonName?.(candidate.key.substring(5).trim()) ?? undefined;
+  }
   if (!label && item) {
     const translated = t(item.tKey);
     label = translated === item.tKey ? candidate.key : translated;
@@ -1341,28 +1492,29 @@ function AiCandidateButton(props: {
       data-dwell
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
-      className="flex-1 min-w-0 h-full rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/60 dark:bg-purple-900/30 flex flex-col items-center justify-center gap-1 p-2"
+      className="flex-1 min-w-0 h-full rounded-xl border-2 border-purple-300 dark:border-purple-700 bg-purple-50/60 dark:bg-purple-900/30 flex flex-col items-center justify-center overflow-hidden"
+      style={{ padding: 5 }}
     >
-      {renderUrl ? (
-        // min-h-0 lets the flex child shrink; max-h pixel cap pins the image
-        // regardless of intrinsic size so the button can't grow vertically.
-        // onError demotes the primary image — the resolver above then
-        // tries the fallback key (which may itself be an emoji).
-        <img
-          src={renderUrl}
-          alt=""
-          className="min-h-0 max-h-[50px] max-w-[80%] object-contain"
-          style={isRTL ? RTL_IMG_STYLE : undefined}
-          onError={() => {
-            if (renderUrl === primary.url) setPrimaryFailed(true);
-          }}
-        />
-      ) : (
-        <span className="text-3xl leading-none" aria-hidden>
-          {renderEmoji ?? "❓"}
-        </span>
-      )}
-      <span className="text-xs font-medium truncate w-full text-center">
+      <div className="icon-fill-area">
+        {renderUrl ? (
+          // onError demotes the primary image — the resolver above then
+          // tries the fallback key (which may itself be an emoji).
+          <img
+            src={renderUrl}
+            alt=""
+            className="icon-fill-img"
+            style={isRTL ? RTL_IMG_STYLE : undefined}
+            onError={() => {
+              if (renderUrl === primary.url) setPrimaryFailed(true);
+            }}
+          />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden>
+            {renderEmoji ?? "❓"}
+          </span>
+        )}
+      </div>
+      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
         {label}
       </span>
     </motion.button>

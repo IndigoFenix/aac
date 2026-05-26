@@ -31,6 +31,7 @@ interface GazeApi {
   locateDll: (device: string) => Promise<GazeSidecarStatus | null>;
   setDll: (device: string, dllPath: string) => Promise<GazeSidecarStatus | null>;
   clearDll: (device: string) => Promise<GazeSidecarStatus | null>;
+  openLog: () => Promise<{ logPath: string; opened: boolean; error: string | null }>;
 }
 
 function getGazeApi(): GazeApi | null {
@@ -74,5 +75,11 @@ export function useGazeSidecar({ enabled, device }: { enabled: boolean; device: 
     setStatus(s);
   }, [device]);
 
-  return { status, locateDll, isElectron: !!getGazeApi() };
+  const openLog = useCallback(async () => {
+    const api = getGazeApi();
+    if (!api) return;
+    await api.openLog();
+  }, []);
+
+  return { status, locateDll, openLog, isElectron: !!getGazeApi() };
 }

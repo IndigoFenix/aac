@@ -287,6 +287,7 @@ export const ar: Translations = {
     toggleQuestion: "علامة استفهام",
     toggleExclamation: "علامة تعجب",
     modifiersEmpty: "اختر فتحة لإضافة معدلات",
+    noPeople: "لا يوجد أشخاص بعد",
     help: "مساعدة",
     play: "قُلها",
     tabs: {

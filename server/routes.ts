@@ -1438,6 +1438,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     biometricController.getKnownPeople(req, res)
   );
 
+  // Full selectable-people directory + stored photos for the AAC sentence
+  // builder (optionalAuth for the student kiosk; access enforced per-student).
+  app.get("/api/aac/students/:studentId/people-directory", optionalAuth, (req, res) =>
+    biometricController.getPeopleDirectory(req, res)
+  );
+  app.get("/api/aac/students/:studentId/people/:personId/photo", optionalAuth, (req, res) =>
+    biometricController.getPersonPhoto(req, res)
+  );
+
   // Student contacts CRUD
   app.post("/api/biometric/students/:studentId/contacts", requireAuth, (req, res) =>
     biometricController.createStudentContact(req, res)

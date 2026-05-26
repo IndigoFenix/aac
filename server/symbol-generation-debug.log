@@ -7861,3 +7861,11 @@
 [2026-05-24T16:19:01.728Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
 [2026-05-24T16:19:03.093Z] [resolveImageKeys] Resolved "normal_day" → /api/custom-symbols/05141432-b015-4314-adb7-00ed40724993/image
 [2026-05-24T16:19:03.094Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T05:40:10.966Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T05:40:10.968Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T05:40:29.700Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T05:40:29.701Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T06:13:36.938Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T06:13:36.939Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T06:23:34.123Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T06:23:34.124Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

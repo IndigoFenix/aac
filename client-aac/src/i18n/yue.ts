@@ -287,6 +287,7 @@ export const yue: Translations = {
     toggleQuestion: "問號",
     toggleExclamation: "感嘆號",
     modifiersEmpty: "揀一個位置加修飾語",
+    noPeople: "仲未加入任何人",
     help: "幫助",
     play: "講",
     tabs: {
