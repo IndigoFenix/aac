@@ -192,6 +192,16 @@ export function buildInteractiveAgentPrompt(params: {
     channel: { channelId: string; label: string; description?: string };
     videos: Array<{ videoId: string; title: string; published: string }>;
   }>;
+  /** Permitted playlists. Browsed like channels; the AI can open one or autoplay from it. */
+  permittedYoutubePlaylists?: Array<{ id: string; label: string; description?: string }>;
+  /**
+   * Recent videos per permitted playlist (pre-fetched from RSS). When present,
+   * takes precedence over `permittedYoutubePlaylists` for prompt text.
+   */
+  youtubePlaylistVideos?: Array<{
+    playlist: { id: string; label: string; description?: string };
+    videos: Array<{ videoId: string; title: string; published: string }>;
+  }>;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
   /**
@@ -241,6 +251,7 @@ export function buildInteractiveAgentPrompt(params: {
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
     permittedYoutubeChannels, permittedYoutubeVideos, youtubeChannelVideos,
+    permittedYoutubePlaylists, youtubePlaylistVideos,
     autoSymbolsEnabled = false, useDirectAudio = false,
     sessionGoals, personaGestureOverrides, safetyNotes,
     interactModeExamples, assistModeExamples, sentenceInterpretationExamples,
@@ -665,8 +676,11 @@ ${availableCustomApps!.map(a => `- ${a.name} (id: "${a.id}")${a.description ? ` 
     const channelsForPrompt = youtubeChannelVideos?.length
       ? youtubeChannelVideos.map(cv => cv.channel)
       : permittedYoutubeChannels || [];
+    const playlistsForPrompt = youtubePlaylistVideos?.length
+      ? youtubePlaylistVideos.map(pv => pv.playlist)
+      : permittedYoutubePlaylists || [];
     const pinnedVideos = permittedYoutubeVideos || [];
-    if (youtubeEnabled && (channelsForPrompt.length > 0 || pinnedVideos.length > 0)) {
+    if (youtubeEnabled && (channelsForPrompt.length > 0 || playlistsForPrompt.length > 0 || pinnedVideos.length > 0)) {
       prompt += `
 
 <youtube>
@@ -692,6 +706,24 @@ YouTube is restricted to the videos and channels below. open_app(app_id="youtube
         } else {
           for (const c of channelsForPrompt) {
             prompt += `\n- ${c.label}${c.description ? ` — ${c.description}` : ""}`;
+          }
+        }
+      }
+      if (playlistsForPrompt.length > 0) {
+        prompt += `\n\nPlaylists${youtubePlaylistVideos?.length ? " (with videos)" : ""}:`;
+        if (youtubePlaylistVideos?.length) {
+          for (const { playlist, videos } of youtubePlaylistVideos) {
+            prompt += `\n- ${playlist.label}${playlist.description ? ` — ${playlist.description}` : ""}`;
+            for (const v of videos) {
+              prompt += `\n    · ${v.title}`;
+            }
+            if (videos.length === 0) {
+              prompt += `\n    (no videos)`;
+            }
+          }
+        } else {
+          for (const p of playlistsForPrompt) {
+            prompt += `\n- ${p.label}${p.description ? ` — ${p.description}` : ""}`;
           }
         }
       }

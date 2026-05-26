@@ -1263,6 +1263,27 @@ export interface PermittedYoutubeVideo {
   description?: string;
 }
 
+/** The kind of YouTube resource a {@link PermittedYoutubeItem} points at. */
+export type PermittedYoutubeItemType = "channel" | "playlist" | "video";
+
+/**
+ * Unified clinician-curated YouTube entry. A single list holds channels,
+ * playlists, and pinned videos; `type` (derived from the pasted URL) tells the
+ * three apart. `id` is the resource's canonical identifier — a UC... channelId,
+ * a PL.../UU.../etc. playlistId, or an 11-char videoId — interpreted per `type`.
+ * `description` is AI-facing.
+ *
+ * This supersedes the separate `permittedYoutubeChannels` / `permittedYoutubeVideos`
+ * arrays (now retained only for backward-compatible reads — see
+ * {@link ../shared/youtube-items}).
+ */
+export interface PermittedYoutubeItem {
+  type: PermittedYoutubeItemType;
+  id: string;
+  label: string;
+  description?: string;
+}
+
 /**
  * Single button on an AAC communication board
  */

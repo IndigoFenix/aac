@@ -13,7 +13,7 @@
 //
 // See planning-docs/student-consent-onboarding-plan.md.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,6 +27,7 @@ import {
   useSignWithToken,
   useRequestPhoneOtp,
   useVerifyPhoneOtp,
+  useVerifyChildId,
   type ConsentNoticeResponse,
   type WizardContextResponse,
   type ConsentInvitationContextResponse,
@@ -74,10 +75,16 @@ interface ConsentWizardProps {
   onSuccess?: () => void;
 }
 
-type Step = "identity" | "phoneOtp" | "guardian" | "notice" | "optIns" | "review";
+type Step = "identity" | "phoneOtp" | "idVerify" | "guardian" | "notice" | "optIns" | "signature" | "review";
 
-const STEP_ORDER_BASE: Step[] = ["identity", "guardian", "notice", "optIns", "review"];
-const STEP_ORDER_WITH_OTP: Step[] = ["identity", "phoneOtp", "guardian", "notice", "optIns", "review"];
+/** What the parent signed with, captured as supplemental non-repudiation evidence. */
+export interface ConsentSignature {
+  mode: "typed" | "drawn";
+  typedName?: string;
+  /** PNG data URL when drawn. */
+  image?: string;
+  signedAt: string;
+}
 
 export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: ConsentWizardProps) {
   const { t, language } = useLanguage();
@@ -123,6 +130,14 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
   const [optResearch, setOptResearch] = useState(false);
   const [optMarketing, setOptMarketing] = useState(false);
 
+  // Signature — type or draw. Captured as supplemental non-repudiation
+  // evidence; carries more evidentiary weight than the bare acks if the
+  // authorization is ever disputed (Israeli Electronic Signature Law).
+  const [sigMode, setSigMode] = useState<"typed" | "drawn">("typed");
+  const [typedName, setTypedName] = useState("");
+  const [drawnImage, setDrawnImage] = useState<string | null>(null);
+  const signatureProvided = sigMode === "typed" ? typedName.trim().length >= 2 : !!drawnImage;
+
   // Seed from existing contact data when ctx loads.
   useEffect(() => {
     const c = ctx?.guardianContact;
@@ -131,23 +146,39 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
     if (c.governmentIdType) setGovIdType(c.governmentIdType as any);
     if (c.governmentIdCountry) setGovIdCountry(c.governmentIdCountry);
     if (c.coGuardianAcknowledged) setCoGuardianAck(true);
+    if (c.name) setTypedName((prev) => prev || c.name);
   }, [ctx?.guardianContact]);
 
   const sessionSign = useSignConsent(studentId ?? "");
   const tokenSign = useSignWithToken();
   const signPending = isTokenMode ? tokenSign.isPending : sessionSign.isPending;
 
-  // OTP step is shown when the invitation arrived via SMS — that's the
-  // PPA-required non-repudiation leg. Only relevant in token mode.
+  // Secondary-factor steps, shown only in token mode and only for the channel
+  // that needs them: SMS → phone OTP (non-repudiation leg); email → child-ID
+  // last-4 check (identity leg), but only when an institute ID is on file and
+  // it hasn't already been verified on a prior visit.
   const requiresPhoneOtp = isTokenMode && (tokenCtxQuery.data?.requiresPhoneOtp ?? false);
+  const requiresIdVerification =
+    isTokenMode &&
+    (tokenCtxQuery.data?.requiresIdVerification ?? false) &&
+    !(tokenCtxQuery.data?.idVerified ?? false);
   const phoneMasked = isTokenMode ? tokenCtxQuery.data?.contactPhoneMasked ?? null : null;
-  const STEP_ORDER = requiresPhoneOtp ? STEP_ORDER_WITH_OTP : STEP_ORDER_BASE;
 
   const [phoneOtpVerified, setPhoneOtpVerified] = useState(false);
+  const [idVerified, setIdVerified] = useState(false);
+
+  const STEP_ORDER = useMemo<Step[]>(() => {
+    const steps: Step[] = ["identity"];
+    if (requiresPhoneOtp) steps.push("phoneOtp");
+    if (requiresIdVerification) steps.push("idVerify");
+    steps.push("guardian", "notice", "optIns", "signature", "review");
+    return steps;
+  }, [requiresPhoneOtp, requiresIdVerification]);
 
   const canProceedFromGuardian = govIdNumber.trim().length >= 4 && coGuardianAck;
   const canProceedFromNotice = purposeAck && voluntarinessAck && transfersAck;
   const canProceedFromPhoneOtp = !requiresPhoneOtp || phoneOtpVerified;
+  const canProceedFromIdVerify = !requiresIdVerification || idVerified;
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const progress = `${stepIndex + 1} / ${STEP_ORDER.length}`;
@@ -179,6 +210,12 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
       optInMarketingComms: optMarketing,
       isSensitive: false as const,
     };
+    const signature: ConsentSignature = {
+      mode: sigMode,
+      typedName: sigMode === "typed" ? typedName.trim() : undefined,
+      image: sigMode === "drawn" ? drawnImage ?? undefined : undefined,
+      signedAt: new Date().toISOString(),
+    };
     try {
       if (isTokenMode && tokenCode) {
         await tokenSign.mutateAsync({
@@ -187,6 +224,7 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
           consentTextVersion: notice.version,
           consentTextHash: notice.hash,
           guardianFields,
+          signature,
           ...acks,
         });
       } else {
@@ -196,6 +234,7 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
           consentTextVersion: notice.version,
           consentTextHash: notice.hash,
           guardianFields,
+          signature,
           ...acks,
         });
       }
@@ -310,6 +349,13 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               onVerified={() => setPhoneOtpVerified(true)}
             />
           )}
+          {step === "idVerify" && tokenCode && (
+            <IdVerifyStep
+              code={tokenCode}
+              verified={idVerified}
+              onVerified={() => setIdVerified(true)}
+            />
+          )}
           {step === "guardian" && (
             <GuardianStep
               govIdNumber={govIdNumber}
@@ -325,6 +371,7 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
           {step === "notice" && (
             <NoticeStep
               notice={notice}
+              studentName={ctx.student.name}
               purposeAck={purposeAck}
               setPurposeAck={setPurposeAck}
               voluntarinessAck={voluntarinessAck}
@@ -345,6 +392,16 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               setOptMarketing={setOptMarketing}
             />
           )}
+          {step === "signature" && (
+            <SignatureStep
+              mode={sigMode}
+              setMode={setSigMode}
+              typedName={typedName}
+              setTypedName={setTypedName}
+              drawnImage={drawnImage}
+              setDrawnImage={setDrawnImage}
+            />
+          )}
           {step === "review" && (
             <ReviewStep
               ctx={ctx}
@@ -357,6 +414,8 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               optAdvertising={optAdvertising}
               optResearch={optResearch}
               optMarketing={optMarketing}
+              signatureMode={sigMode}
+              typedName={typedName}
             />
           )}
         </DialogBody>
@@ -370,8 +429,10 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               onClick={gotoNext}
               disabled={
                 (step === "phoneOtp" && !canProceedFromPhoneOtp) ||
+                (step === "idVerify" && !canProceedFromIdVerify) ||
                 (step === "guardian" && !canProceedFromGuardian) ||
-                (step === "notice" && !canProceedFromNotice)
+                (step === "notice" && !canProceedFromNotice) ||
+                (step === "signature" && !signatureProvided)
               }
             >
               {t("common.next")}
@@ -562,6 +623,88 @@ function PhoneOtpStep({ code, phoneMasked, verified, onVerified }: PhoneOtpStepP
   );
 }
 
+interface IdVerifyStepProps {
+  code: string;
+  verified: boolean;
+  onVerified: () => void;
+}
+
+// Email-channel secondary factor: the parent proves they know the last 4 of
+// the child's ID before they can reach the form. Server-side check only — the
+// ID itself is never sent to the client. Attempt-capped; the server returns
+// `attemptsRemaining` and locks after too many misses.
+function IdVerifyStep({ code, verified, onVerified }: IdVerifyStepProps) {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const verifyId = useVerifyChildId();
+  const [last4, setLast4] = useState("");
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [locked, setLocked] = useState(false);
+
+  async function handleVerify() {
+    try {
+      await verifyId.mutateAsync({ code, last4: last4.trim() });
+      onVerified();
+      toast({ title: t("consent.wizard.idVerify.verifiedToastTitle") });
+    } catch (e: any) {
+      if (e?.code === "child_id_verify_locked") setLocked(true);
+      const left = e?.details?.attemptsRemaining;
+      if (typeof left === "number") setRemaining(left);
+      toast({
+        title: t("consent.wizard.idVerify.errorTitle"),
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  if (verified) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-md border p-3 flex items-start gap-2">
+          <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-600" />
+          <div className="text-sm">{t("consent.wizard.idVerify.verifiedBody")}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+        {t("consent.wizard.idVerify.locked")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-muted-foreground">{t("consent.wizard.idVerify.intro")}</p>
+      <div>
+        <Label htmlFor="id-last4">{t("consent.wizard.idVerify.label")}</Label>
+        <Input
+          id="id-last4"
+          inputMode="numeric"
+          maxLength={4}
+          value={last4}
+          onChange={(e) => setLast4(e.target.value.replace(/\D/g, ""))}
+          placeholder="0000"
+        />
+      </div>
+      {remaining !== null && remaining > 0 && (
+        <p className="text-xs text-amber-700">
+          {t("consent.wizard.idVerify.attemptsRemaining", { count: remaining })}
+        </p>
+      )}
+      <Button onClick={handleVerify} disabled={last4.length < 4 || verifyId.isPending}>
+        {verifyId.isPending
+          ? (t("common.verifying") || "Verifying...")
+          : t("consent.wizard.idVerify.verifyButton")}
+      </Button>
+    </div>
+  );
+}
+
 interface GuardianStepProps {
   govIdNumber: string;
   setGovIdNumber: (v: string) => void;
@@ -630,6 +773,7 @@ function GuardianStep(p: GuardianStepProps) {
 
 interface NoticeStepProps {
   notice: ConsentNoticeResponse;
+  studentName: string;
   purposeAck: boolean;
   setPurposeAck: (v: boolean) => void;
   voluntarinessAck: boolean;
@@ -638,30 +782,55 @@ interface NoticeStepProps {
   setTransfersAck: (v: boolean) => void;
 }
 
+// Layered notice (PPA Feb-2026): the parent sees a short plain-language
+// summary first, with the full Section-11 legal disclosure tucked behind a
+// "read the full notice" toggle. This avoids burying consent in a scroll-wrap.
 function NoticeStep(p: NoticeStepProps) {
   const { t } = useLanguage();
   const c = p.notice.content;
+  const [showFull, setShowFull] = useState(false);
   return (
     <div className="space-y-3">
-      <ScrollArea className="h-72 rounded-md border p-3">
+      <div className="rounded-md border p-3">
         <h3 className="font-semibold mb-2 flex items-center gap-2">
           <FileText className="h-4 w-4" />
-          {c.title}
+          {t("consent.notice.summaryTitle")}
         </h3>
-        <Section title={t("consent.notice.purposeHeader")} body={c.purposeStatement} />
-        <Section title={t("consent.notice.voluntarinessHeader")} body={c.voluntarinessStatement} />
-        <Section title={t("consent.notice.recipientsHeader")} body={c.thirdPartyTransfersStatement} />
-        <ul className="text-sm space-y-1 mt-1 mb-3 list-disc pl-5">
-          {p.notice.thirdPartyRecipients.map((r, i) => (
-            <li key={i}>
-              <span className="font-medium">{r.name}</span>
-              <span className="text-muted-foreground"> — {r.purpose}</span>
-            </li>
-          ))}
+        <ul className="text-sm space-y-1.5 list-disc pl-5">
+          <li>{t("consent.notice.summaryPurpose", { name: p.studentName })}</li>
+          <li>{t("consent.notice.summarySecurity")}</li>
+          <li>{t("consent.notice.summaryRights")}</li>
         </ul>
-        <Section title={t("consent.notice.retentionHeader")} body={c.retentionStatement} />
-        <Section title={t("consent.notice.rightsHeader")} body={c.rightsStatement} />
-      </ScrollArea>
+        <button
+          type="button"
+          onClick={() => setShowFull((v) => !v)}
+          className="mt-3 text-sm font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {showFull ? t("consent.notice.hideFull") : t("consent.notice.showFull")}
+        </button>
+      </div>
+
+      {showFull && (
+        <ScrollArea className="h-72 rounded-md border p-3">
+          <h3 className="font-semibold mb-2 flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            {c.title}
+          </h3>
+          <Section title={t("consent.notice.purposeHeader")} body={c.purposeStatement} />
+          <Section title={t("consent.notice.voluntarinessHeader")} body={c.voluntarinessStatement} />
+          <Section title={t("consent.notice.recipientsHeader")} body={c.thirdPartyTransfersStatement} />
+          <ul className="text-sm space-y-1 mt-1 mb-3 list-disc pl-5">
+            {p.notice.thirdPartyRecipients.map((r, i) => (
+              <li key={i}>
+                <span className="font-medium">{r.name}</span>
+                <span className="text-muted-foreground"> — {r.purpose}</span>
+              </li>
+            ))}
+          </ul>
+          <Section title={t("consent.notice.retentionHeader")} body={c.retentionStatement} />
+          <Section title={t("consent.notice.rightsHeader")} body={c.rightsStatement} />
+        </ScrollArea>
+      )}
       <p className="text-xs text-muted-foreground">
         {t("consent.notice.versionLabel")}: {p.notice.version}
       </p>
@@ -748,6 +917,157 @@ function OptInRow({ id, checked, onChange, label, desc }: { id: string; checked:
   );
 }
 
+interface SignatureStepProps {
+  mode: "typed" | "drawn";
+  setMode: (m: "typed" | "drawn") => void;
+  typedName: string;
+  setTypedName: (v: string) => void;
+  drawnImage: string | null;
+  setDrawnImage: (v: string | null) => void;
+}
+
+// Type-to-sign or draw-to-sign. The ticket asks for a signature component
+// because, while legally similar to a checkbox, a signature carries more
+// evidentiary weight under the Israeli Electronic Signature Law if the parent
+// later disputes authorization. The captured signature is sent as supplemental
+// non-repudiation evidence, NOT as a distinct IDV method.
+function SignatureStep(p: SignatureStepProps) {
+  const { t } = useLanguage();
+  return (
+    <div className="space-y-4">
+      <p className="text-muted-foreground">{t("consent.wizard.signature.intro")}</p>
+      <div className="inline-flex rounded-md border p-0.5">
+        <button
+          type="button"
+          onClick={() => p.setMode("typed")}
+          className={`rounded px-3 py-1 text-sm ${p.mode === "typed" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+        >
+          {t("consent.wizard.signature.typeTab")}
+        </button>
+        <button
+          type="button"
+          onClick={() => p.setMode("drawn")}
+          className={`rounded px-3 py-1 text-sm ${p.mode === "drawn" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+        >
+          {t("consent.wizard.signature.drawTab")}
+        </button>
+      </div>
+
+      {p.mode === "typed" ? (
+        <div>
+          <Label htmlFor="sig-typed">{t("consent.wizard.signature.typedLabel")}</Label>
+          <Input
+            id="sig-typed"
+            value={p.typedName}
+            onChange={(e) => p.setTypedName(e.target.value)}
+            placeholder={t("consent.wizard.signature.typedPlaceholder")}
+            autoComplete="name"
+          />
+          {p.typedName.trim().length >= 2 && (
+            <div className="mt-3 rounded-md border bg-muted/30 p-3">
+              <span
+                className="text-2xl"
+                style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}
+              >
+                {p.typedName.trim()}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <SignaturePad value={p.drawnImage} onChange={p.setDrawnImage} />
+      )}
+
+      <p className="text-xs text-muted-foreground">{t("consent.wizard.signature.legal")}</p>
+    </div>
+  );
+}
+
+interface SignaturePadProps {
+  value: string | null;
+  onChange: (dataUrl: string | null) => void;
+}
+
+// Minimal pointer-driven signature canvas. Emits a PNG data URL on stroke end;
+// "Clear" resets to null. No external dependency.
+function SignaturePad({ value, onChange }: SignaturePadProps) {
+  const { t } = useLanguage();
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const dirtyRef = useRef(false);
+
+  function pos(e: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (canvas.width / rect.width),
+      y: (e.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+
+  function handleDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(e.pointerId);
+    drawingRef.current = true;
+    const ctx = canvas.getContext("2d")!;
+    const { x, y } = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+
+  function handleMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drawingRef.current) return;
+    const ctx = canvasRef.current!.getContext("2d")!;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111827";
+    const { x, y } = pos(e);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    dirtyRef.current = true;
+  }
+
+  function handleUp() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    if (dirtyRef.current && canvasRef.current) {
+      onChange(canvasRef.current.toDataURL("image/png"));
+    }
+  }
+
+  function handleClear() {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    dirtyRef.current = false;
+    onChange(null);
+  }
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        width={600}
+        height={180}
+        onPointerDown={handleDown}
+        onPointerMove={handleMove}
+        onPointerUp={handleUp}
+        onPointerLeave={handleUp}
+        className="w-full touch-none rounded-md border bg-white"
+        style={{ aspectRatio: "600 / 180" }}
+      />
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{t("consent.wizard.signature.drawHint")}</span>
+        <Button type="button" variant="outline" size="sm" onClick={handleClear} disabled={!value}>
+          {t("consent.wizard.signature.clear")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface ReviewStepProps {
   ctx: WizardContextResponse;
   notice: ConsentNoticeResponse;
@@ -759,6 +1079,8 @@ interface ReviewStepProps {
   optAdvertising: boolean;
   optResearch: boolean;
   optMarketing: boolean;
+  signatureMode: "typed" | "drawn";
+  typedName: string;
 }
 
 function ReviewStep(p: ReviewStepProps) {
@@ -800,6 +1122,14 @@ function ReviewStep(p: ReviewStepProps) {
         <div className="flex justify-between">
           <span className="text-muted-foreground">{t("consent.wizard.optInsLabel")}</span>
           <span>{optsOn.length > 0 ? optsOn.join(", ") : t("consent.wizard.optInsNoneOn")}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">{t("consent.wizard.signature.reviewLabel")}</span>
+          <span>
+            {p.signatureMode === "typed"
+              ? p.typedName.trim() || t("consent.wizard.signature.typeTab")
+              : t("consent.wizard.signature.drawTab")}
+          </span>
         </div>
       </div>
       <div className="rounded-md border bg-muted/40 p-3 flex items-start gap-2">

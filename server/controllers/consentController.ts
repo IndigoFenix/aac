@@ -29,6 +29,7 @@ import {
   type ConsentInvitationErrorCode,
 } from "../services/consent/consentInvitationService";
 import { PhoneOtpError, type PhoneOtpErrorCode } from "../services/phoneOtpService";
+import { sendConsentReceipt } from "../services/consent/consentReceipt";
 import { studentRepository } from "../repositories/studentRepository";
 import { studentConsentRecordRepository } from "../repositories/studentConsentRecordRepository";
 import { userRepository } from "../repositories/userRepository";
@@ -43,11 +44,24 @@ import {
 // Zod
 // ============================================================================
 
+// Supplemental signature evidence (type-to-sign / draw-to-sign). Stored inside
+// nonRepudiationEvidence, NOT used as a distinct IDV method. The image is a PNG
+// data URL — capped so a pathological payload can't bloat the jsonb column.
+const signatureSchema = z
+  .object({
+    mode: z.enum(["typed", "drawn"]),
+    typedName: z.string().max(200).optional(),
+    image: z.string().max(2_000_000).optional(),
+    signedAt: z.string().max(40).optional(),
+  })
+  .optional();
+
 const signConsentSchema = z.object({
   signedByContactId: z.string().min(1),
   locale: z.string().min(2).max(10),
   consentTextVersion: z.string().min(1),
   consentTextHash: z.string().length(64),
+  signature: signatureSchema,
 
   // Guardian contact updates committed in the same transaction as the sign.
   guardianFields: z
@@ -355,10 +369,13 @@ class ConsentController {
         signedAt: new Date().toISOString(),
         provenance: "v1_family_flow",
       };
-      const nrEvidence = input.nonRepudiationEvidence ?? {
-        userId,
-        ip: req.ip ?? null,
-        userAgent: req.headers["user-agent"] ?? null,
+      const nrEvidence = {
+        ...(input.nonRepudiationEvidence ?? {
+          userId,
+          ip: req.ip ?? null,
+          userAgent: req.headers["user-agent"] ?? null,
+        }),
+        ...(input.signature ? { signature: input.signature } : {}),
       };
 
       const record = await consentService.signConsent({
@@ -383,6 +400,18 @@ class ConsentController {
         signedFromIp: req.ip ?? null,
         signedFromUserAgent: (req.headers["user-agent"] as string) ?? null,
         actingUserId: userId,
+      });
+
+      // Email the parent their copy of the signed consent (Right to
+      // Information). Awaited before responding so Lambda doesn't freeze it;
+      // the helper never throws, so a delivery failure won't fail the sign.
+      const student = await studentRepository.getStudentById(studentId);
+      const receiptTo =
+        contact.contactEmail ?? (await userRepository.getUser(userId))?.email ?? null;
+      await sendConsentReceipt({
+        to: receiptTo,
+        studentName: student?.name ?? "your child",
+        consent: record,
       });
 
       res.json({ success: true, consent: record });
@@ -542,7 +571,10 @@ class ConsentController {
           identityVerificationMethod: rest.identityVerificationMethod ?? "verified_phone_otp",
           identityVerificationEvidence: rest.identityVerificationEvidence ?? {},
           nonRepudiationMethod: rest.nonRepudiationMethod ?? "verified_phone_otp",
-          nonRepudiationEvidence: rest.nonRepudiationEvidence ?? {},
+          nonRepudiationEvidence: {
+            ...(rest.nonRepudiationEvidence ?? {}),
+            ...(rest.signature ? { signature: rest.signature } : {}),
+          },
           isSensitive: rest.isSensitive ?? false,
         } as any,
         guardianFields: rest.guardianFields,
@@ -648,6 +680,31 @@ class ConsentController {
   }
 
   /**
+   * POST /api/consent/invitations/verify-id
+   * Public — token IS the auth. Verifies the parent-supplied last-4 of the
+   * child's institute ID for an email-channel invitation. Attempt-capped in
+   * the service. Never echoes the ID back.
+   */
+  async verifyChildId(req: Request, res: Response): Promise<void> {
+    try {
+      const code = String(req.body?.code ?? "").trim();
+      const last4 = String(req.body?.last4 ?? "").trim();
+      if (!code || !last4) {
+        res.status(400).json({ success: false, message: "code and last4 are required" });
+        return;
+      }
+      const out = await consentInvitationService.verifyChildId({ code, last4 });
+      res.json({
+        success: true,
+        verifiedAt: out.verifiedAt.toISOString(),
+        attemptsRemaining: out.attemptsRemaining,
+      });
+    } catch (err) {
+      handleInvitationError(res, err);
+    }
+  }
+
+  /**
    * POST /api/consent/invitations/:id/revoke
    * Clinician revokes a pending invitation.
    */
@@ -695,6 +752,7 @@ const signWithTokenSchema = z.object({
   optInAdvertising: z.boolean().optional(),
   optInThirdPartyResearch: z.boolean().optional(),
   optInMarketingComms: z.boolean().optional(),
+  signature: signatureSchema,
   identityVerificationMethod: z.string().optional(),
   identityVerificationEvidence: z.record(z.unknown()).optional(),
   nonRepudiationMethod: z.string().optional(),
@@ -713,6 +771,10 @@ const invitationErrorStatus: Record<ConsentInvitationErrorCode, number> = {
   permission_denied: 403,
   channel_unsupported: 400,
   phone_otp_required: 412,
+  child_id_not_on_file: 400,
+  child_id_verify_locked: 429,
+  child_id_mismatch: 422,
+  child_id_verification_required: 412,
 };
 
 const phoneOtpErrorStatus: Record<PhoneOtpErrorCode, number> = {

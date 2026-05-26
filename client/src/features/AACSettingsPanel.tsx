@@ -5,7 +5,8 @@ import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
-import type { PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeVideo } from '@shared/schema';
+import type { PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
+import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,8 @@ import {
   Globe,
   Plus,
   Trash2,
+  Video,
+  ListVideo,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -95,12 +98,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [dynamicBoardsEnabled, setDynamicBoardsEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
-  const [permittedYoutubeChannels, setPermittedYoutubeChannels] = useState<PermittedYoutubeChannel[]>([]);
-  const [youtubeChannelInput, setYoutubeChannelInput] = useState('');
-  const [resolvingChannel, setResolvingChannel] = useState(false);
-  const [permittedYoutubeVideos, setPermittedYoutubeVideos] = useState<PermittedYoutubeVideo[]>([]);
-  const [youtubeVideoInput, setYoutubeVideoInput] = useState('');
-  const [resolvingVideo, setResolvingVideo] = useState(false);
+  const [permittedYoutubeItems, setPermittedYoutubeItems] = useState<PermittedYoutubeItem[]>([]);
+  const [youtubeInput, setYoutubeInput] = useState('');
+  const [resolvingYoutube, setResolvingYoutube] = useState(false);
   const [accessFontSize, setAccessFontSize] = useState(100);
   const [accessHighContrast, setAccessHighContrast] = useState(false);
   const [accessReduceAnimations, setAccessReduceAnimations] = useState(false);
@@ -201,8 +201,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
-      setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
-      setPermittedYoutubeVideos(Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : []);
+      setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const acc = aac?.accessibility || {};
       setAccessFontSize(acc.fontSize ?? 100);
       setAccessHighContrast(acc.highContrast ?? false);
@@ -240,8 +239,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
-      const originalPermittedYoutubeChannels = Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : [];
-      const originalPermittedYoutubeVideos = Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : [];
+      const originalPermittedYoutubeItems = resolvePermittedYoutubeItems(aac);
       const origAcc = aac?.accessibility || {};
       const origAccessFontSize = origAcc.fontSize ?? 100;
       const origAccessHighContrast = origAcc.highContrast ?? false;
@@ -272,15 +270,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
-        JSON.stringify(permittedYoutubeChannels) !== JSON.stringify(originalPermittedYoutubeChannels) ||
-        JSON.stringify(permittedYoutubeVideos) !== JSON.stringify(originalPermittedYoutubeVideos) ||
+        JSON.stringify(permittedYoutubeItems) !== JSON.stringify(originalPermittedYoutubeItems) ||
         accessFontSize !== origAccessFontSize ||
         accessHighContrast !== origAccessHighContrast ||
         accessReduceAnimations !== origAccessReduceAnimations ||
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, permittedYoutubeVideos, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -310,8 +307,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       dynamicBoardsEnabled: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
-      permittedYoutubeChannels?: PermittedYoutubeChannel[];
-      permittedYoutubeVideos?: PermittedYoutubeVideo[];
+      permittedYoutubeItems?: PermittedYoutubeItem[];
       accessibility?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
@@ -363,8 +359,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       dynamicBoardsEnabled,
       appConfig,
       permittedWebsites,
-      permittedYoutubeChannels,
-      permittedYoutubeVideos,
+      permittedYoutubeItems,
       accessibility: {
         fontSize: accessFontSize,
         highContrast: accessHighContrast,
@@ -402,8 +397,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
-      setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
-      setPermittedYoutubeVideos(Array.isArray(aac?.permittedYoutubeVideos) ? aac.permittedYoutubeVideos : []);
+      setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const accR = aac?.accessibility || {};
       setAccessFontSize(accR.fontSize ?? 100);
       setAccessHighContrast(accR.highContrast ?? false);
@@ -416,65 +410,28 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     setChatAgentPrompt(DEFAULT_AAC_PROMPT);
   };
 
-  const handleAddYoutubeVideo = async () => {
-    const raw = youtubeVideoInput.trim();
+  // Resolve any pasted YouTube link (channel / playlist / video) via the
+  // unified resolver, then add it to the single permitted-content list. The
+  // server detects the type from the URL and returns the canonical id +
+  // title/description so the clinician doesn't have to know which is which.
+  const handleAddYoutube = async () => {
+    const raw = youtubeInput.trim();
     if (!raw) return;
-    setResolvingVideo(true);
+    setResolvingYoutube(true);
     try {
-      const res = await apiRequest('POST', '/api/aac/youtube/resolve-video', { input: raw });
+      const res = await apiRequest('POST', '/api/aac/youtube/resolve', { input: raw });
       const data = await res.json();
-      if (!data.videoId) {
+      if (!data.id || !data.type) {
         toast({
-          title: t('aacSettings.permittedYoutubeVideosResolveFailedTitle'),
-          description: t('aacSettings.permittedYoutubeVideosResolveFailedDesc'),
+          title: t('aacSettings.permittedYoutubeContentResolveFailedTitle'),
+          description: t('aacSettings.permittedYoutubeContentResolveFailedDesc'),
           variant: 'destructive',
         });
         return;
       }
-      if (permittedYoutubeVideos.some(v => v.videoId === data.videoId)) {
+      if (permittedYoutubeItems.some(it => it.id === data.id && it.type === data.type)) {
         toast({
-          title: t('aacSettings.permittedYoutubeVideosDuplicate'),
-          variant: 'destructive',
-        });
-        return;
-      }
-      const label = (data.title || raw).trim();
-      const description = (data.description || '').trim();
-      setPermittedYoutubeVideos(prev => [
-        ...prev,
-        { videoId: data.videoId, label, description },
-      ]);
-      setYoutubeVideoInput('');
-    } catch (err: any) {
-      toast({
-        title: t('aacSettings.permittedYoutubeVideosResolveFailedTitle'),
-        description: err?.message || '',
-        variant: 'destructive',
-      });
-    } finally {
-      setResolvingVideo(false);
-    }
-  };
-
-  const handleAddYoutubeChannel = async () => {
-    const raw = youtubeChannelInput.trim();
-    if (!raw) return;
-    setResolvingChannel(true);
-    try {
-      const res = await apiRequest('POST', '/api/aac/youtube/resolve-channel', { input: raw });
-      const data = await res.json();
-      if (!data.channelId) {
-        toast({
-          title: t('aacSettings.permittedYoutubeChannelsResolveFailedTitle'),
-          description: t('aacSettings.permittedYoutubeChannelsResolveFailedDesc'),
-          variant: 'destructive',
-        });
-        return;
-      }
-      // De-dupe
-      if (permittedYoutubeChannels.some(c => c.channelId === data.channelId)) {
-        toast({
-          title: t('aacSettings.permittedYoutubeChannelsDuplicate'),
+          title: t('aacSettings.permittedYoutubeContentDuplicate'),
           variant: 'destructive',
         });
         return;
@@ -484,19 +441,19 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       // scrape came up empty.
       const label = (data.title || raw).trim();
       const description = (data.description || '').trim();
-      setPermittedYoutubeChannels(prev => [
+      setPermittedYoutubeItems(prev => [
         ...prev,
-        { channelId: data.channelId, label, description },
+        { type: data.type as PermittedYoutubeItemType, id: data.id, label, description },
       ]);
-      setYoutubeChannelInput('');
+      setYoutubeInput('');
     } catch (err: any) {
       toast({
-        title: t('aacSettings.permittedYoutubeChannelsResolveFailedTitle'),
+        title: t('aacSettings.permittedYoutubeContentResolveFailedTitle'),
         description: err?.message || '',
         variant: 'destructive',
       });
     } finally {
-      setResolvingChannel(false);
+      setResolvingYoutube(false);
     }
   };
 
@@ -1229,216 +1186,138 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardContent>
           </Card>
 
-          {/* Permitted YouTube Channels */}
+          {/* Permitted YouTube Content (channels, playlists, videos) */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <span className="text-xl">▶️</span>
-                {t('aacSettings.permittedYoutubeChannelsTitle')}
+                {t('aacSettings.permittedYoutubeContentTitle')}
               </CardTitle>
-              <CardDescription>{t('aacSettings.permittedYoutubeChannelsDescription')}</CardDescription>
+              <CardDescription>{t('aacSettings.permittedYoutubeContentDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {permittedYoutubeChannels.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeChannelsEmpty')}</p>
+              {permittedYoutubeItems.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeContentEmpty')}</p>
               )}
-              {permittedYoutubeChannels.map((ch, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "rounded-lg border p-3 space-y-2",
-                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
-                  )}
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsLabel')}</Label>
-                      <Input
-                        value={ch.label}
-                        onChange={(e) =>
-                          setPermittedYoutubeChannels(prev =>
-                            prev.map((c, i) => (i === idx ? { ...c, label: e.target.value } : c)),
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsChannelId')}</Label>
-                      <Input
-                        value={ch.channelId}
-                        onChange={(e) =>
-                          setPermittedYoutubeChannels(prev =>
-                            prev.map((c, i) => (i === idx ? { ...c, channelId: e.target.value } : c)),
-                          )
-                        }
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsDescriptionField')}</Label>
-                    <Input
-                      value={ch.description || ''}
-                      onChange={(e) =>
-                        setPermittedYoutubeChannels(prev =>
-                          prev.map((c, i) => (i === idx ? { ...c, description: e.target.value } : c)),
-                        )
-                      }
-                      placeholder={t('aacSettings.permittedYoutubeChannelsDescriptionPlaceholder')}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setPermittedYoutubeChannels(prev => prev.filter((_, i) => i !== idx))
-                    }
+              {permittedYoutubeItems.map((item, idx) => {
+                const typeLabel = t(
+                  item.type === 'channel'
+                    ? 'aacSettings.permittedYoutubeTypeChannel'
+                    : item.type === 'playlist'
+                      ? 'aacSettings.permittedYoutubeTypePlaylist'
+                      : 'aacSettings.permittedYoutubeTypeVideo',
+                );
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "rounded-lg border p-3 space-y-2",
+                      isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                    )}
                   >
-                    <Trash2 className="w-3 h-3 me-1" />
-                    {t('aacSettings.permittedYoutubeChannelsRemove')}
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex gap-3">
+                      {item.type === 'video' ? (
+                        <img
+                          src={`https://img.youtube.com/vi/${encodeURIComponent(item.id)}/mqdefault.jpg`}
+                          alt=""
+                          className="w-24 h-[54px] object-cover rounded-md bg-black shrink-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-24 h-[54px] rounded-md bg-black/80 flex items-center justify-center shrink-0">
+                          {item.type === 'playlist'
+                            ? <ListVideo className="w-7 h-7 text-amber-400" />
+                            : <Video className="w-7 h-7 text-red-500" />}
+                        </div>
+                      )}
+                      <div className="flex-1 space-y-2">
+                        <span className={cn(
+                          "inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded",
+                          isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-700",
+                        )}>
+                          {typeLabel}
+                        </span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">{t('aacSettings.permittedYoutubeContentLabel')}</Label>
+                            <Input
+                              value={item.label}
+                              onChange={(e) =>
+                                setPermittedYoutubeItems(prev =>
+                                  prev.map((it, i) => (i === idx ? { ...it, label: e.target.value } : it)),
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">{t('aacSettings.permittedYoutubeContentId')}</Label>
+                            <Input
+                              value={item.id}
+                              onChange={(e) =>
+                                setPermittedYoutubeItems(prev =>
+                                  prev.map((it, i) => (i === idx ? { ...it, id: e.target.value } : it)),
+                                )
+                              }
+                              className="font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.permittedYoutubeContentDescriptionField')}</Label>
+                      <Input
+                        value={item.description || ''}
+                        onChange={(e) =>
+                          setPermittedYoutubeItems(prev =>
+                            prev.map((it, i) => (i === idx ? { ...it, description: e.target.value } : it)),
+                          )
+                        }
+                        placeholder={t('aacSettings.permittedYoutubeContentDescriptionPlaceholder')}
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setPermittedYoutubeItems(prev => prev.filter((_, i) => i !== idx))
+                      }
+                    >
+                      <Trash2 className="w-3 h-3 me-1" />
+                      {t('aacSettings.permittedYoutubeContentRemove')}
+                    </Button>
+                  </div>
+                );
+              })}
 
               <div className="flex gap-2">
                 <Input
-                  placeholder={t('aacSettings.permittedYoutubeChannelsAddPlaceholder')}
-                  value={youtubeChannelInput}
-                  onChange={(e) => setYoutubeChannelInput(e.target.value)}
+                  placeholder={t('aacSettings.permittedYoutubeContentAddPlaceholder')}
+                  value={youtubeInput}
+                  onChange={(e) => setYoutubeInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !resolvingChannel) {
+                    if (e.key === 'Enter' && !resolvingYoutube) {
                       e.preventDefault();
-                      handleAddYoutubeChannel();
+                      handleAddYoutube();
                     }
                   }}
                   className="flex-1"
                 />
                 <Button
                   variant="outline"
-                  onClick={handleAddYoutubeChannel}
-                  disabled={!youtubeChannelInput.trim() || resolvingChannel}
+                  onClick={handleAddYoutube}
+                  disabled={!youtubeInput.trim() || resolvingYoutube}
                 >
-                  {resolvingChannel ? (
+                  {resolvingYoutube ? (
                     <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : (
                     <Plus className="w-4 h-4 me-2" />
                   )}
-                  {t('aacSettings.permittedYoutubeChannelsAdd')}
+                  {t('aacSettings.permittedYoutubeContentAdd')}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                {t('aacSettings.permittedYoutubeChannelsHint')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Pinned YouTube Videos */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="text-xl">📺</span>
-                {t('aacSettings.permittedYoutubeVideosTitle')}
-              </CardTitle>
-              <CardDescription>{t('aacSettings.permittedYoutubeVideosDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {permittedYoutubeVideos.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeVideosEmpty')}</p>
-              )}
-              {permittedYoutubeVideos.map((vid, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "rounded-lg border p-3 space-y-2",
-                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
-                  )}
-                >
-                  <div className="flex gap-3">
-                    <img
-                      src={`https://img.youtube.com/vi/${encodeURIComponent(vid.videoId)}/mqdefault.jpg`}
-                      alt=""
-                      className="w-24 h-[54px] object-cover rounded-md bg-black shrink-0"
-                      loading="lazy"
-                    />
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosLabel')}</Label>
-                        <Input
-                          value={vid.label}
-                          onChange={(e) =>
-                            setPermittedYoutubeVideos(prev =>
-                              prev.map((v, i) => (i === idx ? { ...v, label: e.target.value } : v)),
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosVideoId')}</Label>
-                        <Input
-                          value={vid.videoId}
-                          onChange={(e) =>
-                            setPermittedYoutubeVideos(prev =>
-                              prev.map((v, i) => (i === idx ? { ...v, videoId: e.target.value } : v)),
-                            )
-                          }
-                          className="font-mono text-xs"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('aacSettings.permittedYoutubeVideosDescriptionField')}</Label>
-                    <Input
-                      value={vid.description || ''}
-                      onChange={(e) =>
-                        setPermittedYoutubeVideos(prev =>
-                          prev.map((v, i) => (i === idx ? { ...v, description: e.target.value } : v)),
-                        )
-                      }
-                      placeholder={t('aacSettings.permittedYoutubeVideosDescriptionPlaceholder')}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setPermittedYoutubeVideos(prev => prev.filter((_, i) => i !== idx))
-                    }
-                  >
-                    <Trash2 className="w-3 h-3 me-1" />
-                    {t('aacSettings.permittedYoutubeVideosRemove')}
-                  </Button>
-                </div>
-              ))}
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder={t('aacSettings.permittedYoutubeVideosAddPlaceholder')}
-                  value={youtubeVideoInput}
-                  onChange={(e) => setYoutubeVideoInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !resolvingVideo) {
-                      e.preventDefault();
-                      handleAddYoutubeVideo();
-                    }
-                  }}
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleAddYoutubeVideo}
-                  disabled={!youtubeVideoInput.trim() || resolvingVideo}
-                >
-                  {resolvingVideo ? (
-                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                  ) : (
-                    <Plus className="w-4 h-4 me-2" />
-                  )}
-                  {t('aacSettings.permittedYoutubeVideosAdd')}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t('aacSettings.permittedYoutubeVideosHint')}
+                {t('aacSettings.permittedYoutubeContentHint')}
               </p>
             </CardContent>
           </Card>

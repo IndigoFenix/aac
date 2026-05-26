@@ -730,6 +730,7 @@ export const yue: Translations = {
     chooseChannel: "揀個頻道",
     pinnedVideos: "釘選",
     channelsHeading: "頻道",
+    playlistsHeading: "播放清單",
     browseTitle: "YouTube",
     backToChannels: "返回頻道清單",
     loading: "載入緊...",

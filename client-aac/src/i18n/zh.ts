@@ -730,6 +730,7 @@ export const zh: Translations = {
     chooseChannel: "选择一个频道",
     pinnedVideos: "置顶",
     channelsHeading: "频道",
+    playlistsHeading: "播放列表",
     browseTitle: "YouTube",
     backToChannels: "返回频道列表",
     loading: "加载中...",

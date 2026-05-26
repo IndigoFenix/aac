@@ -59,7 +59,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
-  "permittedYoutubeChannels", "permittedYoutubeVideos",
+  "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility",
 ]);
 

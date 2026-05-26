@@ -728,6 +728,7 @@ export const en = {
     chooseChannel: "Choose a channel",
     pinnedVideos: "Pinned videos",
     channelsHeading: "Channels",
+    playlistsHeading: "Playlists",
     browseTitle: "YouTube",
     backToChannels: "Back to channels",
     loading: "Loading...",

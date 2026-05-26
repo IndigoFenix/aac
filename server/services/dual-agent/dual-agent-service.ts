@@ -4,9 +4,10 @@
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
-import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeVideo } from "@shared/schema";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
-import { fetchRecentVideosForChannels } from "../youtube/channel-search";
+import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
+import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
 import { creditsForModelUsage, creditsForLiveUsage } from "../chat/cost-helpers";
 import type { LLMProviderKey } from "@shared/llm-options";
 import {
@@ -459,14 +460,13 @@ export class DualAgentService {
       const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
       const sections = initResult.enhancedSections;
       const persona = sections?.persona || rawPersona;
-      const ytChannels = Array.isArray(student.aacSettings?.permittedYoutubeChannels)
-        ? (student.aacSettings!.permittedYoutubeChannels as PermittedYoutubeChannel[])
-        : [];
-      const ytVideos = Array.isArray(student.aacSettings?.permittedYoutubeVideos)
-        ? (student.aacSettings!.permittedYoutubeVideos as PermittedYoutubeVideo[])
-        : [];
+      const { channels: ytChannels, playlists: ytPlaylists, videos: ytVideos } =
+        splitYoutubeItems(resolvePermittedYoutubeItems(student.aacSettings));
       const ytChannelVideos = ytChannels.length > 0
         ? await fetchRecentVideosForChannels(ytChannels)
+        : undefined;
+      const ytPlaylistVideos = ytPlaylists.length > 0
+        ? await fetchRecentVideosForPlaylists(ytPlaylists)
         : undefined;
       interactivePrompt = buildInteractiveAgentPrompt({
         studentName: student.firstName || student.name?.split(' ')[0] || "",
@@ -490,7 +490,9 @@ export class DualAgentService {
           : undefined,
         permittedYoutubeChannels: ytChannels.length > 0 ? ytChannels : undefined,
         permittedYoutubeVideos: ytVideos.length > 0 ? ytVideos : undefined,
+        permittedYoutubePlaylists: ytPlaylists.length > 0 ? ytPlaylists : undefined,
         youtubeChannelVideos: ytChannelVideos,
+        youtubePlaylistVideos: ytPlaylistVideos,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
         sessionGoals: sections?.sessionGoals,
         personaGestureOverrides: sections?.gestureOverrides,
@@ -515,12 +517,11 @@ export class DualAgentService {
     const permittedWebsites: PermittedWebsite[] = Array.isArray(aacSt?.permittedWebsites)
       ? (aacSt!.permittedWebsites as PermittedWebsite[])
       : [];
-    const permittedYoutubeChannels: PermittedYoutubeChannel[] = Array.isArray(aacSt?.permittedYoutubeChannels)
-      ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
-      : [];
-    const permittedYoutubeVideos: PermittedYoutubeVideo[] = Array.isArray(aacSt?.permittedYoutubeVideos)
-      ? (aacSt!.permittedYoutubeVideos as PermittedYoutubeVideo[])
-      : [];
+    const {
+      channels: permittedYoutubeChannels,
+      playlists: permittedYoutubePlaylists,
+      videos: permittedYoutubeVideos,
+    } = splitYoutubeItems(resolvePermittedYoutubeItems(aacSt));
 
     // Create session state
     const state: DualAgentSessionState = {
@@ -536,6 +537,7 @@ export class DualAgentService {
       permittedWebsites,
       permittedYoutubeChannels,
       permittedYoutubeVideos,
+      permittedYoutubePlaylists,
       currentEmote: "happy",
       boardButtonLabels: [],
       aiAddedButtonLabels: [],
@@ -669,6 +671,7 @@ export class DualAgentService {
         permittedWebsites: [], // Populated with aacSettings below
         permittedYoutubeChannels: [], // Populated with aacSettings below
         permittedYoutubeVideos: [], // Populated with aacSettings below
+        permittedYoutubePlaylists: [], // Populated with aacSettings below
         currentEmote: "neutral",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
@@ -708,12 +711,10 @@ export class DualAgentService {
         state.permittedWebsites = Array.isArray(aacSt?.permittedWebsites)
           ? (aacSt!.permittedWebsites as PermittedWebsite[])
           : [];
-        state.permittedYoutubeChannels = Array.isArray(aacSt?.permittedYoutubeChannels)
-          ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
-          : [];
-        state.permittedYoutubeVideos = Array.isArray(aacSt?.permittedYoutubeVideos)
-          ? (aacSt!.permittedYoutubeVideos as PermittedYoutubeVideo[])
-          : [];
+        const splitYt = splitYoutubeItems(resolvePermittedYoutubeItems(aacSt));
+        state.permittedYoutubeChannels = splitYt.channels;
+        state.permittedYoutubeVideos = splitYt.videos;
+        state.permittedYoutubePlaylists = splitYt.playlists;
       }
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
@@ -778,8 +779,12 @@ export class DualAgentService {
           permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
           permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
           permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
+          permittedYoutubePlaylists: state.permittedYoutubePlaylists.length > 0 ? state.permittedYoutubePlaylists : undefined,
           youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
             ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
+            : undefined,
+          youtubePlaylistVideos: state.permittedYoutubePlaylists.length > 0
+            ? await fetchRecentVideosForPlaylists(state.permittedYoutubePlaylists)
             : undefined,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
           sessionGoals: sections?.sessionGoals,

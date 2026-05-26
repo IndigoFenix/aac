@@ -8,7 +8,7 @@
 // RSS feed format: https://www.youtube.com/feeds/videos.xml?channel_id=UCxxx
 // Returns the channel's 15 most-recent uploads, no auth, no quota.
 
-import type { PermittedYoutubeChannel } from "@shared/schema";
+import type { PermittedYoutubeChannel, PermittedYoutubeItem } from "@shared/schema";
 import type { YouTubeSearchResult } from "./youtube-search";
 
 /** Cached RSS entries per channel. */
@@ -83,6 +83,39 @@ function parseRssFeed(xml: string): RssVideo[] {
   return out;
 }
 
+/**
+ * Fetch the RSS feed for a playlist and return its videos. Same feed format as
+ * channels, keyed by `playlist_id` instead of `channel_id`. Returns the
+ * playlist's most-recent ~15 entries, no auth, no quota. Cached + []-on-error,
+ * exactly like {@link fetchChannelRssVideos}.
+ *
+ * Note: RD... "mix"/radio playlists are generated on the fly and have no RSS
+ * feed — those return [].
+ */
+export async function fetchPlaylistRssVideos(playlistId: string): Promise<RssVideo[]> {
+  const cacheKey = `pl:${playlistId}`;
+  const cached = rssCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < RSS_CACHE_TTL_MS) {
+    return cached.videos;
+  }
+
+  try {
+    const url = `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 CliniAACian/1.0" } });
+    if (!res.ok) {
+      console.warn(`[YouTubeChannel] Playlist RSS fetch failed for ${playlistId}: ${res.status}`);
+      return [];
+    }
+    const xml = await res.text();
+    const videos = parseRssFeed(xml);
+    rssCache.set(cacheKey, { videos, fetchedAt: Date.now() });
+    return videos;
+  } catch (err: any) {
+    console.warn(`[YouTubeChannel] Playlist RSS fetch error for ${playlistId}:`, err?.message || err);
+    return [];
+  }
+}
+
 function firstCapture(s: string, re: RegExp): string | null {
   const m = re.exec(s);
   return m ? m[1] : null;
@@ -102,40 +135,80 @@ function decodeXmlEntities(s: string): string {
 // Search within permitted channels
 // ---------------------------------------------------------------------------
 
+/** A search candidate: a resolved playable video plus the title used for matching. */
+type SearchCandidate = { video: YouTubeSearchResult; title: string; published?: string };
+
 /**
- * Search for a video within the permitted channels.
- * - If YOUTUBE_API_KEY is set: use Data API v3 search.list with channelId filter
- *   (one request per channel, pick the best match). Provides deep search.
- * - Otherwise: fetch each channel's RSS feed and pick the best title match to
- *   the query (falls back to most-recent upload when query is empty).
+ * Search for a video within the permitted sources (channels + playlists).
+ * - Channels: Data API v3 search.list with a channelId filter when
+ *   YOUTUBE_API_KEY is set (deep search), otherwise the channel's RSS feed.
+ * - Playlists: RSS feed (`playlist_id=`) — no API key needed, covers every
+ *   real playlist.
  *
- * Returns null if no permitted channels or no videos found.
+ * All candidate videos are pooled and the best title match to the query wins.
+ * With an empty query, the most-recent video across all sources is returned.
+ * Returns null if no sources or no videos found.
+ */
+export async function searchWithinPermittedSources(
+  query: string,
+  channels: PermittedYoutubeChannel[],
+  playlists: PermittedYoutubeItem[] = [],
+): Promise<YouTubeSearchResult | null> {
+  if (!channels.length && !playlists.length) return null;
+
+  const candidates: SearchCandidate[] = [];
+
+  if (channels.length) {
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    let channelCandidates: SearchCandidate[] = [];
+    if (apiKey) {
+      channelCandidates = await gatherChannelApiCandidates(query, channels, apiKey);
+    }
+    // Fall back to RSS if the API path is unavailable or returned nothing
+    // (covers no-key and quota-exceeded).
+    if (!channelCandidates.length) {
+      channelCandidates = await gatherChannelRssCandidates(channels);
+    }
+    candidates.push(...channelCandidates);
+  }
+
+  if (playlists.length) {
+    candidates.push(...(await gatherPlaylistRssCandidates(playlists)));
+  }
+
+  if (candidates.length === 0) return null;
+
+  // No query → most-recent across all sources. API hits without a published
+  // date sort last.
+  if (!query.trim()) {
+    const sorted = [...candidates].sort((a, b) =>
+      (b.published || "").localeCompare(a.published || ""),
+    );
+    return sorted[0].video;
+  }
+
+  const best = pickBestMatch(query, candidates);
+  return best?.video ?? null;
+}
+
+/**
+ * @deprecated Prefer {@link searchWithinPermittedSources}. Thin wrapper kept for
+ * callers that only have channels (no playlists).
  */
 export async function searchWithinPermittedChannels(
   query: string,
   channels: PermittedYoutubeChannel[],
 ): Promise<YouTubeSearchResult | null> {
-  if (!channels.length) return null;
-
-  const apiKey = process.env.YOUTUBE_API_KEY;
-  if (apiKey) {
-    const apiResult = await searchChannelsViaApi(query, channels, apiKey);
-    if (apiResult) return apiResult;
-    // Fall through to RSS if API returned nothing (rare — covers quota-exceeded)
-  }
-
-  return searchChannelsViaRss(query, channels);
+  return searchWithinPermittedSources(query, channels, []);
 }
 
-async function searchChannelsViaApi(
+/** Gather candidates from each channel via the Data API (up to 5 per channel). */
+async function gatherChannelApiCandidates(
   query: string,
   channels: PermittedYoutubeChannel[],
   apiKey: string,
-): Promise<YouTubeSearchResult | null> {
-  // Fire per-channel searches in parallel; pick the first returned video that
-  // matches the query reasonably well. If query is empty, use "popular" sort
-  // by omitting q.
-  const searches = channels.map(async (ch) => {
+): Promise<SearchCandidate[]> {
+  const searches = channels.map(async (ch): Promise<SearchCandidate[]> => {
     const params = new URLSearchParams({
       part: "snippet",
       type: "video",
@@ -149,68 +222,60 @@ async function searchChannelsViaApi(
     const url = `https://www.googleapis.com/youtube/v3/search?${params}`;
     try {
       const res = await fetch(url);
-      if (!res.ok) return null;
+      if (!res.ok) return [];
       const data = await res.json();
-      const first = data?.items?.[0];
-      if (!first?.id?.videoId) return null;
-      return {
-        videoId: first.id.videoId,
-        title: first.snippet?.title || "Video",
-        channelTitle: first.snippet?.channelTitle || ch.label,
-        thumbnailUrl:
-          first.snippet?.thumbnails?.medium?.url ||
-          first.snippet?.thumbnails?.default?.url ||
-          "",
-      } as YouTubeSearchResult;
+      const items = Array.isArray(data?.items) ? data.items : [];
+      return items
+        .filter((it: any) => it?.id?.videoId)
+        .map((it: any) => ({
+          video: {
+            videoId: it.id.videoId,
+            title: it.snippet?.title || "Video",
+            channelTitle: it.snippet?.channelTitle || ch.label,
+            thumbnailUrl:
+              it.snippet?.thumbnails?.medium?.url ||
+              it.snippet?.thumbnails?.default?.url ||
+              "",
+          } as YouTubeSearchResult,
+          title: it.snippet?.title || "",
+        }));
     } catch {
-      return null;
+      return [];
     }
   });
-  const results = await Promise.all(searches);
-  const hits = results.filter((r): r is YouTubeSearchResult => !!r);
-  if (hits.length === 0) return null;
-  // Prefer the result whose title best matches the query (token overlap).
-  return pickBestMatch(query, hits.map((h) => ({ video: h, title: h.title })))
-    ?.video ?? hits[0];
+  return (await Promise.all(searches)).flat();
 }
 
-async function searchChannelsViaRss(
-  query: string,
+/** Gather candidates from each channel's RSS feed. */
+async function gatherChannelRssCandidates(
   channels: PermittedYoutubeChannel[],
-): Promise<YouTubeSearchResult | null> {
-  // Fetch all channels' feeds in parallel.
+): Promise<SearchCandidate[]> {
   const feeds = await Promise.all(
-    channels.map(async (ch) => ({
-      channel: ch,
-      videos: await fetchChannelRssVideos(ch.channelId),
-    })),
+    channels.map(async (ch) => ({ ch, videos: await fetchChannelRssVideos(ch.channelId) })),
   );
-
-  // Collect all candidate videos (each tagged with its channel label fallback).
-  const candidates: Array<{ video: RssVideo; fallbackChannelLabel: string }> = [];
-  for (const { channel, videos } of feeds) {
+  const out: SearchCandidate[] = [];
+  for (const { ch, videos } of feeds) {
     for (const v of videos) {
-      candidates.push({ video: v, fallbackChannelLabel: channel.label });
+      out.push({ video: rssToResult(v, ch.label), title: v.title, published: v.published });
     }
   }
-  if (candidates.length === 0) return null;
+  return out;
+}
 
-  // If no query, return the most recent upload across all channels.
-  if (!query.trim()) {
-    const sorted = [...candidates].sort((a, b) =>
-      (b.video.published || "").localeCompare(a.video.published || ""),
-    );
-    const pick = sorted[0];
-    return rssToResult(pick.video, pick.fallbackChannelLabel);
-  }
-
-  // Pick best title match.
-  const best = pickBestMatch(
-    query,
-    candidates.map((c) => ({ video: c, title: c.video.title })),
+/** Gather candidates from each playlist's RSS feed. */
+async function gatherPlaylistRssCandidates(
+  playlists: PermittedYoutubeItem[],
+): Promise<SearchCandidate[]> {
+  const feeds = await Promise.all(
+    playlists.map(async (pl) => ({ pl, videos: await fetchPlaylistRssVideos(pl.id) })),
   );
-  if (!best) return null;
-  return rssToResult(best.video.video, best.video.fallbackChannelLabel);
+  const out: SearchCandidate[] = [];
+  for (const { pl, videos } of feeds) {
+    for (const v of videos) {
+      out.push({ video: rssToResult(v, pl.label), title: v.title, published: v.published });
+    }
+  }
+  return out;
 }
 
 function rssToResult(v: RssVideo, fallbackChannelLabel: string): YouTubeSearchResult {
@@ -357,6 +422,24 @@ export async function fetchRecentVideosForChannels(
   return results;
 }
 
+/**
+ * Recent videos per permitted playlist (RSS-backed, cached). Mirrors
+ * {@link fetchRecentVideosForChannels} for the prompt enrichment so the AI can
+ * suggest real playlist content instead of guessing.
+ */
+export async function fetchRecentVideosForPlaylists(
+  playlists: PermittedYoutubeItem[],
+  maxPerPlaylist = 6,
+): Promise<Array<{ playlist: PermittedYoutubeItem; videos: RssVideo[] }>> {
+  const results = await Promise.all(
+    playlists.map(async (playlist) => ({
+      playlist,
+      videos: (await fetchPlaylistRssVideos(playlist.id)).slice(0, maxPerPlaylist),
+    })),
+  );
+  return results;
+}
+
 const metadataCache = new Map<string, { data: ChannelMetadata; fetchedAt: number }>();
 const METADATA_TTL_MS = 24 * 60 * 60 * 1000; // 24h — channel names rarely change
 
@@ -483,6 +566,120 @@ export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata
     console.warn("[YouTubeChannel] fetchVideoMetadata failed:", err?.message || err);
     return { title: null, description: null, thumbnailUrl: fallbackThumb };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Playlist URL → playlistId resolver + metadata + unified item resolver
+// ---------------------------------------------------------------------------
+
+/** Persistent playlist IDs start with one of these prefixes (RD... mixes excluded — no RSS). */
+const PLAYLIST_ID_RE = /^(PL|UU|OL|LL|FL)[A-Za-z0-9_-]{10,}$/;
+
+/**
+ * Resolve a YouTube playlist URL or raw playlist ID to a canonical playlistId.
+ * Accepts a `?list=...` param on any URL, a bare playlist ID, or a /playlist
+ * page. Returns null when nothing matches.
+ */
+export function resolvePlaylistIdFromUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (PLAYLIST_ID_RE.test(trimmed)) return trimmed;
+  const listMatch = /[?&]list=([A-Za-z0-9_-]+)/.exec(trimmed);
+  if (listMatch && PLAYLIST_ID_RE.test(listMatch[1])) return listMatch[1];
+  return null;
+}
+
+export interface PlaylistMetadata {
+  title: string | null;
+  description: string | null;
+  thumbnailUrl: string | null;
+}
+
+const playlistMetadataCache = new Map<string, { data: PlaylistMetadata; fetchedAt: number }>();
+
+/**
+ * Fetch title + description + thumbnail for a playlist by scraping the
+ * /playlist page (Open Graph tags). Soft-fails to nulls — callers fall back to
+ * the clinician's pasted input. No API key needed.
+ */
+export async function fetchPlaylistMetadata(playlistId: string): Promise<PlaylistMetadata> {
+  const cached = playlistMetadataCache.get(playlistId);
+  if (cached && Date.now() - cached.fetchedAt < METADATA_TTL_MS) {
+    return cached.data;
+  }
+  const url = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      const miss: PlaylistMetadata = { title: null, description: null, thumbnailUrl: null };
+      playlistMetadataCache.set(playlistId, { data: miss, fetchedAt: Date.now() });
+      return miss;
+    }
+    const html = await res.text();
+    const title = extractMeta(html, "og:title") || extractMeta(html, "twitter:title");
+    const description = extractMeta(html, "og:description") || extractMeta(html, "description");
+    const thumb = extractMeta(html, "og:image") || extractMeta(html, "twitter:image");
+    const data: PlaylistMetadata = {
+      title: title ? decodeHtmlEntities(title).trim() : null,
+      description: description ? decodeHtmlEntities(description).trim() : null,
+      thumbnailUrl: thumb || null,
+    };
+    playlistMetadataCache.set(playlistId, { data, fetchedAt: Date.now() });
+    return data;
+  } catch (err: any) {
+    console.warn("[YouTubeChannel] fetchPlaylistMetadata failed:", err?.message || err);
+    return { title: null, description: null, thumbnailUrl: null };
+  }
+}
+
+/**
+ * Detect what kind of YouTube resource a pasted string points at and resolve
+ * its canonical id. Tries, in order: raw id → that kind; explicit playlist
+ * page or a `list=` with no specific video → playlist; watch / youtu.be /
+ * shorts / embed / live → video; otherwise a channel (handle / custom URL /
+ * UC id, scraped).
+ *
+ * A watch URL that ALSO carries a `list=` param resolves to the video (the most
+ * specific single thing) — to add a playlist, paste the playlist URL itself.
+ */
+export async function resolveYoutubeItemFromUrl(
+  input: string,
+): Promise<{ type: "channel" | "playlist" | "video"; id: string } | null> {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // Raw ids first (unambiguous).
+  if (/^UC[A-Za-z0-9_-]{20,}$/.test(trimmed)) return { type: "channel", id: trimmed };
+  if (PLAYLIST_ID_RE.test(trimmed)) return { type: "playlist", id: trimmed };
+  if (VIDEO_ID_RE.test(trimmed)) return { type: "video", id: trimmed };
+
+  const listMatch = /[?&]list=([A-Za-z0-9_-]+)/.exec(trimmed);
+  const hasVideoParam =
+    /[?&]v=[A-Za-z0-9_-]{11}/.test(trimmed) ||
+    /(?:youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)[A-Za-z0-9_-]{11}/.test(trimmed);
+  const isPlaylistPage = /\/playlist\b/i.test(trimmed);
+
+  // Explicit playlist page, or a list= with no specific video → playlist.
+  if ((isPlaylistPage || !hasVideoParam) && listMatch && PLAYLIST_ID_RE.test(listMatch[1])) {
+    return { type: "playlist", id: listMatch[1] };
+  }
+
+  // Video URL forms.
+  const videoId = resolveVideoIdFromUrl(trimmed);
+  if (videoId) return { type: "video", id: videoId };
+
+  // Anything else: treat as a channel (handle / custom URL / channel page).
+  const channelId = await resolveChannelIdFromUrl(trimmed);
+  if (channelId) return { type: "channel", id: channelId };
+
+  return null;
 }
 
 function extractMeta(html: string, name: string): string | null {

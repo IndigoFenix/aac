@@ -217,6 +217,7 @@ function renderAppContent(
         title={activeApp.appData?.title || "Video"}
         channels={activeApp.appData?.channels}
         videos={activeApp.appData?.videos}
+        playlists={activeApp.appData?.playlists}
         onClose={dismissApp}
         sendContextOnly={sendContextOnlyToAi}
       />

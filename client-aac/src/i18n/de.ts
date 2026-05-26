@@ -730,6 +730,7 @@ export const de: Translations = {
     chooseChannel: "Kanal w\u00e4hlen",
     pinnedVideos: "Angeheftete Videos",
     channelsHeading: "Kan\u00e4le",
+    playlistsHeading: "Wiedergabelisten",
     browseTitle: "YouTube",
     backToChannels: "Zur\u00fcck zu den Kan\u00e4len",
     loading: "L\u00e4dt...",

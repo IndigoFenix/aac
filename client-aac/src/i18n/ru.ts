@@ -730,6 +730,7 @@ export const ru: Translations = {
     chooseChannel: "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u0430\u043d\u0430\u043b",
     pinnedVideos: "\u0417\u0430\u043a\u0440\u0435\u043f\u043b\u0451\u043d\u043d\u044b\u0435",
     channelsHeading: "\u041a\u0430\u043d\u0430\u043b\u044b",
+    playlistsHeading: "\u041f\u043b\u0435\u0439\u043b\u0438\u0441\u0442\u044b",
     browseTitle: "YouTube",
     backToChannels: "\u041a \u043a\u0430\u043d\u0430\u043b\u0430\u043c",
     loading: "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...",

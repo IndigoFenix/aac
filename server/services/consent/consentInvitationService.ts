@@ -6,8 +6,8 @@
 // See planning-docs/student-consent-onboarding-plan.md.
 
 import { db } from "../../db.js";
-import { eq } from "drizzle-orm";
-import { studentContacts, type ConsentInvitation, type StudentConsentRecord } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import { studentContacts, instituteStudents, type ConsentInvitation, type StudentConsentRecord } from "@shared/schema";
 import { consentInvitationRepository } from "../../repositories/consentInvitationRepository.js";
 import { studentRepository } from "../../repositories/studentRepository.js";
 import { userRepository } from "../../repositories/userRepository.js";
@@ -20,6 +20,7 @@ import { activityLogService } from "../activityLogService.js";
 import { emailService } from "../emailService.js";
 import { smsService } from "../smsService.js";
 import { phoneOtpService, PhoneOtpError } from "../phoneOtpService.js";
+import { sendConsentReceipt } from "./consentReceipt.js";
 import { toE164 } from "@shared/phone";
 
 export type ConsentInvitationErrorCode =
@@ -32,9 +33,18 @@ export type ConsentInvitationErrorCode =
   | "code_revoked"
   | "permission_denied"
   | "channel_unsupported"
-  | "phone_otp_required";
+  | "phone_otp_required"
+  | "child_id_not_on_file"
+  | "child_id_verify_locked"
+  | "child_id_mismatch"
+  | "child_id_verification_required";
 
 const OTP_PURPOSE = "consent_invitation";
+
+// Email-channel child-ID gate: 5 wrong last-4 guesses locks the gate for the
+// invitation (last-4 is only 10k combinations, so the cap is what makes the
+// knowledge factor meaningful). Locking forces the clinician to re-issue.
+const MAX_ID_VERIFY_ATTEMPTS = 5;
 
 export class ConsentInvitationError extends Error {
   readonly code: ConsentInvitationErrorCode;
@@ -47,7 +57,12 @@ export class ConsentInvitationError extends Error {
   }
 }
 
-const DEFAULT_TTL_DAYS = 7;
+// PPA Feb-2026: consent links for sensitive medical data must be short-lived
+// so a stale link sitting in an inbox can't be redeemed if the account is
+// later compromised. 72 hours is the ticketed ceiling. A clinician may pass a
+// shorter `ttlDays` override, but never a longer one (clamped below).
+const DEFAULT_TTL_HOURS = 72;
+const MAX_TTL_HOURS = 72;
 
 class ConsentInvitationService {
   /**
@@ -95,8 +110,12 @@ class ConsentInvitationService {
       sentTo = "manual"; // copy-link path; clinician hands code to parent themselves
     }
 
-    const ttlDays = args.ttlDays ?? DEFAULT_TTL_DAYS;
-    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+    // Resolve TTL in hours and clamp to the 72h ceiling. `ttlDays` is kept as
+    // the public knob for backward compat, but a request can only ever shorten
+    // the window, never extend it past MAX_TTL_HOURS.
+    const requestedHours = args.ttlDays != null ? args.ttlDays * 24 : DEFAULT_TTL_HOURS;
+    const ttlHours = Math.min(requestedHours, MAX_TTL_HOURS);
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     const { invitation, code } = await consentInvitationRepository.create({
       studentId: args.studentId,
@@ -175,6 +194,8 @@ class ConsentInvitationService {
     invitationId: string;
     channel: string;
     requiresPhoneOtp: boolean;
+    requiresIdVerification: boolean;
+    idVerified: boolean;
     contactPhoneMasked: string | null;
     student: { id: string; name: string; firstName: string | null; lastName: string | null; birthDate: string | null; country: string | null; primaryLanguage: string | null };
     contact: { id: string; name: string; relationship: string | null; contactEmail: string | null; contactPhone: string | null; governmentIdNumber: string | null; governmentIdType: string | null; governmentIdCountry: string | null; isLegalGuardian: boolean; coGuardianAcknowledged: boolean };
@@ -189,11 +210,18 @@ class ConsentInvitationService {
       .where(eq(studentContacts.id, inv.contactId));
     if (!contact) throw new ConsentInvitationError("contact_not_found");
 
+    // Email-channel invitations gate on a child-ID knowledge check, but only
+    // when an institute ID is actually on file for the child (otherwise there
+    // is nothing to verify against and the path falls back to link+signature).
+    const childIdNumber = inv.channel === "email" ? await this.getChildInstituteIdNumber(inv) : null;
+
     return {
       invitationId: inv.id,
       channel: inv.channel,
       // SMS-channel invitations require an OTP non-repudiation leg before sign.
       requiresPhoneOtp: inv.channel === "sms",
+      requiresIdVerification: !!childIdNumber,
+      idVerified: !!inv.idVerifiedAt,
       contactPhoneMasked: contact.contactPhone
         ? maskPhone(toE164(contact.contactPhone, student.country) ?? contact.contactPhone)
         : null,
@@ -280,6 +308,27 @@ class ConsentInvitationService {
       };
     }
 
+    // Child-ID gate: email-channel invitations require a passed last-4 check
+    // BEFORE signing, but only when an institute ID is on file for the child
+    // (the redeem context advertised this via requiresIdVerification). This is
+    // the email-path identity leg, parallel to the SMS OTP non-repudiation leg.
+    let idEvidence: Record<string, unknown> = {};
+    if (inv.channel === "email") {
+      const childIdNumber = await this.getChildInstituteIdNumber(inv);
+      if (childIdNumber) {
+        if (!inv.idVerifiedAt) {
+          throw new ConsentInvitationError(
+            "child_id_verification_required",
+            "The child's ID must be verified before signing this consent",
+          );
+        }
+        idEvidence = {
+          childIdVerifiedAt: inv.idVerifiedAt.toISOString(),
+          childIdVerifyMethod: "last4_institute_id_match",
+        };
+      }
+    }
+
     // Update the contact: flip isLegalGuardian, capture co-guardian + gov-ID.
     // Same shape as the session-authed sign path — kept consistent so audit
     // trails for token vs session signs look identical.
@@ -316,6 +365,7 @@ class ConsentInvitationService {
         invitationChannel: inv.channel,
         invitationSentTo: inv.sentTo,
         ...otpEvidence,
+        ...idEvidence,
       },
       nonRepudiationMethod: args.payload.nonRepudiationMethod ?? "verified_phone_otp",
       nonRepudiationEvidence: {
@@ -330,6 +380,16 @@ class ConsentInvitationService {
       signedFromUserAgent: args.signedFromUserAgent ?? null,
       // Token-flow has no acting userId (parent isn't a user).
       actingUserId: null,
+    });
+
+    // Email the parent their copy of the signed consent (Right to Information).
+    // Awaited (not detached) so it isn't frozen by Lambda at response time;
+    // the helper swallows its own errors so this never fails the sign.
+    const student = await studentRepository.getStudentById(inv.studentId);
+    await sendConsentReceipt({
+      to: contactRow?.contactEmail,
+      studentName: student?.name ?? "your child",
+      consent,
     });
 
     const redeemed = await consentInvitationRepository.markRedeemed(inv.id, consent.id);
@@ -423,6 +483,81 @@ class ConsentInvitationService {
     };
   }
 
+  /**
+   * Verify the parent-supplied last-4 of the child's institute ID for an
+   * email-channel invitation. Public — the token IS the auth. Attempt-capped:
+   * after MAX_ID_VERIFY_ATTEMPTS wrong guesses the gate locks and the parent
+   * must ask the clinic to re-issue the link. On success the invitation is
+   * stamped idVerifiedAt; signWithToken later confirms it before writing.
+   */
+  async verifyChildId(args: { code: string; last4: string }): Promise<{
+    verifiedAt: Date;
+    attemptsRemaining: number;
+  }> {
+    const inv = await this.loadActiveByCode(args.code);
+
+    if (inv.idVerifiedAt) {
+      // Idempotent — already verified, don't burn an attempt.
+      return { verifiedAt: inv.idVerifiedAt, attemptsRemaining: MAX_ID_VERIFY_ATTEMPTS - inv.idVerifyAttempts };
+    }
+    if (inv.idVerifyAttempts >= MAX_ID_VERIFY_ATTEMPTS) {
+      throw new ConsentInvitationError(
+        "child_id_verify_locked",
+        "Too many incorrect attempts — ask the clinic to resend the link",
+        { attemptsRemaining: 0 },
+      );
+    }
+
+    const childIdNumber = await this.getChildInstituteIdNumber(inv);
+    if (!childIdNumber) {
+      throw new ConsentInvitationError(
+        "child_id_not_on_file",
+        "No child ID is on file to verify against",
+      );
+    }
+
+    const expected = normalizeLast4(childIdNumber);
+    const supplied = normalizeLast4(args.last4);
+    // A stored ID with fewer than 4 usable characters can't be checked safely.
+    if (expected.length < 4 || supplied.length < 4 || expected !== supplied) {
+      const attempts = await consentInvitationRepository.incrementIdVerifyAttempts(inv.id);
+      const remaining = Math.max(0, MAX_ID_VERIFY_ATTEMPTS - attempts);
+      activityLogService.log({
+        instituteId: inv.sourceInstituteId,
+        userId: null,
+        eventType: "update",
+        subjectType1: "consent_record",
+        subjectId1: inv.studentId,
+        subjectType2: "student",
+        subjectId2: inv.studentId,
+        details: { action: "consent_invitation_child_id_failed", invitationId: inv.id, attemptsRemaining: remaining },
+        isAiInitiated: false,
+      });
+      throw new ConsentInvitationError(
+        "child_id_mismatch",
+        "That doesn't match the child's ID on file",
+        { attemptsRemaining: remaining },
+      );
+    }
+
+    const updated = await consentInvitationRepository.markIdVerified(inv.id);
+    activityLogService.log({
+      instituteId: inv.sourceInstituteId,
+      userId: null,
+      eventType: "update",
+      subjectType1: "consent_record",
+      subjectId1: inv.studentId,
+      subjectType2: "student",
+      subjectId2: inv.studentId,
+      details: { action: "consent_invitation_child_id_verified", invitationId: inv.id },
+      isAiInitiated: false,
+    });
+    return {
+      verifiedAt: updated?.idVerifiedAt ?? new Date(),
+      attemptsRemaining: MAX_ID_VERIFY_ATTEMPTS - inv.idVerifyAttempts,
+    };
+  }
+
   async revokeInvitation(args: {
     invitationId: string;
     revokedByUserId: string;
@@ -472,6 +607,27 @@ class ConsentInvitationService {
     return normalized;
   }
 
+  /**
+   * Fetch the child's institute ID number for the invitation's source
+   * institute, or null when none is on file (or the invitation has no source
+   * institute, e.g. manual channel). Never returned to the client — only its
+   * last-4 is compared server-side.
+   */
+  private async getChildInstituteIdNumber(inv: ConsentInvitation): Promise<string | null> {
+    if (!inv.sourceInstituteId) return null;
+    const [row] = await db
+      .select({ idNumber: instituteStudents.idNumber })
+      .from(instituteStudents)
+      .where(
+        and(
+          eq(instituteStudents.instituteId, inv.sourceInstituteId),
+          eq(instituteStudents.studentId, inv.studentId),
+        ),
+      );
+    const v = row?.idNumber?.trim();
+    return v ? v : null;
+  }
+
   private async loadActiveByCode(code: string): Promise<ConsentInvitation> {
     const inv = await consentInvitationRepository.getByCode(code);
     if (!inv) throw new ConsentInvitationError("code_not_found");
@@ -491,6 +647,15 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * Normalize an ID (stored or user-supplied) to its comparable last-4: strip
+ * everything but alphanumerics, lowercase, take the trailing 4. This makes the
+ * check tolerant of spacing/dashes while staying exact on the digits.
+ */
+function normalizeLast4(s: string): string {
+  return s.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(-4);
 }
 
 /** Mask all but the last 4 digits of an E.164 phone for display. */

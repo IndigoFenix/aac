@@ -7,9 +7,9 @@
 // so the student can return to browse mode and pick a different video.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { X, Play, Pause, RotateCcw, Rewind, FastForward, ChevronLeft, ChevronRight, Video } from "lucide-react";
+import { X, Play, Pause, RotateCcw, Rewind, FastForward, ChevronLeft, ChevronRight, Video, ListVideo } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import type { PermittedYoutubeChannel, PermittedYoutubeVideo } from "@shared/schema";
+import type { PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface YouTubeAppProps {
@@ -20,6 +20,8 @@ interface YouTubeAppProps {
   channels?: PermittedYoutubeChannel[];
   /** Pinned videos (curated playlist) shown as direct-play tiles in browse mode. */
   videos?: PermittedYoutubeVideo[];
+  /** Permitted playlists for browse mode (browsed like channels). */
+  playlists?: PermittedYoutubeItem[];
   onClose: () => void;
   /** Called with a short free-form string when the student picks/finishes a video manually. */
   sendContextOnly?: (text: string) => void;
@@ -69,6 +71,7 @@ export default function YouTubeApp({
   title,
   channels,
   videos,
+  playlists,
   onClose,
   sendContextOnly,
 }: YouTubeAppProps) {
@@ -77,9 +80,10 @@ export default function YouTubeApp({
   );
   const hasChannels = (channels?.length ?? 0) > 0;
   const hasVideos = (videos?.length ?? 0) > 0;
+  const hasPlaylists = (playlists?.length ?? 0) > 0;
   // "Back to browse" is available whenever the student has curated content
-  // they could pick from — channels or pinned videos.
-  const canReturnToBrowse = hasChannels || hasVideos;
+  // they could pick from — channels, playlists, or pinned videos.
+  const canReturnToBrowse = hasChannels || hasVideos || hasPlaylists;
 
   const pickVideo = useCallback(
     (v: { videoId: string; title: string }, channelLabel?: string) => {
@@ -95,8 +99,8 @@ export default function YouTubeApp({
     setActiveVideo(null);
   }, []);
 
-  // No video, no channels, no pinned videos — render a minimal "unavailable" screen.
-  if (!activeVideo && !hasChannels && !hasVideos) {
+  // No video and no curated content — render a minimal "unavailable" screen.
+  if (!activeVideo && !canReturnToBrowse) {
     return <UnavailableView onClose={onClose} />;
   }
 
@@ -115,6 +119,7 @@ export default function YouTubeApp({
     <BrowseView
       channels={channels || []}
       videos={videos || []}
+      playlists={playlists || []}
       onPickVideo={pickVideo}
       onClose={onClose}
     />
@@ -131,36 +136,56 @@ const PAGE_ROWS = 2;
 const PAGE_COLS = 3;
 const PAGE_SIZE = PAGE_ROWS * PAGE_COLS;
 
+/** A source the student drills into for a video list — a channel or a playlist. */
+type BrowseSource = { kind: "channel" | "playlist"; id: string; label: string };
+
+/** One stacked section in the browse view. `items`/renderers are heterogeneous by section. */
+interface BrowseSection {
+  key: string;
+  title: string;
+  items: any[];
+  getKey: (item: any) => string;
+  renderItem: (item: any) => React.ReactNode;
+}
+
 function BrowseView({
   channels,
   videos,
+  playlists,
   onPickVideo,
   onClose,
 }: {
   channels: PermittedYoutubeChannel[];
   videos: PermittedYoutubeVideo[];
-  onPickVideo: (v: { videoId: string; title: string }, channelLabel?: string) => void;
+  playlists: PermittedYoutubeItem[];
+  onPickVideo: (v: { videoId: string; title: string }, sourceLabel?: string) => void;
   onClose: () => void;
 }) {
   const { t } = useLanguage();
-  // Auto-jump straight to the only channel iff there are no pinned videos to
-  // pick from. With pinned videos present, always show the browse view so the
-  // student sees both options.
-  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
-    channels.length === 1 && videos.length === 0 ? channels[0].channelId : null,
-  );
-  const selectedChannel = useMemo(
-    () => channels.find((c) => c.channelId === selectedChannelId) || null,
-    [channels, selectedChannelId],
+
+  // Channels + playlists are both "sources" the student drills into.
+  const sources: BrowseSource[] = useMemo(
+    () => [
+      ...channels.map((c) => ({ kind: "channel" as const, id: c.channelId, label: c.label })),
+      ...playlists.map((p) => ({ kind: "playlist" as const, id: p.id, label: p.label })),
+    ],
+    [channels, playlists],
   );
 
-  if (selectedChannel) {
+  // Auto-jump straight to the only source iff there are no pinned videos to
+  // pick from. With pinned videos present, always show the browse view so the
+  // student sees every option.
+  const [selectedSource, setSelectedSource] = useState<BrowseSource | null>(
+    sources.length === 1 && videos.length === 0 ? sources[0] : null,
+  );
+
+  if (selectedSource) {
     return (
-      <ChannelVideosView
-        channel={selectedChannel}
-        onBack={() => setSelectedChannelId(null)}
+      <SourceVideosView
+        source={selectedSource}
+        onBack={() => setSelectedSource(null)}
         onClose={onClose}
-        onPickVideo={(v) => onPickVideo(v, selectedChannel.label)}
+        onPickVideo={(v) => onPickVideo(v, selectedSource.label)}
       />
     );
   }
@@ -193,7 +218,7 @@ function BrowseView({
     <button type="button"
       data-dwell
       key={ch.channelId}
-      onClick={() => setSelectedChannelId(ch.channelId)}
+      onClick={() => setSelectedSource({ kind: "channel", id: ch.channelId, label: ch.label })}
       className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-gray-800 hover:bg-gray-700 active:scale-95 transition-all text-center w-full h-full min-h-0 overflow-hidden"
     >
       <Video size={48} className="text-red-500 shrink-0" />
@@ -208,57 +233,66 @@ function BrowseView({
     </button>
   );
 
-  // Only one type → keep the full-screen PaginatedGrid (existing behavior).
-  if (videos.length === 0) {
-    return (
-      <PaginatedGrid
-        title={t("youtubeApp.chooseChannel")}
-        items={channels}
-        getKey={(ch) => ch.channelId}
-        renderItem={renderChannelTile}
-        onClose={onClose}
-      />
-    );
+  const renderPlaylistTile = (pl: PermittedYoutubeItem) => (
+    <button type="button"
+      data-dwell
+      key={pl.id}
+      onClick={() => setSelectedSource({ kind: "playlist", id: pl.id, label: pl.label })}
+      className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-gray-800 hover:bg-gray-700 active:scale-95 transition-all text-center w-full h-full min-h-0 overflow-hidden"
+    >
+      <ListVideo size={48} className="text-amber-400 shrink-0" />
+      <span className="text-white text-base font-semibold line-clamp-2 w-full">
+        {pl.label}
+      </span>
+      {pl.description && (
+        <span className="text-gray-400 text-xs line-clamp-2 w-full">
+          {pl.description}
+        </span>
+      )}
+    </button>
+  );
+
+  // Visible sections, in order: pinned videos, channels, playlists. Empty kinds
+  // are omitted.
+  const sections: BrowseSection[] = [];
+  if (videos.length > 0) {
+    sections.push({ key: "videos", title: t("youtubeApp.pinnedVideos"), items: videos, getKey: (v) => v.videoId, renderItem: renderVideoTile });
   }
-  if (channels.length === 0) {
+  if (channels.length > 0) {
+    sections.push({ key: "channels", title: t("youtubeApp.channelsHeading"), items: channels, getKey: (c) => c.channelId, renderItem: renderChannelTile });
+  }
+  if (playlists.length > 0) {
+    sections.push({ key: "playlists", title: t("youtubeApp.playlistsHeading"), items: playlists, getKey: (p) => p.id, renderItem: renderPlaylistTile });
+  }
+
+  // A single kind → keep the full-screen PaginatedGrid (existing behavior).
+  if (sections.length === 1) {
+    const only = sections[0];
+    const title = only.key === "channels" ? t("youtubeApp.chooseChannel") : only.title;
     return (
       <PaginatedGrid
-        title={t("youtubeApp.pinnedVideos")}
-        items={videos}
-        getKey={(v) => v.videoId}
-        renderItem={renderVideoTile}
+        title={title}
+        items={only.items}
+        getKey={only.getKey}
+        renderItem={only.renderItem}
         onClose={onClose}
       />
     );
   }
 
-  // Both present → split-screen "Pinned videos" + "Channels" stacked sections.
-  return (
-    <SectionedBrowseView
-      videos={videos}
-      channels={channels}
-      renderVideoTile={renderVideoTile}
-      renderChannelTile={renderChannelTile}
-      onClose={onClose}
-    />
-  );
+  // Multiple kinds → stacked, each gets an equal share of vertical space.
+  return <SectionedBrowseView sections={sections} onClose={onClose} />;
 }
 
 // ---------------------------------------------------------------------------
-// SectionedBrowseView — two stacked paginated grids: pinned videos + channels
+// SectionedBrowseView — stacked paginated grids, one per content kind
 // ---------------------------------------------------------------------------
 
 function SectionedBrowseView({
-  videos,
-  channels,
-  renderVideoTile,
-  renderChannelTile,
+  sections,
   onClose,
 }: {
-  videos: PermittedYoutubeVideo[];
-  channels: PermittedYoutubeChannel[];
-  renderVideoTile: (v: PermittedYoutubeVideo) => React.ReactNode;
-  renderChannelTile: (c: PermittedYoutubeChannel) => React.ReactNode;
+  sections: BrowseSection[];
   onClose: () => void;
 }) {
   const { t } = useLanguage();
@@ -279,20 +313,17 @@ function SectionedBrowseView({
         </button>
       </div>
 
-      {/* Two stacked sections, each gets ~half the available vertical space. */}
+      {/* Stacked sections, each gets an equal share of the available height. */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <SectionGrid
-          title={t("youtubeApp.pinnedVideos")}
-          items={videos}
-          getKey={(v) => v.videoId}
-          renderItem={renderVideoTile}
-        />
-        <SectionGrid
-          title={t("youtubeApp.channelsHeading")}
-          items={channels}
-          getKey={(c) => c.channelId}
-          renderItem={renderChannelTile}
-        />
+        {sections.map((s) => (
+          <SectionGrid
+            key={s.key}
+            title={s.title}
+            items={s.items}
+            getKey={s.getKey}
+            renderItem={s.renderItem}
+          />
+        ))}
       </div>
     </div>
   );
@@ -387,13 +418,13 @@ function SectionGrid<T>({
 // Single-channel video list — fetched on demand from RSS endpoint
 // ---------------------------------------------------------------------------
 
-function ChannelVideosView({
-  channel,
+function SourceVideosView({
+  source,
   onBack,
   onClose,
   onPickVideo,
 }: {
-  channel: PermittedYoutubeChannel;
+  source: BrowseSource;
   onBack?: () => void;
   onClose: () => void;
   onPickVideo: (v: { videoId: string; title: string }) => void;
@@ -408,10 +439,11 @@ function ChannelVideosView({
     setError(null);
     (async () => {
       try {
-        const res = await apiRequest(
-          "GET",
-          `/api/aac/youtube/channel-videos?channelId=${encodeURIComponent(channel.channelId)}`,
-        );
+        const endpoint =
+          source.kind === "playlist"
+            ? `/api/aac/youtube/playlist-videos?playlistId=${encodeURIComponent(source.id)}`
+            : `/api/aac/youtube/channel-videos?channelId=${encodeURIComponent(source.id)}`;
+        const res = await apiRequest("GET", endpoint);
         const data = await res.json();
         if (cancelled) return;
         const list: RssVideo[] = Array.isArray(data?.videos) ? data.videos : [];
@@ -427,12 +459,12 @@ function ChannelVideosView({
     return () => {
       cancelled = true;
     };
-  }, [channel.channelId, t]);
+  }, [source.kind, source.id, t]);
 
   if (videos === null && !error) {
     return (
       <StatusView
-        title={channel.label}
+        title={source.label}
         message={t("youtubeApp.loading")}
         onBack={onBack}
         onClose={onClose}
@@ -442,7 +474,7 @@ function ChannelVideosView({
   if (error) {
     return (
       <StatusView
-        title={channel.label}
+        title={source.label}
         message={error}
         onBack={onBack}
         onClose={onClose}
@@ -452,7 +484,7 @@ function ChannelVideosView({
 
   return (
     <PaginatedGrid
-      title={channel.label}
+      title={source.label}
       items={videos || []}
       getKey={(v) => v.videoId}
       renderItem={(v) => (

@@ -518,6 +518,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= STUDENT INFORMED-CONSENT ROUTES =============
   // See planning-docs/student-consent-onboarding-plan.md
+
+  // Keep consent surfaces out of search indexes. This covers both the public
+  // sign page (/consent/sign — served by the SPA fallback registered later,
+  // which still carries this header) and the API. Required by the ticket so
+  // sensitive intake forms never surface in search results. Scoped to consent
+  // paths only — the marketing landing must stay indexable.
+  app.use(["/consent", "/api/consent"], (_req, res, next) => {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    next();
+  });
+
   app.get("/api/consent/notice", requireAuth, (req, res) =>
     consentController.getNotice(req, res)
   );
@@ -556,6 +567,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/consent/invitations/verify-otp", (req, res) =>
     consentController.verifyPhoneOtp(req, res)
+  );
+  app.post("/api/consent/invitations/verify-id", (req, res) =>
+    consentController.verifyChildId(req, res)
   );
   app.post("/api/consent/invitations/:id/revoke", requireAuth, (req, res) =>
     consentController.revokeInvitation(req, res)
@@ -1260,6 +1274,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ channelId, videos });
     } catch (err: any) {
       console.error("[routes] channel-videos failed:", err?.message || err);
+      return res.status(500).json({ error: "Fetch failed" });
+    }
+  });
+
+  // Unified resolver — detect whether a pasted string is a channel, playlist,
+  // or video, resolve its canonical id, and fetch display title/description
+  // (+ thumbnail for videos/playlists). Backs the single "add YouTube content"
+  // input in the clinician settings UI. No API key required (public scrape).
+  app.post("/api/aac/youtube/resolve", optionalAuth, async (req, res) => {
+    try {
+      const { input } = req.body || {};
+      if (typeof input !== "string" || !input.trim()) {
+        return res.status(400).json({ error: "input required" });
+      }
+      const {
+        resolveYoutubeItemFromUrl,
+        fetchChannelMetadata,
+        fetchVideoMetadata,
+        fetchPlaylistMetadata,
+      } = await import("./services/youtube/channel-search");
+      const resolved = await resolveYoutubeItemFromUrl(input);
+      if (!resolved) {
+        return res.status(404).json({ error: "Could not recognize that YouTube URL or ID." });
+      }
+      let title: string | null = null;
+      let description: string | null = null;
+      let thumbnailUrl: string | null = null;
+      if (resolved.type === "channel") {
+        const m = await fetchChannelMetadata(resolved.id);
+        title = m.title;
+        description = m.description;
+      } else if (resolved.type === "video") {
+        const m = await fetchVideoMetadata(resolved.id);
+        title = m.title;
+        description = m.description;
+        thumbnailUrl = m.thumbnailUrl;
+      } else {
+        const m = await fetchPlaylistMetadata(resolved.id);
+        title = m.title;
+        description = m.description;
+        thumbnailUrl = m.thumbnailUrl;
+      }
+      return res.json({ type: resolved.type, id: resolved.id, title, description, thumbnailUrl });
+    } catch (err: any) {
+      console.error("[routes] youtube resolve failed:", err?.message || err);
+      return res.status(500).json({ error: "Resolver failed" });
+    }
+  });
+
+  // List videos in a YouTube playlist (RSS-backed). Public data; the client
+  // already knows the playlistId because the server sent the permitted-items
+  // list to it.
+  app.get("/api/aac/youtube/playlist-videos", optionalAuth, async (req, res) => {
+    try {
+      const playlistId = req.query.playlistId;
+      if (typeof playlistId !== "string" || !/^(PL|UU|OL|LL|FL)[A-Za-z0-9_-]{10,}$/.test(playlistId)) {
+        return res.status(400).json({ error: "valid playlistId required" });
+      }
+      const { fetchPlaylistRssVideos } = await import("./services/youtube/channel-search");
+      const videos = await fetchPlaylistRssVideos(playlistId);
+      return res.json({ playlistId, videos });
+    } catch (err: any) {
+      console.error("[routes] playlist-videos failed:", err?.message || err);
       return res.status(500).json({ error: "Fetch failed" });
     }
   });

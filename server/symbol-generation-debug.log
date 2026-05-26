@@ -7869,3 +7869,45 @@
 [2026-05-26T06:13:36.939Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
 [2026-05-26T06:23:34.123Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-05-26T06:23:34.124Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T08:39:02.915Z] [resolveImageKeys] Resolving 1 keys: what_today (format=internal, useUnapproved=true)
+[2026-05-26T08:39:05.846Z] [resolveImageKeys] No symbol found for "what_today"
+[2026-05-26T08:39:05.847Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: what_today
+[2026-05-26T08:39:05.851Z] [queueGeneration] Queuing 1 keys: what_today (hasCallback=true)
+[2026-05-26T08:39:05.859Z] [resolveImageKeys] Resolving 1 keys: what_today (format=api-path, useUnapproved=true)
+[2026-05-26T08:39:07.271Z] [processQueue] Generating "what_today"...
+[2026-05-26T08:39:07.302Z] [resolveImageKeys] No symbol found for "what_today"
+[2026-05-26T08:39:07.303Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: what_today
+[2026-05-26T08:39:07.304Z] [queueGeneration] Queuing 1 keys: what_today (hasCallback=true)
+[2026-05-26T08:39:25.361Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T08:39:25.363Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T08:39:30.766Z] [COST] imageKey="what_today" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=77 | image: openai/gpt-image-1 in=83 out=272
+[2026-05-26T08:39:30.766Z] [processQueue] Generated "what_today" → eb94ff4f-e1ef-4bd1-878f-72b2ac98a1ee (1 total)
+[2026-05-26T08:39:30.767Z] [processQueue] FULL REFINED PROMPT for "what_today": A simple AAC icon showing a calendar page with the current day highlighted, a large question mark above it, in flat AAC icon style. The calendar page is white with a bold black outline, showing a grid of days. One square on the grid is filled with a bright color like yellow or green to indicate "today". The question mark is large and black, centered above the calendar.
+[2026-05-26T08:39:34.950Z] [processQueue] "what_today" already exists → eb94ff4f-e1ef-4bd1-878f-72b2ac98a1ee
+[2026-05-26T08:39:51.524Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=internal, useUnapproved=true)
+[2026-05-26T08:39:52.804Z] [resolveImageKeys] No symbol found for "clothing_store"
+[2026-05-26T08:39:52.805Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: clothing_store
+[2026-05-26T08:39:52.806Z] [queueGeneration] Queuing 1 keys: clothing_store (hasCallback=true)
+[2026-05-26T08:39:52.809Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=api-path, useUnapproved=true)
+[2026-05-26T08:39:55.083Z] [processQueue] Generating "clothing_store"...
+[2026-05-26T08:39:55.099Z] [resolveImageKeys] No symbol found for "clothing_store"
+[2026-05-26T08:39:55.100Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: clothing_store
+[2026-05-26T08:39:55.101Z] [queueGeneration] Queuing 1 keys: clothing_store (hasCallback=true)
+[2026-05-26T08:40:10.286Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=internal, useUnapproved=true)
+[2026-05-26T08:40:10.886Z] [resolveImageKeys] No symbol found for "clothing_store"
+[2026-05-26T08:40:10.887Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: clothing_store
+[2026-05-26T08:40:10.888Z] [queueGeneration] Queuing 1 keys: clothing_store (hasCallback=true)
+[2026-05-26T08:40:10.892Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=api-path, useUnapproved=true)
+[2026-05-26T08:40:11.854Z] [COST] imageKey="clothing_store" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=88 | image: openai/gpt-image-1 in=95 out=272
+[2026-05-26T08:40:11.856Z] [processQueue] Generated "clothing_store" → 93888596-3a8c-42f5-b41c-acc4df02cb75 (1 total)
+[2026-05-26T08:40:11.858Z] [processQueue] FULL REFINED PROMPT for "clothing_store": A simple, bold AAC icon illustration of a clothing store. The image features a generic, stylized storefront with a large rectangular display window. Inside the window, two simple, generic clothing items are visible: a plain t-shirt and a pair of pants, hanging on minimalist hangers. The storefront has a single, simple door next to the window. The building is depicted with flat, solid colors and thick black outlines, on a transparent background.
+[2026-05-26T08:40:12.069Z] [resolveImageKeys] Resolved "clothing_store" → /api/custom-symbols/93888596-3a8c-42f5-b41c-acc4df02cb75/image
+[2026-05-26T08:40:12.070Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T08:40:16.045Z] [processQueue] "clothing_store" already exists → 93888596-3a8c-42f5-b41c-acc4df02cb75
+[2026-05-26T08:40:20.228Z] [processQueue] "clothing_store" already exists → 93888596-3a8c-42f5-b41c-acc4df02cb75
+[2026-05-26T08:40:21.118Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=internal, useUnapproved=true)
+[2026-05-26T08:40:21.692Z] [resolveImageKeys] Resolved "clothing_store" → __SYMBOL__:93888596-3a8c-42f5-b41c-acc4df02cb75
+[2026-05-26T08:40:21.693Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T08:40:21.697Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=api-path, useUnapproved=true)
+[2026-05-26T08:40:22.870Z] [resolveImageKeys] Resolved "clothing_store" → /api/custom-symbols/93888596-3a8c-42f5-b41c-acc4df02cb75/image
+[2026-05-26T08:40:22.871Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

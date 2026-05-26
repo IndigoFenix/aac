@@ -27,11 +27,31 @@ function useCodeFromQuery(): string | undefined {
   }, [search]);
 }
 
+/**
+ * Inject a `noindex, nofollow` robots meta tag while this page is mounted.
+ * The authoritative signal is the server's X-Robots-Tag header (see
+ * server/routes.ts), but this guards client-rendered navigations and crawlers
+ * that execute JS. Removed on unmount so the tag never leaks to other routes.
+ */
+function useNoIndex() {
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex, nofollow";
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, []);
+}
+
 export function ConsentSignPage() {
   const { t } = useLanguage();
   const code = useCodeFromQuery();
   const invitationQuery = useConsentInvitation(code);
   const [signed, setSigned] = useState(false);
+
+  useNoIndex();
 
   // Open the wizard immediately once the invitation context resolves so the
   // parent doesn't see an empty page first.

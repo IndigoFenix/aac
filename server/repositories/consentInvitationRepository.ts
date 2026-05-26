@@ -9,7 +9,7 @@ import {
   type InsertConsentInvitation,
 } from "@shared/schema";
 import { db } from "../db.js";
-import { and, eq, isNull, gt } from "drizzle-orm";
+import { and, eq, isNull, gt, sql } from "drizzle-orm";
 
 /**
  * Same alphabet as the share-invite codes — unambiguous to type. 12 chars
@@ -89,6 +89,32 @@ export class ConsentInvitationRepository {
           isNull(consentInvitations.revokedAt),
         ),
       )
+      .returning();
+    return row || undefined;
+  }
+
+  /**
+   * Atomically increment the ID-verify attempt counter and return the new
+   * value. Used by the email-channel child-ID gate to cap brute force.
+   */
+  async incrementIdVerifyAttempts(id: string): Promise<number> {
+    const [row] = await db
+      .update(consentInvitations)
+      .set({
+        idVerifyAttempts: sql`${consentInvitations.idVerifyAttempts} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(consentInvitations.id, id))
+      .returning({ attempts: consentInvitations.idVerifyAttempts });
+    return row?.attempts ?? 0;
+  }
+
+  /** Stamp the invitation as having passed the child-ID knowledge check. */
+  async markIdVerified(id: string): Promise<ConsentInvitation | undefined> {
+    const [row] = await db
+      .update(consentInvitations)
+      .set({ idVerifiedAt: new Date(), updatedAt: new Date() })
+      .where(eq(consentInvitations.id, id))
       .returning();
     return row || undefined;
   }

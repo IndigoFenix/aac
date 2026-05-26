@@ -99,6 +99,15 @@ export interface WizardContextResponse {
   activeConsent: StudentConsentRecord | null;
 }
 
+/** Supplemental signature evidence (type-to-sign or draw-to-sign). */
+export interface ConsentSignaturePayload {
+  mode: "typed" | "drawn";
+  typedName?: string;
+  /** PNG data URL when drawn. */
+  image?: string;
+  signedAt: string;
+}
+
 export interface SignConsentRequest {
   signedByContactId: string;
   locale: string;
@@ -117,6 +126,7 @@ export interface SignConsentRequest {
   optInAdvertising?: boolean;
   optInThirdPartyResearch?: boolean;
   optInMarketingComms?: boolean;
+  signature?: ConsentSignaturePayload;
   isSensitive?: boolean;
 }
 
@@ -214,6 +224,8 @@ export interface ConsentInvitationContextResponse {
   invitationId: string;
   channel: "email" | "sms" | "manual";
   requiresPhoneOtp: boolean;
+  requiresIdVerification: boolean;
+  idVerified: boolean;
   contactPhoneMasked: string | null;
   student: {
     id: string;
@@ -252,6 +264,7 @@ export interface SignWithTokenRequest {
   optInAdvertising?: boolean;
   optInThirdPartyResearch?: boolean;
   optInMarketingComms?: boolean;
+  signature?: ConsentSignaturePayload;
   isSensitive?: boolean;
 }
 
@@ -389,6 +402,32 @@ export function useVerifyPhoneOtp() {
   >({
     mutationFn: async (body) => {
       const res = await apiRequest("POST", "/api/consent/invitations/verify-otp", body);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const e = new Error(err.message ?? `Verify failed (${res.status})`);
+        (e as any).code = err.code;
+        (e as any).details = err.details;
+        throw e;
+      }
+      return res.json();
+    },
+  });
+}
+
+/**
+ * Public — no auth. Verifies the last-4 of the child's institute ID for an
+ * email-channel invitation. On failure, the thrown error carries `.code`
+ * (e.g. child_id_mismatch / child_id_verify_locked) and `.details`
+ * (`attemptsRemaining`).
+ */
+export function useVerifyChildId() {
+  return useMutation<
+    { success: true; verifiedAt: string; attemptsRemaining: number },
+    Error,
+    { code: string; last4: string }
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/invitations/verify-id", body);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const e = new Error(err.message ?? `Verify failed (${res.status})`);

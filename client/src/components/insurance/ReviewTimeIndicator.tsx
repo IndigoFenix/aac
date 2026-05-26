@@ -12,6 +12,25 @@ function currentPeriod(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Format a duration into the two largest meaningful units so long review
+ * periods read as days/hours rather than a single large minute count.
+ * e.g. 1d 2h, 3h 15m, 45m.
+ */
+function formatDuration(
+  totalSeconds: number,
+  units: { day: string; hour: string; min: string },
+): string {
+  const totalMinutes = Math.round(totalSeconds / 60);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const mins = totalMinutes % 60;
+
+  if (days > 0) return `${days}${units.day} ${hours}${units.hour}`;
+  if (hours > 0) return `${hours}${units.hour} ${mins}${units.min}`;
+  return `${mins}${units.min}`;
+}
+
 interface Props {
   /** Hide the indicator when false. */
   enabled: boolean;
@@ -53,7 +72,11 @@ export function ReviewTimeIndicator({ enabled, instituteId, studentId }: Props) 
   if (!isEnabled || !data) return null;
 
   const row = data.rollup.students.find((s) => s.studentId === studentId);
-  const minutes = row ? Math.round(row.totalSeconds / 60) : 0;
+  const duration = formatDuration(row?.totalSeconds ?? 0, {
+    day: t('insurance.clinTime.dayShort') || 'd',
+    hour: t('insurance.clinTime.hourShort') || 'h',
+    min: t('insurance.clinTime.minShort') || 'min',
+  });
 
   return (
     <div
@@ -66,7 +89,7 @@ export function ReviewTimeIndicator({ enabled, instituteId, studentId }: Props) 
     >
       <Receipt className="w-3 h-3" />
       <span>
-        {minutes} {t('insurance.clinTime.minThisMonth') || 'min reviewed this month'}
+        {duration} {t('insurance.clinTime.reviewedThisMonth') || 'reviewed this month'}
       </span>
     </div>
   );

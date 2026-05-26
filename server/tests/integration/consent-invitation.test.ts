@@ -7,13 +7,13 @@
  */
 
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 import { truncateAll, db } from '../helpers/db.js';
 import { makeUser, makeStudent, makeInstitute } from '../helpers/factories.js';
 import { studentRepository } from '../../repositories/studentRepository.js';
 import { instituteRepository } from '../../repositories/instituteRepository.js';
-import { studentContacts, consentInvitations } from '@shared/schema';
+import { studentContacts, consentInvitations, instituteStudents } from '@shared/schema';
 import {
   consentInvitationService,
   ConsentInvitationError,
@@ -58,6 +58,37 @@ describe('Consent invitation service', () => {
       expect(result.invitation.codeHash).not.toBe(result.code);
       expect(result.invitation.codeHash).toMatch(/^[0-9a-f]{64}$/);
       expect(result.redemptionUrl).toContain(result.code);
+    });
+
+    it('defaults the link expiry to 72 hours', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      const before = Date.now();
+      const { invitation } = await consentInvitationService.createInvitation({
+        studentId: student.id,
+        contactId: contact.id,
+        sourceInstituteId: institute.id,
+        createdByUserId: clinician.id,
+        channel: 'email',
+      });
+      const ttlMs = new Date(invitation.expiresAt).getTime() - before;
+      // ~72h, with slack for test-execution time on either side.
+      expect(ttlMs).toBeGreaterThan(71 * 3600_000);
+      expect(ttlMs).toBeLessThanOrEqual(72 * 3600_000 + 60_000);
+    });
+
+    it('clamps an over-long ttlDays request down to the 72h ceiling', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      const before = Date.now();
+      const { invitation } = await consentInvitationService.createInvitation({
+        studentId: student.id,
+        contactId: contact.id,
+        sourceInstituteId: institute.id,
+        createdByUserId: clinician.id,
+        channel: 'email',
+        ttlDays: 30, // would be 720h if honored
+      });
+      const ttlMs = new Date(invitation.expiresAt).getTime() - before;
+      expect(ttlMs).toBeLessThanOrEqual(72 * 3600_000 + 60_000);
     });
 
     it('rejects when the contact has no email and channel is email', async () => {
@@ -207,6 +238,53 @@ describe('Consent invitation service', () => {
       expect(updatedContact.governmentIdVerificationProvider).toBe('self_declared_via_magic_link');
     });
 
+    it('threads signature evidence into the consent non-repudiation record', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      const { code } = await consentInvitationService.createInvitation({
+        studentId: student.id,
+        contactId: contact.id,
+        sourceInstituteId: institute.id,
+        createdByUserId: clinician.id,
+        channel: 'email',
+      });
+
+      const { lookupConsentNotice, renderNoticeForHashing } = await import('@shared/legal');
+      const { createHash } = await import('node:crypto');
+      const notice = lookupConsentNotice({ country: 'IL', locale: 'en' })!;
+      const hash = createHash('sha256').update(renderNoticeForHashing(notice.content)).digest('hex');
+
+      const result = await consentInvitationService.signWithToken({
+        code,
+        payload: {
+          locale: 'en',
+          consentTextVersion: notice.version,
+          consentTextHash: hash,
+          thirdPartyRecipients: [],
+          purposeAcknowledged: true,
+          voluntarinessAcknowledged: true,
+          thirdPartyTransfersAcknowledged: true,
+          identityVerificationMethod: 'verified_phone_otp',
+          identityVerificationEvidence: {},
+          nonRepudiationMethod: 'verified_phone_otp',
+          // The controller maps the top-level `signature` field into here; the
+          // service is responsible for preserving it on the consent record.
+          nonRepudiationEvidence: {
+            signature: { mode: 'typed', typedName: 'Jane Parent', signedAt: '2026-05-26T00:00:00Z' },
+          },
+          isSensitive: false,
+        } as any,
+        guardianFields: { coGuardianAcknowledged: true },
+        signedFromIp: '203.0.113.7',
+        signedFromUserAgent: 'TestAgent/1.0',
+      });
+
+      const evidence = result.consent.nonRepudiationEvidence as any;
+      expect(evidence.signature).toMatchObject({ mode: 'typed', typedName: 'Jane Parent' });
+      // Existing magic-link evidence must still be present alongside it.
+      expect(evidence.signedViaMagicLink).toBe(true);
+      expect(evidence.signedFromIp).toBe('203.0.113.7');
+    });
+
     it('rejects double-use of the same token', async () => {
       const { clinician, institute, student, contact } = await setup();
       const { code } = await consentInvitationService.createInvitation({
@@ -327,6 +405,133 @@ describe('Consent invitation service', () => {
         if (prevEnv === undefined) delete process.env.NODE_ENV;
         else process.env.NODE_ENV = prevEnv;
       }
+    });
+  });
+
+  describe('signWithToken — email-channel child-ID gate', () => {
+    // Stamp an institute ID on the child's enrollment so the email gate has
+    // something to verify against. Full ID '123456789' → last 4 = '6789'.
+    async function setChildId(instituteId: string, studentId: string, idNumber: string) {
+      await db
+        .update(instituteStudents)
+        .set({ idNumber })
+        .where(and(eq(instituteStudents.instituteId, instituteId), eq(instituteStudents.studentId, studentId)));
+    }
+
+    async function noticeHash() {
+      const { lookupConsentNotice, renderNoticeForHashing } = await import('@shared/legal');
+      const { createHash } = await import('node:crypto');
+      const notice = lookupConsentNotice({ country: 'IL', locale: 'en' })!;
+      const hash = createHash('sha256').update(renderNoticeForHashing(notice.content)).digest('hex');
+      return { version: notice.version, hash };
+    }
+
+    function payload(version: string, hash: string): any {
+      return {
+        locale: 'en',
+        consentTextVersion: version,
+        consentTextHash: hash,
+        thirdPartyRecipients: [],
+        purposeAcknowledged: true,
+        voluntarinessAcknowledged: true,
+        thirdPartyTransfersAcknowledged: true,
+        identityVerificationMethod: 'verified_phone_otp',
+        identityVerificationEvidence: {},
+        nonRepudiationMethod: 'verified_phone_otp',
+        nonRepudiationEvidence: {},
+        isSensitive: false,
+      };
+    }
+
+    it('exposes requiresIdVerification only when a child ID is on file', async () => {
+      const { clinician, institute, student, contact } = await setup();
+
+      const { code: noIdCode } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+      const ctxNoId = await consentInvitationService.redeemContext(noIdCode);
+      expect(ctxNoId.requiresIdVerification).toBe(false);
+
+      await setChildId(institute.id, student.id, '123456789');
+      const { code: withIdCode } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+      const ctxWithId = await consentInvitationService.redeemContext(withIdCode);
+      expect(ctxWithId.requiresIdVerification).toBe(true);
+      expect(ctxWithId.idVerified).toBe(false);
+    });
+
+    it('blocks signing an email invitation until the child ID is verified', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      await setChildId(institute.id, student.id, '123456789');
+      const { code } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+      const { version, hash } = await noticeHash();
+
+      await expect(
+        consentInvitationService.signWithToken({
+          code, payload: payload(version, hash),
+          guardianFields: { coGuardianAcknowledged: true },
+        }),
+      ).rejects.toMatchObject({ code: 'child_id_verification_required' });
+    });
+
+    it('rejects a wrong last-4 and decrements the remaining attempts', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      await setChildId(institute.id, student.id, '123456789');
+      const { code } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+
+      await expect(
+        consentInvitationService.verifyChildId({ code, last4: '0000' }),
+      ).rejects.toMatchObject({ code: 'child_id_mismatch', details: { attemptsRemaining: 4 } });
+    });
+
+    it('locks the gate after too many wrong attempts', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      await setChildId(institute.id, student.id, '123456789');
+      const { code } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+
+      for (let i = 0; i < 5; i++) {
+        await expect(
+          consentInvitationService.verifyChildId({ code, last4: '0000' }),
+        ).rejects.toMatchObject({ code: 'child_id_mismatch' });
+      }
+      // 6th attempt — even with the CORRECT code — is refused: the gate locked.
+      await expect(
+        consentInvitationService.verifyChildId({ code, last4: '6789' }),
+      ).rejects.toMatchObject({ code: 'child_id_verify_locked' });
+    });
+
+    it('verifies the correct last-4 and then allows signing', async () => {
+      const { clinician, institute, student, contact } = await setup();
+      await setChildId(institute.id, student.id, '123456789');
+      const { code } = await consentInvitationService.createInvitation({
+        studentId: student.id, contactId: contact.id, sourceInstituteId: institute.id,
+        createdByUserId: clinician.id, channel: 'email',
+      });
+      const { version, hash } = await noticeHash();
+
+      const verify = await consentInvitationService.verifyChildId({ code, last4: '6789' });
+      expect(verify.verifiedAt).toBeInstanceOf(Date);
+
+      const result = await consentInvitationService.signWithToken({
+        code, payload: payload(version, hash),
+        guardianFields: { coGuardianAcknowledged: true },
+      });
+      expect(result.consent.id).toBeDefined();
+      const evidence = result.consent.identityVerificationEvidence as any;
+      expect(evidence.childIdVerifyMethod).toBe('last4_institute_id_match');
+      expect(evidence.childIdVerifiedAt).toBeDefined();
     });
   });
 

@@ -12,18 +12,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Plus,
   Settings2,
   Mic,
   MicOff,
@@ -623,30 +616,22 @@ export function ChatFeature() {
           isListening ? "border-red-500/50 ring-2 ring-red-500/20" : "border-card-border"
         )}
       >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
-              data-testid="button-add-attachment"
-              aria-label={t('chat.addAttachment')}
-              disabled={isUploadingFile}
-            >
-              {isUploadingFile ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Plus className="w-5 h-5" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={handleAddFilesClick}>
-              <Paperclip className="w-4 h-4 me-2" />
-              {t('chat.addFiles')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
+          data-testid="button-add-attachment"
+          aria-label={t('chat.addFiles')}
+          title={t('chat.addFiles')}
+          disabled={isUploadingFile}
+          onClick={handleAddFilesClick}
+        >
+          {isUploadingFile ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Paperclip className="w-5 h-5" />
+          )}
+        </Button>
 
         {showTools && (
           <Button

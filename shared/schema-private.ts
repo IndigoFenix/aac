@@ -548,12 +548,16 @@ export const aacSettings = pgTable("aac_settings", {
   // Permitted websites — array of { url, label, description?, subpages? } the AI is allowed to open via the browser app
   permittedWebsites: jsonb("permitted_websites").default([]),
 
-  // Permitted YouTube channels — array of { channelId, label, description? }. When empty, searches are unrestricted.
+  // Unified permitted YouTube content — array of { type: 'channel'|'playlist'|'video', id, label, description? }.
+  // Supersedes permittedYoutubeChannels/permittedYoutubeVideos below. The two
+  // legacy columns are retained (and backfilled into this one by migration
+  // 0109) for rollback safety, but are no longer written to.
+  permittedYoutubeItems: jsonb("permitted_youtube_items").default([]),
+
+  // DEPRECATED — superseded by permittedYoutubeItems. Array of { channelId, label, description? }.
   permittedYoutubeChannels: jsonb("permitted_youtube_channels").default([]),
 
-  // Pinned YouTube videos — array of { videoId, label, description? }. A
-  // curated playlist of specific videos the AAC student can pick directly
-  // and that the AI can autoplay by id/title.
+  // DEPRECATED — superseded by permittedYoutubeItems. Array of { videoId, label, description? }.
   permittedYoutubeVideos: jsonb("permitted_youtube_videos").default([]),
 
   // Accessibility — single JSON blob so new options don't require migrations
@@ -1507,6 +1511,14 @@ export const consentInvitations = pgTable("consent_invitations", {
   signedConsentId: varchar("signed_consent_id").references(() => studentConsentRecords.id),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   revokedByUserId: varchar("revoked_by_user_id").references(() => users.id),
+
+  // Email-channel secondary-factor gate (PPA Feb-2026): before signing, the
+  // parent proves knowledge of the last 4 of the child's institute ID. This is
+  // the email-path analogue of the SMS phone-OTP gate. idVerifyAttempts caps
+  // brute force (last-4 = 10k combos); once exhausted the gate locks until the
+  // clinician re-issues the invitation. Null idVerifiedAt = not yet verified.
+  idVerifiedAt: timestamp("id_verified_at", { withTimezone: true }),
+  idVerifyAttempts: integer("id_verify_attempts").default(0).notNull(),
 
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

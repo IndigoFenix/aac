@@ -1,8 +1,8 @@
 // server/services/youtube/youtube-search.ts
 // YouTube Data API v3 search with child-safety filters
 
-import type { PermittedYoutubeChannel } from "@shared/schema";
-import { searchWithinPermittedChannels } from "./channel-search";
+import type { PermittedYoutubeChannel, PermittedYoutubeItem } from "@shared/schema";
+import { searchWithinPermittedSources } from "./channel-search";
 
 export interface YouTubeSearchResult {
   videoId: string;
@@ -14,8 +14,9 @@ export interface YouTubeSearchResult {
 /**
  * Search YouTube for a child-safe video matching the query.
  *
- * If `permittedChannels` has entries, the search is restricted to those
- * channels (RSS-backed when no API key; Data API when available).
+ * If `permittedChannels` or `permittedPlaylists` has entries, the search is
+ * restricted to those sources (RSS-backed when no API key; Data API for
+ * channels when available).
  *
  * Otherwise, falls back to an unrestricted Data API search (requires
  * YOUTUBE_API_KEY — returns null without one).
@@ -23,9 +24,12 @@ export interface YouTubeSearchResult {
 export async function searchYouTube(
   query: string,
   permittedChannels?: PermittedYoutubeChannel[],
+  permittedPlaylists?: PermittedYoutubeItem[],
 ): Promise<YouTubeSearchResult | null> {
-  if (permittedChannels && permittedChannels.length > 0) {
-    return searchWithinPermittedChannels(query, permittedChannels);
+  const channels = permittedChannels || [];
+  const playlists = permittedPlaylists || [];
+  if (channels.length > 0 || playlists.length > 0) {
+    return searchWithinPermittedSources(query, channels, playlists);
   }
   return searchYouTubeUnrestricted(query);
 }

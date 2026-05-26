@@ -12,12 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -29,7 +23,6 @@ import {
   Minimize2,
   MessageCircle,
   Sparkles,
-  Plus,
   Paperclip,
   X,
   FileText,
@@ -642,30 +635,22 @@ export function ChatPopup() {
             inputExpanded ? "rounded-2xl flex-1 min-h-0" : "rounded-2xl",
             isListening ? "bg-red-500/10 ring-1 ring-red-500/30" : "bg-muted"
           )}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 rounded-full mb-1"
-                  data-testid="chat-popup-add-attachment"
-                  aria-label={t('chat.addAttachment')}
-                  disabled={isUploadingFile}
-                >
-                  {isUploadingFile ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={handleAddFilesClick}>
-                  <Paperclip className="w-3.5 h-3.5 me-2" />
-                  {t('chat.addFiles')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 rounded-full mb-1"
+              data-testid="chat-popup-add-attachment"
+              aria-label={t('chat.addFiles')}
+              title={t('chat.addFiles')}
+              disabled={isUploadingFile}
+              onClick={handleAddFilesClick}
+            >
+              {isUploadingFile ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Paperclip className="w-3.5 h-3.5" />
+              )}
+            </Button>
 
             <textarea
               ref={inputRef}

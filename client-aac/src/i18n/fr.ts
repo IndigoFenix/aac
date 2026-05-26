@@ -730,6 +730,7 @@ export const fr: Translations = {
     chooseChannel: "Choisir une cha\u00eene",
     pinnedVideos: "\u00c9pingl\u00e9s",
     channelsHeading: "Cha\u00eenes",
+    playlistsHeading: "Listes de lecture",
     browseTitle: "YouTube",
     backToChannels: "Retour aux cha\u00eenes",
     loading: "Chargement...",

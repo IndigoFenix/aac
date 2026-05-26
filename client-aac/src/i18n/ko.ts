@@ -730,6 +730,7 @@ export const ko: Translations = {
     chooseChannel: "채널 선택",
     pinnedVideos: "고정 영상",
     channelsHeading: "채널",
+    playlistsHeading: "재생목록",
     browseTitle: "YouTube",
     backToChannels: "채널 목록으로",
     loading: "불러오는 중...",

@@ -48,7 +48,7 @@ import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
 import type { PermittedWebsite, PermittedYoutubeVideo } from "@shared/schema";
 import { isUrlPermitted, mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
-import { fetchRecentVideosForChannels } from "../youtube/channel-search";
+import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
 import { licenseService } from "../licenseService";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
@@ -1649,6 +1649,7 @@ export class LiveRelay {
               permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
               permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
               permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
+              permittedYoutubePlaylists: state.permittedYoutubePlaylists.length > 0 ? state.permittedYoutubePlaylists : undefined,
               autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
               useDirectAudio: this.useDirectAudio,
               sessionGoals: sections?.sessionGoals,
@@ -2032,8 +2033,12 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
             permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
             permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
+            permittedYoutubePlaylists: state.permittedYoutubePlaylists.length > 0 ? state.permittedYoutubePlaylists : undefined,
             youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
               ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
+              : undefined,
+            youtubePlaylistVideos: state.permittedYoutubePlaylists.length > 0
+              ? await fetchRecentVideosForPlaylists(state.permittedYoutubePlaylists)
               : undefined,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
             useDirectAudio: true,
@@ -3403,36 +3408,39 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           if (appId === "youtube") {
             const channels = state?.permittedYoutubeChannels || [];
             const videos = state?.permittedYoutubeVideos || [];
+            const playlists = state?.permittedYoutubePlaylists || [];
             const hasChannels = channels.length > 0;
             const hasVideos = videos.length > 0;
+            const hasPlaylists = playlists.length > 0;
+            const hasContent = hasChannels || hasVideos || hasPlaylists;
             const hasApiKey = !!process.env.YOUTUBE_API_KEY;
 
             // No data + nothing configured → nothing to show. Tell the AI.
-            if (!data && !hasChannels && !hasVideos) {
+            if (!data && !hasContent) {
               return {
                 id: call.id,
                 name,
                 response: {
-                  output: "error: open_app(youtube) needs a `data` parameter (search query) when no permitted channels or pinned videos are configured. Pass e.g. 'counting songs'.",
+                  output: "error: open_app(youtube) needs a `data` parameter (search query) when no permitted channels, playlists, or pinned videos are configured. Pass e.g. 'counting songs'.",
                 },
               };
             }
-            // No channels/videos and no API key → search can't run at all.
-            if (!hasChannels && !hasVideos && !hasApiKey) {
+            // No content and no API key → search can't run at all.
+            if (!hasContent && !hasApiKey) {
               return {
                 id: call.id,
                 name,
                 response: {
-                  output: "error: YouTube is unavailable — no permitted channels or pinned videos are configured and no API key is set. Tell the user this activity isn't available and suggest something else.",
+                  output: "error: YouTube is unavailable — no permitted channels, playlists, or pinned videos are configured and no API key is set. Tell the user this activity isn't available and suggest something else.",
                 },
               };
             }
-            // No data + channels/videos → open the browse UI so the user
-            // picks something manually. Don't run a search, don't auto-play.
-            if (!data && (hasChannels || hasVideos)) {
+            // No data + content → open the browse UI so the user picks
+            // something manually. Don't run a search, don't auto-play.
+            if (!data && hasContent) {
               this.send({
                 type: "app_open",
-                data: { appId: "youtube", appData: { channels, videos } },
+                data: { appId: "youtube", appData: { channels, videos, playlists } },
               });
               // Clear openAppData so the post-turn handler doesn't also run a search.
               this.turnAccum.openAppData = null;
@@ -4298,6 +4306,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         try {
           const channels = this.sessionCache?.state?.permittedYoutubeChannels || [];
           const videos = this.sessionCache?.state?.permittedYoutubeVideos || [];
+          const playlists = this.sessionCache?.state?.permittedYoutubePlaylists || [];
           const query = (openAppData.data || "").trim();
 
           // 1. Pinned-video direct hit. Prefer videoId; fall back to exact
@@ -4318,12 +4327,13 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
                 title: pinnedHit.label,
                 channels: channels.length > 0 ? channels : undefined,
                 videos: videos.length > 0 ? videos : undefined,
+                playlists: playlists.length > 0 ? playlists : undefined,
               },
             });
             return;
           }
 
-          const results = await searchYouTube(query, channels);
+          const results = await searchYouTube(query, channels, playlists);
           if (results) {
             logLiveSession(
               "YOUTUBE_SEARCH",
@@ -4334,22 +4344,23 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
               data: {
                 videoId: results.videoId,
                 title: results.title,
-                // Include permitted channels + pinned videos so the player can
-                // offer a "← browse" button back to the approved content list.
+                // Include permitted channels/playlists + pinned videos so the
+                // player can offer a "← browse" button back to the approved set.
                 channels: channels.length > 0 ? channels : undefined,
                 videos: videos.length > 0 ? videos : undefined,
+                playlists: playlists.length > 0 ? playlists : undefined,
               },
             });
-          } else if (channels.length > 0 || videos.length > 0) {
+          } else if (channels.length > 0 || videos.length > 0 || playlists.length > 0) {
             // No title matched — fall back to browse mode instead of playing
             // something unrelated. Student can pick from the curated set.
             logLiveSession(
               "YOUTUBE_SEARCH_NO_MATCH_BROWSE",
-              `query="${query}" channels=${channels.length} videos=${videos.length}`,
+              `query="${query}" channels=${channels.length} playlists=${playlists.length} videos=${videos.length}`,
             );
             this.send({
               type: "app_open",
-              data: { appId: "youtube", appData: { channels, videos } },
+              data: { appId: "youtube", appData: { channels, videos, playlists } },
             });
             this.provider?.sendContextInjection(
               `[SYSTEM] YouTube search for "${query}" didn't match any permitted video titles. The browser is now open on screen so the user can pick something themselves.`,
