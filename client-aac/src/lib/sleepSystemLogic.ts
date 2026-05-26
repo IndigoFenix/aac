@@ -70,16 +70,25 @@ export function nextSleepState(
   thresholds: SleepThresholds,
   dampMult: number,
 ): SleepState {
-  const dampedEngaged = Math.min(1, thresholds.engaged * dampMult);
   const dampedWakeup = Math.min(1, thresholds.wakeup * dampMult);
   switch (current) {
     case "hibernation":
     case "waking":
       return current;
     case "awake":
-      return score < thresholds.rest ? "resting" : "awake";
+      // Resting is NO LONGER score-driven — it's an AI decision (the model
+      // calls rest() when the user is present but not using the AAC), applied
+      // via setSleepState. The score machine only handles the "nobody's here"
+      // case from awake: an abandoned session drops straight to asleep so it
+      // stops paying for the full awake profile. (thresholds.rest /
+      // thresholds.engaged are retained on the interface but unused here.)
+      return score < thresholds.sleep ? "asleep" : "awake";
     case "resting":
-      if (score >= dampedEngaged) return "awake";
+      // AI-controlled and STICKY against engagement: a present (even talking)
+      // user must NOT pull it back to awake — only a deliberate AAC interaction
+      // (always-wake trigger) or the model's own wake_up() does that, both
+      // routed through setSleepState/triggerAlwaysWake, not this function. It
+      // still falls to asleep once the room actually empties.
       if (score < thresholds.sleep) return "asleep";
       return "resting";
     case "asleep":

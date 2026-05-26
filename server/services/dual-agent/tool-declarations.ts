@@ -284,12 +284,18 @@ function buildSetBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
 
   return {
     name: "set_board",
-    description: `Switch to a pre-built custom ${T.board}. Available: ${boardList}.${loadedNote} Prefer this over rebuild_board() when a custom ${T.board} fits the current activity.`,
+    description: `Switch to a pre-built custom ${T.board}. Available: ${boardList}.${loadedNote} Prefer this over rebuild_board() when a custom ${T.board} fits the current activity.
+
+Just like rebuild_board, pass \`${T.paramOwnSpeech}\` with what YOU say aloud as you switch (e.g. "Okay, let's open your snack board!"). You still speak it in your own voice — the parameter is your written commitment to voicing it, so you react out loud as the ${T.board} changes instead of switching silently.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         board_key: { type: "string", description: `Board key to load. One of: ${config.availableBoards.map(b => `"${b.key}"`).join(", ")}.` },
+        [T.paramOwnSpeech]: {
+          type: "string",
+          description: `Optional. The AI's own spoken statement for this turn — what YOU say aloud as you switch the ${T.board}. Speak the same words via your voice; this is a declaration of your intent, not a TTS source. The system logs it and uses it to make sure you actually voice your reaction when the ${T.board} changes.`,
+        },
       },
       required: ["board_key"],
     },
@@ -597,6 +603,24 @@ const WAKE_UP: FunctionDeclaration = {
   },
 };
 
+// rest — AWAKE-mode-only tool, the counterpart to wake_up. Drops the SESSION
+// PROFILE down to the lightweight resting configuration (tiny prompt, 4 tools,
+// tight compression) when the user is present but NOT using the AAC. Distinct
+// from set_interaction_mode("standby"): standby is a behavioral mode within the
+// full awake profile (still expensive); rest() is the low-cost watching state.
+const REST: FunctionDeclaration = {
+  name: "rest",
+  description: `Drop the session into RESTING mode — call when the user is not communicating with you or using the ${T.board} to communicate with others around them. You keep watching quietly through the camera/mic at low cost and can still answer a direct question, but you stop driving the board. The session wakes the moment they press an AAC button or turn to the device to communicate. Prefer rest() over standby when the user is present but not actively engaging with you or using you to communicate. NOTE: you cannot rest within 10 seconds of an AAC button press — the user is still mid-interaction.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Brief reason you're resting (e.g. 'Daniel is chatting with his mother and not using the board', 'absorbed in the game')." },
+    },
+    required: ["reason"],
+  },
+};
+
 // Sleep system tools — let the AI manage its own engagement level.
 // See planning-docs/aac-sleep-system-plan.md.
 const SLEEP: FunctionDeclaration = {
@@ -766,6 +790,7 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(SET_INTERACTION_MODE);
   declarations.push(PRIVATE_NOTE);
   declarations.push(CALL_MONITOR);
+  declarations.push(REST);
   declarations.push(SLEEP);
   declarations.push(END_SESSION);
   // DISABLED: report_false_wake — only used in wake-check flow, gave the

@@ -658,6 +658,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "reconnecting":
+          // A deliberate resting↔awake profile switch bounces the server↔model
+          // connection for ~1.5s. It's benign, so don't enter the "unhealthy"
+          // state that paints the error/hurt avatar face — the WS to us is
+          // still up and the avatar should stay as-is.
+          if (msg.data === "profile_switch") {
+            setError(null);
+            break;
+          }
           setReconnecting(true);
           setError(null);
           break;

@@ -188,6 +188,14 @@ export const ENGAGEMENT_WEIGHTS: Record<EngagementSignalKind, number> = {
 export const DECAY_HALF_LIFE_MS = 8000;
 
 /**
+ * An AI rest() request is refused if an AAC button was pressed within this
+ * window — the user is still mid-interaction, so dropping to the lightweight
+ * resting profile would cut them off. Game interactions don't count (they
+ * never route through the aacButtonPress always-wake trigger).
+ */
+export const AAC_REST_GUARD_MS = 10_000;
+
+/**
  * Sleep state thresholds (engagement score in [0, 1]).
  * Invariant: sleep < rest < engaged < wakeup.
  * Defaults are placeholders pending tuning via the debug panel.

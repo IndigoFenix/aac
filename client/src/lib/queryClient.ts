@@ -19,12 +19,40 @@ export class ServiceUnavailableError extends Error {
   }
 }
 
+export class UnauthorizedError extends Error {
+  status = 401;
+  code = "UNAUTHORIZED" as const;
+  constructor(message?: string) {
+    super(message || "UNAUTHORIZED");
+    this.name = "UnauthorizedError";
+  }
+}
+
+// Global handler invoked when a request unexpectedly returns 401 — i.e. the
+// session expired server-side. Registered by the AuthProvider so it can clear
+// the cached auth state and bounce the user to the login page instead of
+// letting every subsequent call fail with a raw error. Lives at module scope
+// because apiRequest/getQueryFn run outside of React.
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
+function notifyUnauthorized() {
+  onUnauthorized?.();
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       throw new ServiceUnavailableError();
     }
     const text = (await res.text()) || res.statusText;
+    if (res.status === 401) {
+      notifyUnauthorized();
+      throw new UnauthorizedError(`${res.status}: ${text}`);
+    }
     throw new Error(`${res.status}: ${text}`);
   }
 }

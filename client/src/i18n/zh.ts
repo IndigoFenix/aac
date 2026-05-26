@@ -109,6 +109,8 @@ export const zh = {
     welcomeBack: "欢迎回来！",
     loginFailed: "登录失败",
     loginError: "登录时发生错误",
+    sessionExpired: "会话已过期",
+    sessionExpiredDesc: "您的会话已过期，请重新登录。",
     registerTitle: "创建账户",
     firstName: "名",
     lastName: "姓",

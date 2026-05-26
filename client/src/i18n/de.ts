@@ -109,6 +109,8 @@ export const de = {
     welcomeBack: "Willkommen zurück!",
     loginFailed: "Anmeldung fehlgeschlagen",
     loginError: "Bei der Anmeldung ist ein Fehler aufgetreten",
+    sessionExpired: "Sitzung abgelaufen",
+    sessionExpiredDesc: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
     registerTitle: "Konto erstellen",
     firstName: "Vorname",
     lastName: "Nachname",

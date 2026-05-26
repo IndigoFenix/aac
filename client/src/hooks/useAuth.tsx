@@ -1,6 +1,8 @@
 // src/hooks/useAuth.tsx
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
+import { apiRequest, queryClient, setUnauthorizedHandler } from '@/lib/queryClient';
+import { toast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export interface LicensePermissions {
   all?: boolean;
@@ -70,8 +72,21 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const { t } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Keep a ref to the current user so the module-level 401 handler (which runs
+  // outside React) can tell whether a 401 means "session expired" (was logged
+  // in) vs. a normal unauthenticated request (e.g. the initial /auth/user probe
+  // or the login page). Also guards against firing the logout flow repeatedly
+  // when several in-flight requests all 401 at once.
+  const userRef = useRef<User | null>(null);
+  const sessionExpiredRef = useRef(false);
+  useEffect(() => {
+    userRef.current = user;
+    if (user) sessionExpiredRef.current = false;
+  }, [user]);
 
   const checkAuthStatus = async () => {
     try {
@@ -185,6 +200,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     checkAuthStatus();
   }, []);
+
+  // Auto-logout when an authenticated session expires. Any API call that comes
+  // back 401 routes through here; we only react if the user was actually logged
+  // in, so initial probes and login-page traffic don't trigger a redirect.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      if (!userRef.current || sessionExpiredRef.current) return;
+      sessionExpiredRef.current = true;
+
+      toast({
+        title: t('auth.sessionExpired'),
+        description: t('auth.sessionExpiredDesc'),
+        variant: 'destructive',
+      });
+
+      // Drop all cached data so the next user can't see the previous session's
+      // PHI, clear local auth state, then bounce to the login page.
+      queryClient.clear();
+      setUser(null);
+      window.location.href = '/login';
+    });
+
+    return () => setUnauthorizedHandler(null);
+  }, [t]);
 
   const contextValue: AuthContextType = {
     user,

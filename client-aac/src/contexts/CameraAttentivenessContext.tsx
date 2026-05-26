@@ -42,6 +42,7 @@ import {
   SLEEP_THRESHOLDS,
   FALSE_WAKE_DAMPENING,
   ENGAGEMENT_SAMPLE_HZ,
+  AAC_REST_GUARD_MS,
 } from '@/lib/cameraAttentivenessTypes';
 import {
   decayAndScore,
@@ -164,6 +165,11 @@ export function CameraAttentivenessProvider({
   const contributionsRef = useRef<Partial<Record<EngagementSignalKind, number>>>({});
   const sleepStateRef = useRef<SleepState>('hibernation');
   const scoreLastTickRef = useRef(Date.now());
+
+  // Timestamp of the last AAC button press (always-wake trigger). Used to
+  // refuse an AI rest() request that lands within AAC_REST_GUARD_MS of an
+  // active interaction.
+  const lastAacButtonPressAtRef = useRef(0);
 
   // False-wake threshold dampening — multiplier ≥ 1 applied to wake thresholds.
   // Decays exponentially back toward 1.0 after each false-wake report.
@@ -592,6 +598,17 @@ export function CameraAttentivenessProvider({
   }, []);
 
   const triggerAlwaysWake = useCallback((trigger: AlwaysWakeTrigger) => {
+    if (trigger === 'aacButtonPress') {
+      lastAacButtonPressAtRef.current = Date.now();
+    }
+    // sustainedFace is presence-only. It must NOT pull the session out of an
+    // AI-chosen RESTING state — the whole point of resting is that the user can
+    // be present (even talking) without using the AAC. Mere presence wakes only
+    // from asleep/hibernation. Deliberate AAC interactions (aacButtonPress,
+    // avatarTap, avatarEyegaze) still always wake, including from resting.
+    if (trigger === 'sustainedFace' && sleepStateRef.current === 'resting') {
+      return;
+    }
     console.log(`[SleepSystem] always-wake triggered: ${trigger}`);
     scoreRef.current = 1;
     contributionsRef.current = { ...contributionsRef.current };
@@ -614,6 +631,14 @@ export function CameraAttentivenessProvider({
 
   const setSleepState = useCallback((next: SleepState) => {
     if (next === sleepStateRef.current) return;
+    // Guard: an AI rest() request can't fire while the user is mid-interaction.
+    // The client is the authority here — even if the server sent the request,
+    // a recent AAC button press blocks the drop to resting. (Server enforces
+    // the same window, but this is the backstop against a race.)
+    if (next === 'resting' && Date.now() - lastAacButtonPressAtRef.current < AAC_REST_GUARD_MS) {
+      console.log(`[SleepSystem] resting request blocked — AAC button pressed <${AAC_REST_GUARD_MS}ms ago`);
+      return;
+    }
     console.log(`[SleepSystem] external setSleepState: ${sleepStateRef.current} → ${next}`);
     sleepStateRef.current = next;
     setSleepStateImpl(next);

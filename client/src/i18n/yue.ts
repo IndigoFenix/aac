@@ -109,6 +109,8 @@ export const yue = {
     welcomeBack: "歡迎返嚟！",
     loginFailed: "登入失敗",
     loginError: "登入時發生錯誤",
+    sessionExpired: "登入已過期",
+    sessionExpiredDesc: "你嘅登入已經過期，請重新登入。",
     registerTitle: "建立帳戶",
     firstName: "名",
     lastName: "姓",

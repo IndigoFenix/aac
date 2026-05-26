@@ -109,6 +109,8 @@ export const es = {
     welcomeBack: "¡Bienvenido de nuevo!",
     loginFailed: "Error de inicio de sesión",
     loginError: "Ocurrió un error durante el inicio de sesión",
+    sessionExpired: "Sesión expirada",
+    sessionExpiredDesc: "Tu sesión ha expirado. Por favor, inicia sesión de nuevo.",
     registerTitle: "Crear cuenta",
     firstName: "Nombre",
     lastName: "Apellido",

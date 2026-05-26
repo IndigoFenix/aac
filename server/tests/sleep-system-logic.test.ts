@@ -86,30 +86,36 @@ describe("nextSleepState — sticky states", () => {
   });
 });
 
+// Resting is an AI decision (the model calls rest()), applied via
+// setSleepState — NOT the score machine. So nextSleepState never moves
+// awake↔resting on score. Awake only auto-sleeps when the room empties.
 describe("nextSleepState — Awake transitions", () => {
-  it("stays Awake when score >= rest", () => {
-    expect(nextSleepState("awake", T.rest, T, 1)).toBe("awake");
+  it("stays Awake across the whole engaged range (never auto-rests)", () => {
     expect(nextSleepState("awake", 1, T, 1)).toBe("awake");
+    expect(nextSleepState("awake", T.rest, T, 1)).toBe("awake");
+    // Below the legacy `rest` threshold but above `sleep`: used to go resting,
+    // now stays awake.
+    expect(nextSleepState("awake", T.rest - 0.01, T, 1)).toBe("awake");
+    expect(nextSleepState("awake", T.sleep, T, 1)).toBe("awake");
   });
 
-  it("transitions to Resting when score drops below rest", () => {
-    expect(nextSleepState("awake", T.rest - 0.01, T, 1)).toBe("resting");
-    expect(nextSleepState("awake", 0, T, 1)).toBe("resting");
+  it("drops straight to Asleep when the room empties (score < sleep)", () => {
+    expect(nextSleepState("awake", T.sleep - 0.01, T, 1)).toBe("asleep");
+    expect(nextSleepState("awake", 0, T, 1)).toBe("asleep");
   });
 });
 
-describe("nextSleepState — Resting transitions", () => {
-  it("stays Resting in the middle band", () => {
-    const mid = (T.sleep + T.engaged) / 2;
-    expect(nextSleepState("resting", mid, T, 1)).toBe("resting");
+describe("nextSleepState — Resting transitions (AI-set, sticky)", () => {
+  it("stays Resting even when a present/engaged user keeps the score high", () => {
+    // The whole point: presence (face/voice past the legacy `engaged` band)
+    // must NOT pull resting back to awake. Only an always-wake trigger or
+    // wake_up() does that, via setSleepState — not this function.
+    expect(nextSleepState("resting", 1, T, 1)).toBe("resting");
+    expect(nextSleepState("resting", T.engaged, T, 1)).toBe("resting");
+    expect(nextSleepState("resting", (T.sleep + T.engaged) / 2, T, 1)).toBe("resting");
   });
 
-  it("transitions to Awake when score >= engaged", () => {
-    expect(nextSleepState("resting", T.engaged, T, 1)).toBe("awake");
-    expect(nextSleepState("resting", 1, T, 1)).toBe("awake");
-  });
-
-  it("transitions to Asleep when score < sleep", () => {
+  it("falls to Asleep once the room actually empties (score < sleep)", () => {
     expect(nextSleepState("resting", T.sleep - 0.01, T, 1)).toBe("asleep");
     expect(nextSleepState("resting", 0, T, 1)).toBe("asleep");
   });
@@ -132,16 +138,11 @@ describe("nextSleepState — Asleep transitions", () => {
   });
 });
 
-describe("nextSleepState — hysteresis", () => {
-  it("score between rest and engaged does not flap (Awake stays, Resting stays)", () => {
+describe("nextSleepState — no score-driven flapping between awake and resting", () => {
+  it("a mid-range score holds whichever of awake/resting it's already in", () => {
     const between = (T.rest + T.engaged) / 2;
     expect(nextSleepState("awake", between, T, 1)).toBe("awake");
     expect(nextSleepState("resting", between, T, 1)).toBe("resting");
-  });
-
-  it("score just at rest threshold: Awake stays, Resting → Awake only at engaged", () => {
-    expect(nextSleepState("awake", T.rest, T, 1)).toBe("awake");
-    expect(nextSleepState("resting", T.rest, T, 1)).toBe("resting");
   });
 });
 
@@ -152,15 +153,16 @@ describe("nextSleepState — false-wake dampening", () => {
     expect(nextSleepState("asleep", 0.8, T, 1.2)).toBe("awake");
   });
 
-  it("dampMult raises engaged threshold proportionally", () => {
-    // engaged = 0.45 * 1.2 = 0.54. Score 0.5 should NOT wake from Resting with damp.
+  it("dampMult never wakes Resting (resting ignores score entirely)", () => {
+    // Resting no longer wakes on score, damped or not — only an always-wake
+    // trigger / wake_up() (via setSleepState) leaves it.
     expect(nextSleepState("resting", 0.5, T, 1.2)).toBe("resting");
-    expect(nextSleepState("resting", 0.55, T, 1.2)).toBe("awake");
+    expect(nextSleepState("resting", 1, T, 1.2)).toBe("resting");
   });
 
-  it("dampMult does NOT affect rest or sleep thresholds (going-to-rest stays easy)", () => {
-    expect(nextSleepState("awake", T.rest - 0.01, T, 5)).toBe("resting");
+  it("dampMult does NOT affect the sleep threshold (resting→asleep stays easy)", () => {
     expect(nextSleepState("resting", T.sleep - 0.01, T, 5)).toBe("asleep");
+    expect(nextSleepState("awake", T.sleep - 0.01, T, 5)).toBe("asleep");
   });
 
   it("damped thresholds are clamped to 1.0", () => {

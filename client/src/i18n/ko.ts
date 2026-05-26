@@ -109,6 +109,8 @@ export const ko = {
     welcomeBack: "다시 오신 것을 환영합니다!",
     loginFailed: "로그인 실패",
     loginError: "로그인 중 오류가 발생했습니다",
+    sessionExpired: "세션 만료",
+    sessionExpiredDesc: "세션이 만료되었습니다. 다시 로그인해 주세요.",
     registerTitle: "계정 만들기",
     firstName: "이름",
     lastName: "성",

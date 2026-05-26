@@ -109,6 +109,8 @@ export const ru = {
     welcomeBack: "С возвращением!",
     loginFailed: "Не удалось войти",
     loginError: "Произошла ошибка при входе",
+    sessionExpired: "Сеанс истёк",
+    sessionExpiredDesc: "Срок действия вашего сеанса истёк. Пожалуйста, войдите снова.",
     registerTitle: "Создание аккаунта",
     firstName: "Имя",
     lastName: "Фамилия",

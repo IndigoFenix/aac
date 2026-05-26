@@ -109,6 +109,8 @@ export const ar = {
     welcomeBack: "مرحباً بعودتك!",
     loginFailed: "فشل تسجيل الدخول",
     loginError: "حدث خطأ أثناء تسجيل الدخول",
+    sessionExpired: "انتهت الجلسة",
+    sessionExpiredDesc: "انتهت صلاحية جلستك. يرجى تسجيل الدخول مرة أخرى.",
     registerTitle: "إنشاء حساب",
     firstName: "الاسم الأول",
     lastName: "اسم العائلة",

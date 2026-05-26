@@ -109,6 +109,8 @@ export const he = {
     welcomeBack: "ברוך הבא!",
     loginFailed: "ההתחברות נכשלה",
     loginError: "אירעה שגיאה במהלך ההתחברות",
+    sessionExpired: "ההתחברות פגה",
+    sessionExpiredDesc: "תוקף ההתחברות שלך פג. אנא התחבר מחדש.",
     registerTitle: "יצירת חשבון",
     firstName: "שם פרטי",
     lastName: "שם משפחה",

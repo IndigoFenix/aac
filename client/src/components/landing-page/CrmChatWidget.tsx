@@ -7,6 +7,10 @@ import { useLanguage } from "@/contexts/LanguageContext";
 const STORAGE_KEY_CUSTOMER = "aivota_crm_customer_id";
 const STORAGE_KEY_SESSION = "aivota_crm_session_id";
 
+// Watchdog window for a stalled stream. Must comfortably exceed the server's
+// 30s keepalive interval so a healthy-but-quiet stream isn't killed early.
+const STREAM_IDLE_TIMEOUT_MS = 90_000;
+
 // Synchronous parser keeps render simple — we hand the resulting HTML to
 // dangerouslySetInnerHTML.
 marked.setOptions({ async: false });
@@ -213,6 +217,10 @@ export function CrmChatWidget() {
     const dropPlaceholder = () =>
       setMessages((prev) => prev.filter((m) => m.timestamp !== placeholderTimestamp));
 
+    // Set by the idle watchdog when it aborts a dead stream — lets the catch
+    // distinguish a watchdog timeout from a user-initiated close.
+    let timedOut = false;
+
     try {
       const res = await fetch(apiUrl("/api/crm-chat/message-stream"), {
         method: "POST",
@@ -244,60 +252,81 @@ export function CrmChatWidget() {
       let parserState: SSEParserState = { currentEvent: "", currentData: "" };
       let accumulated = "";
       let streamErrored: string | null = null;
+      let completed = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      // Idle watchdog: if no bytes arrive for longer than the server's keepalive
+      // window, treat the stream as dead and abort it. Without this a frozen
+      // server (where even the keepalive comments stop) would leave reader.read()
+      // blocked forever and the spinner spinning indefinitely.
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          timedOut = true;
+          abort.abort();
+        }, STREAM_IDLE_TIMEOUT_MS);
+      };
+      resetIdleTimer();
 
-        buffer += decoder.decode(value, { stream: true });
-        const parsed = parseSSE(buffer, parserState);
-        buffer = parsed.remaining;
-        parserState = parsed.state;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          resetIdleTimer();
 
-        for (const ev of parsed.events) {
-          let payload: any;
-          try {
-            payload = JSON.parse(ev.data);
-          } catch {
-            continue;
-          }
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseSSE(buffer, parserState);
+          buffer = parsed.remaining;
+          parserState = parsed.state;
 
-          if (ev.event === "session") {
-            if (typeof payload.potentialCustomerId === "string") {
-              setPotentialCustomerId(payload.potentialCustomerId);
-              localStorage.setItem(STORAGE_KEY_CUSTOMER, payload.potentialCustomerId);
+          for (const ev of parsed.events) {
+            let payload: any;
+            try {
+              payload = JSON.parse(ev.data);
+            } catch {
+              continue;
             }
-            if (typeof payload.sessionId === "string") {
-              setSessionId(payload.sessionId);
-              localStorage.setItem(STORAGE_KEY_SESSION, payload.sessionId);
+
+            if (ev.event === "session") {
+              if (typeof payload.potentialCustomerId === "string") {
+                setPotentialCustomerId(payload.potentialCustomerId);
+                localStorage.setItem(STORAGE_KEY_CUSTOMER, payload.potentialCustomerId);
+              }
+              if (typeof payload.sessionId === "string") {
+                setSessionId(payload.sessionId);
+                localStorage.setItem(STORAGE_KEY_SESSION, payload.sessionId);
+              }
+            } else if (ev.event === "text_delta" && typeof payload.text === "string") {
+              accumulated += payload.text;
+              setMessages((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((m) => m.timestamp === placeholderTimestamp);
+                if (idx >= 0) next[idx] = { ...next[idx], streamingMd: accumulated };
+                return next;
+              });
+            } else if (ev.event === "complete") {
+              completed = true;
+              const finalMessage: ChatMessage = (payload?.message as ChatMessage) ?? {
+                role: "assistant",
+                timestamp: placeholderTimestamp,
+                content: { md: accumulated },
+              };
+              setMessages((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((m) => m.timestamp === placeholderTimestamp);
+                if (idx >= 0) next[idx] = finalMessage;
+                else next.push(finalMessage);
+                return next;
+              });
+            } else if (ev.event === "error") {
+              streamErrored = String(payload?.error ?? "internal_error");
+            } else if (ev.event === "close") {
+              // Server signals end of stream — exit outer loop on next read.
             }
-          } else if (ev.event === "text_delta" && typeof payload.text === "string") {
-            accumulated += payload.text;
-            setMessages((prev) => {
-              const next = [...prev];
-              const idx = next.findIndex((m) => m.timestamp === placeholderTimestamp);
-              if (idx >= 0) next[idx] = { ...next[idx], streamingMd: accumulated };
-              return next;
-            });
-          } else if (ev.event === "complete") {
-            const finalMessage: ChatMessage = (payload?.message as ChatMessage) ?? {
-              role: "assistant",
-              timestamp: placeholderTimestamp,
-              content: { md: accumulated },
-            };
-            setMessages((prev) => {
-              const next = [...prev];
-              const idx = next.findIndex((m) => m.timestamp === placeholderTimestamp);
-              if (idx >= 0) next[idx] = finalMessage;
-              else next.push(finalMessage);
-              return next;
-            });
-          } else if (ev.event === "error") {
-            streamErrored = String(payload?.error ?? "internal_error");
-          } else if (ev.event === "close") {
-            // Server signals end of stream — exit outer loop on next read.
           }
         }
+      } finally {
+        if (idleTimer) clearTimeout(idleTimer);
       }
 
       if (streamErrored) {
@@ -308,12 +337,36 @@ export function CrmChatWidget() {
         else setError(t("landing.crm.errorSend"));
         // Drop the unfinished placeholder if we never got any tokens.
         if (!accumulated) dropPlaceholder();
+      } else if (!completed) {
+        // The stream ended (done) without ever delivering a terminal `complete`
+        // or `error` event — e.g. the connection dropped or the server died
+        // mid-turn. If we managed to accumulate some text, salvage it as the
+        // final message; otherwise drop the placeholder and surface an error so
+        // the spinner doesn't hang forever.
+        if (accumulated) {
+          setMessages((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((m) => m.timestamp === placeholderTimestamp);
+            if (idx >= 0)
+              next[idx] = {
+                role: "assistant",
+                timestamp: placeholderTimestamp,
+                content: { md: accumulated },
+              };
+            return next;
+          });
+        } else {
+          dropPlaceholder();
+          setError(t("landing.crm.errorSend"));
+        }
       }
     } catch (err: any) {
       if (err?.name === "AbortError") {
-        // User-initiated abort (e.g. closed widget mid-stream). Drop the
-        // empty placeholder so it doesn't sit there as a stuck spinner.
+        // Either the idle watchdog fired (dead stream) or the user closed the
+        // widget mid-stream. Drop the empty placeholder either way; only the
+        // watchdog case warrants an error message.
         dropPlaceholder();
+        if (timedOut) setError(t("landing.crm.errorSend"));
       } else {
         setError(t("landing.crm.errorSend"));
         setMessages((prev) =>

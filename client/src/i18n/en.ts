@@ -109,6 +109,8 @@ export const en = {
     welcomeBack: "Welcome back!",
     loginFailed: "Login Failed",
     loginError: "An error occurred during login",
+    sessionExpired: "Session Expired",
+    sessionExpiredDesc: "Your session has expired. Please log in again.",
     registerTitle: "Create Account",
     firstName: "First Name",
     lastName: "Last Name",

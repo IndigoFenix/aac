@@ -109,6 +109,8 @@ export const pt = {
     welcomeBack: "Bem-vindo de volta!",
     loginFailed: "Falha no login",
     loginError: "Ocorreu um erro durante o login",
+    sessionExpired: "Sessão expirada",
+    sessionExpiredDesc: "Sua sessão expirou. Por favor, faça login novamente.",
     registerTitle: "Criar conta",
     firstName: "Nome",
     lastName: "Sobrenome",

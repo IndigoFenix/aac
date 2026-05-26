@@ -8174,3 +8174,101 @@
 [2026-05-26T10:52:14.101Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
 [2026-05-26T10:52:19.045Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-05-26T10:52:19.046Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T11:06:22.724Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T11:06:22.725Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T11:09:03.250Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T11:09:03.251Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T11:09:03.256Z] [resolveImageKeys] Resolving 1 keys: snack (format=api-path, useUnapproved=true)
+[2026-05-26T11:09:04.001Z] [resolveImageKeys] Resolved "snack" → /api/custom-symbols/1a6011b2-8a68-484f-b71a-c651e738ce66/image
+[2026-05-26T11:09:04.001Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T11:47:54.369Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T11:47:54.375Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T11:48:30.902Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T11:48:30.903Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T11:49:33.229Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T11:49:33.234Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:15:57.762Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:15:57.764Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:15:57.771Z] [resolveImageKeys] Resolving 2 keys: keyboard_piano, snack (format=api-path, useUnapproved=true)
+[2026-05-26T12:15:58.540Z] [resolveImageKeys] No symbol found for "keyboard_piano"
+[2026-05-26T12:15:58.858Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:15:58.859Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:15:58.861Z] [resolveImageKeys] Resolving 3 keys: keyboard_piano, snack, youtube_video (format=api-path, useUnapproved=true)
+[2026-05-26T12:15:59.602Z] [resolveImageKeys] Resolved "snack" → /api/custom-symbols/1a6011b2-8a68-484f-b71a-c651e738ce66/image
+[2026-05-26T12:15:59.603Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: keyboard_piano
+[2026-05-26T12:15:59.610Z] [queueGeneration] Queuing 1 keys: keyboard_piano (hasCallback=true)
+[2026-05-26T12:16:00.168Z] [resolveImageKeys] No symbol found for "keyboard_piano"
+[2026-05-26T12:16:01.405Z] [processQueue] Generating "keyboard_piano"...
+[2026-05-26T12:16:01.586Z] [resolveImageKeys] Resolved "snack" → /api/custom-symbols/1a6011b2-8a68-484f-b71a-c651e738ce66/image
+[2026-05-26T12:16:01.785Z] [resolveImageKeys] No symbol found for "youtube_video"
+[2026-05-26T12:16:01.786Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: keyboard_piano, youtube_video
+[2026-05-26T12:16:01.791Z] [queueGeneration] Queuing 2 keys: keyboard_piano, youtube_video (hasCallback=true)
+[2026-05-26T12:16:17.050Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:16:17.051Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:16:17.055Z] [resolveImageKeys] Resolving 3 keys: youtube_video, keyboard_piano, snack (format=api-path, useUnapproved=true)
+[2026-05-26T12:16:17.737Z] [resolveImageKeys] No symbol found for "youtube_video"
+[2026-05-26T12:16:18.581Z] [resolveImageKeys] No symbol found for "keyboard_piano"
+[2026-05-26T12:16:21.710Z] [resolveImageKeys] Resolved "snack" → /api/custom-symbols/1a6011b2-8a68-484f-b71a-c651e738ce66/image
+[2026-05-26T12:16:21.711Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: youtube_video, keyboard_piano
+[2026-05-26T12:16:21.716Z] [queueGeneration] Queuing 2 keys: youtube_video, keyboard_piano (hasCallback=true)
+[2026-05-26T12:16:27.206Z] [COST] imageKey="keyboard_piano" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=35 | image: openai/gpt-image-1 in=41 out=272
+[2026-05-26T12:16:27.207Z] [processQueue] Generated "keyboard_piano" → 51564f8a-b7df-44d2-bd37-9c7b403002b1 (1 total)
+[2026-05-26T12:16:27.208Z] [processQueue] FULL REFINED PROMPT for "keyboard_piano": A black and white electronic keyboard piano with a row of white keys and a row of shorter black keys, viewed from a slightly elevated front angle, in flat AAC icon style.
+[2026-05-26T12:16:31.390Z] [processQueue] "keyboard_piano" already exists → 51564f8a-b7df-44d2-bd37-9c7b403002b1
+[2026-05-26T12:16:35.583Z] [processQueue] Generating "youtube_video"...
+[2026-05-26T12:16:51.531Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:16:51.533Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:16:54.400Z] [COST] imageKey="youtube_video" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=46 out=272
+[2026-05-26T12:16:54.401Z] [processQueue] Generated "youtube_video" → 0e04b5cc-0d2b-4387-8f64-dd65605302dc (2 total)
+[2026-05-26T12:16:54.402Z] [processQueue] FULL REFINED PROMPT for "youtube_video": A flat AAC icon of a red horizontal rectangle with a white play button triangle pointing right in the center, symbolizing a video player, with bold black outlines and solid colors, on a transparent background.
+[2026-05-26T12:16:58.583Z] [processQueue] "youtube_video" already exists → 0e04b5cc-0d2b-4387-8f64-dd65605302dc
+[2026-05-26T12:17:02.763Z] [processQueue] "keyboard_piano" already exists → 51564f8a-b7df-44d2-bd37-9c7b403002b1
+[2026-05-26T12:17:10.480Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:17:10.481Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:17:10.484Z] [resolveImageKeys] Resolving 1 keys: youtube_video (format=api-path, useUnapproved=true)
+[2026-05-26T12:17:11.317Z] [resolveImageKeys] Resolved "youtube_video" → /api/custom-symbols/0e04b5cc-0d2b-4387-8f64-dd65605302dc/image
+[2026-05-26T12:17:11.318Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T12:17:16.036Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:17:16.037Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:17:16.042Z] [resolveImageKeys] Resolving 4 keys: youtube_video, space_rocket, car_race, news_anchor (format=api-path, useUnapproved=true)
+[2026-05-26T12:17:17.003Z] [resolveImageKeys] Resolved "youtube_video" → /api/custom-symbols/0e04b5cc-0d2b-4387-8f64-dd65605302dc/image
+[2026-05-26T12:17:18.073Z] [resolveImageKeys] No symbol found for "space_rocket"
+[2026-05-26T12:17:18.249Z] [resolveImageKeys] No symbol found for "car_race"
+[2026-05-26T12:17:18.425Z] [resolveImageKeys] No symbol found for "news_anchor"
+[2026-05-26T12:17:18.426Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: space_rocket, car_race, news_anchor
+[2026-05-26T12:17:18.430Z] [queueGeneration] Queuing 3 keys: space_rocket, car_race, news_anchor (hasCallback=true)
+[2026-05-26T12:17:18.617Z] [processQueue] Generating "news_anchor"...
+[2026-05-26T12:17:24.884Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:17:24.885Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:17:24.889Z] [resolveImageKeys] Resolving 4 keys: youtube_video, space_rocket, car_race, news_anchor (format=api-path, useUnapproved=true)
+[2026-05-26T12:17:25.626Z] [resolveImageKeys] Resolved "youtube_video" → /api/custom-symbols/0e04b5cc-0d2b-4387-8f64-dd65605302dc/image
+[2026-05-26T12:17:26.868Z] [resolveImageKeys] No symbol found for "space_rocket"
+[2026-05-26T12:17:27.047Z] [resolveImageKeys] No symbol found for "car_race"
+[2026-05-26T12:17:27.224Z] [resolveImageKeys] No symbol found for "news_anchor"
+[2026-05-26T12:17:27.225Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: space_rocket, car_race, news_anchor
+[2026-05-26T12:17:27.231Z] [queueGeneration] Queuing 3 keys: space_rocket, car_race, news_anchor (hasCallback=true)
+[2026-05-26T12:17:33.874Z] [COST] imageKey="news_anchor" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=91 | image: openai/gpt-image-1 in=98 out=272
+[2026-05-26T12:17:33.876Z] [processQueue] Generated "news_anchor" → 89a98bab-d559-4f34-a6a3-dbfa29265674 (1 total)
+[2026-05-26T12:17:33.877Z] [processQueue] FULL REFINED PROMPT for "news_anchor": A generic person with a slightly stylized head and body, seated at a desk, facing forward, with a microphone in front of them. The person has simple dots for eyes and a small curve for a mouth, with short, simple hair. The desk is simple and rectangular. The microphone is a classic cylindrical shape on a stand. The figure is wearing a simple shirt and jacket. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-05-26T12:17:38.052Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T12:17:38.053Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T12:17:38.057Z] [resolveImageKeys] Resolving 4 keys: youtube_video, space_rocket, car_race, news_anchor (format=api-path, useUnapproved=true)
+[2026-05-26T12:17:38.115Z] [processQueue] "news_anchor" already exists → 89a98bab-d559-4f34-a6a3-dbfa29265674
+[2026-05-26T12:17:38.784Z] [resolveImageKeys] Resolved "youtube_video" → /api/custom-symbols/0e04b5cc-0d2b-4387-8f64-dd65605302dc/image
+[2026-05-26T12:17:40.199Z] [resolveImageKeys] No symbol found for "space_rocket"
+[2026-05-26T12:17:40.373Z] [resolveImageKeys] No symbol found for "car_race"
+[2026-05-26T12:17:40.548Z] [resolveImageKeys] Resolved "news_anchor" → /api/custom-symbols/89a98bab-d559-4f34-a6a3-dbfa29265674/image
+[2026-05-26T12:17:40.548Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: space_rocket, car_race
+[2026-05-26T12:17:40.561Z] [queueGeneration] Queuing 2 keys: space_rocket, car_race (hasCallback=true)
+[2026-05-26T12:17:42.302Z] [processQueue] Generating "car_race"...
+[2026-05-26T12:18:55.139Z] [COST] imageKey="car_race" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=38 | image: openai/gpt-image-1 in=45 out=272
+[2026-05-26T12:18:55.141Z] [processQueue] Generated "car_race" → 66b28785-9d1e-422e-b43f-45ae522c5973 (2 total)
+[2026-05-26T12:18:55.143Z] [processQueue] FULL REFINED PROMPT for "car_race": A stylized red race car with a black stripe, seen from a slightly elevated side angle, speeding to the right with two simple black motion lines trailing behind it, in flat AAC icon style.
+[2026-05-26T12:18:59.344Z] [processQueue] "car_race" already exists → 66b28785-9d1e-422e-b43f-45ae522c5973
+[2026-05-26T12:19:03.583Z] [processQueue] Generating "space_rocket"...
+[2026-05-26T12:19:32.131Z] [COST] imageKey="space_rocket" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=72 | image: openai/gpt-image-1 in=79 out=272
+[2026-05-26T12:19:32.133Z] [processQueue] Generated "space_rocket" → bcfddea6-e62e-45d6-a304-b4e9e4a98b3b (3 total)
+[2026-05-26T12:19:32.135Z] [processQueue] FULL REFINED PROMPT for "space_rocket": A tall, slender space rocket with a pointed nose cone, two fins at the base, and a flame plume emanating from the bottom, depicted in a flat AAC icon style. The rocket body is white with a red tip and red fins, and the flame is orange and yellow. Bold black outlines around all shapes, flat solid colors, on a transparent background.
+[2026-05-26T12:19:36.323Z] [processQueue] "space_rocket" already exists → bcfddea6-e62e-45d6-a304-b4e9e4a98b3b
+[2026-05-26T12:19:40.638Z] [processQueue] "car_race" already exists → 66b28785-9d1e-422e-b43f-45ae522c5973
+[2026-05-26T12:19:44.819Z] [processQueue] "space_rocket" already exists → bcfddea6-e62e-45d6-a304-b4e9e4a98b3b

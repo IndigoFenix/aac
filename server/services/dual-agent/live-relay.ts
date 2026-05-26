@@ -826,6 +826,10 @@ export class LiveRelay {
   private timezone: string | undefined = undefined;
   /** Last known sleep state for this session — set whenever client or AI reports a transition. */
   private lastSleepState: "hibernation" | "waking" | "awake" | "resting" | "asleep" = "awake";
+  /** Epoch ms of the last AAC interaction (button press / board exit / composed sentence). Gates the rest() tool. */
+  private lastAacInteractionAt = 0;
+  /** A rest() request is refused within this window of an AAC interaction (mirrors client AAC_REST_GUARD_MS). */
+  private static readonly REST_GUARD_MS = 10_000;
 
   // Voice
   private aiVoice: ResolvedVoice | null = null;
@@ -922,6 +926,10 @@ export class LiveRelay {
   // compression. Switched via switchSessionProfile() on a reconnect.
   private sessionProfile: "awake" | "resting" = "awake";
   private profileSwitchPending: "awake" | "resting" | null = null;
+  // True only while a deliberate profile-switch reconnect is in flight. Lets
+  // onReconnecting flag the (benign) reconnect as a profile switch so the
+  // client doesn't show the connection-error avatar face for it.
+  private profileSwitchInProgress = false;
   private useVertexForLive = false;
   private geminiVoiceName: string | undefined;
   private awakeTools: import("./live-provider").LiveProviderConfig["tools"] | null = null;
@@ -945,13 +953,26 @@ export class LiveRelay {
   private behavioralReminderTimer: ReturnType<typeof setInterval> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private snapshotTimer: ReturnType<typeof setInterval> | null = null;
+  private autoRestTimer: ReturnType<typeof setInterval> | null = null;
   private pongReceived = true;
+
+  // Epoch ms of the last AAC activity of ANY kind — the AI speaking, the AI
+  // modifying the ${T.board}, or the user interacting with the ${T.board}.
+  // Drives the auto-rest fallback (drop to resting after AUTO_REST_AFTER_MS of
+  // none of those). Distinct from lastAacInteractionAt, which tracks ONLY user
+  // board interaction for the rest() 10s guard.
+  private lastAacActivityAt = Date.now();
 
   // Timer intervals
   private static readonly BOARD_REMINDER_INTERVAL_MS = 45_000;
   private static readonly BEHAVIORAL_REMINDER_INTERVAL_MS = 180_000;
   private static readonly PING_INTERVAL_MS = 30_000;
   private static readonly SNAPSHOT_INTERVAL_MS = 30_000;
+  // Auto-rest: drop the awake session to resting after this long with no AI
+  // speech, no board change, and no user board interaction. Checked every
+  // AUTO_REST_CHECK_INTERVAL_MS.
+  private static readonly AUTO_REST_AFTER_MS = 120_000;
+  private static readonly AUTO_REST_CHECK_INTERVAL_MS = 20_000;
 
   // Default home board data (virtual — not stored in DB)
   private homeBoardData: import("@shared/schema").ParsedBoardData | null = null;
@@ -1316,6 +1337,14 @@ export class LiveRelay {
           return;
         }
 
+        // Deliberate profile switch (resting↔awake): benign, fast, and not an
+        // error. Tell the client so it doesn't flash the connection-error
+        // avatar face, and don't count it toward the error-reconnect limit.
+        if (this.profileSwitchInProgress) {
+          this.send({ type: "reconnecting", data: "profile_switch" });
+          return;
+        }
+
         this.reconnectAttempts++;
         console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
         this.send({ type: "reconnecting", data: "error:RECONNECTING" });
@@ -1510,8 +1539,13 @@ export class LiveRelay {
           // server-side state — let Gemini's `interrupted` signal trigger
           // the existing onInterrupted → handleInterrupted cleanup.
           const isInterrupt = this.state !== "idle";
+          this.lastAacInteractionAt = Date.now();
+          this.lastAacActivityAt = Date.now();
           this.setState("awaiting_turn");
-          this.handleButtonPress(msg.buttons, msg.sentences, msg.board, isInterrupt);
+          // Note: handleButtonPress voices the student's own SENTENCE + shows
+          // it immediately, then (if waking from resting) switches to the awake
+          // profile before dispatching to the model — see inside.
+          void this.handleButtonPress(msg.buttons, msg.sentences, msg.board, isInterrupt);
           break;
         }
 
@@ -1522,9 +1556,13 @@ export class LiveRelay {
             logLiveSession("BTN_DROPPED (not ready)", `state=${this.state} label="${msg.label}"`);
             break;
           }
+          // Waking from resting: switch to the full awake profile first.
+          await this.ensureAwakeForInteraction();
           // Out-of-turn exit → mark this dispatch as an interrupt (used below
           // when calling provider.sendMessage). Don't pre-emptively touch state.
           const exitIsInterrupt = this.state !== "idle";
+          this.lastAacInteractionAt = Date.now();
+          this.lastAacActivityAt = Date.now();
 
           // Detect Home button press — server loads the home board directly
           // (no AI tool call required) to avoid the rebuild_board side-panel
@@ -1711,6 +1749,9 @@ export class LiveRelay {
               `[SYSTEM] Session RESUMED. The user can see and interact with the device again. Continue normally.`,
             );
             logLiveSession("SESSION_RESUMED", `sessionId=${this.sessionId}`);
+            // Don't let a stale pre-pause timestamp auto-rest the instant we
+            // resume — give the user the full window to re-engage.
+            this.lastAacActivityAt = Date.now();
           }
           break;
 
@@ -1777,7 +1818,12 @@ export class LiveRelay {
               timestamp: Date.now(),
             }).catch(err => console.error("[LiveRelay] Failed to persist glyph press:", err));
           }
+          // Waking from resting: switch to the full awake profile first so the
+          // model has the interpret + rebuild_board tools to handle the play.
+          await this.ensureAwakeForInteraction();
           const wasIdle = this.state === "idle";
+          this.lastAacInteractionAt = Date.now();
+          this.lastAacActivityAt = Date.now();
           this.setState("awaiting_turn");
           const prompt = `${T.tagComposed} ${glyphString}
 The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR job to put words in their mouth: interpret the SENTENCE (see <sentence_interpretation>) and call the \`interpret\` tool with the natural-language SENTENCE — first-person, as the user would say it. The tool voices that SENTENCE in the user's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
@@ -2255,12 +2301,12 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
   // Button press handling
   // -------------------------------------------------------------------------
 
-  private handleButtonPress(
+  private async handleButtonPress(
     buttons: string[],
     sentences?: Record<string, string>,
     board?: any,
     interrupt = false,
-  ): void {
+  ): Promise<void> {
     const buttonList = buttons.join(", ");
     console.log(`[LiveRelay] Interpreting buttons: ${buttonList}${interrupt ? " (interrupt)" : ""}`);
 
@@ -2273,6 +2319,8 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           timestamp: Date.now(),
         }).catch(err => console.error("[LiveRelay] Failed to persist [MORE]:", err));
       }
+      // Waking from resting: needs add_buttons (awake toolset) to satisfy this.
+      await this.ensureAwakeForInteraction();
       this.provider!.sendMessage(`[MORE OPTIONS REQUESTED]
 The user pressed "More" — they can't find the ${T.button} they need on the current ${T.board}. Use add_buttons() to add more relevant ${T.button}s. Do NOT respond with speech — just silently add ${T.button}s.`, "user", true, { interrupt });
       return;
@@ -2316,16 +2364,11 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     // rebuild_board" behavior expectation.
     const prompt = `${T.tagPress} ${singleSentence || buttonList}`;
 
-    // Send prompt with turnComplete=true immediately. Student TTS runs in
-    // parallel. With Google Cloud TTS (~300ms) and AI response time (~1s),
-    // the user voice finishes before the AI starts speaking.
-    //
-    // Track the prompt so we can retry if proactiveAudio swallows the turn.
-    this.pendingRetryPrompt = prompt;
-    this.lastTurnHadButtonPress = true;
-    this.provider!.sendMessage(prompt, "user", true, { interrupt });
-
-    // Stream student voice TTS in parallel
+    // Stream student voice TTS FIRST — it goes straight to the client and is
+    // independent of the model provider, so the student hears their own
+    // SENTENCE immediately even when we're about to reconnect to wake the
+    // session. (Voicing it after the awake-profile reconnect would add a
+    // ~1.5s gap before the press registers audibly.)
     if (singleSentence && this.studentVoice) {
       // Cancel any in-flight student TTS from a previous press — without this,
       // overlapping streams interleave on the `interpretation_audio` channel
@@ -2357,6 +2400,21 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     } else {
       logLiveSession("STUDENT TTS SKIPPED", `singleSentence=${!!singleSentence} studentVoice=${!!this.studentVoice}`);
     }
+
+    // Waking from resting: switch to the full awake profile (rebuild_board etc.)
+    // BEFORE the press reaches the model, otherwise it responds on the resting
+    // tool set and speaks without ever building the board. No-op when already
+    // awake. The student TTS above is already streaming meanwhile.
+    await this.ensureAwakeForInteraction();
+
+    // Send prompt with turnComplete=true. Student TTS is already streaming in
+    // parallel. With Google Cloud TTS (~300ms) and AI response time (~1s),
+    // the user voice finishes before the AI starts speaking.
+    //
+    // Track the prompt so we can retry if proactiveAudio swallows the turn.
+    this.pendingRetryPrompt = prompt;
+    this.lastTurnHadButtonPress = true;
+    this.provider!.sendMessage(prompt, "user", true, { interrupt });
   }
 
   // -------------------------------------------------------------------------
@@ -3332,6 +3390,20 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           return { id: call.id, name, response: { error: `Board "${boardKey}" not found. Available: ${availableKeys}` } };
         }
 
+        // Optional `own_speech` — same mechanism as rebuild_board: the model's
+        // written commitment to what it says aloud as it switches the board.
+        // Recorded as INTENDED speech (NOT actual audio) so handleTurnComplete's
+        // auto-continuation can nudge the model to voice it if it switched the
+        // board silently. We deliberately do NOT forward the text to the client
+        // (the visible header comes from the model's real outputTranscription;
+        // emitting it here would double-print — see the rebuild_board note).
+        const rawSetBoardSpeech = args[T.paramOwnSpeech] ?? args.response;
+        const setBoardSpeech = typeof rawSetBoardSpeech === "string" ? rawSetBoardSpeech.trim() : "";
+        if (setBoardSpeech) {
+          this.turnAccum.rebuildBoardIntendedSpeech = setBoardSpeech;
+          logLiveSession("SET_BOARD own_speech param", setBoardSpeech);
+        }
+
         try {
           // Virtual home board is in memory, not the DB
           let boardData: any;
@@ -3669,6 +3741,30 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         return { id: call.id, name, response: { output: "waking to full interaction" } };
       }
 
+      case "rest": {
+        // AWAKE → resting, requested by the model when the user is present but
+        // not using the AAC. Guard: refuse if an AAC interaction landed within
+        // REST_GUARD_MS — the user is still mid-interaction. We only TELL the
+        // client to rest; the actual server profile switch happens when the
+        // client confirms via client_sleep_state_change (which re-applies the
+        // same guard as the authority). So we deliberately do NOT set
+        // profileSwitchPending here — that would desync the server profile from
+        // a client that refused the drop.
+        const reason = extractStringArg(args, "reason").trim() || "unspecified";
+        const sincePress = Date.now() - this.lastAacInteractionAt;
+        if (sincePress < LiveRelay.REST_GUARD_MS) {
+          logLiveSession("REST TOOL BLOCKED", `AAC interaction ${sincePress}ms ago (< ${LiveRelay.REST_GUARD_MS}ms)`);
+          this.provider?.sendContextInjection(
+            `[SYSTEM] Cannot rest yet — the user used the ${T.board} ${Math.round(sincePress / 1000)}s ago. Stay awake and keep interacting; you can rest once they've stopped using the AAC for at least 10 seconds.`
+          );
+          return { id: call.id, name, response: { error: "too soon — AAC interaction within the last 10s; staying awake" } };
+        }
+        logLiveSession("REST TOOL", reason);
+        this.send({ type: "sleep_state_change", data: { state: "resting", source: "ai" } });
+        this.recordSleepStateChange("resting", "ai");
+        return { id: call.id, name, response: { output: "entering resting mode — watching quietly" } };
+      }
+
       case "sleep": {
         logLiveSession("SLEEP TOOL", "AI requested transition to Asleep");
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
@@ -3863,6 +3959,17 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
   private async handleTurnComplete(reason?: string): Promise<void> {
     logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
+
+    // Auto-rest activity tracking: if the AI spoke (audio or speak()) or changed
+    // the ${T.board} this turn, count it as AAC activity so the inactivity timer
+    // resets. (User board interaction is stamped in the button/exit/glyph cases.)
+    if (
+      this.directAudioChunks.length > 0 ||
+      this.turnAccum.speakText.trim().length > 0 ||
+      this.turnAccum.boardChanged
+    ) {
+      this.lastAacActivityAt = Date.now();
+    }
 
     // Snapshot the auto-continuation flag and clear it eagerly. If this turn
     // is itself the response to a continuation prompt we sent last time, the
@@ -4957,13 +5064,33 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       });
   }
 
-  async switchSessionProfile(target: "awake" | "resting"): Promise<void> {
+  /**
+   * A board interaction (button press / board exit / composed sentence) is the
+   * signal that the user is USING the AAC again, and it must be handled on the
+   * full AWAKE profile — the model needs rebuild_board / interpret to respond.
+   * If we're still on the lightweight RESTING profile when the interaction
+   * arrives, the deferred awake switch wouldn't land until AFTER this turn, so
+   * the model would answer on the resting tool set (no rebuild_board) and speak
+   * without ever building the board. Switch to awake and AWAIT the reconnect
+   * here — called at the top of each interaction case while state is still idle,
+   * so switchSessionProfile reconnects synchronously rather than deferring.
+   */
+  private async ensureAwakeForInteraction(): Promise<void> {
+    if (this.sessionProfile === "awake" && !this.profileSwitchPending) return;
+    logLiveSession("WAKE_FOR_INTERACTION", `board interaction on ${this.sessionProfile} profile (state=${this.state}) — switching to awake before model dispatch`);
+    // force=true: we're handling the interaction NOW and have set state to
+    // awaiting_turn, but there's no in-flight model turn to protect (we haven't
+    // dispatched yet), so don't defer the switch — reconnect immediately.
+    await this.switchSessionProfile("awake", true);
+  }
+
+  async switchSessionProfile(target: "awake" | "resting", force = false): Promise<void> {
     if (this.sessionProfile === target && !this.profileSwitchPending) return;
     if (!this.provider?.reconnectWithConfig) {
       logLiveSession("PROFILE_SWITCH_SKIP", "provider missing reconnectWithConfig");
       return;
     }
-    if (this.state !== "idle") {
+    if (this.state !== "idle" && !force) {
       this.profileSwitchPending = target;
       logLiveSession("PROFILE_SWITCH_DEFERRED", `state=${this.state} target=${target}`);
       return;
@@ -5055,12 +5182,18 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
     const from = this.sessionProfile;
     this.sessionProfile = target;
+    // A fresh awake window starts clean — don't carry a stale activity
+    // timestamp that would auto-rest moments after waking.
+    if (target === "awake") this.lastAacActivityAt = Date.now();
     logLiveSession("PROFILE_SWITCH", `${from} → ${target} (compression trigger=${triggerTokens}/${targetTokens}, tools=${tools?.[0]?.functionDeclarations?.length ?? 0})`);
     try {
+      this.profileSwitchInProgress = true;
       await this.provider.reconnectWithConfig(systemPrompt, providerConfig);
     } catch (err) {
       logLiveSession("PROFILE_SWITCH_ERROR", `${from}→${target}: ${(err as Error).message}`);
       this.sessionProfile = from; // revert on failure
+    } finally {
+      this.profileSwitchInProgress = false;
     }
   }
 
@@ -5124,6 +5257,12 @@ When creating or referencing calendar events, interpret and speak in this local 
     this.snapshotTimer = setInterval(() => {
       this.sendSessionSnapshot();
     }, LiveRelay.SNAPSHOT_INTERVAL_MS);
+
+    // Auto-rest inactivity check (20s)
+    this.lastAacActivityAt = Date.now();
+    this.autoRestTimer = setInterval(() => {
+      this.maybeAutoRest();
+    }, LiveRelay.AUTO_REST_CHECK_INTERVAL_MS);
   }
 
   private stopTimers(): void {
@@ -5140,6 +5279,38 @@ When creating or referencing calendar events, interpret and speak in this local 
       clearInterval(this.snapshotTimer);
       this.snapshotTimer = null;
     }
+    if (this.autoRestTimer) {
+      clearInterval(this.autoRestTimer);
+      this.autoRestTimer = null;
+    }
+  }
+
+  /**
+   * Inactivity fallback for entering RESTING. The model is supposed to call
+   * rest() itself when it notices the user isn't using the AAC, but it won't
+   * always — so if AUTO_REST_AFTER_MS passes with NO AI speech, NO board
+   * change, and NO user board interaction, drop to resting automatically.
+   *
+   * Like the rest() tool, this only TELLS the client (sleep_state_change); the
+   * server profile switch happens when the client confirms via
+   * client_sleep_state_change, so we don't desync if the client refuses. The
+   * `sessionProfile === "awake"` guard stops it firing while already resting/
+   * asleep, and we only act from idle so we never cut into an active turn.
+   */
+  private maybeAutoRest(): void {
+    if (this.paused) return;
+    if (this.sessionProfile !== "awake") return;
+    if (this.state !== "idle") return;
+    if (!this.provider?.isConnected) return;
+    const idleMs = Date.now() - this.lastAacActivityAt;
+    if (idleMs < LiveRelay.AUTO_REST_AFTER_MS) return;
+
+    logLiveSession("AUTO_REST", `no AAC activity for ${Math.round(idleMs / 1000)}s — dropping to resting`);
+    this.send({ type: "sleep_state_change", data: { state: "resting", source: "system" } });
+    this.recordSleepStateChange("resting", "system");
+    // Reset the window so we don't re-fire on the next tick before the client's
+    // round-trip flips sessionProfile to "resting".
+    this.lastAacActivityAt = Date.now();
   }
 
   private startPingTimer(): void {
