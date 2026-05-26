@@ -2437,16 +2437,43 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
     // Now process tools (board building, symbol lookup, etc.) — the model
     // is already continuing to generate audio in parallel.
+    //
+    // The protocol-native functionResponse was already sent above as a bare
+    // "ok" so the model keeps generating audio without waiting on the
+    // (potentially slow) symbol-resolution awaits inside handleSingleToolCall.
+    // That means the rich ToolResponse handleSingleToolCall returns — which
+    // for rebuild_board / add_buttons carries `dropped_buttons` + a corrective
+    // `note` when validation rejected ${T.button}s — would otherwise be lost.
+    // We collect that corrective feedback and re-deliver it via
+    // sendContextInjection (non-triggering content path) so the AI actually
+    // learns its ${T.button}s were dropped and can rebuild correctly. Without
+    // this the error-recovery merge (rebuildBoardErrorRecoveryPending) never
+    // fires and the AI re-submits the same rejected ${T.button}s forever
+    // (e.g. "More" producing the same colliding fallbacks each press).
+    const droppedFeedback: string[] = [];
     for (const call of calls) {
       try {
         logDualAgent("LiveRelay.toolCall", { sessionId: this.sessionId, name: call.name, args: call.args });
         logLiveSession(`TOOL CALL: ${call.name}`, JSON.stringify({ id: call.id, args: call.args }, null, 2));
-        await this.handleSingleToolCall(call);
+        const response = await this.handleSingleToolCall(call);
+        const dropped = response?.response?.dropped_buttons;
+        const note = response?.response?.note;
+        if (Array.isArray(dropped) && dropped.length > 0) {
+          const lines = [`[${call.name || "tool"} — rejected ${T.button}s]`, ...dropped.map(d => `• ${d}`)];
+          if (typeof note === "string" && note) lines.push(note);
+          droppedFeedback.push(lines.join("\n"));
+        }
       } catch (err) {
         const errMsg = (err as Error).message;
         console.error(`[LiveRelay] Tool call "${call.name}" failed:`, errMsg);
         logLiveSession(`TOOL ERROR: ${call.name}`, errMsg);
       }
+    }
+
+    if (droppedFeedback.length > 0 && this.provider) {
+      const feedback = droppedFeedback.join("\n\n");
+      this.provider.sendContextInjection(feedback);
+      logLiveSession("DROPPED_BUTTON_FEEDBACK", feedback);
     }
   }
 

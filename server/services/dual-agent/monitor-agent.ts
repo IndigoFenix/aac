@@ -415,11 +415,15 @@ When you write a \`sentence\` (the second pipe-field of a ${T.button}), every sp
   (2) A raw emoji character (🍎, 🤗, 🎮, …). Default for animals, food, body parts, family, vehicles, places, feelings.
   (3) \`generate:lowercase_snake_case\` — last resort for concepts no emoji or canonical key covers. Always requires a fallback in field 3.
 
-NEVER invent snake_case words. \`good\`, \`happy\`, \`talk\`, \`tell\`, \`stop\`, \`back\`, \`example\`, \`advice\`, \`thought\`, \`other\`, \`time\`, \`let_us\`, \`talk_about\`, \`play_game\`, \`my_day\`, \`5_minutes\` — NONE of these are canonical. If you write any of them the live renderer shows a ❓ tile.
+NEVER invent snake_case words. \`good\`, \`happy\`, \`talk\`, \`tell\`, \`stop\`, \`back\`, \`example\`, \`advice\`, \`thought\`, \`other\`, \`time\`, \`let_us\`, \`talk_about\`, \`play_game\`, \`my_day\`, \`5_minutes\` — NONE of these are canonical.
 
 If you need a verb or concept that isn't in the inventory below: use an emoji, OR write \`generate:something_concrete\` plus a fallback that uses only emojis / canonical keys / custom symbols.
 
 ${getBundledIconsBlock()}
+
+## Rules for generating examples — FOLLOW THESE STRICTLY
+
+You will need to create examples of buttons for the interactive agent. To ensure that it does not create buttons incorrectly, you must follow the same rules it does when providing examples.
 
 ## ${T.button} Encoding
 
@@ -429,7 +433,7 @@ Each ${T.button} is four pipe-separated fields:
 
   - speech: natural-language utterance in ${languageName}, first-person, as the TTS voices it when tapped.
   - sentence: visual encoding — ${T.glyph}s joined with \`+\`, ${T.operator}s appended with \`#\`. Built ONLY from the canonical inventory above + emojis + \`generate:\` keys. Language-neutral; same across all locales.
-  - fallback: a sentence-shaped string using NO \`generate:\` ${T.symbol}s. REQUIRED whenever \`sentence\` contains any \`generate:\`; OMIT (\`||\`) otherwise.
+  - fallback: a sentence-shaped string using NO \`generate:\` ${T.symbol}s. REQUIRED whenever \`sentence\` contains ANY \`generate:\`; leave it blank otherwise.
   - label: short on-button text in ${languageName}.
 
 Examples of the shape — VALID:
@@ -443,7 +447,51 @@ INVALID (do NOT produce these):
   \`Happy|i_me+happy||Happy\`           ← \`happy\` is not canonical; use \`i_me+😊\` instead.
   \`I want to talk|i_me+want+talk||Talk\` ← \`talk\` IS canonical, ok — but \`talk_about\`, \`my_day\` are NOT.
   \`Stop|i_me+stop||Stop\`              ← \`stop\` IS canonical, ok.
-  \`In 5 minutes|in+5_minutes||5min\`   ← \`5_minutes\` is not canonical; use \`later\` + speech that says "in 5 minutes".`;
+  \`In 5 minutes|in+5_minutes||5min\`   ← \`5_minutes\` is not canonical; use \`later\` + speech that says "in 5 minutes".
+  
+
+### Image Generator Rules
+
+\`generate:<key>\` triggers async image generation. It is the LAST RESORT. Most concepts can be expressed without it.
+In your examples of button boards below, you will need to include buttons with \`generate:\` symbols to demonstrate their proper usage.
+
+**Good examples of when to generate a ${T.symbol}:**
+  - Specific scientific objects: \`generate:planet_mars\`, \`generate:black_hole\`, \`generate:saturn_rings\`.
+  - Specific animals where the right emoji is missing: \`generate:seagull\`, \`generate:t_rex\`, \`generate:triceratops\`, \`generate:octopus_giant\`.
+  - Specific tools or instruments: \`generate:violin\`, \`generate:telescope\`, \`generate:microscope\`, \`generate:keyboard_piano\`.
+  - Specific actions that have no emoji or canonical key. For these, use a noun form that the image generator can draw — e.g. "a person doing X" rather than just the verb "X". Examples: \`generate:person_digging\`, \`generate:person_using_computer\`.
+  - Specific people not covered by a \`face:ID\`.
+
+**Bad examples of when to generate a ${T.symbol}:**
+  - **Adjectival qualities** ("sad book", "old chair", "new toy", "scary movie", "funny story") — these are qualities OF an object, not objects. The right answer is an emoji HEAD with a canonical modifier (\`📖.big\`), or a different emoji that already encodes the quality (😢 for "sad").
+  - **Phrases or abstractions** (\`generate:its_called\`, \`generate:what_is_it\`, \`generate:my_day\`, \`generate:something_new\`) — these have no clear picture; the image generator cannot draw an idea.
+  - **Anything that's already a normal emoji** (\`🍎\`, \`🐕\`, \`🚗\`). Just use the emoji.
+  - **Compound "<quality>_<noun>"** keys like \`generate:adventure_book\`, \`generate:funny_book\`, \`generate:new_book\`, \`generate:sad_book\`. The "_<noun>" suffix is almost always a sign you should be using emoji + modifier instead.
+
+**Generation key format:**
+  - lowercase_snake_case, English.
+  - Read like an image-search query: a SHORT, CONCRETE NOUN PHRASE depicting a specific physical thing.
+  - To avoid ambiguity on words with multiple meanings, include categories that distinguish it from possible synonyms — e.g. "planet_mars" not just "mars", "animal_bat" not just "bat".
+  - Good: \`generate:planet_mars\`, \`generate:seagull\`, \`generate:t_rex\`, \`generate:violin\`, \`generate:telescope\`, \`generate:triceratops\`.
+  - Bad: \`generate:its_called\`, \`generate:funny\`, \`generate:adventure_book\`, \`generate:new_book\`, \`generate:my_favorite\`, \`generate:talk_about\`.
+
+**Fallback for a generated SENTENCE — ALWAYS required, NEVER contains \`generate:\`:**
+  - The fallback is what the user sees IMMEDIATELY while the image is generating (and if generation fails). A \`generate:\` in the fallback throws an error.
+  - Fallback may only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers on the above.
+  - Mirror the SHAPE of the \`sentence\` field so the visual reads the same. The fallback's job is to approximate the generated concept by combining an existing emoji with a canonical modifier — "Mars" has no emoji, but a red planet (\`🌑.color_red\`) reads as the same idea. Example:
+        sentence  = \`i_me+want+generate:planet_mars\`
+        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)
+  - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
+
+When providing examples of buttons with \`generate:\` symbols, come up with examples that follow these rules. The Interactive Agent's prompt will include these examples as the ONLY reference for how to use \`generate:\`, so they must be good examples.
+
+When providing examples of ${T.board}, your examples should follow the following conventions:
+
+- Mostly canonical keys and emojis
+- Use modifiers frequently to demonstrate their usefulness and the fact that they are separate from emojis (e.g. \`📖.big\` not \`generate:big_book\`)
+- Include 1–2 \`generate:\` examples that follow the generation rules above, each with a well-crafted fallback that approximates the generated concept using existing emojis + modifiers.
+- Your \`generate:\` examples should also include modifiers. Even when generating a new concept, it is better to generate a simple noun and use modifiers to express qualities, rather than generating a complex compound. For example, \`generate:stegosaurus\` .
+`;
 
       // ── Output spec ──
       // Seven sections. Three of them are example blocks that REPLACE static

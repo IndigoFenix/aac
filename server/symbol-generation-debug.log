@@ -7911,3 +7911,266 @@
 [2026-05-26T08:40:21.697Z] [resolveImageKeys] Resolving 1 keys: clothing_store (format=api-path, useUnapproved=true)
 [2026-05-26T08:40:22.870Z] [resolveImageKeys] Resolved "clothing_store" → /api/custom-symbols/93888596-3a8c-42f5-b41c-acc4df02cb75/image
 [2026-05-26T08:40:22.871Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:37:35.255Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:37:35.257Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:37:53.410Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:37:53.412Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:37:53.418Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:37:54.137Z] [resolveImageKeys] No symbol found for "different_game"
+[2026-05-26T09:37:54.139Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: different_game
+[2026-05-26T09:37:54.141Z] [queueGeneration] Queuing 1 keys: different_game (hasCallback=true)
+[2026-05-26T09:37:54.323Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:37:54.324Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:37:54.328Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:37:55.055Z] [processQueue] Generating "different_game"...
+[2026-05-26T09:37:55.734Z] [resolveImageKeys] No symbol found for "different_game"
+[2026-05-26T09:37:55.735Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: different_game
+[2026-05-26T09:37:55.736Z] [queueGeneration] Queuing 1 keys: different_game (hasCallback=true)
+[2026-05-26T09:38:13.084Z] [COST] imageKey="different_game" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=50 | image: openai/gpt-image-1 in=54 out=272
+[2026-05-26T09:38:13.085Z] [processQueue] Generated "different_game" → 89e56452-0a92-446b-ae20-0ec784d1da63 (1 total)
+[2026-05-26T09:38:13.086Z] [processQueue] FULL REFINED PROMPT for "different_game": A simple AAC icon depicting two distinct, generic game pieces: one red square block and one blue circular disc, both with bold black outlines, positioned side-by-side on a transparent background, in flat, solid colors suitable for a communication board.
+[2026-05-26T09:38:17.296Z] [processQueue] "different_game" already exists → 89e56452-0a92-446b-ae20-0ec784d1da63
+[2026-05-26T09:38:47.111Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:38:47.113Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:38:47.117Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:38:47.837Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:38:47.838Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:38:48.842Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:38:48.845Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:38:48.851Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:38:49.611Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:38:49.612Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:38:59.314Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:38:59.315Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:38:59.319Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:00.045Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:00.046Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:05.168Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:05.169Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:05.174Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:05.916Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:05.917Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:09.682Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:09.683Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:09.687Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:10.404Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:10.405Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:20.832Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:20.833Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:20.835Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:21.884Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:21.885Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:22.393Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:22.394Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:22.397Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:23.636Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:23.637Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:39.609Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:39.612Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:39.616Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:40.372Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:40.373Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:41.386Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:41.387Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:41.390Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:42.808Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:42.809Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:45.218Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:45.218Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:45.221Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:46.008Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:46.009Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:51.501Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:51.503Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:51.508Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:52.242Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:52.244Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:39:57.175Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:39:57.176Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:39:57.180Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:39:57.924Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:39:57.925Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:03.031Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:40:03.032Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:40:03.036Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:03.751Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:40:03.751Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:07.486Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T09:40:07.487Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T09:40:07.492Z] [resolveImageKeys] Resolving 1 keys: different_game (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:08.213Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:40:08.214Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:09.446Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=internal, useUnapproved=true)
+[2026-05-26T09:40:10.878Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=internal, useUnapproved=true)
+[2026-05-26T09:40:11.249Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-26T09:40:11.250Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:11.252Z] [resolveImageKeys] Resolving 2 keys: different_game, adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:12.516Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-26T09:40:12.517Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:12.522Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:13.611Z] [resolveImageKeys] Resolved "different_game" → /api/custom-symbols/89e56452-0a92-446b-ae20-0ec784d1da63/image
+[2026-05-26T09:40:14.113Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:40:14.114Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T09:40:14.344Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:40:14.345Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T09:40:24.551Z] [resolveImageKeys] Resolving 3 keys: funny_book, new_book, sad_book (format=internal, useUnapproved=true)
+[2026-05-26T09:40:25.095Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-26T09:40:26.280Z] [resolveImageKeys] Resolved "new_book" → __SYMBOL__:81beea35-4ce3-446d-891f-7e9653b527c4
+[2026-05-26T09:40:26.623Z] [resolveImageKeys] Resolved "sad_book" → __SYMBOL__:1db270c1-2477-4721-89fc-63208acbda0a
+[2026-05-26T09:40:26.623Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-26T09:40:26.627Z] [resolveImageKeys] Resolving 4 keys: adventure_book, funny_book, new_book, sad_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:26.895Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:40:27.064Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-26T09:40:27.311Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-26T09:40:27.553Z] [resolveImageKeys] Resolved "sad_book" → /api/custom-symbols/1db270c1-2477-4721-89fc-63208acbda0a/image
+[2026-05-26T09:40:27.553Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-26T09:40:40.866Z] [resolveImageKeys] Resolving 4 keys: adventure_book, funny_book, new_book, sad_book (format=internal, useUnapproved=true)
+[2026-05-26T09:40:41.407Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-26T09:40:42.420Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-26T09:40:42.588Z] [resolveImageKeys] Resolved "new_book" → __SYMBOL__:81beea35-4ce3-446d-891f-7e9653b527c4
+[2026-05-26T09:40:42.756Z] [resolveImageKeys] Resolved "sad_book" → __SYMBOL__:1db270c1-2477-4721-89fc-63208acbda0a
+[2026-05-26T09:40:42.756Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-26T09:40:42.758Z] [resolveImageKeys] Resolving 4 keys: adventure_book, funny_book, new_book, sad_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:40:42.930Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:40:43.097Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-26T09:40:43.273Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-26T09:40:43.444Z] [resolveImageKeys] Resolved "sad_book" → /api/custom-symbols/1db270c1-2477-4721-89fc-63208acbda0a/image
+[2026-05-26T09:40:43.445Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-26T09:40:56.974Z] [resolveImageKeys] Resolving 6 keys: adventure_book, funny_book, new_book, sad_book, animal_book, car_book (format=internal, useUnapproved=true)
+[2026-05-26T09:40:57.520Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-26T09:40:58.491Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-26T09:40:59.654Z] [resolveImageKeys] Resolved "new_book" → __SYMBOL__:81beea35-4ce3-446d-891f-7e9653b527c4
+[2026-05-26T09:40:59.876Z] [resolveImageKeys] Resolved "sad_book" → __SYMBOL__:1db270c1-2477-4721-89fc-63208acbda0a
+[2026-05-26T09:41:00.044Z] [resolveImageKeys] No symbol found for "animal_book"
+[2026-05-26T09:41:00.214Z] [resolveImageKeys] No symbol found for "car_book"
+[2026-05-26T09:41:00.215Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: animal_book, car_book
+[2026-05-26T09:41:00.216Z] [queueGeneration] Queuing 2 keys: animal_book, car_book (hasCallback=true)
+[2026-05-26T09:41:00.219Z] [resolveImageKeys] Resolving 6 keys: adventure_book, funny_book, new_book, sad_book, animal_book, car_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:41:00.554Z] [processQueue] Generating "car_book"...
+[2026-05-26T09:41:00.587Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:41:00.887Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-26T09:41:01.055Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-26T09:41:01.224Z] [resolveImageKeys] Resolved "sad_book" → /api/custom-symbols/1db270c1-2477-4721-89fc-63208acbda0a/image
+[2026-05-26T09:41:01.392Z] [resolveImageKeys] No symbol found for "animal_book"
+[2026-05-26T09:41:01.566Z] [resolveImageKeys] No symbol found for "car_book"
+[2026-05-26T09:41:01.567Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: animal_book, car_book
+[2026-05-26T09:41:01.579Z] [queueGeneration] Queuing 2 keys: animal_book, car_book (hasCallback=true)
+[2026-05-26T09:41:18.266Z] [resolveImageKeys] Resolving 2 keys: animal_book, car_book (format=internal, useUnapproved=true)
+[2026-05-26T09:41:19.058Z] [resolveImageKeys] No symbol found for "animal_book"
+[2026-05-26T09:41:20.062Z] [resolveImageKeys] No symbol found for "car_book"
+[2026-05-26T09:41:20.063Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: animal_book, car_book
+[2026-05-26T09:41:20.063Z] [queueGeneration] Queuing 2 keys: animal_book, car_book (hasCallback=true)
+[2026-05-26T09:41:20.067Z] [resolveImageKeys] Resolving 6 keys: adventure_book, funny_book, new_book, sad_book, animal_book, car_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:41:20.089Z] [COST] imageKey="car_book" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=56 | image: openai/gpt-image-1 in=62 out=272
+[2026-05-26T09:41:20.090Z] [processQueue] Generated "car_book" → 3152d5bc-ab48-4424-b7a0-13e412416772 (1 total)
+[2026-05-26T09:41:20.091Z] [processQueue] FULL REFINED PROMPT for "car_book": A simple, bold AAC icon illustration of a red car with black wheels and windows, depicted from a side view, with a blue open book floating above it, showing two white pages. The car and book have thick black outlines and flat, solid colors, on a transparent background.
+[2026-05-26T09:41:20.361Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:41:20.599Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-26T09:41:20.767Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-26T09:41:20.941Z] [resolveImageKeys] Resolved "sad_book" → /api/custom-symbols/1db270c1-2477-4721-89fc-63208acbda0a/image
+[2026-05-26T09:41:21.115Z] [resolveImageKeys] No symbol found for "animal_book"
+[2026-05-26T09:41:21.564Z] [resolveImageKeys] Resolved "car_book" → /api/custom-symbols/3152d5bc-ab48-4424-b7a0-13e412416772/image
+[2026-05-26T09:41:21.565Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: animal_book
+[2026-05-26T09:41:21.592Z] [queueGeneration] Queuing 1 keys: animal_book (hasCallback=true)
+[2026-05-26T09:41:24.523Z] [resolveImageKeys] Resolving 4 keys: adventure_book, funny_book, new_book, sad_book (format=internal, useUnapproved=true)
+[2026-05-26T09:41:24.734Z] [processQueue] "car_book" already exists → 3152d5bc-ab48-4424-b7a0-13e412416772
+[2026-05-26T09:41:25.170Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-26T09:41:26.517Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-26T09:41:26.715Z] [resolveImageKeys] Resolved "new_book" → __SYMBOL__:81beea35-4ce3-446d-891f-7e9653b527c4
+[2026-05-26T09:41:26.880Z] [resolveImageKeys] Resolved "sad_book" → __SYMBOL__:1db270c1-2477-4721-89fc-63208acbda0a
+[2026-05-26T09:41:26.881Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-26T09:41:26.884Z] [resolveImageKeys] Resolving 4 keys: adventure_book, funny_book, new_book, sad_book (format=api-path, useUnapproved=true)
+[2026-05-26T09:41:27.107Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T09:41:27.276Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-26T09:41:27.447Z] [resolveImageKeys] Resolved "new_book" → /api/custom-symbols/81beea35-4ce3-446d-891f-7e9653b527c4/image
+[2026-05-26T09:41:27.619Z] [resolveImageKeys] Resolved "sad_book" → /api/custom-symbols/1db270c1-2477-4721-89fc-63208acbda0a/image
+[2026-05-26T09:41:27.620Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-26T09:41:28.917Z] [processQueue] Generating "animal_book"...
+[2026-05-26T09:41:57.140Z] [COST] imageKey="animal_book" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=63 | image: openai/gpt-image-1 in=70 out=272
+[2026-05-26T09:41:57.141Z] [processQueue] Generated "animal_book" → aebc7be0-ca2f-48ff-b720-fecc487b731e (2 total)
+[2026-05-26T09:41:57.142Z] [processQueue] FULL REFINED PROMPT for "animal_book": A simple, bold AAC icon of an open book with a stylized animal head peeking out from the top of the pages, rendered in flat, solid colors with thick black outlines on a transparent background. The animal head is generic, with simple ears and eyes, and the book is open to show two blank pages.
+[2026-05-26T09:42:01.363Z] [processQueue] "animal_book" already exists → aebc7be0-ca2f-48ff-b720-fecc487b731e
+[2026-05-26T09:42:05.561Z] [processQueue] "car_book" already exists → 3152d5bc-ab48-4424-b7a0-13e412416772
+[2026-05-26T09:42:09.737Z] [processQueue] "animal_book" already exists → aebc7be0-ca2f-48ff-b720-fecc487b731e
+[2026-05-26T09:42:13.927Z] [processQueue] "animal_book" already exists → aebc7be0-ca2f-48ff-b720-fecc487b731e
+[2026-05-26T10:47:44.266Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:47:44.270Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:47:45.826Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:47:45.827Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:47:52.957Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:47:52.959Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:03.502Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:48:03.504Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:22.991Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:48:22.995Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:26.264Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:48:26.265Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:26.269Z] [resolveImageKeys] Resolving 1 keys: news (format=api-path, useUnapproved=true)
+[2026-05-26T10:48:27.040Z] [resolveImageKeys] Resolved "news" → /api/custom-symbols/aa8598e9-8554-4140-9938-72ec4e11ffb7/image
+[2026-05-26T10:48:27.041Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:48:28.615Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:48:28.616Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:28.656Z] [resolveImageKeys] Resolving 1 keys: news (format=api-path, useUnapproved=true)
+[2026-05-26T10:48:32.349Z] [resolveImageKeys] Resolved "news" → /api/custom-symbols/aa8598e9-8554-4140-9938-72ec4e11ffb7/image
+[2026-05-26T10:48:32.352Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:48:53.387Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:48:53.389Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:48:53.398Z] [resolveImageKeys] Resolving 2 keys: board_game, card_game (format=api-path, useUnapproved=true)
+[2026-05-26T10:48:57.362Z] [resolveImageKeys] Resolved "board_game" → /api/custom-symbols/1d00ca46-dd23-4157-8436-b6c5879501d2/image
+[2026-05-26T10:48:58.671Z] [resolveImageKeys] No symbol found for "card_game"
+[2026-05-26T10:48:58.671Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: card_game
+[2026-05-26T10:48:58.675Z] [queueGeneration] Queuing 1 keys: card_game (hasCallback=true)
+[2026-05-26T10:48:58.875Z] [processQueue] Generating "card_game"...
+[2026-05-26T10:49:17.861Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:49:17.898Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:49:18.022Z] [resolveImageKeys] Resolving 2 keys: board_game, card_game (format=api-path, useUnapproved=true)
+[2026-05-26T10:49:21.134Z] [resolveImageKeys] Resolved "board_game" → /api/custom-symbols/1d00ca46-dd23-4157-8436-b6c5879501d2/image
+[2026-05-26T10:49:24.487Z] [COST] imageKey="card_game" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=60 | image: openai/gpt-image-1 in=67 out=272
+[2026-05-26T10:49:24.488Z] [processQueue] Generated "card_game" → c0b570b4-adad-4f78-aff4-45d8ca36aebf (1 total)
+[2026-05-26T10:49:24.489Z] [processQueue] FULL REFINED PROMPT for "card_game": A simple AAC icon of two generic stylized human figures, facing each other, each holding a fan of three playing cards. The cards are white with black outlines and simple red and black suit symbols. The figures have minimal features, bold black outlines, and flat, solid colors, on a transparent background.
+[2026-05-26T10:49:24.557Z] [resolveImageKeys] Resolved "card_game" → /api/custom-symbols/c0b570b4-adad-4f78-aff4-45d8ca36aebf/image
+[2026-05-26T10:49:24.562Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T10:49:42.239Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:49:42.319Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:49:42.324Z] [resolveImageKeys] Resolving 1 keys: song (format=api-path, useUnapproved=true)
+[2026-05-26T10:49:44.498Z] [resolveImageKeys] No symbol found for "song"
+[2026-05-26T10:49:44.499Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: song
+[2026-05-26T10:49:44.500Z] [queueGeneration] Queuing 1 keys: song (hasCallback=true)
+[2026-05-26T10:49:46.060Z] [processQueue] Generating "song"...
+[2026-05-26T10:50:09.163Z] [COST] imageKey="song" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=21 | image: openai/gpt-image-1 in=27 out=272
+[2026-05-26T10:50:09.164Z] [processQueue] Generated "song" → 3837df4c-c696-46aa-9616-32a1717b1678 (1 total)
+[2026-05-26T10:50:09.166Z] [processQueue] FULL REFINED PROMPT for "song": A single black musical note, an eighth note, with a curved flag, in flat AAC icon style.
+[2026-05-26T10:50:38.393Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:50:38.394Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:50:41.605Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:50:41.607Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:50:51.793Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:50:51.796Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:50:55.680Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:50:55.681Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:50:55.704Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T10:50:56.732Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T10:50:56.733Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:51:01.002Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:51:01.140Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:51:01.256Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T10:51:07.571Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T10:51:07.573Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:51:11.509Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:51:11.510Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:51:11.513Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T10:51:12.335Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T10:51:12.336Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:51:19.062Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:51:19.063Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:51:19.067Z] [resolveImageKeys] Resolving 1 keys: adventure_book (format=api-path, useUnapproved=true)
+[2026-05-26T10:51:19.915Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-26T10:51:19.916Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T10:51:51.880Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:51:51.881Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:52:10.902Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:52:10.909Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:52:14.100Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:52:14.101Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T10:52:19.045Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T10:52:19.046Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

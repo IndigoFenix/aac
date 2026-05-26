@@ -552,6 +552,7 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
   - Specific scientific objects: \`generate:planet_mars\`, \`generate:black_hole\`, \`generate:saturn_rings\`.
   - Specific animals where the right emoji is missing: \`generate:seagull\`, \`generate:t_rex\`, \`generate:triceratops\`, \`generate:octopus_giant\`.
   - Specific tools or instruments: \`generate:violin\`, \`generate:telescope\`, \`generate:microscope\`, \`generate:keyboard_piano\`.
+  - Specific actions that have no emoji or canonical key. For these, use a noun form that the image generator can draw — e.g. "a person doing X" rather than just the verb "X". Examples: \`generate:person_digging\`, \`generate:person_using_computer\`.
   - Specific people not covered by a \`face:ID\`.
 
 **WHEN NOT to generate (almost always):**
