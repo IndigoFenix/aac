@@ -57,6 +57,11 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
   // rendered when a handler is wired — keeps the row at 4 cols otherwise so
   // existing screens are unaffected.
   const showSpeakSlot = !!onSpeak;
+  // "Guess" enters the AI guessing game. Only meaningful in the AI dynamic
+  // board, when not already guessing, no app open, and not mid-sentence-builder.
+  const showGuessSlot =
+    boardMode === "ai" && !isGuessingMode && !hasActiveApp && !inSentenceBuilder;
+  const columns = 4 + (showSpeakSlot ? 1 : 0) + (showGuessSlot ? 1 : 0);
   const speakLabel = inSentenceBuilder ? t("quickActions.back") : t("quickActions.speak");
   // Back arrow points opposite reading direction (away from "forward") —
   // ▶ in RTL so it still reads as "go back", ◀ in LTR.
@@ -75,10 +80,8 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
 
   return (
     <div
-      className={`grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 ${
-        showSpeakSlot ? "grid-cols-5" : "grid-cols-4"
-      }`}
-      style={rowStyle}
+      className="grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700"
+      style={{ ...rowStyle, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
       {/* 1st button: More (AI mode) or Back (DB mode) */}
       {boardMode === 'ai' ? (
@@ -142,7 +145,25 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         </span>
       </motion.button>
 
-      {/* 5th button: Speak (opens sentence builder) / Back (closes it) */}
+      {/* Guess: enter the AI guessing game (thought-bubble icon) */}
+      {showGuessSlot && (
+        <motion.button
+          data-dwell
+          data-testid="quick-guess"
+          onClick={() => onAction("guess", t("quickActions.guess"))}
+          className={`${btnClass} border-violet-300 dark:border-violet-500`}
+          style={{ backgroundColor: "#EDE9FE" }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <div className="icon-fill-area"><span className="icon-fill-emoji">💭</span></div>
+          <span className={`${labelClass} text-gray-800`}>
+            {t("quickActions.guess")}
+          </span>
+        </motion.button>
+      )}
+
+      {/* Speak (opens sentence builder) / Back (closes it) */}
       {showSpeakSlot && (
         <motion.button
           data-dwell

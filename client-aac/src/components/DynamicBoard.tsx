@@ -9,6 +9,7 @@ import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
 import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
+import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -372,6 +373,7 @@ export default function DynamicBoard({
 
   const handleButtonClick = useCallback(
     (button: BoardButton) => {
+      console.debug("[guessing] DynamicBoard click:", button.label, "| buttonType:", (button as any).buttonType);
       const action = button.action;
 
       // Handle navigation actions
@@ -400,9 +402,18 @@ export default function DynamicBoard({
         return;
       }
 
-      // Default: speak action
+      // Guessing-mode SUGGESTION buttons fall through to the default path
+      // below: speak() for local feedback, then onButtonClick → home's
+      // handleBoardButtonClick, which routes them to pressSuggestion (rather
+      // than interpret). Routing through the same prop as every other button
+      // avoids DynamicBoard's optional context, which is the working path.
+
+      // Default: speak action. Suggestion buttons are voiced by home's
+      // handler instead (it speaks even during an AI session, where local
+      // speech is otherwise suppressed) — skip here to avoid double speech.
       const textToSpeak = button.spokenText || button.label;
-      if (!suppressLocalSpeech) {
+      const isSuggestion = (button as any).buttonType === "suggestion";
+      if (!suppressLocalSpeech && !isSuggestion) {
         speak(textToSpeak, language, voiceType as any);
       }
       onButtonClick(button, textToSpeak);
@@ -424,6 +435,21 @@ export default function DynamicBoard({
   const currentPage = getCurrentPage();
   const canGoBack = pageHistory.length > 0;
 
+  // Localize a guessing-mode SUGGESTION button. The server bakes an English
+  // label (labelEn) into the button; here we translate it from the shared
+  // registry's i18n key. t() returns the key unchanged when a translation is
+  // missing, in which case we keep the server's English label.
+  const localizeSuggestion = (button: BoardButton): BoardButton => {
+    if ((button as any).buttonType !== "suggestion") return button;
+    const key = (button as any).suggestionKey as string | undefined;
+    const parsed = key ? parseSuggestionKey(key) : null;
+    const entry = parsed ? getSuggestionEntry(parsed.dimension, parsed.value) : null;
+    if (!entry) return button;
+    const translated = t(entry.labelKey);
+    const label = translated && translated !== entry.labelKey ? translated : button.label;
+    return { ...button, label, spokenText: label };
+  };
+
   const renderSlot = (slot: SlotState, index: number) => {
     if (slot.type === "blank") {
       return (
@@ -435,7 +461,7 @@ export default function DynamicBoard({
     }
 
     if (slot.type === "fading") {
-      const { button } = slot;
+      const button = localizeSuggestion(slot.button);
       return (
         <motion.div
           key={`fading-${button.label}-${index}`}
@@ -458,16 +484,20 @@ export default function DynamicBoard({
     }
 
     // occupied
-    const { button, anim } = slot;
+    const { button: rawButton, anim } = slot;
+    const button = localizeSuggestion(rawButton);
     const isEntering = anim === "entering";
     const actionType = button.action?.type;
     const isLinkButton = actionType === "link";
     const isBackButton = actionType === "back" || actionType === "home";
 
     const isGuessButton = (button as any).buttonType === "guess";
+    const isSuggestionButton = (button as any).buttonType === "suggestion";
 
     const borderClass = isGuessButton
       ? "border-amber-400 border-2 ring-2 ring-amber-300/50"
+      : isSuggestionButton
+      ? "border-violet-400 border-2 ring-2 ring-violet-300/40"
       : isLinkButton
       ? "border-blue-400 border-2"
       : isBackButton

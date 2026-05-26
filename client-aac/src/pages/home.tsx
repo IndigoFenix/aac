@@ -6,6 +6,7 @@ import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard"
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
+import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
 import ChatLog from "@/components/ChatLog";
 import ProfileSetup from "@/components/ProfileSetup";
@@ -73,7 +74,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -90,12 +91,13 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
   onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
   onGuessingModeChange?: (active: boolean) => void;
+  onPressSuggestionReady?: (fn: ((suggestionKey: string) => void) | null) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
   onSendConstructionStateReady?: (fn: ((state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void) | null) => void;
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, pressSuggestion, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -153,6 +155,12 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   useEffect(() => {
     onGuessingModeChange?.(guessingMode);
   }, [guessingMode, onGuessingModeChange]);
+
+  useEffect(() => {
+    console.debug("[guessing] bridge registering pressSuggestion, type:", typeof pressSuggestion);
+    onPressSuggestionReady?.(pressSuggestion ? (key: string) => pressSuggestion(key) : null);
+    return () => onPressSuggestionReady?.(null);
+  }, [pressSuggestion, onPressSuggestionReady]);
 
   useEffect(() => {
     onContextButtonsChange?.(contextButtonsFromCtx);
@@ -413,6 +421,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
+  const pressSuggestionRef = useRef<((suggestionKey: string) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
 
@@ -920,6 +929,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
+    console.debug("[guessing] board press:", button.label, "| buttonType:", (button as any).buttonType, "| suggestionKey:", (button as any).suggestionKey);
+
+    // Guessing-mode SUGGESTION button — route to the narrowing assistant
+    // (pressSuggestion) instead of interpreting it as an utterance. Uses the
+    // same ref bridge as interpret, so it shares the working context path.
+    if ((button as any).buttonType === "suggestion" && (button as any).suggestionKey) {
+      console.debug("[guessing] → pressSuggestion, ref is:", typeof pressSuggestionRef.current);
+      // Voice the student's selection in their voice — the server does not
+      // TTS suggestion presses (they don't go through interpret), so this is
+      // the only place the selection gets spoken.
+      speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+      pressSuggestionRef.current?.((button as any).suggestionKey);
+      return;
+    }
+
     // Exit/exitBoard buttons: send directly as board_exit (no speech, no interpretation)
     if (button.action?.type === "exit" || (button as any).exitBoard) {
       const instruction = button.action?.text || "";
@@ -1605,6 +1629,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             } else if (action === "exit") {
               // "Exit" = close the active app
               dismissAppRef.current();
+            } else if (action === "guess") {
+              // "Guess" = enter the AI guessing game. Reuses the board-exit
+              // entry path: the server detects [GUESSING MODE], flips the flag,
+              // appends the initial [GUESSING STATE], and prompts the AI to
+              // offer the top-level category buttons. (See shared/guessing-mode.)
+              sendBoardExitRef.current?.(
+                "Guess",
+                "[GUESSING MODE] The user wants to play the guessing game — help them narrow down what they want to say."
+              );
+            } else if (action === "no" && isGuessingMode) {
+              // In guessing mode, "No" means "none of these" — reject the
+              // current options so the assistant drops that dimension and the
+              // AI asks about something else (or guesses).
+              console.debug("[guessing] No → none of these");
+              pressSuggestionRef.current?.(GUESSING_REJECT);
             } else {
               // Yes/No — send as button press (server handles TTS if AI session active)
               if (interpretFnRef.current) {
@@ -1812,6 +1851,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSendContextOnlyReady={(fn) => { sendContextOnlyFnRef.current = fn; }}
             onBoardExitReady={(fn) => { sendBoardExitRef.current = fn; }}
             onGuessingModeChange={setIsGuessingMode}
+            onPressSuggestionReady={(fn) => { pressSuggestionRef.current = fn; }}
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
             onBinaryChoiceChange={(options, dismiss) => { setBinaryChoiceOptions(options); dismissBinaryChoiceRef.current = dismiss; }}

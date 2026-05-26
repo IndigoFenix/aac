@@ -7,8 +7,13 @@ import type {
 import type {
   ChatProvider,
 } from "../providers/streaming-provider";
-import { resolveEmoji } from "@shared/emoji-registry";
+import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { stripBrackets } from "@shared/glyph-compositor.js";
+import {
+  parseSuggestionKey,
+  isValidSuggestionKey,
+  getSuggestionEntry,
+} from "@shared/guessing-mode/suggestion-registry.js";
 
 /**
  * Parse the SENTENCE BUTTON wire format. Field order:
@@ -164,6 +169,80 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
   }
 
   return buttons;
+}
+
+// ─── Guessing-mode SUGGESTION button expansion ─────────────────────────────
+
+export interface SuggestionButton {
+  label: string;
+  iconRef: string;
+  symbolPath?: string;
+  imageKey?: string;
+  glyph?: string;
+  glyphFallback?: string;
+  sentence?: string;
+  buttonType?: "guess" | "category" | "suggestion";
+  suggestionKey?: string;
+  rowSpan?: number;
+  colSpan?: number;
+}
+
+/**
+ * Expand one `suggestion:<dim>:<value>` key into a full board button using the
+ * shared suggestion registry. Returns null for unknown/invalid keys. The icon
+ * is an emoji when one exists (rendered directly); otherwise the snake_case
+ * imageKey is routed through the normal symbol-generation pipeline, with a
+ * neutral placeholder shown until the generated image lands.
+ */
+export function expandSuggestionKey(key: string): SuggestionButton | null {
+  if (!isValidSuggestionKey(key)) return null;
+  const parsed = parseSuggestionKey(key);
+  if (!parsed) return null;
+  const entry = getSuggestionEntry(parsed.dimension, parsed.value);
+  if (!entry) return null;
+
+  const emoji = isEmoji(entry.icon) ? entry.icon : resolveEmoji(entry.icon);
+  const base: SuggestionButton = {
+    label: entry.labelEn,
+    sentence: entry.labelEn,
+    buttonType: "suggestion",
+    suggestionKey: `suggestion:${parsed.dimension}:${parsed.value}`,
+    iconRef: "fas fa-comment",
+  };
+  if (emoji) {
+    base.iconRef = emoji;
+    base.glyph = emoji;
+    base.glyphFallback = emoji;
+  } else {
+    base.imageKey = entry.icon;
+    base.glyph = `[${entry.icon}]`;
+    base.glyphFallback = "🧩"; // neutral placeholder while the icon generates
+  }
+  return base;
+}
+
+/**
+ * Split a parsed button list into trusted, already-expanded guessing-mode
+ * SUGGESTION buttons and everything else. Suggestion buttons arrive as bare
+ * `suggestion:<dim>:<value>` keys (no pipes), which parseBoardButtons leaves as
+ * label-only buttons that the structural validator would reject. We detect
+ * them here (by label, glyph, or sentence) and expand them via the shared
+ * registry so they bypass validation as known-good system content.
+ */
+export function splitOutSuggestionButtons<
+  T extends { label: string; glyph?: string; sentence?: string }
+>(buttons: T[]): { others: T[]; suggestions: SuggestionButton[] } {
+  const others: T[] = [];
+  const suggestions: SuggestionButton[] = [];
+  for (const btn of buttons) {
+    const candidate = [btn.label, btn.glyph, btn.sentence].find(
+      (s): s is string => !!s && isValidSuggestionKey(s.trim()),
+    );
+    const expanded = candidate ? expandSuggestionKey(candidate.trim()) : null;
+    if (expanded) suggestions.push(expanded);
+    else others.push(btn);
+  }
+  return { others, suggestions };
 }
 
 /**

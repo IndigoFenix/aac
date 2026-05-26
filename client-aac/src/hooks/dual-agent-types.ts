@@ -271,6 +271,8 @@ export interface UseDualAgentReturn {
   // Guessing mode
   /** True when the AI is in guessing mode (narrowing down user's thought) */
   guessingMode?: boolean;
+  /** Press a guessing-mode SUGGESTION button — updates narrowing state and re-injects [GUESSING STATE]. */
+  pressSuggestion?: (suggestionKey: string) => void;
 
   // Construction board (sentence builder)
   /** Push the current construction-board state to the AI so it can populate the AI strip. */

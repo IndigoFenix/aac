@@ -1320,8 +1320,14 @@ export interface BoardButton {
   selfClosing?: boolean;
   /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
   exitBoard?: boolean;
-  /** Visual style hint: "guess" for guessing mode final guesses, "category" for narrowing categories */
-  buttonType?: "normal" | "guess" | "category";
+  /** Visual style hint: "guess" for guessing mode final guesses, "category" for narrowing categories, "suggestion" for guessing-mode narrowing-assistant buttons */
+  buttonType?: "normal" | "guess" | "category" | "suggestion";
+  /**
+   * For `buttonType: "suggestion"` only — the full `suggestion:<dim>:<value>`
+   * key this button represents. The AAC client parses it on press to update
+   * the guessing-mode narrowing state (see shared/guessing-mode).
+   */
+  suggestionKey?: string;
   action?: BoardButtonAction;
 }
 

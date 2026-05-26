@@ -10,6 +10,15 @@ import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
+import {
+  createState as createGuessingState,
+  applyPress as applyGuessingPress,
+  buildStateInjection as buildGuessingInjection,
+  rejectCurrentDimension as rejectGuessingDimension,
+  GUESSING_REJECT,
+  type GuessingModeState,
+} from "@shared/guessing-mode/state.js";
+import { parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry.js";
 
 // Re-export shared types
 export type {
@@ -172,6 +181,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Guessing mode state
   const [guessingMode, setGuessingMode] = useState(false);
+  // Client-owned narrowing state for guessing mode (shared/guessing-mode). The
+  // server builds the initial [GUESSING STATE] on entry; from the first
+  // suggestion press onward this ref is authoritative and drives the injection.
+  const guessingStateRef = useRef<GuessingModeState | null>(null);
   const [constructionSuggestions, setConstructionSuggestions] = useState<
     import("./dual-agent-types").ConstructionSuggestionsClient | null
   >(null);
@@ -711,6 +724,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "guessing_mode":
           setGuessingMode(msg.active ?? false);
+          if (msg.active) {
+            // Mirror the server's starting narrowing state (category not yet
+            // chosen). The server already sent the initial [GUESSING STATE].
+            if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
+          } else {
+            guessingStateRef.current = null;
+          }
           break;
 
         case "construction_suggestions": {
@@ -1058,6 +1078,39 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend, audioPlayer]);
 
   /**
+   * Handle a guessing-mode SUGGESTION button press. Updates the client-owned
+   * narrowing state and pushes a fresh [GUESSING STATE] up to the server,
+   * which injects it and prompts the AI to rebuild with the next suggestions.
+   * Deliberately does NOT go through interpretButtons — a suggestion press is
+   * a narrowing signal, not an utterance.
+   */
+  const pressSuggestion = useCallback((suggestionKey: string) => {
+    console.debug("[guessing] pressSuggestion", suggestionKey);
+    try {
+      if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
+      const state = guessingStateRef.current;
+
+      if (suggestionKey === GUESSING_REJECT) {
+        // "None of these" — drop the current dimension and ask differently.
+        rejectGuessingDimension(state);
+      } else {
+        const parsed = parseSuggestionKey(suggestionKey);
+        if (!parsed) {
+          console.warn("[guessing] could not parse suggestion key:", suggestionKey);
+          return;
+        }
+        applyGuessingPress(state, parsed.dimension, parsed.value);
+      }
+
+      const inj = buildGuessingInjection(state);
+      console.debug("[guessing] → guessing_state", { category: state.category, keys: inj.suggestionKeys });
+      wsSend({ type: "guessing_state", text: inj.text, suggestionKeys: inj.suggestionKeys });
+    } catch (err) {
+      console.error("[guessing] pressSuggestion failed:", err);
+    }
+  }, [wsSend]);
+
+  /**
    * Send a composed glyph from the sentence builder up to the AI for
    * interpretation. The AI is responsible for converting the glyph to a
    * natural-language sentence via the `interpret` tool — the relay does
@@ -1325,6 +1378,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     // Guessing mode
     guessingMode,
+    pressSuggestion,
 
     // Construction board (sentence builder)
     sendConstructionState,

@@ -8272,3 +8272,469 @@
 [2026-05-26T12:19:36.323Z] [processQueue] "space_rocket" already exists → bcfddea6-e62e-45d6-a304-b4e9e4a98b3b
 [2026-05-26T12:19:40.638Z] [processQueue] "car_race" already exists → 66b28785-9d1e-422e-b43f-45ae522c5973
 [2026-05-26T12:19:44.819Z] [processQueue] "space_rocket" already exists → bcfddea6-e62e-45d6-a304-b4e9e4a98b3b
+[2026-05-26T17:09:31.176Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:09:31.177Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:21:32.105Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:21:32.680Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:21:36.680Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:21:36.681Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:21:58.858Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:21:58.985Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:35:24.438Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:35:24.468Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:42:20.385Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:42:20.387Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:42:58.281Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:42:58.285Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:43:07.532Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:43:07.533Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T17:46:24.852Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T17:46:24.854Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:00:24.885Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:00:24.886Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:00:26.859Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:00:26.860Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:00:36.265Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:00:36.266Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:00:46.066Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:00:46.067Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:01:03.454Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:01:03.455Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:01:13.833Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:01:13.834Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:01:24.681Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:01:24.684Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:01:49.423Z] [resolveImageKeys] Resolving 1 keys: ball (format=internal, useUnapproved=true)
+[2026-05-26T18:01:49.983Z] [resolveImageKeys] No symbol found for "ball"
+[2026-05-26T18:01:49.984Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: ball
+[2026-05-26T18:01:49.986Z] [queueGeneration] Queuing 1 keys: ball (hasCallback=true)
+[2026-05-26T18:01:51.048Z] [processQueue] Generating "ball"...
+[2026-05-26T18:01:57.728Z] [resolveImageKeys] Resolving 2 keys: toy_airplane, kite (format=internal, useUnapproved=true)
+[2026-05-26T18:01:58.324Z] [resolveImageKeys] No symbol found for "toy_airplane"
+[2026-05-26T18:01:59.455Z] [resolveImageKeys] No symbol found for "kite"
+[2026-05-26T18:01:59.456Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: toy_airplane, kite
+[2026-05-26T18:01:59.458Z] [queueGeneration] Queuing 2 keys: toy_airplane, kite (hasCallback=true)
+[2026-05-26T18:01:59.463Z] [resolveImageKeys] Resolving 2 keys: toy_airplane, kite (format=api-path, useUnapproved=true)
+[2026-05-26T18:01:59.845Z] [resolveImageKeys] No symbol found for "toy_airplane"
+[2026-05-26T18:02:00.018Z] [resolveImageKeys] No symbol found for "kite"
+[2026-05-26T18:02:00.019Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: toy_airplane, kite
+[2026-05-26T18:02:00.020Z] [queueGeneration] Queuing 2 keys: toy_airplane, kite (hasCallback=true)
+[2026-05-26T18:02:08.916Z] [COST] imageKey="ball" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=25 | image: openai/gpt-image-1 in=31 out=272
+[2026-05-26T18:02:08.917Z] [processQueue] Generated "ball" → 923c2d40-354f-43ad-9041-94d61b97d0a6 (1 total)
+[2026-05-26T18:02:08.919Z] [processQueue] FULL REFINED PROMPT for "ball": A perfectly round, solid red ball with a bold black outline, centered on a transparent background, in flat AAC icon style.
+[2026-05-26T18:02:13.119Z] [processQueue] Generating "kite"...
+[2026-05-26T18:02:16.698Z] [resolveImageKeys] Resolving 2 keys: toy_airplane, kite (format=internal, useUnapproved=true)
+[2026-05-26T18:02:17.772Z] [resolveImageKeys] No symbol found for "toy_airplane"
+[2026-05-26T18:02:18.971Z] [resolveImageKeys] No symbol found for "kite"
+[2026-05-26T18:02:18.973Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: toy_airplane, kite
+[2026-05-26T18:02:18.974Z] [queueGeneration] Queuing 2 keys: toy_airplane, kite (hasCallback=true)
+[2026-05-26T18:02:18.978Z] [resolveImageKeys] Resolving 2 keys: toy_airplane, kite (format=api-path, useUnapproved=true)
+[2026-05-26T18:02:19.327Z] [resolveImageKeys] No symbol found for "toy_airplane"
+[2026-05-26T18:02:19.589Z] [resolveImageKeys] No symbol found for "kite"
+[2026-05-26T18:02:19.589Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: toy_airplane, kite
+[2026-05-26T18:02:19.590Z] [queueGeneration] Queuing 2 keys: toy_airplane, kite (hasCallback=true)
+[2026-05-26T18:02:36.640Z] [COST] imageKey="kite" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=36 | image: openai/gpt-image-1 in=41 out=272
+[2026-05-26T18:02:36.641Z] [processQueue] Generated "kite" → 1fbf1481-d459-4b43-b120-783811ed7b9f (2 total)
+[2026-05-26T18:02:36.642Z] [processQueue] FULL REFINED PROMPT for "kite": A colorful diamond-shaped kite with a long flowing tail, depicted from the front, with two simple curved lines indicating it is flying in the air, in flat AAC icon style.
+[2026-05-26T18:02:40.831Z] [processQueue] "kite" already exists → 1fbf1481-d459-4b43-b120-783811ed7b9f
+[2026-05-26T18:02:41.651Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:02:41.651Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:02:45.014Z] [processQueue] Generating "toy_airplane"...
+[2026-05-26T18:02:54.400Z] [resolveImageKeys] Resolving 3 keys: funny_movie, action_movie, new_movie (format=internal, useUnapproved=true)
+[2026-05-26T18:02:55.291Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:02:56.154Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:02:56.335Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:02:56.336Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: funny_movie, action_movie, new_movie
+[2026-05-26T18:02:56.337Z] [queueGeneration] Queuing 3 keys: funny_movie, action_movie, new_movie (hasCallback=true)
+[2026-05-26T18:02:56.339Z] [resolveImageKeys] Resolving 3 keys: funny_movie, action_movie, new_movie (format=api-path, useUnapproved=true)
+[2026-05-26T18:02:56.879Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:02:59.155Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:03:00.134Z] [resolveImageKeys] Resolving 3 keys: funny_movie, action_movie, new_movie (format=internal, useUnapproved=true)
+[2026-05-26T18:03:03.934Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:03:03.935Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: funny_movie, action_movie, new_movie
+[2026-05-26T18:03:03.936Z] [queueGeneration] Queuing 3 keys: funny_movie, action_movie, new_movie (hasCallback=true)
+[2026-05-26T18:03:04.452Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:03:05.485Z] [COST] imageKey="toy_airplane" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=69 | image: openai/gpt-image-1 in=77 out=272
+[2026-05-26T18:03:05.486Z] [processQueue] Generated "toy_airplane" → 4f301c9a-8d4e-4d73-b606-271b83b3310f (3 total)
+[2026-05-26T18:03:05.487Z] [processQueue] FULL REFINED PROMPT for "toy_airplane": A simple, bold illustration of a toy airplane, viewed from the side, with a propeller at the front and two wings extending from the body. It is rendered in flat, solid colors with thick black outlines, suitable for an AAC communication board icon. The airplane is predominantly red with a yellow propeller and blue accents, centered on a transparent background.
+[2026-05-26T18:03:05.667Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:03:06.373Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:03:06.374Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: funny_movie, action_movie, new_movie
+[2026-05-26T18:03:06.375Z] [queueGeneration] Queuing 3 keys: funny_movie, action_movie, new_movie (hasCallback=true)
+[2026-05-26T18:03:06.379Z] [resolveImageKeys] Resolving 3 keys: funny_movie, action_movie, new_movie (format=api-path, useUnapproved=true)
+[2026-05-26T18:03:06.725Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:03:07.186Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:03:07.556Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:03:07.557Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: funny_movie, action_movie, new_movie
+[2026-05-26T18:03:07.559Z] [queueGeneration] Queuing 3 keys: funny_movie, action_movie, new_movie (hasCallback=true)
+[2026-05-26T18:03:08.225Z] [resolveImageKeys] Resolving 5 keys: funny_movie, action_movie, new_movie, drama_movie, thriller_movie (format=internal, useUnapproved=true)
+[2026-05-26T18:03:08.817Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:03:09.897Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:03:10.004Z] [processQueue] Generating "new_movie"...
+[2026-05-26T18:03:10.082Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:03:10.265Z] [resolveImageKeys] No symbol found for "drama_movie"
+[2026-05-26T18:03:10.446Z] [resolveImageKeys] No symbol found for "thriller_movie"
+[2026-05-26T18:03:10.447Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: funny_movie, action_movie, new_movie, drama_movie, thriller_movie
+[2026-05-26T18:03:10.449Z] [queueGeneration] Queuing 5 keys: funny_movie, action_movie, new_movie, drama_movie, thriller_movie (hasCallback=true)
+[2026-05-26T18:03:10.454Z] [resolveImageKeys] Resolving 5 keys: funny_movie, action_movie, new_movie, drama_movie, thriller_movie (format=api-path, useUnapproved=true)
+[2026-05-26T18:03:10.636Z] [resolveImageKeys] No symbol found for "funny_movie"
+[2026-05-26T18:03:10.985Z] [resolveImageKeys] No symbol found for "action_movie"
+[2026-05-26T18:03:11.160Z] [resolveImageKeys] No symbol found for "new_movie"
+[2026-05-26T18:03:11.334Z] [resolveImageKeys] No symbol found for "drama_movie"
+[2026-05-26T18:03:11.507Z] [resolveImageKeys] No symbol found for "thriller_movie"
+[2026-05-26T18:03:11.507Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: funny_movie, action_movie, new_movie, drama_movie, thriller_movie
+[2026-05-26T18:03:11.508Z] [queueGeneration] Queuing 5 keys: funny_movie, action_movie, new_movie, drama_movie, thriller_movie (hasCallback=true)
+[2026-05-26T18:03:27.301Z] [COST] imageKey="new_movie" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=45 | image: openai/gpt-image-1 in=49 out=272
+[2026-05-26T18:03:27.302Z] [processQueue] Generated "new_movie" → 26d770c1-7485-4367-9d5f-0339be6c9259 (4 total)
+[2026-05-26T18:03:27.304Z] [processQueue] FULL REFINED PROMPT for "new_movie": A red cinema ticket stub with a tear-off section on the right, showing a simple white star in the center of the main portion, and a white circle on the tear-off section, in flat AAC icon style.
+[2026-05-26T18:03:31.513Z] [processQueue] Generating "thriller_movie"...
+[2026-05-26T18:03:51.623Z] [COST] imageKey="thriller_movie" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=54 | image: openai/gpt-image-1 in=58 out=272
+[2026-05-26T18:03:51.624Z] [processQueue] Generated "thriller_movie" → e5b4f7cf-0a33-486d-ae24-22a6447c4373 (5 total)
+[2026-05-26T18:03:51.625Z] [processQueue] FULL REFINED PROMPT for "thriller_movie": A simple AAC icon of a generic person's head in profile, facing right, with a wide open mouth letting out a scream, and a single large drop of sweat on their forehead, all rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-26T18:03:55.814Z] [processQueue] Generating "drama_movie"...
+[2026-05-26T18:04:11.103Z] [COST] imageKey="drama_movie" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=55 | image: openai/gpt-image-1 in=61 out=272
+[2026-05-26T18:04:11.104Z] [processQueue] Generated "drama_movie" → f3a90c79-5d71-47d6-9337-8984e107e715 (6 total)
+[2026-05-26T18:04:11.105Z] [processQueue] FULL REFINED PROMPT for "drama_movie": A simple, bold AAC icon illustration of a classic theater mask with a sad expression, depicted in white with black outlines, centered on a transparent background. The mask has simple dots for eyes and a downturned curve for the mouth, with a single tear drop below one eye.
+[2026-05-26T18:04:15.285Z] [processQueue] "new_movie" already exists → 26d770c1-7485-4367-9d5f-0339be6c9259
+[2026-05-26T18:04:19.470Z] [processQueue] Generating "action_movie"...
+[2026-05-26T18:04:35.424Z] [COST] imageKey="action_movie" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=78 | image: openai/gpt-image-1 in=84 out=272
+[2026-05-26T18:04:35.425Z] [processQueue] Generated "action_movie" → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae (7 total)
+[2026-05-26T18:04:35.426Z] [processQueue] FULL REFINED PROMPT for "action_movie": A generic, stylized male figure in a dynamic pose, mid-air, with one arm extended forward as if firing a weapon (not depicted), and the other arm bent, in flat AAC icon style. The figure wears a simple dark blue shirt and dark gray pants. Simple motion lines emanate from the figure to indicate rapid movement. Bold black outlines, flat solid colors, transparent background.
+[2026-05-26T18:04:39.622Z] [processQueue] Generating "funny_movie"...
+[2026-05-26T18:05:28.606Z] [COST] imageKey="funny_movie" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=46 | image: openai/gpt-image-1 in=52 out=272
+[2026-05-26T18:05:28.607Z] [processQueue] Generated "funny_movie" → eff21d70-275c-4e81-a913-f6b651018b14 (8 total)
+[2026-05-26T18:05:28.608Z] [processQueue] FULL REFINED PROMPT for "funny_movie": A simple AAC icon of a smiling generic human figure with a large open-mouthed laugh, holding a classic red and white striped popcorn box, with a single yellow starburst shape indicating humor, all in flat AAC icon style.
+[2026-05-26T18:05:32.787Z] [processQueue] "thriller_movie" already exists → e5b4f7cf-0a33-486d-ae24-22a6447c4373
+[2026-05-26T18:05:36.988Z] [processQueue] "drama_movie" already exists → f3a90c79-5d71-47d6-9337-8984e107e715
+[2026-05-26T18:05:41.184Z] [processQueue] "new_movie" already exists → 26d770c1-7485-4367-9d5f-0339be6c9259
+[2026-05-26T18:05:45.375Z] [processQueue] "action_movie" already exists → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae
+[2026-05-26T18:05:49.567Z] [processQueue] "funny_movie" already exists → eff21d70-275c-4e81-a913-f6b651018b14
+[2026-05-26T18:05:53.749Z] [processQueue] "new_movie" already exists → 26d770c1-7485-4367-9d5f-0339be6c9259
+[2026-05-26T18:05:57.917Z] [processQueue] "action_movie" already exists → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae
+[2026-05-26T18:06:02.088Z] [processQueue] "funny_movie" already exists → eff21d70-275c-4e81-a913-f6b651018b14
+[2026-05-26T18:06:06.271Z] [processQueue] "new_movie" already exists → 26d770c1-7485-4367-9d5f-0339be6c9259
+[2026-05-26T18:06:10.459Z] [processQueue] "action_movie" already exists → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae
+[2026-05-26T18:06:14.642Z] [processQueue] "funny_movie" already exists → eff21d70-275c-4e81-a913-f6b651018b14
+[2026-05-26T18:06:18.827Z] [processQueue] "action_movie" already exists → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae
+[2026-05-26T18:06:23.005Z] [processQueue] "funny_movie" already exists → eff21d70-275c-4e81-a913-f6b651018b14
+[2026-05-26T18:06:27.194Z] [processQueue] "new_movie" already exists → 26d770c1-7485-4367-9d5f-0339be6c9259
+[2026-05-26T18:06:31.376Z] [processQueue] "action_movie" already exists → 99d3918f-fa0e-4aa3-be7e-b9523ff44eae
+[2026-05-26T18:06:35.556Z] [processQueue] "funny_movie" already exists → eff21d70-275c-4e81-a913-f6b651018b14
+[2026-05-26T18:06:39.742Z] [processQueue] "kite" already exists → 1fbf1481-d459-4b43-b120-783811ed7b9f
+[2026-05-26T18:06:43.920Z] [processQueue] "toy_airplane" already exists → 4f301c9a-8d4e-4d73-b606-271b83b3310f
+[2026-05-26T18:06:48.109Z] [processQueue] "toy_airplane" already exists → 4f301c9a-8d4e-4d73-b606-271b83b3310f
+[2026-05-26T18:06:52.300Z] [processQueue] "kite" already exists → 1fbf1481-d459-4b43-b120-783811ed7b9f
+[2026-05-26T18:06:56.492Z] [processQueue] "toy_airplane" already exists → 4f301c9a-8d4e-4d73-b606-271b83b3310f
+[2026-05-26T18:20:34.685Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:20:34.686Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:20:47.618Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:20:47.619Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:21:01.700Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:21:01.701Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:21:17.996Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:21:17.997Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:21:27.892Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:21:27.893Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:21:35.430Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:21:36.144Z] [resolveImageKeys] No symbol found for "[GUESS] generate:star"
+[2026-05-26T18:21:36.146Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: [GUESS] generate:star
+[2026-05-26T18:21:36.147Z] [queueGeneration] Queuing 1 keys: [GUESS] generate:star (hasCallback=true)
+[2026-05-26T18:21:36.151Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:21:37.164Z] [processQueue] Generating "[GUESS] generate:star"...
+[2026-05-26T18:21:37.203Z] [resolveImageKeys] No symbol found for "[GUESS] generate:star"
+[2026-05-26T18:21:37.203Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: [GUESS] generate:star
+[2026-05-26T18:21:37.204Z] [queueGeneration] Queuing 1 keys: [GUESS] generate:star (hasCallback=true)
+[2026-05-26T18:21:46.987Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:21:47.671Z] [resolveImageKeys] No symbol found for "[GUESS] generate:star"
+[2026-05-26T18:21:47.671Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: [GUESS] generate:star
+[2026-05-26T18:21:47.672Z] [queueGeneration] Queuing 1 keys: [GUESS] generate:star (hasCallback=true)
+[2026-05-26T18:21:47.675Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:21:48.740Z] [resolveImageKeys] No symbol found for "[GUESS] generate:star"
+[2026-05-26T18:21:48.741Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: [GUESS] generate:star
+[2026-05-26T18:21:48.741Z] [queueGeneration] Queuing 1 keys: [GUESS] generate:star (hasCallback=true)
+[2026-05-26T18:21:52.095Z] [COST] imageKey="[GUESS] generate:star" | refinement: gemini/gemini-2.5-flash in=1063 (1055 cached) out=24 | image: openai/gpt-image-1 in=30 out=272
+[2026-05-26T18:21:52.096Z] [processQueue] Generated "[GUESS] generate:star" → b5ef464b-7a33-4bf4-b2c5-ec858288d7c9 (1 total)
+[2026-05-26T18:21:52.096Z] [processQueue] FULL REFINED PROMPT for "[GUESS] generate:star": A five-pointed yellow star with bold black outlines, centered on a transparent background, in a flat AAC icon style.
+[2026-05-26T18:21:56.294Z] [processQueue] "[GUESS] generate:star" already exists → b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:22:00.697Z] [processQueue] "[GUESS] generate:star" already exists → b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:22:01.169Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:22:01.948Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:22:01.948Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:22:01.950Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:22:02.955Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:22:02.955Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:22:04.872Z] [processQueue] "[GUESS] generate:star" already exists → b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:22:09.732Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:09.733Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:09.739Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:22:10.443Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:22:10.448Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:22:10.863Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:10.864Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:14.022Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:14.024Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:24.836Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:24.838Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:31.439Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:31.439Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:34.836Z] [resolveImageKeys] Resolving 2 keys: star, spaceship (format=internal, useUnapproved=true)
+[2026-05-26T18:22:35.375Z] [resolveImageKeys] No symbol found for "star"
+[2026-05-26T18:22:36.281Z] [resolveImageKeys] No symbol found for "spaceship"
+[2026-05-26T18:22:36.282Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: star, spaceship
+[2026-05-26T18:22:36.283Z] [queueGeneration] Queuing 2 keys: star, spaceship (hasCallback=true)
+[2026-05-26T18:22:36.287Z] [resolveImageKeys] Resolving 1 keys: spaceship (format=api-path, useUnapproved=true)
+[2026-05-26T18:22:36.649Z] [resolveImageKeys] No symbol found for "spaceship"
+[2026-05-26T18:22:36.649Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: spaceship
+[2026-05-26T18:22:36.650Z] [queueGeneration] Queuing 1 keys: spaceship (hasCallback=true)
+[2026-05-26T18:22:36.651Z] [processQueue] Generating "spaceship"...
+[2026-05-26T18:22:45.008Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:45.009Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:52.409Z] [COST] imageKey="spaceship" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=58 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-26T18:22:52.410Z] [processQueue] Generated "spaceship" → 58d10e8c-5582-4c2b-9da4-48dd7974e746 (1 total)
+[2026-05-26T18:22:52.412Z] [processQueue] FULL REFINED PROMPT for "spaceship": A simple, bold illustration of a generic science-fiction spaceship, viewed from the side, with a sleek, elongated body, a pointed nose, and two small fins or wings extending from the back, rendered in flat, solid colors with thick black outlines, suitable for an AAC communication board.
+[2026-05-26T18:22:55.891Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:55.892Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:57.661Z] [processQueue] "spaceship" already exists → 58d10e8c-5582-4c2b-9da4-48dd7974e746
+[2026-05-26T18:22:57.901Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:57.902Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:22:59.055Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:22:59.060Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:01.843Z] [processQueue] Generating "star"...
+[2026-05-26T18:23:14.802Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:14.803Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:15.017Z] [COST] imageKey="star" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=25 | image: openai/gpt-image-1 in=31 out=272
+[2026-05-26T18:23:15.018Z] [processQueue] Generated "star" → 394e4834-25dd-44d8-8077-19271b0b470d (2 total)
+[2026-05-26T18:23:15.019Z] [processQueue] FULL REFINED PROMPT for "star": A single five-pointed yellow star with bold black outlines, centered on a transparent background, in a flat AAC icon style.
+[2026-05-26T18:23:33.288Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:33.289Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:38.941Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:38.941Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:43.063Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:43.064Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:47.150Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:47.151Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:48.356Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:48.358Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:23:52.976Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:23:52.977Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:02.531Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:24:02.532Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:10.455Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:24:10.455Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:16.636Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:24:17.347Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:24:17.348Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:17.351Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:18.533Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:18.534Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:22.447Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:24:22.447Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:22.451Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:23.131Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:23.132Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:30.063Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:24:30.758Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:24:30.759Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:30.763Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:32.079Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:32.080Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:36.190Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:24:36.191Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:36.196Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:36.888Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:36.888Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:50.712Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:24:51.399Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:24:51.400Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:51.404Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:52.424Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:52.425Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:24:56.123Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:24:56.127Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:24:56.135Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:24:56.892Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:24:56.893Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:02.806Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:02.807Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:09.347Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:25:10.032Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:25:10.033Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:10.037Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:11.063Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:25:11.063Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:14.302Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:14.303Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:14.308Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:15.027Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:25:15.028Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:17.043Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=internal, useUnapproved=true)
+[2026-05-26T18:25:17.617Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → __SYMBOL__:b5ef464b-7a33-4bf4-b2c5-ec858288d7c9
+[2026-05-26T18:25:17.619Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:17.622Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:18.872Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:25:18.873Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:22.959Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:22.960Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:22.963Z] [resolveImageKeys] Resolving 1 keys: [GUESS] generate:star (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:24.002Z] [resolveImageKeys] Resolved "[GUESS] generate:star" → /api/custom-symbols/b5ef464b-7a33-4bf4-b2c5-ec858288d7c9/image
+[2026-05-26T18:25:24.004Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-26T18:25:24.628Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:24.630Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:24.635Z] [resolveImageKeys] Resolving 1 keys: new_topic (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:26.639Z] [resolveImageKeys] No symbol found for "new_topic"
+[2026-05-26T18:25:26.640Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: new_topic
+[2026-05-26T18:25:26.641Z] [queueGeneration] Queuing 1 keys: new_topic (hasCallback=true)
+[2026-05-26T18:25:27.889Z] [processQueue] Generating "new_topic"...
+[2026-05-26T18:25:32.108Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:32.108Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:32.111Z] [resolveImageKeys] Resolving 1 keys: new_topic (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:32.825Z] [resolveImageKeys] No symbol found for "new_topic"
+[2026-05-26T18:25:32.826Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: new_topic
+[2026-05-26T18:25:32.827Z] [queueGeneration] Queuing 1 keys: new_topic (hasCallback=true)
+[2026-05-26T18:25:39.582Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:39.584Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:39.587Z] [resolveImageKeys] Resolving 1 keys: new_topic (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:40.329Z] [resolveImageKeys] No symbol found for "new_topic"
+[2026-05-26T18:25:40.330Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: new_topic
+[2026-05-26T18:25:40.331Z] [queueGeneration] Queuing 1 keys: new_topic (hasCallback=true)
+[2026-05-26T18:25:44.838Z] [COST] imageKey="new_topic" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=46 | image: openai/gpt-image-1 in=53 out=272
+[2026-05-26T18:25:44.839Z] [processQueue] Generated "new_topic" → 03283bf1-6690-4e91-b03a-d4d75379c184 (1 total)
+[2026-05-26T18:25:44.841Z] [processQueue] FULL REFINED PROMPT for "new_topic": A bright green speech bubble with a bold black outline, containing a white question mark with a bold black outline, and a white exclamation mark with a bold black outline, all centered on a transparent background, in flat AAC icon style.
+[2026-05-26T18:25:46.461Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:46.462Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:46.466Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:47.198Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:25:48.306Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:25:48.306Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:25:49.018Z] [processQueue] "new_topic" already exists → 03283bf1-6690-4e91-b03a-d4d75379c184
+[2026-05-26T18:25:50.617Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:50.618Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:50.622Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:51.330Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:25:52.442Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:25:52.442Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:25:53.215Z] [processQueue] "new_topic" already exists → 03283bf1-6690-4e91-b03a-d4d75379c184
+[2026-05-26T18:25:58.167Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:58.168Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:58.171Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:25:58.902Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:25:59.038Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:25:59.039Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:25:59.043Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:26:00.064Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:26:00.065Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:26:00.621Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:26:02.136Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:26:02.137Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:26:06.878Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:26:06.879Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:26:06.884Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:26:07.627Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:26:08.740Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:26:08.741Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:26:18.596Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:26:18.597Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:26:18.600Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:26:19.335Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:26:20.654Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:26:20.657Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:26:28.253Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:26:28.255Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:26:28.258Z] [resolveImageKeys] Resolving 2 keys: new_topic, quiet (format=api-path, useUnapproved=true)
+[2026-05-26T18:26:29.092Z] [resolveImageKeys] Resolved "new_topic" → /api/custom-symbols/03283bf1-6690-4e91-b03a-d4d75379c184/image
+[2026-05-26T18:26:30.806Z] [resolveImageKeys] Resolved "quiet" → /api/custom-symbols/10d91d2f-46b1-48fa-b0f6-8061d0def7ed/image
+[2026-05-26T18:26:30.807Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-26T18:50:17.033Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:50:17.034Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:50:17.041Z] [resolveImageKeys] Resolving 1 keys: thought (format=api-path, useUnapproved=true)
+[2026-05-26T18:50:17.781Z] [resolveImageKeys] No symbol found for "thought"
+[2026-05-26T18:50:17.782Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: thought
+[2026-05-26T18:50:17.783Z] [queueGeneration] Queuing 1 keys: thought (hasCallback=true)
+[2026-05-26T18:50:18.728Z] [processQueue] Generating "thought"...
+[2026-05-26T18:50:29.996Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:50:29.998Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:50:41.091Z] [COST] imageKey="thought" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=80 | image: openai/gpt-image-1 in=87 out=272
+[2026-05-26T18:50:41.092Z] [processQueue] Generated "thought" → 80f20f4e-328a-4de3-9db4-53cc17c1422e (1 total)
+[2026-05-26T18:50:41.093Z] [processQueue] FULL REFINED PROMPT for "thought": A simple, generic human head in profile, facing right, with a large, puffy white thought bubble emerging from the top of its head, in flat AAC icon style. The head has a simple black outline, a light skin tone, and minimal facial features (a small dot for an eye). The thought bubble is empty, outlined in black, and has three small circles connecting it to the head.
+[2026-05-26T18:50:42.707Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:50:42.708Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:50:59.439Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:50:59.440Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:51:13.573Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:51:13.574Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:51:39.501Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:51:39.501Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:52:09.165Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:52:09.166Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:52:26.863Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:52:26.865Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:52:52.162Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:52:52.163Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:53:19.585Z] [resolveImageKeys] Resolving 3 keys: cartoon_cloud, spaceship, planet (format=internal, useUnapproved=true)
+[2026-05-26T18:53:20.148Z] [resolveImageKeys] No symbol found for "cartoon_cloud"
+[2026-05-26T18:53:21.182Z] [resolveImageKeys] Resolved "spaceship" → __SYMBOL__:58d10e8c-5582-4c2b-9da4-48dd7974e746
+[2026-05-26T18:53:21.354Z] [resolveImageKeys] No symbol found for "planet"
+[2026-05-26T18:53:21.355Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: cartoon_cloud, planet
+[2026-05-26T18:53:21.356Z] [queueGeneration] Queuing 2 keys: cartoon_cloud, planet (hasCallback=true)
+[2026-05-26T18:53:21.361Z] [resolveImageKeys] Resolving 3 keys: cartoon_cloud, spaceship, planet (format=api-path, useUnapproved=true)
+[2026-05-26T18:53:21.715Z] [processQueue] Generating "planet"...
+[2026-05-26T18:53:21.775Z] [resolveImageKeys] No symbol found for "cartoon_cloud"
+[2026-05-26T18:53:21.957Z] [resolveImageKeys] Resolved "spaceship" → /api/custom-symbols/58d10e8c-5582-4c2b-9da4-48dd7974e746/image
+[2026-05-26T18:53:22.131Z] [resolveImageKeys] No symbol found for "planet"
+[2026-05-26T18:53:22.131Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: cartoon_cloud, planet
+[2026-05-26T18:53:22.138Z] [queueGeneration] Queuing 2 keys: cartoon_cloud, planet (hasCallback=true)
+[2026-05-26T18:53:36.537Z] [COST] imageKey="planet" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=79 | image: openai/gpt-image-1 in=86 out=272
+[2026-05-26T18:53:36.538Z] [processQueue] Generated "planet" → 2c9c7fbb-d016-4c10-9063-626e21d0ba4b (1 total)
+[2026-05-26T18:53:36.539Z] [processQueue] FULL REFINED PROMPT for "planet": A simple, bold illustration of a spherical planet with a prominent ring system, tilted slightly. The planet is colored blue and green, representing water and land, with a few white cloud swirls. The rings are a light yellow-orange, encircling the planet's equator. The entire icon has thick black outlines and uses flat, solid colors, on a transparent background, in AAC icon style.
+[2026-05-26T18:53:40.726Z] [processQueue] "planet" already exists → 2c9c7fbb-d016-4c10-9063-626e21d0ba4b
+[2026-05-26T18:53:44.916Z] [processQueue] Generating "cartoon_cloud"...
+[2026-05-26T18:53:47.660Z] [resolveImageKeys] Resolving 3 keys: planet_mars, planet_jupiter, planet_saturn (format=internal, useUnapproved=true)
+[2026-05-26T18:53:48.234Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-26T18:53:49.072Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-26T18:53:49.245Z] [resolveImageKeys] No symbol found for "planet_saturn"
+[2026-05-26T18:53:49.246Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: planet_jupiter, planet_saturn
+[2026-05-26T18:53:49.246Z] [queueGeneration] Queuing 2 keys: planet_jupiter, planet_saturn (hasCallback=true)
+[2026-05-26T18:53:49.250Z] [resolveImageKeys] Resolving 5 keys: planet_mars, planet_jupiter, planet_saturn, pictures, something_else (format=api-path, useUnapproved=true)
+[2026-05-26T18:53:49.459Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-26T18:53:49.634Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-26T18:53:49.818Z] [resolveImageKeys] No symbol found for "planet_saturn"
+[2026-05-26T18:53:49.998Z] [resolveImageKeys] No symbol found for "pictures"
+[2026-05-26T18:53:50.172Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-26T18:53:50.173Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: planet_jupiter, planet_saturn, pictures
+[2026-05-26T18:53:50.179Z] [queueGeneration] Queuing 3 keys: planet_jupiter, planet_saturn, pictures (hasCallback=true)
+[2026-05-26T18:53:57.302Z] [COST] imageKey="cartoon_cloud" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=30 | image: openai/gpt-image-1 in=36 out=272
+[2026-05-26T18:53:57.303Z] [processQueue] Generated "cartoon_cloud" → 943518c6-5904-4d09-8165-050b6a3423b0 (2 total)
+[2026-05-26T18:53:57.304Z] [processQueue] FULL REFINED PROMPT for "cartoon_cloud": A simple, fluffy white cartoon cloud with a bold black outline, depicted from the side, with a flat bottom edge, in flat AAC icon style.
+[2026-05-26T18:54:01.511Z] [processQueue] Generating "pictures"...
+[2026-05-26T18:54:21.823Z] [COST] imageKey="pictures" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=37 | image: openai/gpt-image-1 in=43 out=272
+[2026-05-26T18:54:21.824Z] [processQueue] Generated "pictures" → e6e39b06-d0dc-405c-98e9-382e0952b696 (3 total)
+[2026-05-26T18:54:21.825Z] [processQueue] FULL REFINED PROMPT for "pictures": A stack of three rectangular photographs, slightly overlapping and angled, with the top photo showing a simple landscape scene (green hill, blue sky, yellow sun), in flat AAC icon style.
+[2026-05-26T18:54:26.015Z] [processQueue] Generating "planet_saturn"...
+[2026-05-26T18:54:31.276Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:54:31.277Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:54:31.281Z] [resolveImageKeys] Resolving 3 keys: planet_jupiter, facts, other_planet (format=api-path, useUnapproved=true)
+[2026-05-26T18:54:32.011Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-26T18:54:33.004Z] [resolveImageKeys] No symbol found for "facts"
+[2026-05-26T18:54:36.595Z] [resolveImageKeys] No symbol found for "other_planet"
+[2026-05-26T18:54:36.595Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: planet_jupiter, facts, other_planet
+[2026-05-26T18:54:36.596Z] [queueGeneration] Queuing 3 keys: planet_jupiter, facts, other_planet (hasCallback=true)
+[2026-05-26T18:54:52.704Z] [COST] imageKey="planet_saturn" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=73 | image: openai/gpt-image-1 in=79 out=272
+[2026-05-26T18:54:52.705Z] [processQueue] Generated "planet_saturn" → c1e45c4e-1f86-4de7-a7e9-d6005d3ba632 (4 total)
+[2026-05-26T18:54:52.706Z] [processQueue] FULL REFINED PROMPT for "planet_saturn": A flat AAC icon illustration of the planet Saturn, depicted as a large, light brown sphere with a prominent, thin, flat ring system around its equator. The rings are a lighter shade of brown or beige, extending horizontally beyond the planet's edges. The planet and rings have bold black outlines, and are rendered with solid, flat colors on a transparent background.
+[2026-05-26T18:54:56.896Z] [processQueue] Generating "other_planet"...
+[2026-05-26T18:55:12.153Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-26T18:55:12.154Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-26T18:55:12.158Z] [resolveImageKeys] Resolving 4 keys: planet_jupiter, facts, other_planet, pictures (format=api-path, useUnapproved=true)
+[2026-05-26T18:55:12.943Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-26T18:55:14.042Z] [COST] imageKey="other_planet" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=38 | image: openai/gpt-image-1 in=46 out=272
+[2026-05-26T18:55:14.043Z] [processQueue] Generated "other_planet" → bd2516f9-d241-449b-a6e5-e424ccda451b (5 total)
+[2026-05-26T18:55:14.044Z] [processQueue] FULL REFINED PROMPT for "other_planet": A stylized planet with a prominent ring system, depicted with a distinct color palette of blues, purples, and greens, featuring simple craters or landmasses, in flat AAC icon style.
+[2026-05-26T18:55:14.077Z] [resolveImageKeys] No symbol found for "facts"
+[2026-05-26T18:55:18.323Z] [resolveImageKeys] Resolved "other_planet" → /api/custom-symbols/bd2516f9-d241-449b-a6e5-e424ccda451b/image
+[2026-05-26T18:55:24.903Z] [processQueue] Generating "facts"...
+[2026-05-26T18:55:25.291Z] [resolveImageKeys] Resolved "pictures" → /api/custom-symbols/e6e39b06-d0dc-405c-98e9-382e0952b696/image
+[2026-05-26T18:55:25.292Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: planet_jupiter, facts
+[2026-05-26T18:55:25.298Z] [queueGeneration] Queuing 2 keys: planet_jupiter, facts (hasCallback=true)
+[2026-05-26T18:55:40.310Z] [COST] imageKey="facts" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=49 | image: openai/gpt-image-1 in=56 out=272
+[2026-05-26T18:55:40.311Z] [processQueue] Generated "facts" → ca7ad869-6dd6-4764-8750-948a7606a9c4 (6 total)
+[2026-05-26T18:55:40.312Z] [processQueue] FULL REFINED PROMPT for "facts": A stack of three books in different colors (red, blue, green) with a white question mark symbol overlaid on the top book, all rendered in a simple, bold AAC icon style with flat colors and thick black outlines on a transparent background.

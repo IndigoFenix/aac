@@ -140,6 +140,8 @@ interface DualAgentContextType {
 
   // Guessing mode
   guessingMode: boolean;
+  /** Press a guessing-mode SUGGESTION button — updates narrowing state and re-injects [GUESSING STATE]. */
+  pressSuggestion: (suggestionKey: string) => void;
 
   // Construction board (sentence builder)
   sendConstructionState: (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void;
@@ -795,6 +797,9 @@ function ProviderShell({
     safetyBlocked: agent.safetyBlocked ?? false,
 
     guessingMode: agent.guessingMode ?? false,
+    pressSuggestion: agent.pressSuggestion ?? ((key: string) => {
+      console.warn("[guessing] pressSuggestion is unavailable — the live session hook did not provide it (stale build?). key=", key);
+    }),
 
     sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
     constructionSuggestions: agent.constructionSuggestions ?? null,

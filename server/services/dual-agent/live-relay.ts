@@ -17,7 +17,8 @@ import type {
   ToolResponse,
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
-import { parseBoardButtons } from "./interactive-agent";
+import { parseBoardButtons, splitOutSuggestionButtons } from "./interactive-agent";
+import { createState as createGuessingState, buildStateInjection as buildGuessingInjection } from "@shared/guessing-mode/state.js";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import type {
@@ -125,7 +126,7 @@ function stringifyMsg(msg: any): string {
  *
  *  The object array also accepts legacy field names (`icon`, `image_key`)
  *  so that older Gemini tool-call shapes don't break mid-rollout. */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion"; suggestionKey?: string; rowSpan?: number; colSpan?: number }> {
   // String — the expected format from native audio models.
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -296,7 +297,9 @@ interface MergeButton {
   glyph?: string;
   glyphFallback?: string;
   sentence?: string;
-  buttonType?: "guess" | "category";
+  buttonType?: "guess" | "category" | "suggestion";
+  /** For suggestion buttons — the `suggestion:<dim>:<value>` key (see shared/guessing-mode). */
+  suggestionKey?: string;
   rowSpan?: number;
   colSpan?: number;
 }
@@ -634,7 +637,8 @@ export type ClientMessage =
   | { type: "context_injection"; text: string }           // inject context without triggering a response
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
   | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
-  | { type: "glyph_press"; glyph: string };                       // student played a glyph from the sentence builder — AI must call interpret() to voice it
+  | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
+  | { type: "guessing_state"; text: string; suggestionKeys: string[] }; // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -982,6 +986,8 @@ export class LiveRelay {
 
   // Guessing mode tracking
   private guessingMode = false;
+  /** Suggestion keys the latest [GUESSING STATE] offered the AI (for logging). */
+  private currentGuessingSuggestionKeys: string[] = [];
 
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
@@ -1618,9 +1624,17 @@ export class LiveRelay {
           // dynamic-button path. The press is presented as the user
           // saying the label; the board-defined intent text is appended
           // as parenthetical guidance for context.
-          const exitInstruction = msg.instruction
+          let exitInstruction = msg.instruction
             ? `${T.tagPress} ${msg.label}\n\n(${msg.instruction})`
             : `${T.tagPress} ${msg.label}`;
+          // Entering guessing mode: append the initial [GUESSING STATE] so the
+          // single entry turn already carries the category options. The client
+          // owns the narrowing state from the first suggestion press onward.
+          if (this.guessingMode && msg.instruction.includes("[GUESSING MODE]")) {
+            const inj = buildGuessingInjection(createGuessingState());
+            this.currentGuessingSuggestionKeys = inj.suggestionKeys;
+            exitInstruction += `\n\n${inj.text}`;
+          }
           this.lastTurnHadButtonPress = true;
           this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
@@ -1829,6 +1843,38 @@ export class LiveRelay {
 The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR job to put words in their mouth: interpret the SENTENCE (see <sentence_interpretation>) and call the \`interpret\` tool with the natural-language SENTENCE — first-person, as the user would say it. The tool voices that SENTENCE in the user's TTS voice and records it as their turn; you then respond normally (speak + rebuild_board, subject to mode rules).`;
           logLiveSession("SENTENCE_COMPOSED_IN", `glyph="${glyphString}" wasIdle=${wasIdle}`);
           this.provider.sendMessage(prompt, "user", true, { interrupt: !wasIdle });
+          break;
+        }
+
+        case "guessing_state": {
+          // The frontend narrowing assistant pushed an updated [GUESSING
+          // STATE]. Relay it as a response-triggering injection so the AI
+          // rebuilds the board with the offered suggestion buttons. The
+          // narrowing logic lives entirely on the client (shared/guessing-mode);
+          // the server is stateless about it beyond the enter/exit flag.
+          this.currentGuessingSuggestionKeys = Array.isArray(msg.suggestionKeys) ? msg.suggestionKeys : [];
+          if (!this.guessingMode) {
+            this.guessingMode = true;
+            this.send({ type: "guessing_mode", active: true });
+          }
+          if (this.provider) {
+            // Nudge the model to actually VOICE its question this turn — in
+            // function-calling mode it tends to call rebuild_board silently.
+            const speakNudge = this.muteState === "muted"
+              ? "\n\n(Muted — do NOT speak. Just call rebuild_board with the buttons above.)"
+              : "\n\nFirst SAY your next question out loud (a short, warm, simple question a child understands), THEN call rebuild_board with the buttons above. Always speak before building the board.";
+            // Treat this like a button-press turn so handleTurnComplete's
+            // auto-continuation re-prompts the model to voice its own_speech if
+            // it answered with a silent rebuild_board (no audio).
+            if (this.muteState !== "muted") this.lastTurnHadButtonPress = true;
+            this.provider.sendMessage(msg.text + speakNudge, "user", true);
+            logLiveSession(
+              "GUESSING_STATE_IN",
+              `mute=${this.muteState} keys=${this.currentGuessingSuggestionKeys.length} text="${msg.text.replace(/\n/g, " | ").substring(0, 200)}"`,
+            );
+          } else {
+            logLiveSession("GUESSING_STATE_DROPPED", "no provider — message ignored");
+          }
           break;
         }
 
@@ -3085,11 +3131,16 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       }
 
       case "add_buttons": {
-        const parsedButtons = dedupeImageKeys(toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons));
-        const validation = validateBoardButtons(parsedButtons);
-        const incomingAdd = validation.buttons;
+        const { others: addOthers, suggestions: addSuggestions } = splitOutSuggestionButtons(
+          toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons),
+        );
+        const validation = validateBoardButtons(dedupeImageKeys(addOthers));
+        const incomingAdd = [...validation.buttons, ...addSuggestions];
         if (validation.errors.length > 0) {
           logLiveSession("BOARD_VALIDATION", `add_buttons dropped ${validation.errors.length} button(s): ${validation.errors.join(" | ")}`);
+        }
+        if (addSuggestions.length > 0) {
+          logLiveSession("GUESSING_MODE", `add_buttons: ${addSuggestions.length} suggestion button(s) expanded`);
         }
         const maxSlots = state?.maxBoardItems || 8;
 
@@ -3263,11 +3314,19 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
         const wasPrebuiltLoaded = !!state?.loadedBoardId;
         const maxSlots = 8;
-        const parsedRebuild = dedupeImageKeys(toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons).slice(0, maxSlots));
-        const rebuildValidation = validateBoardButtons(parsedRebuild);
-        const incomingRebuild = rebuildValidation.buttons;
+        // Guessing-mode SUGGESTION buttons (bare `suggestion:*` keys) are
+        // trusted, system-expanded content — split them out before the
+        // structural validator (which would reject a bare key) and rejoin after.
+        const { others: rebuildOthers, suggestions: rebuildSuggestions } = splitOutSuggestionButtons(
+          toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons),
+        );
+        const rebuildValidation = validateBoardButtons(dedupeImageKeys(rebuildOthers));
+        const incomingRebuild = [...rebuildValidation.buttons, ...rebuildSuggestions].slice(0, maxSlots);
         if (rebuildValidation.errors.length > 0) {
           logLiveSession("BOARD_VALIDATION", `rebuild_board dropped ${rebuildValidation.errors.length} button(s): ${rebuildValidation.errors.join(" | ")}`);
+        }
+        if (rebuildSuggestions.length > 0) {
+          logLiveSession("GUESSING_MODE", `rebuild_board: ${rebuildSuggestions.length} suggestion button(s) expanded`);
         }
 
         // Switching out of a prebuilt board clears any prior merge
@@ -3360,11 +3419,16 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         this.turnAccum.boardRebuilt = true;
         this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
 
-        // Guessing mode: exit if no [GUESS] buttons in the rebuild
-        if (this.guessingMode && !buttons.some(b => b.buttonType === "guess")) {
+        // Guessing mode: exit only when the rebuild has neither [GUESS] nor
+        // suggestion buttons — i.e. the AI has moved on to a normal board.
+        if (
+          this.guessingMode &&
+          !buttons.some(b => b.buttonType === "guess" || b.buttonType === "suggestion")
+        ) {
           this.guessingMode = false;
+          this.currentGuessingSuggestionKeys = [];
           this.send({ type: "guessing_mode", active: false });
-          logLiveSession("GUESSING_MODE", "Exited — rebuild_board has no [GUESS] buttons");
+          logLiveSession("GUESSING_MODE", "Exited — rebuild_board has no [GUESS] or suggestion buttons");
         }
 
         const stateMsg = `Main board rebuilt. ${buttons.length}/${maxSlots} buttons: ${buttons.map(b => b.label).join(", ")}`;
@@ -3943,9 +4007,17 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         logLiveSession("GUESSING_MODE", "Entered via home board button");
       }
 
-      const message = instruction
+      let message = instruction
         ? `Board exited. The user pressed "${btn.label}". ${instruction}`
         : `${T.board} exited. The user pressed "${btn.label}". Use rebuild_board() to create a new ${T.board} or set_board() to load another.`;
+
+      // Entering guessing mode: append the initial [GUESSING STATE] so this
+      // tool result already carries the category options for the AI to offer.
+      if (this.guessingMode && instruction.includes("[GUESSING MODE]")) {
+        const inj = buildGuessingInjection(createGuessingState());
+        this.currentGuessingSuggestionKeys = inj.suggestionKeys;
+        message += `\n\n${inj.text}`;
+      }
 
       return { output: message };
     }
@@ -4797,7 +4869,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     }
   }
 
-  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
+  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion"; suggestionKey?: string; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -4817,6 +4889,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           spokenText: b.label,
           ...(b.sentence ? { sentence: b.sentence } : {}),
           ...(b.buttonType ? { buttonType: b.buttonType } : {}),
+          ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
           ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
           ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
           row: Math.floor(i / cols),
