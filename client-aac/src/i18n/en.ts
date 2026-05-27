@@ -132,8 +132,6 @@ export const en = {
     audioMonitoringHint: "Enable continuous ambient audio analysis for contextual awareness",
     therapyMode: "Therapy Mode",
     therapyModeHint: "Enable enhanced speech therapy features",
-    smartObjectDetection: "Smart Object Detection",
-    smartObjectDetectionHint: "Automatically detect objects in your hands and replace symbol suggestions with detected items",
     eyegazeSelection: "Eyegaze Symbol Selection",
     eyegazeSelectionHint: "Enable symbol selection by hovering over symbols for a set duration",
     selectionTimeout: "Selection Timeout",

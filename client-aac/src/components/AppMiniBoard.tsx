@@ -7,6 +7,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
+import { Glyph } from "@/components/Glyph";
 
 interface AppMiniBoardProps {
   board: ParsedBoardData | null;
@@ -18,6 +19,21 @@ interface AppMiniBoardProps {
 }
 
 function renderButtonIcon(button: BoardButton, getFaceImage?: (contactId: string) => string | null) {
+  // Glyph wins (same as the main board / SentenceButton) — this is how most AI
+  // buttons carry their visual, including generated symbols that resolve later.
+  // The Glyph compositor renders the fallback while pieces generate and swaps in
+  // each symbol as it lands, so context buttons are no longer blank/unreliable.
+  if (
+    (button.glyph || button.glyphFallback) &&
+    !button.symbolPath?.startsWith("__FACE__:") &&
+    !button.symbolPath?.startsWith("__SYMBOL__:")
+  ) {
+    return (
+      <div style={{ width: "100%", height: "100%" }}>
+        <Glyph glyph={button.glyph} fallback={button.glyphFallback} noBackground ariaLabel={button.label} />
+      </div>
+    );
+  }
   if (button.symbolPath?.startsWith("__FACE__:")) {
     const contactId = button.symbolPath.substring(9);
     const cached = getFaceImage?.(contactId);
@@ -31,7 +47,12 @@ function renderButtonIcon(button: BoardButton, getFaceImage?: (contactId: string
   if (button.symbolPath) {
     return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
   }
+  // Emoji iconRef renders directly; a FontAwesome sentinel ("fas fa-comment")
+  // would otherwise render as literal text, so render it as an <i> instead.
   if (button.iconRef) {
+    if (button.iconRef.startsWith("fa")) {
+      return <i className={button.iconRef} style={{ color: "white", fontSize: "1.5rem" }} />;
+    }
     return <span className="icon-fill-emoji">{button.iconRef}</span>;
   }
   return null;

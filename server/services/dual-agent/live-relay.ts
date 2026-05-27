@@ -17,7 +17,7 @@ import type {
   ToolResponse,
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
-import { parseBoardButtons, splitOutSuggestionButtons } from "./interactive-agent";
+import { parseBoardButtons, splitOutSuggestionButtons, extractSuggestionButtonsFromRaw, type SuggestionButton } from "./interactive-agent";
 import { createState as createGuessingState, buildStateInjection as buildGuessingInjection } from "@shared/guessing-mode/state.js";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
@@ -252,6 +252,30 @@ function assemble(b: {
     rowSpan: b.rowSpan,
     colSpan: b.colSpan,
   };
+}
+
+/**
+ * Split a rebuild_board/add_buttons `buttons` arg into guessing-mode SUGGESTION
+ * buttons and everything else. For the string form (the usual native-audio
+ * shape) it regex-extracts EVERY suggestion key from the raw text — robust to
+ * the model cramming them into one pipe-joined item instead of comma-separating
+ * bare keys. For the structured/object form it parses then splits per entry.
+ */
+function expandGuessingButtons(raw: unknown): {
+  others: ReturnType<typeof toolArgsToButtons>;
+  suggestions: SuggestionButton[];
+} {
+  const str =
+    typeof raw === "string" ? raw
+    : Array.isArray(raw) && raw.every((x) => typeof x === "string") ? (raw as string[]).join(",")
+    : null;
+
+  if (str !== null) {
+    const { suggestions, othersRaw } = extractSuggestionButtonsFromRaw(str);
+    const others = othersRaw.trim() ? parseBoardButtons(othersRaw) : [];
+    return { others, suggestions };
+  }
+  return splitOutSuggestionButtons(toolArgsToButtons(raw));
 }
 
 /**
@@ -638,7 +662,9 @@ export type ClientMessage =
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
   | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
   | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
-  | { type: "guessing_state"; text: string; suggestionKeys: string[] }; // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild
+  | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string } } // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild
+  | { type: "builder_open" }                                            // sentence builder opened — begin a conversation detour
+  | { type: "builder_close" };                                          // sentence builder closed — end the builder detour
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -988,6 +1014,18 @@ export class LiveRelay {
   private guessingMode = false;
   /** Suggestion keys the latest [GUESSING STATE] offered the AI (for logging). */
   private currentGuessingSuggestionKeys: string[] = [];
+
+  // Detour tracking — the user leaves the conversation for the sentence builder
+  // and/or guessing, then returns. We snapshot the conversation topic when a
+  // detour begins so the contribution turn (composed sentence / confirmed guess)
+  // can carry a [RESUME] reminder. See planning-docs/aac-flow-integration/plan.md.
+  private builderOpen = false;
+  private preDetourTopic: string | null = null;
+  // When guessing is launched from the sentence builder, the resolved concept
+  // fills a sentence slot (via suggest_construction_buttons) instead of becoming
+  // a conversational utterance. Tracks where the active guessing session came from.
+  private guessingOrigin: "conversation" | "builder" = "conversation";
+  private guessingBuilderContext: { targetSlot: number | null; partialGlyph: string; category: string } | null = null;
 
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
@@ -1607,6 +1645,7 @@ export class LiveRelay {
 
           // Detect guessing mode
           if (msg.instruction.includes("[GUESSING MODE]") && !this.guessingMode) {
+            this.beginDetourIfNeeded();
             this.guessingMode = true;
             this.send({ type: "guessing_mode", active: true });
             logLiveSession("GUESSING_MODE", "Entered via board exit button");
@@ -1853,7 +1892,10 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           // narrowing logic lives entirely on the client (shared/guessing-mode);
           // the server is stateless about it beyond the enter/exit flag.
           this.currentGuessingSuggestionKeys = Array.isArray(msg.suggestionKeys) ? msg.suggestionKeys : [];
+          this.guessingOrigin = msg.origin === "builder" ? "builder" : "conversation";
+          this.guessingBuilderContext = msg.origin === "builder" ? (msg.builderContext ?? null) : null;
           if (!this.guessingMode) {
+            this.beginDetourIfNeeded();
             this.guessingMode = true;
             this.send({ type: "guessing_mode", active: true });
           }
@@ -1863,11 +1905,23 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             const speakNudge = this.muteState === "muted"
               ? "\n\n(Muted — do NOT speak. Just call rebuild_board with the buttons above.)"
               : "\n\nFirst SAY your next question out loud (a short, warm, simple question a child understands), THEN call rebuild_board with the buttons above. Always speak before building the board.";
+            // Builder-origin guessing fills a sentence SLOT, not the conversation:
+            // the resolved concept must come back as a construction suggestion.
+            let builderOverride = "";
+            if (this.guessingOrigin === "builder") {
+              const ctx = this.guessingBuilderContext;
+              builderOverride =
+                `\n\n[BUILDER SLOT GUESSING] This narrowing is to fill the ${ctx?.category ?? "current"} slot of the sentence the user is composing` +
+                (ctx?.partialGlyph ? ` ("${ctx.partialGlyph}")` : "") +
+                `. Keep asking narrowing questions with the suggestion buttons as usual, but the GOAL is a single SYMBOL for that slot — NOT a spoken statement. When you have good candidate ${T.symbol}(s), call suggest_construction_buttons with them as \`head_candidates\`` +
+                (typeof ctx?.targetSlot === "number" ? ` for slot ${ctx.targetSlot}` : "") +
+                `. Do NOT offer [GUESS] utterance buttons and do NOT make a conversational reply — this concept goes INTO the sentence.`;
+            }
             // Treat this like a button-press turn so handleTurnComplete's
             // auto-continuation re-prompts the model to voice its own_speech if
             // it answered with a silent rebuild_board (no audio).
             if (this.muteState !== "muted") this.lastTurnHadButtonPress = true;
-            this.provider.sendMessage(msg.text + speakNudge, "user", true);
+            this.provider.sendMessage(msg.text + speakNudge + builderOverride, "user", true);
             logLiveSession(
               "GUESSING_STATE_IN",
               `mute=${this.muteState} keys=${this.currentGuessingSuggestionKeys.length} text="${msg.text.replace(/\n/g, " | ").substring(0, 200)}"`,
@@ -1878,7 +1932,34 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           break;
         }
 
+        case "builder_open": {
+          // Sentence builder opened — start a conversation detour so the
+          // composed sentence later carries a [RESUME] reminder.
+          if (!this.builderOpen) {
+            this.beginDetourIfNeeded();
+            this.builderOpen = true;
+          }
+          logLiveSession("BUILDER_OPEN", `preDetourTopic=${this.preDetourTopic ? "set" : "none"}`);
+          break;
+        }
+
+        case "builder_close": {
+          // Sentence builder closed. If the user composed a sentence, the
+          // interpret follow-up already consumed preDetourTopic; if they
+          // cancelled (and aren't mid-guessing), drop the stale snapshot.
+          this.builderOpen = false;
+          if (!this.guessingMode) this.preDetourTopic = null;
+          logLiveSession("BUILDER_CLOSE", `guessingMode=${this.guessingMode}`);
+          break;
+        }
+
         case "construction_state": {
+          // Opening the builder for the first time begins a detour too (covers
+          // the case where the explicit builder_open didn't arrive first).
+          if (!this.builderOpen) {
+            this.beginDetourIfNeeded();
+            this.builderOpen = true;
+          }
           // Pull current dynamic-board labels off the session state so the
           // injection carries the conversation topic the user just pivoted
           // away from — see formatConstructionStateInjection.
@@ -2347,6 +2428,44 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
   // Button press handling
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // Detour tracking (conversation ↔ builder ↔ guessing)
+  // -------------------------------------------------------------------------
+
+  /** True while the user is away from the conversation (builder and/or guessing). */
+  private inDetour(): boolean {
+    return this.guessingMode || this.builderOpen;
+  }
+
+  /**
+   * Call right BEFORE flipping a surface flag on. If this is the first surface
+   * of a detour, snapshot what the conversation was about so the eventual
+   * contribution turn can remind the model where to resume.
+   */
+  private beginDetourIfNeeded(): void {
+    if (this.inDetour()) return; // already detoured — keep the original snapshot
+    const msgs = this.sessionCache?.state?.pendingMessages ?? [];
+    // Most recent real assistant utterance (skip [SYSTEM …] board-change notes).
+    const lastAi = [...msgs].reverse().find(
+      (m) => m.role === "assistant" && !!m.content && !m.content.trim().startsWith("[SYSTEM"),
+    );
+    const topic = lastAi?.content?.trim();
+    this.preDetourTopic = topic ? (topic.length > 160 ? topic.slice(0, 157) + "…" : topic) : null;
+    logLiveSession("DETOUR_BEGIN", `preDetourTopic=${this.preDetourTopic ? `"${this.preDetourTopic}"` : "(none)"}`);
+  }
+
+  /**
+   * Build the [RESUME] framing for a contribution turn (composed sentence /
+   * confirmed guess) and clear the snapshot. Returns "" when no detour topic is
+   * stored (e.g. guessing/builder was the very first thing this session).
+   */
+  private consumeResumeFraming(): string {
+    const topic = this.preDetourTopic;
+    if (!topic) return "";
+    this.preDetourTopic = null;
+    return `\n\n[RESUME] This is the user's contribution to the conversation you were already having. Right before this detour, you said: "${topic}". Continue from there and weave in what the user just expressed — UNLESS it clearly changes the subject, in which case follow their new direction. Then rebuild a normal ${T.board} for the conversation.`;
+  }
+
   private async handleButtonPress(
     buttons: string[],
     sentences?: Record<string, string>,
@@ -2408,7 +2527,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     // looks like a chat message. The system prompt's
     // <how_the_student_talks_to_you> block handles the "respond aloud +
     // rebuild_board" behavior expectation.
-    const prompt = `${T.tagPress} ${singleSentence || buttonList}`;
+    let prompt = `${T.tagPress} ${singleSentence || buttonList}`;
+    // A button press WHILE in guessing mode is the user confirming a [GUESS] —
+    // their contribution. Carry the [RESUME] reminder so the AI weaves it back
+    // into the conversation it detoured from. (Suggestion presses don't reach
+    // here — they route through pressSuggestion.)
+    if (this.guessingMode) {
+      prompt += this.consumeResumeFraming();
+    }
 
     // Stream student voice TTS FIRST — it goes straight to the client and is
     // independent of the model provider, so the student hears their own
@@ -2715,7 +2841,9 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         // but produces zero audio output (log 2026-05-24 @12:37 line 45166:
         // `audioOutputTokens=0`) and we never recover.
         if (this.provider && this.provider.isConnected) {
-          const followUp = `${T.tagPress} ${sentence}`;
+          // If the composed sentence ended a builder/guessing detour, carry the
+          // [RESUME] reminder so the AI weaves it back into the prior conversation.
+          const followUp = `${T.tagPress} ${sentence}` + this.consumeResumeFraming();
           logLiveSession(
             "INTERPRET_FOLLOWUP_INJECTED",
             `text="${followUp.substring(0, 200)}"`,
@@ -2819,6 +2947,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           symbolPath: btn.symbolPath,
           imageKey: btn.imageKey,
           glyph: btn.glyph,
+          glyphFallback: btn.glyphFallback,
           sentence: btn.sentence,
           buttonType: btn.buttonType,
         }});
@@ -2833,6 +2962,20 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
       case "suggest_construction_buttons": {
         const slotIndex = Number.isInteger(args.slot_index) ? args.slot_index as number : 0;
+
+        // Builder-origin guessing resolves HERE: the AI is placing the found
+        // concept into the sentence slot. End guessing so the builder swaps its
+        // narrowing grid back for the normal grid (the resolved concept lands in
+        // the AI strip below). The builder stays open, so the conversation-detour
+        // snapshot (preDetourTopic) is intentionally preserved for the eventual Play.
+        if (this.guessingMode && this.guessingOrigin === "builder") {
+          this.guessingMode = false;
+          this.guessingOrigin = "conversation";
+          this.guessingBuilderContext = null;
+          this.currentGuessingSuggestionKeys = [];
+          this.send({ type: "guessing_mode", active: false });
+          logLiveSession("GUESSING_MODE", "Exited — builder-origin guessing resolved via suggest_construction_buttons");
+        }
 
         // Two SUGGESTION arrays — head_candidates (next-glyph HEAD SYMBOLs)
         // and modifier_candidates (MODIFIER SYMBOLs for the current head).
@@ -3131,8 +3274,8 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       }
 
       case "add_buttons": {
-        const { others: addOthers, suggestions: addSuggestions } = splitOutSuggestionButtons(
-          toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons),
+        const { others: addOthers, suggestions: addSuggestions } = expandGuessingButtons(
+          args[T.paramUserResponseButtons] ?? args.buttons,
         );
         const validation = validateBoardButtons(dedupeImageKeys(addOthers));
         const incomingAdd = [...validation.buttons, ...addSuggestions];
@@ -3317,8 +3460,8 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         // Guessing-mode SUGGESTION buttons (bare `suggestion:*` keys) are
         // trusted, system-expanded content — split them out before the
         // structural validator (which would reject a bare key) and rejoin after.
-        const { others: rebuildOthers, suggestions: rebuildSuggestions } = splitOutSuggestionButtons(
-          toolArgsToButtons(args[T.paramUserResponseButtons] ?? args.buttons),
+        const { others: rebuildOthers, suggestions: rebuildSuggestions } = expandGuessingButtons(
+          args[T.paramUserResponseButtons] ?? args.buttons,
         );
         const rebuildValidation = validateBoardButtons(dedupeImageKeys(rebuildOthers));
         const incomingRebuild = [...rebuildValidation.buttons, ...rebuildSuggestions].slice(0, maxSlots);
@@ -3427,7 +3570,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         ) {
           this.guessingMode = false;
           this.currentGuessingSuggestionKeys = [];
+          this.guessingOrigin = "conversation";
+          this.guessingBuilderContext = null;
           this.send({ type: "guessing_mode", active: false });
+          // Drop any unconsumed detour snapshot (e.g. the user left guessing via
+          // "Back" without confirming a guess). If a guess WAS confirmed, the
+          // contribution turn already consumed it (null) — this is then a no-op.
+          // Keep it when the builder is still open (nested builder→guessing).
+          if (!this.builderOpen) this.preDetourTopic = null;
           logLiveSession("GUESSING_MODE", "Exited — rebuild_board has no [GUESS] or suggestion buttons");
         }
 
@@ -4002,6 +4152,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
       // Detect guessing mode entry
       if (instruction.includes("[GUESSING MODE]") && !this.guessingMode) {
+        this.beginDetourIfNeeded();
         this.guessingMode = true;
         this.send({ type: "guessing_mode", active: true });
         logLiveSession("GUESSING_MODE", "Entered via home board button");

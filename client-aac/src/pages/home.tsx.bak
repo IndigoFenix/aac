@@ -376,7 +376,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
 
   // Context sidebar buttons (from AI's add_context_button tool)
-  const [contextButtons, setContextButtons] = useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>>([]);
+  const [contextButtons, setContextButtons] = useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>>([]);
 
   // Apply symbol updates to context buttons (async image generation)
   useEffect(() => {
@@ -1547,11 +1547,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                       label: b.label,
                       iconRef: b.iconRef,
                       symbolPath: b.symbolPath,
-                      imageKey: b.imageKey,
-                      glyph: b.glyph,
-                      glyphFallback: b.glyphFallback,
                       sentence: b.sentence,
-                      buttonType: b.buttonType as BoardButton["buttonType"],
                       action: { type: "speak" as const, text: b.label },
                     })),
                   }],

@@ -1,4 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  createContext,
+  useContext,
+  type ReactNode,
+} from 'react';
+import { useCamera } from '@/hooks/useCamera';
 
 interface CameraStream {
   id: string;
@@ -10,7 +19,7 @@ interface CameraStream {
   facing: 'user' | 'environment' | 'unknown';
 }
 
-export function useMultiCamera(options?: { autoStart?: boolean }) {
+function useMultiCameraImpl(options?: { autoStart?: boolean }) {
   const autoStart = options?.autoStart ?? true;
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
   const [cameras, setCameras] = useState<Map<string, CameraStream>>(new Map());
@@ -375,4 +384,236 @@ export function useMultiCamera(options?: { autoStart?: boolean }) {
     userCameraActive: getUserCamera() !== null,
     environmentCameraActive: getEnvironmentCamera() !== null
   };
+}
+
+// =============================================================================
+// SINGLETON CONTEXT + SHARED USER-CAMERA VIDEO ELEMENT
+//
+// Why this exists: `useMultiCameraImpl` was previously called directly from
+// multiple components (home, the attentiveness wrapper, two debug panels).
+// Each call site ran its own getUserMedia, so a single physical camera was
+// acquired several times concurrently. Desktop browsers tolerate that; iOS /
+// iPadOS does not — the second acquisition stalls the first, freezing the feed
+// ("works briefly, then faceMirror stops moving and Motion/Frame go to 0").
+//
+// The provider runs ONE impl instance and owns ONE hidden <video> bound to the
+// user stream. All consumers (face tracking, hand tracking, attentiveness
+// motion + capture) read from `userVideoEl` instead of attaching the stream to
+// their own elements. The element is positioned offscreen but kept RENDERED
+// (opacity:0 + 1px, never display:none) because iOS pauses display:none videos.
+// =============================================================================
+
+export interface CameraDiagEvent {
+  t: number;
+  kind: string;
+  detail?: string;
+}
+
+export interface CaptureUserFrameOptions {
+  width?: number;
+  height?: number;
+  quality?: number;
+}
+
+type MultiCameraImplValue = ReturnType<typeof useMultiCameraImpl>;
+
+export interface MultiCameraValue extends MultiCameraImplValue {
+  /** The single shared hidden <video> playing the user camera, or null until created. */
+  userVideoEl: HTMLVideoElement | null;
+  /** True once the shared user video has decodable frames (readyState >= 2). */
+  userVideoReady: boolean;
+  /** Capture a JPEG frame from the shared user video element (no transient <video>). */
+  captureUserFrame: (opts?: CaptureUserFrameOptions) => Promise<Blob | null>;
+  /** Rolling log of camera lifecycle events (track mute/unmute/ended, replays) for on-device debugging. */
+  cameraDiag: CameraDiagEvent[];
+}
+
+const MultiCameraContext = createContext<MultiCameraValue | null>(null);
+
+const MAX_DIAG_EVENTS = 50;
+
+export function MultiCameraProvider({ children }: { children: ReactNode }) {
+  const base = useMultiCameraImpl({ autoStart: true });
+  const { getUserCamera } = base;
+
+  // Fallback stream for the no-multi-camera path (see home.tsx startSharedCamera).
+  const { stream: sharedCameraStream } = useCamera();
+
+  const userVideoRef = useRef<HTMLVideoElement | null>(null);
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [userVideoReady, setUserVideoReady] = useState(false);
+  const [elReady, setElReady] = useState(false); // flips once the element is created
+  const [cameraDiag, setCameraDiag] = useState<CameraDiagEvent[]>([]);
+
+  const logDiag = useCallback((kind: string, detail?: string) => {
+    const ev: CameraDiagEvent = { t: Date.now(), kind, detail };
+    console.log(`[SharedCamera] ${kind}${detail ? `: ${detail}` : ''}`);
+    setCameraDiag((prev) => {
+      const next = [...prev, ev];
+      return next.length > MAX_DIAG_EVENTS ? next.slice(-MAX_DIAG_EVENTS) : next;
+    });
+  }, []);
+
+  // Resolve the active user stream. Multi-camera assignment is the normal path;
+  // sharedCameraStream is the legacy fallback when no multi-cam device enrolled.
+  const userCam = getUserCamera();
+  const userStream = userCam?.stream ?? sharedCameraStream ?? null;
+
+  // Create the single shared hidden video element exactly once.
+  useEffect(() => {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.autoplay = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('muted', '');
+    // Offscreen but RENDERED — iOS pauses display:none / visibility:hidden videos.
+    v.style.position = 'fixed';
+    v.style.left = '0';
+    v.style.top = '0';
+    v.style.width = '1px';
+    v.style.height = '1px';
+    v.style.opacity = '0';
+    v.style.pointerEvents = 'none';
+    v.style.zIndex = '-1';
+    document.body.appendChild(v);
+    userVideoRef.current = v;
+
+    const onLoaded = () => setUserVideoReady(v.readyState >= 2);
+    const onPause = () => {
+      // iOS resilience: if the element pauses while a stream is attached,
+      // immediately resume. Backgrounding / focus changes trigger spurious pauses.
+      if (v.srcObject) {
+        logDiag('video-pause-resume');
+        v.play().catch(() => {});
+      }
+    };
+    v.addEventListener('loadeddata', onLoaded);
+    v.addEventListener('playing', onLoaded);
+    v.addEventListener('pause', onPause);
+
+    setElReady(true);
+
+    return () => {
+      v.removeEventListener('loadeddata', onLoaded);
+      v.removeEventListener('playing', onLoaded);
+      v.removeEventListener('pause', onPause);
+      v.pause();
+      v.srcObject = null;
+      v.remove();
+      userVideoRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Bind the user stream to the shared element and wire iOS track recovery.
+  useEffect(() => {
+    const v = userVideoRef.current;
+    if (!v) return;
+
+    if (!userStream) {
+      v.pause();
+      v.srcObject = null;
+      setUserVideoReady(false);
+      return;
+    }
+
+    if (v.srcObject !== userStream) {
+      v.srcObject = userStream;
+      logDiag('stream-attached', `tracks=${userStream.getVideoTracks().length}`);
+    }
+    v.play()
+      .then(() => setUserVideoReady(v.readyState >= 2))
+      .catch((err) => logDiag('play-error', String(err)));
+
+    const track = userStream.getVideoTracks()[0];
+    if (!track) return;
+
+    const onMute = () => logDiag('track-mute', track.label);
+    const onUnmute = () => {
+      logDiag('track-unmute', track.label);
+      v.play().catch(() => {});
+    };
+    const onEnded = () => {
+      // iOS dropped the capture entirely — re-acquire from scratch.
+      logDiag('track-ended', track.label);
+      base.autoAssignCameras().catch(() => {});
+    };
+    track.addEventListener('mute', onMute);
+    track.addEventListener('unmute', onUnmute);
+    track.addEventListener('ended', onEnded);
+
+    return () => {
+      track.removeEventListener('mute', onMute);
+      track.removeEventListener('unmute', onUnmute);
+      track.removeEventListener('ended', onEnded);
+    };
+    // base.autoAssignCameras is stable enough; userStream identity drives this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userStream, logDiag]);
+
+  // When the page returns to foreground, ensure the shared element resumes.
+  useEffect(() => {
+    const onVisibility = () => {
+      const v = userVideoRef.current;
+      if (!document.hidden && v?.srcObject) {
+        logDiag('visibility-resume');
+        v.play().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [logDiag]);
+
+  const captureUserFrame = useCallback(
+    async (opts?: CaptureUserFrameOptions): Promise<Blob | null> => {
+      const v = userVideoRef.current;
+      if (!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return null;
+      let canvas = captureCanvasRef.current;
+      if (!canvas) {
+        canvas = document.createElement('canvas');
+        captureCanvasRef.current = canvas;
+      }
+      const w = opts?.width ?? v.videoWidth;
+      const h = opts?.height ?? v.videoHeight;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      try {
+        ctx.drawImage(v, 0, 0, w, h);
+      } catch {
+        return null;
+      }
+      return await new Promise<Blob | null>((resolve) => {
+        canvas!.toBlob((b) => resolve(b), 'image/jpeg', opts?.quality ?? 0.8);
+      });
+    },
+    [],
+  );
+
+  const value: MultiCameraValue = {
+    ...base,
+    userVideoEl: elReady ? userVideoRef.current : null,
+    userVideoReady,
+    captureUserFrame,
+    cameraDiag,
+  };
+
+  return (
+    <MultiCameraContext.Provider value={value}>{children}</MultiCameraContext.Provider>
+  );
+}
+
+/**
+ * Access the shared multi-camera system. Must be rendered inside
+ * <MultiCameraProvider>. The legacy `options` argument is accepted for
+ * call-site compatibility but ignored — the provider controls acquisition.
+ */
+export function useMultiCamera(_options?: { autoStart?: boolean }): MultiCameraValue {
+  const ctx = useContext(MultiCameraContext);
+  if (!ctx) {
+    throw new Error('useMultiCamera must be used within a MultiCameraProvider');
+  }
+  return ctx;
 }

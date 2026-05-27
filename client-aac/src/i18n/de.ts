@@ -134,8 +134,6 @@ export const de: Translations = {
     audioMonitoringHint: "Kontinuierliche Umgebungsger\u00e4uschanalyse f\u00fcr kontextbezogenes Bewusstsein aktivieren",
     therapyMode: "Therapiemodus",
     therapyModeHint: "Erweiterte Sprachtherapiefunktionen aktivieren",
-    smartObjectDetection: "Intelligente Objekterkennung",
-    smartObjectDetectionHint: "Objekte in Ihren H\u00e4nden automatisch erkennen und Symbolvorschl\u00e4ge durch erkannte Gegenst\u00e4nde ersetzen",
     eyegazeSelection: "Blicksteuerung-Symbolauswahl",
     eyegazeSelectionHint: "Symbolauswahl durch Verweilen des Blicks f\u00fcr eine festgelegte Dauer aktivieren",
     selectionTimeout: "Auswahl-Timeout",

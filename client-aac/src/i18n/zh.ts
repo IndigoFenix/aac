@@ -134,8 +134,6 @@ export const zh: Translations = {
     audioMonitoringHint: "启用持续环境音频分析以感知上下文",
     therapyMode: "治疗模式",
     therapyModeHint: "启用增强的语言治疗功能",
-    smartObjectDetection: "智能物体检测",
-    smartObjectDetectionHint: "自动检测手中物体并用检测到的物品替换符号建议",
     eyegazeSelection: "眼动符号选择",
     eyegazeSelectionHint: "通过在符号上悬停一定时间来启用符号选择",
     selectionTimeout: "选择超时",

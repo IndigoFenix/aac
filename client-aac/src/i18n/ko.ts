@@ -134,8 +134,6 @@ export const ko: Translations = {
     audioMonitoringHint: "상황 인식을 위한 지속적인 주변 오디오 분석을 활성화합니다",
     therapyMode: "치료 모드",
     therapyModeHint: "향상된 언어 치료 기능을 활성화합니다",
-    smartObjectDetection: "스마트 물체 감지",
-    smartObjectDetectionHint: "손에 든 물체를 자동으로 감지하여 기호 제안을 감지된 항목으로 대체합니다",
     eyegazeSelection: "시선 기호 선택",
     eyegazeSelectionHint: "설정된 시간 동안 기호 위에 머물러 선택을 활성화합니다",
     selectionTimeout: "선택 시간 제한",

@@ -97,7 +97,12 @@ async function loadGestureRecognizer(
 // =============================================================================
 
 export interface UseHandGestureTrackingOptions {
-  videoStream: MediaStream | null;
+  /**
+   * The shared hidden <video> element playing the user camera (from
+   * MultiCameraProvider's `userVideoEl`). This hook no longer creates its own
+   * element — multiple <video> elements on one MediaStream freeze on iOS.
+   */
+  videoEl: HTMLVideoElement | null;
   enabled?: boolean;
   config?: Partial<HandGestureConfig>;
 }
@@ -113,7 +118,7 @@ export interface UseHandGestureTrackingReturn {
 export function useHandGestureTracking(
   options: UseHandGestureTrackingOptions
 ): UseHandGestureTrackingReturn {
-  const { videoStream, enabled = true, config: configOverrides } = options;
+  const { videoEl, enabled = true, config: configOverrides } = options;
 
   const config: HandGestureConfig = {
     ...DEFAULT_HAND_GESTURE_CONFIG,
@@ -134,73 +139,14 @@ export function useHandGestureTracking(
   const [hands, setHands] = useState<RawTrackedHand[]>([]);
   const [fps, setFps] = useState(0);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const recognizerRef = useRef<any>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameCountRef = useRef(0);
   const fpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTimestampRef = useRef(0);
 
-  // Create hidden video element and attach stream
-  useEffect(() => {
-    if (!videoStream || !enabled) {
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.srcObject = null;
-      }
-      return;
-    }
-
-    let video = videoRef.current;
-    if (!video) {
-      video = document.createElement("video");
-      video.style.display = "none";
-      video.playsInline = true;
-      video.muted = true;
-      document.body.appendChild(video);
-      videoRef.current = video;
-    }
-
-    video.srcObject = videoStream;
-    console.log(
-      "[HandGesture] Attaching stream to hidden video, tracks:",
-      videoStream.getVideoTracks().length
-    );
-    video
-      .play()
-      .then(() => {
-        console.log(
-          "[HandGesture] Video playing, readyState:",
-          video!.readyState,
-          "dimensions:",
-          video!.videoWidth,
-          "x",
-          video!.videoHeight
-        );
-      })
-      .catch((err) => {
-        console.warn("[HandGesture] Video play error:", err);
-      });
-
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [videoStream, enabled]);
-
-  // Cleanup video element on unmount
-  useEffect(() => {
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.srcObject = null;
-        videoRef.current.remove();
-        videoRef.current = null;
-      }
-    };
-  }, []);
+  // NOTE: this hook no longer owns a <video> element. It reads frames from the
+  // shared `videoEl` provided by MultiCameraProvider. See useMultiCamera.tsx.
 
   // Initialize GestureRecognizer
   useEffect(() => {
@@ -237,11 +183,11 @@ export function useHandGestureTracking(
 
   // Run detection loop
   useEffect(() => {
-    if (!isReady || !enabled || !videoStream) {
+    if (!isReady || !enabled || !videoEl) {
       console.log("[HandGesture] Detection loop not starting:", {
         isReady,
         enabled,
-        hasStream: !!videoStream,
+        hasVideo: !!videoEl,
       });
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -255,7 +201,7 @@ export function useHandGestureTracking(
     console.log("[HandGesture] Starting detection loop");
 
     const runDetection = () => {
-      const video = videoRef.current;
+      const video = videoEl;
       const recognizer = recognizerRef.current;
       if (!video || !recognizer || video.readyState < 2) return;
 
@@ -369,7 +315,7 @@ export function useHandGestureTracking(
         fpsTimerRef.current = null;
       }
     };
-  }, [isReady, enabled, videoStream, config.processingIntervalMs]);
+  }, [isReady, enabled, videoEl, config.processingIntervalMs]);
 
   return { isReady, isProcessing, error, hands, fps };
 }

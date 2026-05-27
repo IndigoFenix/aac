@@ -134,8 +134,6 @@ export const fr: Translations = {
     audioMonitoringHint: "Activer l'analyse continue de l'audio ambiant pour la conscience contextuelle",
     therapyMode: "Mode th\u00e9rapie",
     therapyModeHint: "Activer les fonctionnalit\u00e9s am\u00e9lior\u00e9es de th\u00e9rapie de la parole",
-    smartObjectDetection: "D\u00e9tection intelligente d'objets",
-    smartObjectDetectionHint: "D\u00e9tecter automatiquement les objets dans vos mains et remplacer les suggestions de symboles par les \u00e9l\u00e9ments d\u00e9tect\u00e9s",
     eyegazeSelection: "S\u00e9lection de symboles par le regard",
     eyegazeSelectionHint: "Activer la s\u00e9lection de symboles en passant le regard dessus pendant une dur\u00e9e d\u00e9finie",
     selectionTimeout: "D\u00e9lai de s\u00e9lection",

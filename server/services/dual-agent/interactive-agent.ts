@@ -245,6 +245,27 @@ export function splitOutSuggestionButtons<
   return { others, suggestions };
 }
 
+/** Matches a `suggestion:<dim>:<value>` key anywhere in a string (dim may be dotted). */
+export const SUGGESTION_KEY_RE = /suggestion:[a-z_]+(?:\.[a-z_]+)*:[a-z0-9_]+/g;
+
+/**
+ * Regex-extract guessing-mode SUGGESTION buttons from a RAW buttons string,
+ * recovering EVERY key even when the model crams them into one pipe-joined item
+ * with labels — `suggestion:x:a|label||suggestion:x:b|label||…` — instead of
+ * comma-separating bare keys. (Gemini does this often; parseBoardButtons would
+ * otherwise see one button and drop the rest.) Returns the expanded suggestion
+ * buttons plus the raw string with suggestion-bearing comma-segments removed,
+ * so the caller can parse any genuine non-suggestion buttons (e.g. a [GUESS]).
+ */
+export function extractSuggestionButtonsFromRaw(str: string): { suggestions: SuggestionButton[]; othersRaw: string } {
+  const keys = Array.from(new Set(str.match(SUGGESTION_KEY_RE) ?? [])).filter(isValidSuggestionKey);
+  const suggestions = keys
+    .map((k) => expandSuggestionKey(k))
+    .filter((b): b is SuggestionButton => b !== null);
+  const othersRaw = str.split(",").filter((seg) => !seg.includes("suggestion:")).join(",");
+  return { suggestions, othersRaw };
+}
+
 /**
  * Interactive Agent
  *

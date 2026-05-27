@@ -19,6 +19,14 @@ import {
   type GuessingModeState,
 } from "@shared/guessing-mode/state.js";
 import { parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry.js";
+import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions.js";
+
+/** Context passed when guessing is launched from the sentence builder for a slot. */
+export interface GuessingBuilderContext { targetSlot: number | null; partialGlyph: string; category: string }
+// Builder category tab → top-level guessing category.
+const BUILDER_TAB_TO_GUESSING: Record<string, string> = {
+  who: "people", do: "actions", what: "things", where: "places", when: "time",
+};
 
 // Re-export shared types
 export type {
@@ -185,6 +193,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // server builds the initial [GUESSING STATE] on entry; from the first
   // suggestion press onward this ref is authoritative and drives the injection.
   const guessingStateRef = useRef<GuessingModeState | null>(null);
+  // Non-null while guessing was launched from the builder — every guessing_state
+  // send then carries origin:"builder" + the slot context so the resolved
+  // concept fills the sentence slot instead of becoming a conversational reply.
+  const guessingOriginRef = useRef<{ origin: "builder"; builderContext: GuessingBuilderContext } | null>(null);
   const [constructionSuggestions, setConstructionSuggestions] = useState<
     import("./dual-agent-types").ConstructionSuggestionsClient | null
   >(null);
@@ -730,6 +742,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
           } else {
             guessingStateRef.current = null;
+            guessingOriginRef.current = null;
           }
           break;
 
@@ -1077,6 +1090,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
   }, [wsSend, audioPlayer]);
 
+  /** Tell the server the sentence builder opened/closed (conversation detour boundary). */
+  const setBuilderVisible = useCallback((open: boolean) => {
+    wsSend({ type: open ? "builder_open" : "builder_close" });
+  }, [wsSend]);
+
   /**
    * Handle a guessing-mode SUGGESTION button press. Updates the client-owned
    * narrowing state and pushes a fresh [GUESSING STATE] up to the server,
@@ -1084,6 +1102,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
    * Deliberately does NOT go through interpretButtons — a suggestion press is
    * a narrowing signal, not an utterance.
    */
+  // Send the current guessing state, carrying builder origin/context when set.
+  const sendGuessingStateMsg = useCallback((state: GuessingModeState) => {
+    const inj = buildGuessingInjection(state);
+    const o = guessingOriginRef.current;
+    console.debug("[guessing] → guessing_state", { category: state.category, keys: inj.suggestionKeys, origin: o?.origin ?? "conversation" });
+    wsSend({
+      type: "guessing_state",
+      text: inj.text,
+      suggestionKeys: inj.suggestionKeys,
+      ...(o ? { origin: o.origin, builderContext: o.builderContext } : {}),
+    });
+  }, [wsSend]);
+
   const pressSuggestion = useCallback((suggestionKey: string) => {
     console.debug("[guessing] pressSuggestion", suggestionKey);
     try {
@@ -1101,14 +1132,31 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         }
         applyGuessingPress(state, parsed.dimension, parsed.value);
       }
-
-      const inj = buildGuessingInjection(state);
-      console.debug("[guessing] → guessing_state", { category: state.category, keys: inj.suggestionKeys });
-      wsSend({ type: "guessing_state", text: inj.text, suggestionKeys: inj.suggestionKeys });
+      sendGuessingStateMsg(state);
     } catch (err) {
       console.error("[guessing] pressSuggestion failed:", err);
     }
-  }, [wsSend]);
+  }, [sendGuessingStateMsg]);
+
+  /**
+   * Launch guessing FROM the sentence builder to fill a slot. Pre-selects the
+   * guessing category from the builder tab (so it skips the top-level category
+   * step), records the builder origin so the resolved concept returns into the
+   * sentence, and pushes the first [GUESSING STATE].
+   */
+  const enterGuessingFromBuilder = useCallback((builderContext: GuessingBuilderContext) => {
+    try {
+      const state = createGuessingState();
+      const cat = BUILDER_TAB_TO_GUESSING[builderContext.category];
+      if (cat) applyGuessingPress(state, CATEGORY_DIM_ID, cat);
+      guessingStateRef.current = state;
+      guessingOriginRef.current = { origin: "builder", builderContext };
+      console.debug("[guessing] enterGuessingFromBuilder", { builderContext, preCategory: cat });
+      sendGuessingStateMsg(state);
+    } catch (err) {
+      console.error("[guessing] enterGuessingFromBuilder failed:", err);
+    }
+  }, [sendGuessingStateMsg]);
 
   /**
    * Send a composed glyph from the sentence builder up to the AI for
@@ -1379,6 +1427,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Guessing mode
     guessingMode,
     pressSuggestion,
+    enterGuessingFromBuilder,
+    setBuilderVisible,
 
     // Construction board (sentence builder)
     sendConstructionState,

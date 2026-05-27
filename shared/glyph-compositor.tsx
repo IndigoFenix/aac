@@ -303,6 +303,35 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   }
   const mainImageTransform = imageTransforms.length ? imageTransforms.join(" ") : undefined;
 
+  // Emoji raster path (canvas). SVG <text> can't recolor a color-emoji font
+  // (the embedded-bitmap/COLR glyph ignores `fill`) and the emoji branch never
+  // got the RTL flip that real images get. So when the emoji fallback would
+  // render AND the slot carries a color modifier or needs an RTL flip, we
+  // rasterize the emoji to a tinted/mirrored bitmap and feed it through the
+  // same <image> path the real-image branch uses. The flip is baked into the
+  // bitmap (not applied as an SVG transform) so it composes with the dimension
+  // warp without double-flipping.
+  const emojiChar = slot ? (item?.emoji ?? resolveEmoji(slot.key) ?? "❓") : "❓";
+  const emojiFlip = rtl && imageReversible;
+  const wantCanvasEmoji =
+    !!slot &&
+    !url &&
+    (!item?.animatedSprite || !renderAnimatedSymbol) &&
+    (!!colorValue || emojiFlip);
+  const emojiDataUrl = wantCanvasEmoji
+    ? emojiToDataUrl(emojiChar, { tint: colorValue, flip: emojiFlip })
+    : null;
+  // RTL flip is already baked into the bitmap, so the <image> only needs the
+  // dimension warp — reusing mainImageTransform here would mirror it twice.
+  const emojiImageTransform = dimensionScale
+    ? `translate(${mainCx} ${mainCy}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-mainCx} ${-mainCy})`
+    : undefined;
+  // Once the emoji itself is recolored, the rim frame is redundant; keep the
+  // frame only for image symbols (which we don't canvas-tint, to avoid CORS
+  // taint on cross-origin generated/S3 art) or when the raster is unavailable.
+  const tintedViaCanvas = !!emojiDataUrl && !!colorValue;
+  const showColorFrame = !!colorValue && !tintedViaCanvas;
+
   return (
     <g
       onClick={onPress}
@@ -368,7 +397,18 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           onError={onImageError ? () => onImageError(url) : undefined}
         />
       )}
-      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && (
+      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && emojiDataUrl && (
+        <image
+          href={emojiDataUrl}
+          x={mainX}
+          y={mainY}
+          width={mainSize}
+          height={mainSize}
+          filter={hasGlow ? "url(#glyph-glow)" : undefined}
+          transform={emojiImageTransform}
+        />
+      )}
+      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && !emojiDataUrl && (
         <text
           x={layout.x + SLOT_UNIT / 2}
           y={layout.y + SLOT_UNIT / 2}
@@ -378,7 +418,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
           transform={dimensionScale ? `translate(${layout.x + SLOT_UNIT / 2} ${layout.y + SLOT_UNIT / 2}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-(layout.x + SLOT_UNIT / 2)} ${-(layout.y + SLOT_UNIT / 2)})` : undefined}
         >
-          {item?.emoji ?? resolveEmoji(slot.key) ?? "❓"}
+          {emojiChar}
         </text>
       )}
 
@@ -402,9 +442,11 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
       )}
 
       {/* Color modifier — thick rounded outline in the modifier's color
-          around the slot rim. The active-slot blue outline (below)
-          renders on top of this. */}
-      {colorValue && (
+          around the slot rim. Shown for image symbols (which aren't
+          canvas-tinted) and as a fallback when the emoji raster is
+          unavailable; suppressed once the emoji itself is recolored. The
+          active-slot blue outline (below) renders on top of this. */}
+      {showColorFrame && (
         <rect
           x={layout.x + 4}
           y={layout.y + 4}
@@ -1021,4 +1063,77 @@ function isNonReversible(_item: VocabularyItem): boolean {
   // No items currently flagged as non-reversible. When added, this should
   // read a `nonReversible: true` field on the registry item.
   return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emoji rasterization (tint + mirror)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Cache keyed by emoji|tint|flip → data URL. The emoji set on any given board
+// is small and bounded, so this stays tiny and avoids re-rasterizing the same
+// glyph every render. Module-scoped because the canvas output is deterministic
+// for a given (emoji, tint, flip) regardless of which slot requested it.
+const emojiRasterCache = new Map<string, string>();
+
+/**
+ * Rasterize an emoji to a data URL, optionally recolored and/or horizontally
+ * mirrored, so it can be rendered through the SVG <image> path.
+ *
+ * Recoloring uses the `color` composite operation: it takes the hue+saturation
+ * of `tint` while preserving the emoji's own luminosity, so the glyph's shading
+ * and detail survive (a tinted 😀 still reads as a face, not a flat blob). The
+ * tint is then re-clipped to the emoji's alpha via `destination-in` because the
+ * blend would otherwise flood the transparent background with the color.
+ *
+ * Returns null when there's no DOM / 2D context (SSR, jsdom in tests), so
+ * callers fall back to plain <text>.
+ */
+function emojiToDataUrl(
+  emoji: string,
+  opts: { tint?: string; flip?: boolean } = {},
+): string | null {
+  if (typeof document === "undefined") return null;
+  const tint = opts.tint ?? "";
+  const flip = !!opts.flip;
+  const cacheKey = `${emoji}|${tint}|${flip ? "f" : ""}`;
+  const cached = emojiRasterCache.get(cacheKey);
+  if (cached) return cached;
+
+  const S = 128;
+  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = S * dpr;
+  canvas.height = S * dpr;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null; // jsdom / headless — let the caller use <text>
+
+  ctx.scale(dpr, dpr);
+  if (flip) {
+    ctx.translate(S, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.font = `${S * 0.78}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, S / 2, S / 2);
+
+  if (tint) {
+    // Recolor while preserving the emoji's luminance detail.
+    ctx.globalCompositeOperation = "color";
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, S, S);
+    // Re-clip the flooded color back to the emoji's own alpha.
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.fillText(emoji, S / 2, S / 2);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  let url: string;
+  try {
+    url = canvas.toDataURL();
+  } catch {
+    return null; // tainted/unsupported — fall back to <text>
+  }
+  emojiRasterCache.set(cacheKey, url);
+  return url;
 }

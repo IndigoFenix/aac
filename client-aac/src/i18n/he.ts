@@ -134,8 +134,6 @@ export const he: Translations = {
     audioMonitoringHint: "הפעל ניתוח שמע רציף לזיהוי הקשר",
     therapyMode: "מצב טיפול",
     therapyModeHint: "הפעל תכונות טיפול בדיבור מתקדמות",
-    smartObjectDetection: "זיהוי אובייקטים חכם",
-    smartObjectDetectionHint: "זהה אוטומטית אובייקטים בידיים והחלף הצעות סמלים בפריטים שזוהו",
     eyegazeSelection: "בחירת סמלים במבט",
     eyegazeSelectionHint: "אפשר בחירת סמלים על ידי ריחוף מעליהם למשך זמן מוגדר",
     selectionTimeout: "זמן בחירה",

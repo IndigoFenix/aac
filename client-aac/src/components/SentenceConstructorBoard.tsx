@@ -49,6 +49,9 @@ import type {
   ConstructionSuggestionsClient,
   ConstructionMemoryChipsClient,
 } from "@/hooks/dual-agent-types";
+import type { ParsedBoardData, BoardButton } from "@shared/schema";
+import { SentenceButton } from "@/components/SentenceButton";
+import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
 /** Compute the slot we want the AI to suggest for. */
 function computeTargetSlot(glyph: ParsedGlyph, activeSlot: number | null): number {
@@ -175,6 +178,14 @@ export interface SentenceConstructorBoardProps {
   getPersonName?: (personId: string) => string | null;
   /** People seen on camera this session — surfaced first in the person list. */
   presentPersonIds?: string[];
+  /** True while guessing mode is active (renders the narrowing buttons in the main grid). */
+  guessingActive?: boolean;
+  /** The guessing board (narrowing suggestion buttons) from the server, when guessing. */
+  guessingBoard?: ParsedBoardData | null;
+  /** Press a guessing narrowing button (routes to pressSuggestion via home). */
+  onGuessingPress?: (suggestionKey: string) => void;
+  /** Launch guessing for the active slot (when the user can't find a symbol). */
+  onEnterGuessing?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -190,6 +201,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const getFaceImage = props.getFaceImage ?? ctx?.getFaceImage;
   const getPersonName = props.getPersonName;
   const presentPersonIds = props.presentPersonIds ?? [];
+  const guessingActive = props.guessingActive ?? false;
+  const guessingBoard = props.guessingBoard ?? null;
+  const onGuessingPress = props.onGuessingPress;
+  const onEnterGuessing = props.onEnterGuessing;
 
   // Ordered person list for the "who → photos" mode chip: people seen this
   // session first (most likely the student wants to talk about who's here),
@@ -447,19 +462,25 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // effect picks it up and sends `requestGuessingMode: true` on the next
   // injection. The AI's existing <guessing_mode> behavior handles the rest.
   const handleHelpPress = useCallback(() => {
-    if (activeSlot != null) {
-      // Re-suggest path. Exclude what's currently in BOTH AI strips so the
-      // next round genuinely surfaces new ideas (head and modifier alike).
-      setExcludeKeys((prev) => {
-        const seen = new Set(prev);
-        for (const c of aiCandidates) seen.add(c.key);
-        for (const c of aiModifierCandidates) seen.add(c.key);
-        return Array.from(seen);
-      });
-      return;
+    // Help ALWAYS launches the fuzzy guessing engine, seeded with the partial
+    // sentence + the active slot's category so guesses fit. Whether or not a
+    // slot is explicitly selected doesn't matter — the narrowing buttons render
+    // in the main grid and the resolved concept returns to the AI strip to fill
+    // the slot. (Re-suggesting fresh candidates is handled by the "More" button.)
+    const builderContext = {
+      targetSlot: computeTargetSlot(glyph, activeSlot),
+      partialGlyph: serializeGlyph(glyph),
+      category: activeTab,
+    };
+    console.debug("[guessing/builder] Help → enterGuessing", builderContext, "| fn:", typeof onEnterGuessing);
+    if (onEnterGuessing) {
+      onEnterGuessing(builderContext);
+    } else {
+      // Bridge not wired (shouldn't happen) — fall back to the legacy path.
+      console.warn("[guessing/builder] onEnterGuessing unavailable; using legacy requestGuessingMode");
+      setPendingHelpRequest(true);
     }
-    setPendingHelpRequest(true);
-  }, [activeSlot, aiCandidates, aiModifierCandidates]);
+  }, [onEnterGuessing, glyph, activeSlot, activeTab]);
 
   // ── AI strip wiring ──────────────────────────────────────────────────────
   // Send state on every relevant change. The relay forwards it to the live
@@ -1014,11 +1035,50 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           />
         </div>
 
-        {/* Main grid — absorbs remaining vertical space. The "who → photos"
-            mode chip swaps the static vocabulary grid for the person list
-            (known contacts/users, present-in-session first). */}
+        {/* Main grid — absorbs remaining vertical space. While guessing is
+            active the narrowing buttons replace the grid (the resolved concept
+            comes back as a construction suggestion in the AI strip above). The
+            "who → photos" mode chip otherwise swaps the vocabulary grid for the
+            person list. */}
         <div className="flex-1 min-h-0 p-3 overflow-hidden">
-          {activeTab === "who" && modeChip === "photos" ? (
+          {guessingActive ? (
+            (() => {
+              const guessButtons = (guessingBoard?.pages?.[0]?.buttons ?? []).filter(
+                (b) => (b as any).buttonType === "suggestion" && (b as any).suggestionKey,
+              );
+              const localizeGuess = (b: BoardButton): BoardButton => {
+                const key = (b as any).suggestionKey as string | undefined;
+                const parsed = key ? parseSuggestionKey(key) : null;
+                const entry = parsed ? getSuggestionEntry(parsed.dimension, parsed.value) : null;
+                if (!entry) return b;
+                const translated = t(entry.labelKey);
+                return { ...b, label: translated && translated !== entry.labelKey ? translated : b.label };
+              };
+              if (guessButtons.length === 0) {
+                return (
+                  <div className="flex items-center justify-center w-full h-full text-sm text-gray-400">
+                    {t("board.guessingMode")}
+                  </div>
+                );
+              }
+              return (
+                <div
+                  className="grid gap-2 w-full h-full"
+                  style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gridAutoRows: "minmax(0, 1fr)" }}
+                >
+                  {guessButtons.map((b, i) => (
+                    <SentenceButton
+                      key={(b as any).suggestionKey ?? i}
+                      variant="board"
+                      button={localizeGuess(b)}
+                      getFaceImage={getFaceImage ?? undefined}
+                      onClick={() => onGuessingPress?.((b as any).suggestionKey)}
+                    />
+                  ))}
+                </div>
+              );
+            })()
+          ) : activeTab === "who" && modeChip === "photos" ? (
             <div
               className="grid gap-2 w-full h-full"
               style={{

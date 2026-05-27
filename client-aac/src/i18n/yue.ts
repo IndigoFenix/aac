@@ -134,8 +134,6 @@ export const yue: Translations = {
     audioMonitoringHint: "啟用持續環境音訊分析嚟感知上下文",
     therapyMode: "治療模式",
     therapyModeHint: "啟用增強嘅言語治療功能",
-    smartObjectDetection: "智能物件偵測",
-    smartObjectDetectionHint: "自動偵測手中物件並用偵測到嘅物品取代符號建議",
     eyegazeSelection: "眼動符號選擇",
     eyegazeSelectionHint: "通過喺符號上面停留一定時間嚟啟用符號選擇",
     selectionTimeout: "選擇超時",

@@ -273,6 +273,10 @@ export interface UseDualAgentReturn {
   guessingMode?: boolean;
   /** Press a guessing-mode SUGGESTION button — updates narrowing state and re-injects [GUESSING STATE]. */
   pressSuggestion?: (suggestionKey: string) => void;
+  /** Launch guessing from the sentence builder to fill a slot (resolved concept returns to the sentence). */
+  enterGuessingFromBuilder?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
+  setBuilderVisible?: (open: boolean) => void;
 
   // Construction board (sentence builder)
   /** Push the current construction-board state to the AI so it can populate the AI strip. */

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import GameEmbed from "@/components/games/GameEmbed";
 import { CameraProvider } from "@/components/CameraProvider";
+import { MultiCameraProvider } from "@/hooks/useMultiCamera";
 import LoginModal from "@/components/LoginModal";
 import StudentSelector from "@/components/StudentSelector";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -134,15 +135,17 @@ function MainApp() {
   return (
     <AppInitializationProvider>
       <CameraProvider>
-        <BoardsProvider studentId={selectedStudentId}>
-          <ConversationProvider studentId={selectedStudentId} language={language}>
-            <Home
-              studentId={selectedStudentId}
-              onLogout={handleLogout}
-              onExitStudent={handleExitStudent}
-            />
-          </ConversationProvider>
-        </BoardsProvider>
+        <MultiCameraProvider>
+          <BoardsProvider studentId={selectedStudentId}>
+            <ConversationProvider studentId={selectedStudentId} language={language}>
+              <Home
+                studentId={selectedStudentId}
+                onLogout={handleLogout}
+                onExitStudent={handleExitStudent}
+              />
+            </ConversationProvider>
+          </BoardsProvider>
+        </MultiCameraProvider>
       </CameraProvider>
     </AppInitializationProvider>
   );

@@ -6,7 +6,7 @@
  * monitoring with sleep/wake functionality to the app.
  */
 
-import { ReactNode, useRef } from 'react';
+import { ReactNode } from 'react';
 import { useMultiCamera } from '@/hooks/useMultiCamera';
 import { CameraAttentivenessProvider } from '@/contexts/CameraAttentivenessContext';
 
@@ -39,21 +39,15 @@ export function CameraAttentivenessWrapper({
   autoStart = true,
   cameraType = 'user',
 }: CameraAttentivenessWrapperProps) {
-  const { getUserCamera, getEnvironmentCamera } = useMultiCamera();
+  const { userVideoEl } = useMultiCamera();
 
-  // Get the appropriate camera's stream
-  // Use ref to track the actual stream object and only update when it actually changes
-  const camera = cameraType === 'user' ? getUserCamera() : getEnvironmentCamera();
-  const currentStream = camera?.stream ?? null;
-
-  // Track previous stream to avoid unnecessary updates
-  const streamRef = useRef<MediaStream | null>(null);
-  if (currentStream !== streamRef.current) {
-    streamRef.current = currentStream;
-  }
+  // The attentiveness system reads from the single shared user-camera <video>
+  // element owned by MultiCameraProvider. Only the 'user' camera is monitored
+  // here (the sole call site). Environment monitoring uses CameraFrameCollector.
+  const videoEl = cameraType === 'user' ? userVideoEl : null;
 
   return (
-    <CameraAttentivenessProvider videoStream={streamRef.current} autoStart={autoStart}>
+    <CameraAttentivenessProvider videoEl={videoEl} autoStart={autoStart}>
       {children}
     </CameraAttentivenessProvider>
   );

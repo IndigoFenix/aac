@@ -116,21 +116,25 @@ const CameraAttentivenessContext = createContext<CameraAttentivenessContextType 
 
 interface CameraAttentivenessProviderProps {
   children: ReactNode;
-  /** Video stream to monitor - typically from useMultiCamera's user camera */
-  videoStream: MediaStream | null;
-  /** Whether to auto-start monitoring when stream is available */
+  /**
+   * Shared hidden <video> element to read frames from — `userVideoEl` from
+   * MultiCameraProvider. This provider no longer owns a <video>; sharing one
+   * element across consumers avoids the iOS multi-element freeze.
+   */
+  videoEl: HTMLVideoElement | null;
+  /** Whether to auto-start monitoring when the video is available */
   autoStart?: boolean;
 }
 
 export function CameraAttentivenessProvider({
   children,
-  videoStream,
+  videoEl,
   autoStart = true,
 }: CameraAttentivenessProviderProps) {
   const [state, setState] = useState<CameraAttentivenessState>(DEFAULT_ATTENTIVENESS_STATE);
 
-  // Refs for capturing and comparison
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Refs for capturing and comparison. The <video> is the shared element passed
+  // in via `videoEl`; only the work canvas is owned here.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousFrameDataRef = useRef<ImageData | null>(null);
   const lastFrameRef = useRef<CapturedFrame | null>(null);
@@ -177,44 +181,17 @@ export function CameraAttentivenessProvider({
 
   sleepStateRef.current = sleepState;
 
-  // Create hidden video and canvas elements
+  // Create the hidden work canvas (the <video> is shared, owned by the provider).
   useEffect(() => {
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.autoplay = true;
-    video.style.display = 'none';
-    document.body.appendChild(video);
-    videoRef.current = video;
-
     const canvas = document.createElement('canvas');
     canvas.style.display = 'none';
     document.body.appendChild(canvas);
     canvasRef.current = canvas;
 
     return () => {
-      video.pause();
-      video.srcObject = null;
-      video.remove();
       canvas.remove();
     };
   }, []);
-
-  // Connect video stream to hidden video element
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (videoStream) {
-      video.srcObject = videoStream;
-      video.play().catch((err) => {
-        console.warn('[CameraAttentiveness] Failed to play video:', err);
-      });
-    } else {
-      video.pause();
-      video.srcObject = null;
-    }
-  }, [videoStream]);
 
   /**
    * Compare two frames to detect motion
@@ -251,10 +228,10 @@ export function CameraAttentivenessProvider({
    */
   const captureFrame = useCallback(
     async (resolution: CaptureResolution): Promise<CapturedFrame | null> => {
-      const video = videoRef.current;
+      const video = videoEl;
       const canvas = canvasRef.current;
 
-      if (!video || !canvas || !videoStream || video.readyState < 2) {
+      if (!video || !canvas || video.readyState < 2) {
         return null;
       }
 
@@ -295,17 +272,17 @@ export function CameraAttentivenessProvider({
         return null;
       }
     },
-    [videoStream]
+    [videoEl]
   );
 
   /**
    * Get image data for motion detection (always low resolution)
    */
   const getMotionDetectionData = useCallback((): ImageData | null => {
-    const video = videoRef.current;
+    const video = videoEl;
     const canvas = canvasRef.current;
 
-    if (!video || !canvas || !videoStream || video.readyState < 2) {
+    if (!video || !canvas || video.readyState < 2) {
       return null;
     }
 
@@ -323,7 +300,7 @@ export function CameraAttentivenessProvider({
       console.error('[CameraAttentiveness] Failed to get motion data:', err);
       return null;
     }
-  }, [videoStream]);
+  }, [videoEl]);
 
   /**
    * Main monitoring tick - called at the configured frequency
@@ -331,7 +308,7 @@ export function CameraAttentivenessProvider({
    */
   const monitoringTick = useCallback(async () => {
     const currentState = stateRef.current;
-    if (!currentState.isRunning || !videoStream) return;
+    if (!currentState.isRunning || !videoEl) return;
 
     setState((prev) => ({ ...prev, isCapturing: true }));
 
@@ -404,7 +381,7 @@ export function CameraAttentivenessProvider({
     } finally {
       setState((prev) => ({ ...prev, isCapturing: false }));
     }
-  }, [videoStream, getMotionDetectionData, detectMotion, captureFrame]);
+  }, [videoEl, getMotionDetectionData, detectMotion, captureFrame]);
 
   // Keep ref updated with latest monitoringTick
   monitoringTickRef.current = monitoringTick;
@@ -453,7 +430,7 @@ export function CameraAttentivenessProvider({
       captureIntervalRef.current = null;
     }
 
-    if (!state.isRunning || !videoStream) return;
+    if (!state.isRunning || !videoEl) return;
 
     // Use sleep frequency if asleep, otherwise use configured frequency
     const frequency = state.isAwake ? state.mode.frequency : 'sleep';
@@ -475,7 +452,7 @@ export function CameraAttentivenessProvider({
         clearInterval(captureIntervalRef.current);
       }
     };
-  }, [state.isRunning, state.isAwake, state.mode.frequency, videoStream]);
+  }, [state.isRunning, state.isAwake, state.mode.frequency, videoEl]);
 
   // Control methods
   const start = useCallback(() => {
@@ -569,14 +546,14 @@ export function CameraAttentivenessProvider({
 
   // Auto-start when stream becomes available
   useEffect(() => {
-    if (autoStart && videoStream && !state.isRunning) {
+    if (autoStart && videoEl && !state.isRunning) {
       // Small delay to ensure video is ready
       const timeout = setTimeout(() => {
         start();
       }, 500);
       return () => clearTimeout(timeout);
     }
-  }, [autoStart, videoStream, state.isRunning, start]);
+  }, [autoStart, videoEl, state.isRunning, start]);
 
   // Cleanup on unmount
   useEffect(() => {

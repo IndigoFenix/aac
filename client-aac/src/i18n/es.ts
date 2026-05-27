@@ -134,8 +134,6 @@ export const es: Translations = {
     audioMonitoringHint: "Habilitar an\u00e1lisis continuo de audio ambiental para conciencia contextual",
     therapyMode: "Modo de terapia",
     therapyModeHint: "Habilitar funciones mejoradas de terapia del habla",
-    smartObjectDetection: "Detecci\u00f3n inteligente de objetos",
-    smartObjectDetectionHint: "Detectar autom\u00e1ticamente objetos en sus manos y reemplazar sugerencias de s\u00edmbolos con elementos detectados",
     eyegazeSelection: "Selecci\u00f3n de s\u00edmbolos por mirada",
     eyegazeSelectionHint: "Habilitar selecci\u00f3n de s\u00edmbolos al pasar la mirada sobre ellos durante un tiempo determinado",
     selectionTimeout: "Tiempo de selecci\u00f3n",

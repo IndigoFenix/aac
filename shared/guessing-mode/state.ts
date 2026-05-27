@@ -300,8 +300,8 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     }
     lines.push("No category chosen yet — offer the top-level category buttons.");
     const keys = CATEGORY_VALUES.map((c) => `${CATEGORY_DIM_ID}:${c}`).map((k) => `suggestion:${k}`);
-    lines.push("Offer these suggestion keys as buttons:");
-    for (const k of keys) lines.push(`  ${k}`);
+    lines.push("Offer these as buttons — keys only, COMMA-separated (the system fills picture + label), never pipe-joined:");
+    lines.push(`  ${keys.join(",")}`);
     if (state.specialInterests.length) {
       lines.push(`Student's known interests: ${state.specialInterests.join(", ")}`);
     }
@@ -346,8 +346,8 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     lines.push(`Suggested next dimension: ${localName(next.def.id)} — ${label}`);
     const values = next.def.values.slice(0, MAX_SUGGESTION_VALUES);
     keys = values.map((v) => `suggestion:${next.def!.id}:${v}`);
-    lines.push("  Offer these suggestion keys as buttons:");
-    for (const k of keys) lines.push(`    ${k}`);
+    lines.push("  Offer these as buttons — keys only, COMMA-separated (the system fills picture + label), never pipe-joined:");
+    lines.push(`    ${keys.join(",")}`);
   } else {
     lines.push("No more narrowing dimensions — offer [GUESS] buttons now.");
   }

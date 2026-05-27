@@ -32,6 +32,7 @@ import {
 import {
   expandSuggestionKey,
   splitOutSuggestionButtons,
+  extractSuggestionButtonsFromRaw,
 } from "../services/dual-agent/interactive-agent";
 
 describe("registry coverage", () => {
@@ -305,6 +306,28 @@ describe("server-side suggestion-button expansion", () => {
   it("returns null for invalid keys", () => {
     expect(expandSuggestionKey("suggestion:things.kind:dragon")).toBeNull();
     expect(expandSuggestionKey("not a key")).toBeNull();
+  });
+
+  it("recovers ALL keys when the model pipe-crams them with labels (no commas)", () => {
+    // Real Gemini output: keys joined with pipes + Hebrew labels, no commas.
+    const raw = "suggestion:actions.who:alone|לבד||suggestion:actions.who:with_others|עם אחרים||suggestion:actions.who:together|ביחד";
+    const { suggestions, othersRaw } = extractSuggestionButtonsFromRaw(raw);
+    expect(suggestions.map((s) => s.suggestionKey)).toEqual([
+      "suggestion:actions.who:alone",
+      "suggestion:actions.who:with_others",
+      "suggestion:actions.who:together",
+    ]);
+    expect(suggestions.every((s) => s.buttonType === "suggestion")).toBe(true);
+    expect(othersRaw.trim()).toBe(""); // nothing left over
+  });
+
+  it("extracts comma-separated keys and dedupes", () => {
+    const raw = "suggestion:things.kind:animal,suggestion:things.kind:food,suggestion:things.kind:animal";
+    const { suggestions } = extractSuggestionButtonsFromRaw(raw);
+    expect(suggestions.map((s) => s.suggestionKey)).toEqual([
+      "suggestion:things.kind:animal",
+      "suggestion:things.kind:food",
+    ]);
   });
 
   it("splits bare suggestion-key buttons out from normal buttons", () => {

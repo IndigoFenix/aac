@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, Activity, Camera, Moon, Sun, Zap, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCameraAttentivenessOptional } from '@/contexts/CameraAttentivenessContext';
+import { useMultiCamera } from '@/hooks/useMultiCamera';
 import type { CaptureFrequency, CaptureResolution } from '@/lib/cameraAttentivenessTypes';
 
 interface CameraAttentivenessDebugProps {
@@ -37,6 +38,8 @@ export function CameraAttentivenessDebug({ isVisible, onToggle }: CameraAttentiv
   }
 
   const { state, wake, sleep, setFrequency, setResolution, start, stop } = attentiveness;
+  const { userVideoEl, userVideoReady, cameraDiag } = useMultiCamera();
+  const recentDiag = cameraDiag.slice(-6).reverse();
 
   return (
     <>
@@ -139,6 +142,29 @@ export function CameraAttentivenessDebug({ isVisible, onToggle }: CameraAttentiv
                 <span className="font-mono text-gray-900 dark:text-gray-100">
                   {state.frameCount}
                 </span>
+              </div>
+
+              {/* Shared user-camera <video> diagnostics (iOS freeze debugging) */}
+              <div className="space-y-1 pt-2 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">Shared video</span>
+                  <span className={`font-mono text-xs px-2 py-0.5 rounded-full ${userVideoReady ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'}`}>
+                    {userVideoReady ? 'ready' : 'not ready'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500 font-mono">
+                  <span>readyState {userVideoEl?.readyState ?? '–'} / paused {String(userVideoEl?.paused ?? '–')}</span>
+                  <span>{userVideoEl?.videoWidth ?? 0}×{userVideoEl?.videoHeight ?? 0}</span>
+                </div>
+                {recentDiag.length > 0 && (
+                  <div className="mt-1 max-h-24 overflow-y-auto rounded bg-gray-50 dark:bg-gray-800 p-1">
+                    {recentDiag.map((ev, i) => (
+                      <div key={i} className="text-[10px] font-mono text-gray-600 dark:text-gray-400 leading-tight">
+                        {new Date(ev.t).toLocaleTimeString()} · {ev.kind}{ev.detail ? ` (${ev.detail})` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Frequency Control */}

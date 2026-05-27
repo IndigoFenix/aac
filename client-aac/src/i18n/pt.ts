@@ -134,8 +134,6 @@ export const pt: Translations = {
     audioMonitoringHint: "Habilitar an\u00e1lise cont\u00ednua de \u00e1udio ambiente para consci\u00eancia contextual",
     therapyMode: "Modo de terapia",
     therapyModeHint: "Habilitar recursos aprimorados de terapia da fala",
-    smartObjectDetection: "Detec\u00e7\u00e3o inteligente de objetos",
-    smartObjectDetectionHint: "Detectar automaticamente objetos em suas m\u00e3os e substituir sugest\u00f5es de s\u00edmbolos por itens detectados",
     eyegazeSelection: "Sele\u00e7\u00e3o de s\u00edmbolos por olhar",
     eyegazeSelectionHint: "Habilitar sele\u00e7\u00e3o de s\u00edmbolos ao passar o olhar sobre eles por um tempo determinado",
     selectionTimeout: "Tempo de sele\u00e7\u00e3o",
