@@ -1911,11 +1911,11 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             if (this.guessingOrigin === "builder") {
               const ctx = this.guessingBuilderContext;
               builderOverride =
-                `\n\n[BUILDER SLOT GUESSING] This narrowing is to fill the ${ctx?.category ?? "current"} slot of the sentence the user is composing` +
+                `\n\n[BUILDER SLOT GUESSING] You are helping fill the ${ctx?.category ?? "current"} slot of the sentence the user is composing` +
                 (ctx?.partialGlyph ? ` ("${ctx.partialGlyph}")` : "") +
-                `. Keep asking narrowing questions with the suggestion buttons as usual, but the GOAL is a single SYMBOL for that slot — NOT a spoken statement. When you have good candidate ${T.symbol}(s), call suggest_construction_buttons with them as \`head_candidates\`` +
+                `. Run this exactly like normal guessing: your PRIMARY action each turn is rebuild_board with the narrowing suggestion buttons above, so the user keeps narrowing (these render in the builder). SEPARATELY, once you have plausible concrete ${T.symbol}(s) for the slot, ALSO call suggest_construction_buttons with them as \`head_candidates\`` +
                 (typeof ctx?.targetSlot === "number" ? ` for slot ${ctx.targetSlot}` : "") +
-                `. Do NOT offer [GUESS] utterance buttons and do NOT make a conversational reply — this concept goes INTO the sentence.`;
+                ` — those appear as pickable chips. Keep offering narrowing buttons AND refreshing the candidate chips every turn; do NOT resolve in one shot, do NOT offer [GUESS] utterance buttons, and do NOT make a conversational reply. The user will either narrow further or pick a chip to drop the ${T.symbol} into their sentence.`;
             }
             // Treat this like a button-press turn so handleTurnComplete's
             // auto-continuation re-prompts the model to voice its own_speech if
@@ -1948,6 +1948,15 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           // interpret follow-up already consumed preDetourTopic; if they
           // cancelled (and aren't mid-guessing), drop the stale snapshot.
           this.builderOpen = false;
+          // Closing the builder cancels any builder-origin guessing it launched.
+          if (this.guessingMode && this.guessingOrigin === "builder") {
+            this.guessingMode = false;
+            this.guessingOrigin = "conversation";
+            this.guessingBuilderContext = null;
+            this.currentGuessingSuggestionKeys = [];
+            this.send({ type: "guessing_mode", active: false });
+            logLiveSession("GUESSING_MODE", "Exited — builder closed during builder-origin guessing");
+          }
           if (!this.guessingMode) this.preDetourTopic = null;
           logLiveSession("BUILDER_CLOSE", `guessingMode=${this.guessingMode}`);
           break;
@@ -1959,6 +1968,19 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           if (!this.builderOpen) {
             this.beginDetourIfNeeded();
             this.builderOpen = true;
+          }
+          // A construction_state during builder-origin guessing means the user
+          // picked a candidate chip (or otherwise changed the sentence) — the
+          // concept is now in the slot, so end guessing and return the builder
+          // to its normal grid. (Pressing narrowing buttons sends guessing_state,
+          // not construction_state, so this only fires on an actual resolution.)
+          if (this.guessingMode && this.guessingOrigin === "builder") {
+            this.guessingMode = false;
+            this.guessingOrigin = "conversation";
+            this.guessingBuilderContext = null;
+            this.currentGuessingSuggestionKeys = [];
+            this.send({ type: "guessing_mode", active: false });
+            logLiveSession("GUESSING_MODE", "Exited — builder-origin guess placed (construction_state)");
           }
           // Pull current dynamic-board labels off the session state so the
           // injection carries the conversation topic the user just pivoted
@@ -2963,19 +2985,11 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       case "suggest_construction_buttons": {
         const slotIndex = Number.isInteger(args.slot_index) ? args.slot_index as number : 0;
 
-        // Builder-origin guessing resolves HERE: the AI is placing the found
-        // concept into the sentence slot. End guessing so the builder swaps its
-        // narrowing grid back for the normal grid (the resolved concept lands in
-        // the AI strip below). The builder stays open, so the conversation-detour
-        // snapshot (preDetourTopic) is intentionally preserved for the eventual Play.
-        if (this.guessingMode && this.guessingOrigin === "builder") {
-          this.guessingMode = false;
-          this.guessingOrigin = "conversation";
-          this.guessingBuilderContext = null;
-          this.currentGuessingSuggestionKeys = [];
-          this.send({ type: "guessing_mode", active: false });
-          logLiveSession("GUESSING_MODE", "Exited — builder-origin guessing resolved via suggest_construction_buttons");
-        }
+        // NOTE: during builder-origin guessing this populates the AI strip with
+        // candidate concepts WHILE guessing stays active — the narrowing buttons
+        // remain in the main grid and the guesses appear in the chips row. We do
+        // NOT exit guessing here; it ends when the user actually picks a chip
+        // (the resulting construction_state turns guessing off — see that handler).
 
         // Two SUGGESTION arrays — head_candidates (next-glyph HEAD SYMBOLs)
         // and modifier_candidates (MODIFIER SYMBOLs for the current head).
@@ -3564,8 +3578,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
         // Guessing mode: exit only when the rebuild has neither [GUESS] nor
         // suggestion buttons — i.e. the AI has moved on to a normal board.
+        // Builder-origin guessing is EXEMPT: a bad/empty rebuild (e.g. the AI
+        // hallucinated invalid suggestion keys, or tacked on non-[GUESS] concept
+        // buttons) must NOT kick the user out of the builder. Builder guessing
+        // ends only when the user picks a chip (construction_state) or closes
+        // the builder (builder_close).
         if (
           this.guessingMode &&
+          this.guessingOrigin !== "builder" &&
           !buttons.some(b => b.buttonType === "guess" || b.buttonType === "suggestion")
         ) {
           this.guessingMode = false;

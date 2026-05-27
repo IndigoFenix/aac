@@ -908,8 +908,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                      an active HEAD SYMBOL to attach modifiers to.
               right: registry-driven modifiers + More / ColorPicker buttons.
             When only one sub-group has content, it spans the row. The
-            divider only renders when both sides have content. */}
-        {(
+            divider only renders when both sides have content.
+            Hidden during guessing mode — the narrowing buttons take the grid
+            and modifiers aren't relevant while the user is still picking a head. */}
+        {!guessingActive && (
           (aiModifierCandidates.length > 0 && effectiveActiveSlot != null) ||
           modifierItems.length > 0 ||
           colorOptions.length > 0
@@ -989,7 +991,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             on. Renders the swatches inline so we don't have to manage
             popover positioning; tapping the picker button again or a
             swatch closes the row. */}
-        {colorPickerOpen && colorOptions.length > 0 && (
+        {!guessingActive && colorPickerOpen && colorOptions.length > 0 && (
           <div
             className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
             data-testid="color-picker"

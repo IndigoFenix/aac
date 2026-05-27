@@ -33,3 +33,183 @@
 [2026-05-27T12:32:53.728Z] [resolveImageKeys] No symbol found for "helper"
 [2026-05-27T12:32:53.731Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: family, helper
 [2026-05-27T12:32:53.734Z] [queueGeneration] Queuing 2 keys: family, helper (hasCallback=true)
+[2026-05-27T13:11:22.217Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:11:22.229Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:11:40.966Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:11:40.967Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:12:02.661Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:12:02.678Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:12:23.081Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:12:23.115Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:12:38.879Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:12:38.881Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:13:00.856Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:13:00.857Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:13:03.710Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:13:03.710Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:13:03.713Z] [resolveImageKeys] Resolving 1 keys: climb_mountain (format=api-path, useUnapproved=true)
+[2026-05-27T13:13:04.391Z] [resolveImageKeys] No symbol found for "climb_mountain"
+[2026-05-27T13:13:04.392Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: climb_mountain
+[2026-05-27T13:13:04.394Z] [queueGeneration] Queuing 1 keys: climb_mountain (hasCallback=true)
+[2026-05-27T13:13:05.360Z] [processQueue] Generating "climb_mountain"...
+[2026-05-27T13:13:13.577Z] [resolveImageKeys] Resolving 1 keys: himalayas (format=internal, useUnapproved=true)
+[2026-05-27T13:13:14.391Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:14.392Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: himalayas
+[2026-05-27T13:13:14.393Z] [queueGeneration] Queuing 1 keys: himalayas (hasCallback=true)
+[2026-05-27T13:13:14.400Z] [resolveImageKeys] Resolving 1 keys: himalayas (format=api-path, useUnapproved=true)
+[2026-05-27T13:13:15.665Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:15.666Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: himalayas
+[2026-05-27T13:13:15.667Z] [queueGeneration] Queuing 1 keys: himalayas (hasCallback=true)
+[2026-05-27T13:13:21.400Z] [resolveImageKeys] Resolving 3 keys: himalayas, himalayas, mount_everest (format=internal, useUnapproved=true)
+[2026-05-27T13:13:22.213Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:23.264Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:23.451Z] [resolveImageKeys] No symbol found for "mount_everest"
+[2026-05-27T13:13:23.452Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: himalayas, himalayas, mount_everest
+[2026-05-27T13:13:23.453Z] [queueGeneration] Queuing 3 keys: himalayas, himalayas, mount_everest (hasCallback=true)
+[2026-05-27T13:13:23.459Z] [resolveImageKeys] Resolving 2 keys: himalayas, mount_everest (format=api-path, useUnapproved=true)
+[2026-05-27T13:13:23.816Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:24.022Z] [resolveImageKeys] No symbol found for "mount_everest"
+[2026-05-27T13:13:24.023Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: himalayas, mount_everest
+[2026-05-27T13:13:24.026Z] [queueGeneration] Queuing 2 keys: himalayas, mount_everest (hasCallback=true)
+[2026-05-27T13:13:33.592Z] [resolveImageKeys] Resolving 2 keys: himalayas, mount_everest (format=internal, useUnapproved=true)
+[2026-05-27T13:13:34.965Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:36.200Z] [resolveImageKeys] No symbol found for "mount_everest"
+[2026-05-27T13:13:36.200Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: himalayas, mount_everest
+[2026-05-27T13:13:36.202Z] [queueGeneration] Queuing 2 keys: himalayas, mount_everest (hasCallback=true)
+[2026-05-27T13:13:36.205Z] [resolveImageKeys] Resolving 2 keys: himalayas, mount_everest (format=api-path, useUnapproved=true)
+[2026-05-27T13:13:36.971Z] [resolveImageKeys] No symbol found for "himalayas"
+[2026-05-27T13:13:37.354Z] [resolveImageKeys] No symbol found for "mount_everest"
+[2026-05-27T13:13:37.355Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: himalayas, mount_everest
+[2026-05-27T13:13:37.356Z] [queueGeneration] Queuing 2 keys: himalayas, mount_everest (hasCallback=true)
+[2026-05-27T13:13:39.290Z] [COST] imageKey="climb_mountain" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=90 | image: openai/gpt-image-1 in=97 out=272
+[2026-05-27T13:13:39.291Z] [processQueue] Generated "climb_mountain" → b97f644c-f849-4e9e-a178-6add097e1572 (1 total)
+[2026-05-27T13:13:39.291Z] [processQueue] FULL REFINED PROMPT for "climb_mountain": A simple AAC icon of a generic human figure with a slightly stylized body, wearing a blue shirt and brown pants, actively climbing up the side of a tall, triangular brown mountain with a white snow cap. The figure is shown in profile, with arms and legs bent to indicate the climbing action, and simple black motion lines around the hands and feet. The mountain is depicted with bold black outlines and flat, solid colors, centered on a transparent background.
+[2026-05-27T13:13:43.467Z] [processQueue] Generating "mount_everest"...
+[2026-05-27T13:13:51.292Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:13:51.293Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:13:51.296Z] [resolveImageKeys] Resolving 1 keys: sentence (format=api-path, useUnapproved=true)
+[2026-05-27T13:13:51.971Z] [resolveImageKeys] Resolved "sentence" → /api/custom-symbols/f039ed8f-0ba3-4565-a5f3-0f072e614b63/image
+[2026-05-27T13:13:51.971Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-27T13:14:03.974Z] [COST] imageKey="mount_everest" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=65 | image: openai/gpt-image-1 in=71 out=272
+[2026-05-27T13:14:03.975Z] [processQueue] Generated "mount_everest" → 6130d556-2ea9-47b4-ab10-4cff197c9d9d (2 total)
+[2026-05-27T13:14:03.975Z] [processQueue] FULL REFINED PROMPT for "mount_everest": A towering, snow-capped mountain peak with a sharp, pointed summit, rendered in flat AAC icon style. The mountain is predominantly white and light blue for snow and ice, with dark gray or black outlines indicating rock faces and contours. The base of the mountain is a darker shade of gray or brown, suggesting exposed rock.
+[2026-05-27T13:14:08.165Z] [processQueue] Generating "himalayas"...
+[2026-05-27T13:14:58.736Z] [COST] imageKey="himalayas" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=78 | image: openai/gpt-image-1 in=85 out=272
+[2026-05-27T13:14:58.741Z] [processQueue] Generated "himalayas" → 17f27386-ca24-447f-9c89-239a7d2520f0 (3 total)
+[2026-05-27T13:14:58.742Z] [processQueue] FULL REFINED PROMPT for "himalayas": A stylized AAC icon of three towering, snow-capped mountain peaks in a row, with the central peak being the tallest. The mountains are depicted with bold black outlines and flat, solid colors: white for the snow on the upper portions and dark gray for the rocky lower sections. The icon is simple, clean, and instantly recognizable, suitable for a communication board, on a transparent background.
+[2026-05-27T13:15:02.924Z] [processQueue] "mount_everest" already exists → 6130d556-2ea9-47b4-ab10-4cff197c9d9d
+[2026-05-27T13:15:07.109Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:15:11.294Z] [processQueue] "mount_everest" already exists → 6130d556-2ea9-47b4-ab10-4cff197c9d9d
+[2026-05-27T13:15:15.467Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:15:19.647Z] [processQueue] "mount_everest" already exists → 6130d556-2ea9-47b4-ab10-4cff197c9d9d
+[2026-05-27T13:15:24.041Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:15:28.227Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:15:32.405Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:15:36.570Z] [processQueue] "himalayas" already exists → 17f27386-ca24-447f-9c89-239a7d2520f0
+[2026-05-27T13:42:53.768Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:42:53.779Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:43:01.208Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:43:01.210Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:43:35.583Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:43:35.713Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:44:14.010Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:44:14.016Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:44:54.647Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:44:54.648Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:45:19.570Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:45:19.571Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:45:33.019Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:45:33.020Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:45:41.697Z] [resolveImageKeys] Resolving 2 keys: broom, sponge (format=api-path, useUnapproved=true)
+[2026-05-27T13:45:42.228Z] [resolveImageKeys] No symbol found for "broom"
+[2026-05-27T13:45:42.795Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:45:42.796Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:45:43.288Z] [resolveImageKeys] No symbol found for "sponge"
+[2026-05-27T13:45:43.289Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: broom, sponge
+[2026-05-27T13:45:43.290Z] [queueGeneration] Queuing 2 keys: broom, sponge (hasCallback=true)
+[2026-05-27T13:45:45.038Z] [processQueue] Generating "sponge"...
+[2026-05-27T13:46:02.193Z] [COST] imageKey="sponge" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=24 | image: openai/gpt-image-1 in=30 out=272
+[2026-05-27T13:46:02.194Z] [processQueue] Generated "sponge" → 160b2ee5-27be-4b59-9619-5c0cfd82e8f4 (1 total)
+[2026-05-27T13:46:02.195Z] [processQueue] FULL REFINED PROMPT for "sponge": A rectangular yellow cleaning sponge with a textured surface, depicted from a slightly angled front view, in flat AAC icon style.
+[2026-05-27T13:46:06.378Z] [processQueue] Generating "broom"...
+[2026-05-27T13:46:22.083Z] [COST] imageKey="broom" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=74 | image: openai/gpt-image-1 in=82 out=272
+[2026-05-27T13:46:22.083Z] [processQueue] Generated "broom" → e0d68e25-e938-443b-97d4-c62adb4e1200 (2 total)
+[2026-05-27T13:46:22.084Z] [processQueue] FULL REFINED PROMPT for "broom": A simple, bold illustration of a broom, depicted from the side with the bristles at the bottom and the handle extending upwards to the left. The handle is a solid brown rectangle, and the bristles are a solid yellow-brown fan shape. The broom has a thick black outline and uses flat, solid colors on a transparent background, suitable for an AAC communication board icon.
+[2026-05-27T13:46:37.628Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:46:37.629Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:46:56.146Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:46:56.147Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:47:14.308Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:47:14.339Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:47:16.576Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=internal, useUnapproved=true)
+[2026-05-27T13:47:21.006Z] [resolveImageKeys] No symbol found for "medium_size"
+[2026-05-27T13:47:21.007Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: medium_size
+[2026-05-27T13:47:21.007Z] [queueGeneration] Queuing 1 keys: medium_size (hasCallback=true)
+[2026-05-27T13:47:21.064Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:47:22.868Z] [processQueue] Generating "medium_size"...
+[2026-05-27T13:47:22.931Z] [resolveImageKeys] No symbol found for "medium_size"
+[2026-05-27T13:47:22.932Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: medium_size
+[2026-05-27T13:47:22.933Z] [queueGeneration] Queuing 1 keys: medium_size (hasCallback=true)
+[2026-05-27T13:47:34.884Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=internal, useUnapproved=true)
+[2026-05-27T13:47:35.435Z] [resolveImageKeys] No symbol found for "medium_size"
+[2026-05-27T13:47:35.436Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: medium_size
+[2026-05-27T13:47:35.437Z] [queueGeneration] Queuing 1 keys: medium_size (hasCallback=true)
+[2026-05-27T13:47:35.439Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:47:36.946Z] [resolveImageKeys] No symbol found for "medium_size"
+[2026-05-27T13:47:36.947Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: medium_size
+[2026-05-27T13:47:36.948Z] [queueGeneration] Queuing 1 keys: medium_size (hasCallback=true)
+[2026-05-27T13:47:38.325Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=internal, useUnapproved=true)
+[2026-05-27T13:47:45.460Z] [COST] imageKey="medium_size" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=58 | image: openai/gpt-image-1 in=64 out=272
+[2026-05-27T13:47:45.462Z] [processQueue] Generated "medium_size" → 951aef3c-dfa0-4916-8a17-b41bc1756843 (1 total)
+[2026-05-27T13:47:45.463Z] [processQueue] FULL REFINED PROMPT for "medium_size": A simple, bold AAC icon of a gray square, centered, with a slightly larger gray square positioned next to it on the right, and a slightly smaller gray square positioned next to it on the left, all with thick black outlines, on a transparent background, in flat AAC icon style.
+[2026-05-27T13:47:46.627Z] [resolveImageKeys] Resolved "medium_size" → __SYMBOL__:951aef3c-dfa0-4916-8a17-b41bc1756843
+[2026-05-27T13:47:46.627Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-27T13:47:46.629Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:47:48.346Z] [resolveImageKeys] Resolved "medium_size" → /api/custom-symbols/951aef3c-dfa0-4916-8a17-b41bc1756843/image
+[2026-05-27T13:47:48.346Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-27T13:47:49.647Z] [processQueue] "medium_size" already exists → 951aef3c-dfa0-4916-8a17-b41bc1756843
+[2026-05-27T13:47:53.883Z] [processQueue] "medium_size" already exists → 951aef3c-dfa0-4916-8a17-b41bc1756843
+[2026-05-27T13:47:58.074Z] [processQueue] "medium_size" already exists → 951aef3c-dfa0-4916-8a17-b41bc1756843
+[2026-05-27T13:48:06.290Z] [resolveImageKeys] Resolving 2 keys: real_sponge, character_sponge (format=internal, useUnapproved=true)
+[2026-05-27T13:48:07.043Z] [resolveImageKeys] No symbol found for "real_sponge"
+[2026-05-27T13:48:07.876Z] [resolveImageKeys] No symbol found for "character_sponge"
+[2026-05-27T13:48:07.878Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: real_sponge, character_sponge
+[2026-05-27T13:48:07.881Z] [queueGeneration] Queuing 2 keys: real_sponge, character_sponge (hasCallback=true)
+[2026-05-27T13:48:07.887Z] [resolveImageKeys] Resolving 3 keys: real_sponge, character_sponge, medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:48:09.449Z] [resolveImageKeys] Resolving 2 keys: real_sponge, character_sponge (format=internal, useUnapproved=true)
+[2026-05-27T13:48:11.478Z] [processQueue] Generating "character_sponge"...
+[2026-05-27T13:48:11.538Z] [resolveImageKeys] No symbol found for "real_sponge"
+[2026-05-27T13:48:16.590Z] [resolveImageKeys] No symbol found for "real_sponge"
+[2026-05-27T13:48:17.641Z] [resolveImageKeys] No symbol found for "character_sponge"
+[2026-05-27T13:48:20.304Z] [resolveImageKeys] No symbol found for "character_sponge"
+[2026-05-27T13:48:20.304Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: real_sponge, character_sponge
+[2026-05-27T13:48:20.305Z] [queueGeneration] Queuing 2 keys: real_sponge, character_sponge (hasCallback=true)
+[2026-05-27T13:48:20.307Z] [resolveImageKeys] Resolving 3 keys: real_sponge, character_sponge, medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:48:20.421Z] [resolveImageKeys] Resolved "medium_size" → /api/custom-symbols/951aef3c-dfa0-4916-8a17-b41bc1756843/image
+[2026-05-27T13:48:20.421Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: real_sponge, character_sponge
+[2026-05-27T13:48:20.424Z] [queueGeneration] Queuing 2 keys: real_sponge, character_sponge (hasCallback=true)
+[2026-05-27T13:48:21.119Z] [resolveImageKeys] No symbol found for "real_sponge"
+[2026-05-27T13:48:21.988Z] [resolveImageKeys] No symbol found for "character_sponge"
+[2026-05-27T13:48:23.645Z] [resolveImageKeys] Resolved "medium_size" → /api/custom-symbols/951aef3c-dfa0-4916-8a17-b41bc1756843/image
+[2026-05-27T13:48:23.646Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: real_sponge, character_sponge
+[2026-05-27T13:48:23.651Z] [queueGeneration] Queuing 2 keys: real_sponge, character_sponge (hasCallback=true)
+[2026-05-27T13:48:25.113Z] [processQueue] Failed "character_sponge": 400 Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_6f5666c5a8c84054aec7b7e06fae0f64.
+[2026-05-27T13:48:25.284Z] [processQueue] Generating "character_sponge"...
+[2026-05-27T13:48:33.997Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T13:48:34.002Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T13:48:34.031Z] [resolveImageKeys] Resolving 1 keys: medium_size (format=api-path, useUnapproved=true)
+[2026-05-27T13:48:40.609Z] [resolveImageKeys] Resolved "medium_size" → /api/custom-symbols/951aef3c-dfa0-4916-8a17-b41bc1756843/image
+[2026-05-27T13:48:40.612Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-27T13:49:39.173Z] [processQueue] Failed "character_sponge": 400 Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_65a73740133c4aa88ea4c4605e248e3f.
+[2026-05-27T13:49:39.348Z] [processQueue] Generating "real_sponge"...
+[2026-05-27T13:49:57.130Z] [COST] imageKey="real_sponge" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=24 | image: openai/gpt-image-1 in=30 out=272
+[2026-05-27T13:49:57.132Z] [processQueue] Generated "real_sponge" → a930dbee-f5f7-435f-a5b2-5f228d151404 (1 total)
+[2026-05-27T13:49:57.133Z] [processQueue] FULL REFINED PROMPT for "real_sponge": A rectangular yellow cleaning sponge with a textured surface, shown from a slightly angled side view, in flat AAC icon style.
+[2026-05-27T13:50:01.314Z] [processQueue] Generating "character_sponge"...
+[2026-05-27T13:50:18.824Z] [COST] imageKey="character_sponge" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=37 | image: openai/gpt-image-1 in=43 out=272
+[2026-05-27T13:50:18.825Z] [processQueue] Generated "character_sponge" → 977e3b20-2228-4b21-a100-da7403018ee4 (2 total)
+[2026-05-27T13:50:18.826Z] [processQueue] FULL REFINED PROMPT for "character_sponge": A yellow rectangular sponge character with large round eyes, two front teeth, and a cheerful expression, wearing a white shirt, red tie, and brown pants, in flat AAC icon style.
+[2026-05-27T13:50:23.005Z] [processQueue] "real_sponge" already exists → a930dbee-f5f7-435f-a5b2-5f228d151404
+[2026-05-27T13:50:27.190Z] [processQueue] "character_sponge" already exists → 977e3b20-2228-4b21-a100-da7403018ee4
+[2026-05-27T13:50:31.377Z] [processQueue] "real_sponge" already exists → a930dbee-f5f7-435f-a5b2-5f228d151404
+[2026-05-27T13:50:35.551Z] [processQueue] "real_sponge" already exists → a930dbee-f5f7-435f-a5b2-5f228d151404
