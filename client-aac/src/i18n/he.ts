@@ -635,8 +635,9 @@ export const he: Translations = {
     thanks: "תודה",
     speak: "דבר",
     skip: "דלג",
-    neither: "אף אחד",
-    guess: "ניחוש",
+    maybe: "אולי",
+    neitherOfThese: "אף אחד מאלה",
+    guess: "מצא מילה",
   },
 
   silentMode: {

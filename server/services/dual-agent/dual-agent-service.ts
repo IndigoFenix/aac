@@ -311,7 +311,7 @@ export class DualAgentService {
    * event so the browser can call ElevenLabs directly.
    * Otherwise, synthesise server-side and yield audio chunks.
    */
-  private async *yieldTts<T extends "audio" | "interpretation_audio">(
+  private async *yieldTts<T extends "audio" | "utterance_audio">(
     text: string,
     voice: ResolvedVoice,
     eventType: T,

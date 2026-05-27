@@ -635,8 +635,9 @@ export const ru: Translations = {
     thanks: "\u0421\u043f\u0430\u0441\u0438\u0431\u043e",
     speak: "\u0413\u043e\u0432\u043e\u0440\u0438\u0442\u044c",
     skip: "\u041f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
-    neither: "\u041d\u0438 \u0442\u043e\u0442, \u043d\u0438 \u0434\u0440\u0443\u0433\u043e\u0439",
-    guess: "Угадать",
+    maybe: "\u041c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c",
+    neitherOfThese: "\u041d\u0438 \u0442\u043e\u0442, \u043d\u0438 \u0434\u0440\u0443\u0433\u043e\u0439",
+    guess: "Найти слово",
   },
 
   silentMode: {

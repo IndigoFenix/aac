@@ -635,8 +635,9 @@ export const zh: Translations = {
     thanks: "谢谢",
     speak: "说话",
     skip: "跳过",
-    neither: "都不是",
-    guess: "猜一猜",
+    maybe: "也许",
+    neitherOfThese: "都不是",
+    guess: "找词",
   },
 
   silentMode: {

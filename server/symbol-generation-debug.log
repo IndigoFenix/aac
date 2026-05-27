@@ -213,3 +213,197 @@
 [2026-05-27T13:50:27.190Z] [processQueue] "character_sponge" already exists → 977e3b20-2228-4b21-a100-da7403018ee4
 [2026-05-27T13:50:31.377Z] [processQueue] "real_sponge" already exists → a930dbee-f5f7-435f-a5b2-5f228d151404
 [2026-05-27T13:50:35.551Z] [processQueue] "real_sponge" already exists → a930dbee-f5f7-435f-a5b2-5f228d151404
+[2026-05-27T17:41:28.761Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T17:41:28.763Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:26:20.694Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:26:20.699Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:26:45.441Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:26:45.443Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:27:09.263Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:27:09.264Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:27:12.234Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:27:12.235Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:27:25.526Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=internal, useUnapproved=true)
+[2026-05-27T18:27:26.267Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-27T18:27:27.279Z] [resolveImageKeys] No symbol found for "space_book"
+[2026-05-27T18:27:27.451Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-27T18:27:27.453Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: space_book
+[2026-05-27T18:27:27.456Z] [queueGeneration] Queuing 1 keys: space_book (hasCallback=true)
+[2026-05-27T18:27:27.472Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=api-path, useUnapproved=true)
+[2026-05-27T18:27:27.696Z] [processQueue] Generating "space_book"...
+[2026-05-27T18:27:27.828Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-27T18:27:28.085Z] [resolveImageKeys] No symbol found for "space_book"
+[2026-05-27T18:27:28.264Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-27T18:27:28.271Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: space_book
+[2026-05-27T18:27:28.309Z] [queueGeneration] Queuing 1 keys: space_book (hasCallback=true)
+[2026-05-27T18:27:41.698Z] [resolveImageKeys] Resolving 5 keys: space_book, spaceship, planets, astronaut, space_phenomenon (format=internal, useUnapproved=true)
+[2026-05-27T18:27:42.711Z] [resolveImageKeys] No symbol found for "space_book"
+[2026-05-27T18:27:43.651Z] [resolveImageKeys] Resolved "spaceship" → __SYMBOL__:58d10e8c-5582-4c2b-9da4-48dd7974e746
+[2026-05-27T18:27:44.173Z] [resolveImageKeys] No symbol found for "planets"
+[2026-05-27T18:27:45.711Z] [resolveImageKeys] No symbol found for "astronaut"
+[2026-05-27T18:27:45.879Z] [resolveImageKeys] No symbol found for "space_phenomenon"
+[2026-05-27T18:27:45.880Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: space_book, planets, astronaut, space_phenomenon
+[2026-05-27T18:27:45.881Z] [queueGeneration] Queuing 4 keys: space_book, planets, astronaut, space_phenomenon (hasCallback=true)
+[2026-05-27T18:27:45.888Z] [resolveImageKeys] Resolving 7 keys: adventure_book, space_book, funny_book, spaceship, planets, astronaut, space_phenomenon (format=api-path, useUnapproved=true)
+[2026-05-27T18:27:46.224Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-27T18:27:46.464Z] [COST] imageKey="space_book" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=89 | image: openai/gpt-image-1 in=96 out=272
+[2026-05-27T18:27:46.465Z] [processQueue] Generated "space_book" → 6588c446-99d3-40bd-9489-c0e656e15397 (1 total)
+[2026-05-27T18:27:46.466Z] [processQueue] FULL REFINED PROMPT for "space_book": A simple, bold AAC icon illustration of an open book with a stylized planet and stars on its pages, rendered with flat, solid colors and thick black outlines on a transparent background. The book is open to the center, showing two pages. On the left page, a blue planet with a white ring is depicted. On the right page, a few small white stars are scattered. The book itself is a neutral color like light gray or beige.
+[2026-05-27T18:27:46.540Z] [resolveImageKeys] Resolved "space_book" → /api/custom-symbols/6588c446-99d3-40bd-9489-c0e656e15397/image
+[2026-05-27T18:27:46.810Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-27T18:27:46.985Z] [resolveImageKeys] Resolved "spaceship" → /api/custom-symbols/58d10e8c-5582-4c2b-9da4-48dd7974e746/image
+[2026-05-27T18:27:47.153Z] [resolveImageKeys] No symbol found for "planets"
+[2026-05-27T18:27:47.319Z] [resolveImageKeys] No symbol found for "astronaut"
+[2026-05-27T18:27:47.487Z] [resolveImageKeys] No symbol found for "space_phenomenon"
+[2026-05-27T18:27:47.488Z] [resolveImageKeys] Done. Resolved 4, unresolved 3: planets, astronaut, space_phenomenon
+[2026-05-27T18:27:47.505Z] [queueGeneration] Queuing 3 keys: planets, astronaut, space_phenomenon (hasCallback=true)
+[2026-05-27T18:27:50.657Z] [processQueue] Generating "space_phenomenon"...
+[2026-05-27T18:27:55.177Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:27:55.181Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:28:04.006Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:28:04.007Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:28:07.995Z] [COST] imageKey="space_phenomenon" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=46 out=272
+[2026-05-27T18:28:07.996Z] [processQueue] Generated "space_phenomenon" → 26c18685-c1d3-4c8d-a03b-983e86d401dc (2 total)
+[2026-05-27T18:28:07.997Z] [processQueue] FULL REFINED PROMPT for "space_phenomenon": A stylized illustration of a swirling galaxy with a bright central core and several spiral arms, rendered with bold black outlines and flat, solid colors on a transparent background, suitable for an AAC symbol icon.
+[2026-05-27T18:28:12.183Z] [processQueue] "space_phenomenon" already exists → 26c18685-c1d3-4c8d-a03b-983e86d401dc
+[2026-05-27T18:28:12.915Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:28:12.916Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:28:16.379Z] [processQueue] Generating "astronaut"...
+[2026-05-27T18:28:30.774Z] [COST] imageKey="astronaut" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=40 | image: openai/gpt-image-1 in=45 out=272
+[2026-05-27T18:28:30.785Z] [processQueue] Generated "astronaut" → ec7f2fbf-43cc-4560-befd-583e01fe35ce (3 total)
+[2026-05-27T18:28:30.795Z] [processQueue] FULL REFINED PROMPT for "astronaut": A generic human figure wearing a white space suit with a large round helmet, a clear visor, and a backpack-like life support system, standing with arms slightly bent, in flat AAC icon style.
+[2026-05-27T18:28:31.754Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-27T18:28:31.760Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-27T18:28:39.346Z] [processQueue] Generating "planets"...
+[2026-05-27T18:28:52.173Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=internal, useUnapproved=true)
+[2026-05-27T18:28:53.578Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-27T18:28:55.476Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=internal, useUnapproved=true)
+[2026-05-27T18:28:56.313Z] [resolveImageKeys] Resolved "space_book" → __SYMBOL__:6588c446-99d3-40bd-9489-c0e656e15397
+[2026-05-27T18:29:00.284Z] [resolveImageKeys] Resolved "adventure_book" → __SYMBOL__:ac6c3ee3-fee2-45e3-b658-0ff503909fa7
+[2026-05-27T18:29:01.568Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-27T18:29:01.571Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-27T18:29:01.591Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:01.659Z] [COST] imageKey="planets" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=59 | image: openai/gpt-image-1 in=65 out=272
+[2026-05-27T18:29:01.681Z] [processQueue] Generated "planets" → 518b6c61-65df-4571-821f-a7a9e67c961e (4 total)
+[2026-05-27T18:29:01.688Z] [processQueue] FULL REFINED PROMPT for "planets": A stylized illustration of three planets of varying sizes, each a different solid color (e.g., blue, green, orange) with a simple white ring around one, all floating against a transparent background. The planets have bold black outlines and flat, solid colors, suitable for an AAC icon.
+[2026-05-27T18:29:01.785Z] [resolveImageKeys] Resolved "space_book" → __SYMBOL__:6588c446-99d3-40bd-9489-c0e656e15397
+[2026-05-27T18:29:02.124Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-27T18:29:02.652Z] [resolveImageKeys] Resolved "funny_book" → __SYMBOL__:2b44d314-7e86-4eaf-b386-c6f4c24d2f10
+[2026-05-27T18:29:02.659Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-27T18:29:02.675Z] [resolveImageKeys] Resolving 3 keys: adventure_book, space_book, funny_book (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:02.884Z] [resolveImageKeys] Resolved "space_book" → /api/custom-symbols/6588c446-99d3-40bd-9489-c0e656e15397/image
+[2026-05-27T18:29:03.070Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-27T18:29:03.352Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-27T18:29:03.370Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-27T18:29:03.486Z] [resolveImageKeys] Resolved "space_book" → /api/custom-symbols/6588c446-99d3-40bd-9489-c0e656e15397/image
+[2026-05-27T18:29:03.958Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-27T18:29:03.979Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-05-27T18:29:06.138Z] [processQueue] "astronaut" already exists → ec7f2fbf-43cc-4560-befd-583e01fe35ce
+[2026-05-27T18:29:10.317Z] [processQueue] "planets" already exists → 518b6c61-65df-4571-821f-a7a9e67c961e
+[2026-05-27T18:29:13.368Z] [resolveImageKeys] Resolving 4 keys: planets, astronaut, spaceship, space_phenomenon (format=internal, useUnapproved=true)
+[2026-05-27T18:29:13.911Z] [resolveImageKeys] Resolved "planets" → __SYMBOL__:518b6c61-65df-4571-821f-a7a9e67c961e
+[2026-05-27T18:29:14.758Z] [resolveImageKeys] Resolved "astronaut" → __SYMBOL__:ec7f2fbf-43cc-4560-befd-583e01fe35ce
+[2026-05-27T18:29:15.081Z] [processQueue] "space_book" already exists → 6588c446-99d3-40bd-9489-c0e656e15397
+[2026-05-27T18:29:16.304Z] [resolveImageKeys] Resolving 4 keys: planets, astronaut, spaceship, space_phenomenon (format=internal, useUnapproved=true)
+[2026-05-27T18:29:17.011Z] [resolveImageKeys] Resolved "spaceship" → __SYMBOL__:58d10e8c-5582-4c2b-9da4-48dd7974e746
+[2026-05-27T18:29:21.078Z] [resolveImageKeys] Resolved "planets" → __SYMBOL__:518b6c61-65df-4571-821f-a7a9e67c961e
+[2026-05-27T18:29:22.483Z] [resolveImageKeys] Resolved "space_phenomenon" → __SYMBOL__:26c18685-c1d3-4c8d-a03b-983e86d401dc
+[2026-05-27T18:29:22.487Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-27T18:29:22.500Z] [resolveImageKeys] Resolving 7 keys: adventure_book, space_book, funny_book, planets, astronaut, spaceship, space_phenomenon (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:22.531Z] [processQueue] "space_book" already exists → 6588c446-99d3-40bd-9489-c0e656e15397
+[2026-05-27T18:29:22.582Z] [resolveImageKeys] Resolved "astronaut" → __SYMBOL__:ec7f2fbf-43cc-4560-befd-583e01fe35ce
+[2026-05-27T18:29:22.920Z] [resolveImageKeys] Resolved "adventure_book" → /api/custom-symbols/ac6c3ee3-fee2-45e3-b658-0ff503909fa7/image
+[2026-05-27T18:29:23.084Z] [resolveImageKeys] Resolved "spaceship" → __SYMBOL__:58d10e8c-5582-4c2b-9da4-48dd7974e746
+[2026-05-27T18:29:23.247Z] [resolveImageKeys] Resolved "space_book" → /api/custom-symbols/6588c446-99d3-40bd-9489-c0e656e15397/image
+[2026-05-27T18:29:23.262Z] [resolveImageKeys] Resolved "space_phenomenon" → __SYMBOL__:26c18685-c1d3-4c8d-a03b-983e86d401dc
+[2026-05-27T18:29:23.265Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-27T18:29:23.280Z] [resolveImageKeys] Resolving 4 keys: planets, astronaut, spaceship, space_phenomenon (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:23.416Z] [resolveImageKeys] Resolved "funny_book" → /api/custom-symbols/2b44d314-7e86-4eaf-b386-c6f4c24d2f10/image
+[2026-05-27T18:29:23.580Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-27T18:29:23.905Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-27T18:29:23.933Z] [resolveImageKeys] Resolved "astronaut" → /api/custom-symbols/ec7f2fbf-43cc-4560-befd-583e01fe35ce/image
+[2026-05-27T18:29:24.138Z] [resolveImageKeys] Resolved "astronaut" → /api/custom-symbols/ec7f2fbf-43cc-4560-befd-583e01fe35ce/image
+[2026-05-27T18:29:24.229Z] [resolveImageKeys] Resolved "spaceship" → /api/custom-symbols/58d10e8c-5582-4c2b-9da4-48dd7974e746/image
+[2026-05-27T18:29:24.511Z] [resolveImageKeys] Resolved "spaceship" → /api/custom-symbols/58d10e8c-5582-4c2b-9da4-48dd7974e746/image
+[2026-05-27T18:29:24.529Z] [resolveImageKeys] Resolved "space_phenomenon" → /api/custom-symbols/26c18685-c1d3-4c8d-a03b-983e86d401dc/image
+[2026-05-27T18:29:24.533Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-05-27T18:29:24.692Z] [resolveImageKeys] Resolved "space_phenomenon" → /api/custom-symbols/26c18685-c1d3-4c8d-a03b-983e86d401dc/image
+[2026-05-27T18:29:24.698Z] [resolveImageKeys] Done. Resolved 7, unresolved 0: 
+[2026-05-27T18:29:34.810Z] [resolveImageKeys] Resolving 4 keys: planet_mars, planet_jupiter, planet_saturn, planet_earth (format=internal, useUnapproved=true)
+[2026-05-27T18:29:35.348Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-27T18:29:36.179Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:29:37.541Z] [resolveImageKeys] Resolved "planet_saturn" → __SYMBOL__:c1e45c4e-1f86-4de7-a7e9-d6005d3ba632
+[2026-05-27T18:29:37.648Z] [resolveImageKeys] Resolving 4 keys: planet_mars, planet_jupiter, planet_saturn, planet_earth (format=internal, useUnapproved=true)
+[2026-05-27T18:29:40.721Z] [resolveImageKeys] No symbol found for "planet_earth"
+[2026-05-27T18:29:40.722Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: planet_jupiter, planet_earth
+[2026-05-27T18:29:40.723Z] [queueGeneration] Queuing 2 keys: planet_jupiter, planet_earth (hasCallback=true)
+[2026-05-27T18:29:40.727Z] [resolveImageKeys] Resolving 4 keys: planet_mars, planet_jupiter, planet_saturn, planet_earth (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:41.543Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-27T18:29:42.909Z] [processQueue] Generating "planet_earth"...
+[2026-05-27T18:29:43.082Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-27T18:29:43.261Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:29:45.479Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:29:45.654Z] [resolveImageKeys] Resolved "planet_saturn" → __SYMBOL__:c1e45c4e-1f86-4de7-a7e9-d6005d3ba632
+[2026-05-27T18:29:46.331Z] [resolveImageKeys] Resolved "planet_saturn" → /api/custom-symbols/c1e45c4e-1f86-4de7-a7e9-d6005d3ba632/image
+[2026-05-27T18:29:46.501Z] [resolveImageKeys] No symbol found for "planet_earth"
+[2026-05-27T18:29:46.501Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: planet_jupiter, planet_earth
+[2026-05-27T18:29:46.502Z] [queueGeneration] Queuing 2 keys: planet_jupiter, planet_earth (hasCallback=true)
+[2026-05-27T18:29:46.505Z] [resolveImageKeys] Resolving 4 keys: planet_mars, planet_jupiter, planet_saturn, planet_earth (format=api-path, useUnapproved=true)
+[2026-05-27T18:29:46.714Z] [resolveImageKeys] No symbol found for "planet_earth"
+[2026-05-27T18:29:46.715Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: planet_jupiter, planet_earth
+[2026-05-27T18:29:46.725Z] [queueGeneration] Queuing 2 keys: planet_jupiter, planet_earth (hasCallback=true)
+[2026-05-27T18:29:46.881Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-27T18:29:47.349Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:29:47.506Z] [resolveImageKeys] Resolved "planet_saturn" → /api/custom-symbols/c1e45c4e-1f86-4de7-a7e9-d6005d3ba632/image
+[2026-05-27T18:29:47.663Z] [resolveImageKeys] No symbol found for "planet_earth"
+[2026-05-27T18:29:47.664Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: planet_jupiter, planet_earth
+[2026-05-27T18:29:47.670Z] [queueGeneration] Queuing 2 keys: planet_jupiter, planet_earth (hasCallback=true)
+[2026-05-27T18:30:05.403Z] [resolveImageKeys] Resolving 2 keys: saturn_rings, far_away (format=internal, useUnapproved=true)
+[2026-05-27T18:30:05.950Z] [resolveImageKeys] No symbol found for "saturn_rings"
+[2026-05-27T18:30:07.008Z] [resolveImageKeys] No symbol found for "far_away"
+[2026-05-27T18:30:07.009Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: saturn_rings, far_away
+[2026-05-27T18:30:07.010Z] [queueGeneration] Queuing 2 keys: saturn_rings, far_away (hasCallback=true)
+[2026-05-27T18:30:07.016Z] [resolveImageKeys] Resolving 2 keys: saturn_rings, far_away (format=api-path, useUnapproved=true)
+[2026-05-27T18:30:07.299Z] [resolveImageKeys] No symbol found for "saturn_rings"
+[2026-05-27T18:30:07.491Z] [resolveImageKeys] No symbol found for "far_away"
+[2026-05-27T18:30:07.492Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: saturn_rings, far_away
+[2026-05-27T18:30:07.493Z] [queueGeneration] Queuing 2 keys: saturn_rings, far_away (hasCallback=true)
+[2026-05-27T18:30:22.298Z] [resolveImageKeys] Resolving 1 keys: saturn_rings (format=internal, useUnapproved=true)
+[2026-05-27T18:30:22.958Z] [resolveImageKeys] No symbol found for "saturn_rings"
+[2026-05-27T18:30:22.961Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: saturn_rings
+[2026-05-27T18:30:22.965Z] [queueGeneration] Queuing 1 keys: saturn_rings (hasCallback=true)
+[2026-05-27T18:30:22.978Z] [resolveImageKeys] Resolving 2 keys: saturn_rings, saturn_pic (format=api-path, useUnapproved=true)
+[2026-05-27T18:30:24.080Z] [resolveImageKeys] No symbol found for "saturn_rings"
+[2026-05-27T18:30:24.301Z] [resolveImageKeys] No symbol found for "saturn_pic"
+[2026-05-27T18:30:24.308Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: saturn_rings, saturn_pic
+[2026-05-27T18:30:24.316Z] [queueGeneration] Queuing 2 keys: saturn_rings, saturn_pic (hasCallback=true)
+[2026-05-27T18:30:29.208Z] [COST] imageKey="planet_earth" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=41 | image: openai/gpt-image-1 in=47 out=272
+[2026-05-27T18:30:29.211Z] [processQueue] Generated "planet_earth" → 759a61c3-7203-436b-9b25-6acc20436a88 (1 total)
+[2026-05-27T18:30:29.215Z] [processQueue] FULL REFINED PROMPT for "planet_earth": A simple, bold illustration of the planet Earth, depicted as a sphere with blue oceans and green landmasses, with a few white clouds, all outlined in thick black, in flat AAC icon style.
+[2026-05-27T18:30:33.418Z] [processQueue] Generating "saturn_pic"...
+[2026-05-27T18:30:47.548Z] [COST] imageKey="saturn_pic" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=86 | image: openai/gpt-image-1 in=92 out=272
+[2026-05-27T18:30:47.549Z] [processQueue] Generated "saturn_pic" → 512798f5-d884-43eb-a51b-5a10903a4ac4 (2 total)
+[2026-05-27T18:30:47.550Z] [processQueue] FULL REFINED PROMPT for "saturn_pic": A flat AAC icon illustration of the planet Saturn, depicted as a large orange-yellow sphere with a prominent, thin, flat ring system encircling its equator, tilted slightly to show the top and bottom of the rings. The planet has two simple, thin, horizontal stripes across its surface. The rings are a lighter yellow-orange color. The entire image has bold black outlines and uses solid, flat colors on a transparent background.
+[2026-05-27T18:30:51.725Z] [processQueue] Generating "saturn_rings"...
+[2026-05-27T18:31:06.080Z] [resolveImageKeys] Resolving 3 keys: planet_mars, planet_jupiter, planet_earth (format=internal, useUnapproved=true)
+[2026-05-27T18:31:06.801Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-27T18:31:07.688Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:31:10.266Z] [COST] imageKey="saturn_rings" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=49 | image: openai/gpt-image-1 in=56 out=272
+[2026-05-27T18:31:10.267Z] [processQueue] Generated "saturn_rings" → ef2eeb65-1095-457c-b912-3b946c336c0c (3 total)
+[2026-05-27T18:31:10.268Z] [processQueue] FULL REFINED PROMPT for "saturn_rings": A stylized depiction of the planet Saturn, showing a yellow-orange sphere with bold black outlines, encircled by prominent, flat, light-yellow rings with a distinct gap, all rendered in a simple, bold AAC icon style on a transparent background.
+[2026-05-27T18:31:10.682Z] [resolveImageKeys] Resolved "planet_earth" → __SYMBOL__:759a61c3-7203-436b-9b25-6acc20436a88
+[2026-05-27T18:31:10.683Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: planet_jupiter
+[2026-05-27T18:31:10.684Z] [queueGeneration] Queuing 1 keys: planet_jupiter (hasCallback=true)
+[2026-05-27T18:31:10.686Z] [resolveImageKeys] Resolving 3 keys: planet_mars, planet_jupiter, planet_earth (format=api-path, useUnapproved=true)
+[2026-05-27T18:31:15.325Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-27T18:31:15.499Z] [processQueue] "saturn_rings" already exists → ef2eeb65-1095-457c-b912-3b946c336c0c
+[2026-05-27T18:31:15.707Z] [resolveImageKeys] No symbol found for "planet_jupiter"
+[2026-05-27T18:31:16.094Z] [resolveImageKeys] Resolved "planet_earth" → /api/custom-symbols/759a61c3-7203-436b-9b25-6acc20436a88/image
+[2026-05-27T18:31:16.097Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: planet_jupiter
+[2026-05-27T18:31:16.133Z] [queueGeneration] Queuing 1 keys: planet_jupiter (hasCallback=true)
+[2026-05-27T18:31:19.688Z] [processQueue] Generating "planet_jupiter"...
+[2026-05-27T18:31:45.635Z] [COST] imageKey="planet_jupiter" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=44 | image: openai/gpt-image-1 in=51 out=272
+[2026-05-27T18:31:45.638Z] [processQueue] Generated "planet_jupiter" → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788 (4 total)
+[2026-05-27T18:31:45.642Z] [processQueue] FULL REFINED PROMPT for "planet_jupiter": A large, stylized planet with prominent orange, white, and brown horizontal bands, featuring a distinct red oval spot on its surface, depicted as a flat AAC icon with bold black outlines and solid colors on a transparent background.
+[2026-05-27T18:31:49.851Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
+[2026-05-27T18:31:54.054Z] [processQueue] Generating "far_away"...

@@ -635,8 +635,9 @@ export const ar: Translations = {
     thanks: "\u0634\u0643\u0631\u0627\u064b",
     speak: "\u062a\u062d\u062f\u062b",
     skip: "\u062a\u062e\u0637\u064a",
-    neither: "\u0644\u0627 \u0647\u0630\u0627 \u0648\u0644\u0627 \u0630\u0627\u0643",
-    guess: "تخمين",
+    maybe: "\u0631\u0628\u0645\u0627",
+    neitherOfThese: "\u0644\u0627 \u0647\u0630\u0627 \u0648\u0644\u0627 \u0630\u0627\u0643",
+    guess: "إيجاد كلمة",
   },
 
   silentMode: {

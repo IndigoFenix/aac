@@ -816,7 +816,7 @@ interface BadgeStackProps {
   onImageError?: (url: string) => void;
 }
 
-const BADGE_TRANSFORMS: ReadonlyArray<ModifierTransform> = ["badge", "hands"];
+const BADGE_TRANSFORMS: ReadonlyArray<ModifierTransform> = ["badge", "hands", "emotion"];
 
 type CornerKey = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 

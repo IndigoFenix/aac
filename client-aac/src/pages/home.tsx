@@ -68,12 +68,12 @@ interface HomeProps {
 }
 
 /**
- * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
+ * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onEnterGuessingFromBuilderReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onEnterGuessingFromBuilderReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
-  onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
+  onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
@@ -96,16 +96,16 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onPlayGlyphReady, onD
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, interpretButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, pressSuggestion, enterGuessingFromBuilder, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, pressSuggestion, enterGuessingFromBuilder, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
   }, [muteState, onModeChange]);
 
   useEffect(() => {
-    onInterpretReady((buttons: string[], sentences?: Record<string, string>) => interpretButtons(buttons, sentences));
-    return () => onInterpretReady(null);
-  }, [interpretButtons, onInterpretReady]);
+    onVoiceReady((buttons: string[], sentences?: Record<string, string>) => voiceButtons(buttons, sentences));
+    return () => onVoiceReady(null);
+  }, [voiceButtons, onVoiceReady]);
 
   // playGlyph: hand the sentence-builder's composed glyph to the AI for
   // interpretation. Optional on the context (older sessions may not have
@@ -371,7 +371,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // AI button press — AI navigated within a loaded board
   const [aiButtonPressData, setAiButtonPressData] = useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
 
-  // Recent button presses for Interpret feature (silent mode)
+  // Recent button presses for Voice feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
 
 
@@ -431,7 +431,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // `yes` / `no` SYMBOLs — there's no separate yes/no overlay anymore.
   const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null>(null);
   const dismissBinaryChoiceRef = useRef<(() => void) | null>(null);
-  const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
+  const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const pressSuggestionRef = useRef<((suggestionKey: string) => void) | null>(null);
@@ -953,11 +953,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     const newSymbols = [...selectedSymbols, symbol.label];
     setSelectedSymbols(newSymbols);
 
-    // Create interpretation and speak it using student voice
-    const interpretation = newSymbols.join(" ");
-    setCurrentSpeech(interpretation);
+    // Build the utterance and speak it using student voice
+    const utterance = newSymbols.join(" ");
+    setCurrentSpeech(utterance);
     const studentVoice = userProfile?.aacSettings?.studentVoiceType || 'boy';
-    await speak(interpretation, currentLanguage, studentVoice);
+    await speak(utterance, currentLanguage, studentVoice);
 
     // Clear symbols after speech
     setTimeout(() => {
@@ -972,19 +972,19 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     console.debug("[guessing] board press:", button.label, "| buttonType:", (button as any).buttonType, "| suggestionKey:", (button as any).suggestionKey);
 
     // Guessing-mode SUGGESTION button — route to the narrowing assistant
-    // (pressSuggestion) instead of interpreting it as an utterance. Uses the
-    // same ref bridge as interpret, so it shares the working context path.
+    // (pressSuggestion) instead of voicing it as an utterance. Uses the
+    // same ref bridge as voiceButtons, so it shares the working context path.
     if ((button as any).buttonType === "suggestion" && (button as any).suggestionKey) {
       console.debug("[guessing] → pressSuggestion, ref is:", typeof pressSuggestionRef.current);
       // Voice the student's selection in their voice — the server does not
-      // TTS suggestion presses (they don't go through interpret), so this is
+      // TTS suggestion presses (they don't go through voiceButtons), so this is
       // the only place the selection gets spoken.
       speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
       pressSuggestionRef.current?.((button as any).suggestionKey);
       return;
     }
 
-    // Exit/exitBoard buttons: send directly as board_exit (no speech, no interpretation)
+    // Exit/exitBoard buttons: send directly as board_exit (no speech, no voicing)
     if (button.action?.type === "exit" || (button as any).exitBoard) {
       const instruction = button.action?.text || "";
       // Construction-board entry: open the overlay client-side; do NOT forward
@@ -1006,7 +1006,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       return;
     }
 
-    // Track for interpret feature (keep last 10)
+    // Track for Voice feature (keep last 10)
     setRecentButtonPresses(prev => [...prev.slice(-9), spokenText]);
 
     setCurrentSpeech(spokenText);
@@ -1014,18 +1014,18 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
     const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
-    if (interpretFnRef.current) {
-      interpretFnRef.current([spokenText], sentences);
+    if (voiceFnRef.current) {
+      voiceFnRef.current([spokenText], sentences);
       setRecentButtonPresses([]);
     } else {
       speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
     }
   }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
 
-  // Handle interpret: synthesize recent button presses into speech
-  const handleInterpret = useCallback(() => {
-    if (recentButtonPresses.length > 0 && interpretFnRef.current) {
-      interpretFnRef.current(recentButtonPresses);
+  // Handle Voice: synthesize recent button presses into speech
+  const handleVoice = useCallback(() => {
+    if (recentButtonPresses.length > 0 && voiceFnRef.current) {
+      voiceFnRef.current(recentButtonPresses);
       setRecentButtonPresses([]);
     }
   }, [recentButtonPresses]);
@@ -1476,13 +1476,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               // Prefer the AI-supplied sentence; fall back to label.
               const spoken = (option.sentence?.trim() || option.label).trim();
               if (!spoken) return;
-              if (interpretFnRef.current) {
-                interpretFnRef.current([spoken], { [spoken]: spoken });
+              if (voiceFnRef.current) {
+                voiceFnRef.current([spoken], { [spoken]: spoken });
               } else {
                 speak(spoken, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               }
             }}
-            onNeither={() => {
+            onCancel={() => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
             }}
@@ -1602,9 +1602,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             <PrebuiltBoardSection
               studentId={studentId}
               onSpeakAction={(text) => {
-                if (interpretFnRef.current) {
+                if (voiceFnRef.current) {
                   // Route through AI — voice the text and send as button press
-                  interpretFnRef.current([text], { [text]: text });
+                  voiceFnRef.current([text], { [text]: text });
                 } else {
                   setSelectedSymbols([text]);
                 }
@@ -1632,8 +1632,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             if (action === "more") {
               // "More" = user can't find the right button. Ask AI to add
               // more options but NOT respond with speech.
-              if (interpretFnRef.current) {
-                interpretFnRef.current(["[MORE]"]);
+              if (voiceFnRef.current) {
+                voiceFnRef.current(["[MORE]"]);
               }
             } else if (action === "home") {
               // 3-tier Home button navigation
@@ -1675,8 +1675,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               // appends the initial [GUESSING STATE], and prompts the AI to
               // offer the top-level category buttons. (See shared/guessing-mode.)
               sendBoardExitRef.current?.(
-                "Guess",
-                "[GUESSING MODE] The user wants to play the guessing game — help them narrow down what they want to say."
+                "Find word",
+                "[GUESSING MODE] The user wants help finding a word — enter word finding mode and narrow down what they're looking for."
               );
             } else if (action === "no" && isGuessingMode) {
               // In guessing mode, "No" means "none of these" — reject the
@@ -1686,8 +1686,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               pressSuggestionRef.current?.(GUESSING_REJECT);
             } else {
               // Yes/No — send as button press (server handles TTS if AI session active)
-              if (interpretFnRef.current) {
-                interpretFnRef.current([text], { [text]: text });
+              if (voiceFnRef.current) {
+                voiceFnRef.current([text], { [text]: text });
               } else {
                 speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               }
@@ -1803,7 +1803,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           language={currentLanguage}
           pitchByTag={{
             ...(userProfile?.aacSettings?.aiVoicePitch ? { avatar: userProfile.aacSettings.aiVoicePitch } : {}),
-            ...(userProfile?.aacSettings?.studentVoicePitch ? { interpret: userProfile.aacSettings.studentVoicePitch } : {}),
+            ...(userProfile?.aacSettings?.studentVoicePitch ? { utterance: userProfile.aacSettings.studentVoicePitch } : {}),
           }}
           captureFrame={captureUserCameraFrame}
           captureEnvFrame={async () => {
@@ -1822,7 +1822,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           <AvatarSpriteProvider>
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
-            onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
+            onVoiceReady={(fn) => { voiceFnRef.current = fn; }}
             onPlayGlyphReady={(fn) => { playGlyphFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
             onSymbolUpdateChange={setSymbolUpdateData}
@@ -1855,7 +1855,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             boardMode={boardMode}
             onBoardModeChange={setBoardMode}
             recentButtonPresses={recentButtonPresses}
-            onInterpret={handleInterpret}
+            onVoice={handleVoice}
             onExitStudent={onExitStudent}
             onLogout={() => onLogout()}
             onFullScreen={handleFullScreen}

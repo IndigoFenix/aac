@@ -635,8 +635,9 @@ export const es: Translations = {
     thanks: "Gracias",
     speak: "Hablar",
     skip: "Saltar",
-    neither: "Ninguno",
-    guess: "Adivinar",
+    maybe: "Quizás",
+    neitherOfThese: "Ninguno de estos",
+    guess: "Buscar palabra",
   },
 
   silentMode: {

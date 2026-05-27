@@ -80,7 +80,7 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
 
   return (
     <div
-      className="grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700"
+      className="grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shrink-0"
       style={{ ...rowStyle, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
       {/* 1st button: More (AI mode) or Back (DB mode) */}
@@ -156,7 +156,7 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <div className="icon-fill-area"><span className="icon-fill-emoji">💭</span></div>
+          <div className="icon-fill-area"><span className="icon-fill-emoji">🔍</span></div>
           <span className={`${labelClass} text-gray-800`}>
             {t("quickActions.guess")}
           </span>

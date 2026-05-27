@@ -24,8 +24,8 @@ interface DualAgentContextType {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
-  interpretationText: string | null;
-  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  utteranceText: string | null;
+  utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
   debugText: string | null;
 
@@ -59,7 +59,7 @@ interface DualAgentContextType {
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
   sendBoardExit: (label: string, instruction: string) => void;
-  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   /** Send a sentence-builder glyph to the AI for interpretation via the `interpret` tool. */
   playGlyph?: (glyphString: string) => void;
   startVoiceRecording: () => Promise<void>;
@@ -190,7 +190,7 @@ interface DualAgentProviderProps {
   debugMode?: boolean;
   /** Client-side face image cache lookup */
   getFaceImage?: (contactId: string) => string | null;
-  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "interpret" (student voice). */
+  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "utterance" (student voice). */
   pitchByTag?: Record<string, number>;
 }
 
@@ -580,15 +580,15 @@ function DualAgentProviderInner({
     await liveAgentSendVoiceRef.current(currentBoardRef.current || undefined);
   }, []);
 
-  // Wrap interpretButtons so AAC button presses force-wake the sleep system
+  // Wrap voiceButtons so AAC button presses force-wake the sleep system
   // before delegating to the live session. Per the planning doc, AAC button
   // presses are an always-wake trigger that bypasses thresholds and dampening.
-  const liveAgentInterpretRef = useRef(liveAgent.interpretButtons);
-  liveAgentInterpretRef.current = liveAgent.interpretButtons;
-  const interpretButtons = useCallback(
+  const liveAgentVoiceRef = useRef(liveAgent.voiceButtons);
+  liveAgentVoiceRef.current = liveAgent.voiceButtons;
+  const voiceButtons = useCallback(
     async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
       attentiveness?.triggerAlwaysWake("aacButtonPress");
-      await liveAgentInterpretRef.current(recentButtons, sentences, board);
+      await liveAgentVoiceRef.current(recentButtons, sentences, board);
     },
     [attentiveness],
   );
@@ -630,7 +630,7 @@ function DualAgentProviderInner({
       sendMessage={sendMessage}
       sendContextOnly={sendContextOnly}
       sendBoardExit={liveAgent.sendBoardExit}
-      interpretButtons={interpretButtons}
+      voiceButtons={voiceButtons}
       stopVoiceRecording={stopVoiceRecording}
       registerAppCanvasCapture={registerAppCanvasCapture}
       getFaceImage={getFaceImageProp ?? (() => null)}
@@ -662,7 +662,7 @@ interface ProviderShellProps {
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
   sendBoardExit: (label: string, instruction: string) => void;
-  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
   getFaceImage: (contactId: string) => string | null;
@@ -698,7 +698,7 @@ function ProviderShell({
   sendMessage,
   sendContextOnly,
   sendBoardExit,
-  interpretButtons,
+  voiceButtons,
   stopVoiceRecording,
   registerAppCanvasCapture,
   getFaceImage,
@@ -714,8 +714,8 @@ function ProviderShell({
 
     currentMessage: agent.currentMessage,
     transcription: agent.transcription,
-    interpretationText: agent.interpretationText,
-    interpretConfidence: agent.interpretConfidence,
+    utteranceText: agent.utteranceText,
+    utteranceConfidence: agent.utteranceConfidence,
     transcriptConfidence: agent.transcriptConfidence,
     debugText: agent.debugText,
 
@@ -743,7 +743,7 @@ function ProviderShell({
     sendMessage,
     sendContextOnly,
     sendBoardExit,
-    interpretButtons,
+    voiceButtons,
     playGlyph: agent.playGlyph,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,

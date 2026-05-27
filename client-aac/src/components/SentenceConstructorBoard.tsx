@@ -21,6 +21,7 @@ import {
   listByModeChip,
   modifiersFor,
   colorModifiersFor,
+  emotionModifiersFor,
   MODE_CHIPS,
   defaultModeChip,
 } from "@shared/glyph-registry";
@@ -356,6 +357,29 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return null;
   }, [displayedGlyph, effectiveActiveSlot]);
 
+  // Emotion modifiers — same dedicated-popup pattern as colors.
+  const emotionOptions = useMemo<VocabularyItem[]>(() => {
+    if (effectiveActiveSlot == null) return [];
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    if (!item) return [];
+    return emotionModifiersFor(item.pos);
+  }, [displayedGlyph, effectiveActiveSlot]);
+  const [emotionPickerOpen, setEmotionPickerOpen] = useState(false);
+  useEffect(() => {
+    if (emotionOptions.length === 0) setEmotionPickerOpen(false);
+  }, [emotionOptions]);
+  const activeEmotionKey = useMemo(() => {
+    if (effectiveActiveSlot == null) return null;
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    if (!slot) return null;
+    for (const modKey of slot.modifiers) {
+      const mod = getVocabularyItem(modKey);
+      if (mod?.modifier?.transform === "emotion") return modKey;
+    }
+    return null;
+  }, [displayedGlyph, effectiveActiveSlot]);
+
   const handleTabSelect = useCallback((tab: GlyphCategory) => {
     setActiveTab(tab);
     setModeChip(defaultModeChip(tab));
@@ -677,6 +701,35 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [effectiveActiveSlot]
   );
 
+  const handleEmotionPick = useCallback(
+    (emotionItem: VocabularyItem) => {
+      if (effectiveActiveSlot == null) return;
+      setGlyph((g) => {
+        let next = g;
+        const slot = next.slots[effectiveActiveSlot];
+        if (!slot) return g;
+        // One emotion per slot — strip any existing emotion modifier first.
+        for (const modKey of slot.modifiers) {
+          if (modKey === emotionItem.key) continue;
+          const mod = getVocabularyItem(modKey);
+          if (mod?.modifier?.transform === "emotion") {
+            next = removeModifier(next, effectiveActiveSlot, modKey);
+          }
+        }
+        // Toggle: tapping the active emotion again removes it; otherwise add.
+        const refreshedSlot = next.slots[effectiveActiveSlot];
+        if (refreshedSlot.modifiers.includes(emotionItem.key)) {
+          next = removeModifier(next, effectiveActiveSlot, emotionItem.key);
+        } else {
+          next = addModifier(next, effectiveActiveSlot, emotionItem.key);
+        }
+        return next;
+      });
+      setEmotionPickerOpen(false);
+    },
+    [effectiveActiveSlot]
+  );
+
   // "More" press: hide the current SUGGESTIONs, exclude them next round.
   // After MORE_ESCALATION_THRESHOLD presses without a selection, escalate to
   // guessing mode by flagging the next state injection. Excludes from BOTH
@@ -860,10 +913,13 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             />
           </div>
 
-          {/* Help button */}
+          {/* Find-word button — launches word-finding (guessing) mode for the
+              active slot. Violet, matching the "Find word" quick-button. */}
           <ActionButton
-            label={t("construction.help")}
+            label={t("quickActions.guess")}
             icon="🔍"
+            color="#EDE9FE"
+            borderColor="#C4B5FD"
             onPress={handleHelpPress}
             testId="construction-help"
           />
@@ -914,7 +970,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         {!guessingActive && (
           (aiModifierCandidates.length > 0 && effectiveActiveSlot != null) ||
           modifierItems.length > 0 ||
-          colorOptions.length > 0
+          colorOptions.length > 0 ||
+          emotionOptions.length > 0
         ) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
             {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
@@ -951,14 +1008,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             )}
             {aiModifierCandidates.length > 0
               && effectiveActiveSlot != null
-              && (modifierItems.length > 0 || colorOptions.length > 0)
+              && (modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0)
               && (
               <div
                 className="self-stretch w-px bg-gray-300 dark:bg-gray-600 shrink-0"
                 aria-hidden
               />
             )}
-            {(modifierItems.length > 0 || colorOptions.length > 0) && (
+            {(modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0) && (
               <div className="flex items-center gap-2 shrink-0">
                 {modifierItems.map((m) => (
                   <ModifierButton
@@ -982,6 +1039,13 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                     onPress={() => setColorPickerOpen((o) => !o)}
                   />
                 )}
+                {emotionOptions.length > 0 && (
+                  <EmotionPickerButton
+                    active={emotionPickerOpen}
+                    activeEmoji={activeEmotionKey ? getVocabularyItem(activeEmotionKey)?.emoji : undefined}
+                    onPress={() => setEmotionPickerOpen((o) => !o)}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1002,6 +1066,24 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 item={c}
                 active={activeColorKey === c.key}
                 onPress={() => handleColorPick(c)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Emotion picker row — mirrors the color picker; shows face options to
+            attach as a badge on the active slot. */}
+        {!guessingActive && emotionPickerOpen && emotionOptions.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="emotion-picker"
+          >
+            {emotionOptions.map((e) => (
+              <EmotionSwatchButton
+                key={e.key}
+                item={e}
+                active={activeEmotionKey === e.key}
+                onPress={() => handleEmotionPick(e)}
               />
             ))}
           </div>
@@ -1173,6 +1255,9 @@ function ActionButton(props: {
   onPress: () => void;
   disabled?: boolean;
   primary?: boolean;
+  /** Background color (overrides the default white). Border matches unless borderColor is set. */
+  color?: string;
+  borderColor?: string;
   testId?: string;
 }) {
   return (
@@ -1186,9 +1271,12 @@ function ActionButton(props: {
         "w-24 rounded-xl border-2 flex flex-col items-center justify-center gap-1 px-2 py-2",
         props.primary
           ? "bg-green-500 hover:bg-green-600 border-green-700 text-white"
+          : props.color
+          ? "text-gray-800"
           : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
         props.disabled ? "opacity-40 cursor-not-allowed" : "",
       ].join(" ")}
+      style={props.color ? { backgroundColor: props.color, borderColor: props.borderColor ?? props.color } : undefined}
     >
       <span className="text-2xl" aria-hidden>
         {props.icon}
@@ -1411,6 +1499,61 @@ function ColorSwatchButton(props: {
           ✓
         </span>
       )}
+    </motion.button>
+  );
+}
+
+/** Toggle button that opens the emotion picker — mirrors ColorPickerButton. */
+function EmotionPickerButton(props: {
+  active: boolean;
+  activeEmoji?: string;
+  onPress: () => void;
+}) {
+  return (
+    <motion.button
+      data-dwell
+      data-testid="emotion-picker-toggle"
+      onClick={props.onPress}
+      aria-pressed={props.active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
+        props.active
+          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      aria-label="Emotion"
+      title="Emotion"
+    >
+      <span className="text-2xl" aria-hidden>{props.activeEmoji ?? "🙂"}</span>
+    </motion.button>
+  );
+}
+
+/** One emotion option in the emotion picker row — the feeling emoji, ringed when active. */
+function EmotionSwatchButton(props: {
+  item: VocabularyItem;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const label = useItemLabel(props.item);
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`emotion-swatch-${props.item.key}`}
+      onClick={props.onPress}
+      aria-pressed={props.active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-12 h-12 rounded-full border-2 flex items-center justify-center bg-white dark:bg-gray-800",
+        props.active
+          ? "border-blue-600 ring-2 ring-blue-300"
+          : "border-gray-300 dark:border-gray-600",
+      ].join(" ")}
+      aria-label={label}
+      title={label}
+    >
+      <span className="text-2xl" aria-hidden>{props.item.emoji ?? "🙂"}</span>
     </motion.button>
   );
 }

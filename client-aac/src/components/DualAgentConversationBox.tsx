@@ -49,7 +49,7 @@ interface DualAgentConversationBoxProps {
   boardMode: 'ai' | 'db';
   onBoardModeChange: (mode: 'ai' | 'db') => void;
   recentButtonPresses?: string[];
-  onInterpret?: () => void;
+  onVoice?: () => void;
   // App-level controls (moved from top nav bar)
   onExitStudent?: () => void;
   onLogout?: () => void;
@@ -73,7 +73,7 @@ export function DualAgentConversationBox({
   boardMode,
   onBoardModeChange,
   recentButtonPresses,
-  onInterpret,
+  onVoice,
   onExitStudent,
   onLogout,
   onFullScreen,
@@ -115,7 +115,7 @@ export function DualAgentConversationBox({
     setOnUnloadBoard,
     monitorError,
     monitorConsecutiveFailures,
-    interpretConfidence,
+    utteranceConfidence,
     responseMode,
     setResponseMode,
     reconnecting,
@@ -491,14 +491,14 @@ export function DualAgentConversationBox({
                         className="text-sm text-white font-medium leading-relaxed flex-1 mr-3"
                       >
                         {currentMessage.content}
-                        {interpretConfidence && (
+                        {utteranceConfidence && (
                           <span
                             className={`inline-block w-2 h-2 rounded-full ml-2 align-middle ${
-                              interpretConfidence === 'high' ? 'bg-green-400' :
-                              interpretConfidence === 'medium' ? 'bg-amber-400' :
+                              utteranceConfidence === 'high' ? 'bg-green-400' :
+                              utteranceConfidence === 'medium' ? 'bg-amber-400' :
                               'bg-red-400'
                             }`}
-                            title={`Confidence: ${interpretConfidence}`}
+                            title={`Confidence: ${utteranceConfidence}`}
                           />
                         )}
                         {audioEnabled && isPlaying && (
@@ -537,13 +537,13 @@ export function DualAgentConversationBox({
                       </span>
                     )}
                   </div>
-                  {recentButtonPresses && recentButtonPresses.length > 0 && onInterpret && (
+                  {recentButtonPresses && recentButtonPresses.length > 0 && onVoice && (
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={onInterpret}
+                      onClick={onVoice}
                       className="bg-purple-500 hover:bg-purple-600 text-white border-0 px-3 py-2 shrink-0"
-                      title="Interpret selected buttons as speech"
+                      title="Voice selected buttons as speech"
                     >
                       <Speech className="w-4 h-4 mr-1" />
                       {t("quickActions.speak")}

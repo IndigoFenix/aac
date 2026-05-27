@@ -138,7 +138,7 @@ server.on('upgrade', (req, socket, head) => {
    - `user_message` → `geminiSession.sendMessage(text, "user")`
    - `voice_audio` → transcribe via Whisper → `geminiSession.sendMessage(transcript, "user")`
    - `gesture_context` + `person_context` → aggregate, send as context
-   - `interpret_buttons` → build interpretation prompt → `geminiSession.sendMessage()`
+   - `voice_buttons` → build voicing prompt → `geminiSession.sendMessage()`
 
 2. **Gemini → Client**: Parse model output, process, relay to client
    - Accumulate text chunks from `onText` callback
@@ -161,7 +161,7 @@ type ClientMessage =
   | { type: "audio_clip"; data: string; mimeType: string }      // base64 audio
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string }                       // base64 webm
-  | { type: "interpret_buttons"; buttons: string[]; board?: any }
+  | { type: "voice_buttons"; buttons: string[]; board?: any }
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
   | { type: "board_state"; data: any }
@@ -175,7 +175,7 @@ type ServerMessage =
   | { type: "initialized"; sessionId: string }
   | { type: "text"; data: string }
   | { type: "speak"; text: string; audio?: string }
-  | { type: "interpret"; text: string; audio?: string }
+  | { type: "utterance"; text: string; audio?: string }
   | { type: "board_patch"; data: BoardPatch }
   | { type: "board"; data: ParsedBoardData }
   | { type: "transcript"; data: string; speaker: string }
@@ -205,7 +205,7 @@ function useLiveSession(options: LiveSessionOptions): LiveSessionReturn {
   return {
     // Same interface as current useDualAgent where possible
     sessionId, isInitialized, isLoading, error,
-    currentMessage, transcription, interpretationText,
+    currentMessage, transcription, utteranceText,
     audioEnabled, isPlaying, voiceEnabled, isRecording,
     interactionMode, setInteractionMode,
     responseMode, setResponseMode,
@@ -216,7 +216,7 @@ function useLiveSession(options: LiveSessionOptions): LiveSessionReturn {
     sendMessage,             // ws.send({type: "user_message"})
     sendFrameGrid,           // ws.send({type: "frame_grid"})
     sendAudioClip,           // ws.send({type: "audio_clip"})
-    interpretButtons,        // ws.send({type: "interpret_buttons"})
+    voiceButtons,            // ws.send({type: "voice_buttons"})
     startVoiceRecording,
     stopVoiceRecording,
 

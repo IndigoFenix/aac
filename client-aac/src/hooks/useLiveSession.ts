@@ -72,7 +72,7 @@ export interface UseLiveSessionOptions {
   onSymbolUpdate?: (data: { buttonLabel: string; symbolPath: string }) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
-  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "interpret" (student voice). */
+  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "utterance" (student voice). */
   pitchByTag?: Record<string, number>;
   debugMode?: boolean;
   /** Function to capture a camera frame (used for initial image on startup) */
@@ -158,8 +158,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
-  const [interpretationText, setInterpretationText] = useState<string | null>(null);
-  const [interpretConfidence, setInterpretConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
+  const [utteranceText, setUtteranceText] = useState<string | null>(null);
+  const [utteranceConfidence, setUtteranceConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
 
@@ -435,9 +435,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
         }
 
-        case "interpret":
-          setInterpretationText(prev => (prev || "") + (msg.text || ""));
-          if (msg.confidence) setInterpretConfidence(msg.confidence);
+        case "utterance":
+          setUtteranceText(prev => (prev || "") + (msg.text || ""));
+          if (msg.confidence) setUtteranceConfidence(msg.confidence);
           break;
 
         case "audio_interrupt":
@@ -531,10 +531,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           break;
 
-        case "interpretation_audio":
+        case "utterance_audio":
           // Student voice audio chunk — tagged so avatar stays still
           if (audioEnabled) {
-            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "interpret" });
+            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "utterance" });
           }
           break;
 
@@ -544,7 +544,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           const { text: ttsText, voiceId, apiKey, language: ttsLang, voiceRole } = msg.data as {
             text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student";
           };
-          const tag = voiceRole === "ai" ? "avatar" : "interpret";
+          const tag = voiceRole === "ai" ? "avatar" : "utterance";
           // Chain to preserve ordering between consecutive client_tts events
           clientTtsChainRef.current = clientTtsChainRef.current.then(async () => {
             try {
@@ -1079,14 +1079,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     reader.readAsDataURL(audioBlob);
   }, [wsSend, audioRecorder]);
 
-  const interpretButtons = useCallback(async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
+  const voiceButtons = useCallback(async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
     // Drop any pending student-voice TTS chunks from a previous button press.
     // Without this, if the user taps a second button before the first
-    // button's interpretation_audio chunks finish playing, the queued tail
+    // button's utterance_audio chunks finish playing, the queued tail
     // of the previous TTS plays before (or instead of) the new button — the
     // user hears the wrong sentence for the button they just pressed.
-    // Only clears the "interpret" tag; the AI's "avatar" audio is left alone.
-    audioPlayer.clearByTag("interpret");
+    // Only clears the "utterance" tag; the AI's "avatar" audio is left alone.
+    audioPlayer.clearByTag("utterance");
     wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
   }, [wsSend, audioPlayer]);
 
@@ -1099,7 +1099,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
    * Handle a guessing-mode SUGGESTION button press. Updates the client-owned
    * narrowing state and pushes a fresh [GUESSING STATE] up to the server,
    * which injects it and prompts the AI to rebuild with the next suggestions.
-   * Deliberately does NOT go through interpretButtons — a suggestion press is
+   * Deliberately does NOT go through voiceButtons — a suggestion press is
    * a narrowing signal, not an utterance.
    */
   // Send the current guessing state, carrying builder origin/context when set.
@@ -1166,7 +1166,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
    * live-relay.ts.
    */
   const playGlyph = useCallback((glyphString: string) => {
-    audioPlayer.clearByTag("interpret");
+    audioPlayer.clearByTag("utterance");
     wsSend({ type: "glyph_press", glyph: glyphString });
   }, [wsSend, audioPlayer]);
 
@@ -1302,7 +1302,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     isInitializedRef.current = false;
     setCurrentMessage(null);
     setTranscription(null);
-    setInterpretationText(null);
+    setUtteranceText(null);
     setDebugText(null);
     setError(null);
     setActiveApp(null);
@@ -1343,8 +1343,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Messages
     currentMessage,
     transcription,
-    interpretationText,
-    interpretConfidence,
+    utteranceText,
+    utteranceConfidence,
     transcriptConfidence,
     debugText,
 
@@ -1382,7 +1382,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     launchApp,
     captureAppCanvasRef,
 
-    // Avatar — only animate mouth during AI voice ("avatar" tag), not interpretation
+    // Avatar — only animate mouth during AI voice ("avatar" tag), not the student utterance
     emote,
     speakingVolume: audioPlayer.currentTag === "avatar" ? audioPlayer.speakingVolume : 0,
 
@@ -1403,7 +1403,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendContextOnly,
     sendBoardExit,
     sendVoice,
-    interpretButtons,
+    voiceButtons,
     playGlyph,
     startRecording: audioRecorder.startRecording,
     stopRecording: audioRecorder.stopRecording as any,

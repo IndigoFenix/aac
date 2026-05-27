@@ -671,7 +671,7 @@ export type ServerMessage =
   | { type: "initialized"; sessionId: string }
   | { type: "text"; data: string; noAudioClear?: boolean }
   | { type: "speak"; text: string; audio?: string }
-  | { type: "interpret"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
+  | { type: "utterance"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
@@ -688,10 +688,10 @@ export type ServerMessage =
   | { type: "error"; data: string }
   | { type: "thinking"; active: boolean }
   | { type: "avatar_audio"; data: string; format?: "mp3" | "wav" }  // base64 audio chunk (AI voice TTS — avatar mouth animates)
-  | { type: "interpretation_audio"; data: string }     // base64 audio chunk (student voice TTS)
+  | { type: "utterance_audio"; data: string }     // base64 audio chunk (student voice TTS)
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
-  | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "interpret")
+  | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "utterance")
   | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice (incl. yes/no) — trigger overlay with two AI-supplied ${T.button} options
   | { type: "ask_binary_choice"; data: { options: any[] } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
@@ -2495,7 +2495,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
     interrupt = false,
   ): Promise<void> {
     const buttonList = buttons.join(", ");
-    console.log(`[LiveRelay] Interpreting buttons: ${buttonList}${interrupt ? " (interrupt)" : ""}`);
+    console.log(`[LiveRelay] Voicing buttons: ${buttonList}${interrupt ? " (interrupt)" : ""}`);
 
     // [MORE] — user wants more button options, NOT a spoken response
     if (buttons.length === 1 && buttons[0] === "[MORE]") {
@@ -2516,11 +2516,11 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     // For a single button press, use the pre-generated sentence directly.
     const singleSentence = (buttons.length === 1 && sentences?.[buttons[0]]) || "";
 
-    // Send interpretation to client for UI display
+    // Send the student utterance to client for UI display
     if (singleSentence) {
-      this.send({ type: "interpret", text: singleSentence, confidence: "high", noAudioClear: false });
-      this.turnAccum.interpretText = singleSentence;
-      this.turnAccum.interpretConfidence = "high";
+      this.send({ type: "utterance", text: singleSentence, confidence: "high", noAudioClear: false });
+      this.turnAccum.utteranceText = singleSentence;
+      this.turnAccum.utteranceConfidence = "high";
     }
 
     // Record button press as a user message in session log
@@ -2565,12 +2565,12 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     // ~1.5s gap before the press registers audibly.)
     if (singleSentence && this.studentVoice) {
       // Cancel any in-flight student TTS from a previous press — without this,
-      // overlapping streams interleave on the `interpretation_audio` channel
+      // overlapping streams interleave on the `utterance_audio` channel
       // and the client plays a garbled mix. We send a tag-scoped clear so the
       // AI's avatar_audio queue is preserved.
       if (this.studentTtsAbortController) {
         this.studentTtsAbortController.abort();
-        this.send({ type: "audio_clear_tag", tag: "interpret" });
+        this.send({ type: "audio_clear_tag", tag: "utterance" });
       }
       const controller = new AbortController();
       this.studentTtsAbortController = controller;
@@ -2579,7 +2579,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       this.preGenTtsPromise = this.streamTtsWithTimeout(
         singleSentence,
         this.studentVoice,
-        "interpretation_audio",
+        "utterance_audio",
         "Student",
         15_000,
         controller.signal,
@@ -2774,9 +2774,9 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         logLiveSession("INTERPRET", `sentence="${sentence}"`);
 
         // 1. Show the user's "speech" in the UI immediately.
-        this.send({ type: "interpret", text: sentence, confidence: "high", noAudioClear: false });
-        this.turnAccum.interpretText = sentence;
-        this.turnAccum.interpretConfidence = "high";
+        this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
+        this.turnAccum.utteranceText = sentence;
+        this.turnAccum.utteranceConfidence = "high";
 
         // 2. Record as user turn so the conversation history shows the
         // user's contribution (the prior ${T.tagComposed} line stays in
@@ -2803,7 +2803,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         // finishes before the AI's voice begins.
         //
         // We also pin the same promise to `this.preGenTtsPromise` so
-        // handleTurnComplete's `else if (fullInterpretText && studentVoice)`
+        // handleTurnComplete's `else if (fullUtteranceText && studentVoice)`
         // branch is bypassed; otherwise the turn-complete handler would
         // re-synthesize the same sentence and the user would hear the
         // student voice twice. The existing `preGenTtsPromise` path is the
@@ -2811,14 +2811,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         if (this.studentVoice) {
           if (this.studentTtsAbortController) {
             this.studentTtsAbortController.abort();
-            this.send({ type: "audio_clear_tag", tag: "interpret" });
+            this.send({ type: "audio_clear_tag", tag: "utterance" });
           }
           const controller = new AbortController();
           this.studentTtsAbortController = controller;
           const ttsPromise = this.streamTtsWithTimeout(
             sentence,
             this.studentVoice,
-            "interpretation_audio",
+            "utterance_audio",
             "Student",
             15_000,
             controller.signal,
@@ -4201,7 +4201,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
   // -------------------------------------------------------------------------
 
   private async handleTurnComplete(reason?: string): Promise<void> {
-    logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
+    logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, utterance=${!!this.turnAccum.utteranceText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
 
     // Auto-rest activity tracking: if the AI spoke (audio or speak()) or changed
     // the ${T.board} this turn, count it as AAC activity so the inactivity timer
@@ -4560,7 +4560,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     const accum = this.turnAccum;
 
     const fullSpeakText = accum.speakText.trim();
-    const fullInterpretText = accum.interpretText.trim();
+    const fullUtteranceText = accum.utteranceText.trim();
     const fullContextText = accum.contextText.trim();
     const fullTranscriptText = accum.transcriptText.trim();
     const callMonitorReason = accum.callMonitorReason || undefined;
@@ -4580,14 +4580,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       sessionId: this.sessionId,
       toolCalls: [
         fullSpeakText && "speak",
-        fullInterpretText && "interpret",
+        fullUtteranceText && "utterance",
         fullTranscriptText && "transcript",
         fullContextText && "context",
         hasBoardChange && "board",
         callMonitorReason && "call_monitor",
       ].filter(Boolean).join(", ") || "(none)",
       speak: fullSpeakText || "(none)",
-      interpret: fullInterpretText || "(none)",
+      utterance: fullUtteranceText || "(none)",
       transcript: fullTranscriptText || "(none)",
       context: fullContextText.substring(0, 200) || "(none)",
       board: hasBoardChange
@@ -4615,10 +4615,10 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
       const turnMessages: import("./types").PendingMessage[] = [];
 
-      if (fullInterpretText) {
+      if (fullUtteranceText) {
         turnMessages.push({
           role: "assistant",
-          content: `[INTERPRET] ${fullInterpretText}`,
+          content: `[INTERPRET] ${fullUtteranceText}`,
           timestamp: now,
         });
       }
@@ -4791,13 +4791,13 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         // Error already logged in the catch handler of the original promise
       }
       this.preGenTtsPromise = null;
-    } else if (fullInterpretText && this.studentVoice) {
+    } else if (fullUtteranceText && this.studentVoice) {
       // Normal path: Gemini called interpret() — synthesize student voice now
       try {
         await this.streamTtsWithTimeout(
-          fullInterpretText,
+          fullUtteranceText,
           this.studentVoice,
-          "interpretation_audio",
+          "utterance_audio",
           "Student",
         );
       } catch (err) {
@@ -4886,7 +4886,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
   private async streamTtsWithTimeout(
     text: string,
     voice: ResolvedVoice,
-    msgType: "avatar_audio" | "interpretation_audio",
+    msgType: "avatar_audio" | "utterance_audio",
     label: string,
     timeoutMs = 15_000,
     signal?: AbortSignal,
@@ -5163,8 +5163,8 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
    */
   private buildTurnSummary(accum: TurnToolAccumulator): string | null {
     const parts: string[] = [];
-    if (accum.interpretText.trim() && !this.useDirectAudio) {
-      parts.push(`interpret("${accum.interpretText.trim()}")`);
+    if (accum.utteranceText.trim() && !this.useDirectAudio) {
+      parts.push(`interpret("${accum.utteranceText.trim()}")`);
     }
     if (accum.boardRebuilt) {
       const labels = accum.boardAddLabels.join(", ");

@@ -54,6 +54,11 @@ export const T = {
   modifierSymbol: "MODIFIER SYMBOL",
   /** One SYMBOL the AI offers in the SENTENCE BUILDER's AI strip. */
   suggestion: "SUGGESTION",
+  /** Human-facing name for the narrowing mode. The AI frames it as helping the
+   *  student "find a word" — NEVER as a game or "guessing". Change here to
+   *  re-label it everywhere. (Internal protocol still uses the [GUESSING MODE]
+   *  / [GUESSING STATE] markers; those are not student-facing.) */
+  wordFinding: "word finding",
 
   // ── Model-facing tag literals ───────────────────────────────────────────
   /** Turn marker injected when the student taps a SENTENCE BUTTON. */

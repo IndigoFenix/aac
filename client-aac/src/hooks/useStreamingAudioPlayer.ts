@@ -7,7 +7,7 @@ import { pitchShift, semitonesToFactor } from "@/lib/pitchShifter";
 export interface AudioChunk {
   chunk: string; // Base64 encoded audio data
   format: "mp3" | "wav" | "ogg" | "webm";
-  /** Optional tag identifying the audio source (e.g. "avatar", "interpret") */
+  /** Optional tag identifying the audio source (e.g. "avatar", "utterance") */
   tag?: string;
 }
 
@@ -25,7 +25,7 @@ export interface UseStreamingAudioPlayerReturn {
    * has React propagation latency and no echo buffer.
    */
   isBusyRef: { readonly current: boolean };
-  /** Tag of the currently playing chunk (e.g. "avatar", "interpret"), or null if idle */
+  /** Tag of the currently playing chunk (e.g. "avatar", "utterance"), or null if idle */
   currentTag: string | null;
   queueChunk: (chunk: AudioChunk) => void;
   play: () => void;
@@ -41,9 +41,9 @@ export interface UseStreamingAudioPlayerOptions {
   onError?: (error: string) => void;
   autoPlay?: boolean;
   /**
-   * Per-tag pitch shift in semitones.  Keys are audio tags (e.g. "avatar", "interpret").
+   * Per-tag pitch shift in semitones.  Keys are audio tags (e.g. "avatar", "utterance").
    * Untagged chunks or tags not in the map are played without pitch shift.
-   * Example: { avatar: 3, interpret: -2 }
+   * Example: { avatar: 3, utterance: -2 }
    */
   pitchByTag?: Record<string, number>;
 }

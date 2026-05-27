@@ -93,7 +93,7 @@ export function resolveButtonBackground(color?: string, glyph?: string): string 
  * tokens. We deliberately don't match inside emoji or other arbitrary
  * SYMBOLs — only the canonical keys count.
  */
-function detectYesNoDefaultColor(glyph?: string): "green" | "red" | undefined {
+export function detectYesNoDefaultColor(glyph?: string): "green" | "red" | undefined {
   if (!glyph) return undefined;
   const tokens = glyph.split(/[+.#()]/).map((t) => t.trim()).filter(Boolean);
   let hasYes = false;
@@ -126,6 +126,8 @@ interface SentenceButtonProps {
   entering?: boolean;
   /** Stagger the overlay variant's spring entrance. */
   overlayEntranceDelay?: number;
+  /** Override overlay-variant dimensions (defaults sized for two big options). */
+  overlaySize?: { button: string; icon: string };
   /** Optional accessible label override (defaults to the button's label). */
   ariaLabel?: string;
   /** Optional extra content rendered as an absolute overlay (e.g. link arrow). */
@@ -273,6 +275,7 @@ export function SentenceButton(props: SentenceButtonProps) {
     textFontSize,
     entering = false,
     overlayEntranceDelay = 0,
+    overlaySize,
     ariaLabel,
     cornerIndicator,
     extraButtonProps,
@@ -286,6 +289,9 @@ export function SentenceButton(props: SentenceButtonProps) {
   if (variant === "overlay") {
     // Modal-style — full SENTENCE BUTTON rules apply (Glyph compositor,
     // animated SYMBOLs, default colors) but rendered at overlay scale.
+    // Dimensions default to two big options but can be overridden (e.g. the
+    // binary overlay shrinks them to fit three equal buttons in a row).
+    const sz = overlaySize ?? { button: "min(45vw, 300px)", icon: "min(28vw, 180px)" };
     return (
       <motion.button
         data-dwell
@@ -296,8 +302,8 @@ export function SentenceButton(props: SentenceButtonProps) {
           (borderClassName ?? "border-blue-400 text-blue-900 font-bold")
         }
         style={{
-          width: "min(45vw, 300px)",
-          height: "min(45vw, 300px)",
+          width: sz.button,
+          height: sz.button,
           fontSize: "clamp(1.1rem, 3.5vw, 1.8rem)",
           backgroundColor: background,
         }}
@@ -309,9 +315,9 @@ export function SentenceButton(props: SentenceButtonProps) {
       >
         <div
           className="icon-fill-area mb-2"
-          style={{ flex: "0 0 auto", width: "min(28vw, 180px)", height: "min(28vw, 180px)" }}
+          style={{ flex: "0 0 auto", width: sz.icon, height: sz.icon }}
         >
-          {renderIcon(button, "min(28vw, 180px)", getFaceImage)}
+          {renderIcon(button, sz.icon, getFaceImage)}
         </div>
         {button.label}
         {cornerIndicator}

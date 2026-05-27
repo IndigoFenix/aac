@@ -635,8 +635,9 @@ export const yue: Translations = {
     thanks: "多謝",
     speak: "講嘢",
     skip: "跳過",
-    neither: "都唔係",
-    guess: "估下",
+    maybe: "可能",
+    neitherOfThese: "都唔係",
+    guess: "搵字",
   },
 
   silentMode: {

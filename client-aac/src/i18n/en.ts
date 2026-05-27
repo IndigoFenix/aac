@@ -633,8 +633,9 @@ export const en = {
     thanks: "Thanks",
     speak: "Speak",
     skip: "Skip",
-    neither: "Neither",
-    guess: "Guess",
+    maybe: "Maybe",
+    neitherOfThese: "Neither of these",
+    guess: "Find word",
   },
 
   silentMode: {

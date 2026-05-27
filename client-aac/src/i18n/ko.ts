@@ -635,8 +635,9 @@ export const ko: Translations = {
     thanks: "감사합니다",
     speak: "말하기",
     skip: "건너뛰기",
-    neither: "둘 다 아님",
-    guess: "추측",
+    maybe: "아마도",
+    neitherOfThese: "둘 다 아님",
+    guess: "단어 찾기",
   },
 
   silentMode: {

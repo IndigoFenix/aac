@@ -877,15 +877,15 @@ export default function UnifiedDebugPanel({
                 )}
 
                 {/* Confidence indicators */}
-                {(ctx.interpretConfidence || ctx.transcriptConfidence) && (
+                {(ctx.utteranceConfidence || ctx.transcriptConfidence) && (
                   <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded flex gap-3">
-                    {ctx.interpretConfidence && (
+                    {ctx.utteranceConfidence && (
                       <div className="flex items-center gap-1 text-[10px]">
                         <span className={`w-2 h-2 rounded-full ${
-                          ctx.interpretConfidence === 'high' ? 'bg-green-500' :
-                          ctx.interpretConfidence === 'medium' ? 'bg-amber-500' : 'bg-red-500'
+                          ctx.utteranceConfidence === 'high' ? 'bg-green-500' :
+                          ctx.utteranceConfidence === 'medium' ? 'bg-amber-500' : 'bg-red-500'
                         }`} />
-                        <span className="text-gray-500">Interpret: {ctx.interpretConfidence}</span>
+                        <span className="text-gray-500">Utterance: {ctx.utteranceConfidence}</span>
                       </div>
                     )}
                     {ctx.transcriptConfidence && (

@@ -291,8 +291,8 @@ export interface DualAgentConfig {
  */
 export interface TurnToolAccumulator {
   speakText: string;
-  interpretText: string;
-  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  utteranceText: string;
+  utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptText: string;
   transcriptSpeaker: string;
   contextText: string;
@@ -322,8 +322,8 @@ export interface TurnToolAccumulator {
 export function createEmptyAccumulator(): TurnToolAccumulator {
   return {
     speakText: "",
-    interpretText: "",
-    interpretConfidence: null,
+    utteranceText: "",
+    utteranceConfidence: null,
     transcriptText: "",
     transcriptSpeaker: "",
     contextText: "",

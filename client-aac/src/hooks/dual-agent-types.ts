@@ -164,8 +164,8 @@ export interface UseDualAgentReturn {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
-  interpretationText: string | null;
-  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  utteranceText: string | null;
+  utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
   debugText: string | null;
 
@@ -223,7 +223,7 @@ export interface UseDualAgentReturn {
   /** Send a board exit message (exit/exitBoard button pressed on loaded board) */
   sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
-  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   /**
    * Send a composed glyph from the sentence builder. The AI converts it to
    * natural language via the `interpret` tool — the relay does NOT TTS the

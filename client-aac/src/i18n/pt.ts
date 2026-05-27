@@ -635,8 +635,9 @@ export const pt: Translations = {
     thanks: "Obrigado",
     speak: "Falar",
     skip: "Pular",
-    neither: "Nenhum",
-    guess: "Adivinhar",
+    maybe: "Talvez",
+    neitherOfThese: "Nenhum destes",
+    guess: "Achar palavra",
   },
 
   silentMode: {

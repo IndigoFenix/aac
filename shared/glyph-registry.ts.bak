@@ -982,29 +982,29 @@ const VOCAB: VocabularyItem[] = [
   // Emotion modifiers — attach a feeling to a SYMBOL as a small face badge in a
   // corner (e.g. "happy dog"). Like colors, they're hidden from the main
   // carousel and surfaced via a dedicated emotion-picker popup in the builder.
-  // Labels reuse the existing feeling-symbol `aac.glyph.*` translations.
-  { key: "emo_happy", tKey: "aac.glyph.happy", pos: "modifier", categories: [],
+  // Labels reuse the word-finding `guessing.named_feeling.*` translations.
+  { key: "emo_happy", tKey: "guessing.named_feeling.happy", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😊",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 70, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_sad", tKey: "aac.glyph.sad", pos: "modifier", categories: [],
+  { key: "emo_sad", tKey: "guessing.named_feeling.sad", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😢",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 71, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_angry", tKey: "aac.glyph.angry", pos: "modifier", categories: [],
+  { key: "emo_angry", tKey: "guessing.named_feeling.angry", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😠",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 72, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_afraid", tKey: "aac.glyph.scared", pos: "modifier", categories: [],
+  { key: "emo_afraid", tKey: "guessing.named_feeling.afraid", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😨",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 73, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_hurt", tKey: "aac.glyph.hurt", pos: "modifier", categories: [],
+  { key: "emo_hurt", tKey: "guessing.named_feeling.hurt", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "🤕",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 74, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_excited", tKey: "aac.glyph.excited", pos: "modifier", categories: [],
+  { key: "emo_excited", tKey: "guessing.named_feeling.excited", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "🤩",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 75, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_calm", tKey: "aac.glyph.calm", pos: "modifier", categories: [],
+  { key: "emo_calm", tKey: "guessing.named_feeling.calm", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😌",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 76, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
-  { key: "emo_tired", tKey: "aac.glyph.tired", pos: "modifier", categories: [],
+  { key: "emo_tired", tKey: "guessing.named_feeling.tired", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "😴",
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 77, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
 
