@@ -2477,6 +2477,8 @@ export const de = {
     appBubblesGameDesc: "Schwebende Blasen zerplatzen für Hand-Auge-Koordination",
     appSpaceTrader: "Weltraumhändler",
     appSpaceTraderDesc: "Steuere ein Schiff durch Handelsrätsel, um den Stern zu erobern",
+    appSocialTrainer: "Sozialtrainer",
+    appSocialTrainerDesc: "Übe Gespräche mit einer prozedural generierten Partnerfigur",
     spotifyConnected: "Spotify verbunden",
     spotifyConnect: "Verbinden",
     spotifyDisconnect: "Trennen",

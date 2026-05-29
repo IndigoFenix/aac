@@ -47,6 +47,9 @@ function MainApp() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     () => localStorage.getItem('synapse_student_id')
   );
+  const [selectedClassroomId, setSelectedClassroomId] = useState<string | null>(
+    () => localStorage.getItem('synapse_classroom_id')
+  );
   const { t, isRTL, direction, language } = useLanguage();
 
   // Direct routes that embed a /games/<id>/ iframe. These bypass auth/student
@@ -78,7 +81,9 @@ function MainApp() {
 
   const handleLogout = () => {
     setSelectedStudentId(null);
+    setSelectedClassroomId(null);
     localStorage.removeItem('synapse_student_id');
+    localStorage.removeItem('synapse_classroom_id');
     localStorage.removeItem('synapse_user_profile');
     // Mark as signed out locally — do NOT call server /auth/logout
     // so the admin client's session stays alive
@@ -86,14 +91,23 @@ function MainApp() {
     queryClient.setQueryData(["/auth/user"], null);
   };
 
-  const handleStudentSelect = (studentId: string) => {
+  const handleStudentSelect = (studentId: string, classroomId?: string | null) => {
     localStorage.setItem('synapse_student_id', studentId);
     setSelectedStudentId(studentId);
+    if (classroomId) {
+      localStorage.setItem('synapse_classroom_id', classroomId);
+      setSelectedClassroomId(classroomId);
+    } else {
+      localStorage.removeItem('synapse_classroom_id');
+      setSelectedClassroomId(null);
+    }
   };
 
   const handleExitStudent = () => {
     localStorage.removeItem('synapse_student_id');
+    localStorage.removeItem('synapse_classroom_id');
     setSelectedStudentId(null);
+    setSelectedClassroomId(null);
   };
 
   // Show loading while checking authentication
@@ -140,6 +154,7 @@ function MainApp() {
             <ConversationProvider studentId={selectedStudentId} language={language}>
               <Home
                 studentId={selectedStudentId}
+                classroomId={selectedClassroomId}
                 onLogout={handleLogout}
                 onExitStudent={handleExitStudent}
               />

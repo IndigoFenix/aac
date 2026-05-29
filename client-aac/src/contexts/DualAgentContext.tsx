@@ -97,6 +97,10 @@ interface DualAgentContextType {
   dismissApp: () => void;
   launchApp: (appId: string, appData?: any) => void;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
+  /** Built-in apps enabled for this session — drives the static Apps board overlay. */
+  enabledApps: Array<{ id: string; name: string; icon: string }>;
+  /** Custom apps (clinician-authored games) assigned to this student. */
+  availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
   // Avatar
   emote: "happy" | "sad" | "neutral";
@@ -147,6 +151,11 @@ interface DualAgentContextType {
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible: (open: boolean) => void;
 
+  // Social trainer bridge — see dual-agent-types.ts.
+  notifySocialTrainerStarted: () => void;
+  notifySocialTrainerPeerSaid: (text: string) => void;
+  notifySocialTrainerEnded: (report?: unknown, feedbackSummary?: string) => void;
+
   // Construction board (sentence builder)
   sendConstructionState: (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void;
   constructionSuggestions: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null;
@@ -173,6 +182,9 @@ const DualAgentContext = createContext<DualAgentContextType | null>(null);
 interface DualAgentProviderProps {
   children: React.ReactNode;
   studentId: string;
+  // Set when AAC is running in classroom mode. Forwarded to the live session
+  // so the server can stamp chat_sessions.classroom_id.
+  classroomId?: string | null;
   language?: string;
   /** Function to capture a camera frame - returns Blob */
   captureFrame?: () => Promise<Blob | null>;
@@ -205,6 +217,7 @@ export function DualAgentProvider(props: DualAgentProviderProps) {
 function DualAgentProviderInner({
   children,
   studentId,
+  classroomId,
   language = "en",
   captureFrame: captureFrameProp,
   captureEnvFrame: captureEnvFrameProp,
@@ -341,6 +354,7 @@ function DualAgentProviderInner({
 
   const liveAgent = useLiveSession({
     studentId,
+    classroomId,
     language,
     onBoardUpdate: handleBoardUpdate,
     onContextBoardUpdate: useCallback((buttonData: any) => {
@@ -771,6 +785,8 @@ function ProviderShell({
     dismissApp: agent.dismissApp,
     launchApp: agent.launchApp,
     registerAppCanvasCapture,
+    enabledApps: agent.enabledApps,
+    availableCustomApps: agent.availableCustomApps,
 
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,
@@ -806,6 +822,9 @@ function ProviderShell({
     }),
     enterGuessingFromBuilder: agent.enterGuessingFromBuilder ?? (() => { /* live API not available */ }),
     setBuilderVisible: agent.setBuilderVisible ?? (() => { /* live API not available */ }),
+    notifySocialTrainerStarted: agent.notifySocialTrainerStarted ?? (() => { /* live API not available */ }),
+    notifySocialTrainerPeerSaid: agent.notifySocialTrainerPeerSaid ?? (() => { /* live API not available */ }),
+    notifySocialTrainerEnded: agent.notifySocialTrainerEnded ?? (() => { /* live API not available */ }),
 
     sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
     constructionSuggestions: agent.constructionSuggestions ?? null,

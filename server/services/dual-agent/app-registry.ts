@@ -63,6 +63,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     enabledByDefault: false,
   },
   {
+    id: "social_trainer",
+    name: "Social Trainer",
+    description: "Opens a social training session with a procedurally-generated peer character the user practices conversation with. The peer has its own face and voice and reacts to how the user treats it. While the session is running, you (the AAC AI) are placed in silent/utterance-button mode — the user communicates with the peer by pressing your buttons, and the peer's text replaces yours in the header. Use open_app(\"social_trainer\") when the user wants to practice talking to people, work on social skills, or asks for the social game. When the session ends you will be notified with a debrief — discuss it warmly with the user.",
+    icon: "🧑‍🤝‍🧑",
+    enabledByDefault: false,
+  },
+  {
     id: "space_trader",
     name: "Space Trader",
     description: "Opens a space-trading puzzle game designed for eyegaze controls. The student steers a ship to mine asteroids, complete trade chains, and capture the Star across escalating difficulty levels. ALWAYS use open_app to launch this when the user wants to play the space trader game, the space game, or the trader puzzle.",

@@ -1700,6 +1700,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   }
                 />
               </div>
+
+              {/* Social Trainer */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🧑‍🤝‍🧑</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appSocialTrainer')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSocialTrainerDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.social_trainer?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, social_trainer: { ...prev.social_trainer, enabled: checked } }))
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

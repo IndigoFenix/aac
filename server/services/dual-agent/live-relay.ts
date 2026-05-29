@@ -9,6 +9,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { User } from "@shared/schema";
 import { authenticateUpgrade } from "../realtime/ws-auth";
 import { studentService } from "../studentService";
+import { classroomService } from "../classroomService";
 import type {
   LiveProvider,
   LiveProviderCallbacks,
@@ -638,7 +639,7 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 
 /** Messages from client → server */
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
   | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
@@ -664,7 +665,10 @@ export type ClientMessage =
   | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
   | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string } } // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild
   | { type: "builder_open" }                                            // sentence builder opened — begin a conversation detour
-  | { type: "builder_close" };                                          // sentence builder closed — end the builder detour
+  | { type: "builder_close" }                                           // sentence builder closed — end the builder detour
+  | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
+  | { type: "social_trainer_peer_said"; text: string }                  // SocialBot peer just spoke — server composes the per-turn context
+  | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string }; // SocialBot session ended — server composes the debrief
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -846,6 +850,7 @@ export class LiveRelay {
   // Session
   private studentId: string | null = null;
   private userId: string | undefined = undefined;
+  private classroomId: string | null = null;
   private sessionId: string | null = null;
   private sessionCache: SessionCache | null = null;
   private muteState: AACMuteState = "unmuted";
@@ -1650,6 +1655,19 @@ export class LiveRelay {
             this.send({ type: "guessing_mode", active: true });
             logLiveSession("GUESSING_MODE", "Entered via board exit button");
           }
+          // Client-driven guessing exit (user pressed Back / Home / changed
+          // category tab while guessing was active). Flip the flag directly
+          // here instead of waiting for the AI's next rebuild — that path is
+          // fragile and leaves guessing stuck if the model is slow to respond.
+          if (msg.instruction.includes("[EXIT GUESSING]") && this.guessingMode) {
+            this.guessingMode = false;
+            this.currentGuessingSuggestionKeys = [];
+            this.guessingOrigin = "conversation";
+            this.guessingBuilderContext = null;
+            this.send({ type: "guessing_mode", active: false });
+            if (!this.builderOpen) this.preDetourTopic = null;
+            logLiveSession("GUESSING_MODE", `Exited — client signaled [EXIT GUESSING] (label="${msg.label}")`);
+          }
 
           if (this.sessionId) {
             dualAgentService.addPendingMessage(this.sessionId, {
@@ -1943,6 +1961,70 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           break;
         }
 
+        case "social_trainer_started": {
+          // Client just opened the social_trainer app. Compose the
+          // activation prompt server-side (the wording lives in
+          // social-bot/aac-bridge-prompts.ts so the client doesn't
+          // carry brittle prompt strings) and feed it through the
+          // normal user-message path so the AI processes it as a
+          // turn and rebuilds the board.
+          const { socialTrainerStartedPrompt } = await import("../social-bot/aac-bridge-prompts");
+          const text = socialTrainerStartedPrompt();
+          logLiveSession("SOCIAL_TRAINER_STARTED", `injecting kick (len=${text.length})`);
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: text,
+              timestamp: Date.now(),
+            }).catch(() => {});
+          }
+          this.provider?.sendMessage(text, "user");
+          break;
+        }
+
+        case "social_trainer_peer_said": {
+          // The social-bot just produced an utterance. Tell the AAC AI
+          // what was said so it can rebuild the response board.
+          const peerText = typeof (msg as any).text === "string" ? (msg as any).text : "";
+          if (!peerText) {
+            logLiveSession("SOCIAL_TRAINER_PEER_SAID", "ignored empty text");
+            break;
+          }
+          const { socialTrainerPeerSaidPrompt } = await import("../social-bot/aac-bridge-prompts");
+          const text = socialTrainerPeerSaidPrompt(peerText);
+          logLiveSession("SOCIAL_TRAINER_PEER_SAID", `"${peerText.slice(0, 80)}"`);
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: text,
+              timestamp: Date.now(),
+            }).catch(() => {});
+          }
+          this.provider?.sendMessage(text, "user");
+          break;
+        }
+
+        case "social_trainer_ended": {
+          // Social session over. Compose the debrief from the structured
+          // report (if present) and feed it as a user turn so the AAC AI
+          // wraps up the conversation with the student. Mute will have
+          // been flipped back to unmuted by the client at this point.
+          const report = (msg as any).report;
+          const feedback = (msg as any).feedbackSummary;
+          const { socialTrainerEndedPrompt } = await import("../social-bot/aac-bridge-prompts");
+          const text = socialTrainerEndedPrompt({ report, feedbackSummary: feedback });
+          logLiveSession("SOCIAL_TRAINER_ENDED", `hasReport=${!!report}`);
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: text,
+              timestamp: Date.now(),
+            }).catch(() => {});
+          }
+          this.provider?.sendMessage(text, "user");
+          break;
+        }
+
         case "builder_close": {
           // Sentence builder closed. If the user composed a sentence, the
           // interpret follow-up already consumed preDetourTopic; if they
@@ -2058,6 +2140,26 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       return;
     }
 
+    // Classroom mode: if the client supplied a classroomId, verify the
+    // authenticated user can run sessions for it. Without this, anyone with
+    // access to one student could claim an unrelated classroom and pollute
+    // its session log.
+    if (msg.classroomId) {
+      const canManage = await classroomService.canUserManageClassroom(
+        msg.classroomId,
+        this.authedUser.id,
+      );
+      if (!canManage) {
+        console.warn(
+          `[LiveRelay] Access denied: user=${this.authedUser.id} requested classroomId=${msg.classroomId}`,
+        );
+        this.send({ type: "error", data: "FORBIDDEN_CLASSROOM" });
+        this.ws.close(1008, "forbidden");
+        return;
+      }
+      this.classroomId = msg.classroomId;
+    }
+
     this.studentId = msg.studentId;
     this.muteState = msg.muteState || "unmuted";
     this.responseMode = msg.responseMode || "fast";
@@ -2101,6 +2203,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         this.muteState,
         this.pendingLocalState || undefined,
         this.timezone,
+        msg.classroomId,
       );
       this.pendingLocalState = null;
       this.sessionId = state.sessionId;
@@ -2182,7 +2285,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
 
       // 5. If direct audio, rebuild prompt with useDirectAudio flag
       // Fetch custom apps assigned to this user (gated by license permission).
-      let availableCustomApps: Array<{ id: string; name: string; description?: string | null }> = [];
+      let availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }> = [];
       if (this.userId && this.studentId) {
         try {
           const perms = await licenseService.getUserPermissions(this.userId);
@@ -2191,6 +2294,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             availableCustomApps = apps.map((a) => ({
               id: a.id,
               name: a.name,
+              imageUrl: (a as any).imageUrl ?? null,
               description: a.description,
             }));
           }
@@ -2198,6 +2302,9 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
           logLiveSession("CUSTOM_APPS_FETCH_FAILED", String(err));
         }
       }
+      // Stash on session state so the client-side Apps board picker can render
+      // them via session_snapshot without an extra fetch.
+      state.availableCustomApps = availableCustomApps.length ? availableCustomApps : undefined;
 
       if (this.useDirectAudio && cached.monitorAgent.getStudent) {
         const student = cached.monitorAgent.getStudent();
@@ -5856,6 +5963,12 @@ When creating or referencing calendar events, interpret and speak in this local 
     const student = this.sessionCache.monitorAgent.getStudent?.();
     const memory = (student?.chatMemory as Record<string, any>) || {};
 
+    const enabledAppIds = state.appState?.enabledApps || [];
+    const enabledAppsForClient = enabledAppIds
+      .map(id => getAppDefinition(id))
+      .filter((a): a is import("./types").AACAppDefinition => !!a)
+      .map(a => ({ id: a.id, name: a.name, icon: a.icon }));
+
     const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
       sessionId: state.sessionId,
       studentId: state.studentId,
@@ -5874,6 +5987,8 @@ When creating or referencing calendar events, interpret and speak in this local 
       loadedBoardId: state.loadedBoardId,
       currentPageId: state.currentPageId,
       monitorNotes: memory.Student_Notes || undefined,
+      enabledApps: enabledAppsForClient.length ? enabledAppsForClient : undefined,
+      availableCustomApps: state.availableCustomApps,
       timestamp: Date.now(),
     };
 

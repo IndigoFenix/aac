@@ -2477,6 +2477,8 @@ export const ru = {
     appBubblesGameDesc: "Лопать плавающие пузыри для тренировки координации",
     appSpaceTrader: "Космический торговец",
     appSpaceTraderDesc: "Управляйте кораблём в торговых головоломках, чтобы захватить Звезду",
+    appSocialTrainer: "Социальный тренажёр",
+    appSocialTrainerDesc: "Практикуйте беседу с процедурно сгенерированным собеседником",
     spotifyConnected: "Spotify подключён",
     spotifyConnect: "Подключить",
     spotifyDisconnect: "Отключить",

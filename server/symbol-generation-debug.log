@@ -407,3 +407,1145 @@
 [2026-05-27T18:31:45.642Z] [processQueue] FULL REFINED PROMPT for "planet_jupiter": A large, stylized planet with prominent orange, white, and brown horizontal bands, featuring a distinct red oval spot on its surface, depicted as a flat AAC icon with bold black outlines and solid colors on a transparent background.
 [2026-05-27T18:31:49.851Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
 [2026-05-27T18:31:54.054Z] [processQueue] Generating "far_away"...
+[2026-05-27T18:32:19.891Z] [COST] imageKey="far_away" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=55 | image: openai/gpt-image-1 in=61 out=272
+[2026-05-27T18:32:19.891Z] [processQueue] Generated "far_away" → e1b4774a-900b-4a4a-9c15-cfdd26f056ce (5 total)
+[2026-05-27T18:32:19.892Z] [processQueue] FULL REFINED PROMPT for "far_away": A simple AAC icon showing a small, generic human figure standing in the foreground, looking towards a tiny, distant house on a horizon line, with two curved motion lines above the house indicating distance, all rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-27T18:32:24.073Z] [processQueue] "saturn_rings" already exists → ef2eeb65-1095-457c-b912-3b946c336c0c
+[2026-05-27T18:32:28.255Z] [processQueue] "far_away" already exists → e1b4774a-900b-4a4a-9c15-cfdd26f056ce
+[2026-05-27T18:32:32.437Z] [processQueue] "saturn_rings" already exists → ef2eeb65-1095-457c-b912-3b946c336c0c
+[2026-05-27T18:32:36.614Z] [processQueue] "planet_earth" already exists → 759a61c3-7203-436b-9b25-6acc20436a88
+[2026-05-27T18:32:40.787Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
+[2026-05-27T18:32:44.964Z] [processQueue] "planet_earth" already exists → 759a61c3-7203-436b-9b25-6acc20436a88
+[2026-05-27T18:32:49.221Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
+[2026-05-27T18:32:53.528Z] [processQueue] "planet_earth" already exists → 759a61c3-7203-436b-9b25-6acc20436a88
+[2026-05-27T18:32:57.745Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
+[2026-05-27T18:33:01.934Z] [processQueue] "planet_jupiter" already exists → 6f7ecdaf-0721-4a4c-b4a3-e47260ec6788
+[2026-05-28T12:57:48.575Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:57:48.576Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:19.990Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:19.991Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:19.994Z] [resolveImageKeys] Resolving 1 keys: movie (format=api-path, useUnapproved=true)
+[2026-05-28T12:58:20.705Z] [resolveImageKeys] No symbol found for "movie"
+[2026-05-28T12:58:20.706Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: movie
+[2026-05-28T12:58:20.708Z] [queueGeneration] Queuing 1 keys: movie (hasCallback=true)
+[2026-05-28T12:58:21.799Z] [processQueue] Generating "movie"...
+[2026-05-28T12:58:25.387Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:25.388Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:25.392Z] [resolveImageKeys] Resolving 1 keys: movie (format=api-path, useUnapproved=true)
+[2026-05-28T12:58:26.130Z] [resolveImageKeys] No symbol found for "movie"
+[2026-05-28T12:58:26.131Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: movie
+[2026-05-28T12:58:26.132Z] [queueGeneration] Queuing 1 keys: movie (hasCallback=true)
+[2026-05-28T12:58:26.486Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:26.487Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:26.489Z] [resolveImageKeys] Resolving 1 keys: movie (format=api-path, useUnapproved=true)
+[2026-05-28T12:58:27.751Z] [resolveImageKeys] No symbol found for "movie"
+[2026-05-28T12:58:27.752Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: movie
+[2026-05-28T12:58:27.753Z] [queueGeneration] Queuing 1 keys: movie (hasCallback=true)
+[2026-05-28T12:58:33.255Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:33.255Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:44.845Z] [COST] imageKey="movie" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=44 | image: openai/gpt-image-1 in=50 out=272
+[2026-05-28T12:58:44.846Z] [processQueue] Generated "movie" → f2381d79-073f-4fb9-9ad3-c0e92b9b840b (1 total)
+[2026-05-28T12:58:44.847Z] [processQueue] FULL REFINED PROMPT for "movie": A classic film projector, viewed from the side, with a reel of film on top and a beam of light projecting from the lens, in flat AAC icon style. The projector is dark gray with a white light beam.
+[2026-05-28T12:58:46.096Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:46.097Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:58:49.036Z] [processQueue] "movie" already exists → f2381d79-073f-4fb9-9ad3-c0e92b9b840b
+[2026-05-28T12:58:53.215Z] [processQueue] "movie" already exists → f2381d79-073f-4fb9-9ad3-c0e92b9b840b
+[2026-05-28T12:58:57.108Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:58:57.111Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:59:11.253Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:59:11.254Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:59:11.257Z] [resolveImageKeys] Resolving 1 keys: movie (format=api-path, useUnapproved=true)
+[2026-05-28T12:59:11.955Z] [resolveImageKeys] Resolved "movie" → /api/custom-symbols/f2381d79-073f-4fb9-9ad3-c0e92b9b840b/image
+[2026-05-28T12:59:11.956Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T12:59:14.079Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T12:59:14.079Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T12:59:14.088Z] [resolveImageKeys] Resolving 1 keys: movie (format=api-path, useUnapproved=true)
+[2026-05-28T12:59:14.818Z] [resolveImageKeys] Resolved "movie" → /api/custom-symbols/f2381d79-073f-4fb9-9ad3-c0e92b9b840b/image
+[2026-05-28T12:59:14.818Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T13:42:21.772Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:21.773Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:23.332Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:23.333Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:32.883Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:32.884Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:35.896Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:35.897Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:37.698Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:37.698Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:45.367Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:45.368Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:42:53.036Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:42:53.037Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:43:05.173Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:43:05.174Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:43:20.590Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:43:20.592Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:43:36.245Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:43:36.246Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:43:51.704Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:43:51.705Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:44:07.115Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:44:07.115Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:44:22.364Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:44:22.365Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:44:39.451Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:44:39.452Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:44:56.370Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:44:56.370Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:13.448Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:13.448Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:25.261Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:25.261Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:28.685Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:28.686Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:37.947Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:37.948Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:39.434Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:39.435Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:44.130Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:44.131Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:45:56.777Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:45:56.778Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:57:23.592Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:57:23.593Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:57:27.217Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:57:27.218Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:57:42.934Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:57:42.934Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:57:53.967Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:57:53.967Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:57:56.655Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:57:56.656Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:58:13.438Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:58:13.438Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:58:30.050Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:58:30.052Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T13:58:46.694Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T13:58:46.694Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:30.873Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:30.875Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:33.669Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:33.669Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:35.489Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:35.489Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:40.004Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:40.006Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:45.600Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:45.626Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:47.423Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:47.428Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:51.928Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:51.929Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:00:53.000Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:00:53.001Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:01:01.096Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:01:01.099Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:01:13.757Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:01:13.758Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:01:30.025Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:01:30.026Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:01:46.846Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:01:46.847Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:02:12.029Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:02:12.040Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:03:22.516Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:03:22.604Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:03:27.611Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:03:27.625Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:03:50.291Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:03:50.298Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:34:34.712Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:34:34.714Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:34:49.868Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:34:49.879Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:34:49.909Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:34:50.705Z] [resolveImageKeys] No symbol found for "person_practice"
+[2026-05-28T14:34:50.706Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_practice
+[2026-05-28T14:34:50.712Z] [queueGeneration] Queuing 1 keys: person_practice (hasCallback=true)
+[2026-05-28T14:34:51.873Z] [processQueue] Generating "person_practice"...
+[2026-05-28T14:34:56.247Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:34:56.247Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:34:56.252Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:34:56.979Z] [resolveImageKeys] No symbol found for "person_practice"
+[2026-05-28T14:34:56.980Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_practice
+[2026-05-28T14:34:56.982Z] [queueGeneration] Queuing 1 keys: person_practice (hasCallback=true)
+[2026-05-28T14:35:06.360Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:06.368Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:06.377Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:07.386Z] [resolveImageKeys] No symbol found for "person_practice"
+[2026-05-28T14:35:07.388Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_practice
+[2026-05-28T14:35:07.390Z] [queueGeneration] Queuing 1 keys: person_practice (hasCallback=true)
+[2026-05-28T14:35:15.402Z] [COST] imageKey="person_practice" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=66 | image: openai/gpt-image-1 in=75 out=272
+[2026-05-28T14:35:15.403Z] [processQueue] Generated "person_practice" → c090bef5-2fc4-4fc9-ad17-b7275dcc7373 (1 total)
+[2026-05-28T14:35:15.404Z] [processQueue] FULL REFINED PROMPT for "person_practice": A simple, generic human figure with a slightly stylized head and no hair, standing with arms outstretched and slightly bent at the elbows, palms facing forward, in a balanced pose, indicating practice or rehearsal. The figure is rendered in flat, solid colors with bold black outlines, centered on a transparent background, suitable for an AAC icon.
+[2026-05-28T14:35:16.121Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:16.122Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:16.130Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:16.848Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:35:16.849Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:35:19.577Z] [processQueue] "person_practice" already exists → c090bef5-2fc4-4fc9-ad17-b7275dcc7373
+[2026-05-28T14:35:23.759Z] [processQueue] "person_practice" already exists → c090bef5-2fc4-4fc9-ad17-b7275dcc7373
+[2026-05-28T14:35:31.781Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:31.781Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:31.786Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:32.510Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:35:32.511Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:35:38.311Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:38.313Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:38.318Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:39.012Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:35:39.013Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:35:50.475Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:50.476Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:50.480Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:51.163Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:35:51.164Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:35:55.336Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:35:55.337Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:35:55.341Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:35:56.059Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:35:56.061Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:36:12.621Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:36:12.622Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:36:12.625Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:36:13.339Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:36:13.340Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:36:21.355Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:36:21.356Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:36:21.358Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:36:22.035Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:36:22.035Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:36:27.431Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:36:27.432Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:36:27.434Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:36:28.115Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:36:28.117Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:36:35.397Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:36:35.397Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:36:35.399Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:36:36.089Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:36:36.090Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:36:50.613Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:36:50.613Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:36:50.618Z] [resolveImageKeys] Resolving 1 keys: person_practice (format=api-path, useUnapproved=true)
+[2026-05-28T14:36:51.340Z] [resolveImageKeys] Resolved "person_practice" → /api/custom-symbols/c090bef5-2fc4-4fc9-ad17-b7275dcc7373/image
+[2026-05-28T14:36:51.341Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:48:06.411Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:48:06.415Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:48:06.479Z] [resolveImageKeys] Resolving 1 keys: topic_other (format=api-path, useUnapproved=true)
+[2026-05-28T14:48:07.573Z] [resolveImageKeys] No symbol found for "topic_other"
+[2026-05-28T14:48:07.574Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: topic_other
+[2026-05-28T14:48:07.576Z] [queueGeneration] Queuing 1 keys: topic_other (hasCallback=true)
+[2026-05-28T14:48:09.349Z] [processQueue] Generating "topic_other"...
+[2026-05-28T14:48:18.754Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:48:18.755Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:48:18.759Z] [resolveImageKeys] Resolving 2 keys: topic_other, game_other (format=api-path, useUnapproved=true)
+[2026-05-28T14:48:19.453Z] [resolveImageKeys] No symbol found for "topic_other"
+[2026-05-28T14:48:20.555Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:48:20.556Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:48:20.558Z] [resolveImageKeys] Resolving 3 keys: topic_other, game_other, break (format=api-path, useUnapproved=true)
+[2026-05-28T14:48:20.764Z] [resolveImageKeys] No symbol found for "game_other"
+[2026-05-28T14:48:20.765Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: topic_other, game_other
+[2026-05-28T14:48:20.766Z] [queueGeneration] Queuing 2 keys: topic_other, game_other (hasCallback=true)
+[2026-05-28T14:48:21.635Z] [resolveImageKeys] No symbol found for "topic_other"
+[2026-05-28T14:48:22.676Z] [resolveImageKeys] No symbol found for "game_other"
+[2026-05-28T14:48:22.988Z] [resolveImageKeys] No symbol found for "break"
+[2026-05-28T14:48:22.988Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: topic_other, game_other, break
+[2026-05-28T14:48:22.989Z] [queueGeneration] Queuing 3 keys: topic_other, game_other, break (hasCallback=true)
+[2026-05-28T14:48:31.690Z] [COST] imageKey="topic_other" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=45 out=272
+[2026-05-28T14:48:31.691Z] [processQueue] Generated "topic_other" → 9ca2e5c2-e0db-42d4-9a4e-52891610e64d (1 total)
+[2026-05-28T14:48:31.692Z] [processQueue] FULL REFINED PROMPT for "topic_other": A simple AAC icon of a light gray question mark symbol, centered on a transparent background, with a bold black outline. The question mark is a flat, solid color, without gradients or shadows.
+[2026-05-28T14:48:35.862Z] [processQueue] Generating "break"...
+[2026-05-28T14:48:52.527Z] [COST] imageKey="break" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=56 | image: openai/gpt-image-1 in=64 out=272
+[2026-05-28T14:48:52.528Z] [processQueue] Generated "break" → 02039b14-c6e4-4cbc-8e50-df7d1e9860db (2 total)
+[2026-05-28T14:48:52.530Z] [processQueue] FULL REFINED PROMPT for "break": A bold AAC icon of a brown stick of wood or a brown pencil, snapped cleanly in half in the middle, with a jagged break line. The two halves are slightly separated, indicating the break. The icon features thick black outlines and flat, solid colors on a transparent background.
+[2026-05-28T14:48:56.708Z] [processQueue] Generating "game_other"...
+[2026-05-28T14:49:47.129Z] [resolveImageKeys] Resolving 1 keys: today#question (format=internal, useUnapproved=true)
+[2026-05-28T14:49:47.981Z] [resolveImageKeys] Resolved "today#question" → __SYMBOL__:b664ab33-00c7-4713-a4cc-7b45031fcaa9
+[2026-05-28T14:49:47.982Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T14:49:47.985Z] [resolveImageKeys] Resolving 1 keys: activity_fun (format=api-path, useUnapproved=true)
+[2026-05-28T14:49:49.372Z] [resolveImageKeys] No symbol found for "activity_fun"
+[2026-05-28T14:49:49.384Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: activity_fun
+[2026-05-28T14:49:49.398Z] [queueGeneration] Queuing 1 keys: activity_fun (hasCallback=true)
+[2026-05-28T14:49:52.536Z] [COST] imageKey="game_other" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=46 | image: openai/gpt-image-1 in=51 out=272
+[2026-05-28T14:49:52.538Z] [processQueue] Generated "game_other" → 9bf6b29b-03b0-4efb-95b2-a948eaca6af3 (3 total)
+[2026-05-28T14:49:52.539Z] [processQueue] FULL REFINED PROMPT for "game_other": A generic, non-gender-specific human figure with a large head and simple features, holding a classic video game controller with two joysticks and several buttons, looking forward with a slight smile, in flat AAC icon style.
+[2026-05-28T14:49:53.631Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:49:53.632Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:49:53.642Z] [resolveImageKeys] Resolving 1 keys: activity_fun (format=api-path, useUnapproved=true)
+[2026-05-28T14:49:54.416Z] [resolveImageKeys] No symbol found for "activity_fun"
+[2026-05-28T14:49:54.418Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: activity_fun
+[2026-05-28T14:49:54.419Z] [queueGeneration] Queuing 1 keys: activity_fun (hasCallback=true)
+[2026-05-28T14:49:56.876Z] [processQueue] Generating "activity_fun"...
+[2026-05-28T14:49:57.608Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:49:57.609Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:49:57.620Z] [resolveImageKeys] Resolving 1 keys: activity_fun (format=api-path, useUnapproved=true)
+[2026-05-28T14:49:58.344Z] [resolveImageKeys] No symbol found for "activity_fun"
+[2026-05-28T14:49:58.346Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: activity_fun
+[2026-05-28T14:49:58.349Z] [queueGeneration] Queuing 1 keys: activity_fun (hasCallback=true)
+[2026-05-28T14:50:13.481Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:50:13.482Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:50:13.486Z] [resolveImageKeys] Resolving 1 keys: activity_fun (format=api-path, useUnapproved=true)
+[2026-05-28T14:50:14.230Z] [resolveImageKeys] No symbol found for "activity_fun"
+[2026-05-28T14:50:14.231Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: activity_fun
+[2026-05-28T14:50:14.232Z] [queueGeneration] Queuing 1 keys: activity_fun (hasCallback=true)
+[2026-05-28T14:50:15.883Z] [COST] imageKey="activity_fun" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=80 | image: openai/gpt-image-1 in=88 out=272
+[2026-05-28T14:50:15.884Z] [processQueue] Generated "activity_fun" → f052f18c-fae8-4466-8345-af4a219c764c (4 total)
+[2026-05-28T14:50:15.885Z] [processQueue] FULL REFINED PROMPT for "activity_fun": A simple, bold AAC icon illustration of a generic human figure with a large head, smiling broadly with a simple curved mouth and two dot eyes, arms outstretched upwards in a joyful, energetic pose, with three small, curved motion lines above the head indicating excitement. The figure wears a simple blue shirt and black pants. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-28T14:50:20.074Z] [processQueue] "activity_fun" already exists → f052f18c-fae8-4466-8345-af4a219c764c
+[2026-05-28T14:50:24.258Z] [processQueue] "activity_fun" already exists → f052f18c-fae8-4466-8345-af4a219c764c
+[2026-05-28T14:50:28.435Z] [processQueue] "activity_fun" already exists → f052f18c-fae8-4466-8345-af4a219c764c
+[2026-05-28T14:50:32.633Z] [processQueue] "topic_other" already exists → 9ca2e5c2-e0db-42d4-9a4e-52891610e64d
+[2026-05-28T14:50:36.903Z] [processQueue] "game_other" already exists → 9bf6b29b-03b0-4efb-95b2-a948eaca6af3
+[2026-05-28T14:50:41.090Z] [processQueue] "topic_other" already exists → 9ca2e5c2-e0db-42d4-9a4e-52891610e64d
+[2026-05-28T14:50:48.481Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:50:48.486Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:50:48.499Z] [resolveImageKeys] Resolving 2 keys: activity_fun, friends (format=api-path, useUnapproved=true)
+[2026-05-28T14:50:49.369Z] [resolveImageKeys] Resolved "activity_fun" → /api/custom-symbols/f052f18c-fae8-4466-8345-af4a219c764c/image
+[2026-05-28T14:50:50.478Z] [resolveImageKeys] Resolved "friends" → /api/custom-symbols/c1a55830-c3cf-42f9-8895-448ef19aaa55/image
+[2026-05-28T14:50:50.479Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-28T14:51:00.983Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T14:51:00.986Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T14:51:01.002Z] [resolveImageKeys] Resolving 5 keys: movie_fun, game_fun, trip_fun, food_tasty, friends (format=api-path, useUnapproved=true)
+[2026-05-28T14:51:01.773Z] [resolveImageKeys] No symbol found for "movie_fun"
+[2026-05-28T14:51:02.737Z] [resolveImageKeys] No symbol found for "game_fun"
+[2026-05-28T14:51:02.895Z] [resolveImageKeys] No symbol found for "trip_fun"
+[2026-05-28T14:51:03.054Z] [resolveImageKeys] No symbol found for "food_tasty"
+[2026-05-28T14:51:03.213Z] [resolveImageKeys] Resolved "friends" → /api/custom-symbols/c1a55830-c3cf-42f9-8895-448ef19aaa55/image
+[2026-05-28T14:51:03.213Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: movie_fun, game_fun, trip_fun, food_tasty
+[2026-05-28T14:51:03.243Z] [queueGeneration] Queuing 4 keys: movie_fun, game_fun, trip_fun, food_tasty (hasCallback=true)
+[2026-05-28T14:51:03.420Z] [processQueue] Generating "food_tasty"...
+[2026-05-28T14:51:22.641Z] [COST] imageKey="food_tasty" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=56 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-28T14:51:22.644Z] [processQueue] Generated "food_tasty" → f50d0599-f47a-49bb-bc8b-ac4fa773264e (1 total)
+[2026-05-28T14:51:22.645Z] [processQueue] FULL REFINED PROMPT for "food_tasty": A simple AAC icon of a smiling mouth with a tongue sticking out, licking its lips, indicating deliciousness. A small, stylized starburst or sparkle shape is positioned near the mouth to emphasize the "tasty" feeling. Bold black outlines, flat solid colors, transparent background.
+[2026-05-28T14:51:26.833Z] [processQueue] Generating "trip_fun"...
+[2026-05-28T14:51:45.879Z] [COST] imageKey="trip_fun" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=41 | image: openai/gpt-image-1 in=47 out=272
+[2026-05-28T14:51:45.881Z] [processQueue] Generated "trip_fun" → 7bccce04-70c5-4c3e-ac72-0823488cfe11 (2 total)
+[2026-05-28T14:51:45.890Z] [processQueue] FULL REFINED PROMPT for "trip_fun": A generic human figure with a large smile and simple dot eyes, wearing a backpack, holding a map, and walking with a joyful stride, with simple motion lines indicating movement, in flat AAC icon style.
+[2026-05-28T14:51:50.208Z] [processQueue] Generating "game_fun"...
+[2026-05-28T15:11:13.916Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:11:13.918Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:11:16.013Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:11:16.014Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:11:25.397Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:11:25.398Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:12:20.316Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:12:20.318Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:12:39.142Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:12:39.151Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:12:54.232Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:12:54.234Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:13:08.342Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:13:08.343Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:13:20.174Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:13:20.175Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:14:21.949Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:14:21.950Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:14:23.724Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:14:23.725Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:56:39.040Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:56:39.043Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:56:41.431Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:56:41.432Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:56:53.105Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:56:53.106Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:09.221Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:09.222Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:13.676Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:13.677Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:19.816Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:19.817Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:24.039Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:24.040Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:33.622Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:33.624Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:37.386Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:37.387Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:43.256Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:43.257Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:57:49.713Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:57:49.714Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:58:01.135Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:58:01.135Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T15:58:14.515Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T15:58:14.515Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:30:04.242Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:30:04.243Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:30:06.398Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:30:06.399Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:30:20.014Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:30:20.015Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:30:33.030Z] [resolveImageKeys] Resolving 1 keys: ask#question (format=internal, useUnapproved=true)
+[2026-05-28T16:30:33.573Z] [resolveImageKeys] Resolved "ask#question" → __SYMBOL__:ff0c2658-0db8-40c0-b78b-aa00e4118f32
+[2026-05-28T16:30:33.574Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T16:30:53.188Z] [resolveImageKeys] Resolving 1 keys: you#question (format=internal, useUnapproved=true)
+[2026-05-28T16:30:53.711Z] [resolveImageKeys] No symbol found for "you#question"
+[2026-05-28T16:30:53.713Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: you#question
+[2026-05-28T16:30:53.715Z] [queueGeneration] Queuing 1 keys: you#question (hasCallback=true)
+[2026-05-28T16:30:55.828Z] [processQueue] Generating "you#question"...
+[2026-05-28T16:31:14.093Z] [COST] imageKey="you#question" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=60 | image: openai/gpt-image-1 in=67 out=272
+[2026-05-28T16:31:14.094Z] [processQueue] Generated "you#question" → 4045ac6f-cde9-41ed-a18b-8554ba22b848 (1 total)
+[2026-05-28T16:31:14.095Z] [processQueue] FULL REFINED PROMPT for "you#question": A simple, generic human figure with a slightly stylized head and minimal facial features (dots for eyes, small curve for mouth), facing forward and pointing directly at the viewer with one hand, while the other hand is raised with an index finger pointing upwards, indicating a question, in flat AAC icon style.
+[2026-05-28T16:31:39.295Z] [resolveImageKeys] Resolving 1 keys: pretty_doll (format=internal, useUnapproved=true)
+[2026-05-28T16:31:39.814Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:39.815Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: pretty_doll
+[2026-05-28T16:31:39.817Z] [queueGeneration] Queuing 1 keys: pretty_doll (hasCallback=true)
+[2026-05-28T16:31:39.820Z] [resolveImageKeys] Resolving 1 keys: pretty_doll (format=api-path, useUnapproved=true)
+[2026-05-28T16:31:40.861Z] [processQueue] Generating "pretty_doll"...
+[2026-05-28T16:31:40.935Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:40.936Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: pretty_doll
+[2026-05-28T16:31:40.937Z] [queueGeneration] Queuing 1 keys: pretty_doll (hasCallback=true)
+[2026-05-28T16:31:50.224Z] [resolveImageKeys] Resolving 1 keys: pretty_doll (format=internal, useUnapproved=true)
+[2026-05-28T16:31:50.772Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:50.772Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: pretty_doll
+[2026-05-28T16:31:50.773Z] [queueGeneration] Queuing 1 keys: pretty_doll (hasCallback=true)
+[2026-05-28T16:31:50.776Z] [resolveImageKeys] Resolving 1 keys: pretty_doll (format=api-path, useUnapproved=true)
+[2026-05-28T16:31:51.869Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:51.870Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: pretty_doll
+[2026-05-28T16:31:51.871Z] [queueGeneration] Queuing 1 keys: pretty_doll (hasCallback=true)
+[2026-05-28T16:31:52.175Z] [resolveImageKeys] Resolving 2 keys: pretty_doll, talk#question (format=internal, useUnapproved=true)
+[2026-05-28T16:31:53.499Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:55.268Z] [resolveImageKeys] No symbol found for "talk#question"
+[2026-05-28T16:31:55.269Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: pretty_doll, talk#question
+[2026-05-28T16:31:55.269Z] [queueGeneration] Queuing 2 keys: pretty_doll, talk#question (hasCallback=true)
+[2026-05-28T16:31:55.271Z] [resolveImageKeys] Resolving 1 keys: pretty_doll (format=api-path, useUnapproved=true)
+[2026-05-28T16:31:55.582Z] [resolveImageKeys] No symbol found for "pretty_doll"
+[2026-05-28T16:31:55.583Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: pretty_doll
+[2026-05-28T16:31:55.584Z] [queueGeneration] Queuing 1 keys: pretty_doll (hasCallback=true)
+[2026-05-28T16:32:00.363Z] [COST] imageKey="pretty_doll" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=69 | image: openai/gpt-image-1 in=76 out=272
+[2026-05-28T16:32:00.365Z] [processQueue] Generated "pretty_doll" → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5 (1 total)
+[2026-05-28T16:32:00.367Z] [processQueue] FULL REFINED PROMPT for "pretty_doll": A simple, stylized doll with a round head, two dots for eyes, a small curve for a mouth, and a simple, short hairstyle. The doll wears a plain dress with a simple pattern. The doll is depicted standing, facing forward, with bold black outlines and flat, solid colors, on a transparent background, in AAC icon style.
+[2026-05-28T16:32:01.867Z] [resolveImageKeys] Resolving 1 keys: talk#question (format=internal, useUnapproved=true)
+[2026-05-28T16:32:02.391Z] [resolveImageKeys] No symbol found for "talk#question"
+[2026-05-28T16:32:02.391Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: talk#question
+[2026-05-28T16:32:02.392Z] [queueGeneration] Queuing 1 keys: talk#question (hasCallback=true)
+[2026-05-28T16:32:03.334Z] [resolveImageKeys] Resolving 1 keys: more#question (format=internal, useUnapproved=true)
+[2026-05-28T16:32:04.820Z] [resolveImageKeys] No symbol found for "more#question"
+[2026-05-28T16:32:04.822Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: more#question
+[2026-05-28T16:32:04.824Z] [queueGeneration] Queuing 1 keys: more#question (hasCallback=true)
+[2026-05-28T16:32:06.603Z] [processQueue] "pretty_doll" already exists → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5
+[2026-05-28T16:32:10.780Z] [processQueue] Generating "more#question"...
+[2026-05-28T16:32:17.592Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:32:17.592Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:32:31.616Z] [COST] imageKey="more#question" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=102 | image: openai/gpt-image-1 in=107 out=272
+[2026-05-28T16:32:31.617Z] [processQueue] Generated "more#question" → 1776d551-7c84-43aa-9d81-25bfc81df91d (2 total)
+[2026-05-28T16:32:31.618Z] [processQueue] FULL REFINED PROMPT for "more#question": A simple AAC icon of a generic person with a slightly stylized body and a large head, facing forward with a questioning expression. The person's hands are held up in front of their chest, palms open, with simple motion lines radiating outwards from the hands, indicating a gesture of asking for "more" or "what else?". A large, bold black question mark floats above the person's head. The icon uses a limited palette of flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-28T16:32:35.343Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:32:35.344Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:32:43.303Z] [processQueue] Generating "talk#question"...
+[2026-05-28T16:32:52.645Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:32:52.647Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:32:58.730Z] [COST] imageKey="talk#question" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=51 | image: openai/gpt-image-1 in=58 out=272
+[2026-05-28T16:32:58.731Z] [processQueue] Generated "talk#question" → 866c165a-e181-4f0b-a28a-2d441a773107 (3 total)
+[2026-05-28T16:32:58.732Z] [processQueue] FULL REFINED PROMPT for "talk#question": A simple, generic human figure with a slightly stylized head and minimal facial features (dots for eyes, small curve for mouth), facing forward, with a speech bubble containing a large, bold black question mark emerging from their mouth, in flat AAC icon style.
+[2026-05-28T16:33:02.903Z] [processQueue] "talk#question" already exists → 866c165a-e181-4f0b-a28a-2d441a773107
+[2026-05-28T16:33:07.796Z] [processQueue] "pretty_doll" already exists → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5
+[2026-05-28T16:33:11.977Z] [processQueue] "pretty_doll" already exists → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5
+[2026-05-28T16:33:17.412Z] [processQueue] "pretty_doll" already exists → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5
+[2026-05-28T16:33:21.592Z] [processQueue] "pretty_doll" already exists → 8038e0ff-7ab3-4eba-8456-bdf9ec60b3e5
+[2026-05-28T16:35:20.194Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:35:20.194Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T16:35:26.572Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T16:35:26.573Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:16:17.326Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:16:17.330Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:16:25.488Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:16:25.490Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:16:32.814Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:16:32.815Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:16:32.817Z] [resolveImageKeys] Resolving 1 keys: drawing (format=api-path, useUnapproved=true)
+[2026-05-28T17:16:34.146Z] [resolveImageKeys] Resolved "drawing" → /api/custom-symbols/121d85a0-e703-46b1-bd17-0ed685cef8dc/image
+[2026-05-28T17:16:34.147Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T17:16:46.729Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:16:46.730Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:17:00.516Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:17:00.518Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:17:12.651Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=internal, useUnapproved=true)
+[2026-05-28T17:17:13.416Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:13.417Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:13.419Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:13.423Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=api-path, useUnapproved=true)
+[2026-05-28T17:17:14.991Z] [processQueue] Generating "adventure_scene"...
+[2026-05-28T17:17:15.055Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:15.055Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:15.056Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:23.596Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=internal, useUnapproved=true)
+[2026-05-28T17:17:24.595Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:24.595Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:24.596Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:24.600Z] [resolveImageKeys] Resolving 3 keys: adventure_scene, shooting_game, racing_game (format=api-path, useUnapproved=true)
+[2026-05-28T17:17:26.072Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:26.585Z] [resolveImageKeys] Resolved "shooting_game" → /api/custom-symbols/b0107b11-cf9e-42f1-beb1-0d06b2ca13ba/image
+[2026-05-28T17:17:26.748Z] [resolveImageKeys] Resolved "racing_game" → /api/custom-symbols/06ded954-3b72-4154-8ed0-680c86f61bf4/image
+[2026-05-28T17:17:26.749Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: adventure_scene
+[2026-05-28T17:17:26.756Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:26.793Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:17:26.794Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:17:42.434Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=internal, useUnapproved=true)
+[2026-05-28T17:17:44.576Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:44.577Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:44.577Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:44.579Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=api-path, useUnapproved=true)
+[2026-05-28T17:17:46.371Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:46.372Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:46.373Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:57.452Z] [resolveImageKeys] Resolving 1 keys: adventure_scene (format=internal, useUnapproved=true)
+[2026-05-28T17:17:57.969Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:57.969Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: adventure_scene
+[2026-05-28T17:17:57.970Z] [queueGeneration] Queuing 1 keys: adventure_scene (hasCallback=true)
+[2026-05-28T17:17:57.972Z] [resolveImageKeys] Resolving 2 keys: action_game, adventure_scene (format=api-path, useUnapproved=true)
+[2026-05-28T17:17:59.089Z] [resolveImageKeys] No symbol found for "action_game"
+[2026-05-28T17:17:59.263Z] [resolveImageKeys] No symbol found for "adventure_scene"
+[2026-05-28T17:17:59.264Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: action_game, adventure_scene
+[2026-05-28T17:17:59.265Z] [queueGeneration] Queuing 2 keys: action_game, adventure_scene (hasCallback=true)
+[2026-05-28T17:18:04.872Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:04.874Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:04.879Z] [resolveImageKeys] Resolving 3 keys: shooting_game, racing_game, fighting_game (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:05.766Z] [resolveImageKeys] Resolved "shooting_game" → /api/custom-symbols/b0107b11-cf9e-42f1-beb1-0d06b2ca13ba/image
+[2026-05-28T17:18:07.546Z] [resolveImageKeys] Resolved "racing_game" → /api/custom-symbols/06ded954-3b72-4154-8ed0-680c86f61bf4/image
+[2026-05-28T17:18:07.829Z] [resolveImageKeys] No symbol found for "fighting_game"
+[2026-05-28T17:18:07.830Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: fighting_game
+[2026-05-28T17:18:07.834Z] [queueGeneration] Queuing 1 keys: fighting_game (hasCallback=true)
+[2026-05-28T17:18:12.785Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:12.786Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:20.917Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:20.918Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:20.922Z] [resolveImageKeys] Resolving 1 keys: action_game (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:21.609Z] [resolveImageKeys] No symbol found for "action_game"
+[2026-05-28T17:18:21.610Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: action_game
+[2026-05-28T17:18:21.610Z] [queueGeneration] Queuing 1 keys: action_game (hasCallback=true)
+[2026-05-28T17:18:29.454Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:29.456Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:29.460Z] [resolveImageKeys] Resolving 1 keys: israeli_music (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:30.987Z] [resolveImageKeys] No symbol found for "israeli_music"
+[2026-05-28T17:18:30.988Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: israeli_music
+[2026-05-28T17:18:30.989Z] [queueGeneration] Queuing 1 keys: israeli_music (hasCallback=true)
+[2026-05-28T17:18:34.727Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:34.728Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:34.731Z] [resolveImageKeys] Resolving 4 keys: israeli_music, classical_music, rock_music, pop_music (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:35.407Z] [resolveImageKeys] No symbol found for "israeli_music"
+[2026-05-28T17:18:36.383Z] [resolveImageKeys] No symbol found for "classical_music"
+[2026-05-28T17:18:36.635Z] [resolveImageKeys] No symbol found for "rock_music"
+[2026-05-28T17:18:36.806Z] [resolveImageKeys] No symbol found for "pop_music"
+[2026-05-28T17:18:36.806Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: israeli_music, classical_music, rock_music, pop_music
+[2026-05-28T17:18:36.807Z] [queueGeneration] Queuing 4 keys: israeli_music, classical_music, rock_music, pop_music (hasCallback=true)
+[2026-05-28T17:18:46.485Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:46.485Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:46.486Z] [resolveImageKeys] Resolving 3 keys: singer, fast_tempo, slow_tempo (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:47.333Z] [resolveImageKeys] No symbol found for "singer"
+[2026-05-28T17:18:48.910Z] [resolveImageKeys] No symbol found for "fast_tempo"
+[2026-05-28T17:18:49.086Z] [resolveImageKeys] No symbol found for "slow_tempo"
+[2026-05-28T17:18:49.086Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: singer, fast_tempo, slow_tempo
+[2026-05-28T17:18:49.087Z] [queueGeneration] Queuing 3 keys: singer, fast_tempo, slow_tempo (hasCallback=true)
+[2026-05-28T17:18:54.315Z] [COST] imageKey="adventure_scene" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=56 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-28T17:18:54.315Z] [processQueue] Generated "adventure_scene" → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2 (1 total)
+[2026-05-28T17:18:54.316Z] [processQueue] FULL REFINED PROMPT for "adventure_scene": A simple AAC icon of a stylized, generic human figure with a backpack and a walking stick, standing on a small green hill with a single pointed mountain in the background and a sun in the sky, all rendered with bold black outlines and flat, solid colors on a transparent background.
+[2026-05-28T17:18:58.388Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:18:58.388Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:18:58.391Z] [resolveImageKeys] Resolving 3 keys: singer, fast_tempo, slow_tempo (format=api-path, useUnapproved=true)
+[2026-05-28T17:18:58.482Z] [processQueue] Generating "slow_tempo"...
+[2026-05-28T17:18:59.174Z] [resolveImageKeys] No symbol found for "singer"
+[2026-05-28T17:19:00.293Z] [resolveImageKeys] No symbol found for "fast_tempo"
+[2026-05-28T17:19:01.053Z] [resolveImageKeys] No symbol found for "slow_tempo"
+[2026-05-28T17:19:01.054Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: singer, fast_tempo, slow_tempo
+[2026-05-28T17:19:01.055Z] [queueGeneration] Queuing 3 keys: singer, fast_tempo, slow_tempo (hasCallback=true)
+[2026-05-28T17:19:01.087Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:19:01.088Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:19:01.090Z] [resolveImageKeys] Resolving 4 keys: singer, fast_tempo, slow_tempo, israeli_music (format=api-path, useUnapproved=true)
+[2026-05-28T17:19:02.714Z] [resolveImageKeys] No symbol found for "singer"
+[2026-05-28T17:19:04.524Z] [resolveImageKeys] No symbol found for "fast_tempo"
+[2026-05-28T17:19:04.686Z] [resolveImageKeys] No symbol found for "slow_tempo"
+[2026-05-28T17:19:04.857Z] [resolveImageKeys] No symbol found for "israeli_music"
+[2026-05-28T17:19:04.859Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: singer, fast_tempo, slow_tempo, israeli_music
+[2026-05-28T17:19:04.860Z] [queueGeneration] Queuing 4 keys: singer, fast_tempo, slow_tempo, israeli_music (hasCallback=true)
+[2026-05-28T17:19:19.247Z] [COST] imageKey="slow_tempo" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=70 | image: openai/gpt-image-1 in=76 out=272
+[2026-05-28T17:19:19.248Z] [processQueue] Generated "slow_tempo" → a1efdc74-aec9-4cf2-b765-30a92625f8b5 (2 total)
+[2026-05-28T17:19:19.248Z] [processQueue] FULL REFINED PROMPT for "slow_tempo": A simple AAC icon showing a snail with a brown shell and green body, slowly moving from left to right. A single, curved, dashed motion line trails behind the snail to indicate its slow movement. The snail's head has two short antennae with small black eyes. The image is a flat, bold illustration with black outlines on a transparent background.
+[2026-05-28T17:19:23.434Z] [processQueue] Generating "israeli_music"...
+[2026-05-28T17:19:38.922Z] [COST] imageKey="israeli_music" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=38 | image: openai/gpt-image-1 in=45 out=272
+[2026-05-28T17:19:38.924Z] [processQueue] Generated "israeli_music" → b8fc303a-e42e-49b5-9dc3-a4d77d7a5d72 (3 total)
+[2026-05-28T17:19:38.925Z] [processQueue] FULL REFINED PROMPT for "israeli_music": A simple, bold AAC icon of a blue Star of David symbol with a stylized musical note in the center, all rendered in flat, solid colors with thick black outlines on a transparent background.
+[2026-05-28T17:19:43.102Z] [processQueue] "slow_tempo" already exists → a1efdc74-aec9-4cf2-b765-30a92625f8b5
+[2026-05-28T17:19:47.288Z] [processQueue] Generating "fast_tempo"...
+[2026-05-28T17:20:04.380Z] [COST] imageKey="fast_tempo" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=52 | image: openai/gpt-image-1 in=58 out=272
+[2026-05-28T17:20:04.381Z] [processQueue] Generated "fast_tempo" → 70a12ba7-d24e-44ca-bbdf-3c9d65ddbcc8 (4 total)
+[2026-05-28T17:20:04.383Z] [processQueue] FULL REFINED PROMPT for "fast_tempo": A bold AAC icon illustration of a black musical eighth note with two flags, depicted with three short, horizontal motion lines to its right, indicating speed. The note is centered on a transparent background, rendered with flat, solid black color and a thick black outline.
+[2026-05-28T17:20:08.564Z] [processQueue] Generating "singer"...
+[2026-05-28T17:20:25.105Z] [COST] imageKey="singer" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=63 | image: openai/gpt-image-1 in=69 out=272
+[2026-05-28T17:20:25.106Z] [processQueue] Generated "singer" → f30f4d29-606f-4d20-8241-a98bef086ed0 (5 total)
+[2026-05-28T17:20:25.108Z] [processQueue] FULL REFINED PROMPT for "singer": A generic human figure, facing forward, with a simple dot for eyes and a small curve for a mouth, holding a microphone up to their mouth with one hand. The figure is wearing a simple, short-sleeved shirt and pants. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-05-28T17:20:29.276Z] [processQueue] "slow_tempo" already exists → a1efdc74-aec9-4cf2-b765-30a92625f8b5
+[2026-05-28T17:20:33.470Z] [processQueue] "fast_tempo" already exists → 70a12ba7-d24e-44ca-bbdf-3c9d65ddbcc8
+[2026-05-28T17:20:37.686Z] [processQueue] "singer" already exists → f30f4d29-606f-4d20-8241-a98bef086ed0
+[2026-05-28T17:20:41.878Z] [processQueue] "fast_tempo" already exists → 70a12ba7-d24e-44ca-bbdf-3c9d65ddbcc8
+[2026-05-28T17:20:46.160Z] [processQueue] "singer" already exists → f30f4d29-606f-4d20-8241-a98bef086ed0
+[2026-05-28T17:20:50.338Z] [processQueue] Generating "pop_music"...
+[2026-05-28T17:21:07.016Z] [COST] imageKey="pop_music" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=61 | image: openai/gpt-image-1 in=68 out=272
+[2026-05-28T17:21:07.017Z] [processQueue] Generated "pop_music" → ac0df565-d9c5-4242-8776-09b5d20d90af (6 total)
+[2026-05-28T17:21:07.018Z] [processQueue] FULL REFINED PROMPT for "pop_music": A bold AAC icon of a stylized musical note, specifically an eighth note, depicted in a vibrant, saturated pink or purple color, with two smaller, lighter-colored musical notes (perhaps yellow or light blue) orbiting it with simple motion lines, all against a transparent background, in flat AAC icon style.
+[2026-05-28T17:21:11.206Z] [processQueue] Generating "rock_music"...
+[2026-05-28T17:21:30.731Z] [COST] imageKey="rock_music" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=96 | image: openai/gpt-image-1 in=101 out=272
+[2026-05-28T17:21:30.731Z] [processQueue] Generated "rock_music" → cbf90251-edbc-4b33-856f-21a46779a86c (7 total)
+[2026-05-28T17:21:30.732Z] [processQueue] FULL REFINED PROMPT for "rock_music": A bold AAC icon of a generic human figure, facing forward, with arms raised in a "rock and roll" gesture (index and pinky fingers extended, thumb holding down middle and ring fingers). The figure wears a simple black t-shirt and blue pants. Simple motion lines emanate from the hands. The figure has a simple dot for eyes and a small curved mouth, with no hair. The illustration uses flat, solid colors and bold black outlines on a transparent background.
+[2026-05-28T17:21:34.918Z] [processQueue] Generating "classical_music"...
+[2026-05-28T17:21:49.843Z] [COST] imageKey="classical_music" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=46 | image: openai/gpt-image-1 in=53 out=272
+[2026-05-28T17:21:49.846Z] [processQueue] Generated "classical_music" → 7506704c-ca7b-4df0-aff4-1e024b6bf303 (8 total)
+[2026-05-28T17:21:49.849Z] [processQueue] FULL REFINED PROMPT for "classical_music": A stylized black musical eighth note with a white stem and a white flag, positioned next to a white classical lyre with black strings, all rendered in a flat, bold AAC icon style with thick black outlines on a transparent background.
+[2026-05-28T17:21:54.044Z] [processQueue] "israeli_music" already exists → b8fc303a-e42e-49b5-9dc3-a4d77d7a5d72
+[2026-05-28T17:21:58.251Z] [processQueue] "israeli_music" already exists → b8fc303a-e42e-49b5-9dc3-a4d77d7a5d72
+[2026-05-28T17:22:02.430Z] [processQueue] Generating "action_game"...
+[2026-05-28T17:22:16.672Z] [COST] imageKey="action_game" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=68 | image: openai/gpt-image-1 in=74 out=272
+[2026-05-28T17:22:16.672Z] [processQueue] Generated "action_game" → e9611413-fe10-4c4d-bd00-210985e587f5 (9 total)
+[2026-05-28T17:22:16.673Z] [processQueue] FULL REFINED PROMPT for "action_game": A generic human figure with a large head and simple features, wearing a blue shirt and brown pants, is depicted in a dynamic pose, jumping or running with one arm raised, holding a simple, generic video game controller with two buttons. Bold black outlines, flat solid colors, no gradients, on a transparent background, in AAC icon style.
+[2026-05-28T17:22:20.854Z] [processQueue] Generating "fighting_game"...
+[2026-05-28T17:22:34.296Z] [COST] imageKey="fighting_game" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=70 | image: openai/gpt-image-1 in=77 out=272
+[2026-05-28T17:22:34.296Z] [processQueue] Generated "fighting_game" → 6b79c678-0964-428f-88ab-435ca51f0092 (10 total)
+[2026-05-28T17:22:34.297Z] [processQueue] FULL REFINED PROMPT for "fighting_game": A simple AAC icon of two stylized, generic human figures facing each other in a dynamic combat pose, one figure in red and the other in blue, with simple motion lines indicating punching or kicking. The figures have bold black outlines and flat, solid colors, with minimal facial features (dots for eyes, small curve for mouth). The background is transparent.
+[2026-05-28T17:22:38.480Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:22:42.705Z] [processQueue] "action_game" already exists → e9611413-fe10-4c4d-bd00-210985e587f5
+[2026-05-28T17:22:46.889Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:22:51.072Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:22:55.254Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:22:59.437Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:23:03.618Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:23:07.796Z] [processQueue] "adventure_scene" already exists → 6d2f9bbb-9bc2-45ff-bde7-92f6f4d95ff2
+[2026-05-28T17:32:13.760Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:32:13.762Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:32:16.513Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:32:16.513Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:32:26.771Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:32:26.772Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:33:08.171Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:33:08.172Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:33:25.898Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:33:25.898Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:33:40.577Z] [resolveImageKeys] Resolving 2 keys: my_day, my_interests (format=api-path, useUnapproved=true)
+[2026-05-28T17:33:42.671Z] [resolveImageKeys] Resolved "my_day" → /api/custom-symbols/d4c49758-247d-4393-9ded-94d418c01b82/image
+[2026-05-28T17:33:43.868Z] [resolveImageKeys] No symbol found for "my_interests"
+[2026-05-28T17:33:43.869Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: my_interests
+[2026-05-28T17:33:43.870Z] [queueGeneration] Queuing 1 keys: my_interests (hasCallback=true)
+[2026-05-28T17:33:44.261Z] [processQueue] Generating "my_interests"...
+[2026-05-28T17:33:54.019Z] [resolveImageKeys] Resolving 2 keys: fish_aquarium, animals_zoo (format=api-path, useUnapproved=true)
+[2026-05-28T17:33:54.571Z] [resolveImageKeys] No symbol found for "fish_aquarium"
+[2026-05-28T17:33:55.610Z] [resolveImageKeys] No symbol found for "animals_zoo"
+[2026-05-28T17:33:55.610Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: fish_aquarium, animals_zoo
+[2026-05-28T17:33:55.611Z] [queueGeneration] Queuing 2 keys: fish_aquarium, animals_zoo (hasCallback=true)
+[2026-05-28T17:34:00.700Z] [COST] imageKey="my_interests" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=93 | image: openai/gpt-image-1 in=100 out=272
+[2026-05-28T17:34:00.701Z] [processQueue] Generated "my_interests" → 0d0c46e2-c981-47ee-9815-ffc5465a6af0 (1 total)
+[2026-05-28T17:34:00.702Z] [processQueue] FULL REFINED PROMPT for "my_interests": A generic human figure, facing forward, with a simple smile, surrounded by a thought bubble containing various small, simple icons representing common interests: a book, a music note, a paintbrush, and a soccer ball. The figure has a light skin tone, a simple blue shirt, and no hair. The icons within the thought bubble are distinct colors. The overall image has bold black outlines and flat, solid colors, on a transparent background, in AAC icon style.
+[2026-05-28T17:34:04.955Z] [processQueue] Generating "animals_zoo"...
+[2026-05-28T17:34:20.745Z] [COST] imageKey="animals_zoo" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=77 | image: openai/gpt-image-1 in=84 out=272
+[2026-05-28T17:34:20.745Z] [processQueue] Generated "animals_zoo" → 2c059235-6ecd-4d82-9198-7392b6b791fa (2 total)
+[2026-05-28T17:34:20.746Z] [processQueue] FULL REFINED PROMPT for "animals_zoo": A simple, bold AAC icon illustration of a group of generic zoo animals. The image features a stylized brown lion with a yellow mane, a gray elephant with large ears and a trunk, and a black and white striped zebra, all standing together. The animals are depicted in a flat, solid color style with thick black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-05-28T17:34:24.924Z] [processQueue] Generating "fish_aquarium"...
+[2026-05-28T17:34:31.368Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:34:31.368Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:34:37.269Z] [resolveImageKeys] Resolving 1 keys: fish_deep_sea (format=internal, useUnapproved=true)
+[2026-05-28T17:34:37.810Z] [resolveImageKeys] No symbol found for "fish_deep_sea"
+[2026-05-28T17:34:37.811Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: fish_deep_sea
+[2026-05-28T17:34:37.812Z] [queueGeneration] Queuing 1 keys: fish_deep_sea (hasCallback=true)
+[2026-05-28T17:34:37.816Z] [resolveImageKeys] Resolving 1 keys: fish_deep_sea (format=api-path, useUnapproved=true)
+[2026-05-28T17:34:38.969Z] [resolveImageKeys] No symbol found for "fish_deep_sea"
+[2026-05-28T17:34:38.970Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: fish_deep_sea
+[2026-05-28T17:34:38.971Z] [queueGeneration] Queuing 1 keys: fish_deep_sea (hasCallback=true)
+[2026-05-28T17:34:39.191Z] [COST] imageKey="fish_aquarium" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=52 | image: openai/gpt-image-1 in=58 out=272
+[2026-05-28T17:34:39.192Z] [processQueue] Generated "fish_aquarium" → 60aae522-ace8-468b-963e-74e17e23cfdb (3 total)
+[2026-05-28T17:34:39.193Z] [processQueue] FULL REFINED PROMPT for "fish_aquarium": A rectangular glass fish tank filled with blue water, containing a single orange fish swimming to the right, with a few green aquatic plants at the bottom, all rendered in a flat, bold AAC icon style with thick black outlines and solid colors on a transparent background.
+[2026-05-28T17:34:43.377Z] [processQueue] Generating "fish_deep_sea"...
+[2026-05-28T17:34:45.649Z] [resolveImageKeys] Resolving 2 keys: fish_deep_sea, fish_dark (format=internal, useUnapproved=true)
+[2026-05-28T17:34:46.469Z] [resolveImageKeys] No symbol found for "fish_deep_sea"
+[2026-05-28T17:34:47.500Z] [resolveImageKeys] No symbol found for "fish_dark"
+[2026-05-28T17:34:47.500Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: fish_deep_sea, fish_dark
+[2026-05-28T17:34:47.501Z] [queueGeneration] Queuing 2 keys: fish_deep_sea, fish_dark (hasCallback=true)
+[2026-05-28T17:34:47.503Z] [resolveImageKeys] Resolving 2 keys: fish_deep_sea, fish_dark (format=api-path, useUnapproved=true)
+[2026-05-28T17:34:47.789Z] [resolveImageKeys] No symbol found for "fish_deep_sea"
+[2026-05-28T17:34:48.053Z] [resolveImageKeys] No symbol found for "fish_dark"
+[2026-05-28T17:34:48.054Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: fish_deep_sea, fish_dark
+[2026-05-28T17:34:48.054Z] [queueGeneration] Queuing 2 keys: fish_deep_sea, fish_dark (hasCallback=true)
+[2026-05-28T17:34:52.851Z] [resolveImageKeys] Resolving 4 keys: octopus_giant, eel, shark, fish_dark (format=internal, useUnapproved=true)
+[2026-05-28T17:34:53.414Z] [resolveImageKeys] No symbol found for "octopus_giant"
+[2026-05-28T17:34:54.436Z] [resolveImageKeys] No symbol found for "eel"
+[2026-05-28T17:34:54.779Z] [resolveImageKeys] No symbol found for "shark"
+[2026-05-28T17:34:54.952Z] [resolveImageKeys] No symbol found for "fish_dark"
+[2026-05-28T17:34:54.954Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: octopus_giant, eel, shark, fish_dark
+[2026-05-28T17:34:54.958Z] [queueGeneration] Queuing 4 keys: octopus_giant, eel, shark, fish_dark (hasCallback=true)
+[2026-05-28T17:34:54.962Z] [resolveImageKeys] Resolving 4 keys: octopus_giant, eel, shark, fish_dark (format=api-path, useUnapproved=true)
+[2026-05-28T17:34:55.139Z] [resolveImageKeys] No symbol found for "octopus_giant"
+[2026-05-28T17:34:55.314Z] [resolveImageKeys] No symbol found for "eel"
+[2026-05-28T17:34:55.487Z] [resolveImageKeys] No symbol found for "shark"
+[2026-05-28T17:34:55.659Z] [resolveImageKeys] No symbol found for "fish_dark"
+[2026-05-28T17:34:55.659Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: octopus_giant, eel, shark, fish_dark
+[2026-05-28T17:34:55.660Z] [queueGeneration] Queuing 4 keys: octopus_giant, eel, shark, fish_dark (hasCallback=true)
+[2026-05-28T17:34:59.877Z] [COST] imageKey="fish_deep_sea" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=53 | image: openai/gpt-image-1 in=63 out=272
+[2026-05-28T17:34:59.878Z] [processQueue] Generated "fish_deep_sea" → 1fed1f18-d80f-4ab3-ba40-9f3d3c67d164 (4 total)
+[2026-05-28T17:34:59.880Z] [processQueue] FULL REFINED PROMPT for "fish_deep_sea": A stylized deep-sea fish, depicted in profile, with a dark blue body, a large head, and a prominent bioluminescent lure dangling from its forehead, in flat AAC icon style. The fish has simple fins and a small, open mouth with tiny teeth.
+[2026-05-28T17:35:04.070Z] [processQueue] Generating "fish_dark"...
+[2026-05-28T17:35:05.820Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:35:05.821Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:35:12.720Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=internal, useUnapproved=true)
+[2026-05-28T17:35:13.255Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:14.277Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:14.278Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:14.280Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:14.284Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:14.462Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:14.811Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:14.812Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:14.813Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:20.653Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=internal, useUnapproved=true)
+[2026-05-28T17:35:21.211Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:22.238Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:22.239Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:22.240Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:22.242Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:22.762Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:23.086Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:23.087Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:23.087Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:23.737Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=internal, useUnapproved=true)
+[2026-05-28T17:35:24.273Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:25.304Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:25.305Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:25.306Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:25.308Z] [resolveImageKeys] Resolving 2 keys: octopus_arms, octopus_eyes (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:25.471Z] [COST] imageKey="fish_dark" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=63 | image: openai/gpt-image-1 in=69 out=272
+[2026-05-28T17:35:25.473Z] [processQueue] Generated "fish_dark" → e33ebb87-2368-41fc-a2ae-497ee882927c (5 total)
+[2026-05-28T17:35:25.473Z] [processQueue] FULL REFINED PROMPT for "fish_dark": A simple, bold AAC icon of a dark gray fish swimming to the right, with a single black eye and a simple curved mouth. The fish has a rounded body, a triangular tail fin, and two small fins on its underside, all outlined in thick black. The color is a flat, solid dark gray.
+[2026-05-28T17:35:25.997Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:26.507Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:26.508Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: octopus_arms, octopus_eyes
+[2026-05-28T17:35:26.509Z] [queueGeneration] Queuing 2 keys: octopus_arms, octopus_eyes (hasCallback=true)
+[2026-05-28T17:35:27.187Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=internal, useUnapproved=true)
+[2026-05-28T17:35:27.728Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:28.757Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:28.930Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:29.102Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:29.281Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:29.283Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:29.285Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:29.290Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:29.474Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:29.801Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:29.816Z] [processQueue] Generating "octopus_eyes"...
+[2026-05-28T17:35:29.967Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:30.134Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:30.302Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:30.303Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:30.303Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:33.177Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=internal, useUnapproved=true)
+[2026-05-28T17:35:33.716Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:34.740Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:34.910Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:35.082Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:35.256Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:35.256Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:35.257Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:35.259Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:35.739Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:36.063Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:37.150Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:38.385Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:39.383Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:39.384Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:39.385Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:40.965Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=internal, useUnapproved=true)
+[2026-05-28T17:35:41.678Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:42.702Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:42.873Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:43.044Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:43.216Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:43.216Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:43.217Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:43.219Z] [resolveImageKeys] Resolving 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:43.399Z] [resolveImageKeys] No symbol found for "octopus_arms"
+[2026-05-28T17:35:43.572Z] [resolveImageKeys] No symbol found for "octopus_eyes"
+[2026-05-28T17:35:43.747Z] [resolveImageKeys] No symbol found for "octopus_mean"
+[2026-05-28T17:35:43.920Z] [resolveImageKeys] No symbol found for "octopus_chasing"
+[2026-05-28T17:35:44.093Z] [resolveImageKeys] No symbol found for "octopus_eating_fish"
+[2026-05-28T17:35:44.094Z] [resolveImageKeys] Done. Resolved 0, unresolved 5: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish
+[2026-05-28T17:35:44.095Z] [queueGeneration] Queuing 5 keys: octopus_arms, octopus_eyes, octopus_mean, octopus_chasing, octopus_eating_fish (hasCallback=true)
+[2026-05-28T17:35:48.395Z] [COST] imageKey="octopus_eyes" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=73 | image: openai/gpt-image-1 in=78 out=272
+[2026-05-28T17:35:48.397Z] [processQueue] Generated "octopus_eyes" → fdbb34af-0f63-45d0-a6d9-378d7a0a1a43 (6 total)
+[2026-05-28T17:35:48.398Z] [processQueue] FULL REFINED PROMPT for "octopus_eyes": A close-up of a cartoon octopus's head, showing two large, round, black eyes with white pupils, set on a purple head. The eyes are prominent and centered, with a simple, curved line for the mouth below them. The illustration is in a flat, bold AAC icon style with thick black outlines and solid colors, on a transparent background.
+[2026-05-28T17:35:52.118Z] [resolveImageKeys] Resolving 3 keys: squid, crab_giant, starfish_deep (format=internal, useUnapproved=true)
+[2026-05-28T17:35:52.640Z] [resolveImageKeys] No symbol found for "squid"
+[2026-05-28T17:35:53.682Z] [processQueue] Generating "octopus_eating_fish"...
+[2026-05-28T17:35:53.685Z] [resolveImageKeys] No symbol found for "crab_giant"
+[2026-05-28T17:35:53.973Z] [resolveImageKeys] No symbol found for "starfish_deep"
+[2026-05-28T17:35:53.973Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: squid, crab_giant, starfish_deep
+[2026-05-28T17:35:53.974Z] [queueGeneration] Queuing 3 keys: squid, crab_giant, starfish_deep (hasCallback=true)
+[2026-05-28T17:35:53.976Z] [resolveImageKeys] Resolving 3 keys: squid, crab_giant, starfish_deep (format=api-path, useUnapproved=true)
+[2026-05-28T17:35:54.197Z] [resolveImageKeys] No symbol found for "squid"
+[2026-05-28T17:35:54.367Z] [resolveImageKeys] No symbol found for "crab_giant"
+[2026-05-28T17:35:54.537Z] [resolveImageKeys] No symbol found for "starfish_deep"
+[2026-05-28T17:35:54.538Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: squid, crab_giant, starfish_deep
+[2026-05-28T17:35:54.539Z] [queueGeneration] Queuing 3 keys: squid, crab_giant, starfish_deep (hasCallback=true)
+[2026-05-28T17:35:58.349Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-28T17:35:58.350Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-28T17:36:09.992Z] [COST] imageKey="octopus_eating_fish" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=62 | image: openai/gpt-image-1 in=71 out=272
+[2026-05-28T17:36:09.993Z] [processQueue] Generated "octopus_eating_fish" → a994e1a0-10a2-4fab-95d2-201ff7eeaed0 (7 total)
+[2026-05-28T17:36:09.994Z] [processQueue] FULL REFINED PROMPT for "octopus_eating_fish": A purple octopus with eight tentacles, two of which are holding a small orange fish towards its mouth. The octopus has simple dot eyes and a small curved mouth. The fish is shown from the side, with a simple fin and tail. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-05-28T17:36:11.993Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:36:12.539Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:36:12.540Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:36:12.542Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:36:12.545Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:36:13.787Z] [resolveImageKeys] No symbol found for "session_review"
+[2026-05-28T17:36:13.791Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review
+[2026-05-28T17:36:13.794Z] [queueGeneration] Queuing 1 keys: session_review (hasCallback=true)
+[2026-05-28T17:36:14.182Z] [processQueue] Generating "starfish_deep"...
+[2026-05-28T17:36:20.263Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:36:20.801Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:36:20.802Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:36:20.802Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:36:20.804Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:36:22.023Z] [resolveImageKeys] No symbol found for "session_review"
+[2026-05-28T17:36:22.024Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review
+[2026-05-28T17:36:22.024Z] [queueGeneration] Queuing 1 keys: session_review (hasCallback=true)
+[2026-05-28T17:36:23.347Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:36:24.077Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:36:24.078Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:36:24.078Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:36:24.080Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:36:25.451Z] [resolveImageKeys] No symbol found for "session_review"
+[2026-05-28T17:36:25.451Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review
+[2026-05-28T17:36:25.452Z] [queueGeneration] Queuing 1 keys: session_review (hasCallback=true)
+[2026-05-28T17:36:34.433Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:36:35.253Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:36:35.255Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:36:35.257Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:36:35.260Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:36:36.292Z] [resolveImageKeys] No symbol found for "session_review"
+[2026-05-28T17:36:36.293Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review
+[2026-05-28T17:36:36.295Z] [queueGeneration] Queuing 1 keys: session_review (hasCallback=true)
+[2026-05-28T17:36:36.500Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:36:37.284Z] [COST] imageKey="starfish_deep" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=29 | image: openai/gpt-image-1 in=36 out=272
+[2026-05-28T17:36:37.286Z] [processQueue] Generated "starfish_deep" → 86b26735-8f8e-4958-858d-9e2e27cc1342 (8 total)
+[2026-05-28T17:36:37.288Z] [processQueue] FULL REFINED PROMPT for "starfish_deep": A five-armed sea star, bright orange with small red circular markings, resting on a flat dark blue seabed, in flat AAC icon style.
+[2026-05-28T17:36:39.444Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:36:39.445Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:36:39.445Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:36:39.447Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:36:41.237Z] [resolveImageKeys] No symbol found for "session_review"
+[2026-05-28T17:36:41.238Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review
+[2026-05-28T17:36:41.239Z] [queueGeneration] Queuing 1 keys: session_review (hasCallback=true)
+[2026-05-28T17:36:41.633Z] [processQueue] Generating "session_review"...
+[2026-05-28T17:36:58.152Z] [COST] imageKey="session_review" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=80 | image: openai/gpt-image-1 in=88 out=272
+[2026-05-28T17:36:58.153Z] [processQueue] Generated "session_review" → 82f9a18f-dd3b-4316-a05d-76db8a111d0c (9 total)
+[2026-05-28T17:36:58.154Z] [processQueue] FULL REFINED PROMPT for "session_review": A simple AAC icon of a generic person, facing forward, with a thought bubble above their head containing a magnifying glass icon, indicating review or analysis. The person has a neutral expression with simple dot eyes and a small curved mouth. The magnifying glass has a bold black outline and a clear lens. The icon uses a limited palette of bold, flat colors on a transparent background, with strong black outlines.
+[2026-05-28T17:37:00.087Z] [resolveImageKeys] Resolving 1 keys: session_review#question (format=internal, useUnapproved=true)
+[2026-05-28T17:37:01.448Z] [resolveImageKeys] No symbol found for "session_review#question"
+[2026-05-28T17:37:01.449Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: session_review#question
+[2026-05-28T17:37:01.449Z] [queueGeneration] Queuing 1 keys: session_review#question (hasCallback=true)
+[2026-05-28T17:37:01.451Z] [resolveImageKeys] Resolving 1 keys: session_review (format=api-path, useUnapproved=true)
+[2026-05-28T17:37:03.065Z] [resolveImageKeys] Resolved "session_review" → /api/custom-symbols/82f9a18f-dd3b-4316-a05d-76db8a111d0c/image
+[2026-05-28T17:37:03.066Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-28T17:37:03.236Z] [processQueue] "session_review" already exists → 82f9a18f-dd3b-4316-a05d-76db8a111d0c
+[2026-05-28T17:37:07.423Z] [processQueue] Generating "session_review#question"...
+[2026-05-29T06:24:26.490Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:24:26.491Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:24:38.503Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:24:38.504Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:24:40.093Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:24:40.093Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:24:55.828Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:24:55.828Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:25:03.807Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:25:03.808Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:25:11.294Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:25:11.295Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:25:16.151Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:25:16.153Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:25:27.550Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:25:27.551Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:25:34.701Z] [resolveImageKeys] Resolving 1 keys: cat_type#question (format=internal, useUnapproved=true)
+[2026-05-29T06:25:35.327Z] [resolveImageKeys] No symbol found for "cat_type#question"
+[2026-05-29T06:25:35.328Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type#question
+[2026-05-29T06:25:35.329Z] [queueGeneration] Queuing 1 keys: cat_type#question (hasCallback=true)
+[2026-05-29T06:25:35.334Z] [resolveImageKeys] Resolving 1 keys: cat_type (format=api-path, useUnapproved=true)
+[2026-05-29T06:25:36.470Z] [processQueue] Generating "cat_type#question"...
+[2026-05-29T06:25:36.547Z] [resolveImageKeys] No symbol found for "cat_type"
+[2026-05-29T06:25:36.548Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type
+[2026-05-29T06:25:36.550Z] [queueGeneration] Queuing 1 keys: cat_type (hasCallback=true)
+[2026-05-29T06:25:42.726Z] [resolveImageKeys] Resolving 1 keys: cat_type#question (format=internal, useUnapproved=true)
+[2026-05-29T06:25:43.286Z] [resolveImageKeys] No symbol found for "cat_type#question"
+[2026-05-29T06:25:43.289Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type#question
+[2026-05-29T06:25:43.291Z] [queueGeneration] Queuing 1 keys: cat_type#question (hasCallback=true)
+[2026-05-29T06:25:43.296Z] [resolveImageKeys] Resolving 1 keys: cat_type (format=api-path, useUnapproved=true)
+[2026-05-29T06:25:44.468Z] [resolveImageKeys] No symbol found for "cat_type"
+[2026-05-29T06:25:44.469Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type
+[2026-05-29T06:25:44.470Z] [queueGeneration] Queuing 1 keys: cat_type (hasCallback=true)
+[2026-05-29T06:25:51.022Z] [resolveImageKeys] Resolving 1 keys: cat_type#question (format=internal, useUnapproved=true)
+[2026-05-29T06:25:51.582Z] [resolveImageKeys] No symbol found for "cat_type#question"
+[2026-05-29T06:25:51.583Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type#question
+[2026-05-29T06:25:51.584Z] [queueGeneration] Queuing 1 keys: cat_type#question (hasCallback=true)
+[2026-05-29T06:25:51.586Z] [resolveImageKeys] Resolving 1 keys: cat_type (format=api-path, useUnapproved=true)
+[2026-05-29T06:25:52.715Z] [resolveImageKeys] No symbol found for "cat_type"
+[2026-05-29T06:25:52.716Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type
+[2026-05-29T06:25:52.716Z] [queueGeneration] Queuing 1 keys: cat_type (hasCallback=true)
+[2026-05-29T06:26:00.641Z] [COST] imageKey="cat_type#question" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=100 | image: openai/gpt-image-1 in=106 out=272
+[2026-05-29T06:26:00.642Z] [processQueue] Generated "cat_type#question" → 89edf38e-4837-456a-a0a8-71099702171f (1 total)
+[2026-05-29T06:26:00.642Z] [processQueue] FULL REFINED PROMPT for "cat_type#question": A simple, bold AAC icon illustration of a generic cat. The cat is sitting, facing forward, with its tail curled around its body. A large, bold black question mark floats above its head, indicating confusion or inquiry. The cat has two pointed ears, simple dot eyes, and a small nose and mouth. The cat is rendered in a solid orange color with black outlines, and the question mark is solid black. The image has a transparent background, flat colors, and no gradients or shadows.
+[2026-05-29T06:26:04.822Z] [processQueue] Generating "cat_type"...
+[2026-05-29T06:26:05.768Z] [resolveImageKeys] Resolving 1 keys: cat_type#question (format=internal, useUnapproved=true)
+[2026-05-29T06:26:06.312Z] [resolveImageKeys] Resolved "cat_type#question" → __SYMBOL__:89edf38e-4837-456a-a0a8-71099702171f
+[2026-05-29T06:26:06.313Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T06:26:06.316Z] [resolveImageKeys] Resolving 1 keys: cat_type (format=api-path, useUnapproved=true)
+[2026-05-29T06:26:07.684Z] [resolveImageKeys] No symbol found for "cat_type"
+[2026-05-29T06:26:07.685Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: cat_type
+[2026-05-29T06:26:07.686Z] [queueGeneration] Queuing 1 keys: cat_type (hasCallback=true)
+[2026-05-29T06:26:13.687Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:26:13.690Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:26:21.328Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:26:21.329Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:26:26.454Z] [COST] imageKey="cat_type" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=65 | image: openai/gpt-image-1 in=72 out=272
+[2026-05-29T06:26:26.456Z] [processQueue] Generated "cat_type" → e196fbf8-878b-46e3-97dc-50c6390e0d22 (2 total)
+[2026-05-29T06:26:26.457Z] [processQueue] FULL REFINED PROMPT for "cat_type": A simple, stylized cat icon, depicted in profile, sitting with its tail curled around its body. The cat has pointed ears, a small nose, and simple dot eyes. It is rendered in a solid, neutral color like orange or gray, with bold black outlines, on a transparent background, in flat AAC icon style.
+[2026-05-29T06:26:28.982Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:26:28.982Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:26:30.734Z] [processQueue] "cat_type" already exists → e196fbf8-878b-46e3-97dc-50c6390e0d22
+[2026-05-29T06:26:34.906Z] [processQueue] "cat_type#question" already exists → 89edf38e-4837-456a-a0a8-71099702171f
+[2026-05-29T06:26:36.603Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:26:36.604Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:26:39.082Z] [processQueue] "cat_type" already exists → e196fbf8-878b-46e3-97dc-50c6390e0d22
+[2026-05-29T06:26:43.267Z] [processQueue] "cat_type#question" already exists → 89edf38e-4837-456a-a0a8-71099702171f
+[2026-05-29T06:26:47.456Z] [processQueue] "cat_type" already exists → e196fbf8-878b-46e3-97dc-50c6390e0d22
+[2026-05-29T06:38:31.388Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:38:31.390Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:38:31.403Z] [resolveImageKeys] Resolving 1 keys: video (format=api-path, useUnapproved=true)
+[2026-05-29T06:38:32.102Z] [resolveImageKeys] No symbol found for "video"
+[2026-05-29T06:38:32.103Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: video
+[2026-05-29T06:38:32.104Z] [queueGeneration] Queuing 1 keys: video (hasCallback=true)
+[2026-05-29T06:38:33.052Z] [processQueue] Generating "video"...
+[2026-05-29T06:38:40.645Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:38:40.648Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:38:45.642Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:38:45.643Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:38:51.757Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:38:51.758Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:38:53.700Z] [COST] imageKey="video" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=35 | image: openai/gpt-image-1 in=41 out=272
+[2026-05-29T06:38:53.701Z] [processQueue] Generated "video" → af8cb4ab-55ae-4e2d-b09b-c7eb5a0d9514 (1 total)
+[2026-05-29T06:38:53.702Z] [processQueue] FULL REFINED PROMPT for "video": A flat AAC icon illustration of a classic rectangular video cassette tape, shown from the front with the two circular reels visible through the clear plastic window, in flat AAC icon style.
+[2026-05-29T06:38:56.146Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:38:56.147Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:39:04.100Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:39:04.101Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:39:11.700Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:39:11.700Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:39:24.728Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:39:24.729Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:39:26.278Z] [resolveImageKeys] Resolving 2 keys: family, hobbies (format=internal, useUnapproved=true)
+[2026-05-29T06:39:28.107Z] [resolveImageKeys] No symbol found for "family"
+[2026-05-29T06:39:29.247Z] [resolveImageKeys] No symbol found for "hobbies"
+[2026-05-29T06:39:29.248Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: family, hobbies
+[2026-05-29T06:39:29.249Z] [queueGeneration] Queuing 2 keys: family, hobbies (hasCallback=true)
+[2026-05-29T06:39:29.252Z] [resolveImageKeys] Resolving 2 keys: family, hobbies (format=api-path, useUnapproved=true)
+[2026-05-29T06:39:29.580Z] [processQueue] Generating "hobbies"...
+[2026-05-29T06:39:29.605Z] [resolveImageKeys] No symbol found for "family"
+[2026-05-29T06:39:29.785Z] [resolveImageKeys] No symbol found for "hobbies"
+[2026-05-29T06:39:29.787Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: family, hobbies
+[2026-05-29T06:39:29.789Z] [queueGeneration] Queuing 2 keys: family, hobbies (hasCallback=true)
+[2026-05-29T06:39:35.923Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:39:35.924Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:39:35.926Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T06:39:36.480Z] [resolveImageKeys] No symbol found for "outer_space"
+[2026-05-29T06:39:36.481Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: outer_space
+[2026-05-29T06:39:36.482Z] [queueGeneration] Queuing 1 keys: outer_space (hasCallback=true)
+[2026-05-29T06:39:51.994Z] [COST] imageKey="hobbies" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=67 | image: openai/gpt-image-1 in=74 out=272
+[2026-05-29T06:39:51.995Z] [processQueue] Generated "hobbies" → 04a5c2df-5012-4938-b6fd-fe10b36fc5a6 (1 total)
+[2026-05-29T06:39:51.996Z] [processQueue] FULL REFINED PROMPT for "hobbies": A collection of small, distinct objects representing various hobbies, arranged neatly within a square frame. The objects include a simplified paintbrush and palette, a small book, a musical note, and a sports ball. Each object is rendered with bold black outlines and flat, solid, saturated colors, on a transparent background, in flat AAC icon style.
+[2026-05-29T06:39:56.178Z] [processQueue] Generating "outer_space"...
+[2026-05-29T06:40:01.556Z] [resolveImageKeys] Resolving 2 keys: planet#question, planets (format=internal, useUnapproved=true)
+[2026-05-29T06:40:02.125Z] [resolveImageKeys] No symbol found for "planet#question"
+[2026-05-29T06:40:03.149Z] [resolveImageKeys] Resolved "planets" → __SYMBOL__:518b6c61-65df-4571-821f-a7a9e67c961e
+[2026-05-29T06:40:03.149Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: planet#question
+[2026-05-29T06:40:03.150Z] [queueGeneration] Queuing 1 keys: planet#question (hasCallback=true)
+[2026-05-29T06:40:03.155Z] [resolveImageKeys] Resolving 2 keys: planet, planets (format=api-path, useUnapproved=true)
+[2026-05-29T06:40:03.404Z] [resolveImageKeys] Resolved "planet" → /api/custom-symbols/2c9c7fbb-d016-4c10-9063-626e21d0ba4b/image
+[2026-05-29T06:40:03.676Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-29T06:40:03.677Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-29T06:40:10.507Z] [resolveImageKeys] Resolving 2 keys: planet#question, black_hole (format=internal, useUnapproved=true)
+[2026-05-29T06:40:11.076Z] [resolveImageKeys] No symbol found for "planet#question"
+[2026-05-29T06:40:12.750Z] [resolveImageKeys] No symbol found for "black_hole"
+[2026-05-29T06:40:12.751Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: planet#question, black_hole
+[2026-05-29T06:40:12.752Z] [queueGeneration] Queuing 2 keys: planet#question, black_hole (hasCallback=true)
+[2026-05-29T06:40:12.754Z] [resolveImageKeys] Resolving 3 keys: planet, planets, black_hole (format=api-path, useUnapproved=true)
+[2026-05-29T06:40:13.291Z] [COST] imageKey="outer_space" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=26 | image: openai/gpt-image-1 in=33 out=272
+[2026-05-29T06:40:13.291Z] [processQueue] Generated "outer_space" → 42929aa6-19c4-41fd-915d-7345adfee3af (2 total)
+[2026-05-29T06:40:13.292Z] [processQueue] FULL REFINED PROMPT for "outer_space": A dark blue and black night sky with several bright white stars of various sizes and a crescent moon, in flat AAC icon style.
+[2026-05-29T06:40:13.338Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:40:13.339Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:40:13.343Z] [resolveImageKeys] Resolving 1 keys: planets (format=api-path, useUnapproved=true)
+[2026-05-29T06:40:13.553Z] [resolveImageKeys] Resolved "planet" → /api/custom-symbols/2c9c7fbb-d016-4c10-9063-626e21d0ba4b/image
+[2026-05-29T06:40:14.369Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-29T06:40:14.370Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T06:40:15.521Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-29T06:40:16.014Z] [resolveImageKeys] No symbol found for "black_hole"
+[2026-05-29T06:40:16.014Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: black_hole
+[2026-05-29T06:40:16.027Z] [queueGeneration] Queuing 1 keys: black_hole (hasCallback=true)
+[2026-05-29T06:40:17.479Z] [processQueue] Generating "black_hole"...
+[2026-05-29T06:40:25.619Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T06:40:25.621Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T06:40:25.624Z] [resolveImageKeys] Resolving 2 keys: planets, black_hole (format=api-path, useUnapproved=true)
+[2026-05-29T06:40:26.308Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-29T06:40:27.373Z] [resolveImageKeys] No symbol found for "black_hole"
+[2026-05-29T06:40:27.374Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: black_hole
+[2026-05-29T06:40:27.379Z] [queueGeneration] Queuing 1 keys: black_hole (hasCallback=true)
+[2026-05-29T06:40:30.879Z] [COST] imageKey="black_hole" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=45 out=272
+[2026-05-29T06:40:30.880Z] [processQueue] Generated "black_hole" → 3202dc2f-d64e-4eac-82da-427e3ba6a02a (3 total)
+[2026-05-29T06:40:30.881Z] [processQueue] FULL REFINED PROMPT for "black_hole": A flat AAC icon illustration of a swirling black void with a bright white circular outline, surrounded by a thin ring of red and orange light, indicating a powerful gravitational pull, on a transparent background.
+[2026-05-29T06:40:35.055Z] [processQueue] "black_hole" already exists → 3202dc2f-d64e-4eac-82da-427e3ba6a02a
+[2026-05-29T06:40:38.288Z] [resolveImageKeys] Resolving 2 keys: planets, black_hole (format=internal, useUnapproved=true)
+[2026-05-29T06:40:38.779Z] [resolveImageKeys] Resolved "planets" → __SYMBOL__:518b6c61-65df-4571-821f-a7a9e67c961e
+[2026-05-29T06:40:39.655Z] [resolveImageKeys] Resolved "black_hole" → __SYMBOL__:3202dc2f-d64e-4eac-82da-427e3ba6a02a
+[2026-05-29T06:40:39.656Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-29T06:40:39.658Z] [resolveImageKeys] Resolving 2 keys: planets, black_hole (format=api-path, useUnapproved=true)
+[2026-05-29T06:40:39.770Z] [processQueue] "black_hole" already exists → 3202dc2f-d64e-4eac-82da-427e3ba6a02a
+[2026-05-29T06:40:40.002Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-05-29T06:40:40.349Z] [resolveImageKeys] Resolved "black_hole" → /api/custom-symbols/3202dc2f-d64e-4eac-82da-427e3ba6a02a/image
+[2026-05-29T06:40:40.350Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-29T06:40:44.060Z] [processQueue] Generating "planet#question"...
+[2026-05-29T06:41:01.526Z] [COST] imageKey="planet#question" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=43 | image: openai/gpt-image-1 in=50 out=272
+[2026-05-29T06:41:01.528Z] [processQueue] Generated "planet#question" → 5bd3d041-b313-458f-b657-2373166debcc (4 total)
+[2026-05-29T06:41:01.530Z] [processQueue] FULL REFINED PROMPT for "planet#question": A stylized blue planet with green landmasses, featuring a large white question mark prominently displayed on its surface, all rendered with bold black outlines and flat, solid colors on a transparent background, in AAC icon style.
+[2026-05-29T06:41:05.725Z] [processQueue] "planet#question" already exists → 5bd3d041-b313-458f-b657-2373166debcc
+[2026-05-29T06:41:09.904Z] [processQueue] "hobbies" already exists → 04a5c2df-5012-4938-b6fd-fe10b36fc5a6
+[2026-05-29T06:41:14.095Z] [processQueue] Generating "family"...
+[2026-05-29T06:41:27.833Z] [COST] imageKey="family" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=98 | image: openai/gpt-image-1 in=105 out=272
+[2026-05-29T06:41:27.834Z] [processQueue] Generated "family" → 3df06b89-02bc-43c4-b17f-9679df1d931f (5 total)
+[2026-05-29T06:41:27.835Z] [processQueue] FULL REFINED PROMPT for "family": A simple AAC icon illustration of a family group, featuring three stylized figures: a taller adult figure, a slightly shorter adult figure, and a child figure, standing together. All figures have simple dot eyes and a small curved mouth. The adult figures have no hair, and the child figure has no hair. All figures wear simple, generic clothing. The figures are rendered with bold black outlines and flat, solid colors, on a transparent background, in a clean, instantly recognizable AAC symbol style.
+[2026-05-29T06:41:32.016Z] [processQueue] "family" already exists → 3df06b89-02bc-43c4-b17f-9679df1d931f
+[2026-05-29T07:00:25.925Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:25.926Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:25.931Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:00:26.651Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:00:26.652Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:00:34.300Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:34.301Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:39.466Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:39.467Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:50.561Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:50.562Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:54.894Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:54.895Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:57.495Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:00:57.496Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:00:57.502Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:00:58.446Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:00:58.446Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:06.468Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:06.468Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:06.476Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:07.181Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:07.182Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:10.492Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:10.493Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:10.496Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:11.212Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:11.213Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:14.827Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:14.827Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:14.833Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:15.544Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:15.544Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:16.302Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:16.303Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:16.308Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:18.199Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:18.200Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:21.972Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:21.973Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:21.977Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:22.687Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:22.688Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:01:25.925Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:01:25.930Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:01:25.936Z] [resolveImageKeys] Resolving 1 keys: outer_space (format=api-path, useUnapproved=true)
+[2026-05-29T07:01:26.681Z] [resolveImageKeys] Resolved "outer_space" → /api/custom-symbols/42929aa6-19c4-41fd-915d-7345adfee3af/image
+[2026-05-29T07:01:26.683Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:21:36.658Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:21:36.660Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:21:47.664Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:21:47.666Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:21:50.720Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:21:50.721Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:21:54.239Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:21:54.240Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:21:57.909Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:21:57.910Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:04.524Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:22:04.525Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:09.351Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:22:09.353Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:11.092Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:22:11.093Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:18.967Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:22:18.968Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:24.784Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T07:22:24.785Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T07:22:33.512Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=internal, useUnapproved=true)
+[2026-05-29T07:22:34.462Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-29T07:22:34.463Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:22:34.465Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=api-path, useUnapproved=true)
+[2026-05-29T07:22:35.548Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-29T07:22:35.549Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:22:44.294Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=internal, useUnapproved=true)
+[2026-05-29T07:22:44.790Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-29T07:22:44.791Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:22:44.794Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=api-path, useUnapproved=true)
+[2026-05-29T07:22:45.853Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-29T07:22:45.854Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:22:54.295Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=internal, useUnapproved=true)
+[2026-05-29T07:22:54.790Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-29T07:22:54.791Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:22:54.793Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=api-path, useUnapproved=true)
+[2026-05-29T07:22:55.826Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-29T07:22:55.826Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:23:09.879Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=internal, useUnapproved=true)
+[2026-05-29T07:23:10.375Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-29T07:23:10.376Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:23:10.378Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=api-path, useUnapproved=true)
+[2026-05-29T07:23:11.417Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-29T07:23:11.418Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:23:21.797Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=internal, useUnapproved=true)
+[2026-05-29T07:23:22.305Z] [resolveImageKeys] Resolved "planet_mars" → __SYMBOL__:e81fdc78-6759-4036-9107-f7b77b2aa62a
+[2026-05-29T07:23:22.305Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T07:23:22.308Z] [resolveImageKeys] Resolving 1 keys: planet_mars (format=api-path, useUnapproved=true)
+[2026-05-29T07:23:23.555Z] [resolveImageKeys] Resolved "planet_mars" → /api/custom-symbols/e81fdc78-6759-4036-9107-f7b77b2aa62a/image
+[2026-05-29T07:23:23.557Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-29T10:16:35.459Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:16:35.461Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:16:46.366Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:16:46.367Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:05.743Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:05.744Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:09.935Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:09.936Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:14.737Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:14.739Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:19.658Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:19.659Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:26.979Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:26.979Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:34.330Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:34.330Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:17:55.050Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:17:55.051Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:18:06.784Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:18:06.785Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:18:14.336Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:18:14.338Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:18:21.294Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:18:21.295Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:18:25.805Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:18:25.806Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T10:18:34.606Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T10:18:34.606Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T12:37:10.205Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T12:37:10.206Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T12:37:28.144Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T12:37:28.145Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T12:38:42.885Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T12:38:42.886Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-29T12:40:27.047Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-05-29T12:40:27.048Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

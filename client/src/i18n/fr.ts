@@ -2477,6 +2477,8 @@ export const fr = {
     appBubblesGameDesc: "Éclater des bulles flottantes pour la coordination œil-main",
     appSpaceTrader: "Marchand de l'espace",
     appSpaceTraderDesc: "Pilotez un vaisseau à travers des énigmes commerciales pour capturer l'Étoile",
+    appSocialTrainer: "Entraîneur social",
+    appSocialTrainerDesc: "Entraînez-vous à converser avec un camarade généré proceduralement",
     spotifyConnected: "Spotify connecté",
     spotifyConnect: "Connecter",
     spotifyDisconnect: "Déconnecter",

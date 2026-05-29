@@ -51,6 +51,10 @@ export const de: Translations = {
     selectInstitute: "Organisation",
     chooseInstitute: "Organisation ausw\u00e4hlen",
     chooseInstituteFirst: "Bitte w\u00e4hlen Sie zuerst eine Organisation",
+    selectClassroom: "Klasse",
+    chooseClassroom: "Klasse w\u00e4hlen",
+    noClassroom: "Keine Klasse (einzelner Sch\u00fcler)",
+    noStudentsInClassroom: "Keine Sch\u00fcler in dieser Klasse.",
     loggingOut: "Abmeldung...",
     loginTitle: "Willkommen",
     loginSubtitle: "Melden Sie sich an, um fortzufahren",
@@ -294,6 +298,7 @@ export const de: Translations = {
       what: "Was",
       where: "Wo",
       when: "Wann",
+      chat: "Chat",
     },
     chips: {
       all: "Alle",
@@ -326,6 +331,11 @@ export const de: Translations = {
       clock: "Uhr",
       routine: "Routine",
       frequency: "Häufigkeit",
+      greet: "Begrüßen",
+      polite: "Höflich",
+      reply: "Antwort",
+      react: "Reagieren",
+      turn: "Reihe",
     },
   },
 
@@ -596,6 +606,33 @@ export const de: Translations = {
       always: "Immer",
       never: "Nie",
       sometimes: "Manchmal",
+      hi: "Hi",
+      good_morning: "Guten Morgen",
+      good_night: "Gute Nacht",
+      see_you_later: "Bis später",
+      welcome: "Willkommen",
+      youre_welcome: "Bitte",
+      excuse_me: "Entschuldigung",
+      its_ok: "Schon gut",
+      ok: "OK",
+      understand: "Verstehe",
+      confused: "Verwirrt",
+      wow: "Wow",
+      oops: "Ups",
+      oh_no: "Oh nein",
+      cool: "Cool",
+      yuck: "Igitt",
+      look: "Schau",
+      my_turn: "Ich bin dran",
+      your_turn: "Du bist dran",
+      slow_down: "Langsamer",
+      finished: "Fertig",
+      with: "Mit",
+      for: "Für",
+      instead: "Stattdessen",
+      before: "Vor",
+      after: "Nach",
+      because: "Weil",
     },
   },
 
@@ -642,6 +679,17 @@ export const de: Translations = {
 
   silentMode: {
     placeholder: "Tippen Sie auf Tasten, um einen Satz zu bilden...",
+  },
+
+  appsBoard: {
+    title: "Apps",
+    empty: "Keine Apps aktiviert.",
+  },
+
+  social: {
+    peer: "Partner:",
+    waiting: "Warte auf Partner…",
+    connecting: "Verbinde…",
   },
 
   pause: {

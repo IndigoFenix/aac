@@ -2477,6 +2477,8 @@ export const he = {
     appBubblesGameDesc: "פיצוץ בועות צפות לאימון תיאום עין-יד",
     appSpaceTrader: "סוחר חלל",
     appSpaceTraderDesc: "נווט בחללית דרך חידות מסחר ולכוד את הכוכב",
+    appSocialTrainer: "מאמן חברתי",
+    appSocialTrainerDesc: "תרגלו שיחה עם דמות חבר שנוצרת באופן פרוצדורלי",
     spotifyConnected: "ספוטיפיי מחובר",
     spotifyConnect: "חבר",
     spotifyDisconnect: "נתק",

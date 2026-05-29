@@ -51,6 +51,10 @@ export const ko: Translations = {
     selectInstitute: "기관",
     chooseInstitute: "기관을 선택하세요",
     chooseInstituteFirst: "먼저 기관을 선택해 주세요",
+    selectClassroom: "교실",
+    chooseClassroom: "교실 선택",
+    noClassroom: "교실 없음 (단일 학생)",
+    noStudentsInClassroom: "이 교실에 학생이 없습니다.",
     loggingOut: "로그아웃 중...",
     loginTitle: "환영합니다",
     loginSubtitle: "계속하려면 로그인하세요",
@@ -294,6 +298,7 @@ export const ko: Translations = {
       what: "무엇",
       where: "어디",
       when: "언제",
+      chat: "대화",
     },
     chips: {
       all: "전체",
@@ -326,6 +331,11 @@ export const ko: Translations = {
       clock: "시계",
       routine: "일과",
       frequency: "빈도",
+      greet: "인사",
+      polite: "예의",
+      reply: "답변",
+      react: "반응",
+      turn: "차례",
     },
   },
 
@@ -596,6 +606,33 @@ export const ko: Translations = {
       always: "항상",
       never: "전혀",
       sometimes: "때때로",
+      hi: "안녕",
+      good_morning: "좋은 아침",
+      good_night: "잘 자",
+      see_you_later: "또 봐요",
+      welcome: "환영",
+      youre_welcome: "천만에",
+      excuse_me: "실례합니다",
+      its_ok: "괜찮아",
+      ok: "오케이",
+      understand: "이해",
+      confused: "헷갈려",
+      wow: "우와",
+      oops: "이런",
+      oh_no: "안 돼",
+      cool: "멋져",
+      yuck: "으웩",
+      look: "봐",
+      my_turn: "내 차례",
+      your_turn: "네 차례",
+      slow_down: "천천히",
+      finished: "끝",
+      with: "같이",
+      for: "위해",
+      instead: "대신",
+      before: "전에",
+      after: "후에",
+      because: "왜냐하면",
     },
   },
 
@@ -642,6 +679,17 @@ export const ko: Translations = {
 
   silentMode: {
     placeholder: "버튼을 눌러 문장을 만드세요...",
+  },
+
+  appsBoard: {
+    title: "앱",
+    empty: "활성화된 앱이 없습니다.",
+  },
+
+  social: {
+    peer: "친구:",
+    waiting: "친구를 기다리는 중…",
+    connecting: "연결 중…",
   },
 
   pause: {

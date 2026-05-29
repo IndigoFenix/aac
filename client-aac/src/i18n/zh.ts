@@ -51,6 +51,10 @@ export const zh: Translations = {
     selectInstitute: "机构",
     chooseInstitute: "选择一个机构",
     chooseInstituteFirst: "请先选择一个机构",
+    selectClassroom: "班级",
+    chooseClassroom: "选择班级",
+    noClassroom: "无班级（单个学生）",
+    noStudentsInClassroom: "本班级没有学生。",
     loggingOut: "正在退出登录...",
     loginTitle: "欢迎",
     loginSubtitle: "登录以继续",
@@ -294,6 +298,7 @@ export const zh: Translations = {
       what: "什么",
       where: "哪里",
       when: "何时",
+      chat: "聊天",
     },
     chips: {
       all: "全部",
@@ -326,6 +331,11 @@ export const zh: Translations = {
       clock: "时钟",
       routine: "例行公事",
       frequency: "频率",
+      greet: "问候",
+      polite: "礼貌",
+      reply: "回应",
+      react: "反应",
+      turn: "轮到",
     },
   },
 
@@ -596,6 +606,33 @@ export const zh: Translations = {
       always: "总是",
       never: "从不",
       sometimes: "有时",
+      hi: "你好",
+      good_morning: "早上好",
+      good_night: "晚安",
+      see_you_later: "待会见",
+      welcome: "欢迎",
+      youre_welcome: "不客气",
+      excuse_me: "不好意思",
+      its_ok: "没关系",
+      ok: "好",
+      understand: "明白",
+      confused: "困惑",
+      wow: "哇",
+      oops: "哎呀",
+      oh_no: "不会吧",
+      cool: "酷",
+      yuck: "恶心",
+      look: "看",
+      my_turn: "我来",
+      your_turn: "你来",
+      slow_down: "慢点",
+      finished: "完成",
+      with: "和",
+      for: "为",
+      instead: "而不是",
+      before: "之前",
+      after: "之后",
+      because: "因为",
     },
   },
 
@@ -642,6 +679,17 @@ export const zh: Translations = {
 
   silentMode: {
     placeholder: "点击按钮来构建短语...",
+  },
+
+  appsBoard: {
+    title: "应用",
+    empty: "未启用任何应用程序。",
+  },
+
+  social: {
+    peer: "朋友：",
+    waiting: "等待朋友…",
+    connecting: "连接中…",
   },
 
   pause: {

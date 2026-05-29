@@ -2477,6 +2477,8 @@ export const ar = {
     appBubblesGameDesc: "فرقعة الفقاعات العائمة لتدريب التنسيق بين العين واليد",
     appSpaceTrader: "تاجر الفضاء",
     appSpaceTraderDesc: "قُد سفينة عبر ألغاز التجارة للاستيلاء على النجمة",
+    appSocialTrainer: "مدرب اجتماعي",
+    appSocialTrainerDesc: "تدرب على المحادثة مع شخصية زميل يتم إنشاؤها إجرائياً",
     spotifyConnected: "Spotify متصل",
     spotifyConnect: "ربط",
     spotifyDisconnect: "قطع الاتصال",

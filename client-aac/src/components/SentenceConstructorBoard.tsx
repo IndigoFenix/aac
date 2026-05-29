@@ -97,9 +97,10 @@ function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
   return null;
 }
 
-const TABS: readonly GlyphCategory[] = ["who", "do", "what", "where", "when"] as const;
+const TABS: readonly GlyphCategory[] = ["chat", "who", "do", "what", "where", "when"] as const;
 
 const TAB_ICON: Record<GlyphCategory, string> = {
+  chat: "💬",
   who: "👤",
   do: "🤲",
   what: "📦",
@@ -187,6 +188,10 @@ export interface SentenceConstructorBoardProps {
   onGuessingPress?: (suggestionKey: string) => void;
   /** Launch guessing for the active slot (when the user can't find a symbol). */
   onEnterGuessing?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** Cancel guessing mode (fired when the user picks a category tab or mode
+   *  chip while guessing is active — the explicit category choice means they
+   *  no longer want the narrowing assistant). */
+  onExitGuessing?: () => void;
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -206,6 +211,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const guessingBoard = props.guessingBoard ?? null;
   const onGuessingPress = props.onGuessingPress;
   const onEnterGuessing = props.onEnterGuessing;
+  const onExitGuessing = props.onExitGuessing;
 
   // Ordered person list for the "who → photos" mode chip: people seen this
   // session first (most likely the student wants to talk about who's here),
@@ -381,9 +387,19 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   }, [displayedGlyph, effectiveActiveSlot]);
 
   const handleTabSelect = useCallback((tab: GlyphCategory) => {
+    // Picking a category while guessing is active is a clear "I'm done
+    // narrowing — let me browse this category instead" signal. Cancel
+    // guessing first so the AI knows and the main grid returns.
+    if (guessingActive) onExitGuessing?.();
     setActiveTab(tab);
     setModeChip(defaultModeChip(tab));
-  }, []);
+  }, [guessingActive, onExitGuessing]);
+
+  // Mode-chip picker (subcategory). Same exit-on-pick rule as the tab handler.
+  const handleModeChipSelect = useCallback((chipKey: string) => {
+    if (guessingActive) onExitGuessing?.();
+    setModeChip(chipKey);
+  }, [guessingActive, onExitGuessing]);
 
   const onTabKey = useCallback(
     (e: React.KeyboardEvent, tab: GlyphCategory) => {
@@ -852,7 +868,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             <motion.button
               key={chip.key}
               data-dwell
-              onClick={() => setModeChip(chip.key)}
+              onClick={() => handleModeChipSelect(chip.key)}
               whileTap={{ scale: 0.95 }}
               className={[
                 "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",

@@ -51,6 +51,10 @@ export const fr: Translations = {
     selectInstitute: "Organisation",
     chooseInstitute: "Choisissez une organisation",
     chooseInstituteFirst: "Veuillez d'abord s\u00e9lectionner une organisation",
+    selectClassroom: "Classe",
+    chooseClassroom: "Choisissez une classe",
+    noClassroom: "Aucune classe (\u00e9l\u00e8ve unique)",
+    noStudentsInClassroom: "Aucun \u00e9l\u00e8ve dans cette classe.",
     loggingOut: "D\u00e9connexion...",
     loginTitle: "Bienvenue",
     loginSubtitle: "Connectez-vous pour continuer",
@@ -294,6 +298,7 @@ export const fr: Translations = {
       what: "Quoi",
       where: "Où",
       when: "Quand",
+      chat: "Discuter",
     },
     chips: {
       all: "Tout",
@@ -326,6 +331,11 @@ export const fr: Translations = {
       clock: "Horloge",
       routine: "Routine",
       frequency: "Fréquence",
+      greet: "Salut",
+      polite: "Poli",
+      reply: "Répondre",
+      react: "Réagir",
+      turn: "Tour",
     },
   },
 
@@ -596,6 +606,33 @@ export const fr: Translations = {
       always: "Toujours",
       never: "Jamais",
       sometimes: "Parfois",
+      hi: "Salut",
+      good_morning: "Bonjour",
+      good_night: "Bonne nuit",
+      see_you_later: "À plus tard",
+      welcome: "Bienvenue",
+      youre_welcome: "De rien",
+      excuse_me: "Excusez-moi",
+      its_ok: "Ce n'est rien",
+      ok: "OK",
+      understand: "Compris",
+      confused: "Confus",
+      wow: "Waouh",
+      oops: "Oups",
+      oh_no: "Oh non",
+      cool: "Cool",
+      yuck: "Beurk",
+      look: "Regarde",
+      my_turn: "Mon tour",
+      your_turn: "Ton tour",
+      slow_down: "Doucement",
+      finished: "Fini",
+      with: "Avec",
+      for: "Pour",
+      instead: "À la place",
+      before: "Avant",
+      after: "Après",
+      because: "Parce que",
     },
   },
 
@@ -642,6 +679,17 @@ export const fr: Translations = {
 
   silentMode: {
     placeholder: "Appuyez sur les boutons pour construire une phrase...",
+  },
+
+  appsBoard: {
+    title: "Applications",
+    empty: "Aucune application activée.",
+  },
+
+  social: {
+    peer: "Camarade :",
+    waiting: "En attente du camarade…",
+    connecting: "Connexion…",
   },
 
   pause: {

@@ -2477,6 +2477,8 @@ export const zh = {
     appBubblesGameDesc: "戳破漂浮的泡泡，训练手眼协调",
     appSpaceTrader: "太空商人",
     appSpaceTraderDesc: "驾驶飞船穿越贸易谜题，夺取星星",
+    appSocialTrainer: "社交训练",
+    appSocialTrainerDesc: "与程序生成的朋友角色练习对话",
     spotifyConnected: "Spotify 已连接",
     spotifyConnect: "连接",
     spotifyDisconnect: "断开连接",

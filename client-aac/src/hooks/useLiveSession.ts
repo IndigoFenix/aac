@@ -61,6 +61,10 @@ import type {
 
 export interface UseLiveSessionOptions {
   studentId: string;
+  // Set when the AAC session is running in classroom mode. Forwarded to the
+  // live-relay's initialize message so the server stamps chat_sessions with
+  // the classroom and the dual-agent can use it for prompt building / roster.
+  classroomId?: string | null;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   onContextBoardUpdate?: (board: ParsedBoardData) => void;
@@ -90,6 +94,7 @@ export interface UseLiveSessionOptions {
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
   const {
     studentId,
+    classroomId,
     language = "en",
     onBoardUpdate,
     onContextBoardUpdate,
@@ -183,6 +188,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Active app state
   const [activeApp, setActiveApp] = useState<ActiveAppData | null>(null);
+
+  // Enabled built-in apps + custom apps assigned to this student.
+  // Populated from session_snapshot and consumed by the Apps board overlay.
+  const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string }>>([]);
+  const [availableCustomApps, setAvailableCustomApps] = useState<Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>>([]);
 
   // App canvas capture ref (for drawing app, etc.)
   const captureAppCanvasRef = useRef<(() => Promise<Blob | null>) | null>(null);
@@ -732,6 +742,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
               console.warn("[useLiveSession] Failed to save local snapshot:", err)
             );
           }
+          // Refresh the apps lists that the Apps board overlay reads from.
+          // Snapshot is the single source of truth — server may add/remove
+          // custom apps mid-session, and snapshots arrive after relevant changes.
+          setEnabledApps(msg.snapshot?.enabledApps ?? []);
+          setAvailableCustomApps(msg.snapshot?.availableCustomApps ?? []);
           break;
 
         case "guessing_mode":
@@ -940,6 +955,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             responseMode,
             debugMode,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...(classroomId ? { classroomId } : {}),
             ...(initialFrameBase64 ? { initialFrame: initialFrameBase64 } : {}),
           });
         };
@@ -1094,6 +1110,29 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const setBuilderVisible = useCallback((open: boolean) => {
     wsSend({ type: open ? "builder_open" : "builder_close" });
   }, [wsSend]);
+
+  // ── Social trainer bridge ────────────────────────────────────────────────
+  //
+  // The social-bot lives in its own WS (`/ws/social-bot`) and has no
+  // direct line to the AAC AI. Three thin notifiers funnel semantic
+  // events to the AAC server, which composes the actual prompts (the
+  // wording lives in server/services/social-bot/aac-bridge-prompts.ts).
+
+  const notifySocialTrainerStarted = useCallback(() => {
+    wsSend({ type: "social_trainer_started" });
+  }, [wsSend]);
+
+  const notifySocialTrainerPeerSaid = useCallback((text: string) => {
+    if (!text) return;
+    wsSend({ type: "social_trainer_peer_said", text });
+  }, [wsSend]);
+
+  const notifySocialTrainerEnded = useCallback(
+    (report?: unknown, feedbackSummary?: string) => {
+      wsSend({ type: "social_trainer_ended", report, feedbackSummary });
+    },
+    [wsSend],
+  );
 
   /**
    * Handle a guessing-mode SUGGESTION button press. Updates the client-owned
@@ -1381,6 +1420,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     dismissApp,
     launchApp,
     captureAppCanvasRef,
+    // Apps available to launch from the static Apps board overlay
+    enabledApps,
+    availableCustomApps,
 
     // Avatar — only animate mouth during AI voice ("avatar" tag), not the student utterance
     emote,
@@ -1429,6 +1471,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     pressSuggestion,
     enterGuessingFromBuilder,
     setBuilderVisible,
+
+    // Social trainer bridge
+    notifySocialTrainerStarted,
+    notifySocialTrainerPeerSaid,
+    notifySocialTrainerEnded,
 
     // Construction board (sentence builder)
     sendConstructionState,

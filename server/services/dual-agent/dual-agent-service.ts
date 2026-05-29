@@ -3,7 +3,7 @@
 
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
@@ -34,6 +34,7 @@ import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type App
 import { getContactsByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
+import { classroomRepository } from "../../repositories/classroomRepository";
 import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
 import { activityLogService } from "../activityLogService";
 
@@ -345,6 +346,7 @@ export class DualAgentService {
     muteState: AACMuteState = 'unmuted',
     localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
     timezone?: string,
+    classroomId?: string,
   ): Promise<DualAgentSessionState> {
     // Consent gate — runs even on resume so a session opened against an
     // active consent stops working once that consent is revoked.
@@ -373,12 +375,12 @@ export class DualAgentService {
     // Try to rebuild from client-provided local state (fallback when DB is empty/stale)
     if (localState && localState.studentId === studentId) {
       console.log("[DualAgentService] Rebuilding session from client local state:", localState.sessionId);
-      return this.rebuildFromLocalState(studentId, userId, localState);
+      return this.rebuildFromLocalState(studentId, userId, localState, classroomId);
     }
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, muteState, timezone);
+    return this.createNewSession(studentId, userId, muteState, timezone, classroomId);
   }
 
   /**
@@ -389,6 +391,7 @@ export class DualAgentService {
     userId?: string,
     muteState: AACMuteState = 'unmuted',
     timezone?: string,
+    classroomId?: string,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -435,6 +438,48 @@ export class DualAgentService {
         .limit(1);
       cachedDiagnosis = record?.primaryDiagnosis || null;
     } catch { /* ignore */ }
+
+    // Fetch classroom context when this session runs on a shared classroom
+    // device. The roster (with short per-student entries) is injected into
+    // the system prompt so the AI can reframe when the active student
+    // changes. Skipped silently in single-student mode.
+    let classroomContext: Parameters<typeof buildInteractiveAgentPrompt>[0]['classroom'] = undefined;
+    if (classroomId) {
+      try {
+        const classroom = await classroomRepository.getClassroomById(classroomId);
+        if (classroom && classroom.isActive) {
+          const rosterRows = await classroomRepository.getStudentsInClassroom(classroomId);
+          // Batch-fetch primary diagnosis for the whole roster in one query.
+          const rosterIds = rosterRows.map(r => r.student.id);
+          const diagByStudent = new Map<string, string>();
+          if (rosterIds.length > 0) {
+            const diagRows = await db
+              .select({ studentId: medicalRecords.studentId, primaryDiagnosis: medicalRecords.primaryDiagnosis })
+              .from(medicalRecords)
+              .where(inArray(medicalRecords.studentId, rosterIds));
+            for (const row of diagRows) {
+              if (row.primaryDiagnosis) diagByStudent.set(row.studentId, row.primaryDiagnosis);
+            }
+          }
+          classroomContext = {
+            name: classroom.name,
+            grade: classroom.grade || undefined,
+            description: classroom.description || undefined,
+            roster: rosterRows.map(({ student, enrollment }) => ({
+              id: student.id,
+              name: student.firstName || student.name?.split(' ')[0] || student.name || '?',
+              age: computeAge(student.birthDate),
+              gender: student.gender || undefined,
+              diagnosis: diagByStudent.get(student.id),
+              notes: enrollment.notes || undefined,
+              isActive: student.id === studentId,
+            })),
+          };
+        }
+      } catch (err) {
+        console.warn("[DualAgentService] Failed to fetch classroom context:", err);
+      }
+    }
 
     // Load auto-selectable boards
     let availableBoards: DualAgentSessionState['availableBoards'] = [];
@@ -500,6 +545,7 @@ export class DualAgentService {
         assistModeExamples: sections?.assistModeExamples,
         sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
         safetyNotes: sections?.safetyNotes,
+        classroom: classroomContext,
       });
     }
 
@@ -528,6 +574,7 @@ export class DualAgentService {
       sessionId: initResult.sessionId,
       studentId,
       userId,
+      classroomId,
       interactivePrompt,
       monitorBusy: false,
       messages: [],
@@ -580,12 +627,15 @@ export class DualAgentService {
     studentId: string,
     userId: string | undefined,
     localState: import("@shared/aac-local-storage").AacSessionSnapshot,
+    classroomId?: string,
   ): Promise<DualAgentSessionState> {
     // Create a new session like normal, but seed it with local state data
     const state = await this.createNewSession(
       studentId,
       userId,
       localState.muteState || 'unmuted',
+      undefined,
+      classroomId,
     );
 
     // Overlay messages and board state from local snapshot
@@ -661,6 +711,7 @@ export class DualAgentService {
         sessionId: session.id,
         studentId: session.studentId || "",
         userId: session.userId || undefined,
+        classroomId: session.classroomId || undefined,
         interactivePrompt: session.interactivePrompt || "",
         monitorBusy,
         monitorBusySince,
@@ -868,6 +919,7 @@ export class DualAgentService {
           id: state.sessionId,
           studentId: state.studentId,
           userId: state.userId,
+          classroomId: state.classroomId,
           chatMode: "aac",
           state: chatState,
           log: state.messages,

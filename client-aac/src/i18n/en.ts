@@ -49,6 +49,10 @@ export const en = {
     selectInstitute: "Organization",
     chooseInstitute: "Choose an organization",
     chooseInstituteFirst: "Please select an organization first",
+    selectClassroom: "Classroom",
+    chooseClassroom: "Choose a classroom",
+    noClassroom: "No classroom (single student)",
+    noStudentsInClassroom: "No students in this classroom.",
     loggingOut: "Logging out...",
     loginTitle: "Welcome",
     loginSubtitle: "Sign in to continue",
@@ -292,6 +296,7 @@ export const en = {
       what: "What",
       where: "Where",
       when: "When",
+      chat: "Chat",
     },
     chips: {
       all: "All",
@@ -324,6 +329,11 @@ export const en = {
       clock: "Clock",
       routine: "Routine",
       frequency: "Frequency",
+      greet: "Greet",
+      polite: "Polite",
+      reply: "Reply",
+      react: "React",
+      turn: "Turn",
     },
   },
 
@@ -594,6 +604,33 @@ export const en = {
       always: "Always",
       never: "Never",
       sometimes: "Sometimes",
+      hi: "Hi",
+      good_morning: "Good morning",
+      good_night: "Good night",
+      see_you_later: "See you later",
+      welcome: "Welcome",
+      youre_welcome: "You're welcome",
+      excuse_me: "Excuse me",
+      its_ok: "It's OK",
+      ok: "OK",
+      understand: "Understand",
+      confused: "Confused",
+      wow: "Wow",
+      oops: "Oops",
+      oh_no: "Oh no",
+      cool: "Cool",
+      yuck: "Yuck",
+      look: "Look",
+      my_turn: "My turn",
+      your_turn: "Your turn",
+      slow_down: "Slow down",
+      finished: "Finished",
+      with: "With",
+      for: "For",
+      instead: "Instead",
+      before: "Before",
+      after: "After",
+      because: "Because",
     },
   },
 
@@ -640,6 +677,17 @@ export const en = {
 
   silentMode: {
     placeholder: "Tap buttons to build a phrase...",
+  },
+
+  appsBoard: {
+    title: "Apps",
+    empty: "No apps are enabled.",
+  },
+
+  social: {
+    peer: "Peer:",
+    waiting: "Waiting for peer…",
+    connecting: "Connecting…",
   },
 
   pause: {

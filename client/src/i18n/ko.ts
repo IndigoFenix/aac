@@ -2477,6 +2477,8 @@ export const ko = {
     appBubblesGameDesc: "떠다니는 버블을 터뜨려 손-눈 협응 연습",
     appSpaceTrader: "우주 무역상",
     appSpaceTraderDesc: "거래 퍼즐을 통과해 우주선을 조종하고 별을 차지하세요",
+    appSocialTrainer: "사회성 트레이너",
+    appSocialTrainerDesc: "절차적으로 생성된 친구 캐릭터와 대화를 연습하세요",
     spotifyConnected: "Spotify 연결됨",
     spotifyConnect: "연결",
     spotifyDisconnect: "연결 해제",

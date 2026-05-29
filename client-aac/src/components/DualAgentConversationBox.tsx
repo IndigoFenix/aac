@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
+import { useSocialBot } from "@/contexts/SocialBotContext";
+import { ProceduralFace } from "@shared/social-bot/ProceduralFace";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
@@ -124,6 +126,7 @@ export function DualAgentConversationBox({
     setPaused,
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
+  const socialBot = useSocialBot();
   const { t, isRTL } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
@@ -242,8 +245,16 @@ export function DualAgentConversationBox({
   // Cave click: user-only mute toggle. Muted → unmute & greet. Unmuted → mute & stop audio.
   // Either direction is a clear user-initiated engagement event, so it always-wakes
   // the sleep system as well (counts as an avatar tap).
+  //
+  // During a social-trainer session the cave is repurposed as a "cancel"
+  // button — pressing it ends the current session via SocialBotContext, which
+  // then handles mute-state restore + debrief message.
   const handleCaveClick = useCallback(() => {
     attentiveness?.triggerAlwaysWake('avatarTap');
+    if (socialBot.active) {
+      socialBot.cancel();
+      return;
+    }
     if (muteState === 'muted') {
       setMuteState('unmuted');
       if (isInitialized) {
@@ -253,7 +264,7 @@ export function DualAgentConversationBox({
       setMuteState('muted');
       stopAudio();
     }
-  }, [muteState, isInitialized, setMuteState, sendMessage, stopAudio, attentiveness]);
+  }, [socialBot, muteState, isInitialized, setMuteState, sendMessage, stopAudio, attentiveness]);
 
   // Sprite presentation (eye/ear/mouth/focus, animation frames, sleep flags)
   // comes from <AvatarSpriteProvider> so the header avatar and the fullscreen
@@ -293,24 +304,53 @@ export function DualAgentConversationBox({
 
             {/* Animated Avatar — hidden when sleeping. Click to send attention message in interact mode.
                 data-dwell is omitted while the avatar is talking + 3s grace period so eyegaze
-                doesn't accidentally start new turns when the user is just listening. */}
-            {!isAsleep && (
-              <button type="button"
-                {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
-                onClick={handleAvatarClick}
-                className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-                title="Tap to get attention"
+                doesn't accidentally start new turns when the user is just listening.
+                During a social-trainer session the avatar slot is taken over by
+                the bot face — the AAC AI is in muted/silent mode and has no
+                visible avatar of its own. */}
+            {socialBot.active ? (
+              <div
+                className="relative shrink-0 self-center w-20 flex items-center justify-center select-none"
+                title={socialBot.voiceName ? `Social peer (voice: ${socialBot.voiceName})` : "Social peer"}
               >
-                <AacAvatar
-                  avatar={sprite.avatar}
-                  renderedEye={sprite.renderedEye}
-                  renderedEar={sprite.renderedEar}
-                  mouthEmote={sprite.mouthEmote}
-                  mouthOpen={sprite.mouthOpen}
-                  showMouth={sprite.showMouth}
-                  focusActive={sprite.focusActive}
-                />
-              </button>
+                {socialBot.connected && socialBot.appearance ? (
+                  <ProceduralFace
+                    target={socialBot.faceTarget}
+                    appearance={socialBot.appearance}
+                    expressiveness={socialBot.expressiveness}
+                    legibility={socialBot.legibility}
+                    speakingLevel={socialBot.speakingLevel}
+                    style={{ width: 80, height: 80 }}
+                  />
+                ) : (
+                  /* Connecting — show a neutral spinner so the slot doesn't
+                     collapse and the user knows something is loading. */
+                  <div
+                    className="rounded-full border-4 border-white/30 border-t-white/90 animate-spin"
+                    style={{ width: 48, height: 48 }}
+                    aria-label="Connecting"
+                  />
+                )}
+              </div>
+            ) : (
+              !isAsleep && (
+                <button type="button"
+                  {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
+                  onClick={handleAvatarClick}
+                  className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+                  title="Tap to get attention"
+                >
+                  <AacAvatar
+                    avatar={sprite.avatar}
+                    renderedEye={sprite.renderedEye}
+                    renderedEar={sprite.renderedEar}
+                    mouthEmote={sprite.mouthEmote}
+                    mouthOpen={sprite.mouthOpen}
+                    showMouth={sprite.showMouth}
+                    focusActive={sprite.focusActive}
+                  />
+                </button>
+              )
             )}
 
             {/* Right side: two rows. relative+z so buttons stack in front of the avatar sprite. */}
@@ -439,8 +479,17 @@ export function DualAgentConversationBox({
                 </div>
               </div>
 
-              {/* Bottom row: message (unmuted) / utterance buttons (muted) — min-h keeps header stable during loading */}
-              {muteState === 'unmuted' ? (
+              {/* Bottom row: bot text (social mode) / message (unmuted) / utterance buttons (muted) — min-h keeps header stable during loading */}
+              {socialBot.active ? (
+                <div className="flex items-center min-h-[2rem]">
+                  <div className="text-sm text-white font-medium leading-relaxed flex-1">
+                    {socialBot.botText
+                      ? (<><span className="opacity-60 mr-1">{t("social.peer")}</span>{socialBot.botText}</>)
+                      : (<span className="text-white/60 italic">{socialBot.connected ? t("social.waiting") : t("social.connecting")}</span>)
+                    }
+                  </div>
+                </div>
+              ) : muteState === 'unmuted' ? (
                 <div className="flex items-center min-h-[2rem]">
                   {isLoading ? (
                     <div className="flex items-center gap-2 text-white">

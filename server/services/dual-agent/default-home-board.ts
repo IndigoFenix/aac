@@ -66,7 +66,10 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     id: "home_apps",
     labels: { en: "Apps", he: "אפליקציות" },
     icon: "📱",
-    instruction: "[APPS] The user wants to use apps. Rebuild the board with buttons for each available app (use open_app() to launch them). Include app names and icons.",
+    // Intercepted by the client (see home.tsx handleBoardButtonClick) — opens
+    // the apps board overlay client-side. NOT forwarded to the AI; the overlay
+    // sends its own [APP OPENED ...] instruction once the user picks an app.
+    instruction: "[APPS BOARD] Open the apps board.",
   },
   {
     id: "home_construct",

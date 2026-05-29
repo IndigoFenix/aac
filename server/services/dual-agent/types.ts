@@ -132,6 +132,10 @@ export interface DualAgentSessionState {
   sessionId: string;
   studentId: string;
   userId?: string;
+  // When set, this session is running in classroom mode (multi-student
+  // shared screen). The currently active student is still tracked via
+  // studentId; classroomId persists the roster context.
+  classroomId?: string;
 
   /**
    * Set by LiveRelay during init so the dual-agent-service can ask the
@@ -202,6 +206,11 @@ export interface DualAgentSessionState {
 
   // Cached custom symbols for prompt building
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
+
+  // Custom apps (clinician-authored games) assigned to this student. Cached so
+  // the client-side Apps board picker can render them without an extra fetch
+  // and so the prompt enhancer / tool builder can reference them.
+  availableCustomApps?: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
   // Cached diagnosis from medicalRecords table (loaded once per session)
   cachedDiagnosis?: string | null;

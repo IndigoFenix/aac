@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import { stringify } from "csv-stringify";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
+import { setupSocialBotWebSocket } from "./services/social-bot/social-bot-relay";
 import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
 import { subscribe } from "./services/realtime/room-registry";
 import { initBus } from "./services/realtime/bus-factory";
@@ -1951,6 +1952,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Set up WebSocket for Gemini Live API relay
   setupLiveWebSocket(httpServer);
+
+  // Set up WebSocket for the Social Training Game bot relay
+  setupSocialBotWebSocket(httpServer);
 
   // Set up generic realtime server (path-based routing) and register handlers.
   setupRealtimeServer(httpServer);

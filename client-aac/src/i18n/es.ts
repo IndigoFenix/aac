@@ -51,6 +51,10 @@ export const es: Translations = {
     selectInstitute: "Organizaci\u00f3n",
     chooseInstitute: "Elija una organizaci\u00f3n",
     chooseInstituteFirst: "Por favor, seleccione una organizaci\u00f3n primero",
+    selectClassroom: "Aula",
+    chooseClassroom: "Elija un aula",
+    noClassroom: "Sin aula (un solo estudiante)",
+    noStudentsInClassroom: "No hay estudiantes en esta aula.",
     loggingOut: "Cerrando sesi\u00f3n...",
     loginTitle: "Bienvenido",
     loginSubtitle: "Inicie sesi\u00f3n para continuar",
@@ -294,6 +298,7 @@ export const es: Translations = {
       what: "Qué",
       where: "Dónde",
       when: "Cuándo",
+      chat: "Charla",
     },
     chips: {
       all: "Todo",
@@ -326,6 +331,11 @@ export const es: Translations = {
       clock: "Reloj",
       routine: "Rutina",
       frequency: "Frecuencia",
+      greet: "Saludo",
+      polite: "Cortés",
+      reply: "Responder",
+      react: "Reaccionar",
+      turn: "Turno",
     },
   },
 
@@ -596,6 +606,33 @@ export const es: Translations = {
       always: "Siempre",
       never: "Nunca",
       sometimes: "A veces",
+      hi: "Hola",
+      good_morning: "Buenos días",
+      good_night: "Buenas noches",
+      see_you_later: "Hasta luego",
+      welcome: "Bienvenido",
+      youre_welcome: "De nada",
+      excuse_me: "Perdón",
+      its_ok: "Está bien",
+      ok: "OK",
+      understand: "Entiendo",
+      confused: "Confundido",
+      wow: "Vaya",
+      oops: "Ups",
+      oh_no: "Oh no",
+      cool: "Genial",
+      yuck: "Puaj",
+      look: "Mira",
+      my_turn: "Mi turno",
+      your_turn: "Tu turno",
+      slow_down: "Más despacio",
+      finished: "Terminado",
+      with: "Con",
+      for: "Para",
+      instead: "En vez",
+      before: "Antes",
+      after: "Después",
+      because: "Porque",
     },
   },
 
@@ -642,6 +679,17 @@ export const es: Translations = {
 
   silentMode: {
     placeholder: "Toque los botones para construir una frase...",
+  },
+
+  appsBoard: {
+    title: "Aplicaciones",
+    empty: "No hay aplicaciones habilitadas.",
+  },
+
+  social: {
+    peer: "Compañero:",
+    waiting: "Esperando al compañero…",
+    connecting: "Conectando…",
   },
 
   pause: {

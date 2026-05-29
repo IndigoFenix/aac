@@ -14,7 +14,7 @@
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type GlyphCategory = "who" | "do" | "what" | "where" | "when";
+export type GlyphCategory = "who" | "do" | "what" | "where" | "when" | "chat";
 
 /** Coarse part-of-speech used to decide modifier applicability. */
 export type GlyphPos =
@@ -407,8 +407,8 @@ const VOCAB: VocabularyItem[] = [
     } },
   { key: "drink", tKey: "aac.glyph.drink", pos: "verb", categories: ["do"],
     modeChips: { do: ["common"] }, tone: "request", emoji: "🥤", exposeToAi: true },
-  { key: "help", tKey: "aac.glyph.help", pos: "verb", categories: ["do"],
-    modeChips: { do: ["common", "social"] }, tone: "request", emoji: "🙋", exposeToAi: true },
+  { key: "help", tKey: "aac.glyph.help", pos: "verb", categories: ["do", "chat"],
+    modeChips: { do: ["common", "social"], chat: ["all", "turn"] }, tone: "request", emoji: "🙋", exposeToAi: true },
   { key: "say", tKey: "aac.glyph.say", pos: "verb", categories: ["do"],
     modeChips: { do: ["social", "mental"] }, tone: "social", emoji: "💬", exposeToAi: true,
     composable: { accepts: ["noun", "animal", "person", "place", "feeling"],
@@ -422,8 +422,8 @@ const VOCAB: VocabularyItem[] = [
   { key: "need", tKey: "aac.glyph.need", pos: "verb", categories: ["do"],
     modeChips: { do: ["common"] }, tone: "request", emoji: "🙏", exposeToAi: true,
     composable: { accepts: ["noun", "animal", "person", "place"], suggestCategories: ["what"] } },
-  { key: "wait", tKey: "aac.glyph.wait", pos: "verb", categories: ["do"],
-    modeChips: { do: ["common"] }, tone: "comment", emoji: "⏳", exposeToAi: true },
+  { key: "wait", tKey: "aac.glyph.wait", pos: "verb", categories: ["do", "chat"],
+    modeChips: { do: ["common"], chat: ["all", "turn"] }, tone: "comment", emoji: "⏳", exposeToAi: true },
   { key: "find", tKey: "aac.glyph.find", pos: "verb", categories: ["do"],
     modeChips: { do: ["mental"] }, tone: "comment", emoji: "🔍", exposeToAi: true },
   { key: "share", tKey: "aac.glyph.share", pos: "verb", categories: ["do"],
@@ -432,8 +432,8 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["common", "mental"] }, tone: "comment", emoji: "💭", exposeToAi: true,
     composable: { accepts: ["noun", "animal", "person", "place", "feeling"],
                   suggestCategories: ["what", "who"], position: "upper" } },
-  { key: "stop", tKey: "aac.glyph.stop", pos: "verb", categories: ["do"],
-    modeChips: { do: ["body"] }, tone: "request", emoji: "🛑", exposeToAi: true },
+  { key: "stop", tKey: "aac.glyph.stop", pos: "verb", categories: ["do", "chat"],
+    modeChips: { do: ["body"], chat: ["all", "turn"] }, tone: "request", emoji: "🛑", exposeToAi: true },
   // walk + run keep exposeToAi off: the AI emits them by emoji (🚶 / 🏃)
   // and the renderer reverse-maps the emoji to this registry entry's
   // imagePath so the bundled artwork shows instead of the raw emoji.
@@ -757,22 +757,22 @@ const VOCAB: VocabularyItem[] = [
   // Without them in the registry, the AI hallucinates snake_case (`yes`,
   // `hello`, `thank_you`) that ends up queued for image generation and
   // renders as ❓ until the symbol arrives.
-  { key: "yes", tKey: "aac.glyph.yes", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "✅", exposeToAi: true,
+  { key: "yes", tKey: "aac.glyph.yes", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "reply"] }, tone: "social", emoji: "✅", exposeToAi: true,
     animatedSprite: { sheet: "yes-no-sprites", cols: 3, rows: 2, row: 0, frames: [0, 1, 2, 1] } },
-  { key: "no", tKey: "aac.glyph.no", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "❌", exposeToAi: true,
+  { key: "no", tKey: "aac.glyph.no", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "reply"] }, tone: "social", emoji: "❌", exposeToAi: true,
     animatedSprite: { sheet: "yes-no-sprites", cols: 3, rows: 2, row: 1, frames: [0, 1, 0, 2] } },
-  { key: "maybe", tKey: "aac.glyph.maybe", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "🤷" },
-  { key: "hello", tKey: "aac.glyph.hello", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "👋" },
-  { key: "goodbye", tKey: "aac.glyph.goodbye", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "👋" },
-  { key: "thank_you", tKey: "aac.glyph.thank_you", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "🙏" },
-  { key: "sorry", tKey: "aac.glyph.sorry", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "social"] }, tone: "social", emoji: "😔" },
+  { key: "maybe", tKey: "aac.glyph.maybe", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "reply"] }, tone: "social", emoji: "🤷" },
+  { key: "hello", tKey: "aac.glyph.hello", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "greet"] }, tone: "social", emoji: "👋" },
+  { key: "goodbye", tKey: "aac.glyph.goodbye", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "greet"] }, tone: "social", emoji: "👋" },
+  { key: "thank_you", tKey: "aac.glyph.thank_you", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "polite"] }, tone: "social", emoji: "🙏" },
+  { key: "sorry", tKey: "aac.glyph.sorry", pos: "noun", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "polite"] }, tone: "social", emoji: "😔" },
 
   // ── WHERE ────────────────────────────────────────────────────────────────
   // `home`, `school`, `park` cross-listed in WHAT (places mode-chip).
@@ -1009,15 +1009,103 @@ const VOCAB: VocabularyItem[] = [
     modifier: { appliesTo: ["noun", "animal", "person", "place", "verb", "feeling"], transform: "emotion", order: 77, corner: "top-right", hiddenFromCarousel: true }, exposeToAi: true },
 
   // Social
-  { key: "please", tKey: "aac.glyph.please", pos: "modifier", categories: ["do"],
-    modeChips: { do: ["social"] }, tone: "social", emoji: "🙏", exposeToAi: true,
+  { key: "please", tKey: "aac.glyph.please", pos: "modifier", categories: ["do", "chat"],
+    modeChips: { do: ["social"], chat: ["all", "polite"] }, tone: "social", emoji: "🙏", exposeToAi: true,
     modifier: { appliesTo: ["verb"], transform: "badge", order: 1 } },
-  { key: "again", tKey: "aac.glyph.again", pos: "modifier", categories: ["do"],
-    modeChips: { do: ["relation"] }, tone: "comment", emoji: "🔁", exposeToAi: true,
+  { key: "again", tKey: "aac.glyph.again", pos: "modifier", categories: ["do", "chat"],
+    modeChips: { do: ["relation"], chat: ["all", "turn"] }, tone: "comment", emoji: "🔁", exposeToAi: true,
     modifier: { appliesTo: ["verb"], transform: "badge", order: 2 } },
-  { key: "more", tKey: "aac.glyph.more", pos: "modifier", categories: ["do"],
-    modeChips: { do: ["relation"] }, tone: "request", emoji: "➕", exposeToAi: true,
+  { key: "more", tKey: "aac.glyph.more", pos: "modifier", categories: ["do", "chat"],
+    modeChips: { do: ["relation"], chat: ["all", "turn"] }, tone: "request", emoji: "➕", exposeToAi: true,
     modifier: { appliesTo: ["noun", "verb"], transform: "badge", order: 3 } },
+
+  // ── CHAT — conversational expressions (new HEAD SYMBOLs) ─────────────────
+  // Short utterance-level acts the student reaches for constantly: greetings,
+  // politeness, acknowledgements, reactions, turn-taking. Existing items
+  // (yes/no/maybe/hello/goodbye/thank_you/sorry/please/help/stop/wait/
+  // again/more) are cross-listed into this category above.
+  //
+  // Greetings
+  { key: "hi", tKey: "aac.glyph.hi", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "greet"] }, tone: "social", emoji: "🙋", exposeToAi: true },
+  { key: "good_morning", tKey: "aac.glyph.good_morning", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "greet"] }, tone: "social", emoji: "🌅", exposeToAi: true },
+  { key: "good_night", tKey: "aac.glyph.good_night", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "greet"] }, tone: "social", emoji: "🌙", exposeToAi: true },
+  { key: "see_you_later", tKey: "aac.glyph.see_you_later", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "greet"] }, tone: "social", emoji: "🤚", exposeToAi: true },
+  { key: "welcome", tKey: "aac.glyph.welcome", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "greet"] }, tone: "social", emoji: "🎉", exposeToAi: true },
+
+  // Politeness
+  { key: "youre_welcome", tKey: "aac.glyph.youre_welcome", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "polite"] }, tone: "social", emoji: "😊", exposeToAi: true },
+  { key: "excuse_me", tKey: "aac.glyph.excuse_me", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "polite"] }, tone: "social", emoji: "🤚", exposeToAi: true },
+  { key: "its_ok", tKey: "aac.glyph.its_ok", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "polite"] }, tone: "social", emoji: "🤗", exposeToAi: true },
+
+  // Reply (acknowledgements). `yes`, `no`, `maybe` cross-listed above.
+  // Understanding axis: `understand` + `confused`. "I don't understand" is
+  // composed via `understand.not` once the student knows modifiers; `confused`
+  // is a single-glyph fallback that means roughly the same thing.
+  { key: "ok", tKey: "aac.glyph.ok", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "reply"] }, tone: "social", emoji: "👌", exposeToAi: true },
+  { key: "understand", tKey: "aac.glyph.understand", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "reply"] }, tone: "social", emoji: "💡", exposeToAi: true },
+  { key: "confused", tKey: "aac.glyph.confused", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "reply"] }, tone: "feeling", emoji: "😕", exposeToAi: true },
+
+  // Reactions / discourse markers
+  { key: "wow", tKey: "aac.glyph.wow", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😮", exposeToAi: true },
+  { key: "oops", tKey: "aac.glyph.oops", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "comment", emoji: "😬", exposeToAi: true },
+  { key: "oh_no", tKey: "aac.glyph.oh_no", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😱", exposeToAi: true },
+  { key: "cool", tKey: "aac.glyph.cool", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😎", exposeToAi: true },
+  { key: "yuck", tKey: "aac.glyph.yuck", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "🤢", exposeToAi: true },
+  { key: "look", tKey: "aac.glyph.look", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "social", emoji: "👀", exposeToAi: true },
+
+  // Turn-taking / conversation flow. `wait`, `help`, `stop`, `again`, `more`
+  // cross-listed above.
+  { key: "my_turn", tKey: "aac.glyph.my_turn", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "turn"] }, tone: "social", emoji: "🙋", exposeToAi: true },
+  { key: "your_turn", tKey: "aac.glyph.your_turn", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "turn"] }, tone: "social", emoji: "🫵", exposeToAi: true, directional: true },
+  { key: "slow_down", tKey: "aac.glyph.slow_down", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "turn"] }, tone: "social", emoji: "🐢", exposeToAi: true },
+  { key: "finished", tKey: "aac.glyph.finished", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "turn"] }, tone: "comment", emoji: "🏁", exposeToAi: true },
+
+  // ── Preposition modifiers ────────────────────────────────────────────────
+  // Tier-1 relations the interpreter can't infer from verb+noun context
+  // (accompaniment, sequencing, beneficiary, causation, substitution).
+  // All hidden from the construction-board grid (categories: []) — they
+  // attach to an adjacent slot like `my`/`your`/`not`. Tier-2 spatial pairs
+  // (behind/in_front/under/over) are deliberately deferred until the
+  // compositor grows a `spatial_overlay` transform.
+  { key: "with", tKey: "aac.glyph.with", pos: "modifier", categories: [],
+    modeChips: {}, tone: "social", emoji: "🤝", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "badge", order: 15 } },
+  { key: "for", tKey: "aac.glyph.for", pos: "modifier", categories: [],
+    modeChips: {}, tone: "social", emoji: "🎁", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "badge", order: 16 } },
+  { key: "instead", tKey: "aac.glyph.instead", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🔄", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person", "verb"], transform: "badge", order: 17 } },
+  { key: "before", tKey: "aac.glyph.before", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⏮️", exposeToAi: true, directional: true,
+    modifier: { appliesTo: ["noun", "verb", "time"], transform: "badge", order: 18 } },
+  { key: "after", tKey: "aac.glyph.after", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⏭️", exposeToAi: true, directional: true,
+    modifier: { appliesTo: ["noun", "verb", "time"], transform: "badge", order: 19 } },
+  { key: "because", tKey: "aac.glyph.because", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🔗", exposeToAi: true,
+    modifier: { appliesTo: ["verb", "feeling"], transform: "badge", order: 20 } },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1154,6 +1242,7 @@ export const MODE_CHIPS: Record<GlyphCategory, readonly string[]> = {
   what: ["all", "food", "drink", "toys", "clothes", "things", "body_parts", "vehicles", "nature", "feelings", "social", "places", "people", "ideas"],
   where: ["places", "rooms", "spatial"],
   when: ["quick", "days", "time-of-day", "clock", "routine", "frequency"],
+  chat: ["all", "greet", "polite", "reply", "react", "turn"],
 };
 
 /** Default mode chip per category — first in the list. */

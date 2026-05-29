@@ -31,7 +31,7 @@ export interface IdentifiedPerson {
 
 /** Construction-board snapshot the client sends to the AI on every relevant change. */
 export interface ConstructionStateClient {
-  category: "who" | "do" | "what" | "where" | "when";
+  category: "who" | "do" | "what" | "where" | "when" | "chat";
   modeChip: string;
   /** Serialized glyph string (e.g. "i_me+want+water.big#question"). */
   glyph: string;
@@ -54,7 +54,7 @@ export interface ConstructionStateClient {
     /** Coarse part-of-speech types accepted as the payload. */
     accepts: string[];
     /** Categories the AI should bias suggestions toward. */
-    suggestCategories: Array<"who" | "do" | "what" | "where" | "when">;
+    suggestCategories: Array<"who" | "do" | "what" | "where" | "when" | "chat">;
   };
 }
 
@@ -114,7 +114,7 @@ export interface BinaryChoiceOption {
 
 /** AI-driven memory chips for the construction board, scoped per category. */
 export interface ConstructionMemoryChipsClient {
-  category: "who" | "do" | "what" | "where" | "when";
+  category: "who" | "do" | "what" | "where" | "when" | "chat";
   chips: Array<{ key: string; label: string }>;
   receivedAt: number;
 }
@@ -207,6 +207,10 @@ export interface UseDualAgentReturn {
   launchApp: (appId: string, appData?: any) => void;
   /** Register a function to capture the app canvas (e.g. drawing) for detection */
   captureAppCanvasRef: React.MutableRefObject<(() => Promise<Blob | null>) | null>;
+  /** Built-in apps enabled for this session (id + display name + icon). */
+  enabledApps: Array<{ id: string; name: string; icon: string }>;
+  /** Custom apps (clinician-authored games) assigned to this student. */
+  availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
   // Avatar
   emote: "happy" | "sad" | "neutral";
@@ -277,6 +281,13 @@ export interface UseDualAgentReturn {
   enterGuessingFromBuilder?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible?: (open: boolean) => void;
+
+  // Social trainer bridge — small semantic events to the AAC live-relay
+  // so it can compose the appropriate system prompts itself (wording
+  // lives in server/services/social-bot/aac-bridge-prompts.ts).
+  notifySocialTrainerStarted?: () => void;
+  notifySocialTrainerPeerSaid?: (text: string) => void;
+  notifySocialTrainerEnded?: (report?: unknown, feedbackSummary?: string) => void;
 
   // Construction board (sentence builder)
   /** Push the current construction-board state to the AI so it can populate the AI strip. */

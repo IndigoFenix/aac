@@ -51,6 +51,10 @@ export const pt: Translations = {
     selectInstitute: "Organiza\u00e7\u00e3o",
     chooseInstitute: "Escolha uma organiza\u00e7\u00e3o",
     chooseInstituteFirst: "Por favor, selecione uma organiza\u00e7\u00e3o primeiro",
+    selectClassroom: "Sala de aula",
+    chooseClassroom: "Escolha uma sala de aula",
+    noClassroom: "Sem sala de aula (aluno \u00fanico)",
+    noStudentsInClassroom: "N\u00e3o h\u00e1 alunos nesta sala de aula.",
     loggingOut: "Saindo...",
     loginTitle: "Bem-vindo",
     loginSubtitle: "Entre para continuar",
@@ -294,6 +298,7 @@ export const pt: Translations = {
       what: "O quê",
       where: "Onde",
       when: "Quando",
+      chat: "Conversa",
     },
     chips: {
       all: "Tudo",
@@ -326,6 +331,11 @@ export const pt: Translations = {
       clock: "Relógio",
       routine: "Rotina",
       frequency: "Frequência",
+      greet: "Saudação",
+      polite: "Educado",
+      reply: "Resposta",
+      react: "Reagir",
+      turn: "Vez",
     },
   },
 
@@ -596,6 +606,33 @@ export const pt: Translations = {
       always: "Sempre",
       never: "Nunca",
       sometimes: "Às vezes",
+      hi: "Oi",
+      good_morning: "Bom dia",
+      good_night: "Boa noite",
+      see_you_later: "Até logo",
+      welcome: "Bem-vindo",
+      youre_welcome: "De nada",
+      excuse_me: "Com licença",
+      its_ok: "Tudo bem",
+      ok: "OK",
+      understand: "Entendi",
+      confused: "Confuso",
+      wow: "Uau",
+      oops: "Opa",
+      oh_no: "Ah não",
+      cool: "Legal",
+      yuck: "Eca",
+      look: "Olha",
+      my_turn: "Minha vez",
+      your_turn: "Sua vez",
+      slow_down: "Devagar",
+      finished: "Acabou",
+      with: "Com",
+      for: "Para",
+      instead: "Em vez",
+      before: "Antes",
+      after: "Depois",
+      because: "Porque",
     },
   },
 
@@ -642,6 +679,17 @@ export const pt: Translations = {
 
   silentMode: {
     placeholder: "Toque nos bot\u00f5es para construir uma frase...",
+  },
+
+  appsBoard: {
+    title: "Aplicativos",
+    empty: "Nenhum aplicativo ativado.",
+  },
+
+  social: {
+    peer: "Colega:",
+    waiting: "Aguardando colega\u2026",
+    connecting: "Conectando\u2026",
   },
 
   pause: {

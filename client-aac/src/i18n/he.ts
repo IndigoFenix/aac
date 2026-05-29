@@ -51,6 +51,10 @@ export const he: Translations = {
     selectInstitute: "ארגון",
     chooseInstitute: "בחר ארגון",
     chooseInstituteFirst: "נא לבחור ארגון תחילה",
+    selectClassroom: "כיתה",
+    chooseClassroom: "בחר כיתה",
+    noClassroom: "ללא כיתה (תלמיד יחיד)",
+    noStudentsInClassroom: "אין תלמידים בכיתה זו.",
     loggingOut: "מתנתק...",
     loginTitle: "ברוך הבא",
     loginSubtitle: "התחבר כדי להמשיך",
@@ -294,6 +298,7 @@ export const he: Translations = {
       what: "מה",
       where: "איפה",
       when: "מתי",
+      chat: "שיחה",
     },
     chips: {
       all: "הכל",
@@ -326,6 +331,11 @@ export const he: Translations = {
       clock: "שעון",
       routine: "שגרה",
       frequency: "תדירות",
+      greet: "ברכה",
+      polite: "מנומס",
+      reply: "תשובה",
+      react: "תגובה",
+      turn: "תור",
     },
   },
 
@@ -596,6 +606,33 @@ export const he: Translations = {
       always: "תמיד",
       never: "אף פעם",
       sometimes: "לפעמים",
+      hi: "היי",
+      good_morning: "בוקר טוב",
+      good_night: "לילה טוב",
+      see_you_later: "להתראות",
+      welcome: "ברוך הבא",
+      youre_welcome: "בבקשה",
+      excuse_me: "סליחה",
+      its_ok: "זה בסדר",
+      ok: "אוקיי",
+      understand: "מבין",
+      confused: "מבולבל",
+      wow: "וואו",
+      oops: "אופס",
+      oh_no: "אוי לא",
+      cool: "מגניב",
+      yuck: "איכס",
+      look: "תראה",
+      my_turn: "התור שלי",
+      your_turn: "התור שלך",
+      slow_down: "לאט יותר",
+      finished: "סיימתי",
+      with: "עם",
+      for: "בשביל",
+      instead: "במקום",
+      before: "לפני",
+      after: "אחרי",
+      because: "כי",
     },
   },
 
@@ -642,6 +679,17 @@ export const he: Translations = {
 
   silentMode: {
     placeholder: "לחץ על כפתורים כדי לבנות משפט...",
+  },
+
+  appsBoard: {
+    title: "אפליקציות",
+    empty: "אין אפליקציות פעילות.",
+  },
+
+  social: {
+    peer: "חבר:",
+    waiting: "ממתין לחבר…",
+    connecting: "מתחבר…",
   },
 
   pause: {

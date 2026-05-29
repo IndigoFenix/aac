@@ -51,6 +51,10 @@ export const ar: Translations = {
     selectInstitute: "\u0627\u0644\u0645\u0624\u0633\u0633\u0629",
     chooseInstitute: "\u0627\u062e\u062a\u0631 \u0645\u0624\u0633\u0633\u0629",
     chooseInstituteFirst: "\u064a\u0631\u062c\u0649 \u0627\u062e\u062a\u064a\u0627\u0631 \u0645\u0624\u0633\u0633\u0629 \u0623\u0648\u0644\u0627\u064b",
+    selectClassroom: "\u0627\u0644\u0641\u0635\u0644",
+    chooseClassroom: "\u0627\u062e\u062a\u0631 \u0641\u0635\u0644\u0627\u064b",
+    noClassroom: "\u0628\u0644\u0627 \u0641\u0635\u0644 (\u0637\u0627\u0644\u0628 \u0648\u0627\u062d\u062f)",
+    noStudentsInClassroom: "\u0644\u0627 \u064a\u0648\u062c\u062f \u0637\u0644\u0627\u0628 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0641\u0635\u0644.",
     loggingOut: "\u062c\u0627\u0631\u064a \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062e\u0631\u0648\u062c...",
     loginTitle: "\u0645\u0631\u062d\u0628\u0627\u064b",
     loginSubtitle: "\u0633\u062c\u0651\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0644\u0644\u0645\u062a\u0627\u0628\u0639\u0629",
@@ -294,6 +298,7 @@ export const ar: Translations = {
       what: "ماذا",
       where: "أين",
       when: "متى",
+      chat: "محادثة",
     },
     chips: {
       all: "الكل",
@@ -326,6 +331,11 @@ export const ar: Translations = {
       clock: "الساعة",
       routine: "روتين",
       frequency: "تكرار",
+      greet: "تحية",
+      polite: "مهذب",
+      reply: "رد",
+      react: "تفاعل",
+      turn: "دور",
     },
   },
 
@@ -596,6 +606,33 @@ export const ar: Translations = {
       always: "\u062f\u0627\u0626\u0645\u0627",
       never: "\u0623\u0628\u062f\u0627",
       sometimes: "\u0623\u062d\u064a\u0627\u0646\u0627",
+      hi: "\u0623\u0647\u0644\u0627\u064b",
+      good_morning: "\u0635\u0628\u0627\u062d \u0627\u0644\u062e\u064a\u0631",
+      good_night: "\u062a\u0635\u0628\u062d \u0639\u0644\u0649 \u062e\u064a\u0631",
+      see_you_later: "\u0625\u0644\u0649 \u0627\u0644\u0644\u0642\u0627\u0621",
+      welcome: "\u0645\u0631\u062d\u0628\u0627\u064b",
+      youre_welcome: "\u0639\u0641\u0648\u0627\u064b",
+      excuse_me: "\u0627\u0644\u0645\u0639\u0630\u0631\u0629",
+      its_ok: "\u0644\u0627 \u0628\u0623\u0633",
+      ok: "\u062d\u0633\u0646\u0627\u064b",
+      understand: "\u0641\u0647\u0645\u062a",
+      confused: "\u0645\u062d\u062a\u0627\u0631",
+      wow: "\u0648\u0627\u0648",
+      oops: "\u0639\u0630\u0631\u0627\u064b",
+      oh_no: "\u064a\u0627 \u0644\u0644\u0623\u0633\u0641",
+      cool: "\u0631\u0627\u0626\u0639",
+      yuck: "\u0625\u064a\u064a\u064a\u0647",
+      look: "\u0627\u0646\u0638\u0631",
+      my_turn: "\u062f\u0648\u0631\u064a",
+      your_turn: "\u062f\u0648\u0631\u0643",
+      slow_down: "\u0639\u0644\u0649 \u0645\u0647\u0644",
+      finished: "\u0627\u0646\u062a\u0647\u064a\u062a",
+      with: "\u0645\u0639",
+      for: "\u0644\u0640",
+      instead: "\u0628\u062f\u0644\u0627\u064b",
+      before: "\u0642\u0628\u0644",
+      after: "\u0628\u0639\u062f",
+      because: "\u0644\u0623\u0646",
     },
   },
 
@@ -642,6 +679,17 @@ export const ar: Translations = {
 
   silentMode: {
     placeholder: "\u0627\u0636\u063a\u0637 \u0639\u0644\u0649 \u0627\u0644\u0623\u0632\u0631\u0627\u0631 \u0644\u0628\u0646\u0627\u0621 \u062c\u0645\u0644\u0629...",
+  },
+
+  appsBoard: {
+    title: "\u062a\u0637\u0628\u064a\u0642\u0627\u062a",
+    empty: "\u0644\u0627 \u062a\u0648\u062c\u062f \u062a\u0637\u0628\u064a\u0642\u0627\u062a \u0645\u0641\u0639\u0651\u0644\u0629.",
+  },
+
+  social: {
+    peer: "\u0627\u0644\u0632\u0645\u064a\u0644:",
+    waiting: "\u0641\u064a \u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0632\u0645\u064a\u0644\u2026",
+    connecting: "\u062c\u0627\u0631\u064d \u0627\u0644\u0627\u062a\u0635\u0627\u0644\u2026",
   },
 
   pause: {

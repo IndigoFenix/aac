@@ -2477,6 +2477,8 @@ export const yue = {
     appBubblesGameDesc: "篤穿漂浮嘅泡泡，訓練手眼協調",
     appSpaceTrader: "太空商人",
     appSpaceTraderDesc: "駕駛太空船穿越貿易謎題，奪取星星",
+    appSocialTrainer: "社交訓練",
+    appSocialTrainerDesc: "同程序生成嘅朋友角色練習對話",
     spotifyConnected: "Spotify 已連接",
     spotifyConnect: "連接",
     spotifyDisconnect: "斷開連接",

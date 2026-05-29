@@ -51,6 +51,10 @@ export const yue: Translations = {
     selectInstitute: "機構",
     chooseInstitute: "揀一個機構",
     chooseInstituteFirst: "請先揀一個機構",
+    selectClassroom: "班",
+    chooseClassroom: "揀一個班",
+    noClassroom: "冇班（單個學生）",
+    noStudentsInClassroom: "呢個班冇學生。",
     loggingOut: "登出緊...",
     loginTitle: "歡迎",
     loginSubtitle: "登入嚟繼續",
@@ -294,6 +298,7 @@ export const yue: Translations = {
       what: "乜嘢",
       where: "邊度",
       when: "幾時",
+      chat: "傾偈",
     },
     chips: {
       all: "全部",
@@ -326,6 +331,11 @@ export const yue: Translations = {
       clock: "時鐘",
       routine: "日常",
       frequency: "頻率",
+      greet: "打招呼",
+      polite: "客氣",
+      reply: "回應",
+      react: "反應",
+      turn: "輪到",
     },
   },
 
@@ -596,6 +606,33 @@ export const yue: Translations = {
       always: "成日",
       never: "從來唔",
       sometimes: "有時",
+      hi: "你好",
+      good_morning: "早晨",
+      good_night: "晚安",
+      see_you_later: "遲啲見",
+      welcome: "歡迎",
+      youre_welcome: "唔使客氣",
+      excuse_me: "唔好意思",
+      its_ok: "冇問題",
+      ok: "OK",
+      understand: "明白",
+      confused: "唔明",
+      wow: "嘩",
+      oops: "唉吔",
+      oh_no: "唔好啊",
+      cool: "勁",
+      yuck: "噁心",
+      look: "睇",
+      my_turn: "我嚟",
+      your_turn: "你嚟",
+      slow_down: "慢啲",
+      finished: "完",
+      with: "同",
+      for: "為",
+      instead: "代替",
+      before: "之前",
+      after: "之後",
+      because: "因為",
     },
   },
 
@@ -642,6 +679,17 @@ export const yue: Translations = {
 
   silentMode: {
     placeholder: "撳按鈕嚟組句子...",
+  },
+
+  appsBoard: {
+    title: "應用程式",
+    empty: "未啟用任何應用程式。",
+  },
+
+  social: {
+    peer: "朋友：",
+    waiting: "等緊朋友…",
+    connecting: "連接緊…",
   },
 
   pause: {

@@ -64,6 +64,12 @@ function buildBundledIconsBlock(): string {
   // These SYMBOLs are exposed BECAUSE no single emoji captures them
   // cleanly — surfacing one would tempt the AI to use the emoji
   // standalone, defeating the point. The key alone is the contract.
+  // Badge modifiers split between "social" (please/again/more — attach to
+  // verbs to soften or repeat them) and "relation" (with/for/before/after/
+  // because/instead — encode relations the interpreter can't infer from
+  // verb+noun context). Same transform, distinct semantic groups for the
+  // AI to reason about.
+  const RELATION_BADGE_KEYS = new Set(["with", "for", "instead", "before", "after", "because"]);
   for (const v of listAllVocabulary()) {
     if (!v.exposeToAi) continue;
     if (v.pos === "modifier" && v.categories.length === 0) {
@@ -75,7 +81,7 @@ function buildBundledIconsBlock(): string {
         : transform === "red_x" ? "negation"
         : transform === "glow" || transform === "shrink" ? "intensity"
         : transform === "color" ? "color"
-        : transform === "badge" ? "social"
+        : transform === "badge" ? (RELATION_BADGE_KEYS.has(v.key) ? "relation" : "social")
         : transform;
       let arr = modifierGroups.get(group);
       if (!arr) { arr = []; modifierGroups.set(group, arr); }
@@ -108,11 +114,12 @@ function buildBundledIconsBlock(): string {
   const CATEGORY_HEADERS: Record<string, string> = {
     who: "WHO — pronouns + deictic HEAD SYMBOLs",
     do: "DO — abstract / relational verb HEAD SYMBOLs",
-    what: "WHAT — social / expression HEAD SYMBOLs (yes, no, etc.)",
+    what: "WHAT — abstract HEAD SYMBOLs not covered by other tabs",
     where: "WHERE — spatial deictic HEAD SYMBOLs",
     when: "WHEN — time HEAD SYMBOLs",
+    chat: "CHAT — conversational HEAD SYMBOLs (greetings, politeness, replies, reactions, turn-taking)",
   };
-  for (const cat of ["who", "do", "what", "where", "when"] as const) {
+  for (const cat of ["who", "do", "what", "where", "when", "chat"] as const) {
     const items = byCategory.get(cat);
     if (!items?.length) continue;
     lines.push(`${CATEGORY_HEADERS[cat]}:`);
@@ -121,9 +128,9 @@ function buildBundledIconsBlock(): string {
 
   if (modifierGroups.size > 0) {
     lines.push("");
-    lines.push("MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`). Stack by chaining: `🤗.big.please`.");
+    lines.push("MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`, `🍽️.with`). Stack by chaining: `🤗.big.please`.");
     lines.push("**This list is EXHAUSTIVE. The renderer has no image for any modifier not listed here.** Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot. If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).");
-    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "other_modifier"];
+    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "other_modifier"];
     for (const group of MODIFIER_ORDER) {
       const items = modifierGroups.get(group);
       if (!items?.length) continue;
@@ -231,6 +238,33 @@ export function buildInteractiveAgentPrompt(params: {
    * [SESSION SUMMARY] context message; this is the on-reconnect backstop.
    */
   sessionSummary?: string;
+  /**
+   * Classroom-mode context. Set when the AAC session is running on a shared
+   * classroom device. When present:
+   *   - `<classroom>` is injected after `<role>` describing the shared-device
+   *     framing, the active student, and the roster.
+   *   - `studentName` etc. above are interpreted as the CURRENTLY ACTIVE
+   *     student (face recognition / explicit switch). The roster lets the AI
+   *     reframe when the active student changes.
+   *   - `description` is the clinician-authored classroom-wide focus that
+   *     takes precedence over single-student interests for group activities.
+   */
+  classroom?: {
+    name: string;
+    grade?: string;
+    description?: string;
+    roster: Array<{
+      id: string;
+      name: string;
+      age?: string;
+      gender?: string;
+      diagnosis?: string;
+      notes?: string;
+      // True for the entry whose student is the currently active one
+      // (matches the top-level `studentName`).
+      isActive?: boolean;
+    }>;
+  };
 }): string {
   // ──────────────────────────────────────────────────────────────────────────
   // DIAGNOSTIC: minimal-prompt mode.
@@ -255,7 +289,7 @@ export function buildInteractiveAgentPrompt(params: {
     autoSymbolsEnabled = false, useDirectAudio = false,
     sessionGoals, personaGestureOverrides, safetyNotes,
     interactModeExamples, assistModeExamples, sentenceInterpretationExamples,
-    sessionSummary,
+    sessionSummary, classroom,
   } = params;
 
   // Age-aware gender word. "boy"/"girl" applied to an adult age (e.g. "39
@@ -276,6 +310,34 @@ export function buildInteractiveAgentPrompt(params: {
     : (genderStr ? `a ${genderStr}` : 'a user');
   const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
   const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
+
+  // Classroom block — only injected when this session runs on a shared
+  // classroom device. References to [${studentName}] in the rest of the
+  // prompt mean "the currently active student"; the roster below tells the
+  // AI who else may approach the device and how to reframe when the active
+  // user changes.
+  const classroomBlock = classroom
+    ? `\n\n<classroom>
+This AAC device is shared by the [${classroom.name}] classroom${classroom.grade ? ` (grade ${classroom.grade})` : ''}. Multiple students may approach throughout the day. The student currently active is [${studentName}].${classroom.description ? `\n\nClassroom-wide focus (takes precedence over single-student interests for group activities): ${classroom.description}` : ''}
+
+When the active user changes — a different face matches in [PEOPLE PRESENT], a different voice introduces themself, or someone explicitly switches — shift your interaction to fit that student's entry below. Treat in-session memory of one student as private to that student; don't carry their content over when a different student takes over the device.
+
+<classroom_roster>
+${classroom.roster.map(r => {
+  const rAgeNum = r.age ? parseInt(r.age, 10) : NaN;
+  const rIsAdult = !isNaN(rAgeNum) && rAgeNum >= 18;
+  const rGender = r.gender === 'male' ? (rIsAdult ? 'man' : 'boy')
+    : r.gender === 'female' ? (rIsAdult ? 'woman' : 'girl')
+    : '';
+  const rAge = r.age ? (rGender ? `${r.age} year old ${rGender}` : `${r.age} year old`) : (rGender || '');
+  const rDiag = r.diagnosis ? ` with ${r.diagnosis}` : '';
+  const rNotes = r.notes ? `. Notes: ${r.notes}` : '';
+  const activeMark = r.isActive ? '  ← currently active' : '';
+  return `- [${r.name}]${rAge ? `, ${rAge}` : ''}${rDiag}${rNotes}${activeMark}`;
+}).join('\n')}
+</classroom_roster>
+</classroom>`
+    : '';
 
   const commRules = useDirectAudio
     ? `You speak directly — your voice is heard by the user. Use tools for everything else.
@@ -301,7 +363,7 @@ Button presses are voiced automatically by a separate TTS in the user's own voic
 ${aiIdentity} for [${studentName}], ${ageStr}${diagnosisStr}. Your role is to assist and support the user in their communication and interaction needs, as well as to communicate with them directly and help them learn and make progress on their goals.
 You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools — you cannot move or physically interact with anything. Don't offer or claim to perform actions outside your tools (e.g. handing the user an item).
 Language: ${languageName}. All board labels and ${speechModality} are in ${languageName} unless you are translating for someone.
-</role>
+</role>${classroomBlock}
 
 <communication>
 ${commRules}${muteOverride}
@@ -664,7 +726,7 @@ ${availableBoards.map(b => `- ${b.name}: (key: "${b.key}")${b.hint ? ` — ${b.h
     prompt += `
 
 <apps>
-Launch apps via open_app(app_id, [data]). Use the app instead of describing the activity in board buttons. After open/close, rebuild_board() for the new context.`;
+Launch apps via open_app(app_id, [data]). The student also has a dedicated "Apps" page they can open themselves from the home board — DO NOT put app-launch buttons inside USER RESPONSE BOARDs (the page already lists every available app and launches them on its own). Only call open_app() when the conversation calls for it — e.g. the student asks to draw or you decide an activity fits the moment. After open/close, rebuild_board() for the new context.`;
 
     if (hasBuiltInApps) {
       prompt += `

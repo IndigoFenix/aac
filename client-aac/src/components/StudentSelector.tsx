@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogOut, User, Building2 } from "lucide-react";
+import { LogOut, User, Building2, Users } from "lucide-react";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
@@ -30,15 +30,32 @@ interface InstitutesResponse {
   institutes: Institute[];
 }
 
+interface Classroom {
+  id: string;
+  name: string;
+  grade?: string | null;
+  roomNumber?: string | null;
+  role?: string;
+  isPrimary?: boolean;
+}
+
+interface ClassroomsResponse {
+  success: boolean;
+  classrooms: Classroom[];
+}
+
 interface StudentSelectorProps {
   user: { id: string; name?: string; email?: string };
-  onStudentSelect: (studentId: string) => void;
+  onStudentSelect: (studentId: string, classroomId?: string | null) => void;
   onLogout: () => void;
 }
 
 export default function StudentSelector({ user, onStudentSelect, onLogout }: StudentSelectorProps) {
   const { t, direction, isRTL } = useLanguage();
   const [selectedInstituteId, setSelectedInstituteId] = useState<string | null>(null);
+  const [selectedClassroomId, setSelectedClassroomId] = useState<string | null>(null);
+
+  const apiBase = import.meta.env.VITE_API_URL?.replace(/\/+$/, "") ?? "";
 
   // Fetch user's institutes
   const { data: institutesData, isLoading: institutesLoading } = useQuery<InstitutesResponse>({
@@ -54,15 +71,43 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
     }
   }, [institutes, selectedInstituteId]);
 
-  // Fetch students scoped to selected institute
-  const { data: studentsData, isLoading: studentsLoading, error } = useQuery<StudentsResponse>({
-    queryKey: ["/api/students", { instituteId: selectedInstituteId }],
+  // Reset classroom selection when institute changes
+  useEffect(() => {
+    setSelectedClassroomId(null);
+  }, [selectedInstituteId]);
+
+  // Fetch user's classrooms in the selected institute (school-type institutes only have classrooms)
+  const { data: classroomsData, isLoading: classroomsLoading } = useQuery<ClassroomsResponse>({
+    queryKey: ["/api/users/me/classrooms", { instituteId: selectedInstituteId }],
     queryFn: async () => {
       const res = await fetch(
-        (import.meta.env.VITE_API_URL?.replace(/\/+$/, "") ?? "") +
-        `/api/students?instituteId=${selectedInstituteId}`,
+        `${apiBase}/api/users/me/classrooms?instituteId=${selectedInstituteId}`,
         { credentials: "include" }
       );
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
+    },
+    enabled: !!selectedInstituteId,
+  });
+
+  const classrooms = classroomsData?.classrooms;
+  const hasClassrooms = !!classrooms && classrooms.length > 0;
+
+  // Fetch students: if a classroom is picked, scope to its roster; otherwise all institute students
+  const studentsQueryKey = selectedClassroomId
+    ? ["/api/classrooms/students", { classroomId: selectedClassroomId }]
+    : ["/api/students", { instituteId: selectedInstituteId }];
+
+  const { data: studentsData, isLoading: studentsLoading, error } = useQuery<StudentsResponse>({
+    queryKey: studentsQueryKey,
+    queryFn: async () => {
+      const url = selectedClassroomId
+        ? `${apiBase}/api/classrooms/${selectedClassroomId}/students`
+        : `${apiBase}/api/students?instituteId=${selectedInstituteId}`;
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
         const text = (await res.text()) || res.statusText;
         throw new Error(`${res.status}: ${text}`);
@@ -82,6 +127,10 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
   }, [error, onLogout]);
 
   const showInstituteSelector = institutes && institutes.length > 1;
+
+  const handleStudentSelect = (studentId: string) => {
+    onStudentSelect(studentId, selectedClassroomId);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4" dir={direction}>
@@ -138,6 +187,33 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
                 </div>
               )}
 
+              {/* Classroom selector - only shown when the user has classrooms in the chosen institute */}
+              {selectedInstituteId && !classroomsLoading && hasClassrooms && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    {t("auth.selectClassroom")}
+                  </label>
+                  <Select
+                    value={selectedClassroomId ?? "none"}
+                    onValueChange={(v) => setSelectedClassroomId(v === "none" ? null : v)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={t("auth.chooseClassroom")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("auth.noClassroom")}</SelectItem>
+                      {classrooms!.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                          {c.grade ? ` (${c.grade})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Student selector */}
               {!selectedInstituteId ? (
                 <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
@@ -154,11 +230,13 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
                 </div>
               ) : !students || students.length === 0 ? (
                 <div className="text-center py-4 text-gray-600 dark:text-gray-300">
-                  <p>{t("auth.noStudentsFound")}</p>
-                  <p className="text-sm mt-2">{t("auth.addStudentHint")}</p>
+                  <p>{selectedClassroomId ? t("auth.noStudentsInClassroom") : t("auth.noStudentsFound")}</p>
+                  {!selectedClassroomId && (
+                    <p className="text-sm mt-2">{t("auth.addStudentHint")}</p>
+                  )}
                 </div>
               ) : (
-                <Select onValueChange={onStudentSelect}>
+                <Select onValueChange={handleStudentSelect}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={t("auth.chooseStudent")} />
                   </SelectTrigger>

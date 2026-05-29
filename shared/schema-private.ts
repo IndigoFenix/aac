@@ -1588,13 +1588,18 @@ export const phoneOtpCodes = pgTable("phone_otp_codes", {
 // Chat sessions
 export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  // User context - at least one must be provided
+  // User context - at least one of userId, studentId, classroomId, or
+  // crmPotentialCustomerId must be provided. classroomId is set when the
+  // AAC session is running in multi-student classroom mode; studentId may
+  // still be set in that case to track the currently active student.
   userId: varchar("user_id").references(() => users.id),
   studentId: varchar("student_id").references(() => students.id),
   userStudentId: varchar("user_student_id").references(() => userStudents.id), // The relationship record if both are provided
-  // Cross-schema FKs: institutes.id and institute_users.id live in schema.ts — constraints enforced via migration
+  // Cross-schema FKs: institutes.id, institute_users.id, and classrooms.id
+  // live in schema.ts — constraints enforced via migration
   instituteId: varchar("institute_id"),
   instituteUserId: varchar("institute_user_id"),
+  classroomId: varchar("classroom_id"),
   // Cross-schema FK: crm_potential_customers.id lives in schema.ts. When set,
   // this is a CRM landing-page chat session — userId/studentId/instituteId are null.
   crmPotentialCustomerId: varchar("crm_potential_customer_id"),
@@ -1636,6 +1641,7 @@ export const chatSessions = pgTable("chat_sessions", {
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),
   index("idx_chat_sessions_institute_id").on(table.instituteId),
+  index("idx_chat_sessions_classroom_id").on(table.classroomId),
   index("idx_chat_sessions_status").on(table.status),
   index("idx_chat_sessions_chat_mode_created").on(table.chatMode, table.createdAt),
   index("idx_chat_sessions_student_importance").on(table.studentId, table.importance, table.createdAt),

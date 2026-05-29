@@ -22,5 +22,15 @@ export default defineConfig({
   server: {
     port: 5174,
     host: "0.0.0.0",
+    // Standalone vite dev mode for the AAC client (`npm run client-aac:dev`)
+    // runs on its own port — proxy backend traffic to the Express server so
+    // /ws/* upgrades and /api/* requests actually reach the running server.
+    // Without this, /ws/social-bot (and /ws/live) just hang in CONNECTING
+    // because vite doesn't know what to do with them.
+    proxy: {
+      "/ws":   { target: "ws://localhost:5000", ws: true, changeOrigin: true },
+      "/api":  { target: "http://localhost:5000", changeOrigin: true },
+      "/auth": { target: "http://localhost:5000", changeOrigin: true },
+    },
   },
 });

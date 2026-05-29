@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { UserX, Eye, EyeOff, Play } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard";
+import AppsBoard from "@/components/AppsBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
@@ -15,6 +16,7 @@ import { ConversationBox } from "@/components/ConversationBox";
 import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
 import { FullscreenAvatarOverlay } from "@/components/FullscreenAvatarOverlay";
 import { AvatarSpriteProvider } from "@/contexts/AvatarSpriteContext";
+import { SocialBotProvider } from "@/contexts/SocialBotContext";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
@@ -63,6 +65,11 @@ import { fetchWithAuth } from "@/lib/queryClient";
 
 interface HomeProps {
   studentId: string;
+  // Set when the user entered AAC via a classroom (multi-student mode).
+  // Currently propagated for future classroom-mode features (active-user
+  // switching, classroom-level prompt compilation); the session still
+  // operates around a single active studentId.
+  classroomId?: string | null;
   onLogout: () => void;
   onExitStudent: () => void;
 }
@@ -71,7 +78,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onEnterGuessingFromBuilderReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onEnterGuessingFromBuilderReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -86,6 +93,9 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
+  onEnabledAppsChange?: (apps: Array<{ id: string; name: string; icon: string }>) => void;
+  onAvailableCustomAppsChange?: (apps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>) => void;
+  onLaunchAppReady?: (fn: ((appId: string, appData?: any) => void) | null) => void;
   onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
   onGuessingModeChange?: (active: boolean) => void;
   onPressSuggestionReady?: (fn: ((suggestionKey: string) => void) | null) => void;
@@ -96,7 +106,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, pressSuggestion, enterGuessingFromBuilder, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, enterGuessingFromBuilder, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -201,6 +211,19 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   }, [activeApp, dismissApp, registerAppCanvasCapture, onActiveAppChange]);
 
   useEffect(() => {
+    onEnabledAppsChange?.(enabledApps);
+  }, [enabledApps, onEnabledAppsChange]);
+
+  useEffect(() => {
+    onAvailableCustomAppsChange?.(availableCustomApps);
+  }, [availableCustomApps, onAvailableCustomAppsChange]);
+
+  useEffect(() => {
+    onLaunchAppReady?.(launchApp);
+    return () => onLaunchAppReady?.(null);
+  }, [launchApp, onLaunchAppReady]);
+
+  useEffect(() => {
     onSendConstructionStateReady?.(sendConstructionState);
     return () => onSendConstructionStateReady?.(null);
   }, [sendConstructionState, onSendConstructionStateReady]);
@@ -300,7 +323,7 @@ function renderAppContent(
   return null;
 }
 
-export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) {
+export default function Home({ studentId, classroomId, onLogout, onExitStudent }: HomeProps) {
   // Disable periodic camera detection calls (detect-person, analyze-image) to focus on chat
   const DISABLE_PERIODIC_DETECTION = true;
 
@@ -396,6 +419,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [aiSessionActive, setAiSessionActive] = useState(false);
   const [isGuessingMode, setIsGuessingMode] = useState(false);
   const [showConstructionBoard, setShowConstructionBoard] = useState(false);
+  // Static apps page overlay — opened by the home "Apps" button (intercepted
+  // client-side, not forwarded to the AI). Closes when the user picks an app
+  // (which then triggers the existing launchApp flow) or hits Back/Home.
+  const [showAppsBoard, setShowAppsBoard] = useState(false);
   // Notify the server when the sentence builder opens/closes so it can track
   // the conversation detour and inject a [RESUME] reminder afterward. Only fires
   // on an actual transition (skips the initial false on mount).
@@ -425,6 +452,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
   const dismissAppRef = useRef<() => void>(() => {});
   const registerAppCanvasCaptureRef = useRef<(fn: (() => Promise<Blob | null>) | null) => void>(() => {});
+  // Apps available to launch from the static Apps board overlay, bridged from
+  // DualAgentContext (the overlay renders outside the provider subtree).
+  const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string }>>([]);
+  const [availableCustomApps, setAvailableCustomApps] = useState<Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>>([]);
+  const launchAppFnRef = useRef<((appId: string, appData?: any) => void) | null>(null);
 
   // Binary-choice overlay state (bridged from DualAgentContext). Yes/no
   // questions are surfaced through this same overlay using the canonical
@@ -994,6 +1026,15 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         setShowConstructionBoard(true);
         return;
       }
+      // Apps page entry: open the static apps overlay client-side. The AI is
+      // not involved in rendering this page; it only finds out which app the
+      // user picked once they pick one (via a follow-up sendBoardExit call
+      // from AppsBoard's onPick handler).
+      if (instruction.includes("[APPS BOARD]")) {
+        console.log("[apps] home button intercept — opening overlay");
+        setShowAppsBoard(true);
+        return;
+      }
       // Save current page as latestPage when entering guessing mode from non-home tier
       if (instruction.includes("[GUESSING MODE]") && currentTier !== "home") {
         if (boardData) setLatestPage(boardData);
@@ -1492,6 +1533,31 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }}
           />
 
+          {showAppsBoard && (
+            // Static apps page — same dwell-trap pattern as the sentence
+            // builder so gaze over empty areas doesn't fall through to buttons
+            // behind. Picking an app launches it and tells the AI via the
+            // same exit-instruction channel used by every home button.
+            <div className="absolute inset-0 z-30 bg-white dark:bg-gray-900" data-dwell-trap>
+              <AppsBoard
+                enabledApps={enabledApps}
+                availableCustomApps={availableCustomApps}
+                onPick={(appId, displayName, appData) => {
+                  launchAppFnRef.current?.(appId, appData);
+                  // Inform the AI which app the user opened. Uses the existing
+                  // board-exit channel — the server treats this like any other
+                  // home-button instruction.
+                  sendBoardExitRef.current?.(
+                    displayName,
+                    `[APP OPENED] The user opened the ${displayName} app. Call rebuild_board() with context buttons relevant to this activity, or close_app() if the activity should end.`,
+                  );
+                  setShowAppsBoard(false);
+                }}
+                onClose={() => setShowAppsBoard(false)}
+              />
+            </div>
+          )}
+
           {showConstructionBoard && (
             // data-dwell-trap confines eyegaze dwell selection to the sentence
             // builder while it's open — gaze over its empty areas resolves to
@@ -1505,6 +1571,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 guessingBoard={boardData}
                 onGuessingPress={(key) => pressSuggestionRef.current?.(key)}
                 onEnterGuessing={(ctx) => enterGuessingFromBuilderRef.current?.(ctx)}
+                onExitGuessing={() => {
+                  // User picked a category tab / mode chip while guessing was
+                  // active — tell the server (and AI) they cancelled the word
+                  // search and want to browse normally instead. The
+                  // [EXIT GUESSING] tag flips guessingMode server-side.
+                  sendBoardExitRef.current?.(
+                    "Back",
+                    "[EXIT GUESSING] The user cancelled word-finding by picking a sentence-builder category. Resume normal sentence construction.",
+                  );
+                }}
                 people={peopleDirectory.people}
                 getFaceImage={resolveFaceImage}
                 getPersonName={peopleDirectory.getName}
@@ -1568,8 +1644,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               />
             );
           })()}
-          {/* App content — replaces board when an app is active */}
-          {activeApp ? (
+          {/* App content — replaces board when an app is active.
+              Exception: "social_trainer" runs in the header only and lets
+              the board keep rendering underneath. */}
+          {activeApp && activeApp.appId !== "social_trainer" ? (
             <div className="flex-1 min-w-0 h-full">
               {renderAppContent(
                 activeApp,
@@ -1629,6 +1707,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               setShowConstructionBoard(false);
               return;
             }
+            // Same dismiss-on-Home behavior for the static apps overlay.
+            if (showAppsBoard && action === "home") {
+              setShowAppsBoard(false);
+              return;
+            }
             if (action === "more") {
               // "More" = user can't find the right button. Ask AI to add
               // more options but NOT respond with speech.
@@ -1638,13 +1721,18 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             } else if (action === "home") {
               // 3-tier Home button navigation
               if (isGuessingMode) {
-                // Guessing mode: always return to latest page
+                // Guessing mode: tell the server to exit guessing first so the
+                // [EXIT GUESSING] tag flips the flag directly, then navigate
+                // back to whatever page the user was on. Send the exit even
+                // when there's no latestPage — otherwise the user gets stuck.
+                sendBoardExitRef.current?.(
+                  "Back",
+                  "[EXIT GUESSING] The user cancelled word-finding by pressing Back. Continue the conversation naturally without finishing the word search.",
+                );
                 if (latestPage) {
                   setPrebuiltBoardData(null);
                   setBoardData(latestPage);
                   setCurrentTier("latest");
-                  // Tell the AI the user exited guessing mode
-                  sendBoardExitRef.current?.("Back", "The user exited guessing mode and returned to their conversation. Continue naturally.");
                 }
               } else if (currentTier === "latest") {
                 // On latest page → go to context board home if exists, otherwise home
@@ -1694,9 +1782,32 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }
           }}
           onBack={() => {
-            // Back also dismisses the sentence builder when it's open.
+            // Back also dismisses the sentence builder when it's open. The
+            // server's builder_close handler already exits builder-origin
+            // guessing — but if guessing was launched from the conversation
+            // tier, builder_close won't touch it, so we send the explicit
+            // [EXIT GUESSING] signal here too.
             if (showConstructionBoard) {
+              if (isGuessingMode) {
+                sendBoardExitRef.current?.(
+                  "Back",
+                  "[EXIT GUESSING] The user cancelled word-finding by closing the sentence builder. Continue the conversation naturally.",
+                );
+              }
               setShowConstructionBoard(false);
+              return;
+            }
+            // Same dismiss-on-Back behavior for the static apps overlay.
+            if (showAppsBoard) {
+              setShowAppsBoard(false);
+              return;
+            }
+            // Top-level Back while in conversation-tier guessing: cancel it.
+            if (isGuessingMode) {
+              sendBoardExitRef.current?.(
+                "Back",
+                "[EXIT GUESSING] The user cancelled word-finding by pressing Back. Continue the conversation naturally without finishing the word search.",
+              );
               return;
             }
             // Call the prebuilt board's back function
@@ -1706,7 +1817,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }
           }}
           boardMode={boardMode}
-          hasActiveApp={!!activeApp}
+          // social_trainer takes over the header but doesn't render an app
+          // overlay, so the "exit app" close button is misleading — the
+          // return-to-menu button should stay. Other apps still get the
+          // close button via the `hasActiveApp` flag.
+          hasActiveApp={!!activeApp && activeApp.appId !== "social_trainer"}
           hasPrebuiltBoard={!!prebuiltBoardData}
           currentTier={currentTier}
           isGuessingMode={isGuessingMode}
@@ -1800,6 +1915,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       {studentId && useDualAgent && (
         <DualAgentProvider
           studentId={studentId}
+          classroomId={classroomId}
           language={currentLanguage}
           pitchByTag={{
             ...(userProfile?.aacSettings?.aiVoicePitch ? { avatar: userProfile.aacSettings.aiVoicePitch } : {}),
@@ -1820,6 +1936,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           getFaceImage={resolveFaceImage}
         >
           <AvatarSpriteProvider>
+          <SocialBotProvider studentId={studentId}>
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
             onVoiceReady={(fn) => { voiceFnRef.current = fn; }}
@@ -1839,6 +1956,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onBinaryChoiceChange={(options, dismiss) => { setBinaryChoiceOptions(options); dismissBinaryChoiceRef.current = dismiss; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
+            onEnabledAppsChange={setEnabledApps}
+            onAvailableCustomAppsChange={setAvailableCustomApps}
+            onLaunchAppReady={(fn) => { launchAppFnRef.current = fn; }}
             onSendConstructionStateReady={(fn) => { sendConstructionStateRef.current = fn; }}
             onConstructionSuggestionsChange={setConstructionSuggestionsState}
             onConstructionMemoryChipsChange={setConstructionMemoryChipsState}
@@ -1885,6 +2005,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               lastCapturedFaceImage={lastCapturedFaceImage}
             />
           )}
+          </SocialBotProvider>
           </AvatarSpriteProvider>
         </DualAgentProvider>
       )}
