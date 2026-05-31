@@ -122,6 +122,20 @@ export interface EnhancedPromptSections {
   assistModeExamples?: string;
   sentenceInterpretationExamples?: string;
   safetyNotes?: string;
+  /**
+   * Three-agent system only (see planning-docs/aac-agent-responsibility-split.md):
+   * Observer-specific guidance extracted from the clinician's chatAgentPrompt
+   * by the thorough-startup enhancer. Covers gestures to watch for, what
+   * counts as relevant in the environment, what NOT to transcribe, etc.
+   * Empty in the single-agent path (legacy ignores it).
+   */
+  observerInstructions?: string;
+  /**
+   * Three-agent system only: Board-Manager-specific guidance extracted by
+   * the enhancer. Surface preferences (e.g. "always include a 'finished'
+   * button for this student"). Empty in the single-agent path.
+   */
+  boardManagerGuidance?: string;
 }
 
 /**
@@ -145,7 +159,16 @@ export interface DualAgentSessionState {
   onTerminate?: (reason: string) => void;
 
   // Agent states
-  interactivePrompt: string; // Full prompt for Interactive agent
+  interactivePrompt: string; // Full prompt for Interactive agent (single-agent / legacy path)
+  /**
+   * Three-agent system (planning-docs/aac-agent-responsibility-split.md):
+   * Per-agent system prompts when this session runs the new path. The legacy
+   * `interactivePrompt` above stays populated for the single-agent path; in
+   * the three-agent path it may be left empty or set to a debug summary.
+   */
+  observerPrompt?: string;
+  speakerPrompt?: string;
+  boardManagerPrompt?: string;
   monitorBusy: boolean; // Is Monitor currently processing?
   monitorBusySince?: number; // Timestamp when Monitor started (for staleness detection)
 

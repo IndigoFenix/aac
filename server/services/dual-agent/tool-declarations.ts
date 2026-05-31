@@ -55,6 +55,14 @@ export interface ToolDeclarationConfig {
    * English when unset or unknown.
    */
   language?: string;
+  /**
+   * When true, AI-generated buttons must each carry a single GLYPH. Tool
+   * descriptions drop every `+`-joined SENTENCE example and the "match GLYPH
+   * count to SENTENCE shape" line, and the inline format examples switch to
+   * single-glyph variants. The sentence builder / interpret() path is
+   * unaffected.
+   */
+  singleGlyphButtons?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,36 +75,48 @@ export interface ToolDeclarationConfig {
 // system prompt — to keep the model's audio language consistent. The
 // analytical description text itself stays English (documentation).
 // See <grammar> and <button_syntax> in the system prompt for the full spec.
-function sentenceButtonFormat(language: string | undefined): string {
+function sentenceButtonFormat(language: string | undefined, singleGlyph: boolean): string {
+  // `sentence` field shape: single GLYPH or up to 3 `+`-joined GLYPHs. The
+  // OPERATOR example and the "match GLYPH count" line both bake in the
+  // multi-glyph shape, so they're rewritten / dropped under single-glyph mode.
+  const sentenceFieldDesc = singleGlyph
+    ? "(2) sentence — visual encoding: a single GLYPH (one head SYMBOL plus optional MODIFIER SYMBOLs attached with `.`), with sentence-level OPERATORs appended with `#`. "
+    : "(2) sentence — visual encoding: GLYPHs joined by `+`, MODIFIER SYMBOLs attached with `.`, sentence-level OPERATORs appended with `#`. ";
+  const operatorExample = singleGlyph
+    ? "Use OPERATORs for past/future/question — `🛝#past`. "
+    : "Use OPERATORs for past/future/question — `i_me+go+🛝#past`. ";
+  const glyphCountGuidance = singleGlyph
+    ? ""
+    : `Match GLYPH count to the SENTENCE shape: full subject+verb+object thoughts are 3-glyph SENTENCEs (${ex("tool.sbf_speech_three_glyph_banana", language)}); one-word answers and feelings are 1-glyph (${ex("tool.sbf_speech_one_glyph_tired", language)}). Don't pad. `;
   return (
     "Each ${T.button} is four pipe-separated fields: speech|sentence|fallback|label. " +
     `(1) speech — natural-language SENTENCE the TTS voices when pressed (first-person, conversational, e.g. ${ex("tool.sbf_speech_water", language)}). ` +
-    "(2) sentence — visual encoding: GLYPHs joined by `+`, MODIFIER SYMBOLs attached with `.`, sentence-level OPERATORs appended with `#`. " +
+    sentenceFieldDesc +
     "Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — default for anything not in <bundled_icons>), `symbol:ID` / `face:ID`, or `generate:lowercase_snake_case` (last resort, async-generated). " +
     "(3) fallback — a `sentence` string using NO `generate:` SYMBOLs (only canonical keys, emojis, `symbol:ID`, `face:ID`). REQUIRED whenever `sentence` uses any `generate:` SYMBOL; OMIT this field entirely (empty: `||`) otherwise. " +
     "(4) label — short on-button text. " +
     "**Snake_case rule:** if a word isn't in <bundled_icons>, EITHER use an emoji, OR prefix with `generate:` AND provide a fallback. Never emit bare unknown snake_case (`talk_about`, `my_day`, `go_school`); it renders as ❓ until generation completes. " +
     "Use MODIFIER SYMBOLs when the SENTENCE carries detail (color/size/count/possession/intensity) — `🍎.color_red`, `🤗.big.please`, `🍪.two`. " +
-    "Use OPERATORs for past/future/question — `i_me+go+🛝#past`. " +
-    `Match GLYPH count to the SENTENCE shape: full subject+verb+object thoughts are 3-glyph SENTENCEs (${ex("tool.sbf_speech_three_glyph_banana", language)}); one-word answers and feelings are 1-glyph (${ex("tool.sbf_speech_one_glyph_tired", language)}). Don't pad. ` +
+    operatorExample +
+    glyphCountGuidance +
     "Optional trailing rowSpan|colSpan after the label."
   );
 }
 
-function buttonFormatAdd(language: string | undefined): string {
+function buttonFormatAdd(language: string | undefined, singleGlyph: boolean): string {
   return (
     "Comma-separated ${T.button}s (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
-    sentenceButtonFormat(language) +
-    ` ${ex("tool.button_format_add_example", language)}`
+    sentenceButtonFormat(language, singleGlyph) +
+    ` ${ex("tool.button_format_add_example", language, singleGlyph)}`
   );
 }
 
-function buttonFormatRebuild(language: string | undefined): string {
+function buttonFormatRebuild(language: string | undefined, singleGlyph: boolean): string {
   return (
     "Comma-separated ${T.button}s for the ${T.board} (speech|sentence|fallback|label[|rowSpan|colSpan]). " +
-    sentenceButtonFormat(language) +
+    sentenceButtonFormat(language, singleGlyph) +
     " Aim to fill the ${T.board} (6–8 ${T.button}s) with a WIDE VARIETY of options unless context is unusually narrow. " +
-    ex("tool.button_format_rebuild_example", language)
+    ex("tool.button_format_rebuild_example", language, singleGlyph)
   );
 }
 
@@ -225,7 +245,7 @@ function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration
     parametersJsonSchema: {
       type: "object",
       properties: {
-        buttons: { type: "string", description: buttonFormatAdd(config.language) },
+        buttons: { type: "string", description: buttonFormatAdd(config.language, !!config.singleGlyphButtons) },
       },
       required: ["buttons"],
     },
@@ -269,7 +289,7 @@ If a custom board is currently loaded, calling this unloads it and replaces it w
           type: "string",
           description: `Optional. The AI's own spoken statement for this turn — what YOU are saying aloud. Speak the same words via your voice; this parameter is a declaration of your intent, not a TTS source. Useful for ${T.tagPress} responses (e.g. when the user presses 'I want to play' → \`${T.paramOwnSpeech}\`: 'Sure! What would you like to play with?'). The system logs this for monitoring and displays it as text in the UI alongside your spoken audio. Do NOT put user-response options here — those go in \`${T.paramUserResponseButtons}\`.`,
         },
-        [T.paramUserResponseButtons]: { type: "string", description: buttonFormatRebuild(config.language) },
+        [T.paramUserResponseButtons]: { type: "string", description: buttonFormatRebuild(config.language, !!config.singleGlyphButtons) },
       },
       required: [T.paramUserResponseButtons],
     },
@@ -408,18 +428,21 @@ const CALL_MONITOR: FunctionDeclaration = {
 // MODIFIER SYMBOLs, OPERATORs, animated SYMBOLs). For yes/no questions, the
 // `yes` / `no` canonical SYMBOLs auto-color the ${T.button} green / red.
 // Inline examples are localized via prompt-examples.ts.
-function binaryChoiceOptionFormat(language: string | undefined): string {
+function binaryChoiceOptionFormat(language: string | undefined, singleGlyph: boolean): string {
+  const rulesLine = singleGlyph
+    ? "All ${T.button} rules apply (single-GLYPH SENTENCE, MODIFIER SYMBOLs, OPERATORs, fallback when `sentence` uses `generate:`). "
+    : "All ${T.button} rules apply (multi-glyph SENTENCEs, MODIFIER SYMBOLs, OPERATORs, fallback when `sentence` uses `generate:`). ";
   return (
     "speech|sentence|fallback|label — same ${T.button} format as rebuild_board. " +
-    "All ${T.button} rules apply (multi-glyph SENTENCEs, MODIFIER SYMBOLs, OPERATORs, fallback when `sentence` uses `generate:`). " +
+    rulesLine +
     "speech is the first-person SENTENCE the user voices on press. label is the short on-button text. " +
     "For yes/no questions, use the `yes` / `no` canonical SYMBOLs — they animate on hover and auto-color the ${T.button} green / red without you setting an explicit color. " +
-    ex("tool.binary_choice_inline_examples", language)
+    ex("tool.binary_choice_inline_examples", language, singleGlyph)
   );
 }
 
 function buildBinaryChoiceTool(config: ToolDeclarationConfig): FunctionDeclaration {
-  const optionFormat = binaryChoiceOptionFormat(config.language);
+  const optionFormat = binaryChoiceOptionFormat(config.language, !!config.singleGlyphButtons);
   return {
     name: "binary_choice",
     description: `Show two large overlay ${T.button}s IMMEDIATELY. Use when SOMEONE ELSE offers the user a choice between two options — either a binary choice ("Do you want the apple or the banana?", or holds up two objects) OR a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions — use the ${T.board} for those.`,
@@ -436,7 +459,7 @@ function buildBinaryChoiceTool(config: ToolDeclarationConfig): FunctionDeclarati
 }
 
 function buildAskBinaryChoiceTool(config: ToolDeclarationConfig): FunctionDeclaration {
-  const optionFormat = binaryChoiceOptionFormat(config.language);
+  const optionFormat = binaryChoiceOptionFormat(config.language, !!config.singleGlyphButtons);
   return {
     name: "ask_binary_choice",
     description: `Show two large overlay ${T.button}s AFTER your speech finishes. Use when YOU offer the user a choice between two options — either a binary choice or a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs (e.g. option1="Yes|yes||Yes", option2="No|no||No") — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions.`,

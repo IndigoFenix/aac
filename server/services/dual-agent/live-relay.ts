@@ -1760,6 +1760,7 @@ export class LiveRelay {
               permittedYoutubeVideos: state.permittedYoutubeVideos.length > 0 ? state.permittedYoutubeVideos : undefined,
               permittedYoutubePlaylists: state.permittedYoutubePlaylists.length > 0 ? state.permittedYoutubePlaylists : undefined,
               autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+              singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
               useDirectAudio: this.useDirectAudio,
               sessionGoals: sections?.sessionGoals,
               personaGestureOverrides: sections?.gestureOverrides,
@@ -2166,6 +2167,33 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
     this.debugMode = msg.debugMode || false;
     this.timezone = msg.timezone;
 
+    // ────────────────────────────────────────────────────────────────────
+    // Three-agent system handoff (planning-docs/aac-agent-responsibility-split.md).
+    // Selection is env-driven:
+    //   AAC_USE_THREE_AGENT_SYSTEM=1                 — enable globally
+    //   AAC_THREE_AGENT_STUDENT_IDS=uuid1,uuid2,...  — enable only for these students
+    // Either (or both) opt this session into the new Observer / Speaker /
+    // Board Manager path. We detach our WS listeners, hand the socket to
+    // AgentCoordinator, and re-deliver the initialize message via its
+    // constructor. Dynamic import breaks the live-relay ↔ agent-coordinator
+    // value cycle (types still flow through static imports).
+    // ────────────────────────────────────────────────────────────────────
+    const enabledGlobally = process.env.AAC_USE_THREE_AGENT_SYSTEM === "1";
+    const enabledStudentIds = (process.env.AAC_THREE_AGENT_STUDENT_IDS || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (enabledGlobally || enabledStudentIds.includes(msg.studentId)) {
+      console.log(`[LiveRelay] Three-agent system selected for student=${msg.studentId} (envGlobal=${enabledGlobally}, envList=${enabledStudentIds.length > 0}) — handing off`);
+      this.ws.removeAllListeners("message");
+      this.ws.removeAllListeners("close");
+      this.ws.removeAllListeners("error");
+      const { AgentCoordinator } = await import("./agent-coordinator");
+      new AgentCoordinator(this.ws, this.authedUser, msg);
+      this.state = "closed";
+      return;
+    }
+
     try {
       // 1. Read LLM config
       const aacChatConfig = await settingsRepository.getLLMConfig("aac_chat");
@@ -2343,6 +2371,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
               ? await fetchRecentVideosForPlaylists(state.permittedYoutubePlaylists)
               : undefined,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+            singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
             useDirectAudio: true,
             sessionGoals: sections?.sessionGoals,
             personaGestureOverrides: sections?.gestureOverrides,
@@ -2392,6 +2421,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         // baked into the tool descriptions (see prompt-examples.ts). Falls
         // back to English when unset.
         language: cached.monitorAgent?.getStudent?.()?.primaryLanguage || undefined,
+        singleGlyphButtons: !!cached.monitorAgent?.getStudent?.()?.aacSettings?.singleGlyphButtons,
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -5491,6 +5521,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         faceRecognitionActive: (state.cachedContacts?.length || 0) > 0,
         useDirectAudio: this.useDirectAudio,
         language: student.primaryLanguage || undefined,
+        singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
         restingMode: true,
       });
       triggerTokens = LiveRelay.RESTING_COMPRESSION_TRIGGER;
@@ -5511,6 +5542,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         faceRecognitionActive: (state.cachedContacts?.length || 0) > 0,
         useDirectAudio: this.useDirectAudio,
         language: student.primaryLanguage || undefined,
+        singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
       });
       triggerTokens = LiveRelay.AWAKE_COMPRESSION_TRIGGER;
       targetTokens = LiveRelay.AWAKE_COMPRESSION_TARGET;

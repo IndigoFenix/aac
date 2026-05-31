@@ -37,6 +37,11 @@ const ENHANCED_SECTIONS: ReadonlyArray<{ tag: string; key: keyof EnhancedPromptS
   { tag: "assist_mode_examples", key: "assistModeExamples" },
   { tag: "sentence_interpretation_examples", key: "sentenceInterpretationExamples" },
   { tag: "safety_notes", key: "safetyNotes" },
+  // Three-agent system only (see planning-docs/aac-agent-responsibility-split.md).
+  // Empty in the legacy path; populated for the new Observer / Board Manager
+  // prompt builders.
+  { tag: "observer_instructions", key: "observerInstructions" },
+  { tag: "board_manager_guidance", key: "boardManagerGuidance" },
 ];
 
 /**
@@ -232,7 +237,7 @@ export class MonitorAgent {
    * seven tag-delimited sections that the prompt builder weaves into the
    * Interactive Agent's system prompt at specific locations.
    *
-   * The seven sections (see EnhancedPromptSections):
+   * The nine sections (see EnhancedPromptSections):
    *   - persona                       — who the AI is + who the user is + comm profile
    *   - session_goals                 — aims for THIS session given events / time / notes
    *   - gesture_overrides             — student-specific gestures the AI may treat as
@@ -245,6 +250,12 @@ export class MonitorAgent {
    *                                     including metaphor/compound patterns
    *   - safety_notes                  — allergies, behavioral triggers, redaction
    *                                     categories from the user-written prompt
+   *   - observer_instructions         — three-agent path only: what the Observer
+   *                                     should pay attention to (gestures, kinds
+   *                                     of objects, what NOT to transcribe)
+   *   - board_manager_guidance        — three-agent path only: surface preferences
+   *                                     (always include 'finished', prefer X buttons
+   *                                     in Y situation, etc.)
    *
    * Independent of the sections, this method ALSO returns `additionalContext`
    * built by `buildMemoryDump` — the raw "Interests: ..., Notes: ..." listing
@@ -276,6 +287,12 @@ export class MonitorAgent {
       const personaIsDefault = !rawPersonaPrompt;
       const language = student.primaryLanguage || "en";
       const languageName = getLanguageName(language);
+      // When true, the enhancer's example buttons (and the constraints on the
+      // student_specific / assist_mode example sections) must stay single-
+      // glyph — no `+`-joined SENTENCEs. The sentence_interpretation_examples
+      // section is left multi-glyph regardless (it feeds interpret(), which
+      // still decodes multi-glyph user-composed SENTENCEs).
+      const singleGlyphButtons = !!aac?.singleGlyphButtons;
 
       // ── Parse interests into a clean list ──
       // The enhancer needs to know the EXACT listed interests as a typed list
@@ -398,7 +415,7 @@ The Interactive Agent's prompt uses a rigid vocabulary. Your output is concatena
 - ${T.builder} — the composition surface the user opens to compose a ${T.sentence} one ${T.symbol} at a time.
 - ${T.symbol} — ONE word. An emoji, a canonical registry key, a custom symbol, or a \`generate:\` key. Never "icon" or "picture".
 - ${T.glyph} — ONE phrase. A ${T.headSymbol} plus optional ${T.modifierSymbol}s joined with \`.\`.
-- ${T.sentence} — a full utterance. Up to 3 ${T.glyph}s joined with \`+\`, optionally tagged with \`#${T.operator}\`s.
+- ${T.sentence} — a full utterance.${singleGlyphButtons ? " One ${T.glyph} per ${T.button} (head SYMBOL + optional MODIFIER SYMBOLs), optionally tagged with \\`#${T.operator}\\`s." : " Up to 3 ${T.glyph}s joined with \\`+\\`, optionally tagged with \\`#${T.operator}\\`s."}
 - ${T.operator} — sentence-level tag (\`#past\`, \`#future\`, \`#question\`).
 - ${T.headSymbol} / ${T.modifierSymbol} — the two roles a ${T.symbol} plays inside a ${T.glyph}.
 - ${T.suggestion} — a single ${T.symbol} surfaced in the ${T.builder}'s AI strip.
@@ -432,11 +449,23 @@ Each ${T.button} is four pipe-separated fields:
   \`speech|sentence|fallback|label\`
 
   - speech: natural-language utterance in ${languageName}, first-person, as the TTS voices it when tapped.
-  - sentence: visual encoding — ${T.glyph}s joined with \`+\`, ${T.operator}s appended with \`#\`. Built ONLY from the canonical inventory above + emojis + \`generate:\` keys. Language-neutral; same across all locales.
+  - sentence: visual encoding — ${singleGlyphButtons ? "a single " + T.glyph + " (one head SYMBOL + optional MODIFIER SYMBOLs joined with `.`)" : T.glyph + "s joined with `+`"}, ${T.operator}s appended with \`#\`. Built ONLY from the canonical inventory above + emojis + \`generate:\` keys. Language-neutral; same across all locales.
   - fallback: a sentence-shaped string using NO \`generate:\` ${T.symbol}s. REQUIRED whenever \`sentence\` contains ANY \`generate:\`; leave it blank otherwise.
   - label: short on-button text in ${languageName}.
 
-Examples of the shape — VALID:
+${singleGlyphButtons
+  ? `Examples of the shape — VALID:
+  \`I want a banana|🍌||Banana\`                          (one emoji)
+  \`Pizza, please|🍕.please||Pizza\`                      (.please is canonical modifier)
+  \`Happy|😊||Happy\`                                      (emoji)
+  \`Are you OK?|👌#question||OK?\`                         (emoji + #question operator)
+  \`Tell me about Mars|generate:planet_mars|🌑.color_red|Mars\`   (generate + fallback)
+
+INVALID (do NOT produce these):
+  \`Happy|happy||Happy\`                ← \`happy\` is not canonical; use \`😊\` instead.
+  \`Two cookies|🍪+two||Cookies\`        ← \`two\` is a modifier, attach with \`.\` not \`+\`: \`🍪.two\`.
+  \`In 5 minutes|5_minutes||5min\`      ← \`5_minutes\` is not canonical; use \`later\` + speech that says "in 5 minutes".`
+  : `Examples of the shape — VALID:
   \`I want a banana|i_me+want+🍌||Banana\`               (i_me, want are canonical; 🍌 is emoji)
   \`Pizza, please|🍕.please||Pizza\`                     (.please is canonical modifier)
   \`Happy|😊||Happy\`                                     (1-glyph emoji)
@@ -447,8 +476,8 @@ INVALID (do NOT produce these):
   \`Happy|i_me+happy||Happy\`           ← \`happy\` is not canonical; use \`i_me+😊\` instead.
   \`I want to talk|i_me+want+talk||Talk\` ← \`talk\` IS canonical, ok — but \`talk_about\`, \`my_day\` are NOT.
   \`Stop|i_me+stop||Stop\`              ← \`stop\` IS canonical, ok.
-  \`In 5 minutes|in+5_minutes||5min\`   ← \`5_minutes\` is not canonical; use \`later\` + speech that says "in 5 minutes".
-  
+  \`In 5 minutes|in+5_minutes||5min\`   ← \`5_minutes\` is not canonical; use \`later\` + speech that says "in 5 minutes".`}
+
 
 ### Image Generator Rules
 
@@ -479,8 +508,11 @@ In your examples of button boards below, you will need to include buttons with \
   - The fallback is what the user sees IMMEDIATELY while the image is generating (and if generation fails). A \`generate:\` in the fallback throws an error.
   - Fallback may only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers on the above.
   - Mirror the SHAPE of the \`sentence\` field so the visual reads the same. The fallback's job is to approximate the generated concept by combining an existing emoji with a canonical modifier — "Mars" has no emoji, but a red planet (\`🌑.color_red\`) reads as the same idea. Example:
-        sentence  = \`i_me+want+generate:planet_mars\`
-        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)
+${singleGlyphButtons
+  ? `        sentence  = \`generate:planet_mars\`
+        fallback  = \`🌑.color_red\`   (single GLYPH; substitute existing emoji + canonical modifier)`
+  : `        sentence  = \`i_me+want+generate:planet_mars\`
+        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)`}
   - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
 
 When providing examples of buttons with \`generate:\` symbols, come up with examples that follow these rules. The Interactive Agent's prompt will include these examples as the ONLY reference for how to use \`generate:\`, so they must be good examples.
@@ -518,7 +550,7 @@ ${openTag("session_goals")}
 A session_goals bullet is shaped: "[Likely situation] → [what the AI should do when it sees that situation]". Examples of the shape (don't copy literally):
 - "Music therapy at 10:00 — when the user returns to the device after, expect them to want to share what happened; surface ${T.button}s for 'I liked it' / 'I didn't like it' / specific instruments."
 - "Afternoon energy dip around 14:00 — be ready for short, low-effort exchanges and ${T.button}s about resting / a snack / a quiet activity."
-- "Recent notes show the user has been working on 2-symbol requests — gently model that pattern when offering ${T.button}s, e.g. \`i_me+want+X\`."
+- "${singleGlyphButtons ? "Recent notes show the user has been working on adjective+noun requests — gently model that pattern when offering ${T.button}s, e.g. `🍎.color_red`, `🍪.two`." : "Recent notes show the user has been working on 2-symbol requests — gently model that pattern when offering ${T.button}s, e.g. `i_me+want+X`."}"
 - "User has a sibling birthday this weekend — if they raise it, support questions about the party."
 
 Skip a bullet if no signal supports it. Be specific. If NOTHING in the data suggests anything actionable, leave the section body empty.
@@ -551,7 +583,7 @@ The format below is RIGID — match it exactly. Match the INDENTATION too (8 spa
 CONSTRAINTS:
 - Situation must be plausible for THIS user given the data above — not a generic "at home" if the time + events suggest the user is in a class right now.
 - The conversation can touch on the user's interests, current goals, or whatever the situation naturally produces — but the situation, not the interest, is the frame.
-- Every \`sentence\` field MUST use ONLY canonical registry keys (from the inventory above) + emojis + \`generate:\`. No invented snake_case.
+- Every \`sentence\` field MUST use ONLY canonical registry keys (from the inventory above) + emojis + \`generate:\`. No invented snake_case.${singleGlyphButtons ? "\n- Every \\`sentence\\` field is a SINGLE GLYPH (one head SYMBOL + optional MODIFIER SYMBOLs with \\`.\\`). NEVER use \\`+\\` to join GLYPHs in a button's sentence." : ""}
 - Each ${T.button} list is comma-separated. EACH button itself is exactly four pipe-fields (\`speech|sentence|fallback|label\`) — count the pipes before writing the next button.
 - Drop the fallback field (\`||\`) whenever \`sentence\` has no \`generate:\`.
 - Speech and labels are in ${languageName}. Glyph encoding stays language-neutral.
@@ -601,7 +633,34 @@ ${openTag("safety_notes")}
 - Surface any high-risk patterns to watch for from recent notes.
 - Note what (if anything) you redacted from the user-written prompt, BY CATEGORY only (e.g. "Removed an instruction to withhold communication as a behavioral consequence — unsafe under AAC ethics."). Do NOT quote the removed text.
 - If nothing specific applies, leave the body empty.
-${closeTag("safety_notes")}`;
+${closeTag("safety_notes")}
+
+${openTag("observer_instructions")}
+[Three-agent-only — guidance for the OBSERVER agent (the perception layer that records what's happening around the device). Empty in single-agent mode; harmless otherwise. 0–6 bullets.]
+
+The Observer's job is to record people, voices, objects, gestures, and ambient events — its sibling agents read those records to decide whether to speak or update the board. Help it know what's worth recording for THIS user.
+
+Include only items that are SPECIFIC to this user (general "watch for gestures" guidance is already in the prompt). Examples of what fits here:
+- Gestures unique to this user that signal something the AI should know but should NOT be transcribed as speech (self-stimming patterns, comfort behaviors).
+- Object categories the user is known to fixate on or react to (e.g. "this user gets distressed by balloons — record their appearance promptly").
+- Words / phrases that should NOT be transcribed (e.g. the user's own approximations of words their AAC can voice, so the system doesn't double-count).
+- People the user often interacts with off-camera (so Observer can recognize the voice even without a face match).
+- If nothing specific applies, leave the body empty.
+${closeTag("observer_instructions")}
+
+${openTag("board_manager_guidance")}
+[Three-agent-only — guidance for the BOARD MANAGER agent (the surface that produces the buttons the user picks from). Empty in single-agent mode. 0–6 bullets.]
+
+The Board Manager produces the ${T.button}s independently from the Speaker — its job is to anticipate what the user might want to say or do next given the context. Help it bias its choices toward what works for THIS user.
+
+Include only items that are SPECIFIC to this user. Examples of what fits here:
+- Buttons that should always be present (e.g. "always include a 'finished' or 'all done' button — this user uses it to end activities").
+- Layout / shape preferences (e.g. "this user reads better with shorter labels — keep label text under 8 characters when possible").
+- Topic biases (e.g. "weight social-greeting buttons heavily — this user is working on greetings").
+- Visual choices (e.g. "this user responds better to face symbols than emoji for people — prefer face:ID over generic person emoji").
+- Pacing (e.g. "this user prefers 4-button boards over 8-button ones; keep boards uncluttered").
+- If nothing specific applies, leave the body empty.
+${closeTag("board_manager_guidance")}`;
 
       // ── User-written prompt wrapped in untrusted markers ──
       // The enhancer treats this as CONTENT to summarize, not commands.

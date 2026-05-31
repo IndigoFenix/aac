@@ -2331,6 +2331,8 @@ export const de = {
     buttonSizeBalanced: "Ausgeglichen (Standard)",
     buttonSizeSmIcon: "Kleinere Symbole, größerer Text",
     buttonSizeMinIcon: "Minimale Symbole, extra großer Text",
+    singleGlyphButtons: "Einzelsymbol-Tasten",
+    singleGlyphButtonsDesc: "Beschränkt KI-generierte Tasten auf je ein Symbol oder eine Phrase. Hilfreich für Kommunikationsanfänger.",
     // Startup
     startupMode: "Startmodus",
     startupModeDesc: "Wie viel Kontext beim Starten einer AAC-Sitzung geladen wird",

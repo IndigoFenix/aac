@@ -228,13 +228,15 @@ export class SocialBotRelay {
       const aac = student?.aacSettings as any;
       voiceExclusions = [aac?.geminiAiVoice, aac?.geminiStudentVoice];
     } else {
-      // Standalone mode — no student record. TTS still needs a code (we
-      // default to "en" so Gemini TTS has something to lean on), but
-      // the prompt tells the model to mirror the user.
+      // Standalone mode — no student record. The client tells us which
+      // language it set its STT to via params.language; use that as the
+      // ground truth so prompt + TTS line up with what the user is
+      // actually speaking (no more "stuck in Hebrew" surprises).
       this.studentId = null;
-      this.language = "en";
-      promptLanguage = null;
-      logLiveSession("SOCIAL BOT", `standalone session — no studentId`);
+      const langCode = typeof params.language === "string" ? params.language : "en";
+      this.language = langCode;
+      promptLanguage = getLanguageName(langCode);
+      logLiveSession("SOCIAL BOT", `standalone session — no studentId, language=${langCode}`);
     }
     // Gender-matched voice, excluding any AAC voices the student already
     // hears in their day-to-day session.

@@ -51,6 +51,24 @@ const ARCHETYPES = [
 type ArchetypeId = (typeof ARCHETYPES)[number]["id"];
 type GenderPick = "random" | "male" | "female";
 
+// Language codes mirror shared/language-names.ts. We expose them
+// explicitly in standalone because the browser SpeechRecognition's
+// implicit `navigator.language` was locking the user's actual STT to
+// whatever locale their OS reported — not what they want to test.
+const LANGUAGES: ReadonlyArray<{ code: string; label: string; bcp47: string }> = [
+  { code: "en", label: "English", bcp47: "en-US" },
+  { code: "he", label: "Hebrew", bcp47: "he-IL" },
+  { code: "es", label: "Spanish", bcp47: "es-ES" },
+  { code: "pt", label: "Portuguese", bcp47: "pt-PT" },
+  { code: "fr", label: "French", bcp47: "fr-FR" },
+  { code: "ru", label: "Russian", bcp47: "ru-RU" },
+  { code: "de", label: "German", bcp47: "de-DE" },
+  { code: "ar", label: "Arabic", bcp47: "ar-SA" },
+  { code: "zh", label: "Mandarin", bcp47: "zh-CN" },
+  { code: "yue", label: "Cantonese", bcp47: "zh-HK" },
+  { code: "ko", label: "Korean", bcp47: "ko-KR" },
+];
+
 const COMPETENCY_LABEL: Record<string, string> = {
   responsiveness: "responding to what they said",
   reciprocity: "asking about them",
@@ -108,9 +126,18 @@ export default function SocialTrainerApp() {
     const parsed = stored ? parseFloat(stored) : NaN;
     return Number.isFinite(parsed) ? parsed : 0.4;
   });
+  const [languageCode, setLanguageCode] = useState<string>(() => {
+    const stored = localStorage.getItem("social_trainer_language");
+    if (stored && LANGUAGES.some((l) => l.code === stored)) return stored;
+    // First-launch default: try to match the browser locale to one of
+    // our known codes, otherwise English.
+    const navCode = (navigator.language || "en").split("-")[0];
+    return LANGUAGES.find((l) => l.code === navCode) ? navCode : "en";
+  });
   useEffect(() => { localStorage.setItem("social_trainer_archetype", archetype); }, [archetype]);
   useEffect(() => { localStorage.setItem("social_trainer_gender", genderPick); }, [genderPick]);
   useEffect(() => { localStorage.setItem("social_trainer_difficulty", String(difficulty)); }, [difficulty]);
+  useEffect(() => { localStorage.setItem("social_trainer_language", languageCode); }, [languageCode]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -248,8 +275,12 @@ export default function SocialTrainerApp() {
       const rec = new SR();
       rec.continuous = true;
       rec.interimResults = true;
-      // Don't hard-pin a language — let the browser pick from its locale.
-      rec.lang = navigator.language || "en-US";
+      // Explicit BCP-47 from the language picker. Implicit navigator.language
+      // here was the original "stuck in Hebrew" bug — the user's OS locale
+      // was silently dictating STT regardless of what they actually wanted
+      // to speak.
+      const lang = LANGUAGES.find((l) => l.code === languageCode);
+      rec.lang = lang?.bcp47 || "en-US";
 
       rec.onresult = (event: any) => {
         let interim = "";
@@ -288,7 +319,7 @@ export default function SocialTrainerApp() {
     } catch (err: any) {
       setError(`SpeechRecognition failed: ${err.message || err}`);
     }
-  }, [micActive, sendUtterance]);
+  }, [micActive, sendUtterance, languageCode]);
 
   const stopMic = useCallback(() => {
     const rec = recognitionRef.current;
@@ -313,10 +344,11 @@ export default function SocialTrainerApp() {
     ws.onopen = () => {
       // studentId is optional — server drops AAC-specific bits and runs
       // in standalone mode (mirror-the-user language) when it's missing.
-      const params: { archetype?: string; gender?: "male" | "female"; difficulty?: number } = {};
+      const params: { archetype?: string; gender?: "male" | "female"; difficulty?: number; language?: string } = {};
       if (archetype !== "random") params.archetype = archetype;
       if (genderPick !== "random") params.gender = genderPick;
       params.difficulty = difficulty;
+      params.language = languageCode;
       const init: { type: "initialize"; studentId?: string; params?: typeof params } = {
         type: "initialize",
         params,
@@ -382,7 +414,7 @@ export default function SocialTrainerApp() {
     ws.onerror = () => {
       setError("WebSocket error");
     };
-  }, [studentId, archetype, genderPick, difficulty, playWavBase64, interruptPlayback, stopMic]);
+  }, [studentId, archetype, genderPick, difficulty, languageCode, playWavBase64, interruptPlayback, stopMic]);
 
   const disconnect = useCallback(() => {
     stopMic();
@@ -464,6 +496,17 @@ export default function SocialTrainerApp() {
               <option value="random">Random</option>
               <option value="male">Male</option>
               <option value="female">Female</option>
+            </select>
+          </label>
+          <label>
+            <span>Language</span>
+            <select
+              value={languageCode}
+              onChange={(e) => setLanguageCode(e.target.value)}
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
             </select>
           </label>
           <label className="slider">

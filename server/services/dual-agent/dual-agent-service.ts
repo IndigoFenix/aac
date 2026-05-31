@@ -539,6 +539,7 @@ export class DualAgentService {
         youtubeChannelVideos: ytChannelVideos,
         youtubePlaylistVideos: ytPlaylistVideos,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+        singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
         sessionGoals: sections?.sessionGoals,
         personaGestureOverrides: sections?.gestureOverrides,
         interactModeExamples: sections?.interactModeExamples,
@@ -838,6 +839,7 @@ export class DualAgentService {
             ? await fetchRecentVideosForPlaylists(state.permittedYoutubePlaylists)
             : undefined,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+          singleGlyphButtons: !!student.aacSettings?.singleGlyphButtons,
           sessionGoals: sections?.sessionGoals,
           personaGestureOverrides: sections?.gestureOverrides,
           interactModeExamples: sections?.interactModeExamples,

@@ -88,6 +88,12 @@ export class GeminiLiveProvider implements LiveProvider {
   // Set by close() so onclose handler knows not to auto-reconnect
   private closedIntentionally = false;
 
+  // Track consecutive auto-reconnect attempts so a config-error close
+  // (or persistent server-side rejection) can't burn rate-limit cycles
+  // forever. Reset on successful setupComplete.
+  private consecutiveReconnects = 0;
+  private static MAX_CONSECUTIVE_RECONNECTS = 5;
+
   // Vertex AI does not support the `behavior` parameter on tool declarations
   private useVertexAI = false;
 
@@ -97,16 +103,21 @@ export class GeminiLiveProvider implements LiveProvider {
   // outside our async chain and loses context).
   private debugSessionId: string | null = null;
   private debugMode = false;
+  /** Optional agent tag for the three-agent path (Observer / Speaker).
+   *  Threaded through runInSessionContext so every server-message and
+   *  tool-call log entry the SDK callback emits carries the agent name. */
+  private debugAgentLabel: string | undefined;
 
   /** Bind this provider's onmessage callbacks to a session for DB log capture. */
-  setDebugSessionContext(sessionId: string, debugMode: boolean): void {
+  setDebugSessionContext(sessionId: string, debugMode: boolean, agentLabel?: string): void {
     this.debugSessionId = sessionId;
     this.debugMode = debugMode;
+    this.debugAgentLabel = agentLabel;
   }
 
   private withSession<T>(fn: () => T): T {
     if (this.debugSessionId) {
-      return runInSessionContext(this.debugSessionId, this.debugMode, fn);
+      return runInSessionContext(this.debugSessionId, this.debugMode, fn, this.debugAgentLabel);
     }
     return fn();
   }
@@ -286,14 +297,22 @@ export class GeminiLiveProvider implements LiveProvider {
             this.lastCloseCode = e.code;
             const reason = e.reason || "";
             console.log(`[GeminiLiveProvider] Connection closed: code=${e.code} reason=${reason}`);
+            logLiveSession("CONNECTION_CLOSED", `code=${e.code} reason="${reason}" intentional=${this.closedIntentionally}`);
             this.clearReconnectTimer();
 
             const isRateLimit = /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(reason);
             this.lastCloseWasRateLimit = isRateLimit;
 
-            const isConfigError = e.code === 1007 && /Invalid JSON payload|Unknown name|Cannot find field/i.test(reason);
+            // Detect config errors — closes where the server rejected our
+            // request shape. Auto-reconnecting on these burns rate-limit
+            // cycles forever because the next attempt has the same config.
+            // Widened from the original (Invalid JSON / Unknown name) to
+            // catch modality / model / parameter mismatches the server
+            // surfaces as 1007.
+            const isConfigError = e.code === 1007 && /Invalid JSON payload|Unknown name|Cannot find field|not supported|invalid|unsupported/i.test(reason);
             if (isConfigError) {
               console.error(`[GeminiLiveProvider] CONFIG ERROR (not safety): ${reason}`);
+              logLiveSession("CONFIG_ERROR", `code=${e.code} reason="${reason}"`);
             }
 
             const isSafety = !isRateLimit && !isConfigError && /policy.violation|unsafe|blocked|safety/i.test(reason);
@@ -303,13 +322,35 @@ export class GeminiLiveProvider implements LiveProvider {
 
             if (isRateLimit) {
               console.warn(`[GeminiLiveProvider] Rate limited — NOT auto-reconnecting. Reason: ${reason}`);
+              logLiveSession("RECONNECT_SKIPPED", `rate limited: ${reason}`);
+              return;
+            }
+
+            // Config errors are non-recoverable without a code change. Don't
+            // try to reconnect — surface as a fatal error so the caller can
+            // tear down cleanly instead of looping.
+            if (isConfigError) {
+              console.warn(`[GeminiLiveProvider] Config error — NOT auto-reconnecting (would re-fail with same config).`);
+              logLiveSession("RECONNECT_SKIPPED", `config error: ${reason}`);
+              this.callbacks.onError(new Error(`Config error from server: ${reason}`));
+              return;
+            }
+
+            // Max-retry guard — if we've already burned the budget on this
+            // run of consecutive failures, give up and surface a fatal error.
+            if (this.consecutiveReconnects >= GeminiLiveProvider.MAX_CONSECUTIVE_RECONNECTS) {
+              console.warn(`[GeminiLiveProvider] Reconnect budget exhausted (${this.consecutiveReconnects} consecutive failures) — giving up.`);
+              logLiveSession("RECONNECT_BUDGET_EXHAUSTED", `attempts=${this.consecutiveReconnects} lastCode=${e.code} lastReason="${reason}"`);
+              this.callbacks.onError(new Error(`Reconnect budget exhausted after ${this.consecutiveReconnects} attempts (last close: ${e.code} ${reason})`));
               return;
             }
 
             // Auto-reconnect on unexpected closes
             if (!this.closedIntentionally && e.code !== 1000) {
+              this.consecutiveReconnects += 1;
               const delay = e.code === 1011 ? 1000 : e.code === 1007 ? 2000 : 1000;
-              console.log(`[GeminiLiveProvider] Unexpected close (code=${e.code}), reconnecting in ${delay}ms...`);
+              console.log(`[GeminiLiveProvider] Unexpected close (code=${e.code}), reconnecting in ${delay}ms (attempt ${this.consecutiveReconnects}/${GeminiLiveProvider.MAX_CONSECUTIVE_RECONNECTS})...`);
+              logLiveSession("RECONNECT_SCHEDULED", `code=${e.code} delayMs=${delay} attempt=${this.consecutiveReconnects}/${GeminiLiveProvider.MAX_CONSECUTIVE_RECONNECTS}`);
               this.callbacks.onReconnecting?.();
               this.scheduleReconnect(delay);
             }
@@ -329,6 +370,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   async reconnect(): Promise<void> {
     this.callbacks.onReconnecting?.();
+    logLiveSession("RECONNECT_START", `hasResumption=${!!this.resumptionHandle} attempt=${this.consecutiveReconnects}`);
 
     if (this.session) {
       try { this.session.close(); } catch { /* ignore */ }
@@ -339,17 +381,25 @@ export class GeminiLiveProvider implements LiveProvider {
 
     if (!this.resumptionHandle) {
       console.warn("[GeminiLiveProvider] No resumption handle — full reconnect");
-      await this.connect(this.systemPrompt, this.config);
+      logLiveSession("RECONNECT_NO_HANDLE", "starting full reconnect");
+      try {
+        await this.connect(this.systemPrompt, this.config);
+      } catch (err) {
+        logLiveSession("RECONNECT_FAILED", `${(err as Error).message}`);
+        throw err;
+      }
       await this.callbacks.onReconnectFailed?.();
       return;
     }
 
     console.log("[GeminiLiveProvider] Reconnecting with resumption handle...");
+    logLiveSession("RECONNECT_WITH_HANDLE", "attempting session resumption");
 
     try {
       await this.connect(this.systemPrompt, this.config);
     } catch (err) {
       console.warn("[GeminiLiveProvider] Resumption failed, trying fresh connect:", err);
+      logLiveSession("RECONNECT_RESUMPTION_FAILED", `${(err as Error).message} — falling back to fresh connect`);
       this.resumptionHandle = null;
       await this.connect(this.systemPrompt, this.config);
       await this.callbacks.onReconnectFailed?.();
@@ -673,6 +723,9 @@ export class GeminiLiveProvider implements LiveProvider {
     if (msg.setupComplete) {
       console.log("[GeminiLiveProvider] Setup complete — ready to send data");
       logLiveSession("SETUP_COMPLETE", `connected=${this.connected} timestamp=${Date.now()}`);
+      // A fully-set-up session resets the reconnect-retry counter so a
+      // brief network blip later doesn't count toward the cap.
+      this.consecutiveReconnects = 0;
       this.callbacks.onReady?.();
       return;
     }

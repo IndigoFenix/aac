@@ -182,6 +182,11 @@ export interface LiveProvider {
    * Bind logger session context so provider-side events (server messages,
    * tool calls) get attributed to the right session_debug_logs row.
    * No-op when debugMode is false.
+   *
+   * `agentLabel` is an optional tag (Observer / Speaker) for the three-agent
+   * path — when set, every log entry the provider emits inside its async
+   * callbacks carries the tag so concurrent traces from two Live sessions
+   * can be told apart.
    */
-  setDebugSessionContext(sessionId: string, debugMode: boolean): void;
+  setDebugSessionContext(sessionId: string, debugMode: boolean, agentLabel?: string): void;
 }

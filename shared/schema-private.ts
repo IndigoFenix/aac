@@ -506,6 +506,15 @@ export const aacSettings = pgTable("aac_settings", {
   iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference
 
+  // Constrain AI-generated buttons to a single GLYPH each (the glyph may still
+  // carry modifiers — what's restricted is the per-button GLYPH count). When
+  // on, the live system prompt, tool descriptions, and prompt enhancer strip
+  // every `+`-joined SENTENCE example and rewrite the grammar so the model
+  // never sees multi-glyph button shapes. The sentence builder and interpret()
+  // path are unaffected — the user can still compose multi-glyph SENTENCEs
+  // and the model still decodes them.
+  singleGlyphButtons: boolean("single_glyph_buttons").default(false).notNull(),
+
   // Auto-generated symbol settings
   generateSymbols: boolean("generate_symbols").default(true).notNull(), // Generate symbol images on-the-fly via Gemini
   useApprovedSymbols: boolean("use_approved_symbols").default(true).notNull(), // Show approved generated symbols on buttons

@@ -65,6 +65,15 @@ export interface CloudLayer {
   horizScaleM: number;
   /** Vertical noise wavelength (meters). */
   vertScaleM: number;
+  /** 0..1 — physical shape axis.
+   *    0 = pure stratus: layer is flat, every cell renders as a planet-
+   *        tangent disc, no parallax variation.
+   *    1 = pure cumulus: every cell renders as a volumetric puff with
+   *        parallax-layered sub-sprites for depth.
+   *  Real water clouds blend (Earth ~0.6: scattered cumulus over broken
+   *  stratus). Used by the renderer's mode selector — does NOT change
+   *  the density field itself. */
+  cumuliformity: number;
 }
 
 export interface CloudClump {
@@ -285,6 +294,29 @@ function pickHorizScaleM(cloudType: Atmosphere["cloudType"]): number {
   }
 }
 
+/** Cumuliformity per cloud type. Drives whether sprites render as flat
+ *  discs (stratus) or volumetric puffs (cumulus) in the renderer. Tuned
+ *  to real-physics expectations:
+ *    Venus sulfuric — pure deck, 0
+ *    Earth water    — mixed cumulus/stratus, 0.6
+ *    Mars CO₂ ice   — wispy flat layer, 0.1
+ *    Jupiter ammonia— banded stratus deck (storms add cumulus locally
+ *                     via clumps, not via the base layer), 0.2
+ *    Neptune methane— deep flat haze, 0.0
+ *    Hot Jupiter    — silicate haze, mostly flat, 0.15
+ */
+function pickCumuliformity(cloudType: Atmosphere["cloudType"]): number {
+  switch (cloudType) {
+    case "water":          return 0.6;
+    case "sulfuric_acid":  return 0.0;
+    case "ammonia":        return 0.2;
+    case "methane":        return 0.0;
+    case "co2_ice":        return 0.1;
+    case "iron_silicate":  return 0.15;
+    default:               return 0.3;
+  }
+}
+
 /** Tint where air is sinking. Darken the zone color and shift toward the
  *  warmer end — belts on Jupiter expose deeper, warmer chemistry. */
 function deriveBeltColor(zone: THREE.Color): THREE.Color {
@@ -331,6 +363,7 @@ export function deriveCloudField(opts: DeriveCloudFieldOpts): CloudFieldParams {
     beltColor,
     horizScaleM,
     vertScaleM,
+    cumuliformity: pickCumuliformity(atmosphere.cloudType),
   };
 
   // Circulation derivation:

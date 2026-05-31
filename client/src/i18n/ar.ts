@@ -2331,6 +2331,8 @@ export const ar = {
     buttonSizeBalanced: "متوازن (افتراضي)",
     buttonSizeSmIcon: "رموز أصغر، نص أكبر",
     buttonSizeMinIcon: "رموز صغيرة جداً، نص كبير جداً",
+    singleGlyphButtons: "أزرار برمز واحد",
+    singleGlyphButtonsDesc: "تقييد الأزرار التي ينشئها الذكاء الاصطناعي برمز أو عبارة واحدة لكل زر. مفيد للمبتدئين في التواصل.",
     // Startup
     startupMode: "وضع البدء",
     startupModeDesc: "مقدار السياق المطلوب تحميله عند بدء جلسة AAC",

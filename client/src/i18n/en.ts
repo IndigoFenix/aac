@@ -2331,6 +2331,8 @@ export const en = {
     buttonSizeBalanced: "Balanced (default)",
     buttonSizeSmIcon: "Smaller icons, larger text",
     buttonSizeMinIcon: "Minimal icons, extra large text",
+    singleGlyphButtons: "Single-Symbol Buttons",
+    singleGlyphButtonsDesc: "Constrain AI-generated buttons to a single symbol or phrase each. Useful for early communicators.",
     // Startup
     startupMode: "Startup Mode",
     startupModeDesc: "How much context to load when starting an AAC session",

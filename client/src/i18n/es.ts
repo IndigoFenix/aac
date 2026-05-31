@@ -2331,6 +2331,8 @@ export const es = {
     buttonSizeBalanced: "Equilibrado (predeterminado)",
     buttonSizeSmIcon: "Iconos más pequeños, texto más grande",
     buttonSizeMinIcon: "Iconos mínimos, texto extra grande",
+    singleGlyphButtons: "Botones de un solo símbolo",
+    singleGlyphButtonsDesc: "Restringe los botones generados por la IA a un solo símbolo o frase. Útil para comunicadores tempranos.",
     // Startup
     startupMode: "Modo de inicio",
     startupModeDesc: "Cuánto contexto cargar al iniciar una sesión AAC",

@@ -1549,3 +1549,273 @@
 [2026-05-29T12:38:42.886Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
 [2026-05-29T12:40:27.047Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-05-29T12:40:27.048Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-05-31T08:38:49.321Z] [resolveImageKeys] Resolving 3 keys: feel, something, do (format=api-path, useUnapproved=true)
+[2026-05-31T08:38:49.497Z] [resolveImageKeys] No symbol found for "feel"
+[2026-05-31T08:38:49.665Z] [resolveImageKeys] No symbol found for "something"
+[2026-05-31T08:38:49.833Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T08:38:49.834Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: feel, something
+[2026-05-31T08:38:49.835Z] [queueGeneration] Queuing 2 keys: feel, something (hasCallback=true)
+[2026-05-31T08:38:50.005Z] [processQueue] Generating "something"...
+[2026-05-31T08:38:53.592Z] [resolveImageKeys] Resolving 3 keys: do, me, about (format=api-path, useUnapproved=true)
+[2026-05-31T08:38:53.764Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T08:38:53.931Z] [resolveImageKeys] No symbol found for "me"
+[2026-05-31T08:38:54.100Z] [resolveImageKeys] No symbol found for "about"
+[2026-05-31T08:38:54.101Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: me, about
+[2026-05-31T08:38:54.102Z] [queueGeneration] Queuing 2 keys: me, about (hasCallback=true)
+[2026-05-31T10:09:44.450Z] [resolveImageKeys] Resolving 3 keys: feel, do, something_else (format=api-path, useUnapproved=true)
+[2026-05-31T10:09:44.617Z] [resolveImageKeys] No symbol found for "feel"
+[2026-05-31T10:09:44.788Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:09:44.951Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-31T10:09:44.953Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: feel
+[2026-05-31T10:09:44.954Z] [queueGeneration] Queuing 1 keys: feel (hasCallback=true)
+[2026-05-31T10:09:45.121Z] [processQueue] Generating "feel"...
+[2026-05-31T10:09:58.307Z] [resolveImageKeys] Resolving 2 keys: yes, no (format=internal, useUnapproved=true)
+[2026-05-31T10:09:58.478Z] [resolveImageKeys] No symbol found for "yes"
+[2026-05-31T10:09:58.649Z] [resolveImageKeys] No symbol found for "no"
+[2026-05-31T10:09:58.650Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: yes, no
+[2026-05-31T10:09:58.652Z] [queueGeneration] Queuing 2 keys: yes, no (hasCallback=true)
+[2026-05-31T10:10:01.787Z] [resolveImageKeys] Resolving 4 keys: about, new, what, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:10:01.963Z] [resolveImageKeys] No symbol found for "about"
+[2026-05-31T10:10:02.578Z] [resolveImageKeys] No symbol found for "new"
+[2026-05-31T10:10:02.754Z] [resolveImageKeys] No symbol found for "what"
+[2026-05-31T10:10:02.931Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:10:02.936Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: about, new, what
+[2026-05-31T10:10:02.938Z] [queueGeneration] Queuing 3 keys: about, new, what (hasCallback=true)
+[2026-05-31T10:10:02.946Z] [COST] imageKey="feel" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=61 | image: openai/gpt-image-1 in=68 out=272
+[2026-05-31T10:10:02.947Z] [processQueue] Generated "feel" → 8a34db14-c195-40ed-9614-3dc2a470bb69 (1 total)
+[2026-05-31T10:10:02.948Z] [processQueue] FULL REFINED PROMPT for "feel": A simple, generic human figure with a slightly stylized body, facing forward, with a large head. The figure has simple dots for eyes and a small curved mouth. One hand is raised to the chest, palm flat against the chest, indicating the action of feeling or sensing, in flat AAC icon style.
+[2026-05-31T10:41:17.515Z] [resolveImageKeys] Resolving 4 keys: what, happen, feel, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:41:17.690Z] [resolveImageKeys] No symbol found for "what"
+[2026-05-31T10:41:17.859Z] [resolveImageKeys] No symbol found for "happen"
+[2026-05-31T10:41:18.027Z] [resolveImageKeys] Resolved "feel" → /api/custom-symbols/8a34db14-c195-40ed-9614-3dc2a470bb69/image
+[2026-05-31T10:41:18.195Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:41:18.196Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: what, happen
+[2026-05-31T10:41:18.197Z] [queueGeneration] Queuing 2 keys: what, happen (hasCallback=true)
+[2026-05-31T10:41:18.367Z] [processQueue] Generating "happen"...
+[2026-05-31T10:41:34.928Z] [COST] imageKey="happen" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=93 | image: openai/gpt-image-1 in=99 out=272
+[2026-05-31T10:41:34.929Z] [processQueue] Generated "happen" → 7074fb45-b7d1-4fc4-8c71-c193eda19ddc (1 total)
+[2026-05-31T10:41:34.930Z] [processQueue] FULL REFINED PROMPT for "happen": A simple, bold AAC icon illustration depicting a light bulb illuminating above a generic human figure's head, symbolizing an idea or event occurring. The figure is shown from the chest up, facing forward, with a simple dot for an eye and a small curve for a mouth. The light bulb is bright yellow with a white glow, and the figure has a light brown skin tone. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-31T10:41:39.122Z] [processQueue] Generating "what"...
+[2026-05-31T10:41:52.292Z] [COST] imageKey="what" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=51 | image: openai/gpt-image-1 in=57 out=272
+[2026-05-31T10:41:52.293Z] [processQueue] Generated "what" → 11016454-0312-4cc3-91eb-5007b6468e6d (2 total)
+[2026-05-31T10:41:52.294Z] [processQueue] FULL REFINED PROMPT for "what": A generic human figure with a slightly stylized head and simple dot eyes, shrugging their shoulders with palms facing up, conveying confusion or questioning, in a flat AAC icon style. The figure is centered, with bold black outlines and solid, saturated colors.
+[2026-05-31T10:42:39.754Z] [resolveImageKeys] Resolving 2 keys: how_are_you, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:42:39.946Z] [resolveImageKeys] No symbol found for "how_are_you"
+[2026-05-31T10:42:40.336Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:42:40.338Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: how_are_you
+[2026-05-31T10:42:40.343Z] [queueGeneration] Queuing 1 keys: how_are_you (hasCallback=true)
+[2026-05-31T10:42:40.875Z] [processQueue] Generating "how_are_you"...
+[2026-05-31T10:42:42.960Z] [resolveImageKeys] Resolving 2 keys: how_are_you_feeling#question, its_ok (format=internal, useUnapproved=true)
+[2026-05-31T10:42:45.611Z] [resolveImageKeys] Resolving 3 keys: interesting, yes, no (format=internal, useUnapproved=true)
+[2026-05-31T10:42:46.611Z] [resolveImageKeys] No symbol found for "how_are_you_feeling#question"
+[2026-05-31T10:42:46.787Z] [resolveImageKeys] Resolved "interesting" → __SYMBOL__:d98820e3-51fc-4733-a821-b5636fe3ca35
+[2026-05-31T10:42:46.976Z] [resolveImageKeys] No symbol found for "its_ok"
+[2026-05-31T10:42:46.978Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: how_are_you_feeling#question, its_ok
+[2026-05-31T10:42:46.981Z] [queueGeneration] Queuing 2 keys: how_are_you_feeling#question, its_ok (hasCallback=true)
+[2026-05-31T10:42:46.985Z] [resolveImageKeys] Resolving 2 keys: how_are_you_feeling, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:42:47.129Z] [resolveImageKeys] No symbol found for "yes"
+[2026-05-31T10:42:47.322Z] [resolveImageKeys] No symbol found for "how_are_you_feeling"
+[2026-05-31T10:42:47.436Z] [resolveImageKeys] No symbol found for "no"
+[2026-05-31T10:42:47.438Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: yes, no
+[2026-05-31T10:42:47.441Z] [queueGeneration] Queuing 2 keys: yes, no (hasCallback=true)
+[2026-05-31T10:42:47.444Z] [resolveImageKeys] Resolving 4 keys: about, what, happen, interesting (format=api-path, useUnapproved=true)
+[2026-05-31T10:42:47.632Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:42:47.634Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: how_are_you_feeling
+[2026-05-31T10:42:47.638Z] [queueGeneration] Queuing 1 keys: how_are_you_feeling (hasCallback=true)
+[2026-05-31T10:42:47.690Z] [resolveImageKeys] No symbol found for "about"
+[2026-05-31T10:42:47.882Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T10:42:48.066Z] [resolveImageKeys] Resolved "happen" → /api/custom-symbols/7074fb45-b7d1-4fc4-8c71-c193eda19ddc/image
+[2026-05-31T10:42:48.244Z] [resolveImageKeys] Resolved "interesting" → /api/custom-symbols/d98820e3-51fc-4733-a821-b5636fe3ca35/image
+[2026-05-31T10:42:48.247Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: about
+[2026-05-31T10:42:48.253Z] [queueGeneration] Queuing 1 keys: about (hasCallback=true)
+[2026-05-31T10:42:55.866Z] [COST] imageKey="how_are_you" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=67 | image: openai/gpt-image-1 in=74 out=272
+[2026-05-31T10:42:55.872Z] [processQueue] Generated "how_are_you" → 43da2c12-70b1-4b4d-9c96-b4ad0d15536c (1 total)
+[2026-05-31T10:42:55.876Z] [processQueue] FULL REFINED PROMPT for "how_are_you": A generic human figure with a slightly stylized, larger head, simple dots for eyes, and a small curved mouth, standing with arms slightly open in a welcoming gesture, with a large, bright yellow question mark floating above their head, all rendered in flat, solid colors with bold black outlines on a transparent background, in AAC icon style.
+[2026-05-31T10:43:00.052Z] [processQueue] Generating "about"...
+[2026-05-31T10:43:00.283Z] [resolveImageKeys] Resolving 1 keys: its_ok (format=internal, useUnapproved=true)
+[2026-05-31T10:43:00.467Z] [resolveImageKeys] No symbol found for "its_ok"
+[2026-05-31T10:43:00.471Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: its_ok
+[2026-05-31T10:43:00.479Z] [queueGeneration] Queuing 1 keys: its_ok (hasCallback=true)
+[2026-05-31T10:43:00.484Z] [resolveImageKeys] Resolving 2 keys: feel, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:43:00.682Z] [resolveImageKeys] Resolved "feel" → /api/custom-symbols/8a34db14-c195-40ed-9614-3dc2a470bb69/image
+[2026-05-31T10:43:00.885Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:43:00.904Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-31T10:43:04.567Z] [resolveImageKeys] Resolving 1 keys: interesting (format=api-path, useUnapproved=true)
+[2026-05-31T10:43:04.761Z] [resolveImageKeys] Resolved "interesting" → /api/custom-symbols/d98820e3-51fc-4733-a821-b5636fe3ca35/image
+[2026-05-31T10:43:04.769Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T10:43:06.646Z] [resolveImageKeys] Resolving 1 keys: call (format=api-path, useUnapproved=true)
+[2026-05-31T10:43:06.952Z] [resolveImageKeys] No symbol found for "call"
+[2026-05-31T10:43:06.955Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: call
+[2026-05-31T10:43:06.961Z] [queueGeneration] Queuing 1 keys: call (hasCallback=true)
+[2026-05-31T10:43:15.333Z] [COST] imageKey="about" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=72 | image: openai/gpt-image-1 in=78 out=272
+[2026-05-31T10:43:15.334Z] [processQueue] Generated "about" → 03349d62-7240-4637-a794-32f238e0ab07 (2 total)
+[2026-05-31T10:43:15.335Z] [processQueue] FULL REFINED PROMPT for "about": A simple, bold AAC icon illustration of a generic human head in profile, facing right, with a thought bubble emerging from the top of the head. The thought bubble contains a question mark. The head has a simple dot for an eye and a small curve for a mouth. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-31T10:43:19.524Z] [processQueue] Generating "call"...
+[2026-05-31T10:43:35.124Z] [COST] imageKey="call" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=71 | image: openai/gpt-image-1 in=77 out=272
+[2026-05-31T10:43:35.125Z] [processQueue] Generated "call" → 60ba3fd9-8a3f-4ce0-a6f4-31d0c6d6690a (3 total)
+[2026-05-31T10:43:35.125Z] [processQueue] FULL REFINED PROMPT for "call": A generic human figure with a large head and simple features, holding a black rectangular smartphone to their ear with one hand, depicted in a side profile view. A simple curved motion line emanates from the phone towards the ear, indicating sound. The figure wears a simple blue shirt. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-05-31T10:43:39.299Z] [processQueue] Generating "its_ok"...
+[2026-05-31T10:43:53.540Z] [COST] imageKey="its_ok" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=41 | image: openai/gpt-image-1 in=47 out=272
+[2026-05-31T10:43:53.541Z] [processQueue] Generated "its_ok" → 0bab4e46-f871-4ba7-ae81-ef14906c2615 (4 total)
+[2026-05-31T10:43:53.542Z] [processQueue] FULL REFINED PROMPT for "its_ok": A simple generic human figure with a neutral expression, holding both hands up with palms facing forward, in a gesture of reassurance or "stop," with a subtle, gentle smile, in flat AAC icon style.
+[2026-05-31T10:43:57.728Z] [processQueue] Generating "how_are_you_feeling"...
+[2026-05-31T10:44:11.340Z] [COST] imageKey="how_are_you_feeling" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=44 | image: openai/gpt-image-1 in=50 out=272
+[2026-05-31T10:44:11.341Z] [processQueue] Generated "how_are_you_feeling" → 3f9e70f3-b902-42dc-9f9e-898d8a1e4afc (5 total)
+[2026-05-31T10:44:11.343Z] [processQueue] FULL REFINED PROMPT for "how_are_you_feeling": A simple AAC icon showing a generic human head with a large question mark floating above it, in flat AAC icon style. The head has simple dot eyes and a small curved mouth. The question mark is bold and black.
+[2026-05-31T10:44:15.524Z] [processQueue] Generating "no"...
+[2026-05-31T10:44:27.800Z] [COST] imageKey="no" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=24 | image: openai/gpt-image-1 in=30 out=272
+[2026-05-31T10:44:27.801Z] [processQueue] Generated "no" → 9b8a17d8-b924-4b12-b314-d8b998428090 (6 total)
+[2026-05-31T10:44:27.803Z] [processQueue] FULL REFINED PROMPT for "no": A red circle with a diagonal line through it, indicating "no" or "stop," in flat AAC icon style.
+[2026-05-31T10:44:31.975Z] [processQueue] Generating "yes"...
+[2026-05-31T10:44:44.134Z] [COST] imageKey="yes" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=27 | image: openai/gpt-image-1 in=33 out=272
+[2026-05-31T10:44:44.136Z] [processQueue] Generated "yes" → 8ea78a1f-76b4-48ab-a92e-4c49372f7011 (7 total)
+[2026-05-31T10:44:44.136Z] [processQueue] FULL REFINED PROMPT for "yes": A green checkmark icon, bold and simple, with a thick black outline, on a transparent background, in flat AAC icon style.
+[2026-05-31T10:44:48.315Z] [processQueue] "its_ok" already exists → 0bab4e46-f871-4ba7-ae81-ef14906c2615
+[2026-05-31T10:44:52.503Z] [processQueue] Generating "how_are_you_feeling#question"...
+[2026-05-31T10:45:04.569Z] [COST] imageKey="how_are_you_feeling#question" | refinement: gemini/gemini-2.5-flash in=1062 (1055 cached) out=37 | image: openai/gpt-image-1 in=43 out=272
+[2026-05-31T10:45:04.570Z] [processQueue] Generated "how_are_you_feeling#question" → 15304a9c-ce01-43da-bf3c-0204d38871e0 (8 total)
+[2026-05-31T10:45:04.571Z] [processQueue] FULL REFINED PROMPT for "how_are_you_feeling#question": A generic human figure with a yellow circular head, simple black dot eyes, and a small curved mouth, with a blue question mark floating above their head, in flat AAC icon style.
+[2026-05-31T10:59:55.039Z] [resolveImageKeys] Resolving 1 keys: wait#past (format=internal, useUnapproved=true)
+[2026-05-31T10:59:55.447Z] [resolveImageKeys] No symbol found for "wait#past"
+[2026-05-31T10:59:55.448Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: wait#past
+[2026-05-31T10:59:55.450Z] [queueGeneration] Queuing 1 keys: wait#past (hasCallback=true)
+[2026-05-31T10:59:55.456Z] [resolveImageKeys] Resolving 2 keys: feel, do (format=api-path, useUnapproved=true)
+[2026-05-31T10:59:56.265Z] [resolveImageKeys] Resolved "feel" → /api/custom-symbols/8a34db14-c195-40ed-9614-3dc2a470bb69/image
+[2026-05-31T10:59:56.267Z] [processQueue] Generating "wait#past"...
+[2026-05-31T10:59:57.482Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T10:59:57.483Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-05-31T10:59:59.550Z] [resolveImageKeys] Resolving 1 keys: wait (format=internal, useUnapproved=true)
+[2026-05-31T10:59:59.720Z] [resolveImageKeys] No symbol found for "wait"
+[2026-05-31T10:59:59.721Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: wait
+[2026-05-31T10:59:59.722Z] [queueGeneration] Queuing 1 keys: wait (hasCallback=true)
+[2026-05-31T10:59:59.723Z] [resolveImageKeys] Resolving 3 keys: do, new, time (format=api-path, useUnapproved=true)
+[2026-05-31T10:59:59.892Z] [resolveImageKeys] Resolved "do" → /api/custom-symbols/5594a41b-1779-4996-8f4b-32211c15c2ba/image
+[2026-05-31T11:00:00.064Z] [resolveImageKeys] No symbol found for "new"
+[2026-05-31T11:00:00.238Z] [resolveImageKeys] No symbol found for "time"
+[2026-05-31T11:00:00.239Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: new, time
+[2026-05-31T11:00:00.241Z] [queueGeneration] Queuing 2 keys: new, time (hasCallback=true)
+[2026-05-31T11:00:07.215Z] [resolveImageKeys] Resolving 2 keys: wait, later (format=internal, useUnapproved=true)
+[2026-05-31T11:00:07.869Z] [resolveImageKeys] No symbol found for "wait"
+[2026-05-31T11:00:08.039Z] [resolveImageKeys] Resolved "later" → __SYMBOL__:cf0e9ad3-09b4-426b-810a-36bad996719a
+[2026-05-31T11:00:08.039Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: wait
+[2026-05-31T11:00:08.040Z] [queueGeneration] Queuing 1 keys: wait (hasCallback=true)
+[2026-05-31T11:00:08.041Z] [resolveImageKeys] Resolving 4 keys: what, happen, something, new (format=api-path, useUnapproved=true)
+[2026-05-31T11:00:08.209Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T11:00:08.382Z] [resolveImageKeys] Resolved "happen" → /api/custom-symbols/7074fb45-b7d1-4fc4-8c71-c193eda19ddc/image
+[2026-05-31T11:00:08.550Z] [resolveImageKeys] No symbol found for "something"
+[2026-05-31T11:00:08.719Z] [resolveImageKeys] No symbol found for "new"
+[2026-05-31T11:00:08.719Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: something, new
+[2026-05-31T11:00:08.721Z] [queueGeneration] Queuing 2 keys: something, new (hasCallback=true)
+[2026-05-31T11:00:20.452Z] [COST] imageKey="wait#past" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=88 | image: openai/gpt-image-1 in=94 out=272
+[2026-05-31T11:00:20.452Z] [processQueue] Generated "wait#past" → f09bf391-ddaa-49b2-b603-2503a8f1a1b9 (1 total)
+[2026-05-31T11:00:20.453Z] [processQueue] FULL REFINED PROMPT for "wait#past": A simple, generic human figure with a slightly stylized body and larger head, standing with both hands held up in front, palms facing forward, in a gesture indicating "stop" or "wait." The figure has simple dots for eyes and a small curved mouth. The clothing is minimal and non-gender-specific. The illustration uses bold black outlines and flat, solid colors, suitable for an AAC communication board icon, on a transparent background.
+[2026-05-31T11:00:24.640Z] [processQueue] Generating "new"...
+[2026-05-31T11:00:38.585Z] [resolveImageKeys] Resolving 2 keys: wait, later (format=internal, useUnapproved=true)
+[2026-05-31T11:00:39.906Z] [COST] imageKey="new" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=64 | image: openai/gpt-image-1 in=72 out=272
+[2026-05-31T11:00:39.906Z] [processQueue] Generated "new" → 3163e25a-6a7f-4816-8a6e-8f121bf8b4db (2 total)
+[2026-05-31T11:00:39.907Z] [processQueue] FULL REFINED PROMPT for "new": A bold AAC icon of a bright green upward-pointing arrow, curving slightly to the right, with a small yellow starburst at its tip, symbolizing "new". The arrow has a thick black outline and is filled with a flat, solid green color. The starburst is filled with a flat, solid yellow color.
+[2026-05-31T11:00:40.083Z] [resolveImageKeys] No symbol found for "wait"
+[2026-05-31T11:00:40.481Z] [resolveImageKeys] Resolved "later" → __SYMBOL__:cf0e9ad3-09b4-426b-810a-36bad996719a
+[2026-05-31T11:00:40.482Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: wait
+[2026-05-31T11:00:40.483Z] [queueGeneration] Queuing 1 keys: wait (hasCallback=true)
+[2026-05-31T11:00:40.484Z] [resolveImageKeys] Resolving 1 keys: something (format=api-path, useUnapproved=true)
+[2026-05-31T11:00:40.663Z] [resolveImageKeys] No symbol found for "something"
+[2026-05-31T11:00:40.664Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: something
+[2026-05-31T11:00:40.665Z] [queueGeneration] Queuing 1 keys: something (hasCallback=true)
+[2026-05-31T11:00:42.963Z] [resolveImageKeys] Resolving 2 keys: what#question, wait (format=internal, useUnapproved=true)
+[2026-05-31T11:00:43.134Z] [resolveImageKeys] No symbol found for "what#question"
+[2026-05-31T11:00:43.305Z] [resolveImageKeys] No symbol found for "wait"
+[2026-05-31T11:00:43.307Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: what#question, wait
+[2026-05-31T11:00:43.308Z] [queueGeneration] Queuing 2 keys: what#question, wait (hasCallback=true)
+[2026-05-31T11:00:43.310Z] [resolveImageKeys] Resolving 2 keys: what, time (format=api-path, useUnapproved=true)
+[2026-05-31T11:00:43.482Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T11:00:43.653Z] [resolveImageKeys] No symbol found for "time"
+[2026-05-31T11:00:43.654Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: time
+[2026-05-31T11:00:43.655Z] [queueGeneration] Queuing 1 keys: time (hasCallback=true)
+[2026-05-31T11:00:44.094Z] [processQueue] Generating "something"...
+[2026-05-31T11:38:45.916Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T11:38:49.529Z] [resolveImageKeys] No symbol found for "finished"
+[2026-05-31T11:38:49.530Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: finished
+[2026-05-31T11:38:49.531Z] [queueGeneration] Queuing 1 keys: finished (hasCallback=true)
+[2026-05-31T11:38:49.533Z] [resolveImageKeys] Resolving 1 keys: how_are_you (format=api-path, useUnapproved=true)
+[2026-05-31T11:38:49.697Z] [processQueue] Generating "finished"...
+[2026-05-31T11:38:49.707Z] [resolveImageKeys] Resolved "how_are_you" → /api/custom-symbols/43da2c12-70b1-4b4d-9c96-b4ad0d15536c/image
+[2026-05-31T11:38:49.708Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T11:38:53.001Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T11:38:53.168Z] [resolveImageKeys] No symbol found for "finished"
+[2026-05-31T11:38:53.169Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: finished
+[2026-05-31T11:38:53.170Z] [queueGeneration] Queuing 1 keys: finished (hasCallback=true)
+[2026-05-31T11:39:06.654Z] [COST] imageKey="finished" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=31 | image: openai/gpt-image-1 in=37 out=272
+[2026-05-31T11:39:06.656Z] [processQueue] Generated "finished" → 8afbff17-5769-4d1c-847e-2f5321bea133 (1 total)
+[2026-05-31T11:39:06.657Z] [processQueue] FULL REFINED PROMPT for "finished": A green checkmark symbol inside a solid green circle, with a bold black outline around both the checkmark and the circle, in flat AAC icon style.
+[2026-05-31T11:39:11.107Z] [processQueue] "finished" already exists → 8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T11:39:29.118Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T11:39:29.483Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T11:39:29.485Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T11:39:29.488Z] [resolveImageKeys] Resolving 1 keys: what (format=api-path, useUnapproved=true)
+[2026-05-31T11:39:29.706Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T11:39:29.707Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:22:21.932Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T12:22:22.109Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:22:22.115Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:22:37.291Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T12:22:37.585Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:22:37.586Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:22:37.588Z] [resolveImageKeys] Resolving 1 keys: sparkles (format=api-path, useUnapproved=true)
+[2026-05-31T12:22:37.762Z] [resolveImageKeys] No symbol found for "sparkles"
+[2026-05-31T12:22:37.767Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: sparkles
+[2026-05-31T12:22:37.768Z] [queueGeneration] Queuing 1 keys: sparkles (hasCallback=true)
+[2026-05-31T12:22:37.942Z] [processQueue] Generating "sparkles"...
+[2026-05-31T12:22:43.628Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T12:22:43.790Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:22:43.791Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:22:55.734Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T12:22:57.330Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:22:57.331Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:23:24.293Z] [COST] imageKey="sparkles" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=45 | image: openai/gpt-image-1 in=53 out=272
+[2026-05-31T12:23:24.294Z] [processQueue] Generated "sparkles" → 7c1a147d-27fc-453f-b568-bccd58e89aea (1 total)
+[2026-05-31T12:23:24.296Z] [processQueue] FULL REFINED PROMPT for "sparkles": A cluster of three stylized, four-pointed star shapes, varying slightly in size, with bold black outlines and solid bright yellow fill, radiating outward from a central point, on a transparent background, in flat AAC icon style.
+[2026-05-31T12:23:25.566Z] [resolveImageKeys] Resolving 2 keys: generate:ping_pong, finished (format=internal, useUnapproved=true)
+[2026-05-31T12:23:25.752Z] [resolveImageKeys] No symbol found for "generate:ping_pong"
+[2026-05-31T12:23:25.928Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:23:25.929Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: generate:ping_pong
+[2026-05-31T12:23:25.930Z] [queueGeneration] Queuing 1 keys: generate:ping_pong (hasCallback=true)
+[2026-05-31T12:23:25.932Z] [resolveImageKeys] Resolving 2 keys: ping_pong, what (format=api-path, useUnapproved=true)
+[2026-05-31T12:23:26.092Z] [resolveImageKeys] No symbol found for "ping_pong"
+[2026-05-31T12:23:26.104Z] [processQueue] Generating "generate:ping_pong"...
+[2026-05-31T12:23:26.249Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T12:23:26.250Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: ping_pong
+[2026-05-31T12:23:26.251Z] [queueGeneration] Queuing 1 keys: ping_pong (hasCallback=true)
+[2026-05-31T12:23:39.791Z] [resolveImageKeys] Resolving 2 keys: what#question, finished (format=internal, useUnapproved=true)
+[2026-05-31T12:23:39.988Z] [resolveImageKeys] No symbol found for "what#question"
+[2026-05-31T12:23:40.173Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:23:40.174Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: what#question
+[2026-05-31T12:23:40.176Z] [queueGeneration] Queuing 1 keys: what#question (hasCallback=true)
+[2026-05-31T12:23:40.178Z] [resolveImageKeys] Resolving 2 keys: ping_pong, what (format=api-path, useUnapproved=true)
+[2026-05-31T12:23:40.353Z] [resolveImageKeys] No symbol found for "ping_pong"
+[2026-05-31T12:23:40.528Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T12:23:40.529Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: ping_pong
+[2026-05-31T12:23:40.530Z] [queueGeneration] Queuing 1 keys: ping_pong (hasCallback=true)
+[2026-05-31T12:23:41.089Z] [COST] imageKey="generate:ping_pong" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=85 | image: openai/gpt-image-1 in=89 out=272
+[2026-05-31T12:23:41.090Z] [processQueue] Generated "generate:ping_pong" → 24b66aa1-8c95-4333-8209-d095f95dab16 (1 total)
+[2026-05-31T12:23:41.090Z] [processQueue] FULL REFINED PROMPT for "generate:ping_pong": A simple, bold AAC icon illustration of a person playing ping pong. A generic human figure with a large head and simple features is shown mid-action, holding a paddle and hitting a ping pong ball. The figure wears a simple t-shirt and shorts. Minimal motion lines indicate the swing of the paddle and the flight of the ball. The icon uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-05-31T12:23:45.264Z] [processQueue] Generating "ping_pong"...
+[2026-05-31T12:24:02.135Z] [COST] imageKey="ping_pong" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=49 | image: openai/gpt-image-1 in=55 out=272
+[2026-05-31T12:24:02.136Z] [processQueue] Generated "ping_pong" → 737f1db7-475e-4661-b6d4-4c608924bbb7 (2 total)
+[2026-05-31T12:24:02.136Z] [processQueue] FULL REFINED PROMPT for "ping_pong": A flat AAC icon illustration of a white ping pong ball bouncing above a red ping pong paddle, held by a generic human hand with a light brown skin tone. The paddle has a black handle. Simple black outlines, solid colors, transparent background.
+[2026-05-31T12:24:02.905Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-05-31T12:24:03.155Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-05-31T12:24:03.156Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-05-31T12:24:03.158Z] [resolveImageKeys] Resolving 6 keys: what, this, ping_pong, explain, about, something_else (format=api-path, useUnapproved=true)
+[2026-05-31T12:24:03.316Z] [resolveImageKeys] Resolved "what" → /api/custom-symbols/11016454-0312-4cc3-91eb-5007b6468e6d/image
+[2026-05-31T12:24:03.473Z] [resolveImageKeys] No symbol found for "this"
+[2026-05-31T12:24:03.634Z] [resolveImageKeys] Resolved "ping_pong" → /api/custom-symbols/737f1db7-475e-4661-b6d4-4c608924bbb7/image
+[2026-05-31T12:24:03.792Z] [resolveImageKeys] No symbol found for "explain"
+[2026-05-31T12:24:03.967Z] [resolveImageKeys] Resolved "about" → /api/custom-symbols/03349d62-7240-4637-a794-32f238e0ab07/image
+[2026-05-31T12:24:04.124Z] [resolveImageKeys] Resolved "something_else" → /api/custom-symbols/6724d700-0054-4225-a35b-74a0054fb63b/image
+[2026-05-31T12:24:04.127Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: this, explain
+[2026-05-31T12:24:04.129Z] [queueGeneration] Queuing 2 keys: this, explain (hasCallback=true)
+[2026-05-31T12:24:06.325Z] [processQueue] Generating "what#question"...
+[2026-05-31T12:24:20.086Z] [COST] imageKey="what#question" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=35 | image: openai/gpt-image-1 in=41 out=272
+[2026-05-31T12:24:20.088Z] [processQueue] Generated "what#question" → f9f32a0d-1076-4849-8ffa-0420183101c0 (3 total)
+[2026-05-31T12:24:20.090Z] [processQueue] FULL REFINED PROMPT for "what#question": A large, bold black question mark symbol, centered on a transparent background, with a flat, solid yellow fill color and a thick black outline, in simple AAC icon style.

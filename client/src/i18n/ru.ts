@@ -2331,6 +2331,8 @@ export const ru = {
     buttonSizeBalanced: "Сбалансированный (по умолчанию)",
     buttonSizeSmIcon: "Меньшие иконки, крупный текст",
     buttonSizeMinIcon: "Минимальные иконки, очень крупный текст",
+    singleGlyphButtons: "Кнопки с одним символом",
+    singleGlyphButtonsDesc: "Ограничить кнопки, генерируемые ИИ, одним символом или фразой. Полезно для начинающих коммуникаторов.",
     // Startup
     startupMode: "Режим запуска",
     startupModeDesc: "Сколько контекста загружать при запуске сеанса AAC",

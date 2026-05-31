@@ -2331,6 +2331,8 @@ export const yue = {
     buttonSizeBalanced: "平衡（預設）",
     buttonSizeSmIcon: "細啲圖示，大啲文字",
     buttonSizeMinIcon: "最細圖示，超大文字",
+    singleGlyphButtons: "單符號按鈕",
+    singleGlyphButtonsDesc: "將AI生成嘅按鈕限制為單一符號或短語。啱啱開始學溝通嘅人士適用。",
     // Startup
     startupMode: "啟動模式",
     startupModeDesc: "啟動 AAC 工作階段嗰陣載入幾多背景資料",

@@ -2331,6 +2331,8 @@ export const he = {
     buttonSizeBalanced: "מאוזן (ברירת מחדל)",
     buttonSizeSmIcon: "אייקונים קטנים יותר, טקסט גדול יותר",
     buttonSizeMinIcon: "אייקונים מינימליים, טקסט גדול מאוד",
+    singleGlyphButtons: "כפתורים עם סמל בודד",
+    singleGlyphButtonsDesc: "הגבל את הכפתורים שהבינה המלאכותית יוצרת לסמל או ביטוי בודד. מתאים למתקשרים בתחילת דרכם.",
     // Startup
     startupMode: "מצב הפעלה",
     startupModeDesc: "How much context to load when starting an AAC session",

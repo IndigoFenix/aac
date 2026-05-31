@@ -212,6 +212,16 @@ export function buildInteractiveAgentPrompt(params: {
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
   /**
+   * When true, AI-generated buttons must each carry a single GLYPH (head
+   * SYMBOL + optional MODIFIER SYMBOLs). The `<grammar>`/`<button_syntax>`
+   * blocks drop every `+`-joined SENTENCE example, all tool descriptions
+   * switch to single-glyph example variants, and the enhancer is told to
+   * keep its example boards single-glyph. The sentence builder, interpret(),
+   * and suggest_construction_buttons paths are NOT affected — the user can
+   * still compose multi-glyph SENTENCEs and the model still decodes them.
+   */
+  singleGlyphButtons?: boolean;
+  /**
    * Optional structured sections produced by the thorough-startup enhancer
    * (see EnhancedPromptSections in dual-agent/types.ts). When present, each
    * section is injected at a specific location in the prompt:
@@ -287,6 +297,7 @@ export function buildInteractiveAgentPrompt(params: {
     permittedYoutubeChannels, permittedYoutubeVideos, youtubeChannelVideos,
     permittedYoutubePlaylists, youtubePlaylistVideos,
     autoSymbolsEnabled = false, useDirectAudio = false,
+    singleGlyphButtons = false,
     sessionGoals, personaGestureOverrides, safetyNotes,
     interactModeExamples, assistModeExamples, sentenceInterpretationExamples,
     sessionSummary, classroom,
@@ -417,7 +428,7 @@ NEVER produce text or audio such as "Let me check" or "Let me check that for you
     EXAMPLES (Interact Mode)${interactModeExamples ? " — themed on this user's interests / upcoming events" : ""} — A natural conversation flow. Note: the fallback field is OMITTED whenever the SENTENCE uses no \`generate:\` SYMBOLs.
     <examples>
       <example>
-${interactModeExamples ?? ex("interact_mode.dialogue", language)}
+${interactModeExamples ?? ex("interact_mode.dialogue", language, singleGlyphButtons)}
       </example>
     </examples>
 
@@ -447,7 +458,7 @@ ${ex("interact_mode.bad_echo", language)}
     EXAMPLES (Assist Mode)${assistModeExamples ? " — themed on this user's interests / upcoming events" : ""} — You are facilitating communication.
     <examples>
       <example>
-${assistModeExamples ?? ex("assist_mode.dialogue", language)}
+${assistModeExamples ?? ex("assist_mode.dialogue", language, singleGlyphButtons)}
       </example>
     </examples>
   </assist_mode>
@@ -464,9 +475,9 @@ Use binary_choice / ask_binary_choice for ANY question with exactly two response
 
 A "Neither" button is added automatically — do NOT include it as one of your two options.
 
-Each option is a ${T.button} in the standard speech|sentence|fallback|label format — ALL ${T.button} rules apply (multi-glyph SENTENCEs, MODIFIER SYMBOLs, OPERATORs, \`generate:\` + fallback). Use the canonical \`yes\` / \`no\` SYMBOLs for yes/no questions — they render with animated icons and auto-color the ${T.button} green / red without you setting an explicit color.
+Each option is a ${T.button} in the standard speech|sentence|fallback|label format — ALL ${T.button} rules apply (${singleGlyphButtons ? "single-GLYPH SENTENCE, " : "multi-glyph SENTENCEs, "}MODIFIER SYMBOLs, OPERATORs, \`generate:\` + fallback). Use the canonical \`yes\` / \`no\` SYMBOLs for yes/no questions — they render with animated icons and auto-color the ${T.button} green / red without you setting an explicit color.
 
-${ex("binary_choice.examples", language)}
+${ex("binary_choice.examples", language, singleGlyphButtons)}
 
 Don't use this for open-ended questions — use rebuild_board() with multiple ${T.button}s for those.
 </binary_choice>
@@ -599,9 +610,21 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
   **CRITICAL — MODIFIER SYMBOLs are ALWAYS from the canonical registry, full stop.** The complete list is in <bundled_icons>: count, possession, negation, intensity, size_shape, temperature, color, social. Words like \`.new\`, \`.old\`, \`.sad\`, \`.funny\`, \`.adventure\`, \`.american\`, \`.scary\` are NOT modifiers — the renderer has no image for them, so the slot shows as a meaningless dot. Emojis are not modifiers either (\`.✨\`, \`.😢\` are also invalid — modifiers are registry keys, not emoji). If you need an adjective the registry doesn't have:
     - Pick a different HEAD SYMBOL that ALREADY encodes the quality (😢 for "sad", 😂 for "funny", 👴 for "old man", 😨 for "scary", ✨ for "new").
     - Or drop the adjective from the visual entirely and put it in the spoken \`speech\` field only — the user hears "sad book" even if the icon just shows 📖.
-  Never invent a modifier outside the registry, and never compose multiple GLYPHs just to attach an adjective — one phrase = one GLYPH (HEAD + canonical modifiers).
+  Never invent a modifier outside the registry${singleGlyphButtons ? "" : ", and never compose multiple GLYPHs just to attach an adjective — one phrase = one GLYPH (HEAD + canonical modifiers)"}.
 
-  SENTENCE: up to 3 GLYPHS joined with \`+\`:
+${singleGlyphButtons
+  ? `  SENTENCE: one GLYPH per ${T.button}. Each ${T.button}'s \`sentence\` field is a single GLYPH (head SYMBOL + optional MODIFIER SYMBOLs). Examples:
+    - \`😴\` ("tired")
+    - \`🍎.color_red\` ("red apple")
+    - \`🍪.two\` ("two cookies")
+    - \`🤗.big.please\` ("a big hug, please")
+
+  OPERATOR: sentence-level tag appended with \`#\`. Multiple operators may stack:
+    - \`#past\`     — \`🛝#past\` = "I went to the playground"
+    - \`#future\`   — \`🛝#future\` = "I will go to the playground"
+    - \`#question\` — \`🛝#past#question\` = "Did I go to the playground?"
+  Operators modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.`
+  : `  SENTENCE: up to 3 GLYPHS joined with \`+\`:
     - 1-glyph: \`😴\` ("tired"), \`🍎.color_red\` ("red apple")
     - 2-glyph: \`i_me+🤒\` ("I feel sick"), \`have+💧\` ("I have water")
     - 3-glyph: \`i_me+want+🍌\` ("I want a banana"), \`you+give+i_me\` ("you give me")
@@ -611,7 +634,7 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
     - \`#past\`     — \`i_me+go+🛝#past\` = "I went to the playground"
     - \`#future\`   — \`i_me+go+🛝#future\` = "I will go to the playground"
     - \`#question\` — \`mom+give+📖#past#question\` = "Did Mom give me the book?" (recipient implied)
-  Operators modify the WHOLE sentence — they never substitute for a GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.
+  Operators modify the WHOLE sentence — they never substitute for a GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.`}
 </grammar>
 
 <generation_rules>
@@ -641,8 +664,11 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
   - The fallback is what the user sees IMMEDIATELY while the image is generating (and if generation fails). A \`generate:\` in the fallback throws an error.
   - Fallback may only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers on the above.
   - Mirror the SHAPE of the \`sentence\` field so the visual reads the same. The fallback's job is to approximate the generated concept by combining an existing emoji with a canonical modifier — "Mars" has no emoji, but a red planet (\`🌑.color_red\`) reads as the same idea. Example:
-        sentence  = \`i_me+want+generate:planet_mars\`
-        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)
+${singleGlyphButtons
+  ? `        sentence  = \`generate:planet_mars\`
+        fallback  = \`🌑.color_red\`   (single GLYPH; substitute existing emoji + canonical modifier)`
+  : `        sentence  = \`i_me+want+generate:planet_mars\`
+        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)`}
   - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
 </generation_rules>
 
@@ -652,21 +678,21 @@ Each ${T.button} is four pipe-separated fields:
   \`speech|sentence|fallback|label\`
 
   - speech: the natural-language SENTENCE as the TTS voices it (first-person, conversational).
-  - sentence: the visual encoding — GLYPHs joined by \`+\`, with operators appended via \`#\`. Follows <grammar> above. Most buttons should use emoji + canonical modifier here, NOT a \`generate:\` key (see <generation_rules>).
+  - sentence: the visual encoding — ${singleGlyphButtons ? "a single GLYPH (head SYMBOL + optional MODIFIER SYMBOLs joined with \\`.\\`)" : "GLYPHs joined by \\`+\\`"}, with operators appended via \`#\`. Follows <grammar> above. Most buttons should use emoji + canonical modifier here, NOT a \`generate:\` key (see <generation_rules>).
   - fallback: the visual the button shows IMMEDIATELY while a \`generate:\` image is being produced (and as the permanent visual if generation fails). REQUIRED whenever \`sentence\` contains ANY \`generate:\` SYMBOL; OMIT this field entirely (\`||\`) otherwise.
-      **The fallback must NEVER contain \`generate:\` and must NEVER contain a non-canonical modifier (\`.new\`, \`.old\`, \`.sad\`, etc.).** A \`generate:\` in the fallback leaves the button blank (❓); a non-canonical modifier renders as a meaningless dot. Use only: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, and canonical modifiers from <bundled_icons>. Mirror the shape of \`sentence\` (e.g. \`i_me+want+generate:planet_mars\` → \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept). See <generation_rules>.
+      **The fallback must NEVER contain \`generate:\` and must NEVER contain a non-canonical modifier (\`.new\`, \`.old\`, \`.sad\`, etc.).** A \`generate:\` in the fallback leaves the button blank (❓); a non-canonical modifier renders as a meaningless dot. Use only: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, and canonical modifiers from <bundled_icons>. Mirror the shape of \`sentence\` (e.g. ${singleGlyphButtons ? "\\`generate:planet_mars\\` → \\`🌑.color_red\\`" : "\\`i_me+want+generate:planet_mars\\` → \\`i_me+want+🌑.color_red\\`"} — pair an existing emoji with a canonical modifier to approximate the generated concept). See <generation_rules>.
   - label: short on-button text in ${languageName}. The user sees this; not voiced.
 
 <examples>
-${ex("button_syntax.food_question", language)}
+${ex("button_syntax.food_question", language, singleGlyphButtons)}
 
-${ex("button_syntax.company_question", language)}
+${ex("button_syntax.company_question", language, singleGlyphButtons)}
 
-${ex("button_syntax.feeling_question", language)}
+${ex("button_syntax.feeling_question", language, singleGlyphButtons)}
 
-${ex("button_syntax.operators", language)}
+${ex("button_syntax.operators", language, singleGlyphButtons)}
 
-${ex("button_syntax.generated", language)}
+${ex("button_syntax.generated", language, singleGlyphButtons)}
 </examples>
 
 <board_rules>

@@ -34,20 +34,39 @@ const NOISY_SECTIONS = new Set<string>([
   "MINIMAL: WS RAW MESSAGE",
 ]);
 
-type SessionContext = { sessionId: string; debugMode: boolean };
+type SessionContext = {
+  sessionId: string;
+  debugMode: boolean;
+  /** Optional agent label (Observer / Speaker / BoardManager) used in the
+   *  three-agent path so the file log + DB rows can distinguish which
+   *  Live session a server message or tool call belongs to. */
+  agent?: string;
+};
 const sessionContextStore = new AsyncLocalStorage<SessionContext>();
 
 /**
  * Run `fn` with logger context bound to the given session. Any
  * logLiveSession / logDualAgent calls inside (or in async work spawned from)
  * `fn` will also write to `session_debug_logs` when `debugMode` is true.
+ *
+ * `agent` is the optional three-agent-path tag — passing it includes the
+ * agent name in each log entry's section header (e.g.
+ * `OBSERVER · TOOL CALL transcript`) so concurrent Observer / Speaker
+ * traces don't intermix indistinguishably.
  */
 export function runInSessionContext<T>(
   sessionId: string,
   debugMode: boolean,
   fn: () => T,
+  agent?: string,
 ): T {
-  return sessionContextStore.run({ sessionId, debugMode }, fn);
+  return sessionContextStore.run({ sessionId, debugMode, agent }, fn);
+}
+
+/** Current agent tag (if any) from the surrounding context. Used by the
+ *  log formatters to prefix the section name. */
+function currentAgentTag(): string | undefined {
+  return sessionContextStore.getStore()?.agent;
 }
 
 function persistToDb(section: string, content: string): void {
@@ -70,15 +89,17 @@ function ensureSize(): void {
 
 /** Log a structured event (JSON data). */
 export function logDualAgent(section: string, data: Record<string, any>): void {
+  const tag = currentAgentTag();
+  const displaySection = tag ? `[${tag}] ${section}` : section;
   try {
     ensureSize();
     const timestamp = new Date().toISOString();
-    const entry = `\n${"=".repeat(60)}\n[${timestamp}] ${section}\n${"-".repeat(40)}\n${JSON.stringify(data, null, 2)}\n`;
+    const entry = `\n${"=".repeat(60)}\n[${timestamp}] ${displaySection}\n${"-".repeat(40)}\n${JSON.stringify(data, null, 2)}\n`;
     fs.appendFileSync(LOG_FILE, entry);
   } catch {
     /* ignore logging errors */
   }
-  persistToDb(section, JSON.stringify(data, null, 2));
+  persistToDb(displaySection, JSON.stringify(data, null, 2));
 }
 
 // Coalesce identical consecutive entries — useful for noisy events like pcm_audio
@@ -102,6 +123,8 @@ function flushCoalesced(): void {
  * Identical consecutive entries are coalesced into a single line with a count.
  */
 export function logLiveSession(section: string, content: string, truncate = false): void {
+  const tag = currentAgentTag();
+  const displaySection = tag ? `[${tag}] ${section}` : section;
   try {
     if (truncate) {
       flushCoalesced();
@@ -110,8 +133,8 @@ export function logLiveSession(section: string, content: string, truncate = fals
     ensureSize();
     const timestamp = new Date().toISOString();
 
-    // Coalesce identical consecutive entries
-    if (lastEntry && lastEntry.section === section && lastEntry.content === content) {
+    // Coalesce identical consecutive entries (same agent + section + content).
+    if (lastEntry && lastEntry.section === displaySection && lastEntry.content === content) {
       lastEntry.count++;
       lastEntry.lastTimestamp = timestamp;
       return;
@@ -119,11 +142,11 @@ export function logLiveSession(section: string, content: string, truncate = fals
     // Flush previous coalesced run if it had repeats
     flushCoalesced();
 
-    const entry = `\n${"=".repeat(80)}\n[${timestamp}] ${section}\n${"─".repeat(80)}\n${content}\n`;
+    const entry = `\n${"=".repeat(80)}\n[${timestamp}] ${displaySection}\n${"─".repeat(80)}\n${content}\n`;
     fs.appendFileSync(LOG_FILE, entry);
-    lastEntry = { section, content, count: 1, firstTimestamp: timestamp, lastTimestamp: timestamp };
+    lastEntry = { section: displaySection, content, count: 1, firstTimestamp: timestamp, lastTimestamp: timestamp };
   } catch {
     /* ignore logging errors */
   }
-  persistToDb(section, content);
+  persistToDb(displaySection, content);
 }

@@ -2331,6 +2331,8 @@ export const ko = {
     buttonSizeBalanced: "균형 (기본)",
     buttonSizeSmIcon: "작은 아이콘, 큰 텍스트",
     buttonSizeMinIcon: "최소 아이콘, 매우 큰 텍스트",
+    singleGlyphButtons: "단일 기호 버튼",
+    singleGlyphButtonsDesc: "AI가 생성하는 버튼을 하나의 기호나 구문으로 제한합니다. 의사소통 초보자에게 유용합니다.",
     // Startup
     startupMode: "시작 모드",
     startupModeDesc: "AAC 세션 시작 시 로드할 맥락의 양을 설정합니다",

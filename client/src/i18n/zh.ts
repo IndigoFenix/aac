@@ -2331,6 +2331,8 @@ export const zh = {
     buttonSizeBalanced: "平衡（默认）",
     buttonSizeSmIcon: "较小图标，较大文字",
     buttonSizeMinIcon: "最小图标，超大文字",
+    singleGlyphButtons: "单符号按钮",
+    singleGlyphButtonsDesc: "将AI生成的按钮限制为单个符号或短语。适合初学交流者。",
     // Startup
     startupMode: "启动模式",
     startupModeDesc: "启动 AAC 会话时加载多少上下文",

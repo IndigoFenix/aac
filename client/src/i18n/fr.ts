@@ -2331,6 +2331,8 @@ export const fr = {
     buttonSizeBalanced: "Équilibré (par défaut)",
     buttonSizeSmIcon: "Icônes plus petites, texte plus grand",
     buttonSizeMinIcon: "Icônes minimales, texte extra grand",
+    singleGlyphButtons: "Boutons à un seul symbole",
+    singleGlyphButtonsDesc: "Limite les boutons générés par l'IA à un seul symbole ou expression. Utile pour les communicateurs débutants.",
     // Startup
     startupMode: "Mode de démarrage",
     startupModeDesc: "Combien de contexte charger au démarrage d'une session AAC",

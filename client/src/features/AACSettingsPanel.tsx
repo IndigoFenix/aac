@@ -84,6 +84,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [studentVoicePitch, setStudentVoicePitch] = useState(0);
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
+  const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
   const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
@@ -187,6 +188,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -226,6 +228,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStudentVoicePitch = aac?.studentVoicePitch ?? 0;
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
+      const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
       const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
@@ -257,6 +260,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         studentVoicePitch !== originalStudentVoicePitch ||
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
+        singleGlyphButtons !== originalSingleGlyphButtons ||
         startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
@@ -277,7 +281,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -293,6 +297,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch?: number;
       useLocalTts?: boolean;
       iconTextRatio: number;
+      singleGlyphButtons: boolean;
       startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
@@ -345,6 +350,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch,
       useLocalTts,
       iconTextRatio,
+      singleGlyphButtons,
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
@@ -383,6 +389,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -811,6 +818,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 {iconTextRatio === 4 && t('aacSettings.buttonSizeSmIcon')}
                 {iconTextRatio === 5 && t('aacSettings.buttonSizeMinIcon')}
               </p>
+              <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                <div className="flex-1 pr-4">
+                  <Label htmlFor="single-glyph-buttons" className="text-sm font-medium">
+                    {t('aacSettings.singleGlyphButtons')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('aacSettings.singleGlyphButtonsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="single-glyph-buttons"
+                  checked={singleGlyphButtons}
+                  onCheckedChange={setSingleGlyphButtons}
+                  data-testid="switch-single-glyph-buttons"
+                />
+              </div>
             </CardContent>
           </Card>
 
