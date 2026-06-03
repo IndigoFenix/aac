@@ -146,8 +146,19 @@ interface DualAgentContextType {
   guessingMode: boolean;
   /** Press a guessing-mode SUGGESTION button — updates narrowing state and re-injects [GUESSING STATE]. */
   pressSuggestion: (suggestionKey: string) => void;
-  /** Launch guessing from the sentence builder to fill a slot. */
+  /** Press an AI-driven NARROW button — records the user's choice as a
+   *  custom narrowing fact and re-injects [GUESSING STATE]. */
+  pressNarrow: (dimension: string, value: string, sourceText?: string) => void;
+  /** Unified word-finder entry — pass a builderContext to launch from the
+   *  sentence builder (pre-selects the category), or call with no args to
+   *  launch from conversation tier. Same downstream protocol either way. */
+  enterGuessing: (builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** Legacy alias — equivalent to enterGuessing(builderContext). */
   enterGuessingFromBuilder: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** User-initiated word-finder cancel. Single exit path used by every
+   *  surface (quick-button toggle, sentence-builder toggle, back press).
+   *  The server clears guessing state and broadcasts guessing_mode:false. */
+  exitGuessing: (reason?: string) => void;
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible: (open: boolean) => void;
 
@@ -820,7 +831,12 @@ function ProviderShell({
     pressSuggestion: agent.pressSuggestion ?? ((key: string) => {
       console.warn("[guessing] pressSuggestion is unavailable — the live session hook did not provide it (stale build?). key=", key);
     }),
+    pressNarrow: agent.pressNarrow ?? ((dim: string, value: string) => {
+      console.warn("[guessing] pressNarrow is unavailable — the live session hook did not provide it (stale build?).", { dim, value });
+    }),
+    enterGuessing: agent.enterGuessing ?? (() => { /* live API not available */ }),
     enterGuessingFromBuilder: agent.enterGuessingFromBuilder ?? (() => { /* live API not available */ }),
+    exitGuessing: agent.exitGuessing ?? (() => { /* live API not available */ }),
     setBuilderVisible: agent.setBuilderVisible ?? (() => { /* live API not available */ }),
     notifySocialTrainerStarted: agent.notifySocialTrainerStarted ?? (() => { /* live API not available */ }),
     notifySocialTrainerPeerSaid: agent.notifySocialTrainerPeerSaid ?? (() => { /* live API not available */ }),

@@ -50,124 +50,251 @@ import {
  *   "Hello!|hello||Hi"           (single-SYMBOL)
  *   "Big button|big||Press!|2|2" (rowSpan/colSpan trailing)
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> = [];
-  const items = content.split(',');
+type ParsedBoardButton = {
+  label: string;
+  iconRef: string;
+  symbolPath?: string;
+  imageKey?: string;
+  glyph?: string;
+  glyphFallback?: string;
+  sentence?: string;
+  buttonType?: "guess" | "category" | "narrow";
+  narrowDimension?: string;
+  narrowValue?: string;
+  rowSpan?: number;
+  colSpan?: number;
+};
 
-  for (const item of items) {
-    const trimmed = item.trim();
-    if (!trimmed) continue;
+// ---------------------------------------------------------------------------
+// Shared helpers — derive render fields + detect label prefixes. Both the
+// structured path (parseStructuredBoardButton) and the pipe path
+// (parseSinglePipeButton) reuse these so the two paths can't drift.
+// ---------------------------------------------------------------------------
 
-    const parts = trimmed.split('|');
+/**
+ * Derive renderer hints from `glyph` (visual encoding) and `glyphFallback`.
+ * Pulled out so the structured and pipe parsers share one implementation:
+ *
+ *   - bare emoji glyph                  → iconRef = the emoji
+ *   - `symbol:ID` / `face:ID`           → symbolPath = `__SYMBOL__:ID` / `__FACE__:ID`
+ *   - bare snake_case (single slot)     → imageKey (triggers symbol generation)
+ *   - registered emoji key              → iconRef = the registry emoji, no imageKey
+ *
+ * Multi-slot glyphs leave iconRef at the default — the renderer prefers the
+ * full glyph string to the iconRef when it's set.
+ */
+function deriveRenderFields(
+  glyph: string | undefined,
+  glyphFallback: string | undefined,
+): { iconRef: string; symbolPath?: string; imageKey?: string } {
+  let iconRef = "fas fa-comment";
+  let symbolPath: string | undefined;
+  let imageKey: string | undefined;
 
-    // Degenerate input: a bare label with no pipes at all.
-    if (parts.length === 1) {
-      buttons.push({ label: trimmed, iconRef: "fas fa-comment" });
-      continue;
-    }
-
-    let sentence = parts[0]?.trim() || undefined;
-    const glyph = parts[1]?.trim() || undefined;
-    let glyphFallback: string | undefined;
-    let label: string;
-
-    if (parts.length === 3) {
-      // AI sometimes emits `sentence|glyph|label` instead of
-      // `sentence|glyph||label` — it reads "omit fallback" as dropping the
-      // delimiter rather than leaving the field empty. Treat the 3-section
-      // shape as fallback-absent; the downstream validator still raises a
-      // "fallback required" error when the glyph actually needs one.
-      glyphFallback = undefined;
-      label = parts[2]?.trim() || "";
-    } else {
-      glyphFallback = parts[2]?.trim() || undefined;
-      label = parts[3]?.trim() || "";
-    }
-
-    // Tolerate AI undershoot — for 2-section forms (`label|icon`), the
-    // first field is the label, not the sentence.
-    if (parts.length < 3 && !label) {
-      label = sentence || "";
-      sentence = undefined;
-    }
-    if (!label) continue;
-
-    // Detect [GUESS] prefix for guessing-mode final guesses.
-    let buttonType: "guess" | "category" | undefined;
-    if (label.startsWith("[GUESS]")) {
-      label = label.substring(7).trim();
-      buttonType = "guess";
-    }
-
-    // Optional trailing rowSpan/colSpan in fields 4 / 5.
-    const rawRowSpan = parseInt(parts[4]?.trim(), 10);
-    const rawColSpan = parseInt(parts[5]?.trim(), 10);
-    const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
-    const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
-
-    // ── Derive iconRef / symbolPath / imageKey for renderer fallback ────
-    let iconRef = "fas fa-comment";
-    let symbolPath: string | undefined;
-    let imageKey: string | undefined;
-
-    if (glyphFallback) {
-      // Single-slot fallback → pull an iconRef or symbolPath from it.
-      const fbSlots = glyphFallback.split('+').map(s => s.trim()).filter(Boolean);
-      if (fbSlots.length === 1) {
-        const slotMain = stripBrackets(fbSlots[0].split('.')[0].split('(')[0]);
-        if (slotMain.startsWith("face:")) {
-          symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
-        } else if (slotMain.startsWith("symbol:")) {
-          symbolPath = `__SYMBOL__:${slotMain.substring(7).trim()}`;
-        } else if (slotMain) {
-          iconRef = slotMain;
-        }
+  if (glyphFallback) {
+    const fbSlots = glyphFallback.split('+').map(s => s.trim()).filter(Boolean);
+    if (fbSlots.length === 1) {
+      const slotMain = stripBrackets(fbSlots[0].split('.')[0].split('(')[0]);
+      if (slotMain.startsWith("face:")) {
+        symbolPath = `__FACE__:${slotMain.substring(5).trim()}`;
+      } else if (slotMain.startsWith("symbol:")) {
+        symbolPath = `__SYMBOL__:${slotMain.substring(7).trim()}`;
+      } else if (slotMain) {
+        iconRef = slotMain;
       }
-      // Multi-slot fallback: leave iconRef as default. The renderer prefers
-      // glyphFallback over iconRef when it's set, so this is fine.
     }
+  }
 
-    if (glyph) {
-      const glyphSlots = glyph.split('+').map(s => s.trim()).filter(Boolean);
-      if (glyphSlots.length === 1) {
-        // Brackets around an imageKey are a prompt hint, not data — strip
-        // them so the downstream emoji/registry/generator lookups see the
-        // bare key the AI intended.
-        const slotMain = stripBrackets(glyphSlots[0].split('.')[0].split('(')[0]);
-        // An imageKey is a bare snake_case identifier — not an emoji, not a
-        // symbol/face ref. The existing auto-symbol pipeline picks this up
-        // and queues generation if no matching custom symbol exists yet.
-        const isEmoji = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
-        if (slotMain && !isEmoji && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
-          imageKey = slotMain;
-          // Emoji-registry swap: if the imageKey has a known emoji and the
-          // fallback didn't already set an iconRef, use the emoji and skip
-          // generation entirely.
-          if (iconRef === "fas fa-comment") {
-            const emojiSwap = resolveEmoji(imageKey);
-            if (emojiSwap) {
-              iconRef = emojiSwap;
-              imageKey = undefined;
-            }
+  if (glyph) {
+    const glyphSlots = glyph.split('+').map(s => s.trim()).filter(Boolean);
+    if (glyphSlots.length === 1) {
+      const slotMain = stripBrackets(glyphSlots[0].split('.')[0].split('(')[0]);
+      const isEmoji = /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(slotMain);
+      if (slotMain && !isEmoji && !slotMain.startsWith("face:") && !slotMain.startsWith("symbol:")) {
+        imageKey = slotMain;
+        if (iconRef === "fas fa-comment") {
+          const emojiSwap = resolveEmoji(imageKey);
+          if (emojiSwap) {
+            iconRef = emojiSwap;
+            imageKey = undefined;
           }
         }
       }
     }
-
-    buttons.push({
-      label,
-      iconRef,
-      symbolPath,
-      imageKey,
-      glyph,
-      glyphFallback,
-      sentence,
-      buttonType,
-      rowSpan,
-      colSpan,
-    });
   }
 
+  return { iconRef, symbolPath, imageKey };
+}
+
+/**
+ * Detect [GUESS] / [NARROW:dim] label prefixes and strip them. Returns the
+ * cleaned label plus the structural fields the renderer needs.
+ *
+ * A malformed `[NARROW:]` or `[NARROW:foo]` (no value) falls through to the
+ * normal-button path — downstream validation surfaces the bad shape.
+ */
+function applyLabelPrefix(rawLabel: string): {
+  label: string;
+  buttonType?: "guess" | "narrow";
+  narrowDimension?: string;
+  narrowValue?: string;
+} {
+  if (rawLabel.startsWith("[GUESS]")) {
+    return { label: rawLabel.substring(7).trim(), buttonType: "guess" };
+  }
+  const m = rawLabel.match(/^\[NARROW:([^\]]+)\]\s*(.*)$/);
+  if (m) {
+    const dim = m[1].trim();
+    const value = m[2].trim();
+    if (dim && value) {
+      return { label: value, buttonType: "narrow", narrowDimension: dim, narrowValue: value };
+    }
+  }
+  return { label: rawLabel };
+}
+
+// ---------------------------------------------------------------------------
+// Structured input — the canonical path. The AI tool schema declares each
+// button as `{speech, sentence, fallback, label, ...}`; this parser reads
+// those fields directly. NO pipe round-trip → no comma-fragmentation when
+// a field value contains a comma (e.g. Hebrew "כן, אני רוצה לדבר").
+// ---------------------------------------------------------------------------
+
+export interface StructuredBoardButton {
+  /** Natural-language SENTENCE the TTS voices on press (stored as `.sentence`
+   *  on the parsed button — naming is unfortunate but matches the renderer). */
+  speech?: unknown;
+  /** Visual GLYPH encoding (stored as `.glyph` on the parsed button). */
+  sentence?: unknown;
+  /** Visual fallback encoding (stored as `.glyphFallback`). */
+  fallback?: unknown;
+  /** Short on-button text. May carry [GUESS] / [NARROW:] prefixes. */
+  label?: unknown;
+  rowSpan?: unknown;
+  colSpan?: unknown;
+  /** Special-kind marker (wordfinder / more) — handled by the caller before
+   *  reaching this parser. Accepted in either casing for tolerance. */
+  buttonType?: unknown;
+  button_type?: unknown;
+}
+
+export function parseStructuredBoardButton(input: unknown): ParsedBoardButton | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as StructuredBoardButton;
+
+  const speech = typeof o.speech === "string" ? o.speech.trim() : "";
+  const glyph = typeof o.sentence === "string" ? o.sentence.trim() : "";
+  const glyphFallback = typeof o.fallback === "string" ? o.fallback.trim() : "";
+  const rawLabel = typeof o.label === "string" ? o.label.trim() : "";
+  if (!rawLabel) return null;
+
+  const prefix = applyLabelPrefix(rawLabel);
+  const { iconRef, symbolPath, imageKey } = deriveRenderFields(
+    glyph || undefined,
+    glyphFallback || undefined,
+  );
+
+  const rowSpan = typeof o.rowSpan === "number" && o.rowSpan >= 2 ? o.rowSpan : undefined;
+  const colSpan = typeof o.colSpan === "number" && o.colSpan >= 2 ? o.colSpan : undefined;
+
+  return {
+    label: prefix.label,
+    iconRef,
+    symbolPath,
+    imageKey,
+    glyph: glyph || undefined,
+    glyphFallback: glyphFallback || undefined,
+    sentence: speech || undefined,
+    buttonType: prefix.buttonType,
+    narrowDimension: prefix.narrowDimension,
+    narrowValue: prefix.narrowValue,
+    rowSpan,
+    colSpan,
+  };
+}
+
+/**
+ * Dispatcher — branch by input shape. Object inputs use the structured
+ * parser; string inputs use the legacy pipe parser. Lets callers accept
+ * either format without caring which it is.
+ *
+ * The string path is RETAINED only for legacy compatibility (tests, older
+ * AI prompts). New tool schemas declare structured arrays; route those
+ * directly via `parseStructuredBoardButton` for clarity.
+ */
+export function parseBoardButton(input: unknown): ParsedBoardButton | null {
+  if (typeof input === "string") return parseSinglePipeButton(input);
+  if (input && typeof input === "object") return parseStructuredBoardButton(input);
+  return null;
+}
+
+/**
+ * LEGACY pipe parser — parse ONE pipe-encoded button string. Retained for
+ * older code paths (tests, the legacy comma-separated multi-button list).
+ * New code should pass structured objects through
+ * `parseStructuredBoardButton` instead.
+ *
+ * Comma-split was deliberately moved up into `parseBoardButtons` so a
+ * comma inside a field (e.g. Hebrew "כן, אני רוצה לדבר") doesn't
+ * fragment a single button when callers pass it here directly.
+ */
+export function parseSinglePipeButton(input: string): ParsedBoardButton | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split('|');
+
+  // Degenerate input: a bare label with no pipes at all.
+  if (parts.length === 1) {
+    return { label: trimmed, iconRef: "fas fa-comment" };
+  }
+
+  let speech = parts[0]?.trim() || "";
+  let glyph = parts[1]?.trim() || "";
+  let glyphFallback = "";
+  let label: string;
+
+  if (parts.length === 3) {
+    // AI sometimes emits `sentence|glyph|label` instead of
+    // `sentence|glyph||label` — it reads "omit fallback" as dropping the
+    // delimiter rather than leaving the field empty. Treat the 3-section
+    // shape as fallback-absent.
+    label = parts[2]?.trim() || "";
+  } else {
+    glyphFallback = parts[2]?.trim() || "";
+    label = parts[3]?.trim() || "";
+  }
+
+  // Tolerate AI undershoot — for 2-section forms (`label|icon`), the
+  // first field is the label, not the speech.
+  if (parts.length < 3 && !label) {
+    label = speech;
+    speech = "";
+  }
+  if (!label) return null;
+
+  const rawRowSpan = parseInt(parts[4]?.trim(), 10);
+  const rawColSpan = parseInt(parts[5]?.trim(), 10);
+
+  // Delegate to the structured parser so the derivation + label-prefix
+  // logic stays in one place and the two paths can't drift.
+  return parseStructuredBoardButton({
+    speech: speech || undefined,
+    sentence: glyph || undefined,
+    fallback: glyphFallback || undefined,
+    label,
+    rowSpan: rawRowSpan >= 2 ? rawRowSpan : undefined,
+    colSpan: rawColSpan >= 2 ? rawColSpan : undefined,
+  });
+}
+
+export function parseBoardButtons(content: string): ParsedBoardButton[] {
+  const items = content.split(',');
+  const buttons: ParsedBoardButton[] = [];
+  for (const item of items) {
+    const parsed = parseSinglePipeButton(item);
+    if (parsed) buttons.push(parsed);
+  }
   return buttons;
 }
 
@@ -181,8 +308,12 @@ export interface SuggestionButton {
   glyph?: string;
   glyphFallback?: string;
   sentence?: string;
-  buttonType?: "guess" | "category" | "suggestion";
+  buttonType?: "guess" | "category" | "suggestion" | "narrow";
   suggestionKey?: string;
+  /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */
+  narrowDimension?: string;
+  /** For `buttonType: "narrow"` — the value the user is selecting. */
+  narrowValue?: string;
   rowSpan?: number;
   colSpan?: number;
 }

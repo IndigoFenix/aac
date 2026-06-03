@@ -30,8 +30,9 @@ import {
 
 export interface ObserverToolConfig {
   /**
-   * RESTING profile selects a smaller tool set — the model is watching
-   * passively and can only wake the session back up.
+   * Legacy flag, kept for type compatibility with the older profile API
+   * but no longer used — Observer's tool surface is constant across
+   * awake/resting profiles. See buildObserverToolDeclarations.
    */
   restingMode?: boolean;
 }
@@ -41,26 +42,28 @@ export interface ObserverToolConfig {
 // ---------------------------------------------------------------------------
 
 function buildTranscriptTool(): FunctionDeclaration {
-  // Identical to the single-agent path's transcript tool. An earlier
-  // attempt added a `direction` field (device/user/ambient) so the
-  // routing layer could decide whether Speaker should respond; that
-  // changed the tool the model already knew and started producing
-  // MALFORMED_FUNCTION_CALL on every transcript. Reverted to the
-  // original 3-field schema; Speaker's prompt + the conversation flow
-  // decide whether to respond.
   return {
     name: "transcript",
     description:
-      `Record clear speech you heard from a person nearby (someone speaking in their own voice through the room, not via the AAC device, and not your sibling Speaker agent's voice playing through the speakers — that arrives as an [OWN_SPEECH] context note). Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. DO NOT transcribe your own voice echoing back through the mic, and DO NOT transcribe the device's TTS playing back the ${T.button} the user pressed.`,
+      `Record clear in-person speech you heard. Identify both the SPEAKER and the TARGET (who they were speaking to). DO NOT transcribe the device's TTS playing back the ${T.button} the user just pressed; DO NOT transcribe your sibling Speaker agent's voice coming out of the room speakers (that arrives as an [OWN_SPEECH] context note).
+
+Speaker/target values (ALWAYS in English, regardless of conversation language):
+  - "DEVICE"  — the AI itself. Use as TARGET when the person is addressing the AI (looking at the screen, using the AI's name, responding to the AI's last utterance).
+  - "USER"    — the active user (the student if present; otherwise the most prominent person at the device who is looking at the screen). The student's actual name is also accepted in place of "USER" and treated as equivalent — write it in its Latin-letter form (e.g. "Daniel", not the Hebrew/other-script spelling).
+  - "UNKNOWN" — reserve for cases where the speaker or target genuinely can't be identified (off-camera voice, a stranger). Do NOT use UNKNOWN just because you're unsure between USER and DEVICE — make a best guess.
+  - Any other identified third party — caregiver / sibling / teacher etc. Use a SHORT English label or the person's name in Latin letters (e.g. "Mom", "Teacher", "Yael"); never use non-Latin scripts in this field even if the spoken language is Hebrew, Arabic, etc.
+
+YOU decide definitively who is addressing whom. Err on the side of USER or DEVICE rather than UNKNOWN whenever either is plausible.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: "The transcribed speech." },
-        speaker: { type: "string", description: "Who spoke (e.g. 'Mom', 'Teacher', 'Unknown')." },
+        speaker: { type: "string", description: "Who spoke. DEVICE / USER / UNKNOWN / an identified name." },
+        target: { type: "string", description: "Who the speech is directed at. DEVICE / USER / UNKNOWN / an identified name." },
         confidence: { type: "string", enum: ["high", "medium", "low"], description: "Transcription confidence." },
       },
-      required: ["text", "speaker"],
+      required: ["text", "speaker", "target"],
     },
   };
 }
@@ -170,28 +173,55 @@ const END_SESSION: FunctionDeclaration = {
   parametersJsonSchema: { type: "object", properties: {} },
 };
 
+/**
+ * Behavioral mode switch — Observer owns this because Observer has the
+ * camera/mic context to judge whether the user is conversing with the AI
+ * vs. someone else in the room. The Coordinator forwards the resulting
+ * [MODE] context injection to Speaker so it knows whether to chat
+ * directly (companion) or stay quiet and support a human-to-human
+ * conversation (facilitator).
+ */
+const SET_INTERACTION_MODE: FunctionDeclaration = {
+  name: "set_interaction_mode",
+  description:
+    `Switch the AI's behavioral mode. "companion" = the AI is the user's conversation partner; Speaker chats back, asks follow-ups, drives the dialogue. "facilitator" = the AI supports the user in talking to ANOTHER PERSON in the room (parent, sibling, teacher, friend); Speaker stays quiet and lets the board do the talking. Use this when you observe the user shift between the two modes (e.g. someone walks in and starts talking with the user → facilitator; the other person leaves or the user turns back to the screen alone → companion). The mode is then forwarded to Speaker as a context note.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      mode: {
+        type: "string",
+        enum: ["companion", "facilitator"],
+        description: "The mode to switch to.",
+      },
+      reason: { type: "string", description: "Brief reason for the mode change (e.g. 'Mom just walked in and started talking with Daniel')." },
+    },
+    required: ["mode"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Builder
 // ---------------------------------------------------------------------------
 
-export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): Tool[] {
-  const declarations: FunctionDeclaration[] = [];
-
-  if (config.restingMode) {
-    // RESTING profile: smallest possible surface.
-    declarations.push(WAKE_UP);
-    declarations.push(buildTranscriptTool());
-    declarations.push(buildUpdateContextTool());
-    if (debugIntrospectionEnabled()) declarations.push(DEBUG_MESSAGE);
-    return [{ functionDeclarations: declarations }];
-  }
-
-  // AWAKE profile — match the single-agent's perception surface.
+export function buildObserverToolDeclarations(_config: ObserverToolConfig = {}): Tool[] {
+  // Observer's tool surface is constant — Observer runs across BOTH awake
+  // and resting profiles (the simplified design: resting just shuts off
+  // Speaker + BoardManager, Observer keeps observing). The old
+  // restingMode-narrowed surface dropped request_focus/rest/sleep/call_monitor
+  // which were exactly the tools Observer needed to actively manage the
+  // session — removing them in resting mode meant Observer couldn't even
+  // request a wake_up via sleep-state transitions. WAKE_UP is also retained
+  // because Observer can self-wake via the engagement_change route.
+  //
   // private_note is intentionally omitted — over-eager note-taking was
   // suppressing actual transcript/update_context tool calls.
+  const declarations: FunctionDeclaration[] = [];
   declarations.push(buildTranscriptTool());
   declarations.push(buildUpdateContextTool());
   declarations.push(buildRequestFocusTool());
+  declarations.push(SET_INTERACTION_MODE);
+  declarations.push(WAKE_UP);
   declarations.push(REST);
   declarations.push(SLEEP);
   declarations.push(END_SESSION);

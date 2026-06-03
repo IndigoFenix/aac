@@ -37,6 +37,9 @@ export interface EyeTrackingDwellContextValue {
   dwellTarget: DwellTarget | null;
   enabled: boolean;
   mode: DwellMode;
+  /** Configured dwell time in ms (from aacSettings.eyegazeTimeout). Exposed so
+   *  embedded games with their own dwell logic can honour the same setting. */
+  dwellTimeMs: number;
   isCalibrated: boolean;
   isCalibrating: boolean;
   startCalibration: () => void;
@@ -62,6 +65,7 @@ const EyeTrackingDwellContext = createContext<EyeTrackingDwellContextValue>({
   dwellTarget: null,
   enabled: false,
   mode: "off",
+  dwellTimeMs: 2000,
   isCalibrated: false,
   isCalibrating: false,
   startCalibration: () => {},
@@ -318,6 +322,7 @@ export function EyeTrackingDwellProvider({
         dwellTarget,
         enabled,
         mode,
+        dwellTimeMs,
         isCalibrated,
         isCalibrating,
         startCalibration,

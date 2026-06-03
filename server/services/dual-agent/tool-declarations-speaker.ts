@@ -8,13 +8,13 @@
 // speech from Observer, sentence-builder plays, context updates) and
 // decides whether and how to respond.
 //
-// Tool set (~8 + 3 shared):
+// Tool set:
 //   - speak                  (fallback path only — omitted when native audio is in use)
-//   - interpret              (voice the user's composed sentence through student TTS)
 //   - emote
 //   - set_interaction_mode   (interact | assist — no standby)
 //   - open_app / close_app / open_website
-//   - call_monitor / private_note / debug_message  (shared)
+//   - call_monitor / debug_message  (shared)
+// NOTE: interpret() moved to Board Manager — see tool-declarations-board-manager.ts.
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import { flattenPermittedWebsites } from "@shared/permitted-websites";
@@ -37,8 +37,10 @@ export interface SpeakerToolConfig {
    *  speak() tool is omitted. When false (fallback path), speak() is
    *  declared and the relay routes text through server-side TTS. */
   useDirectAudio: boolean;
-  /** When true, Speaker is in RESTING-mode — smaller tool set, may still
-   *  answer a brief direct question via speak() when not using native audio. */
+  /** Legacy flag — kept for type compatibility. Speaker no longer runs in
+   *  the resting profile (Coordinator closes the Speaker entirely on
+   *  transition to resting and spins up a fresh one on wake), so the old
+   *  resting-mode tool branch is dead. See AgentCoordinator.transitionToProfile. */
   restingMode?: boolean;
   /** When true, Speaker is in MUTED mode (cave-toggled user state) — it
    *  doesn't talk to the user; the speak() / interpret() interaction
@@ -62,7 +64,7 @@ function buildSpeakTool(): FunctionDeclaration {
   return {
     name: "speak",
     description:
-      `Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. Your sibling Board Manager builds the response surface independently after you finish; you don't need to call any board tool here. Do NOT announce board changes or repeat yourself. When a ${T.tagPress} arrives, the user's SENTENCE has already been voiced by the device; do NOT repeat or paraphrase it — respond naturally. Only call speak() once per turn.`,
+      `Say something to the user (AI voice). A separate TTS voices the text. One call per turn. Respond to ${T.tagPress} turns; don't echo the user's own SENTENCE back.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -70,40 +72,6 @@ function buildSpeakTool(): FunctionDeclaration {
         text: { type: "string", description: "The text to speak aloud." },
       },
       required: ["text"],
-    },
-  };
-}
-
-/**
- * `interpret` — voice on behalf of the user, using the student's TTS.
- *
- * Called ONLY in response to a ${T.tagComposed} turn. The model produces
- * the natural-language SENTENCE in first-person — what the user would
- * say if they could speak directly — and the system pipes it through the
- * student-voice TTS so the room hears the SENTENCE in the user's voice.
- *
- * After interpret() runs, the Coordinator routes the resulting transcript
- * to Observer (as `[OWN_SPEECH]` tagged student) and to Board Manager
- * (which rebuilds the follow-up response surface). You DO NOT need to
- * call speak() or any board tool on the same turn — those happen on a
- * later turn after you receive the follow-up [BUTTON PRESS] / context
- * injection from Board Manager.
- */
-function buildInterpretTool(): FunctionDeclaration {
-  return {
-    name: "interpret",
-    description:
-      `Voice a natural-language SENTENCE through the USER'S TTS voice. Call this ONLY in response to a ${T.tagComposed} turn — never spontaneously, and never in response to a regular ${T.tagPress} (those carry a pre-baked SENTENCE that TTS plays automatically). The 'sentence' argument MUST be first-person, as the user would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using the user's interests, don't echo individual SYMBOLs one by one. After interpret() finishes the student voice, the system routes a follow-up context to you on a later turn — respond THEN (speak), not in the interpret turn itself.`,
-    behavior: Behavior.NON_BLOCKING,
-    parametersJsonSchema: {
-      type: "object",
-      properties: {
-        sentence: {
-          type: "string",
-          description: "The user's intended SENTENCE in their voice. First-person, natural language. Do not include the raw composed-sentence string.",
-        },
-      },
-      required: ["sentence"],
     },
   };
 }
@@ -128,28 +96,36 @@ function buildEmoteTool(): FunctionDeclaration {
   };
 }
 
+// set_interaction_mode moved to Observer (it has the camera/mic context
+// to judge interact vs. assist). Removed from Speaker's surface. The
+// earlier MALFORMED-bursts reasoning was a misdiagnosis — Speaker
+// returns an empty tool list on native audio anyway (see the
+// useDirectAudio guard above), so set_interaction_mode hasn't actually
+// been present on the live native-audio surface for a while. Speaker
+// receives [MODE] context injections from Coordinator after Observer's
+// set_interaction_mode call.
+
 /**
- * Behavioral mode within an active session. `standby` from the legacy
- * single-agent tool has been retired in the three-agent path — Observer's
- * `rest` is the engagement-state equivalent. Speaker's mode here is
- * purely about conversational stance.
+ * Set the target party for your next utterance. When omitted, the
+ * target defaults to USER. Set to a person's name (e.g. "Mom",
+ * "Teacher") when you intend to speak TO that person rather than the
+ * user. The target is consumed by the NEXT speak()/audio turn and
+ * resets afterwards.
  */
-const SET_INTERACTION_MODE: FunctionDeclaration = {
-  name: "set_interaction_mode",
+const SET_SPEECH_TARGET: FunctionDeclaration = {
+  name: "set_speech_target",
   description:
-    `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations from Observer. "assist" = you stay quiet and only respond when the user explicitly addresses you (the avatar appears sleepy); the user is busy with another person or in a situation where proactive speech would be intrusive. To stop driving the session entirely when the user steps away, your sibling Observer agent will call rest()/sleep() — you don't manage that.`,
+    `Set who your NEXT utterance is addressed to. Default is USER. Call this before speaking when you intend to address a specific other person in the room (caregiver, teacher, sibling). One-shot — resets to USER after your next speech turn.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
     properties: {
-      mode: {
+      target: {
         type: "string",
-        enum: ["interact", "assist"],
-        description: "The mode to switch to.",
+        description: `"USER" (default), or a specific person's name.`,
       },
-      reason: { type: "string", description: "Brief reason for the mode change." },
     },
-    required: ["mode"],
+    required: ["target"],
   },
 };
 
@@ -222,30 +198,37 @@ function buildOpenWebsiteTool(permitted: PermittedWebsite[]): FunctionDeclaratio
 // ---------------------------------------------------------------------------
 
 export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] {
-  const declarations: FunctionDeclaration[] = [];
-
-  // RESTING profile for Speaker: it can still answer a brief direct
-  // question (when native audio is off, speak() is its mechanism).
-  // No board, no apps, no mode switching, no private_note.
-  if (config.restingMode) {
-    if (!config.useDirectAudio) declarations.push(buildSpeakTool());
-    if (debugIntrospectionEnabled()) declarations.push(DEBUG_MESSAGE);
-    return [{ functionDeclarations: declarations }];
+  // TEMPORARY DIAGNOSTIC: disable Speaker's tool surface entirely. If
+  // MALFORMED_FUNCTION_CALL disappears with zero tools declared, we
+  // know the failure is rooted in the tool surface (model attempting a
+  // call that fails Vertex's parser). If MALFORMED persists, the
+  // problem lies elsewhere in the prompt / config. Revert by removing
+  // this early return.
+  if (config.useDirectAudio && !config.isMutedMode) {
+    return [];
   }
 
-  // Awake profile.
+  const declarations: FunctionDeclaration[] = [];
+
+  // Speaker only runs in the awake profile in the current design — the
+  // Coordinator closes the Speaker session entirely when transitioning to
+  // resting. So there's no resting-profile tool surface to build.
   if (!config.isMutedMode && !config.useDirectAudio) {
     declarations.push(buildSpeakTool());
   }
 
-  // interpret() is declared so Speaker can voice the user's intent when
-  // they play a SENTENCE from the SENTENCE BUILDER. Always declared
-  // regardless of native vs. tool audio — it routes through student TTS,
-  // not AI voice.
-  declarations.push(buildInterpretTool());
+  // interpret() moved to Board Manager — it has the freshest context
+  // about the SUGGESTIONs the user composed with, and removing it from
+  // Speaker shrinks the native-audio tool surface (better function-
+  // calling reliability + no more spurious interpret-on-button-press).
 
   declarations.push(buildEmoteTool());
-  declarations.push(SET_INTERACTION_MODE);
+  // set_interaction_mode moved to Observer — Speaker no longer
+  // declares it. Speaker learns the current mode from [MODE] context
+  // injections forwarded by Coordinator after Observer's call.
+  // SET_SPEECH_TARGET also kept undeclared — its earlier addition was
+  // an independent change and didn't fix the MALFORMED, so we leave it
+  // out unless target-setting becomes a user-requested feature.
 
   // Apps + websites
   const hasBuiltInApps = config.enabledApps.length > 0;

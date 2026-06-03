@@ -33,6 +33,7 @@ const GAME_PATH_BYPASS: Record<string, string> = {
   'sandbox-app': 'sandbox-game',
   'space-trader-app': 'space-trader',
   'bubbles-app': 'bubbles-game',
+  'musical-microbes-app': 'musical-microbes',
 };
 
 function matchGameRoute(pathname: string): string | null {
@@ -61,7 +62,7 @@ function MainApp() {
         <GameEmbed
           gameId={gameRoute}
           src={`/games/${gameRoute}/`}
-          forwardGaze={gameRoute === 'bubbles-game'}
+          forwardGaze={gameRoute === 'bubbles-game' || gameRoute === 'musical-microbes'}
           onClose={() => { window.location.href = '/aac'; }}
         />
       </div>

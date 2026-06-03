@@ -273,6 +273,13 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "consent_re_signed",
   "guardian_id_verified",
   "minor_threshold_crossed",
+  // A student's consent-authority determination (guardian vs. self) was set or
+  // changed. Subject is the student. Details carry the mode + basis.
+  "consent_authority_set",
+  // A student on the age-default ("auto") reached the age of majority while an
+  // active guardian-signed consent is on file — a clinician must confirm
+  // self-consent or record a guardianship basis. Subject is the student.
+  "consent_authority_review_required",
   // Authentication audit events. Subject is always a `user`. Used for
   // login surveillance and MFA challenge tracking — required for HIPAA /
   // IL MoE auditability.
@@ -443,6 +450,26 @@ export const students = pgTable("students", {
   // existing rows with now + 90 days. Admins can extend per-student.
   // See planning-docs/student-consent-onboarding-plan.md.
   legacyConsentDeadline: timestamp("legacy_consent_deadline", { withTimezone: true }),
+
+  // Consent authority — who may consent for this student. "auto" (default)
+  // derives from the age of majority (guardian below it, self at/above). The
+  // overrides handle exceptions: "guardian_required" for an adult under legal
+  // guardianship, "self" for a self-consenting minor. See consent-authority.ts.
+  // Stored as text (closed set lives in shared/legal types).
+  consentAuthority: text("consent_authority").default("auto").notNull(),
+  // For an adult under guardianship: the legal instrument the guardian acts
+  // under (court_appointed_guardian / limited_guardian / supported_decision_making
+  // / power_of_attorney). Required when consentAuthority === "guardian_required"
+  // and the student is at/above the age of majority.
+  guardianshipBasis: text("guardianship_basis"),
+  // Supporting evidence for the guardianship determination (court-order ref,
+  // issuing authority, document references, notes).
+  guardianshipEvidence: jsonb("guardianship_evidence"),
+  // When the guardianship order should be re-reviewed / expires.
+  guardianshipReviewDate: date("guardianship_review_date"),
+  // Audit: who set the current consent-authority determination and when.
+  consentAuthoritySetByUserId: varchar("consent_authority_set_by_user_id").references(() => users.id),
+  consentAuthoritySetAt: timestamp("consent_authority_set_at", { withTimezone: true }),
 
   // Status and metadata
   isActive: boolean("is_active").default(true).notNull(),
@@ -1430,8 +1457,19 @@ export const consentForms = pgTable("consent_forms", {
 export const studentConsentRecords = pgTable("student_consent_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").references(() => students.id).notNull(),
+  // Null for self-consent (signerType "self") — there is no guardian contact.
   signedByContactId: varchar("signed_by_contact_id")
-    .references(() => studentContacts.id).notNull(),
+    .references(() => studentContacts.id),
+
+  // Who signed: a guardian or the student themselves. Resolved at sign time by
+  // resolveConsentAuthority (shared/legal/consent-authority.ts).
+  signerType: text("signer_type").default("guardian").notNull(),
+  // The student's own user account when self-signing in an authenticated
+  // session. Null for magic-link self-sign (the parent/student has no account).
+  signedByUserId: varchar("signed_by_user_id").references(() => users.id),
+  // Frozen snapshot of why this signer was legitimate (the guardianship basis,
+  // "self_age", or "self_capable_override"). Mirrors the country/age freeze.
+  consentAuthorityBasis: text("consent_authority_basis"),
 
   // Frozen at signing time so later edits to students.country / birthDate
   // don't retroactively alter the consent's legal context.
@@ -1506,7 +1544,11 @@ export const consentInvitations = pgTable("consent_invitations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
 
   studentId: varchar("student_id").references(() => students.id).notNull(),
-  contactId: varchar("contact_id").references(() => studentContacts.id).notNull(),
+  // Null for self-consent invitations (recipientType "self") — the student
+  // signs for themselves, so there is no guardian contact.
+  contactId: varchar("contact_id").references(() => studentContacts.id),
+  // Who the invitation is addressed to: a guardian or the student themselves.
+  recipientType: text("recipient_type").default("guardian").notNull(),
   sourceInstituteId: varchar("source_institute_id"),
 
   codeHash: text("code_hash").notNull(),

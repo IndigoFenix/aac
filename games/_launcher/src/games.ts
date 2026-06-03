@@ -36,6 +36,13 @@ export const GAMES: GameEntry[] = [
     gradient: "from-sky-600 to-cyan-900",
   },
   {
+    id: "musical-microbes",
+    name: "Musical Microbes",
+    description: "Grow a garden of tiny organisms and listen to the music they make together. A calm, no-wrong-notes sandbox for gaze, touch, or mouse.",
+    emoji: "🎶",
+    gradient: "from-fuchsia-700 to-indigo-900",
+  },
+  {
     id: "seagull-dream",
     name: "Seagull Dream",
     description: "Fly a seagull over a tiny world. Look up to take off, look down to land. Hands-free 3D exploration.",

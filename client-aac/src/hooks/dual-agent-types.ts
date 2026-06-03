@@ -277,8 +277,19 @@ export interface UseDualAgentReturn {
   guessingMode?: boolean;
   /** Press a guessing-mode SUGGESTION button — updates narrowing state and re-injects [GUESSING STATE]. */
   pressSuggestion?: (suggestionKey: string) => void;
-  /** Launch guessing from the sentence builder to fill a slot (resolved concept returns to the sentence). */
+  /** Press an AI-driven NARROW button — records the user's choice as a
+   *  custom narrowing fact and re-injects [GUESSING STATE] so the AI can
+   *  propose the next step. `sourceText` is the button's voiced speech. */
+  pressNarrow?: (dimension: string, value: string, sourceText?: string) => void;
+  /** Unified word-finder entry. Pass a builderContext to launch from the
+   *  sentence builder (pre-selects category), or omit for conversation
+   *  tier. Same downstream protocol either way. */
+  enterGuessing?: (builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** Legacy alias — equivalent to enterGuessing(builderContext). */
   enterGuessingFromBuilder?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** User-initiated word-finder cancel — sends `exit_guessing` to the
+   *  server, which clears state and broadcasts `guessing_mode:false`. */
+  exitGuessing?: (reason?: string) => void;
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible?: (open: boolean) => void;
 

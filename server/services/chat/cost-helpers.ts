@@ -95,6 +95,43 @@ export const creditsForLiveUsage = (
     );
 };
 
+// ---------------------------------------------------------------------------
+// TTS pricing — flat per-1000-char rates per provider, approximate.
+// ---------------------------------------------------------------------------
+//
+// Sources (as of 2026):
+//   - ElevenLabs Flash v2:        ~$0.30 per 1k chars
+//   - Gemini 2.5 Flash TTS:       ~$0.10 per 1k chars (output tokens equivalent)
+//   - Google Cloud TTS Standard:  ~$0.004 per 1k chars
+//   - OpenAI TTS:                 ~$0.015 per 1k chars
+//
+// These are rough. The catalog doesn't carry TTS rates today, so we hard-
+// code per-provider rates here. Refine later by reading per-voice tier
+// from the voice config (Standard vs Studio for Google, Flash vs Multi
+// for ElevenLabs, etc.).
+export type TtsProvider = "elevenlabs" | "gemini-live" | "gemini" | "google" | "openai";
+
+const TTS_USD_PER_1K_CHARS: Record<TtsProvider, number> = {
+    "elevenlabs":  0.30,
+    "gemini-live": 0.10,
+    "gemini":      0.10,
+    "google":      0.004,
+    "openai":      0.015,
+};
+
+/**
+ * Calculate credits for one TTS synthesis. Charged per character of input
+ * text — actual audio length doesn't matter to the providers' billing.
+ */
+export const creditsForTtsUsage = (
+    provider: TtsProvider,
+    characters: number,
+): number => {
+    if (characters <= 0) return 0;
+    const ratePer1k = TTS_USD_PER_1K_CHARS[provider] ?? TTS_USD_PER_1K_CHARS.gemini;
+    return ChargeToCredits((ratePer1k / 1000) * characters);
+};
+
 // number of credits to charge for ONE web_search_preview tool call
 export const CreditsPerSearchByIntelligence = (
     intelligence: 0|1|2|3,           // 0 = mini, 1 = mini, 2 = 4o, 3 = o3-pro

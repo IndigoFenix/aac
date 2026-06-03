@@ -1,18 +1,22 @@
 // server/services/dual-agent/dual-agent-logger.ts
-// Single debug log file for the dual-agent / live-relay system.
+// Verbose file-only debug log for the dual-agent / live-relay system.
 //
-// When called inside `runInSessionContext(sessionId, debugMode, fn)`, log
-// entries are also persisted to the `session_debug_logs` table so admins can
-// review a specific session's trace from the UI (Session History → Debug Log).
-// High-volume events (audio chunks, frame grids) are dropped at the DB
-// boundary — they still go to the file for local debugging.
+// File: live-session-debug.log. Local-only — for low-level traces (provider
+// raw messages, frame counts, audio chunks). The admin-visible
+// session_debug_logs DB rows are populated by agent-flow-logger.ts instead;
+// the flow log is one line per high-signal event and is far more useful for
+// session review.
+//
+// runInSessionContext / sessionContextStore are still exported so the flow
+// logger and any caller wanting DB persistence can ride on the same
+// session-scoped context. The store keeps `sessionId` + `debugMode` (and
+// an optional agent tag) bound to whatever async chain is started inside
+// `run()`.
 
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { AsyncLocalStorage } from "async_hooks";
-import { db } from "../../db";
-import { sessionDebugLogs } from "../../../shared/schema-private";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,21 +24,13 @@ const __dirname = dirname(__filename);
 const LOG_FILE = join(__dirname, "..", "..", "live-session-debug.log");
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
-// Sections that fire many times per second; dropped from DB persistence.
-// They still go to the file (where they're coalesced).
-const NOISY_SECTIONS = new Set<string>([
-  "pcm_audio",
-  "FRAME_GRID",
-  "FRAME_GRID DROPPED",
-  "GEMINI → audioChunk",
-  "MINIMAL: GEMINI → audioChunk",
-  "RAW_MSG",
-  "MINIMAL: WS ping",
-  "MINIMAL: WS pong",
-  "MINIMAL: WS RAW MESSAGE",
-]);
+// NOTE: live-session-debug.log is file-only as of 2026-06. The admin
+// session-debug view reads from agent-flow-logger persistence instead.
+// The flow log is one line per high-signal event and is far more useful
+// for session review than the live-session log's verbose RAW_MSG /
+// per-chunk audio entries.
 
-type SessionContext = {
+export type SessionContext = {
   sessionId: string;
   debugMode: boolean;
   /** Optional agent label (Observer / Speaker / BoardManager) used in the
@@ -42,7 +38,7 @@ type SessionContext = {
    *  Live session a server message or tool call belongs to. */
   agent?: string;
 };
-const sessionContextStore = new AsyncLocalStorage<SessionContext>();
+export const sessionContextStore = new AsyncLocalStorage<SessionContext>();
 
 /**
  * Run `fn` with logger context bound to the given session. Any
@@ -69,16 +65,6 @@ function currentAgentTag(): string | undefined {
   return sessionContextStore.getStore()?.agent;
 }
 
-function persistToDb(section: string, content: string): void {
-  const ctx = sessionContextStore.getStore();
-  if (!ctx || !ctx.debugMode) return;
-  if (NOISY_SECTIONS.has(section)) return;
-  // Fire-and-forget; do not await. Logging errors must never break the relay.
-  db.insert(sessionDebugLogs)
-    .values({ sessionId: ctx.sessionId, section, content })
-    .catch(() => { /* swallow — admin will see file but not DB row */ });
-}
-
 function ensureSize(): void {
   try {
     if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
@@ -99,7 +85,7 @@ export function logDualAgent(section: string, data: Record<string, any>): void {
   } catch {
     /* ignore logging errors */
   }
-  persistToDb(displaySection, JSON.stringify(data, null, 2));
+  // File-only — admin debug view reads from agent-flow-logger DB rows.
 }
 
 // Coalesce identical consecutive entries — useful for noisy events like pcm_audio
@@ -148,5 +134,5 @@ export function logLiveSession(section: string, content: string, truncate = fals
   } catch {
     /* ignore logging errors */
   }
-  persistToDb(displaySection, content);
+  // File-only — admin debug view reads from agent-flow-logger DB rows.
 }

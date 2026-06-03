@@ -8,6 +8,13 @@ export {
   REGIME_THRESHOLDS,
 } from "./minor-protection.js";
 export {
+  DEFAULT_AGE_OF_MAJORITY,
+  AGE_OF_MAJORITY,
+  getAgeOfMajority,
+} from "./age-of-majority.js";
+export { resolveConsentAuthority } from "./consent-authority.js";
+export type { ConsentAuthorityResult } from "./consent-authority.js";
+export {
   getIdvMethodSpec,
   isKnownIdvMethod,
   resolveIdvRegimeContext,

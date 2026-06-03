@@ -187,13 +187,13 @@ export class GeminiLiveProvider implements LiveProvider {
           // TEXT modality for prefix token mode (no tools), AUDIO for function calling mode (with tools)
           responseModalities: [config.responseModality === "TEXT" ? Modality.TEXT
             : config.responseModality === "AUDIO" ? Modality.AUDIO
-            : config.tools ? Modality.AUDIO : Modality.TEXT],
+            : config.tools && config.tools.length > 0 ? Modality.AUDIO : Modality.TEXT],
           systemInstruction: { parts: [{ text: systemPrompt }] },
           temperature: config.temperature ?? 0.7,
           // Tool declarations for function calling
           // Strip `behavior` from tool declarations — the SDK handles it internally
           // and passing it raw can cause tools to be ignored by some API endpoints.
-          ...(config.tools ? (() => {
+          ...(config.tools && config.tools.length > 0 ? (() => {
             // Note: toolConfig (with VALIDATED mode) is NOT a valid field on
             // LiveConnectConfig — it's silently dropped by the SDK. VALIDATED
             // mode is only available on the regular generateContent API.
@@ -224,19 +224,19 @@ export class GeminiLiveProvider implements LiveProvider {
               targetTokens: String(targetTokens),
             },
           },
-          // proactiveAudio: true — lets the model decide not to respond to
+          // proactiveAudio: lets the model decide not to respond to
           // background chatter, echoes, or input not directed at it.
-          // Empirically, removing this causes MALFORMED_FUNCTION_CALL bursts
-          // at session start (4+ consecutive zero-token malformed turns) on
-          // gemini-live-2.5-flash-native-audio. Re-enabled with the
-          // expectation that the system prompt's strong positive bias toward
-          // responding (in <interact> mode) keeps the model engaged, while
-          // proactivity handles the genuine "not directed at me" cases that
-          // stay_silent is too explicit for.
+          // Default ON for Observer-style models that need to stay quiet
+          // most of the time. Speaker has it OFF — without a strong
+          // positive "respond aloud" bias in the prompt, proactiveAudio
+          // makes the model emit empty turns that Vertex flags as
+          // MALFORMED_FUNCTION_CALL.
           // 3.1 Preview rejects the `proactivity` field with 1007 — omit there.
           ...(config.model === "gemini-3.1-flash-live-preview"
             ? {}
-            : { proactivity: { proactiveAudio: true } }),
+            : config.proactiveAudio === false
+              ? {}
+              : { proactivity: { proactiveAudio: true } }),
           // Safety filters disabled — Gemini was rejecting innocuous greetings
           // with RESPONSE_REJECTED. Using BLOCK_NONE rather than OFF: both are
           // "do not block", but BLOCK_NONE is more universally accepted across
@@ -601,20 +601,22 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendContextInjection(text: string): void {
     if (!this.session || !this.connected) return;
-    const wrapped = `[SYSTEM CONTEXT UPDATE]\n${text}`;
+    // No structural prefix on the wire. The native-audio Speaker was
+    // voicing the literal "[SYSTEM CONTEXT UPDATE]" tag aloud — same
+    // failure mode as the earlier [GUESSING STATE] echo. Callers already
+    // supply their own framing tag ([CONTEXT], [MODE], [BUTTON PRESS to
+    // YOU], etc.), and `turnComplete: false` is what tells the model
+    // "this is context, not a turn to reply to." The wrap was redundant.
     try {
       if (this.isPreview31) {
         // 3.1: route text through sendRealtimeInput. There's no
         // turnComplete=false equivalent — every text input triggers a turn.
-        // To approximate "context injection that doesn't ask for a reply",
-        // we still send the text but the system prompt should explain that
-        // [SYSTEM CONTEXT UPDATE] entries are informational.
-        logLiveSession("CLIENT → sendRealtimeInput(text) [context]", wrapped.substring(0, 200));
-        this.session.sendRealtimeInput({ text: wrapped });
+        logLiveSession("CLIENT → sendRealtimeInput(text) [context]", text.substring(0, 200));
+        this.session.sendRealtimeInput({ text });
       } else {
         logLiveSession("CLIENT → sendContextInjection", `turnComplete=false text="${text.substring(0, 120)}"`);
         this.session.sendClientContent({
-          turns: [{ role: "user", parts: [{ text: wrapped }] }],
+          turns: [{ role: "user", parts: [{ text }] }],
           turnComplete: false,
         });
       }
@@ -805,6 +807,21 @@ export class GeminiLiveProvider implements LiveProvider {
         const txText = (content as any).inputTranscription.text || "(empty)";
         events.push(`inputTranscription("${txText.substring(0, 100)}")`);
         logLiveSession("GEMINI ← inputTranscription", `Gemini heard from user: "${txText}"`);
+        // High-signal flow log: tag with the agent label so we know
+        // which Live session "heard" this audio. Observer is the only
+        // mic-receiving agent in the three-agent path, but tagging
+        // future-proofs against changes.
+        if (this.debugAgentLabel) {
+          // Dynamic import to avoid a circular load (agent-flow-logger
+          // currently has no deps on this provider, but staying defensive).
+          import("./agent-flow-logger").then(m => {
+            m.flowInput(
+              this.debugAgentLabel as any,
+              "gemini_input_transcript",
+              txText,
+            );
+          }).catch(() => { /* ignore */ });
+        }
       }
       if ((content as any).generationComplete) events.push("generationComplete");
       if (events.length > 0) {
@@ -863,6 +880,14 @@ export class GeminiLiveProvider implements LiveProvider {
         } else {
           this.callbacks.onOutputTranscription?.(transcriptText);
         }
+      }
+      // `outputTranscription.finished: true` marks the end of the text
+      // portion of the model's turn. Audio chunks may still follow, but
+      // the transcript is now complete. Downstream consumers (BoardManager)
+      // use this as the "full transcript available" signal — much earlier
+      // than turnComplete (which waits for all audio to deliver).
+      if ((content as any).outputTranscription?.finished === true) {
+        this.callbacks.onOutputTranscriptionFinished?.();
       }
 
       if (content.turnComplete) {

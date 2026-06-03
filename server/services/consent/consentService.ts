@@ -13,12 +13,16 @@ import { studentContacts, type StudentConsentRecord } from "@shared/schema";
 import {
   resolveMinorProtection,
   computeAgeYears,
+  resolveConsentAuthority,
+  getAgeOfMajority,
   resolveIdvRegimeContext,
   checkIdvAcceptability,
   isKnownIdvMethod,
   lookupConsentNotice,
   renderNoticeForHashing,
   type ConsentRecipientCategory,
+  type ConsentAuthorityMode,
+  type GuardianshipBasis,
   type OptInType,
   type IdvAcceptabilityResult,
 } from "@shared/legal";
@@ -34,6 +38,8 @@ export type ConsentErrorCode =
   | "contact_not_found"
   | "contact_not_for_student"
   | "contact_not_legal_guardian"
+  | "guardianship_basis_required"
+  | "signer_not_permitted"
   | "disclosures_required"
   | "notice_not_found"
   | "notice_version_mismatch"
@@ -55,7 +61,17 @@ export class ConsentError extends Error {
 
 export interface SignConsentInput {
   studentId: string;
-  signedByContactId: string;
+  /**
+   * The signing guardian contact. Required when the student resolves to
+   * guardian consent; omitted (null) for self-consent (signerType "self").
+   */
+  signedByContactId?: string | null;
+  /**
+   * The student's own user account, when self-signing in an authenticated
+   * session. Null for magic-link self-sign (the signer has no user account).
+   * Ignored for guardian consent.
+   */
+  signedByUserId?: string | null;
 
   /** UI locale; used to pick the localized notice variant. */
   locale: string;
@@ -128,17 +144,56 @@ class ConsentService {
     const country = (student.country ?? "IL").toUpperCase();
     const ageAtSigningYears = computeAgeYears(new Date(student.birthDate));
 
-    // 3. Contact validation
-    const [contact] = await db
-      .select()
-      .from(studentContacts)
-      .where(eq(studentContacts.id, input.signedByContactId));
-    if (!contact) throw new ConsentError("contact_not_found");
-    if (contact.studentId !== input.studentId) {
-      throw new ConsentError("contact_not_for_student");
-    }
-    if (!contact.isLegalGuardian) {
-      throw new ConsentError("contact_not_legal_guardian");
+    // 3. Resolve who may sign (guardian vs. self) and validate the supplied
+    // signer against it. The student's consent-authority override drives this;
+    // absent an override it falls back to the age of majority.
+    const authority = resolveConsentAuthority({
+      country,
+      ageYears: ageAtSigningYears,
+      authorityMode: (student.consentAuthority ?? "auto") as ConsentAuthorityMode,
+      guardianshipBasis: (student.guardianshipBasis ?? null) as GuardianshipBasis | null,
+    });
+
+    if (authority.signerType === "guardian") {
+      if (!input.signedByContactId) {
+        throw new ConsentError(
+          "signer_not_permitted",
+          "This student requires guardian consent — a signing guardian contact is required",
+        );
+      }
+      const [contact] = await db
+        .select()
+        .from(studentContacts)
+        .where(eq(studentContacts.id, input.signedByContactId));
+      if (!contact) throw new ConsentError("contact_not_found");
+      if (contact.studentId !== input.studentId) {
+        throw new ConsentError("contact_not_for_student");
+      }
+      if (!contact.isLegalGuardian) {
+        throw new ConsentError("contact_not_legal_guardian");
+      }
+      // An adult under guardianship must have a documented legal basis — we
+      // can't assert a guardian's authority over an adult without one.
+      if (
+        ageAtSigningYears >= getAgeOfMajority(country) &&
+        student.consentAuthority === "guardian_required" &&
+        !student.guardianshipBasis
+      ) {
+        throw new ConsentError(
+          "guardianship_basis_required",
+          "Guardian consent for a student at/above the age of majority requires a recorded guardianship basis",
+        );
+      }
+    } else {
+      // Self-consent: there is no guardian contact. A guardian contact passed
+      // here would mean the caller is trying to have someone else sign for a
+      // self-consenting student — reject it.
+      if (input.signedByContactId) {
+        throw new ConsentError(
+          "signer_not_permitted",
+          "This student self-consents — a guardian contact cannot sign on their behalf",
+        );
+      }
     }
 
     // 4. Notice lookup + hash check
@@ -217,7 +272,10 @@ class ConsentService {
     // 8. Insert
     const inserted = await studentConsentRecordRepository.create({
       studentId: input.studentId,
-      signedByContactId: input.signedByContactId,
+      signedByContactId: authority.signerType === "guardian" ? input.signedByContactId! : null,
+      signerType: authority.signerType,
+      signedByUserId: authority.signerType === "self" ? (input.signedByUserId ?? null) : null,
+      consentAuthorityBasis: authority.basis,
       country,
       ageAtSigningYears,
       isMinorEnhancedProtection: minor.isApplicable,
@@ -257,7 +315,10 @@ class ConsentService {
         nonRepudiationMethod: input.nonRepudiationMethod,
         optIns: finalOptIns,
         optInsForcedOff,
-        signedByContactId: input.signedByContactId,
+        signerType: authority.signerType,
+        consentAuthorityBasis: authority.basis,
+        signedByContactId: authority.signerType === "guardian" ? input.signedByContactId : null,
+        signedByUserId: authority.signerType === "self" ? (input.signedByUserId ?? null) : null,
       },
     });
 

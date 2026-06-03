@@ -542,6 +542,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/consent/students/:studentId/wizard-context", requireAuth, (req, res) =>
     consentController.getWizardContext(req, res)
   );
+  app.get("/api/consent/students/:studentId/authority", requireAuth, (req, res) =>
+    consentController.getAuthority(req, res)
+  );
+  app.put("/api/consent/students/:studentId/authority", requireAuth, (req, res) =>
+    consentController.setAuthority(req, res)
+  );
   app.post("/api/consent/students/:studentId/sign", requireAuth, (req, res) =>
     consentController.signConsent(req, res)
   );

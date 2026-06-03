@@ -6,12 +6,12 @@
 //
 // See planning-docs/student-consent-onboarding-plan.md.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { useCreateConsentInvitation } from "@/hooks/useConsentApi";
+import { useCreateConsentInvitation, useConsentAuthority } from "@/hooks/useConsentApi";
 import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
 import { openUI } from "@/lib/uiEvents";
 
@@ -83,23 +83,41 @@ export function SendConsentRequestDialog({
 
   const contacts = contactsQuery.data?.contacts ?? [];
 
+  // Resolve who may sign — for a self-consenting (adult) student the request is
+  // addressed to the student themselves, not a guardian contact.
+  const authorityQuery = useConsentAuthority(studentId);
+  const resolvedSigner = authorityQuery.data?.resolved?.signerType ?? null;
+
   const [contactId, setContactId] = useState<string>("");
+  const [recipientType, setRecipientType] = useState<"guardian" | "self">("guardian");
+  const [selfDestination, setSelfDestination] = useState<string>("");
   const [channel, setChannel] = useState<"email" | "sms" | "manual">("email");
+
+  // Default the recipient to the resolved signer once known.
+  useEffect(() => {
+    if (resolvedSigner) setRecipientType(resolvedSigner);
+  }, [resolvedSigner]);
+
+  const isSelf = recipientType === "self";
 
   const selectedContact = useMemo(
     () => contacts.find((c) => c.id === contactId),
     [contacts, contactId],
   );
 
-  // The available channels depend on which fields the selected contact has.
-  // If the contact has neither email nor phone, only "manual" is offered.
+  // The available channels depend on the destination. For a guardian it's which
+  // fields the contact has; for self it's whether a destination was entered.
   const channelAvailable = useMemo(() => {
+    if (isSelf) {
+      const has = selfDestination.trim().length > 0;
+      return { email: has, sms: has, manual: true };
+    }
     return {
       email: !!selectedContact?.contactEmail,
       sms: !!selectedContact?.contactPhone,
       manual: true,
     };
-  }, [selectedContact]);
+  }, [isSelf, selfDestination, selectedContact]);
 
   const [result, setResult] = useState<{
     code: string;
@@ -108,13 +126,16 @@ export function SendConsentRequestDialog({
   } | null>(null);
 
   async function handleSubmit() {
-    if (!contactId) return;
+    if (!isSelf && !contactId) return;
+    if (isSelf && channel !== "manual" && !selfDestination.trim()) return;
     try {
       const r = await create.mutateAsync({
         studentId,
-        contactId,
         sourceInstituteId,
         channel,
+        ...(isSelf
+          ? { recipientType: "self" as const, selfDestination: selfDestination.trim() }
+          : { recipientType: "guardian" as const, contactId }),
       });
       setResult({
         code: r.code,
@@ -170,6 +191,10 @@ export function SendConsentRequestDialog({
               isLoading={contactsQuery.isLoading}
               contactId={contactId}
               setContactId={setContactId}
+              recipientType={recipientType}
+              setRecipientType={setRecipientType}
+              selfDestination={selfDestination}
+              setSelfDestination={setSelfDestination}
               channel={channel}
               setChannel={setChannel}
               channelAvailable={channelAvailable}
@@ -190,7 +215,7 @@ export function SendConsentRequestDialog({
               <Button
                 onClick={handleSubmit}
                 disabled={
-                  !contactId ||
+                  (isSelf ? (channel !== "manual" && !selfDestination.trim()) : !contactId) ||
                   !channelAvailable[channel] ||
                   create.isPending
                 }
@@ -212,6 +237,10 @@ function FormPanel({
   isLoading,
   contactId,
   setContactId,
+  recipientType,
+  setRecipientType,
+  selfDestination,
+  setSelfDestination,
   channel,
   setChannel,
   channelAvailable,
@@ -222,6 +251,10 @@ function FormPanel({
   isLoading: boolean;
   contactId: string;
   setContactId: (v: string) => void;
+  recipientType: "guardian" | "self";
+  setRecipientType: (v: "guardian" | "self") => void;
+  selfDestination: string;
+  setSelfDestination: (v: string) => void;
   channel: "email" | "sms" | "manual";
   setChannel: (v: "email" | "sms" | "manual") => void;
   channelAvailable: { email: boolean; sms: boolean; manual: boolean };
@@ -231,9 +264,23 @@ function FormPanel({
   if (isLoading) {
     return <p className="text-muted-foreground">{t("common.loading") || "Loading..."}</p>;
   }
-  if (contacts.length === 0) {
+  const isSelf = recipientType === "self";
+  // For a guardian request we need contacts to exist; the self path doesn't.
+  if (!isSelf && contacts.length === 0) {
     return (
       <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <RecipientOption
+            label={t("consent.authority.recipientGuardian") || "A parent / guardian"}
+            selected={!isSelf}
+            onClick={() => setRecipientType("guardian")}
+          />
+          <RecipientOption
+            label={t("consent.authority.recipientSelf") || "The student"}
+            selected={isSelf}
+            onClick={() => setRecipientType("self")}
+          />
+        </div>
         <p className="text-sm text-muted-foreground">
           {t("consent.send.noContacts") ||
             "No contacts on file for this student. Add a parent contact in the Contacts tab first."}
@@ -247,6 +294,37 @@ function FormPanel({
   }
   return (
     <div className="space-y-4">
+      <div>
+        <Label>{t("consent.authority.recipientLabel") || "Who signs"}</Label>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <RecipientOption
+            label={t("consent.authority.recipientGuardian") || "A parent / guardian"}
+            selected={!isSelf}
+            onClick={() => setRecipientType("guardian")}
+          />
+          <RecipientOption
+            label={t("consent.authority.recipientSelf") || "The student"}
+            selected={isSelf}
+            onClick={() => setRecipientType("self")}
+          />
+        </div>
+      </div>
+
+      {isSelf ? (
+        <div>
+          <Label>{t("consent.authority.selfDestinationLabel") || "Student email or phone"}</Label>
+          <Input
+            value={selfDestination}
+            onChange={(e) => setSelfDestination(e.target.value)}
+            placeholder={t("consent.authority.selfDestinationPlaceholder") || "student@example.com or +972…"}
+            className="mt-1"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t("consent.authority.selfDestinationHint") ||
+              "An SMS code is the strongest verification for sensitive data."}
+          </p>
+        </div>
+      ) : (
       <div>
         <div className="flex items-center justify-between">
           <Label>{t("consent.send.contactLabel") || "Send to"}</Label>
@@ -273,6 +351,7 @@ function FormPanel({
           </SelectContent>
         </Select>
       </div>
+      )}
 
       <div>
         <Label>{t("consent.send.channelLabel") || "Delivery channel"}</Label>
@@ -310,6 +389,28 @@ function FormPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function RecipientOption({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border p-3 text-sm transition-colors ${
+        selected ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

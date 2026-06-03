@@ -65,8 +65,28 @@ export interface StudentConsentRecord {
   revocationReason?: string | null;
 }
 
+export type ConsentAuthorityMode = "auto" | "guardian_required" | "self";
+export type ConsentSignerType = "guardian" | "self";
+export type GuardianshipBasis =
+  | "minor"
+  | "court_appointed_guardian"
+  | "limited_guardian"
+  | "supported_decision_making"
+  | "power_of_attorney";
+
+export interface ConsentAuthorityResponse {
+  success: true;
+  consentAuthority: ConsentAuthorityMode;
+  guardianshipBasis: GuardianshipBasis | null;
+  guardianshipEvidence: Record<string, unknown> | null;
+  guardianshipReviewDate: string | null;
+  resolved: { signerType: ConsentSignerType; basis: string; source: "override" | "age" } | null;
+}
+
 export interface WizardContextResponse {
   success: true;
+  signerType?: ConsentSignerType | null;
+  consentAuthority?: ConsentAuthorityMode;
   student: {
     id: string;
     name: string;
@@ -109,7 +129,8 @@ export interface ConsentSignaturePayload {
 }
 
 export interface SignConsentRequest {
-  signedByContactId: string;
+  /** Omitted for self-consent (the logged-in student signs). */
+  signedByContactId?: string;
   locale: string;
   consentTextVersion: string;
   consentTextHash: string;
@@ -189,6 +210,46 @@ export function useActiveConsent(studentId: string | undefined) {
   });
 }
 
+/** Reads the consent-authority determination + resolved signer for a student. */
+export function useConsentAuthority(studentId: string | undefined) {
+  return useQuery<ConsentAuthorityResponse>({
+    queryKey: ["consent-authority", studentId],
+    enabled: !!studentId,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/consent/students/${studentId}/authority`);
+      if (!res.ok) throw new Error(`Failed to load consent authority (${res.status})`);
+      return res.json();
+    },
+  });
+}
+
+export interface SetConsentAuthorityRequest {
+  mode: ConsentAuthorityMode;
+  basis?: GuardianshipBasis | null;
+  evidence?: Record<string, unknown> | null;
+  reviewDate?: string | null;
+}
+
+export function useSetConsentAuthority(studentId: string) {
+  const qc = useQueryClient();
+  return useMutation<ConsentAuthorityResponse, Error, SetConsentAuthorityRequest>({
+    mutationFn: async (body) => {
+      const res = await apiRequest("PUT", `/api/consent/students/${studentId}/authority`, body);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const e = new Error(err.message ?? `Update failed (${res.status})`);
+        (e as any).code = err.code;
+        throw e;
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["consent-authority", studentId] });
+      qc.invalidateQueries({ queryKey: ["consent-wizard-context", studentId] });
+    },
+  });
+}
+
 export function useSignConsent(studentId: string) {
   const qc = useQueryClient();
   return useMutation<
@@ -223,6 +284,7 @@ export interface ConsentInvitationContextResponse {
   success: true;
   invitationId: string;
   channel: "email" | "sms" | "manual";
+  recipientType: "guardian" | "self";
   requiresPhoneOtp: boolean;
   requiresIdVerification: boolean;
   idVerified: boolean;
@@ -236,6 +298,7 @@ export interface ConsentInvitationContextResponse {
     country: string | null;
     primaryLanguage: string | null;
   };
+  // Null for self-consent invitations — the student signs for themselves.
   contact: {
     id: string;
     name: string;
@@ -247,7 +310,7 @@ export interface ConsentInvitationContextResponse {
     governmentIdCountry: string | null;
     isLegalGuardian: boolean;
     coGuardianAcknowledged: boolean;
-  };
+  } | null;
   expiresAt: string;
 }
 
@@ -270,7 +333,12 @@ export interface SignWithTokenRequest {
 
 export interface CreateInvitationRequest {
   studentId: string;
-  contactId: string;
+  /** Required for guardian invitations; omitted for self-consent. */
+  contactId?: string;
+  /** Defaults to the student's resolved signer. "self" sends to the student. */
+  recipientType?: "guardian" | "self";
+  /** The student's own email/phone for a self-consent invitation. */
+  selfDestination?: string;
   sourceInstituteId: string;
   channel: "email" | "sms" | "manual";
   ttlDays?: number;

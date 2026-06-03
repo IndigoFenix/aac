@@ -607,8 +607,9 @@ ${T.board}s should always provide a WIDE VARIETY of options — don't cluster ar
     - \`📖.my\`           — head 📖 + possession modifier ("my book")
     - \`🤗.big.please\`   — modifiers stack
 
-  **CRITICAL — MODIFIER SYMBOLs are ALWAYS from the canonical registry, full stop.** The complete list is in <bundled_icons>: count, possession, negation, intensity, size_shape, temperature, color, social. Words like \`.new\`, \`.old\`, \`.sad\`, \`.funny\`, \`.adventure\`, \`.american\`, \`.scary\` are NOT modifiers — the renderer has no image for them, so the slot shows as a meaningless dot. Emojis are not modifiers either (\`.✨\`, \`.😢\` are also invalid — modifiers are registry keys, not emoji). If you need an adjective the registry doesn't have:
-    - Pick a different HEAD SYMBOL that ALREADY encodes the quality (😢 for "sad", 😂 for "funny", 👴 for "old man", 😨 for "scary", ✨ for "new").
+  **MODIFIER SYMBOLs are EITHER from the canonical registry OR a raw emoji.** Canonical list in <bundled_icons>: count, possession, negation, intensity, size_shape, temperature, color, social. Emojis can also serve as modifiers — they render as a small badge in a corner of the HEAD (\`📖.😢\` = sad book; \`🐕.👴\` = old dog; \`🍪.✨\` = new cookie). What's INVALID is bare unknown snake_case (\`.new\`, \`.old\`, \`.funny\`, \`.adventure\`, \`.american\`, \`.scary\`) — those have no image and render as a meaningless dot. If you need an adjective the registry doesn't have:
+    - Use the emoji version of the quality as a modifier (\`.😢\` for "sad", \`.👴\` for "old man", \`.✨\` for "new").
+    - Pick a different HEAD SYMBOL that ALREADY encodes the quality (😢 for "sad", 😂 for "funny", 👴 for "old man").
     - Or drop the adjective from the visual entirely and put it in the spoken \`speech\` field only — the user hears "sad book" even if the icon just shows 📖.
   Never invent a modifier outside the registry${singleGlyphButtons ? "" : ", and never compose multiple GLYPHs just to attach an adjective — one phrase = one GLYPH (HEAD + canonical modifiers)"}.
 

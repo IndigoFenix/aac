@@ -162,15 +162,16 @@ describe('minor-threshold cron', () => {
     });
     const result = await runMinorThresholdCheck();
     expect(result.flagged).toBe(1);
-    const logs = await db
-      .select()
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.eventType, 'minor_threshold_crossed'),
-          eq(activityLogs.subjectId1, consent.id),
-        ),
-      );
+    // activityLogService.log() is fire-and-forget — poll until the row commits.
+    const where = and(
+      eq(activityLogs.eventType, 'minor_threshold_crossed'),
+      eq(activityLogs.subjectId1, consent.id),
+    );
+    let logs: any[] = [];
+    for (let i = 0; i < 40 && logs.length === 0; i++) {
+      logs = await db.select().from(activityLogs).where(where);
+      if (logs.length === 0) await new Promise((r) => setTimeout(r, 50));
+    }
     expect((logs[0].details as any).priorRegime).toBe('eu_gdpr_minor');
     expect((logs[0].details as any).threshold).toBe(16);
   });

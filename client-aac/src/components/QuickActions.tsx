@@ -57,10 +57,12 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
   // rendered when a handler is wired — keeps the row at 4 cols otherwise so
   // existing screens are unaffected.
   const showSpeakSlot = !!onSpeak;
-  // "Guess" enters the AI guessing game. Only meaningful in the AI dynamic
-  // board, when not already guessing, no app open, and not mid-sentence-builder.
+  // "Guess" is the Word Finder entry — always visible in the AI dynamic
+  // board when no app is open and we're not inside the sentence builder
+  // (the builder has its own Word Finder button). Click toggles entry/exit
+  // based on isGuessingMode (single source of truth from the server).
   const showGuessSlot =
-    boardMode === "ai" && !isGuessingMode && !hasActiveApp && !inSentenceBuilder;
+    boardMode === "ai" && !hasActiveApp && !inSentenceBuilder;
   const columns = 4 + (showSpeakSlot ? 1 : 0) + (showGuessSlot ? 1 : 0);
   const speakLabel = inSentenceBuilder ? t("quickActions.back") : t("quickActions.speak");
   // Back arrow points opposite reading direction (away from "forward") —
@@ -145,14 +147,21 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         </span>
       </motion.button>
 
-      {/* Guess: enter the AI guessing game (thought-bubble icon) */}
+      {/* Word Finder: the same button enters and exits guessing mode. When
+          active, an extra ring + thicker border highlights it across every
+          surface that exposes the button (this row + the sentence builder). */}
       {showGuessSlot && (
         <motion.button
           data-dwell
           data-testid="quick-guess"
+          data-active={isGuessingMode ? "true" : undefined}
           onClick={() => onAction("guess", t("quickActions.guess"))}
-          className={`${btnClass} border-violet-300 dark:border-violet-500`}
-          style={{ backgroundColor: "#EDE9FE" }}
+          className={`${btnClass} ${
+            isGuessingMode
+              ? "border-violet-600 border-2 ring-2 ring-violet-400 dark:border-violet-300"
+              : "border-violet-300 dark:border-violet-500"
+          }`}
+          style={{ backgroundColor: isGuessingMode ? "#C4B5FD" : "#EDE9FE" }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >

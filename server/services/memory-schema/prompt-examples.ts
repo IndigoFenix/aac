@@ -107,6 +107,76 @@ export function ex(
 // glyph encodings (the pipe-field 2nd column) identical across locales.
 
 const EXAMPLES: Record<string, ExampleEntry> = {
+  // ── Three-agent: Speaker interact-mode dialogue (speech only) ────────────
+  // Speaker doesn't rebuild the board — Board Manager does. These examples
+  // show ONLY what Speaker actually does: speak in reply to user presses.
+  "speaker.interact_dialogue": {
+    en: `        [USER to YOU] "I want to talk about my day."
+        AI: Sure! What would you like to talk about?
+        [USER to YOU] "My morning."
+        AI: All right, let's talk about your morning! What did you do?
+        [USER to YOU] "I had breakfast."
+        AI: Breakfast is important! What did you have for breakfast?`,
+    he: `        [USER to YOU] "אני רוצה לדבר על היום שלי."
+        AI: בטח! על מה תרצה לדבר?
+        [USER to YOU] "הבוקר."
+        AI: טוב, בוא נדבר על הבוקר שלך! מה עשית?
+        [USER to YOU] "אכלתי ארוחת בוקר."
+        AI: ארוחת בוקר זה חשוב! מה אכלת לארוחת בוקר?`,
+  },
+
+  // ── Three-agent: Speaker silent dialogue (target not YOU) ────────────────
+  "speaker.assist_dialogue": {
+    en: `        Situation: The user is communicating with a therapist via the device.
+
+        [USER to Therapist] "I want to talk about my day."
+        AI: (silent — addressed to the therapist, not you)
+        [Therapist to USER] "What did you do this morning?"
+        AI: (silent — therapist is asking the user, not you)
+        [USER to Therapist] "I had breakfast."
+        AI: (silent)`,
+    he: `        Situation: The user is communicating with a therapist via the device.
+
+        [USER to Therapist] "אני רוצה לדבר על היום שלי."
+        AI: (silent — addressed to the therapist, not you)
+        [Therapist to USER] "מה עשית הבוקר?"
+        AI: (silent — therapist is asking the user, not you)
+        [USER to Therapist] "אכלתי ארוחת בוקר."
+        AI: (silent)`,
+  },
+
+  // ── Three-agent: Board Manager worked examples (trigger → tool call) ─────
+  "board_manager.examples": {
+    en: `        Trigger: User pressed "[BUTTON PRESS] I want to talk about my day."
+        Tool call: rebuild_board(buttons=[6–8 follow-ups: My morning, Afternoon, Yesterday, Weekend, Something good happened, Something hard happened, Something else])
+
+        Trigger: AI just said "What would you like to talk about?"
+        Tool call: rebuild_board(buttons=[6–8 replies to that question])
+
+        Trigger: Therapist asked "What did you do this morning?"
+        Tool call: rebuild_board(buttons=[6–8 morning-activity SENTENCEs the user can pick])
+
+        Trigger: Observer noted a dog walked into view.
+        Tool call: add_context_button(button={speech:"I see a dog", sentence:"i_me+see+🐕", label:"Dog"})
+
+        Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[want, go, see, eat], modifier_candidates=[])`,
+    he: `        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
+        Tool call: rebuild_board(buttons=[6–8 המשך: הבוקר, הצהריים, אתמול, סוף השבוע, משהו טוב, משהו קשה, משהו אחר])
+
+        Trigger: ה-AI אמר "על מה תרצה לדבר?"
+        Tool call: rebuild_board(buttons=[6–8 תשובות לשאלה])
+
+        Trigger: המטפלת שאלה "מה עשית הבוקר?"
+        Tool call: rebuild_board(buttons=[6–8 פעולות בוקר שהמשתמש יכול לבחור])
+
+        Trigger: Observer רשם שכלב נכנס לתמונה.
+        Tool call: add_context_button(button={speech:"אני רואה כלב", sentence:"i_me+see+🐕", label:"כלב"})
+
+        Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[want, go, see, eat], modifier_candidates=[])`,
+  },
+
   // ── <interact_mode> worked dialogue (3 turns) ────────────────────────────
   "interact_mode.dialogue": {
     en: `        User turn: "${T.tagPress} I want to talk about my day."

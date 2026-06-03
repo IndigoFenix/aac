@@ -25,14 +25,14 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     labels: { en: "Interact", he: "דבר איתי" },
     icon: "🗣️",
     staticIcon: "/aac-buttons/main-menu/ai_talking.png",
-    instruction: "[INTERACT] The user wants to talk to you. Switch to Interaction Mode. Rebuild the board with conversation starters and topics relevant to the student's interests.",
+    instruction: "[INTERACT] The user wants to talk to you. Switch to Companion Mode. Rebuild the board with conversation starters and topics relevant to the student's interests.",
   },
   {
     id: "home_talk",
     labels: { en: "Talk", he: "אני מדבר" },
     icon: "💬",
     staticIcon: "/aac-buttons/main-menu/human_talking.png",
-    instruction: "[ASSIST] The user is talking to someone else. Switch to Assist Mode. Rebuild the board with phrases and responses the student might want to say in a conversation.",
+    instruction: "[ASSIST] The user is talking to someone else. Switch to Facilitator Mode. Rebuild the board with phrases and responses the student might want to say in a conversation.",
   },
   {
     id: "home_my_day",

@@ -410,10 +410,13 @@ export default function DynamicBoard({
 
       // Default: speak action. Suggestion buttons are voiced by home's
       // handler instead (it speaks even during an AI session, where local
-      // speech is otherwise suppressed) — skip here to avoid double speech.
+      // speech is otherwise suppressed). Word Finder and More buttons are
+      // mode/meta actions — never voice them. Skip local speak in those
+      // cases to avoid double speech / spurious utterances.
       const textToSpeak = button.spokenText || button.label;
-      const isSuggestion = (button as any).buttonType === "suggestion";
-      if (!suppressLocalSpeech && !isSuggestion) {
+      const bt = (button as any).buttonType;
+      const isMeta = bt === "suggestion" || bt === "wordfinder" || bt === "more";
+      if (!suppressLocalSpeech && !isMeta) {
         speak(textToSpeak, language, voiceType as any);
       }
       onButtonClick(button, textToSpeak);
@@ -493,16 +496,59 @@ export default function DynamicBoard({
 
     const isGuessButton = (button as any).buttonType === "guess";
     const isSuggestionButton = (button as any).buttonType === "suggestion";
+    const isWordFinderButton = (button as any).buttonType === "wordfinder";
+    const isMoreButton = (button as any).buttonType === "more";
 
     const borderClass = isGuessButton
       ? "border-amber-400 border-2 ring-2 ring-amber-300/50"
       : isSuggestionButton
       ? "border-violet-400 border-2 ring-2 ring-violet-300/40"
+      : isWordFinderButton
+      ? "border-violet-400 border-2 ring-2 ring-violet-300/40"
+      : isMoreButton
+      ? "border-gray-300 dark:border-gray-600 border-2"
       : isLinkButton
       ? "border-blue-400 border-2"
       : isBackButton
         ? "border-amber-400 border-2"
         : "border-gray-200";
+
+    // Special META buttons (wordfinder, more) — the AI sets `buttonType` on
+    // a regular button in rebuild_board / add_board_button to mark it.
+    // Both render with FIXED appearance pulled from the same i18n keys
+    // and styling the quick-actions row uses, so the board-embedded
+    // variants look identical to their quick-actions twins.
+    if (isWordFinderButton || isMoreButton) {
+      const kind = isWordFinderButton ? "wordfinder" : "more";
+      const labelText = kind === "wordfinder"
+        ? t("quickActions.guess")
+        : t("quickActions.more");
+      const icon = kind === "wordfinder" ? "🔍" : "➕";
+      const bg = kind === "wordfinder" ? "#EDE9FE" : "#E5E7EB";
+      return (
+        <motion.button
+          data-dwell
+          data-dwell-cell={`grid-${index}`}
+          data-testid={`board-${kind}`}
+          key={`btn-${kind}-${index}`}
+          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: isEntering ? 0.3 : 0.15 }}
+          onClick={() => handleButtonClick(button)}
+          className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
+          style={{ backgroundColor: bg, padding: 5 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <div className="icon-fill-area"><span className="icon-fill-emoji">{icon}</span></div>
+          <div className="flex items-center justify-center w-full overflow-hidden shrink-0" style={{ maxHeight: "40%", marginTop: 2 }}>
+            <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
+              {labelText}
+            </span>
+          </div>
+        </motion.button>
+      );
+    }
 
     // Nav buttons (Back / Home) keep their inline renderer — they don't
     // voice a SENTENCE, the icon area is a fixed Font Awesome glyph (back

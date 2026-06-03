@@ -78,7 +78,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onEnterGuessingFromBuilderReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -99,14 +99,17 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
   onGuessingModeChange?: (active: boolean) => void;
   onPressSuggestionReady?: (fn: ((suggestionKey: string) => void) | null) => void;
+  onPressNarrowReady?: (fn: ((dimension: string, value: string, sourceText?: string) => void) | null) => void;
   onEnterGuessingFromBuilderReady?: (fn: ((builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void) | null) => void;
+  onEnterGuessingReady?: (fn: (() => void) | null) => void;
+  onExitGuessingReady?: (fn: ((reason?: string) => void) | null) => void;
   onSetBuilderVisibleReady?: (fn: ((open: boolean) => void) | null) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
   onSendConstructionStateReady?: (fn: ((state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void) | null) => void;
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, enterGuessingFromBuilder, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -172,6 +175,11 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   }, [pressSuggestion, onPressSuggestionReady]);
 
   useEffect(() => {
+    onPressNarrowReady?.(pressNarrow ? (dim: string, value: string, sourceText?: string) => pressNarrow(dim, value, sourceText) : null);
+    return () => onPressNarrowReady?.(null);
+  }, [pressNarrow, onPressNarrowReady]);
+
+  useEffect(() => {
     onSetBuilderVisibleReady?.(setBuilderVisible ? (open: boolean) => setBuilderVisible(open) : null);
     return () => onSetBuilderVisibleReady?.(null);
   }, [setBuilderVisible, onSetBuilderVisibleReady]);
@@ -180,6 +188,16 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
     onEnterGuessingFromBuilderReady?.(enterGuessingFromBuilder ? (ctx) => enterGuessingFromBuilder(ctx) : null);
     return () => onEnterGuessingFromBuilderReady?.(null);
   }, [enterGuessingFromBuilder, onEnterGuessingFromBuilderReady]);
+
+  useEffect(() => {
+    onEnterGuessingReady?.(enterGuessing ? () => enterGuessing() : null);
+    return () => onEnterGuessingReady?.(null);
+  }, [enterGuessing, onEnterGuessingReady]);
+
+  useEffect(() => {
+    onExitGuessingReady?.(exitGuessing ? (reason?: string) => exitGuessing(reason) : null);
+    return () => onExitGuessingReady?.(null);
+  }, [exitGuessing, onExitGuessingReady]);
 
   useEffect(() => {
     onContextButtonsChange?.(contextButtonsFromCtx);
@@ -296,6 +314,16 @@ function renderAppContent(
       <GameEmbed
         gameId="space-trader"
         src="/games/space-trader/"
+        onClose={dismissApp}
+      />
+    );
+  }
+  if (activeApp.appId === "musical_microbes") {
+    return (
+      <GameEmbed
+        gameId="musical-microbes"
+        src="/games/musical-microbes/"
+        forwardGaze
         onClose={dismissApp}
       />
     );
@@ -467,7 +495,17 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const pressSuggestionRef = useRef<((suggestionKey: string) => void) | null>(null);
+  const pressNarrowRef = useRef<((dimension: string, value: string, sourceText?: string) => void) | null>(null);
   const enterGuessingFromBuilderRef = useRef<((ctx: { targetSlot: number | null; partialGlyph: string; category: string }) => void) | null>(null);
+  // Conversation-tier enterGuessing (no builder context). Bridged separately
+  // from enterGuessingFromBuilder so callers don't have to construct a
+  // builderContext.
+  const enterGuessingRef = useRef<(() => void) | null>(null);
+  // exitGuessing — single client-initiated cancel path used by every
+  // word-finder surface (quick-button toggle, sentence-builder toggle,
+  // any "back while guessing" press). Replaces the legacy [EXIT GUESSING]
+  // board_exit kludge.
+  const exitGuessingRef = useRef<((reason?: string) => void) | null>(null);
   const setBuilderVisibleRef = useRef<((open: boolean) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
@@ -1003,15 +1041,43 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
     console.debug("[guessing] board press:", button.label, "| buttonType:", (button as any).buttonType, "| suggestionKey:", (button as any).suggestionKey);
 
+    // Word Finder entry button (set by AI via button_type: "wordfinder").
+    // Treat the press as a mode-toggle: enter guessing without voicing the
+    // button (it isn't an utterance) and without firing button_pressed (the
+    // press is a meta action, not the user saying anything).
+    if ((button as any).buttonType === "wordfinder") {
+      console.debug("[guessing] board word-finder pressed → enterGuessing");
+      enterGuessingRef.current?.();
+      return;
+    }
+
+    // [MORE] equivalent — set by AI via button_type: "more". Same wire
+    // protocol as the quick-actions [MORE] button (button_press with the
+    // canonical "[MORE]" label); the server short-circuits in
+    // handleButtonPress: no TTS, no Speaker user_turn, just kicks
+    // BoardManager to refresh the surface.
+    if ((button as any).buttonType === "more") {
+      console.debug("[more] board more pressed → [MORE] press");
+      if (voiceFnRef.current) {
+        voiceFnRef.current(["[MORE]"]);
+      }
+      return;
+    }
+
     // Guessing-mode SUGGESTION button — route to the narrowing assistant
-    // (pressSuggestion) instead of voicing it as an utterance. Uses the
-    // same ref bridge as voiceButtons, so it shares the working context path.
+    // (pressSuggestion) for state update AND voice through the SAME server
+    // TTS path every other button uses (voiceFnRef → server student-voice
+    // TTS via elevenlabs / Gemini). Falling back to client-side `speak()`
+    // produced a noticeably different voice for these buttons compared to
+    // regular SENTENCE BUTTONs, since the browser's built-in speech
+    // synthesis doesn't go through the configured student-voice pipeline.
     if ((button as any).buttonType === "suggestion" && (button as any).suggestionKey) {
       console.debug("[guessing] → pressSuggestion, ref is:", typeof pressSuggestionRef.current);
-      // Voice the student's selection in their voice — the server does not
-      // TTS suggestion presses (they don't go through voiceButtons), so this is
-      // the only place the selection gets spoken.
-      speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+      if (voiceFnRef.current) {
+        voiceFnRef.current([spokenText], { [spokenText]: spokenText });
+      } else {
+        speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+      }
       pressSuggestionRef.current?.((button as any).suggestionKey);
       return;
     }
@@ -1570,16 +1636,23 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 guessingActive={isGuessingMode}
                 guessingBoard={boardData}
                 onGuessingPress={(key) => pressSuggestionRef.current?.(key)}
+                onGuessButtonPress={(button) => {
+                  // A free-form AI guess button (no suggestion: key).
+                  // Route through the normal board-button click — voices
+                  // the SENTENCE and emits button_pressed to the server.
+                  // Use the button's `speech` text (or sentence fallback)
+                  // as the spoken-text argument.
+                  const spoken = (button as any).speech || button.sentence || button.label;
+                  handleBoardButtonClick(button, spoken);
+                }}
+                onNarrowPress={(dim, value, sourceText) => pressNarrowRef.current?.(dim, value, sourceText)}
                 onEnterGuessing={(ctx) => enterGuessingFromBuilderRef.current?.(ctx)}
                 onExitGuessing={() => {
                   // User picked a category tab / mode chip while guessing was
-                  // active — tell the server (and AI) they cancelled the word
-                  // search and want to browse normally instead. The
-                  // [EXIT GUESSING] tag flips guessingMode server-side.
-                  sendBoardExitRef.current?.(
-                    "Back",
-                    "[EXIT GUESSING] The user cancelled word-finding by picking a sentence-builder category. Resume normal sentence construction.",
-                  );
+                  // active — single exit path now hits the server's
+                  // `exit_guessing` handler directly (no board_exit kludge,
+                  // no spurious "Back" button_pressed downstream).
+                  exitGuessingRef.current?.("builder_category_chip");
                 }}
                 people={peopleDirectory.people}
                 getFaceImage={resolveFaceImage}
@@ -1758,19 +1831,36 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               // "Exit" = close the active app
               dismissAppRef.current();
             } else if (action === "guess") {
-              // "Guess" = enter the AI guessing game. Reuses the board-exit
-              // entry path: the server detects [GUESSING MODE], flips the flag,
-              // appends the initial [GUESSING STATE], and prompts the AI to
-              // offer the top-level category buttons. (See shared/guessing-mode.)
-              sendBoardExitRef.current?.(
-                "Find word",
-                "[GUESSING MODE] The user wants help finding a word — enter word finding mode and narrow down what they're looking for."
-              );
+              // "Find word" button. The same button toggles entry and exit
+              // based on the current isGuessingMode flag (single source of
+              // truth, server-driven via guessing_mode WS message). The
+              // server's `clearGuessingState` / `applyGuessingState` IS
+              // the authority; the client just calls the appropriate
+              // bridged action.
+              if (isGuessingMode) {
+                console.debug("[guessing] quick-button toggle → exitGuessing");
+                exitGuessingRef.current?.("quick_action_toggle");
+              } else {
+                console.debug("[guessing] quick-button toggle → enterGuessing");
+                enterGuessingRef.current?.();
+              }
             } else if (action === "no" && isGuessingMode) {
               // In guessing mode, "No" means "none of these" — reject the
-              // current options so the assistant drops that dimension and the
-              // AI asks about something else (or guesses).
+              // current narrowing step AND voice the press as a normal
+              // button. Voicing matters for two reasons:
+              //   (1) Same student-voice TTS as every other button —
+              //       without it, the press is silent on the client,
+              //       which feels broken.
+              //   (2) The AI sees [USER to YOU] לא in the conversational
+              //       record, which is what nudges it to pivot when the
+              //       narrowing state's history is already empty (state-
+              //       only rejection becomes a no-op after enough
+              //       rejections, leaving the AI with no signal that the
+              //       user is still rejecting things).
               console.debug("[guessing] No → none of these");
+              if (voiceFnRef.current) {
+                voiceFnRef.current([text], { [text]: text });
+              }
               pressSuggestionRef.current?.(GUESSING_REJECT);
             } else {
               // Yes/No — send as button press (server handles TTS if AI session active)
@@ -1785,14 +1875,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             // Back also dismisses the sentence builder when it's open. The
             // server's builder_close handler already exits builder-origin
             // guessing — but if guessing was launched from the conversation
-            // tier, builder_close won't touch it, so we send the explicit
-            // [EXIT GUESSING] signal here too.
+            // tier, builder_close won't touch it, so we fire the explicit
+            // exit_guessing here too.
             if (showConstructionBoard) {
               if (isGuessingMode) {
-                sendBoardExitRef.current?.(
-                  "Back",
-                  "[EXIT GUESSING] The user cancelled word-finding by closing the sentence builder. Continue the conversation naturally.",
-                );
+                exitGuessingRef.current?.("back_closes_builder");
               }
               setShowConstructionBoard(false);
               return;
@@ -1804,10 +1891,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             }
             // Top-level Back while in conversation-tier guessing: cancel it.
             if (isGuessingMode) {
-              sendBoardExitRef.current?.(
-                "Back",
-                "[EXIT GUESSING] The user cancelled word-finding by pressing Back. Continue the conversation naturally without finishing the word search.",
-              );
+              exitGuessingRef.current?.("back_button");
               return;
             }
             // Call the prebuilt board's back function
@@ -1949,7 +2033,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onBoardExitReady={(fn) => { sendBoardExitRef.current = fn; }}
             onGuessingModeChange={setIsGuessingMode}
             onPressSuggestionReady={(fn) => { pressSuggestionRef.current = fn; }}
+            onPressNarrowReady={(fn) => { pressNarrowRef.current = fn; }}
             onEnterGuessingFromBuilderReady={(fn) => { enterGuessingFromBuilderRef.current = fn; }}
+            onEnterGuessingReady={(fn) => { enterGuessingRef.current = fn; }}
+            onExitGuessingReady={(fn) => { exitGuessingRef.current = fn; }}
             onSetBuilderVisibleReady={(fn) => { setBuilderVisibleRef.current = fn; }}
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}

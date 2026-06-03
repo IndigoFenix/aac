@@ -16,6 +16,7 @@ import {
   ConsentError,
   type SignConsentInput,
 } from "./consentService.js";
+import { consentAuthorityService } from "./consentAuthorityService.js";
 import { activityLogService } from "../activityLogService.js";
 import { emailService } from "../emailService.js";
 import { smsService } from "../smsService.js";
@@ -26,6 +27,8 @@ import { toE164 } from "@shared/phone";
 export type ConsentInvitationErrorCode =
   | "contact_not_found"
   | "contact_missing_channel"
+  | "recipient_type_mismatch"
+  | "self_destination_required"
   | "student_not_found"
   | "code_not_found"
   | "code_expired"
@@ -73,7 +76,15 @@ class ConsentInvitationService {
    */
   async createInvitation(args: {
     studentId: string;
-    contactId: string;
+    /** Required for guardian invitations; omitted for self-consent. */
+    contactId?: string | null;
+    /** Who the invitation addresses. Defaults to the student's resolved signer. */
+    recipientType?: "guardian" | "self";
+    /**
+     * Destination for a self-consent invitation (the student's own email or
+     * phone), since the student has no guardian contact to read it from.
+     */
+    selfDestination?: string;
     sourceInstituteId: string | null;
     createdByUserId: string;
     channel: "email" | "sms" | "manual";
@@ -83,31 +94,62 @@ class ConsentInvitationService {
     const student = await studentRepository.getStudentById(args.studentId);
     if (!student) throw new ConsentInvitationError("student_not_found");
 
-    const [contact] = await db
-      .select()
-      .from(studentContacts)
-      .where(eq(studentContacts.id, args.contactId));
-    if (!contact) throw new ConsentInvitationError("contact_not_found");
-    if (contact.studentId !== args.studentId) {
-      throw new ConsentInvitationError("contact_not_found", "Contact does not belong to that student");
+    // The invitation's recipient must match who is actually allowed to sign.
+    // Resolve the student's authority and default/validate against it so a
+    // self-consent invitation can't be created for a guardian-only student
+    // (signConsent would reject it at sign time anyway).
+    const resolved = await consentAuthorityService.resolveForStudent(args.studentId);
+    const recipientType = args.recipientType ?? resolved?.signerType ?? "guardian";
+    if (resolved && recipientType !== resolved.signerType) {
+      throw new ConsentInvitationError(
+        "recipient_type_mismatch",
+        `Student resolves to ${resolved.signerType} consent, but a ${recipientType} invitation was requested`,
+      );
+    }
+    const isSelf = recipientType === "self";
+
+    let contact: typeof studentContacts.$inferSelect | undefined;
+    if (!isSelf) {
+      if (!args.contactId) throw new ConsentInvitationError("contact_not_found", "Guardian invitation requires a contact");
+      [contact] = await db
+        .select()
+        .from(studentContacts)
+        .where(eq(studentContacts.id, args.contactId));
+      if (!contact) throw new ConsentInvitationError("contact_not_found");
+      if (contact.studentId !== args.studentId) {
+        throw new ConsentInvitationError("contact_not_found", "Contact does not belong to that student");
+      }
     }
 
     let sentTo: string;
-    if (args.channel === "email") {
-      if (!contact.contactEmail) throw new ConsentInvitationError("contact_missing_channel", "Contact has no email");
-      sentTo = contact.contactEmail;
-    } else if (args.channel === "sms") {
-      if (!contact.contactPhone) throw new ConsentInvitationError("contact_missing_channel", "Contact has no phone");
-      const normalized = toE164(contact.contactPhone, student.country);
+    if (args.channel === "manual") {
+      sentTo = "manual"; // copy-link path; clinician hands code to the signer themselves
+    } else if (args.channel === "email") {
+      const email = isSelf ? args.selfDestination : contact!.contactEmail;
+      if (!email) {
+        throw new ConsentInvitationError(
+          isSelf ? "self_destination_required" : "contact_missing_channel",
+          isSelf ? "A student email is required for a self-consent email invitation" : "Contact has no email",
+        );
+      }
+      sentTo = email;
+    } else {
+      // sms
+      const rawPhone = isSelf ? args.selfDestination : contact!.contactPhone;
+      if (!rawPhone) {
+        throw new ConsentInvitationError(
+          isSelf ? "self_destination_required" : "contact_missing_channel",
+          isSelf ? "A student phone is required for a self-consent SMS invitation" : "Contact has no phone",
+        );
+      }
+      const normalized = toE164(rawPhone, student.country);
       if (!normalized) {
         throw new ConsentInvitationError(
-          "contact_missing_channel",
-          `Contact phone "${contact.contactPhone}" cannot be normalized to E.164 (country=${student.country ?? "unknown"})`,
+          isSelf ? "self_destination_required" : "contact_missing_channel",
+          `Phone "${rawPhone}" cannot be normalized to E.164 (country=${student.country ?? "unknown"})`,
         );
       }
       sentTo = normalized;
-    } else {
-      sentTo = "manual"; // copy-link path; clinician hands code to parent themselves
     }
 
     // Resolve TTL in hours and clamp to the 72h ceiling. `ttlDays` is kept as
@@ -119,7 +161,8 @@ class ConsentInvitationService {
 
     const { invitation, code } = await consentInvitationRepository.create({
       studentId: args.studentId,
-      contactId: args.contactId,
+      contactId: isSelf ? null : args.contactId!,
+      recipientType,
       sourceInstituteId: args.sourceInstituteId,
       createdByUserId: args.createdByUserId,
       channel: args.channel,
@@ -177,7 +220,8 @@ class ConsentInvitationService {
         action: "consent_invitation_sent",
         invitationId: invitation.id,
         channel: args.channel,
-        contactId: args.contactId,
+        recipientType,
+        contactId: isSelf ? null : args.contactId,
         expiresAt: expiresAt.toISOString(),
       },
     });
@@ -193,38 +237,52 @@ class ConsentInvitationService {
   async redeemContext(code: string): Promise<{
     invitationId: string;
     channel: string;
+    recipientType: string;
     requiresPhoneOtp: boolean;
     requiresIdVerification: boolean;
     idVerified: boolean;
     contactPhoneMasked: string | null;
     student: { id: string; name: string; firstName: string | null; lastName: string | null; birthDate: string | null; country: string | null; primaryLanguage: string | null };
-    contact: { id: string; name: string; relationship: string | null; contactEmail: string | null; contactPhone: string | null; governmentIdNumber: string | null; governmentIdType: string | null; governmentIdCountry: string | null; isLegalGuardian: boolean; coGuardianAcknowledged: boolean };
+    // Null for self-consent invitations — the student signs for themselves.
+    contact: { id: string; name: string; relationship: string | null; contactEmail: string | null; contactPhone: string | null; governmentIdNumber: string | null; governmentIdType: string | null; governmentIdCountry: string | null; isLegalGuardian: boolean; coGuardianAcknowledged: boolean } | null;
     expiresAt: string;
   }> {
     const inv = await this.loadActiveByCode(code);
     const student = await studentRepository.getStudentById(inv.studentId);
     if (!student) throw new ConsentInvitationError("student_not_found");
-    const [contact] = await db
-      .select()
-      .from(studentContacts)
-      .where(eq(studentContacts.id, inv.contactId));
-    if (!contact) throw new ConsentInvitationError("contact_not_found");
 
-    // Email-channel invitations gate on a child-ID knowledge check, but only
-    // when an institute ID is actually on file for the child (otherwise there
-    // is nothing to verify against and the path falls back to link+signature).
-    const childIdNumber = inv.channel === "email" ? await this.getChildInstituteIdNumber(inv) : null;
+    const isSelf = inv.recipientType === "self";
+    let contact: typeof studentContacts.$inferSelect | undefined;
+    if (!isSelf) {
+      if (!inv.contactId) throw new ConsentInvitationError("contact_not_found");
+      [contact] = await db
+        .select()
+        .from(studentContacts)
+        .where(eq(studentContacts.id, inv.contactId));
+      if (!contact) throw new ConsentInvitationError("contact_not_found");
+    }
+
+    // Email-channel GUARDIAN invitations gate on a child-ID knowledge check,
+    // but only when an institute ID is actually on file (otherwise there is
+    // nothing to verify against). Self-consent uses SMS+OTP, not the child-ID
+    // gate (the student verifying their own ID adds nothing).
+    const childIdNumber = !isSelf && inv.channel === "email" ? await this.getChildInstituteIdNumber(inv) : null;
+
+    // For self over SMS the destination phone lives on the invitation (sentTo,
+    // already E.164); for guardians it's the contact's phone.
+    const phoneForMask = isSelf
+      ? (inv.channel === "sms" ? inv.sentTo : null)
+      : (contact!.contactPhone ? toE164(contact!.contactPhone, student.country) ?? contact!.contactPhone : null);
 
     return {
       invitationId: inv.id,
       channel: inv.channel,
+      recipientType: inv.recipientType,
       // SMS-channel invitations require an OTP non-repudiation leg before sign.
       requiresPhoneOtp: inv.channel === "sms",
       requiresIdVerification: !!childIdNumber,
       idVerified: !!inv.idVerifiedAt,
-      contactPhoneMasked: contact.contactPhone
-        ? maskPhone(toE164(contact.contactPhone, student.country) ?? contact.contactPhone)
-        : null,
+      contactPhoneMasked: phoneForMask ? maskPhone(phoneForMask) : null,
       student: {
         id: student.id,
         name: student.name,
@@ -234,18 +292,20 @@ class ConsentInvitationService {
         country: student.country,
         primaryLanguage: student.primaryLanguage,
       },
-      contact: {
-        id: contact.id,
-        name: contact.name,
-        relationship: contact.relationship,
-        contactEmail: contact.contactEmail,
-        contactPhone: contact.contactPhone,
-        governmentIdNumber: contact.governmentIdNumber,
-        governmentIdType: contact.governmentIdType,
-        governmentIdCountry: contact.governmentIdCountry,
-        isLegalGuardian: contact.isLegalGuardian,
-        coGuardianAcknowledged: contact.coGuardianAcknowledged,
-      },
+      contact: contact
+        ? {
+            id: contact.id,
+            name: contact.name,
+            relationship: contact.relationship,
+            contactEmail: contact.contactEmail,
+            contactPhone: contact.contactPhone,
+            governmentIdNumber: contact.governmentIdNumber,
+            governmentIdType: contact.governmentIdType,
+            governmentIdCountry: contact.governmentIdCountry,
+            isLegalGuardian: contact.isLegalGuardian,
+            coGuardianAcknowledged: contact.coGuardianAcknowledged,
+          }
+        : null,
       expiresAt: inv.expiresAt.toISOString(),
     };
   }
@@ -275,10 +335,13 @@ class ConsentInvitationService {
     signedFromUserAgent?: string | null;
   }): Promise<{ consent: StudentConsentRecord; invitation: ConsentInvitation }> {
     const inv = await this.loadActiveByCode(args.code);
-    const [contactRow] = await db
-      .select()
-      .from(studentContacts)
-      .where(eq(studentContacts.id, inv.contactId));
+    const isSelf = inv.recipientType === "self";
+    const [contactRow] = inv.contactId
+      ? await db
+          .select()
+          .from(studentContacts)
+          .where(eq(studentContacts.id, inv.contactId))
+      : [undefined];
 
     // Phone-OTP gate: SMS-channel invitations MUST have a recently verified
     // OTP for this invitation. This is the non-repudiation leg required by
@@ -313,7 +376,7 @@ class ConsentInvitationService {
     // (the redeem context advertised this via requiresIdVerification). This is
     // the email-path identity leg, parallel to the SMS OTP non-repudiation leg.
     let idEvidence: Record<string, unknown> = {};
-    if (inv.channel === "email") {
+    if (inv.channel === "email" && !isSelf) {
       const childIdNumber = await this.getChildInstituteIdNumber(inv);
       if (childIdNumber) {
         if (!inv.idVerifiedAt) {
@@ -331,33 +394,38 @@ class ConsentInvitationService {
 
     // Update the contact: flip isLegalGuardian, capture co-guardian + gov-ID.
     // Same shape as the session-authed sign path — kept consistent so audit
-    // trails for token vs session signs look identical.
-    const updates: Partial<typeof studentContacts.$inferInsert> = {
-      isLegalGuardian: true,
-      legalGuardianDeclaredAt: new Date(),
-    };
-    if (args.guardianFields) {
-      const g = args.guardianFields;
-      if (g.coGuardianAcknowledged !== undefined) updates.coGuardianAcknowledged = g.coGuardianAcknowledged;
-      if (g.governmentIdNumber !== undefined) {
-        updates.governmentIdNumber = g.governmentIdNumber;
-        updates.governmentIdVerifiedVia = "manual_entry";
-        updates.governmentIdVerificationProvider = "self_declared_via_magic_link";
-        updates.governmentIdVerifiedAt = new Date();
+    // trails for token vs session signs look identical. Skipped for self-consent
+    // (there is no guardian contact to declare).
+    if (!isSelf && inv.contactId) {
+      const updates: Partial<typeof studentContacts.$inferInsert> = {
+        isLegalGuardian: true,
+        legalGuardianDeclaredAt: new Date(),
+      };
+      if (args.guardianFields) {
+        const g = args.guardianFields;
+        if (g.coGuardianAcknowledged !== undefined) updates.coGuardianAcknowledged = g.coGuardianAcknowledged;
+        if (g.governmentIdNumber !== undefined) {
+          updates.governmentIdNumber = g.governmentIdNumber;
+          updates.governmentIdVerifiedVia = "manual_entry";
+          updates.governmentIdVerificationProvider = "self_declared_via_magic_link";
+          updates.governmentIdVerifiedAt = new Date();
+        }
+        if (g.governmentIdType !== undefined) updates.governmentIdType = g.governmentIdType;
+        if (g.governmentIdCountry !== undefined) updates.governmentIdCountry = g.governmentIdCountry.toUpperCase();
       }
-      if (g.governmentIdType !== undefined) updates.governmentIdType = g.governmentIdType;
-      if (g.governmentIdCountry !== undefined) updates.governmentIdCountry = g.governmentIdCountry.toUpperCase();
+      await db
+        .update(studentContacts)
+        .set(updates)
+        .where(eq(studentContacts.id, inv.contactId));
     }
-    await db
-      .update(studentContacts)
-      .set(updates)
-      .where(eq(studentContacts.id, inv.contactId));
 
-    // Sign — IDV evidence ties back to the invitation token + ip/ua.
+    // Sign — IDV evidence ties back to the invitation token + ip/ua. For self
+    // invitations signedByContactId is null; signConsent resolves signerType
+    // from the student's own authority and persists "self".
     const consent = await consentService.signConsent({
       ...args.payload,
       studentId: inv.studentId,
-      signedByContactId: inv.contactId,
+      signedByContactId: isSelf ? null : inv.contactId,
       identityVerificationMethod: args.payload.identityVerificationMethod ?? "verified_phone_otp",
       identityVerificationEvidence: {
         ...(args.payload.identityVerificationEvidence ?? {}),
@@ -588,6 +656,14 @@ class ConsentInvitationService {
    * has no phone or the value can't be normalized.
    */
   private async resolveContactPhoneE164(inv: ConsentInvitation): Promise<string> {
+    // Self-consent invitations have no contact — the destination phone lives on
+    // the invitation (sentTo, normalized to E.164 at creation time).
+    if (inv.recipientType === "self" || !inv.contactId) {
+      if (inv.channel !== "sms" || !inv.sentTo || inv.sentTo === "manual") {
+        throw new ConsentInvitationError("contact_missing_channel", "Self invitation has no phone on file");
+      }
+      return inv.sentTo;
+    }
     const [contact] = await db
       .select()
       .from(studentContacts)

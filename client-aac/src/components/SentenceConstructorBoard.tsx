@@ -186,6 +186,14 @@ export interface SentenceConstructorBoardProps {
   guessingBoard?: ParsedBoardData | null;
   /** Press a guessing narrowing button (routes to pressSuggestion via home). */
   onGuessingPress?: (suggestionKey: string) => void;
+  /** Press an AI-generated guess button (a free-form rebuild_board button,
+   *  not a suggestion: key). Routes through the normal board-button click
+   *  path: voices the SENTENCE + emits button_pressed to the server. */
+  onGuessButtonPress?: (button: BoardButton) => void;
+  /** Press an AI-driven NARROW button (`buttonType: "narrow"`). Records the
+   *  user's pick as a custom narrowing fact and re-injects [GUESSING STATE]
+   *  so the AI can propose the next narrowing step. */
+  onNarrowPress?: (dimension: string, value: string, sourceText?: string) => void;
   /** Launch guessing for the active slot (when the user can't find a symbol). */
   onEnterGuessing?: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
   /** Cancel guessing mode (fired when the user picks a category tab or mode
@@ -210,6 +218,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const guessingActive = props.guessingActive ?? false;
   const guessingBoard = props.guessingBoard ?? null;
   const onGuessingPress = props.onGuessingPress;
+  const onGuessButtonPress = props.onGuessButtonPress;
+  const onNarrowPress = props.onNarrowPress;
   const onEnterGuessing = props.onEnterGuessing;
   const onExitGuessing = props.onExitGuessing;
 
@@ -502,11 +512,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // effect picks it up and sends `requestGuessingMode: true` on the next
   // injection. The AI's existing <guessing_mode> behavior handles the rest.
   const handleHelpPress = useCallback(() => {
-    // Help ALWAYS launches the fuzzy guessing engine, seeded with the partial
-    // sentence + the active slot's category so guesses fit. Whether or not a
-    // slot is explicitly selected doesn't matter — the narrowing buttons render
-    // in the main grid and the resolved concept returns to the AI strip to fill
-    // the slot. (Re-suggesting fresh candidates is handled by the "More" button.)
+    // The Word Finder button toggles entry/exit based on the current
+    // guessingActive flag (server-driven; same source of truth as the
+    // quick-button toggle). Active → exit; inactive → enter with the
+    // partial-sentence + active-slot category context.
+    if (guessingActive) {
+      console.debug("[guessing/builder] Help → exitGuessing (toggle off)");
+      onExitGuessing?.();
+      return;
+    }
     const builderContext = {
       targetSlot: computeTargetSlot(glyph, activeSlot),
       partialGlyph: serializeGlyph(glyph),
@@ -520,7 +534,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       console.warn("[guessing/builder] onEnterGuessing unavailable; using legacy requestGuessingMode");
       setPendingHelpRequest(true);
     }
-  }, [onEnterGuessing, glyph, activeSlot, activeTab]);
+  }, [guessingActive, onEnterGuessing, onExitGuessing, glyph, activeSlot, activeTab]);
 
   // ── AI strip wiring ──────────────────────────────────────────────────────
   // Send state on every relevant change. The relay forwards it to the live
@@ -929,13 +943,16 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             />
           </div>
 
-          {/* Find-word button — launches word-finding (guessing) mode for the
-              active slot. Violet, matching the "Find word" quick-button. */}
+          {/* Find-word button — launches (or exits) word-finding mode for the
+              active slot. Violet, matching the "Find word" quick-button. The
+              `active` prop renders the highlight when guessing is on; the
+              press toggles entry/exit via the same handler. */}
           <ActionButton
             label={t("quickActions.guess")}
             icon="🔍"
             color="#EDE9FE"
             borderColor="#C4B5FD"
+            active={guessingActive}
             onPress={handleHelpPress}
             testId="construction-help"
           />
@@ -1143,9 +1160,21 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         <div className="flex-1 min-h-0 p-3 overflow-hidden">
           {guessingActive ? (
             (() => {
-              const guessButtons = (guessingBoard?.pages?.[0]?.buttons ?? []).filter(
-                (b) => (b as any).buttonType === "suggestion" && (b as any).suggestionKey,
-              );
+              // Render THREE flavors of word-finder buttons:
+              //   (1) suggestion: a registry-driven button (`buttonType="suggestion"`
+              //       with a `suggestionKey`) — routes via onGuessingPress.
+              //   (2) narrow: an AI-driven open-ended narrowing step
+              //       (`buttonType="narrow"` with `narrowDimension` / `narrowValue`)
+              //       — routes via onNarrowPress with the speech as sourceText.
+              //   (3) guess: a free-form AI guess (untagged or `buttonType="guess"`)
+              //       — routes through the normal board-button click path.
+              const allButtons = guessingBoard?.pages?.[0]?.buttons ?? [];
+              const guessButtons = allButtons.filter((b) => {
+                const bt = (b as any).buttonType;
+                const sk = (b as any).suggestionKey;
+                const nd = (b as any).narrowDimension;
+                return (bt === "suggestion" && sk) || (bt === "narrow" && nd) || bt === "guess" || (!bt && !sk && !nd);
+              });
               const localizeGuess = (b: BoardButton): BoardButton => {
                 const key = (b as any).suggestionKey as string | undefined;
                 const parsed = key ? parseSuggestionKey(key) : null;
@@ -1166,15 +1195,24 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   className="grid gap-2 w-full h-full"
                   style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gridAutoRows: "minmax(0, 1fr)" }}
                 >
-                  {guessButtons.map((b, i) => (
-                    <SentenceButton
-                      key={(b as any).suggestionKey ?? i}
-                      variant="board"
-                      button={localizeGuess(b)}
-                      getFaceImage={getFaceImage ?? undefined}
-                      onClick={() => onGuessingPress?.((b as any).suggestionKey)}
-                    />
-                  ))}
+                  {guessButtons.map((b, i) => {
+                    const sk = (b as any).suggestionKey as string | undefined;
+                    const nd = (b as any).narrowDimension as string | undefined;
+                    const nv = (b as any).narrowValue as string | undefined;
+                    return (
+                      <SentenceButton
+                        key={sk ?? (nd && nv ? `narrow-${nd}-${nv}` : `guess-${i}`)}
+                        variant="board"
+                        button={localizeGuess(b)}
+                        getFaceImage={getFaceImage ?? undefined}
+                        onClick={() => {
+                          if (sk) onGuessingPress?.(sk);
+                          else if (nd && nv) onNarrowPress?.(nd, nv, (b as any).sentence ?? (b as any).speech);
+                          else onGuessButtonPress?.(b);
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               );
             })()
@@ -1274,12 +1312,16 @@ function ActionButton(props: {
   /** Background color (overrides the default white). Border matches unless borderColor is set. */
   color?: string;
   borderColor?: string;
+  /** When true, render the active highlight (thicker border + ring). Used
+   *  by the Word Finder button to show that guessing mode is currently on. */
+  active?: boolean;
   testId?: string;
 }) {
   return (
     <motion.button
       data-dwell
       data-testid={props.testId}
+      data-active={props.active ? "true" : undefined}
       onClick={props.onPress}
       disabled={props.disabled}
       whileTap={{ scale: 0.95 }}
@@ -1291,8 +1333,9 @@ function ActionButton(props: {
           ? "text-gray-800"
           : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
         props.disabled ? "opacity-40 cursor-not-allowed" : "",
+        props.active ? "ring-2 ring-violet-400 border-violet-600 dark:border-violet-300" : "",
       ].join(" ")}
-      style={props.color ? { backgroundColor: props.color, borderColor: props.borderColor ?? props.color } : undefined}
+      style={props.color ? { backgroundColor: props.active && props.color === "#EDE9FE" ? "#C4B5FD" : props.color, borderColor: props.borderColor ?? props.color } : undefined}
     >
       <span className="text-2xl" aria-hidden>
         {props.icon}

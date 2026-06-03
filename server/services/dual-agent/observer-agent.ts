@@ -29,17 +29,20 @@ import {
   buildObserverToolDeclarations,
   type ObserverToolConfig,
 } from "./tool-declarations-observer";
+import { flowInput, flowTool } from "./agent-flow-logger";
 import type {
   ObserverEvent,
   TranscribedEvent,
   ContextUpdateEvent,
   EngagementChangeEvent,
   FocusRequestEvent,
+  ModeChangeEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
   ContextUpdateType,
   SpeechDirection,
 } from "./agent-events";
+import { isDeviceTarget, isUserTarget } from "./speech-party";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -49,6 +52,7 @@ import type {
  *  cross-agent ones. The Coordinator dispatches each. */
 export type ObserverOutputEvent =
   | ObserverEvent
+  | ModeChangeEvent
   | MonitorCallRequestedEvent
   | PrivateNoteEvent;
 
@@ -102,20 +106,23 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
     case "transcript": {
       const text = asString(args.text);
       const speaker = asString(args.speaker);
-      if (!text || !speaker) return null;
-      // The tool no longer carries a `direction` arg (reverted — see note
-      // in tool-declarations-observer). Default to "user" so the
-      // coordinator routes every transcript to Speaker as a user turn,
-      // matching the single-agent's behavior of always letting the model
-      // decide whether to respond.
-      const direction: SpeechDirection = "user";
+      const target = asString(args.target);
+      if (!text || !speaker || !target) return null;
       const confidence = (asString(args.confidence) as TranscribedEvent["confidence"] | undefined) ?? "medium";
+      // Legacy `direction` field — mirror target for older renderers.
+      // "DEVICE" → "device", "USER"/student name → "user", else "ambient".
+      const direction: SpeechDirection = isDeviceTarget(target)
+        ? "device"
+        : isUserTarget(target)
+          ? "user"
+          : "ambient";
       const event: TranscribedEvent = {
         type: "transcribed",
         source: "observer",
         timestamp: now,
         text,
         speaker,
+        target,
         direction,
         confidence,
       };
@@ -148,6 +155,27 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
         source: "observer",
         timestamp: now,
         reason,
+      };
+      return event;
+    }
+
+    case "set_interaction_mode": {
+      // Canonical values: "companion" / "facilitator". Map legacy
+      // "interact" / "assist" to the new pair so a stale model call
+      // still works (the tool's enum is the new pair, but the model's
+      // pretraining may surface the old names occasionally).
+      const raw = asString(args.mode);
+      const mode: ModeChangeEvent["mode"] | null =
+        raw === "companion" || raw === "interact" ? "companion"
+        : raw === "facilitator" || raw === "assist" ? "facilitator"
+        : null;
+      if (!mode) return null;
+      const event: ModeChangeEvent = {
+        type: "mode_change",
+        source: "observer",
+        timestamp: now,
+        mode,
+        reason: asString(args.reason),
       };
       return event;
     }
@@ -322,6 +350,7 @@ export class ObserverAgent {
    */
   sendFrame(jpegBase64: string, scenePrompt?: string): void {
     const prompt = scenePrompt || "[scene update] React if something here calls for action.";
+    flowInput("OBSERVER", "image_frame", prompt);
     this.provider?.sendFrameWithPrompt(jpegBase64, prompt);
   }
 
@@ -347,6 +376,7 @@ export class ObserverAgent {
   /** Inject context that Observer should see but not respond to (e.g.
    *  `[OWN_SPEECH]: <transcript>` after Speaker's turn ends). */
   sendContextInjection(text: string): void {
+    flowInput("OBSERVER", "context", text);
     this.provider?.sendContextInjection(text);
   }
 
@@ -386,6 +416,7 @@ export class ObserverAgent {
     // 2. Parse and emit each event for Coordinator dispatch.
     for (const call of calls) {
       try {
+        flowTool("OBSERVER", call.name || "?", JSON.stringify(call.args ?? {}));
         const event = parseToolCall(call, now);
         if (event) this.callbacks.onEvent(event);
       } catch (err) {

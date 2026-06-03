@@ -18,7 +18,7 @@ export type PlatformMessage = BridgeMessageBase & (
    * user's license; games that require licensing must refuse to start without
    * a valid token. Standalone access is gated separately at the server layer.
    */
-  | { type: "init"; locale?: string; studentDisplayName?: string; licenseToken?: string }
+  | { type: "init"; locale?: string; studentDisplayName?: string; licenseToken?: string; dwellMs?: number }
   | { type: "expression"; emotion: string; confidence: number }
   | { type: "people_present"; names: string[] }
   | { type: "ai_comment"; text: string }

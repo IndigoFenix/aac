@@ -147,9 +147,11 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     const init: Omit<PlatformMessage, "__aivotaGameBridge"> = {
       type: "init",
       locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+      // Games with their own dwell logic honour the platform's configured dwell time.
+      dwellMs: dwell?.dwellTimeMs,
     };
     sendToGame(iframe, init);
-  }, [iframeReady]);
+  }, [iframeReady, dwell?.dwellTimeMs]);
 
   // Forward gaze position into the iframe's local coordinate space at ~30 Hz.
   // Coordinates produced by the dwell context are page-space; we subtract the

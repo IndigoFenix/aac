@@ -20,6 +20,7 @@ import { ConsentWizard } from '@/features/consent/ConsentWizard';
 import { SendConsentRequestDialog } from '@/features/consent/SendConsentRequestDialog';
 import { PendingInvitationsList } from '@/features/consent/PendingInvitationsList';
 import { ConsentHistoryPanel } from '@/features/consent/ConsentHistoryPanel';
+import { ConsentAuthorityPanel } from '@/features/consent/ConsentAuthorityPanel';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -429,6 +430,11 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
               onClose={() => setSendConsentDialogOpen(false)}
             />
           )}
+          {/* Consent authority — who may consent for this student (guardian vs.
+              self). Collapsible; lets a clinician override the age-of-majority
+              default for an adult under guardianship or a self-consenting minor. */}
+          {student?.id && <ConsentAuthorityPanel studentId={student.id} />}
+
           {/* Consent history — collapsible audit-grade timeline. Renders only
               when the student has at least one consent record (active or revoked). */}
           {student?.id && <ConsentHistoryPanel studentId={student.id} />}

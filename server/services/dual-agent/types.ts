@@ -136,6 +136,25 @@ export interface EnhancedPromptSections {
    * button for this student"). Empty in the single-agent path.
    */
   boardManagerGuidance?: string;
+  /**
+   * Three-agent system only: Speaker's interact-mode worked dialogue.
+   * Speech-only — NO rebuild_board calls, NO transcript() calls. Speaker
+   * just speaks; BOARD MANAGER produces the buttons separately. Empty in
+   * legacy single-agent path.
+   */
+  speakerInteractExamples?: string;
+  /**
+   * Three-agent system only: Speaker's assist-mode worked dialogue.
+   * Shows Speaker staying quiet while a third party engages the user.
+   * Empty in legacy.
+   */
+  speakerAssistExamples?: string;
+  /**
+   * Three-agent system only: Board Manager worked examples — sample
+   * button rebuilds for the common trigger types (button press, AI
+   * speech, third-party speech, ambient observation). Empty in legacy.
+   */
+  boardManagerExamples?: string;
 }
 
 /**

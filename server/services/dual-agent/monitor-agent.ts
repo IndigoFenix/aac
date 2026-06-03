@@ -42,6 +42,9 @@ const ENHANCED_SECTIONS: ReadonlyArray<{ tag: string; key: keyof EnhancedPromptS
   // prompt builders.
   { tag: "observer_instructions", key: "observerInstructions" },
   { tag: "board_manager_guidance", key: "boardManagerGuidance" },
+  { tag: "speaker_interact_examples", key: "speakerInteractExamples" },
+  { tag: "speaker_assist_examples", key: "speakerAssistExamples" },
+  { tag: "board_manager_examples", key: "boardManagerExamples" },
 ];
 
 /**
@@ -129,6 +132,17 @@ export class MonitorAgent {
     sessionId: string;
     initialContext?: string;
     enhancedSections?: EnhancedPromptSections;
+    /** Usage from the thorough-startup enhancer call (only set when
+     *  startupMode === 1 actually fired an LLM call). The Coordinator /
+     *  dualAgentService charges credits for this — startup is a real,
+     *  measurable cost that wasn't being tracked previously. */
+    enhancerUsage?: {
+      provider: import("@shared/llm-options").LLMProviderKey;
+      model: string;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens?: number;
+    };
   }> {
     console.log("[MonitorAgent] Initializing session for student:", this.studentId);
 
@@ -167,6 +181,7 @@ export class MonitorAgent {
       sessionId: contextResult.sessionId,
       initialContext: contextResult.additionalContext,
       enhancedSections: contextResult.enhancedSections,
+      enhancerUsage: (contextResult as any).enhancerUsage,
     };
   }
 
@@ -187,28 +202,45 @@ export class MonitorAgent {
     const now = new Date();
     parts.push(`Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`);
 
-    if (memory.Student_Notes && this.privacyOptions.allowNotes) {
-      parts.push(`Previous notes: ${memory.Student_Notes}`);
+    // Render a memory field that may be a string, an array, or missing.
+    // Empty values produce NO line — the prior truthy check (`if (memory.X)`)
+    // let empty arrays through and emitted "Previous notes: " with an empty
+    // value, which read like data was loaded but blank. Array values render
+    // as comma-separated text; objects fall back to JSON.
+    const renderListField = (label: string, value: any): void => {
+      if (value == null) return;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed) parts.push(`${label}: ${trimmed}`);
+        return;
+      }
+      if (Array.isArray(value)) {
+        if (value.length === 0) return;
+        const formatted = value
+          .map(v => typeof v === "string" ? v : JSON.stringify(v))
+          .join(", ");
+        parts.push(`${label}: ${formatted}`);
+        return;
+      }
+      parts.push(`${label}: ${JSON.stringify(value)}`);
+    };
+
+    if (this.privacyOptions.allowNotes) {
+      renderListField("Previous notes", memory.Student_Notes);
     }
-    if (memory.Student_Interests) {
-      parts.push(`Interests: ${memory.Student_Interests}`);
-    }
-    if (memory.Student_People) {
-      const peopleStr = typeof memory.Student_People === "string"
-        ? memory.Student_People
-        : JSON.stringify(memory.Student_People);
-      parts.push(`Important people: ${peopleStr}`);
-    }
+    renderListField("Interests", memory.Student_Interests);
+    renderListField("Important people", memory.Student_People);
+
     const commProfile = typeof (student as any).communicationProfile === "string"
       ? (student as any).communicationProfile.trim()
       : "";
     if (commProfile) {
       parts.push(`Communication profile (clinician-set, authoritative): ${commProfile}`);
     }
-    if (memory.Student_CommunicationStyle) {
+    if (memory.Student_CommunicationStyle && Object.keys(memory.Student_CommunicationStyle).length > 0) {
       parts.push(`Communication style (legacy, may be stale): ${JSON.stringify(memory.Student_CommunicationStyle)}`);
     }
-    if (memory.Student_Preferences) {
+    if (memory.Student_Preferences && (Array.isArray(memory.Student_Preferences) ? memory.Student_Preferences.length > 0 : true)) {
       parts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
     }
 
@@ -513,7 +545,7 @@ ${singleGlyphButtons
         fallback  = \`🌑.color_red\`   (single GLYPH; substitute existing emoji + canonical modifier)`
   : `        sentence  = \`i_me+want+generate:planet_mars\`
         fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)`}
-  - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
+  - Modifiers must be EITHER from the canonical registry OR a raw emoji. \`📖.new\` is invalid because \`.new\` isn't a registry modifier and isn't an emoji. Valid examples: \`📖.big\` (canonical), \`📖.😢\` (emoji modifier — renders as a sad-face badge on the book).
 
 When providing examples of buttons with \`generate:\` symbols, come up with examples that follow these rules. The Interactive Agent's prompt will include these examples as the ONLY reference for how to use \`generate:\`, so they must be good examples.
 
@@ -660,7 +692,80 @@ Include only items that are SPECIFIC to this user. Examples of what fits here:
 - Visual choices (e.g. "this user responds better to face symbols than emoji for people — prefer face:ID over generic person emoji").
 - Pacing (e.g. "this user prefers 4-button boards over 8-button ones; keep boards uncluttered").
 - If nothing specific applies, leave the body empty.
-${closeTag("board_manager_guidance")}`;
+${closeTag("board_manager_guidance")}
+
+${openTag("speaker_interact_examples")}
+[Three-agent-only — Speaker's interact-mode worked dialogue. 2–4 turns. Empty in single-agent mode.]
+
+Speaker's job in the three-agent architecture is the AI's spoken voice. The BUTTONS are produced separately by the BOARD MANAGER agent — Speaker NEVER calls rebuild_board, NEVER produces button arrays, NEVER calls transcript(). Show ONLY Speaker speaking aloud.
+
+Each user statement is tagged \`[<speaker> to <target>] "..."\` — the bracketed labels stay in ENGLISH even when the dialogue itself is in another language. A press from the user addressed to the AI looks like \`[USER to YOU] "<their SENTENCE in ${languageName}>"\`. Speaker's reply is plain text (no marker).
+
+Pick the situation BEFORE the topic. 8-space indent on each line. Open with the situation line.
+
+        Situation: [one line — where the user is, who's there, what's happening]
+
+        [USER to YOU] "[user's first SENTENCE, in ${languageName}]"
+        AI: [your reply, in ${languageName} — conversational, react and follow up]
+        [USER to YOU] "[user's follow-up, in ${languageName}]"
+        AI: [your reply]
+        [USER to YOU] "[user's third turn, in ${languageName}]"
+        AI: [your reply]
+
+CONSTRAINTS:
+- Only the \`[USER to YOU] "..."\` and \`AI: ...\` line shapes. No "User turn:", "You speak:", or "You call:" labels.
+- All bracketed metadata (USER, YOU, AI, target names if any) stays in ENGLISH. Dialogue inside the quotes is in ${languageName}.
+- Don't echo the user's words; reply conversationally.
+- Situation must be plausible for THIS user given the data above.
+${closeTag("speaker_interact_examples")}
+
+${openTag("speaker_assist_examples")}
+[Three-agent-only — Speaker's assist-mode worked dialogue. Shows Speaker staying quiet while a third party engages the user. Empty in single-agent mode.]
+
+In assist mode, Speaker stays silent while another person talks with the user. The BOARD MANAGER builds the buttons; the OBSERVER transcribes the third party's voice. Speaker's job here is to observe and resist speaking unless directly addressed.
+
+Pick a DIFFERENT plausible situation from speaker_interact_examples — therapy, classroom, meal with a parent, transit, etc.
+
+Statements stay in the unified \`[<speaker> to <target>] "..."\` shape — labels in ENGLISH, dialogue in ${languageName}. Speaker's silent turns are written as \`AI: (silent — reason)\`.
+
+        Situation: [one line — who, where, when, what's happening]
+
+        [USER to <third party>] "[user's first SENTENCE, in ${languageName}]"
+        AI: (silent — addressed to <third party>, not you)
+        [<third party> to USER] "[their question to the user, in ${languageName}]"
+        AI: (silent — they're asking the user, not you)
+        [USER to <third party>] "[user's reply, in ${languageName}]"
+        AI: (silent)
+
+If at some point the third party DIRECTLY addresses the AI ("AI, can you remind us what we did yesterday?"), add a brief \`AI: <reply>\` line; otherwise stay silent.
+
+CONSTRAINTS:
+- Only \`[<speaker> to <target>] "..."\` and \`AI: ...\` (silent or speaking) lines.
+- All bracketed metadata is ENGLISH; dialogue inside quotes is ${languageName}.
+${closeTag("speaker_assist_examples")}
+
+${openTag("board_manager_examples")}
+[Three-agent-only — Board Manager worked examples. 3–5 short blocks, each showing ONE trigger → ONE tool call. Empty in single-agent mode.]
+
+Board Manager is invoked per event and produces the ${T.button}s the user picks from. Show worked examples across the trigger types it sees (button press, AI speech, third-party speech, ambient observation, sentence-builder).
+
+Each block is exactly TWO lines (8-space indent):
+
+        Trigger: [one line describing what just happened in plain ${languageName}]
+        Tool call: [the appropriate tool name + the SHAPE of its args (don't write full button arrays; describe what they should contain)]
+
+Cover these trigger types in order (Triggers themselves use the unified \`[<speaker> to <target>]\` shape with ENGLISH metadata):
+- \`[USER to AI]\` press → rebuild_board with follow-up SENTENCEs to what the user just said.
+- \`[AI to USER]\` (AI just spoke) → rebuild_board with replies to the AI's question / statement.
+- \`[<person> to USER]\` (third party spoke to the user) → rebuild_board with response SENTENCEs.
+- Ambient observation (a new object appears, a person walks in) → add_context_button with ONE relevant ${T.button}.
+- Sentence builder open (${T.tagBuilderState} arrives) → suggest_construction_buttons with 4 head candidates + up to 4 modifier candidates.
+
+CONSTRAINTS:
+- Each block is exactly 2 lines (Trigger + Tool call).
+- The Tool call line names the actual tool (rebuild_board / add_context_button / suggest_construction_buttons), not "RebuildBoardButtons" or other concatenations.
+- ${T.button}s in your examples should match topics this user is plausibly engaged in.
+${closeTag("board_manager_examples")}`;
 
       // ── User-written prompt wrapped in untrusted markers ──
       // The enhancer treats this as CONTENT to summarize, not commands.
@@ -773,17 +878,29 @@ ${outputSpec}`;
       // the explicit data and has to infer everything from the persona prose.
       const memoryDump = this.buildMemoryDump(student);
 
+      // Capture usage so the caller (dualAgentService.initializeSession)
+      // can charge credits. Cheapest Haiku call, but 6k-token output
+      // adds up at scale. GPTResponse has token counts on the response
+      // root (not nested under .usage).
+      const enhancerUsage = response.promptTokens || response.completionTokens ? {
+        provider: (llmConfig?.provider || "claude") as import("@shared/llm-options").LLMProviderKey,
+        model: llmConfig?.model || "claude-haiku-4-5-20251001",
+        promptTokens: response.promptTokens ?? 0,
+        completionTokens: response.completionTokens ?? 0,
+        cachedTokens: response.cachedTokens ?? 0,
+      } : undefined;
+
       const sectionCount = Object.keys(sections).length;
       if (sectionCount > 0) {
         const sizes = ENHANCED_SECTIONS
           .map(({ key }) => `${key}=${sections[key]?.length ?? 0}`)
           .join(", ");
         console.log(`[MonitorAgent] Thorough startup parsed ${sectionCount}/${ENHANCED_SECTIONS.length} sections (${sizes})`);
-        return { sessionId, enhancedSections: sections, additionalContext: memoryDump };
+        return { sessionId, enhancedSections: sections, additionalContext: memoryDump, enhancerUsage } as any;
       }
 
       console.warn("[MonitorAgent] Thorough startup: no nonced section tags found in response, falling back to plain text as context");
-      return { sessionId, additionalContext: responseText || memoryDump };
+      return { sessionId, additionalContext: responseText || memoryDump, enhancerUsage } as any;
     } catch (error) {
       console.error("[MonitorAgent] Thorough startup failed, falling back to fast:", error);
       return this.fastInitializeContext(student);
@@ -807,8 +924,17 @@ ${outputSpec}`;
   async produceSessionSummary(
     previousSummary: string | undefined,
     recentMessages: Array<{ role: string; content: string }>,
-  ): Promise<string | undefined> {
-    if (recentMessages.length === 0) return previousSummary;
+  ): Promise<{
+    summary?: string;
+    usage?: {
+      provider: import("@shared/llm-options").LLMProviderKey;
+      model: string;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens?: number;
+    };
+  }> {
+    if (recentMessages.length === 0) return { summary: previousSummary };
     try {
       const student = this.student;
       const studentName = student?.name || "the user";
@@ -888,15 +1014,24 @@ ${transcript}`;
       const text = response.content || '';
       const match = text.match(new RegExp(`\\[SUMMARY-${nonce}\\]([\\s\\S]*?)\\[/SUMMARY-${nonce}\\]`));
       const summary = match?.[1]?.trim();
+      // Even if parsing fails, the LLM call still happened — bill it.
+      // Token counts live on the response root, not under .usage.
+      const usage = response.promptTokens || response.completionTokens ? {
+        provider: (llmConfig?.provider || "claude") as import("@shared/llm-options").LLMProviderKey,
+        model: llmConfig?.model || "claude-haiku-4-5-20251001",
+        promptTokens: response.promptTokens ?? 0,
+        completionTokens: response.completionTokens ?? 0,
+        cachedTokens: response.cachedTokens ?? 0,
+      } : undefined;
       if (summary) {
         console.log(`[MonitorAgent] Produced session summary (${summary.length} chars from ${recentMessages.length} new msgs)`);
-        return summary;
+        return { summary, usage };
       }
       console.warn("[MonitorAgent] Session summary: no tagged output, keeping previous");
-      return previousSummary;
+      return { summary: previousSummary, usage };
     } catch (err) {
       console.error("[MonitorAgent] produceSessionSummary failed:", err);
-      return previousSummary;
+      return { summary: previousSummary };
     }
   }
 

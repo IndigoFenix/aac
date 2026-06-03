@@ -82,6 +82,10 @@ export function collectInvalidModifiers(glyph: string | undefined): string[] {
       const bareKey = stripBrackets(modKey);
       if (seen.has(bareKey)) continue;
       seen.add(bareKey);
+      // Emojis are valid modifiers — the compositor renders them as
+      // image badges in a corner. (E.g. `📖.😢` = sad book.) Skip the
+      // registry check for emoji modifiers.
+      if (isEmoji(bareKey)) continue;
       const item = getVocabularyItem(bareKey);
       // A registry hit only counts as a modifier when it actually carries
       // a modifier facet — `apple` has a registry entry but isn't a
@@ -144,6 +148,23 @@ export function validateBoardButtons<
   const seenFallback = new Map<string, string>();
 
   for (const btn of buttons) {
+    // (0) Malformed [NARROW:...] prefix surviving the parser. parseBoardButtons
+    // strips `[NARROW:<dim>] <value>` when BOTH parts are non-empty and tags
+    // the button as `narrow`. A malformed shape — empty dim, missing value,
+    // unclosed bracket — leaves the prefix in the label. Surface that here so
+    // the model can correct it rather than shipping a confused button to the
+    // user.
+    if (btn.label.startsWith("[NARROW")) {
+      errors.push(
+        `Button "${btn.label}" — malformed [NARROW:<dimension>] prefix. ` +
+        `Use the exact shape \`[NARROW:dimension_label] value\` with BOTH a non-empty ` +
+        `dimension (e.g. "genre", "time of day", "kind of place") AND a non-empty ` +
+        `value (the user's choice, e.g. "comedy"). The visible button label is just ` +
+        `the value; the dimension is internal narrowing-state metadata.`
+      );
+      continue;
+    }
+
     // (1) imageKey without fallback.
     if (btn.glyph && glyphHasImageKey(btn.glyph) && !btn.glyphFallback) {
       errors.push(
@@ -182,11 +203,11 @@ export function validateBoardButtons<
       }
       errors.push(
         `Button "${btn.label}" — ${parts.join("; ")}. ` +
-        `Modifiers must come from the canonical registry's modifier list (see <bundled_icons>: count, possession, ` +
-        `negation, intensity, size_shape, temperature, color, social). Words like \`.new\`, \`.old\`, \`.sad\`, ` +
-        `\`.funny\` are NOT modifiers — they render as a dot. Use a different HEAD SYMBOL that already encodes ` +
-        `the quality (😢 for "sad", 👴 for "old", 🆕 for "new"), or carry the quality in the speech field, ` +
-        `or compose two GLYPHs (e.g. "sad book" → \`📖+😢\`).`
+        `Modifiers must be EITHER from the canonical registry's modifier list (count, possession, negation, ` +
+        `intensity, size_shape, temperature, color, social — see <bundled_icons>) OR a raw emoji ` +
+        `(e.g. \`📖.😢\` for "sad book"). Bare unknown snake_case words like \`.new\`, \`.old\`, \`.funny\` are NOT ` +
+        `modifiers — they render as a dot. Either use the emoji version of the quality (\`.😢\` instead of \`.sad\`), ` +
+        `pick a different HEAD that already encodes the quality (😢 for "sad"), or carry the quality in the speech field only.`
       );
       continue;
     }

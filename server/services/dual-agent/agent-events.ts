@@ -50,6 +50,11 @@ export interface ButtonPressedEvent extends BaseEvent {
   /** The button's visual GLYPH encoding (for context — Board Manager uses
    *  it when rebuilding so it knows what shape the user just produced). */
   glyph?: string;
+  /** Who the press is addressed to. Inherited from the loaded board's
+   *  target (set by BoardManager on rebuild_board / show_binary_choice).
+   *  Defaults to "DEVICE" when no target was set. When DEVICE, the press
+   *  is routed to Speaker as a user_turn; otherwise it's a context note. */
+  target?: SpeechParty;
 }
 
 export interface SentenceComposedEvent extends BaseEvent {
@@ -102,19 +107,35 @@ export type ExternalEvent =
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the transcribed speech was directed at the device, at the user,
- * or was ambient/incidental. Observer labels this; Speaker uses it when
- * deciding whether to respond.
+ * Speaker / target identifiers used by transcripts and board events.
+ *  - "DEVICE" — the AI (Speaker). Observer renders this for transcripts the
+ *    AI should respond to; Speaker's prompt treats DEVICE-targeted speech
+ *    as "addressed to YOU".
+ *  - "USER"   — the active user (the student if present, else whoever is
+ *    currently most prominent at the device). The literal student name
+ *    is also accepted in place of "USER" and treated as equivalent.
+ *  - "UNKNOWN" — reserved for cases where neither side can plausibly be
+ *    identified. Observer is told to prefer best-guess between USER and
+ *    DEVICE over UNKNOWN.
+ *  - Any other string — an identified third party (caregiver, sibling,
+ *    teacher, etc.).
  */
+export type SpeechParty = "DEVICE" | "USER" | "UNKNOWN" | string;
+
+/** Legacy field, retained for back-compat in renderEventLine fallthroughs. */
 export type SpeechDirection = "device" | "user" | "ambient";
 
 export interface TranscribedEvent extends BaseEvent {
   type: "transcribed";
   source: "observer";
   text: string;
-  speaker: string;
-  direction: SpeechDirection;
+  speaker: SpeechParty;
+  /** Who the speech is directed at. See SpeechParty. */
+  target: SpeechParty;
   confidence: "high" | "medium" | "low";
+  /** Legacy field — mirrors `target` for older renderers. Computed by the
+   *  parser; do not set when constructing fresh events. */
+  direction?: SpeechDirection;
 }
 
 /** Same enum as the existing update_context tool's `type` field. */
@@ -180,6 +201,24 @@ export type ObserverEvent =
 export interface SpeechStartEvent extends BaseEvent {
   type: "speech_start";
   source: "speaker";
+  /** Whatever transcript has accumulated by the time the first audio
+   *  chunk arrives. Native-audio Gemini interleaves text and audio, so
+   *  this is typically only PARTIAL (the first chunk of the utterance).
+   *  Consumers wanting the full transcript should listen for
+   *  `speech_text_finalized` instead. */
+  transcript?: string;
+}
+
+/** Fires when Gemini emits `outputTranscription.finished: true` — the
+ *  text portion of the model's turn is complete (audio may still be
+ *  streaming). BoardManager triggers on this so it has the FULL
+ *  transcript when building follow-up buttons, but starts generating
+ *  while the user is still hearing the audio. */
+export interface SpeechTextFinalizedEvent extends BaseEvent {
+  type: "speech_text_finalized";
+  source: "speaker";
+  /** The full accumulated transcript at the moment text completes. */
+  transcript: string;
 }
 
 export interface SpeechEndEvent extends BaseEvent {
@@ -189,6 +228,10 @@ export interface SpeechEndEvent extends BaseEvent {
    *  injects this into Observer as `[OWN_SPEECH]` for echo suppression
    *  AND forwards to Board Manager as the trigger for a rebuild. */
   transcript: string;
+  /** Who Speaker was addressing. Defaults to "USER" unless Speaker
+   *  explicitly set a different target via its `set_speech_target` tool
+   *  before this turn. BoardManager rebuilds when target=USER. */
+  target?: SpeechParty;
 }
 
 export interface EmoteChangeEvent extends BaseEvent {
@@ -197,23 +240,38 @@ export interface EmoteChangeEvent extends BaseEvent {
   emote: "happy" | "sad" | "neutral";
 }
 
-/** Behavioral mode within an active session. `standby` is intentionally
- *  not part of this enum — Observer's `rest` engagement state replaces it. */
+/** Behavioral mode within an active session.
+ *  - `companion` — AI is the user's conversation partner (back-and-forth chat).
+ *  - `facilitator` — AI supports the user in talking to a human in the room
+ *    (board does the talking; AI stays quiet unless explicitly addressed).
+ *  `standby` is intentionally not part of this enum — Observer's `rest`
+ *  engagement state replaces it. Source is "observer" — Observer owns mode
+ *  decisions (it has the best environmental context to judge whether someone
+ *  else is engaging the user); Coordinator forwards the resulting [MODE]
+ *  injection to Speaker.
+ *
+ *  Legacy values "interact" and "assist" are mapped to "companion" and
+ *  "facilitator" respectively at the parser layer for graceful migration. */
 export interface ModeChangeEvent extends BaseEvent {
   type: "mode_change";
-  source: "speaker";
-  mode: "interact" | "assist";
+  source: "observer";
+  mode: "companion" | "facilitator";
   reason?: string;
 }
 
-/** Speaker's call to interpret() — voicing a user-composed SENTENCE
- *  through the student TTS voice. Coordinator routes this to the student-
- *  voice TTS path and re-injects the resulting transcript into Observer
- *  (as `[OWN_SPEECH]` tagged student) and Board Manager (as a rebuild
- *  trigger for the follow-up surface). */
+/** Board Manager's call to interpret() — voicing a user-composed
+ *  SENTENCE through the student TTS voice. Board Manager owns this
+ *  because it has the freshest context about the SUGGESTIONs the user
+ *  picked during composition; moving it off Speaker also shrinks
+ *  Speaker's tool surface (better function-calling reliability) and
+ *  eliminates a whole class of spurious-interpret bugs on regular
+ *  button presses. Coordinator routes this to the student-voice TTS
+ *  path and re-injects the resulting transcript into Observer (as
+ *  `[OWN_SPEECH]` tagged student) and Speaker (as the follow-up
+ *  [BUTTON PRESS] for the AI's reply). */
 export interface InterpretIntentEvent extends BaseEvent {
   type: "interpret_intent";
-  source: "speaker";
+  source: "board-manager";
   sentence: string;
 }
 
@@ -246,10 +304,10 @@ export interface WebsiteOpenRequestedEvent extends BaseEvent {
 
 export type SpeakerEvent =
   | SpeechStartEvent
+  | SpeechTextFinalizedEvent
   | SpeechEndEvent
   | EmoteChangeEvent
   | ModeChangeEvent
-  | InterpretIntentEvent
   | AppOpenRequestedEvent
   | AppCloseRequestedEvent
   | WebsiteOpenRequestedEvent;
@@ -284,8 +342,12 @@ export interface BoardButton {
   glyphFallback?: string;
   rowSpan?: number;
   colSpan?: number;
-  buttonType?: "guess" | "category" | "suggestion";
+  buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   suggestionKey?: string;
+  /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */
+  narrowDimension?: string;
+  /** For `buttonType: "narrow"` — the value the user is selecting. */
+  narrowValue?: string;
   /** Allow forward-compatible extensions without breaking the bus. */
   [k: string]: unknown;
 }
@@ -294,6 +356,9 @@ export interface BoardRebuiltEvent extends BaseEvent {
   type: "board_rebuilt";
   source: "board-manager";
   buttons: BoardButton[];
+  /** Who the buttons are addressed to. Carried over into button-press
+   *  events when the user picks one. Defaults to "DEVICE". */
+  target?: SpeechParty;
 }
 
 export interface ContextButtonAddedEvent extends BaseEvent {
@@ -302,11 +367,22 @@ export interface ContextButtonAddedEvent extends BaseEvent {
   button: BoardButton;
 }
 
+export interface BoardButtonAddedEvent extends BaseEvent {
+  type: "board_button_added";
+  source: "board-manager";
+  button: BoardButton;
+  /** Who this button's reply is addressed to (same semantics as
+   *  BoardRebuiltEvent.target). When omitted, the Coordinator keeps the
+   *  current board's target. */
+  target?: SpeechParty;
+}
+
 export interface BinaryChoiceShownEvent extends BaseEvent {
   type: "binary_choice_shown";
   source: "board-manager";
   option1: BoardButton;
   option2: BoardButton;
+  target?: SpeechParty;
 }
 
 export interface BuilderSuggestedEvent extends BaseEvent {
@@ -324,12 +400,28 @@ export interface BoardNoChangeEvent extends BaseEvent {
   reason?: string;
 }
 
+/**
+ * BoardManager declares that the Word Finder narrowing session should
+ * end — the user's word has been identified, OR the conversation has
+ * clearly moved past finding a word. The Coordinator handles this by
+ * calling clearGuessingState and re-invoking BoardManager with a clean
+ * "guessing just ended" trigger.
+ */
+export interface GuessingExitRequestedEvent extends BaseEvent {
+  type: "guessing_exit_requested";
+  source: "board-manager";
+  reason: string;
+}
+
 export type BoardManagerEvent =
   | BoardRebuiltEvent
+  | BoardButtonAddedEvent
   | ContextButtonAddedEvent
   | BinaryChoiceShownEvent
   | BuilderSuggestedEvent
-  | BoardNoChangeEvent;
+  | BoardNoChangeEvent
+  | InterpretIntentEvent
+  | GuessingExitRequestedEvent;
 
 // ---------------------------------------------------------------------------
 // Cross-agent events (any agent may emit)

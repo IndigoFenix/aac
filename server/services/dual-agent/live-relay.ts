@@ -18,7 +18,7 @@ import type {
   ToolResponse,
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
-import { parseBoardButtons, splitOutSuggestionButtons, extractSuggestionButtonsFromRaw, type SuggestionButton } from "./interactive-agent";
+import { parseBoardButtons, parseSinglePipeButton, splitOutSuggestionButtons, extractSuggestionButtonsFromRaw, type SuggestionButton } from "./interactive-agent";
 import { createState as createGuessingState, buildStateInjection as buildGuessingInjection } from "@shared/guessing-mode/state.js";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
@@ -127,7 +127,7 @@ function stringifyMsg(msg: any): string {
  *
  *  The object array also accepts legacy field names (`icon`, `image_key`)
  *  so that older Gemini tool-call shapes don't break mid-rollout. */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion"; suggestionKey?: string; rowSpan?: number; colSpan?: number }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion" | "narrow"; suggestionKey?: string; narrowDimension?: string; narrowValue?: string; rowSpan?: number; colSpan?: number }> {
   // String — the expected format from native audio models.
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -322,9 +322,13 @@ interface MergeButton {
   glyph?: string;
   glyphFallback?: string;
   sentence?: string;
-  buttonType?: "guess" | "category" | "suggestion";
+  buttonType?: "guess" | "category" | "suggestion" | "narrow";
   /** For suggestion buttons — the `suggestion:<dim>:<value>` key (see shared/guessing-mode). */
   suggestionKey?: string;
+  /** For narrow buttons — AI-proposed narrowing dimension label. */
+  narrowDimension?: string;
+  /** For narrow buttons — the value the user is selecting. */
+  narrowValue?: string;
   rowSpan?: number;
   colSpan?: number;
 }
@@ -663,7 +667,8 @@ export type ClientMessage =
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
   | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
   | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
-  | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string } } // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild
+  | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }; customFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>; rejectedFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }> } // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild; custom/rejected facts carry the AI-driven narrowing trail
+  | { type: "exit_guessing"; reason?: string }                          // user-initiated word-finder cancel (any surface — quick-button toggle, sentence-builder toggle, etc.)
   | { type: "builder_open" }                                            // sentence builder opened — begin a conversation detour
   | { type: "builder_close" }                                           // sentence builder closed — end the builder detour
   | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
@@ -2169,22 +2174,34 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
 
     // ────────────────────────────────────────────────────────────────────
     // Three-agent system handoff (planning-docs/aac-agent-responsibility-split.md).
+    // Default since 2026-06: every session goes through the three-agent
+    // Observer / Speaker / Board Manager path. The legacy single-agent
+    // relay code in this file is kept only as a fallback while we
+    // stabilize the new system.
+    //
     // Selection is env-driven:
-    //   AAC_USE_THREE_AGENT_SYSTEM=1                 — enable globally
-    //   AAC_THREE_AGENT_STUDENT_IDS=uuid1,uuid2,...  — enable only for these students
-    // Either (or both) opt this session into the new Observer / Speaker /
-    // Board Manager path. We detach our WS listeners, hand the socket to
-    // AgentCoordinator, and re-deliver the initialize message via its
-    // constructor. Dynamic import breaks the live-relay ↔ agent-coordinator
-    // value cycle (types still flow through static imports).
+    //   AAC_USE_LEGACY_RELAY=1                       — force the legacy path
+    //                                                  (escape hatch only)
+    //   AAC_LEGACY_RELAY_STUDENT_IDS=uuid1,uuid2,... — force legacy for these
+    //                                                  specific students
+    //
+    // Legacy `AAC_USE_THREE_AGENT_SYSTEM` / `AAC_THREE_AGENT_STUDENT_IDS`
+    // env vars are no-ops now — kept readable in old configs without
+    // breaking anything.
+    //
+    // We detach our WS listeners, hand the socket to AgentCoordinator, and
+    // re-deliver the initialize message via its constructor. Dynamic import
+    // breaks the live-relay ↔ agent-coordinator value cycle (types still
+    // flow through static imports).
     // ────────────────────────────────────────────────────────────────────
-    const enabledGlobally = process.env.AAC_USE_THREE_AGENT_SYSTEM === "1";
-    const enabledStudentIds = (process.env.AAC_THREE_AGENT_STUDENT_IDS || "")
+    const forceLegacy = process.env.AAC_USE_LEGACY_RELAY === "1";
+    const legacyStudentIds = (process.env.AAC_LEGACY_RELAY_STUDENT_IDS || "")
       .split(",")
       .map(s => s.trim())
       .filter(Boolean);
-    if (enabledGlobally || enabledStudentIds.includes(msg.studentId)) {
-      console.log(`[LiveRelay] Three-agent system selected for student=${msg.studentId} (envGlobal=${enabledGlobally}, envList=${enabledStudentIds.length > 0}) — handing off`);
+    const useThreeAgent = !forceLegacy && !legacyStudentIds.includes(msg.studentId);
+    if (useThreeAgent) {
+      console.log(`[LiveRelay] Three-agent system selected for student=${msg.studentId} (default) — handing off`);
       this.ws.removeAllListeners("message");
       this.ws.removeAllListeners("close");
       this.ws.removeAllListeners("error");
@@ -2193,6 +2210,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       this.state = "closed";
       return;
     }
+    console.log(`[LiveRelay] Legacy single-agent path selected for student=${msg.studentId} (AAC_USE_LEGACY_RELAY=${forceLegacy ? "1" : "0"}, perStudent=${legacyStudentIds.includes(msg.studentId)})`);
 
     try {
       // 1. Read LLM config
@@ -4024,11 +4042,14 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           return { id: call.id, name, response: { error: "option1 and option2 are required (sentence|glyph|fallback|label)" } };
         }
         // Each option uses the same pipe-separated button syntax as the rest
-        // of the board — reuse parseBoardButtons so glyph/fallback/imageKey
-        // are resolved the same way, then take the first parsed button per
-        // option (defensive against the model packing a comma inside one).
-        const opt1 = parseBoardButtons(opt1Raw)[0];
-        const opt2 = parseBoardButtons(opt2Raw)[0];
+        // of the board. Use parseSinglePipeButton (NOT parseBoardButtons) so
+        // a comma inside a speech / label field doesn't split the button
+        // into two pieces — the first piece would otherwise be a degenerate
+        // {label, iconRef: "fas fa-comment"} with no glyph, and the binary
+        // choice would render as a fa-comment bubble with the wrong third
+        // option ("neither" instead of "maybe").
+        const opt1 = parseSinglePipeButton(opt1Raw);
+        const opt2 = parseSinglePipeButton(opt2Raw);
         if (!opt1 || !opt2) {
           return { id: call.id, name, response: { error: "could not parse option1/option2 — expected sentence|glyph|fallback|label" } };
         }
@@ -5177,7 +5198,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     }
   }
 
-  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion"; suggestionKey?: string; rowSpan?: number; colSpan?: number }>): any {
+  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion" | "narrow"; suggestionKey?: string; narrowDimension?: string; narrowValue?: string; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -5198,6 +5219,8 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           ...(b.sentence ? { sentence: b.sentence } : {}),
           ...(b.buttonType ? { buttonType: b.buttonType } : {}),
           ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
+          ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
+          ...(b.narrowValue ? { narrowValue: b.narrowValue } : {}),
           ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
           ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
           row: Math.floor(i / cols),
@@ -5424,8 +5447,24 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     const markCount = total;
     this.summaryInFlight = true;
     monitor.produceSessionSummary(state.sessionSummary, newMessages)
-      .then(summary => {
+      .then(result => {
         this.summaryInFlight = false;
+        // Bill credits for the summarizer LLM call regardless of whether
+        // the summary changed — the tokens were consumed either way.
+        if (result.usage && this.sessionId && state.studentId) {
+          dualAgentService.trackHttpUsage(
+            this.sessionId,
+            state.studentId,
+            state.userId,
+            result.usage.provider,
+            result.usage.model,
+            result.usage.promptTokens,
+            result.usage.completionTokens,
+            result.usage.cachedTokens ?? 0,
+            "monitor-summary",
+          ).catch(err => console.error("[LiveRelay] trackHttpUsage(summary) failed:", err));
+        }
+        const summary = result.summary;
         if (!summary || summary === state.sessionSummary) {
           // No change — still advance the marker so we don't re-summarize the
           // same batch every turn.

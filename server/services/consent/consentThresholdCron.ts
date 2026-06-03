@@ -25,6 +25,7 @@ import {
 import {
   computeAgeYears,
   getRegimeThreshold,
+  getAgeOfMajority,
   type MinorProtectionRegime,
 } from "@shared/legal";
 import { activityLogService } from "../activityLogService.js";
@@ -108,6 +109,83 @@ export async function runMinorThresholdCheck(now: Date = new Date()): Promise<{
   return { scanned: rows.length, flagged };
 }
 
+/**
+ * Single-pass scan for consent-authority review. Finds students on the
+ * age-of-majority default (`consentAuthority = 'auto'`) who have reached the
+ * age of majority while an active GUARDIAN-signed consent is on file. Once an
+ * adult has capacity, a guardian no longer has authority, so that consent is
+ * stale — but we do NOT auto-revoke (that would break service); instead we emit
+ * one `consent_authority_review_required` event per student so a clinician can
+ * either confirm self-consent or record a guardianship basis.
+ *
+ * De-dupes by querying the activity log for a prior review flag for the same
+ * student. Returns the count of newly-flagged students. Safe to call repeatedly.
+ */
+export async function runConsentAuthorityReviewCheck(now: Date = new Date()): Promise<{
+  scanned: number;
+  flagged: number;
+}> {
+  // Active, guardian-signed consents for students still on the age default.
+  const rows = await db
+    .select({
+      studentId: studentConsentRecords.studentId,
+      consentId: studentConsentRecords.id,
+      birthDate: students.birthDate,
+      country: students.country,
+    })
+    .from(studentConsentRecords)
+    .innerJoin(students, eq(studentConsentRecords.studentId, students.id))
+    .where(
+      and(
+        isNull(studentConsentRecords.revokedAt),
+        eq(studentConsentRecords.signerType, "guardian"),
+        eq(students.consentAuthority, "auto"),
+      ),
+    );
+
+  let flagged = 0;
+
+  for (const row of rows) {
+    if (!row.birthDate) continue; // can't decide without a birth date
+    const country = (row.country ?? "IL").toUpperCase();
+    const currentAge = computeAgeYears(new Date(row.birthDate), now);
+    if (currentAge < getAgeOfMajority(country)) continue; // still a minor
+
+    // De-dupe per STUDENT (this is about the student's capacity status, not a
+    // specific consent record).
+    const [prior] = await db
+      .select({ id: activityLogs.id })
+      .from(activityLogs)
+      .where(
+        and(
+          eq(activityLogs.eventType, "consent_authority_review_required"),
+          eq(activityLogs.subjectType1, "student"),
+          eq(activityLogs.subjectId1, row.studentId),
+        ),
+      )
+      .limit(1);
+    if (prior) continue;
+
+    activityLogService.log({
+      eventType: "consent_authority_review_required",
+      subjectType1: "student",
+      subjectId1: row.studentId,
+      subjectType2: "consent_record",
+      subjectId2: row.consentId,
+      details: {
+        currentAge,
+        ageOfMajority: getAgeOfMajority(country),
+        country,
+        recommendation:
+          "Student has reached the age of majority while a guardian-signed consent is on file. Confirm the student can self-consent (send a self-consent request) or record a guardianship basis (set consent authority to guardian_required).",
+      },
+    });
+    flagged++;
+  }
+
+  return { scanned: rows.length, flagged };
+}
+
 let scheduledTimer: NodeJS.Timeout | null = null;
 
 /**
@@ -121,14 +199,20 @@ export function scheduleMinorThresholdCheck(): void {
 
   // Initial run, deferred slightly so server boot isn't blocked.
   setTimeout(() => {
-    runMinorThresholdCheck().catch((err) => {
-      console.error("[consentThresholdCron] Initial run failed:", err);
-    });
+    void runAllConsentThresholdChecks("Initial");
   }, 30_000);
 
   scheduledTimer = setInterval(() => {
-    runMinorThresholdCheck().catch((err) => {
-      console.error("[consentThresholdCron] Scheduled run failed:", err);
-    });
+    void runAllConsentThresholdChecks("Scheduled");
   }, ONE_DAY_MS);
+}
+
+/** Run both daily scans, each failing independently. */
+async function runAllConsentThresholdChecks(label: string): Promise<void> {
+  await runMinorThresholdCheck().catch((err) => {
+    console.error(`[consentThresholdCron] ${label} minor-threshold run failed:`, err);
+  });
+  await runConsentAuthorityReviewCheck().catch((err) => {
+    console.error(`[consentThresholdCron] ${label} authority-review run failed:`, err);
+  });
 }

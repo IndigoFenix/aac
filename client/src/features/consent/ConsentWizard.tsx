@@ -167,15 +167,20 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
   const [phoneOtpVerified, setPhoneOtpVerified] = useState(false);
   const [idVerified, setIdVerified] = useState(false);
 
+  // Self-consent: the student signs for themselves — there is no guardian to
+  // declare, so the guardian step is skipped.
+  const isSelf = ctx?.signerType === "self";
+
   const STEP_ORDER = useMemo<Step[]>(() => {
     const steps: Step[] = ["identity"];
     if (requiresPhoneOtp) steps.push("phoneOtp");
     if (requiresIdVerification) steps.push("idVerify");
-    steps.push("guardian", "notice", "optIns", "signature", "review");
+    if (!isSelf) steps.push("guardian");
+    steps.push("notice", "optIns", "signature", "review");
     return steps;
-  }, [requiresPhoneOtp, requiresIdVerification]);
+  }, [requiresPhoneOtp, requiresIdVerification, isSelf]);
 
-  const canProceedFromGuardian = govIdNumber.trim().length >= 4 && coGuardianAck;
+  const canProceedFromGuardian = isSelf || (govIdNumber.trim().length >= 4 && coGuardianAck);
   const canProceedFromNotice = purposeAck && voluntarinessAck && transfersAck;
   const canProceedFromPhoneOtp = !requiresPhoneOtp || phoneOtpVerified;
   const canProceedFromIdVerify = !requiresIdVerification || idVerified;
@@ -193,13 +198,17 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
   }
 
   async function handleSubmit() {
-    if (!ctx?.guardianContact || !notice) return;
-    const guardianFields = {
-      coGuardianAcknowledged: coGuardianAck,
-      governmentIdNumber: govIdNumber.trim(),
-      governmentIdType: govIdType,
-      governmentIdCountry: govIdCountry.toUpperCase(),
-    };
+    if (!ctx || !notice) return;
+    if (!isSelf && !ctx.guardianContact) return;
+    // Self-consent has no guardian contact to declare.
+    const guardianFields = isSelf
+      ? undefined
+      : {
+          coGuardianAcknowledged: coGuardianAck,
+          governmentIdNumber: govIdNumber.trim(),
+          governmentIdType: govIdType,
+          governmentIdCountry: govIdCountry.toUpperCase(),
+        };
     const acks = {
       purposeAcknowledged: purposeAck,
       voluntarinessAcknowledged: voluntarinessAck,
@@ -229,7 +238,8 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
         });
       } else {
         await sessionSign.mutateAsync({
-          signedByContactId: ctx.guardianContact.id,
+          // Omit the contact for self-consent — the logged-in student signs.
+          signedByContactId: isSelf ? undefined : ctx.guardianContact!.id,
           locale: notice.locale,
           consentTextVersion: notice.version,
           consentTextHash: notice.hash,
@@ -1150,21 +1160,26 @@ function mergeInvitationContext(
   data: ConsentInvitationContextResponse | undefined,
 ): WizardContextResponse | undefined {
   if (!data) return undefined;
+  const c = data.contact;
   return {
     success: true,
+    signerType: data.recipientType === "self" ? "self" : "guardian",
     student: data.student,
     user: null,
-    guardianContact: {
-      id: data.contact.id,
-      studentId: data.student.id,
-      name: data.contact.name,
-      linkedUserId: null,
-      governmentIdNumber: data.contact.governmentIdNumber,
-      governmentIdType: data.contact.governmentIdType,
-      governmentIdCountry: data.contact.governmentIdCountry,
-      isLegalGuardian: data.contact.isLegalGuardian,
-      coGuardianAcknowledged: data.contact.coGuardianAcknowledged,
-    },
+    // Self-consent invitations have no guardian contact.
+    guardianContact: c
+      ? {
+          id: c.id,
+          studentId: data.student.id,
+          name: c.name,
+          linkedUserId: null,
+          governmentIdNumber: c.governmentIdNumber,
+          governmentIdType: c.governmentIdType,
+          governmentIdCountry: c.governmentIdCountry,
+          isLegalGuardian: c.isLegalGuardian,
+          coGuardianAcknowledged: c.coGuardianAcknowledged,
+        }
+      : null,
     activeConsent: null,
   };
 }

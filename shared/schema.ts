@@ -1320,14 +1320,32 @@ export interface BoardButton {
   selfClosing?: boolean;
   /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
   exitBoard?: boolean;
-  /** Visual style hint: "guess" for guessing mode final guesses, "category" for narrowing categories, "suggestion" for guessing-mode narrowing-assistant buttons */
-  buttonType?: "normal" | "guess" | "category" | "suggestion";
+  /**
+   * Visual style hint: "guess" for guessing-mode final guesses, "category"
+   * for narrowing categories, "suggestion" for guessing-mode registry-driven
+   * narrowing-assistant buttons, "narrow" for AI-driven open-ended narrowing
+   * steps (Phase 2 of open-ended narrowing — the AI proposes its OWN
+   * narrowing dimension when the registry doesn't fit the conversation).
+   */
+  buttonType?: "normal" | "guess" | "category" | "suggestion" | "narrow";
   /**
    * For `buttonType: "suggestion"` only — the full `suggestion:<dim>:<value>`
    * key this button represents. The AAC client parses it on press to update
    * the guessing-mode narrowing state (see shared/guessing-mode).
    */
   suggestionKey?: string;
+  /**
+   * For `buttonType: "narrow"` only — the AI-proposed narrowing dimension
+   * label (e.g. "genre"). Press handler routes this through
+   * `applyCustomFact(state, narrowDimension, narrowValue, speech)`.
+   */
+  narrowDimension?: string;
+  /**
+   * For `buttonType: "narrow"` only — the value the user is selecting
+   * for the AI-proposed dimension (e.g. "comedy"). Mirrors `label` after
+   * the `[NARROW:<dim>]` prefix is stripped.
+   */
+  narrowValue?: string;
   action?: BoardButtonAction;
 }
 

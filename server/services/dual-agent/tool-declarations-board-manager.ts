@@ -40,6 +40,10 @@ export interface BoardManagerToolConfig {
   /** When true, every button must carry a single GLYPH (modifiers OK).
    *  Drives the format hints embedded in button-shaped tool descriptions. */
   singleGlyphButtons?: boolean;
+  /** True when the Word Finder narrowing session is currently active.
+   *  Adds `exit_guessing` to the tool surface so the AI can declare
+   *  convergence and return to normal conversation. */
+  guessingActive?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,11 +57,11 @@ function buttonObjectSchema(): Record<string, unknown> {
     properties: {
       speech: {
         type: "string",
-        description: `Natural-language SENTENCE the TTS voices when this ${T.button} is pressed. First-person, conversational (e.g. "I want some water", "I'm tired"). What the user is SAYING when they press the ${T.button}.`,
+        description: `Natural-language SENTENCE the TTS voices when this ${T.button} is pressed. First-person, conversational (e.g. "I want some water", "I'm tired"). What the user is SAYING when they press the ${T.button}. Ignored when \`button_type\` is set — those buttons are META actions, not utterances.`,
       },
       sentence: {
         type: "string",
-        description: `Visual encoding for the ${T.button}: up to 3 GLYPHs joined by \`+\`, MODIFIER SYMBOLs attached with \`.\`, sentence-level OPERATORs (\`#past\`, \`#future\`, \`#question\`) appended with \`#\`. Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — the DEFAULT for anything not in <bundled_icons>), \`symbol:ID\` / \`face:ID\`, or \`generate:lowercase_snake_case\` (LAST RESORT, async-generated). NEVER emit bare unknown snake_case (\`talk_about\`, \`my_day\`) — it renders as ❓ until generation completes. Use MODIFIER SYMBOLs when the SENTENCE carries detail: \`🍎.color_red\`, \`🤗.big.please\`, \`🍪.two\`.`,
+        description: `Visual encoding for the ${T.button}: up to 3 GLYPHs joined by \`+\`, MODIFIER SYMBOLs attached with \`.\`, sentence-level OPERATORs (\`#past\`, \`#future\`, \`#question\`) appended with \`#\`. Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — the DEFAULT for anything not in <bundled_icons>), \`symbol:ID\` / \`face:ID\`, or \`generate:lowercase_snake_case\` (LAST RESORT, async-generated). NEVER emit bare unknown snake_case (\`talk_about\`, \`my_day\`) — it renders as ❓ until generation completes. Use MODIFIER SYMBOLs when the SENTENCE carries detail: \`🍎.color_red\`, \`🤗.big.please\`, \`🍪.two\`. Ignored when \`button_type\` is set.`,
       },
       fallback: {
         type: "string",
@@ -65,7 +69,7 @@ function buttonObjectSchema(): Record<string, unknown> {
       },
       label: {
         type: "string",
-        description: `Short text shown on the ${T.button} face. In the user's language. Not voiced — the \`speech\` field is voiced; this is the on-button text the user sees.`,
+        description: `Short text shown on the ${T.button} face. In the user's language. Not voiced — the \`speech\` field is voiced; this is the on-button text the user sees. Ignored when \`button_type\` is set (those buttons have a fixed system-rendered label).`,
       },
       rowSpan: {
         type: "integer",
@@ -74,6 +78,11 @@ function buttonObjectSchema(): Record<string, unknown> {
       colSpan: {
         type: "integer",
         description: "Optional. Number of grid columns this button spans (>=2). Omit for a 1×1 button.",
+      },
+      button_type: {
+        type: "string",
+        enum: ["wordfinder", "more"],
+        description: `OPTIONAL. Special button kind for META actions (NOT a SENTENCE the user voices). When set, the system renders a FIXED appearance (icon, color, label) and the \`speech\` / \`sentence\` / \`fallback\` / \`label\` fields are ignored. Only meaningful on rebuild_board and add_board_button (the main ${T.board}); ignored on add_context_button and show_binary_choice. Available values:\n  - "wordfinder" — a Word Finder entry. Add this when the user seems to be reaching for a specific concrete CONCEPT (a thing, a place, a person, an activity, an object they want to name) but it would be impractical to guess what it is — too many plausible candidates, or no signal narrow enough to enumerate them. Pressing it opens a narrowing assistant that asks targeted questions until the concept surfaces. NOT for genuinely open-ended chitchat ("how are you?" — there's nothing to "find").\n  - "more" — adds a [MORE] button. Add this when you suspect the user might want OTHER options on the same topic than the ones you offered. Looks and behaves identically to the [MORE] in the quick-actions row: pressing it asks for fresh alternatives, no voiced utterance.\n\nWhen using \`button_type\`, you may pass placeholder values (or empty strings) for speech / sentence / label — they're discarded.`,
       },
     },
     required: ["speech", "sentence", "label"],
@@ -97,24 +106,45 @@ function buildRebuildBoardTool(config: BoardManagerToolConfig): FunctionDeclarat
   return {
     name: "rebuild_board",
     description:
-      `Replace the ${T.board} with a fresh set of ${T.button}s (up to 8). Use after ${T.tagPress} inputs or major conversation shifts. Provide a WIDE VARIETY of options.
+      `Replace the ${T.board} with up to 8 fresh ${T.button}s. Use whenever the user just acted (${T.tagPress}, ${T.tagComposed}, transcribed speech) or someone spoke to them — they need response options.
 
-The ${T.button}s are the USER's responses — what they can press to reply or take initiative. NEVER put the AI's own questions or statements into these — Speaker handles all spoken output independently.
-
-If a custom board is currently loaded, calling this unloads it and replaces it with your new dynamic ${T.board}. The context sidebar (left) is separate — use add_context_button() for that. Don't reuse the same \`generate:\` ${T.symbol} more than once on one ${T.board}.
-
-If the current ${T.board} is still appropriate for the situation, call no_change() instead of rebuilding redundantly.`,
+The \`target\` field declares who the user's button replies are addressed to. Default "DEVICE" (the user is talking to the AI). Set to a person's name or "USER" when the buttons reply to someone in the room (e.g. a teacher just asked the user a question — target=Teacher).`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        [T.paramUserResponseButtons]: {
+        buttons: {
           type: "array",
           description: rebuildBoardButtonsDescription(config),
           items: buttonObjectSchema(),
         },
+        target: {
+          type: "string",
+          description: `Who the buttons are addressed to. "DEVICE" (default — user is talking to the AI), "USER" (user is talking to themselves), or a specific person's name (when replying to someone in the room).`,
+        },
       },
-      required: [T.paramUserResponseButtons],
+      required: ["buttons"],
+    },
+  };
+}
+
+function buildAddBoardButtonTool(config: BoardManagerToolConfig): FunctionDeclaration {
+  const max = config.maxBoardItems || 8;
+  return {
+    name: "add_board_button",
+    description:
+      `Add ONE ${T.button} to the CURRENT ${T.board} without replacing the whole board. Use when one new option naturally extends the conversation but the existing options still apply — e.g. you want to surface "I'm not sure" alongside the existing yes/no/maybe answers. The server merges the button in: an exact duplicate is collapsed; if the board is at the ${max}-button cap, the new button DISPLACES the most-similar existing one (label/glyph/sentence overlap) in place. Do NOT call this multiple times in one turn to assemble a board from scratch — use rebuild_board for that. Use add_board_button when you genuinely want incremental extension of an existing surface.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        button: buttonObjectSchema(),
+        target: {
+          type: "string",
+          description: `Who this button's reply is addressed to. "DEVICE" (default), "USER", or a specific person's name. Same semantics as rebuild_board's target.`,
+        },
+      },
+      required: ["button"],
     },
   };
 }
@@ -123,7 +153,9 @@ function buildAddContextButtonTool(): FunctionDeclaration {
   return {
     name: "add_context_button",
     description:
-      `Add ONE ${T.button} to the context sidebar (left, 4 visible slots). Use when Observer has noted something new in the environment — a nearby object, person, or activity the user might want to interact with. The sidebar scrolls: the oldest ${T.button} is pushed out when full. Do NOT duplicate ${T.board} labels.`,
+      `Add ONE ${T.button} to the context sidebar (left, 4 visible slots). Use when Observer has noted something new in the environment — a nearby object, person, or activity the user might want to interact with. The sidebar scrolls: the oldest ${T.button} is pushed out when full. Do NOT duplicate ${T.board} labels.
+
+NOTE: this is the SIDEBAR (left strip, ambient observations), NOT the main board. To add a button to the main response board, use add_board_button() instead.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -174,19 +206,60 @@ function buildPressButtonTool(): FunctionDeclaration {
   };
 }
 
+/**
+ * `interpret` — voice a user-composed SENTENCE through the student's TTS.
+ *
+ * Called ONLY in response to a [SENTENCE COMPOSED] turn (the user
+ * pressed Play in the SENTENCE BUILDER). You read the symbol-by-symbol
+ * SENTENCE the user composed and produce the natural first-person line
+ * they meant to say. The system pipes it through the student-voice TTS
+ * so the room hears the SENTENCE in the user's voice.
+ *
+ * After interpret() runs, a follow-up [BUTTON PRESS] with your
+ * interpreted text routes to Speaker for the AI reply — you don't need
+ * to do anything else on that turn beyond emitting this tool call.
+ *
+ * NEVER call interpret() on a regular [BUTTON PRESS] (those already
+ * carry a pre-baked SENTENCE that TTS plays automatically) or
+ * spontaneously. The Coordinator gates this server-side and will drop
+ * a stray call.
+ */
+function buildInterpretTool(): FunctionDeclaration {
+  return {
+    name: "interpret",
+    description:
+      `Voice a natural-language SENTENCE through the USER'S TTS voice. Call this ONLY in response to a ${T.tagComposed} turn — never spontaneously, and never on a regular ${T.tagPress} (those carry a pre-baked SENTENCE the device already voices). The 'sentence' argument MUST be first-person, as the user would say it ("I want a banana", "I'm tired and I want a hug from Mom"), and MUST follow the <sentence_interpretation> rules — read the composed SENTENCE creatively using the user's interests, don't echo individual SYMBOLs. After interpret() finishes, the system delivers your interpreted text to Speaker as a [${T.tagPress}] follow-up — you don't need to do anything else for that turn.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        sentence: {
+          type: "string",
+          description: "The user's intended SENTENCE in their voice. First-person, natural language. Do not include the raw composed-sentence string.",
+        },
+      },
+      required: ["sentence"],
+    },
+  };
+}
+
 function buildShowBinaryChoiceTool(): FunctionDeclaration {
   return {
     name: "show_binary_choice",
     description:
       `Show two large overlay ${T.button}s on the device. Use when the user is being offered a choice between two options — either a binary choice ("apple or banana?", or someone holds up two objects) OR a yes/no question. For yes/no, use the canonical \`yes\` / \`no\` SYMBOLs in each option's \`sentence\` field — they render with the animated yes/no icons and default green/red coloring. A "Neither" button is added automatically. Do NOT use for open-ended questions — use rebuild_board() for those.
 
-Each option is a button object with the same fields as a rebuild_board button: \`speech\` (what TTS voices), \`sentence\` (visual encoding), \`fallback\` (required when sentence uses \`generate:\`), \`label\`.`,
+Each option is a button object: \`speech\` (TTS), \`sentence\` (visual), \`fallback\` (when sentence uses \`generate:\`), \`label\`. The \`target\` field declares who the user's choice is addressed to — same semantics as on rebuild_board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         option1: buttonObjectSchema(),
         option2: buttonObjectSchema(),
+        target: {
+          type: "string",
+          description: `Who the choice is addressed to. "DEVICE" (default), "USER", or a person's name.`,
+        },
       },
       required: ["option1", "option2"],
     },
@@ -289,10 +362,46 @@ function buildSetMemoryChipsTool(): FunctionDeclaration {
   };
 }
 
+/**
+ * `exit_guessing` — declare that the Word Finder session is over.
+ *
+ * Available ONLY while guessing mode is active. The Coordinator calls
+ * clearGuessingState on receipt, which:
+ *   - flips the client's guessingMode flag (the violet highlight clears)
+ *   - tells Speaker to drop narrowing questions
+ *   - re-invokes BoardManager with a clean "rebuild for conversation"
+ *     trigger so the next surface isn't stuck on suggestion buttons
+ */
+function buildExitGuessingTool(): FunctionDeclaration {
+  return {
+    name: "exit_guessing",
+    description:
+      `End the Word Finder narrowing session and return the device to normal conversation. Use this when:
+- The user just confirmed your guess (e.g., pressed "yes" to "is it X?" — you found their word).
+- The conversation has clearly moved past finding a word (the user is talking about something unrelated now).
+- You can speak confidently about what the user meant based on accumulated narrowing facts, and further narrowing would just frustrate them.
+
+Do NOT call this just because narrowing is hard. The Word Finder is supposed to grind through dimensions until it converges; call exit ONLY when convergence has actually happened or the user has redirected. Calling this prematurely loses the narrowing state and resets the search.
+
+Pair this call with a rebuild_board on the NEXT invocation that reflects the resolved topic (the user is going to talk ABOUT what was just found, so build buttons for that conversation).`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: `Short phrase describing why guessing is ending. Examples: "user confirmed comet", "user said yes to black hole", "user changed topic to school".`,
+        },
+      },
+      required: ["reason"],
+    },
+  };
+}
+
 const NO_CHANGE: FunctionDeclaration = {
   name: "no_change",
   description:
-    `Declare that the current ${T.board} is still appropriate and no update is needed for this event. Use this often — most observational events do not call for the ${T.board} to change. Calling no_change() explicitly is preferred over rebuilding identically.`,
+    `Declare that the current ${T.board} is still appropriate and no update is needed for this event. Use this often — most observational events do not call for the ${T.board} to change. This is also the UNIVERSAL FALLBACK: if you're unsure what to do, or no other tool fits, call no_change with a short reason. NEVER return without a tool call — silent responses fail. Calling no_change() explicitly is always preferred over rebuilding identically or returning nothing.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
@@ -313,6 +422,7 @@ export function buildBoardManagerToolDeclarations(config: BoardManagerToolConfig
   const declarations: FunctionDeclaration[] = [];
 
   declarations.push(buildRebuildBoardTool(config));
+  declarations.push(buildAddBoardButtonTool(config));
   declarations.push(buildAddContextButtonTool());
 
   if (config.availableBoards.length > 0) {
@@ -325,6 +435,12 @@ export function buildBoardManagerToolDeclarations(config: BoardManagerToolConfig
   declarations.push(buildShowBinaryChoiceTool());
   declarations.push(buildSuggestConstructionButtonsTool());
   declarations.push(buildSetMemoryChipsTool());
+  declarations.push(buildInterpretTool());
+  // Only surface exit_guessing while the Word Finder is active — outside
+  // guessing mode, the tool would be a no-op and waste tool-surface area.
+  if (config.guessingActive) {
+    declarations.push(buildExitGuessingTool());
+  }
   declarations.push(NO_CHANGE);
 
   // call_monitor only — private_note intentionally omitted.

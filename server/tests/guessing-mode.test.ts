@@ -12,6 +12,8 @@ import {
   createState,
   cloneState,
   applyPress,
+  applyCustomFact,
+  rejectMostRecentFact,
   dismissDimension,
   flagExpand,
   rejectCurrentDimension,
@@ -33,7 +35,9 @@ import {
   expandSuggestionKey,
   splitOutSuggestionButtons,
   extractSuggestionButtonsFromRaw,
+  parseBoardButtons,
 } from "../services/dual-agent/interactive-agent";
+import { validateBoardButtons } from "../services/dual-agent/board-button-validator";
 
 describe("registry coverage", () => {
   it("has an entry for every dimension value", () => {
@@ -356,5 +360,200 @@ describe("cloneState", () => {
       c.dimensions["things.kind"].weights["food"],
     );
     expect(s.specialInterests).not.toBe(c.specialInterests);
+  });
+
+  it("deep-copies customFacts and rejectedFacts so mutations don't leak", () => {
+    const s = createState();
+    applyCustomFact(s, "genre", "comedy");
+    const c = cloneState(s);
+    expect(c.customFacts).toEqual(s.customFacts);
+    expect(c.customFacts).not.toBe(s.customFacts);
+    rejectMostRecentFact(c);
+    expect(s.customFacts).toHaveLength(1);
+    expect(s.rejectedFacts).toHaveLength(0);
+    expect(c.customFacts).toHaveLength(0);
+    expect(c.rejectedFacts).toHaveLength(1);
+  });
+});
+
+describe("custom narrowing facts", () => {
+  it("applyCustomFact appends a fact and renders it in the injection", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "genre", "comedy", "what kind of movie?");
+    expect(s.customFacts).toHaveLength(1);
+    expect(s.customFacts[0].dimension).toBe("genre");
+    expect(s.customFacts[0].value).toBe("comedy");
+    expect(s.customFacts[0].sourceText).toBe("what kind of movie?");
+
+    const inj = buildStateInjection(s);
+    expect(inj.customFacts).toEqual(s.customFacts);
+    expect(inj.text).toMatch(/Custom narrowing facts/i);
+    expect(inj.text).toContain("genre=comedy");
+  });
+
+  it("applyCustomFact ignores empty dimension or value", () => {
+    const s = createState();
+    applyCustomFact(s, "", "comedy");
+    applyCustomFact(s, "genre", "");
+    expect(s.customFacts).toHaveLength(0);
+    expect(s.history).toHaveLength(0);
+  });
+
+  it("rejectMostRecentFact unwinds a custom fact and surfaces it in [GUESSING STATE]", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "genre", "comedy");
+    applyCustomFact(s, "era", "modern");
+
+    const ok = rejectMostRecentFact(s);
+    expect(ok).toBe(true);
+    expect(s.customFacts.map((f) => f.value)).toEqual(["comedy"]);
+    expect(s.rejectedFacts.map((f) => `${f.dimension}=${f.value}`)).toEqual(["era=modern"]);
+    expect(s.justRejected).toBe(true);
+
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/Rejected/);
+    expect(inj.text).toContain("era=modern");
+    expect(inj.rejectedFacts).toEqual(s.rejectedFacts);
+  });
+
+  it("rejectMostRecentFact on a registry press dismisses that dimension", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyPress(s, "things.kind", "animal");
+
+    const ok = rejectMostRecentFact(s);
+    expect(ok).toBe(true);
+    expect(s.dimensions["things.kind"].dismissed).toBe(true);
+    expect(s.rejectedFacts).toHaveLength(1);
+    expect(s.rejectedFacts[0].dimension).toBe("kind"); // localName
+    expect(s.rejectedFacts[0].value).toBe("animal");
+    expect(s.justRejected).toBe(true);
+  });
+
+  it("rejectMostRecentFact skips the category mode-switch press", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    // Only entry in history is the category mode switch — nothing to reject.
+    expect(rejectMostRecentFact(s)).toBe(false);
+    expect(s.justRejected).toBe(false);
+  });
+
+  it("rejectMostRecentFact returns false on empty history", () => {
+    const s = createState();
+    expect(rejectMostRecentFact(s)).toBe(false);
+  });
+
+  it("parser strips `[NARROW:<dim>] <value>` and tags the button", () => {
+    // structured pipe: speech|sentence|fallback|label
+    const pipe = `what kind of movie?|🎬|🎬|[NARROW:genre] Comedy`;
+    const [btn] = parseBoardButtons(pipe);
+    expect(btn).toBeDefined();
+    expect(btn.label).toBe("Comedy");
+    expect(btn.buttonType).toBe("narrow");
+    expect(btn.narrowDimension).toBe("genre");
+    expect(btn.narrowValue).toBe("Comedy");
+    // The speech field (parser exposes it as `sentence`) is preserved as-is —
+    // useful as `sourceText` on the customFact recorded by the press handler.
+    expect(btn.sentence).toBe("what kind of movie?");
+  });
+
+  it("parser tolerates multi-word dimension labels", () => {
+    const pipe = `when?|🌅|🌅|[NARROW:time of day] morning`;
+    const [btn] = parseBoardButtons(pipe);
+    expect(btn.narrowDimension).toBe("time of day");
+    expect(btn.narrowValue).toBe("morning");
+    expect(btn.buttonType).toBe("narrow");
+    expect(btn.label).toBe("morning");
+  });
+
+  it("parser leaves a malformed `[NARROW:]` prefix in the label for the validator", () => {
+    // Empty dimension — parser declines to tag and passes the label through.
+    const pipe = `what?|🤔|🤔|[NARROW:] something`;
+    const [btn] = parseBoardButtons(pipe);
+    expect(btn.buttonType).toBeUndefined();
+    expect(btn.narrowDimension).toBeUndefined();
+    expect(btn.label).toBe("[NARROW:] something");
+  });
+
+  it("parser leaves a missing-value `[NARROW:<dim>]` in the label for the validator", () => {
+    // No value after the bracket — parser declines to tag.
+    const pipe = `pick one|🤔|🤔|[NARROW:genre]`;
+    const [btn] = parseBoardButtons(pipe);
+    expect(btn.buttonType).toBeUndefined();
+    expect(btn.label).toBe("[NARROW:genre]");
+  });
+
+  it("validator rejects buttons whose label still begins with [NARROW", () => {
+    const malformed = {
+      label: "[NARROW:] comedy",
+      glyph: "🎬",
+      glyphFallback: "🎬",
+    };
+    const { buttons, errors } = validateBoardButtons([malformed]);
+    expect(buttons).toEqual([]);
+    expect(errors[0]).toMatch(/malformed \[NARROW/i);
+  });
+
+  it("after rejectMostRecentFact the injection prints Rejected: dim=value", () => {
+    // Simulates the client's GUESSING_REJECT → rejectMostRecentFact flow on
+    // a state where the user picked one custom narrowing step then said no.
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "genre", "comedy");
+    const undid = rejectMostRecentFact(s);
+    expect(undid).toBe(true);
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/Rejected/);
+    expect(inj.text).toContain("genre=comedy");
+    expect(inj.rejectedFacts.map((f) => `${f.dimension}=${f.value}`)).toEqual(["genre=comedy"]);
+    // And the engine state must have CLEARED the fact from customFacts.
+    expect(inj.customFacts).toEqual([]);
+  });
+
+  it("rejectMostRecentFact preserves earlier facts (only the latest is undone)", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "genre", "comedy");
+    applyCustomFact(s, "era", "modern");
+    rejectMostRecentFact(s);
+    expect(s.customFacts.map((f) => f.value)).toEqual(["comedy"]);
+    expect(s.rejectedFacts.map((f) => f.value)).toEqual(["modern"]);
+    // Build the injection — comedy still appears as a Custom fact, modern as Rejected.
+    const inj = buildStateInjection(s);
+    expect(inj.text).toContain("genre=comedy");
+    expect(inj.text).toContain("era=modern");
+    // And the order in the text: Custom facts: ... appears BEFORE Rejected: ...
+    expect(inj.text.indexOf("Custom narrowing facts")).toBeLessThan(inj.text.indexOf("Rejected"));
+  });
+
+  it("validator passes a well-formed narrow button (post-parser, no prefix in label)", () => {
+    const btn = {
+      label: "Comedy",
+      glyph: "🎬",
+      glyphFallback: "🎬",
+    };
+    const { buttons, errors } = validateBoardButtons([btn]);
+    expect(buttons).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("custom and registry facts compose in history order", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "genre", "comedy");
+    applyPress(s, "things.kind", "animal");
+    applyCustomFact(s, "era", "modern");
+
+    // Most recent is the era fact.
+    rejectMostRecentFact(s);
+    expect(s.customFacts.map((f) => f.value)).toEqual(["comedy"]);
+    expect(s.rejectedFacts.map((f) => f.value)).toEqual(["modern"]);
+
+    // Next most recent is the registry press for things.kind=animal.
+    rejectMostRecentFact(s);
+    expect(s.dimensions["things.kind"].dismissed).toBe(true);
+    expect(s.rejectedFacts.map((f) => f.value)).toEqual(["modern", "animal"]);
   });
 });

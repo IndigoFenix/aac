@@ -20,6 +20,23 @@ export interface MinorProtectionResult {
   forcedOffOptIns: ReadonlySet<OptInType>;
 }
 
+// Per-student consent-authority override (stored as text on students). Decides
+// whether a guardian or the student signs, overriding the age-of-majority
+// default. See consent-authority.ts.
+export type ConsentAuthorityMode = "auto" | "guardian_required" | "self";
+
+// Resolved party that must sign consent (stored as text on consent records).
+export type ConsentSignerType = "guardian" | "self";
+
+// Legal instrument under which a guardian acts for someone at/above the age of
+// majority. Required when authorityMode === "guardian_required" for an adult.
+export type GuardianshipBasis =
+  | "minor"
+  | "court_appointed_guardian"
+  | "limited_guardian"
+  | "supported_decision_making"
+  | "power_of_attorney";
+
 // Identity-verification + non-repudiation method identifiers. Stored as
 // text on consent records — adding a method = data, not migration.
 export type IdvMethod =

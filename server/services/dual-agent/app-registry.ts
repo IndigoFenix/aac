@@ -76,6 +76,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🚀",
     enabledByDefault: false,
   },
+  {
+    id: "musical_microbes",
+    name: "Musical Microbes",
+    description: "Opens a calm music-making sandbox where the student places tiny organisms (pulsers, responders, harmonizers, echoers, silencers) that interact to make generative music — a hidden scale keeps it always in tune, so there are no wrong notes. Works with eyegaze, touch, or mouse. ALWAYS use open_app to launch this when the user wants to make music with the microbes, play the musical garden, or asks for the microbes game.",
+    icon: "🎶",
+    enabledByDefault: false,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

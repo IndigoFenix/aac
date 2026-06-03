@@ -16,6 +16,7 @@
 // (see planning-docs/aac-guessing-mode → "Reconciled design (v2)").
 
 import type {
+  CustomNarrowingFact,
   DimensionDef,
   DimensionState,
   GuessingCategory,
@@ -59,6 +60,8 @@ export function createState(specialInterests: string[] = []): GuessingModeState 
     history: [],
     specialInterests: [...specialInterests],
     turnCount: 0,
+    customFacts: [],
+    rejectedFacts: [],
   };
 }
 
@@ -74,11 +77,14 @@ export function cloneState(s: GuessingModeState): GuessingModeState {
   return {
     category: s.category,
     dimensions,
-    history: [...s.history],
+    history: s.history.map((h) => ({ ...h, fact: h.fact ? { ...h.fact } : undefined })),
     specialInterests: [...s.specialInterests],
     turnCount: s.turnCount,
     focus: s.focus,
     expandSameDimension: s.expandSameDimension,
+    justRejected: s.justRejected,
+    customFacts: s.customFacts.map((f) => ({ ...f })),
+    rejectedFacts: s.rejectedFacts.map((f) => ({ ...f })),
   };
 }
 
@@ -212,6 +218,89 @@ export function dismissDimension(state: GuessingModeState, dimId: string): Guess
   return state;
 }
 
+/**
+ * Apply an AI-proposed narrowing step the user confirmed via a `[NARROW:<dim>]
+ * <value>` button. Records the fact (so the AI sees it in the next
+ * `[GUESSING STATE]`) and logs it in `history` so a subsequent rejection can
+ * unwind it. Runs on a parallel track to the registry-driven `applyPress` —
+ * custom facts do NOT touch dimension weights.
+ */
+export function applyCustomFact(
+  state: GuessingModeState,
+  dimension: string,
+  value: string,
+  sourceText?: string,
+): GuessingModeState {
+  const dim = dimension.trim();
+  const val = value.trim();
+  if (!dim || !val) return state;
+  state.turnCount += 1;
+  const fact: CustomNarrowingFact = {
+    dimension: dim,
+    value: val,
+    sourceText: sourceText?.trim() || undefined,
+    addedAt: state.turnCount,
+  };
+  state.customFacts.push(fact);
+  state.history.push({ turn: state.turnCount, key: `custom:${dim}:${val}`, fact });
+  state.expandSameDimension = false;
+  state.justRejected = false;
+  state.focus = dim;
+  return state;
+}
+
+/**
+ * Pop the most recent positive narrowing step (registry press OR custom fact)
+ * and move it to `rejectedFacts`. The AI sees the rejection in the next
+ * `[GUESSING STATE]` and is told to pivot to a different angle.
+ *
+ * Returns true if a fact was rejected; false if there was nothing to undo
+ * (caller can fall back to `rejectCurrentDimension` in that case).
+ */
+export function rejectMostRecentFact(state: GuessingModeState): boolean {
+  // Walk backwards looking for a positive press — skip nothing, but ignore the
+  // category mode-switch press (rejecting "things" would just strand the user).
+  for (let i = state.history.length - 1; i >= 0; i--) {
+    const entry = state.history[i];
+    if (entry.key.startsWith(`${CATEGORY_DIM_ID}:`)) continue;
+
+    if (entry.fact) {
+      // Custom fact — remove from customFacts + rejectedFacts gets the dropped one.
+      const idx = state.customFacts.findIndex(
+        (f) => f.dimension === entry.fact!.dimension && f.value === entry.fact!.value && f.addedAt === entry.fact!.addedAt,
+      );
+      if (idx >= 0) state.customFacts.splice(idx, 1);
+      state.rejectedFacts.push({ ...entry.fact });
+      state.history.splice(i, 1);
+      state.justRejected = true;
+      state.expandSameDimension = false;
+      return true;
+    }
+
+    // Registry press: parse `<dimId>:<value>`, dismiss the dimension, and
+    // mark the value rejected so the AI doesn't propose it again. We don't
+    // unwind the weight update — pressing the dimension's other values
+    // remains the more natural path forward; dismiss prevents the engine
+    // from re-asking the dimension.
+    const colon = entry.key.indexOf(":");
+    if (colon <= 0) continue;
+    const dimId = entry.key.slice(0, colon);
+    const value = entry.key.slice(colon + 1);
+    dismissDimension(state, dimId);
+    state.rejectedFacts.push({
+      dimension: localName(dimId),
+      value,
+      addedAt: state.turnCount + 1,
+    });
+    state.history.splice(i, 1);
+    state.turnCount += 1;
+    state.justRejected = true;
+    state.expandSameDimension = false;
+    return true;
+  }
+  return false;
+}
+
 /** "More" — ask the assistant to expand values in the same dimension next turn. */
 export function flagExpand(state: GuessingModeState): GuessingModeState {
   state.expandSameDimension = true;
@@ -286,12 +375,25 @@ export function readyForGuesses(state: GuessingModeState): boolean {
 
 // ─── Injection rendering ─────────────────────────────────────────────────
 
-/** Strip the namespace for human-readable lines: "animal.where_found" → "where_found". */
-const localName = (id: string) => (id.includes(".") ? id.slice(id.indexOf(".") + 1) : id);
+/** Strip the namespace for human-readable lines: "animal.where_found" → "where_found".
+ *  Function declaration (not const arrow) so it's hoisted and usable from
+ *  earlier helpers like `rejectMostRecentFact`. */
+function localName(id: string) {
+  return id.includes(".") ? id.slice(id.indexOf(".") + 1) : id;
+}
+
+/** Render a list of facts as "dim=value (sourceText)" entries. */
+function renderFacts(facts: CustomNarrowingFact[]): string {
+  return facts
+    .map((f) => (f.sourceText ? `${f.dimension}=${f.value} ("${f.sourceText}")` : `${f.dimension}=${f.value}`))
+    .join(", ");
+}
 
 export function buildStateInjection(state: GuessingModeState): GuessingInjectionWire {
   const lines: string[] = ["[GUESSING STATE]"];
   const next = suggestNextDimension(state);
+  const customFacts = state.customFacts ?? [];
+  const rejectedFacts = state.rejectedFacts ?? [];
 
   // Category-selection turn.
   if (next.isCategory) {
@@ -302,13 +404,16 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     const keys = CATEGORY_VALUES.map((c) => `${CATEGORY_DIM_ID}:${c}`).map((k) => `suggestion:${k}`);
     lines.push("Offer these as buttons — keys only, COMMA-separated (the system fills picture + label), never pipe-joined:");
     lines.push(`  ${keys.join(",")}`);
+    if (rejectedFacts.length) {
+      lines.push(`Rejected so far (do NOT propose these again): ${renderFacts(rejectedFacts)}`);
+    }
     if (state.specialInterests.length) {
       lines.push(`Student's known interests: ${state.specialInterests.join(", ")}`);
     }
     lines.push(
       'You may also offer [GUESS] buttons at any time if you already have a strong hunch.',
     );
-    return { text: lines.join("\n"), suggestionKeys: keys };
+    return { text: lines.join("\n"), suggestionKeys: keys, customFacts, rejectedFacts };
   }
 
   const category = state.category!;
@@ -352,6 +457,13 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     lines.push("No more narrowing dimensions — offer [GUESS] buttons now.");
   }
 
+  if (customFacts.length) {
+    lines.push(`Custom narrowing facts (your earlier proposals the user confirmed): ${renderFacts(customFacts)}`);
+  }
+  if (rejectedFacts.length) {
+    lines.push(`Rejected (do NOT propose the same dimension+value again): ${renderFacts(rejectedFacts)}`);
+  }
+
   lines.push(`Ready for guesses: ${readyForGuesses(state) ? "yes" : "not yet (still broad)"}`);
   if (state.specialInterests.length) {
     lines.push(`Student's known interests: ${state.specialInterests.join(", ")}`);
@@ -359,8 +471,9 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
   const presses = state.history.map((h) => h.key).join(", ");
   if (presses) lines.push(`Presses so far: ${state.history.length} — ${presses}`);
   lines.push(
-    "You may also offer [GUESS] buttons at any time, or pick a different dimension if you have a reason to.",
+    "You may also offer [GUESS] buttons at any time, or pick a different dimension if you have a reason to. " +
+    "When the registry's `Suggested next dimension` doesn't fit the live conversation, propose your own narrowing dimension via `[NARROW:<dimension>] <value>` buttons instead (see <guessing_mode> in your role).",
   );
 
-  return { text: lines.join("\n"), suggestionKeys: keys };
+  return { text: lines.join("\n"), suggestionKeys: keys, customFacts, rejectedFacts };
 }

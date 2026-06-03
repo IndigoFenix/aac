@@ -13,8 +13,10 @@ import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache
 import {
   createState as createGuessingState,
   applyPress as applyGuessingPress,
+  applyCustomFact as applyGuessingCustomFact,
   buildStateInjection as buildGuessingInjection,
   rejectCurrentDimension as rejectGuessingDimension,
+  rejectMostRecentFact as rejectGuessingMostRecentFact,
   GUESSING_REJECT,
   type GuessingModeState,
 } from "@shared/guessing-mode/state.js";
@@ -175,7 +177,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // User-controlled mute state (cave toggle — the AI cannot change this)
   const [muteState, setMuteStateImpl] = useState<"unmuted" | "muted">("unmuted");
   // Last AI-initiated mode change — used to flash the "AI: <mode>" indicator
-  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "standby"; reason?: string; source: "ai"; at: number } | null>(null);
+  const [lastModeChange, setLastModeChange] = useState<{ mode: "companion" | "facilitator" | "standby"; reason?: string; source: "ai"; at: number } | null>(null);
 
   // Response mode
   const [responseMode, setResponseModeState] = useState<"fast" | "analyze">("fast");
@@ -610,11 +612,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "interaction_mode_changed":
-          // AI changed its own behavioral mode (interact / assist / standby).
-          // This NEVER affects the user-controlled muteState — only the cave
-          // tap can mute or unmute. Just flash the indicator.
-          if (msg.data.mode === "interact" || msg.data.mode === "assist" || msg.data.mode === "standby") {
-            setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: "ai", at: Date.now() });
+          // AI changed its own behavioral mode (companion / facilitator /
+          // standby). This NEVER affects the user-controlled muteState —
+          // only the cave tap can mute or unmute. Just flash the indicator.
+          // Accept legacy "interact" / "assist" labels in case an older
+          // server build is connected; map them to the new canonical names
+          // so downstream consumers (AvatarSpriteContext etc.) only see
+          // the new pair.
+          {
+            const raw = msg.data.mode;
+            const mode: "companion" | "facilitator" | "standby" | null =
+              raw === "companion" || raw === "interact" ? "companion"
+              : raw === "facilitator" || raw === "assist" ? "facilitator"
+              : raw === "standby" ? "standby"
+              : null;
+            if (mode) {
+              setLastModeChange({ mode, reason: msg.data.reason, source: "ai", at: Date.now() });
+            }
           }
           break;
 
@@ -1145,11 +1159,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const sendGuessingStateMsg = useCallback((state: GuessingModeState) => {
     const inj = buildGuessingInjection(state);
     const o = guessingOriginRef.current;
-    console.debug("[guessing] → guessing_state", { category: state.category, keys: inj.suggestionKeys, origin: o?.origin ?? "conversation" });
+    console.debug("[guessing] → guessing_state", {
+      category: state.category,
+      keys: inj.suggestionKeys,
+      custom: inj.customFacts.length,
+      rejected: inj.rejectedFacts.length,
+      origin: o?.origin ?? "conversation",
+    });
     wsSend({
       type: "guessing_state",
       text: inj.text,
       suggestionKeys: inj.suggestionKeys,
+      customFacts: inj.customFacts,
+      rejectedFacts: inj.rejectedFacts,
       ...(o ? { origin: o.origin, builderContext: o.builderContext } : {}),
     });
   }, [wsSend]);
@@ -1161,8 +1183,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       const state = guessingStateRef.current;
 
       if (suggestionKey === GUESSING_REJECT) {
-        // "None of these" — drop the current dimension and ask differently.
-        rejectGuessingDimension(state);
+        // "No" / "none of these" — prefer rejecting the most recent positive
+        // narrowing step (custom fact OR registry press). The AI sees the
+        // rejection in the next [GUESSING STATE] and is told to pivot to a
+        // different angle. If there's nothing positive to undo (the user
+        // pressed "no" on a freshly-proposed dimension before picking a
+        // value), fall back to the legacy "drop current dimension" behavior.
+        const undid = rejectGuessingMostRecentFact(state);
+        if (!undid) rejectGuessingDimension(state);
       } else {
         const parsed = parseSuggestionKey(suggestionKey);
         if (!parsed) {
@@ -1178,24 +1206,75 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [sendGuessingStateMsg]);
 
   /**
-   * Launch guessing FROM the sentence builder to fill a slot. Pre-selects the
-   * guessing category from the builder tab (so it skips the top-level category
-   * step), records the builder origin so the resolved concept returns into the
-   * sentence, and pushes the first [GUESSING STATE].
+   * Press handler for AI-driven narrowing buttons (`buttonType: "narrow"`).
+   * Records the user's confirmation of an AI-proposed narrowing step as a
+   * CustomNarrowingFact in the guessing state, then re-pushes the state so
+   * the AI sees the new fact in its next `[GUESSING STATE]` injection and
+   * proposes the next step (or commits to `[GUESS]` if narrowing has
+   * converged). `sourceText` is the button's voiced speech, used as the
+   * AI's own framing of what was asked.
    */
-  const enterGuessingFromBuilder = useCallback((builderContext: GuessingBuilderContext) => {
+  const pressNarrow = useCallback((dimension: string, value: string, sourceText?: string) => {
+    console.debug("[guessing] pressNarrow", { dimension, value, sourceText });
     try {
-      const state = createGuessingState();
-      const cat = BUILDER_TAB_TO_GUESSING[builderContext.category];
-      if (cat) applyGuessingPress(state, CATEGORY_DIM_ID, cat);
-      guessingStateRef.current = state;
-      guessingOriginRef.current = { origin: "builder", builderContext };
-      console.debug("[guessing] enterGuessingFromBuilder", { builderContext, preCategory: cat });
+      if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
+      const state = guessingStateRef.current;
+      applyGuessingCustomFact(state, dimension, value, sourceText);
       sendGuessingStateMsg(state);
     } catch (err) {
-      console.error("[guessing] enterGuessingFromBuilder failed:", err);
+      console.error("[guessing] pressNarrow failed:", err);
     }
   }, [sendGuessingStateMsg]);
+
+  /**
+   * Unified word-finder entry point.
+   *
+   * - From the BUILDER: pass a builderContext. The category is pre-selected
+   *   from the builder tab so the user skips the top-level category step,
+   *   and the origin is recorded so the resolved concept feeds back into
+   *   the composed sentence.
+   * - From CONVERSATION: omit builderContext. The user starts at the
+   *   top-level "what kind of thing are you looking for?" step. The
+   *   resolved concept flows back as a normal SENTENCE BUTTON press.
+   *
+   * Both paths build the same shaped GuessingModeState and push it via
+   * the same WS message — so the server, the AI prompts, and the
+   * client-side display flow are identical regardless of entry point.
+   */
+  const enterGuessing = useCallback((builderContext?: GuessingBuilderContext) => {
+    try {
+      const state = createGuessingState();
+      if (builderContext) {
+        const cat = BUILDER_TAB_TO_GUESSING[builderContext.category];
+        if (cat) applyGuessingPress(state, CATEGORY_DIM_ID, cat);
+        guessingOriginRef.current = { origin: "builder", builderContext };
+      } else {
+        guessingOriginRef.current = { origin: "conversation" };
+      }
+      guessingStateRef.current = state;
+      console.debug("[guessing] enterGuessing", { origin: guessingOriginRef.current.origin });
+      sendGuessingStateMsg(state);
+    } catch (err) {
+      console.error("[guessing] enterGuessing failed:", err);
+    }
+  }, [sendGuessingStateMsg]);
+
+  /** Legacy alias — same as enterGuessing(builderContext). Retained because
+   *  SentenceConstructorBoard's `onEnterGuessing` prop is wired to this
+   *  name. New code should call enterGuessing directly. */
+  const enterGuessingFromBuilder = useCallback((builderContext: GuessingBuilderContext) => {
+    enterGuessing(builderContext);
+  }, [enterGuessing]);
+
+  /** User-initiated Word Finder cancel. Single exit path for every surface
+   *  (quick-button toggle, sentence-builder toggle, back press while
+   *  guessing). The server `clearGuessingState` sets `guessingState=null`
+   *  and broadcasts `guessing_mode:false`; the local ref is wiped by the
+   *  `guessing_mode` message handler — so we don't have to nuke it here. */
+  const exitGuessing = useCallback((reason?: string) => {
+    console.debug("[guessing] exitGuessing", { reason });
+    wsSend({ type: "exit_guessing", reason });
+  }, [wsSend]);
 
   /**
    * Send a composed glyph from the sentence builder up to the AI for
@@ -1469,7 +1548,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Guessing mode
     guessingMode,
     pressSuggestion,
+    pressNarrow,
+    enterGuessing,
     enterGuessingFromBuilder,
+    exitGuessing,
     setBuilderVisible,
 
     // Social trainer bridge

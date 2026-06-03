@@ -8,7 +8,7 @@ import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "@shared/sch
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
-import { creditsForModelUsage, creditsForLiveUsage } from "../chat/cost-helpers";
+import { creditsForModelUsage, creditsForLiveUsage, creditsForTtsUsage, type TtsProvider } from "../chat/cost-helpers";
 import type { LLMProviderKey } from "@shared/llm-options";
 import {
   InteractiveAgent,
@@ -238,6 +238,48 @@ export class DualAgentService {
   }
 
   /**
+   * Track credits for a non-Live HTTP completion turn — used by the
+   * Monitor's thoroughStartup and produceSessionSummary calls (which go
+   * through GPT.getStructuredResponse, not the Live API). Computes credits
+   * from the same per-1M-token catalog as `creditsForModelUsage`.
+   */
+  async trackHttpUsage(
+    sessionId: string,
+    studentId: string,
+    userId: string | undefined,
+    provider: LLMProviderKey,
+    model: string,
+    promptTokens: number,
+    completionTokens: number,
+    cachedTokens: number = 0,
+    label: string = "http",
+  ): Promise<void> {
+    const credits = creditsForModelUsage(provider, model, promptTokens, completionTokens, cachedTokens);
+    const logSuffix = `model=${model} prompt=${promptTokens} completion=${completionTokens}${cachedTokens ? ` cached=${cachedTokens}` : ""} [${label}]`;
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
+  }
+
+  /**
+   * Track credits for one TTS synthesis. Charged per character — actual
+   * audio duration doesn't affect provider billing. Called from the
+   * Coordinator's `streamStudentTts` once per synthesis after the facade
+   * reports which provider actually rendered the audio (the facade may
+   * fall back through several providers; only the final one bills).
+   */
+  async trackTtsUsage(
+    sessionId: string,
+    studentId: string,
+    userId: string | undefined,
+    provider: TtsProvider,
+    characters: number,
+  ): Promise<void> {
+    if (characters <= 0) return;
+    const credits = creditsForTtsUsage(provider, characters);
+    const logSuffix = `tts provider=${provider} chars=${characters}`;
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
+  }
+
+  /**
    * Resolve voice settings from a cached session's student data.
    * Fetches custom voice records in parallel when FK is set.
    * Returns ResolvedVoice objects that the TTS facade uses to route to the correct provider.
@@ -412,6 +454,24 @@ export class DualAgentService {
     const defaultApps = getDefaultEnabledApps();
     const enabledAppDefs = APP_REGISTRY.filter(a => defaultApps.includes(a.id));
     const initResult = await monitorAgent.initializeSession(muteState, enabledAppDefs);
+
+    // Bill credits for the thorough-startup enhancer if it fired. The
+    // session ID is the one Monitor created/loaded above; we use it
+    // directly since `state.sessionId` isn't built until later.
+    if (initResult.enhancerUsage) {
+      const u = initResult.enhancerUsage;
+      this.trackHttpUsage(
+        initResult.sessionId,
+        studentId,
+        userId,
+        u.provider,
+        u.model,
+        u.promptTokens,
+        u.completionTokens,
+        u.cachedTokens ?? 0,
+        "monitor-startup-enhancer",
+      ).catch(err => console.error("[DualAgentService] trackHttpUsage(enhancer) failed:", err));
+    }
 
     // Fetch contacts for prompt context
     let cachedContacts: DualAgentSessionState['cachedContacts'] = [];

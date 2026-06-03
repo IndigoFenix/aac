@@ -16,6 +16,7 @@ import { db } from "../db";
 import {
   studentContacts,
   studentConsentRecords,
+  userStudents,
   type StudentContact,
 } from "@shared/schema";
 import {
@@ -28,6 +29,11 @@ import {
   ConsentInvitationError,
   type ConsentInvitationErrorCode,
 } from "../services/consent/consentInvitationService";
+import {
+  consentAuthorityService,
+  ConsentAuthorityError,
+  type ConsentAuthorityErrorCode,
+} from "../services/consent/consentAuthorityService";
 import { PhoneOtpError, type PhoneOtpErrorCode } from "../services/phoneOtpService";
 import { sendConsentReceipt } from "../services/consent/consentReceipt";
 import { studentRepository } from "../repositories/studentRepository";
@@ -57,7 +63,9 @@ const signatureSchema = z
   .optional();
 
 const signConsentSchema = z.object({
-  signedByContactId: z.string().min(1),
+  // Required for guardian consent; omitted for self-consent (the logged-in
+  // student signs for themselves).
+  signedByContactId: z.string().min(1).optional(),
   locale: z.string().min(2).max(10),
   consentTextVersion: z.string().min(1),
   consentTextHash: z.string().length(64),
@@ -108,6 +116,8 @@ const errorStatus: Record<ConsentErrorCode, number> = {
   contact_not_found: 404,
   contact_not_for_student: 403,
   contact_not_legal_guardian: 422,
+  guardianship_basis_required: 422,
+  signer_not_permitted: 422,
   disclosures_required: 400,
   notice_not_found: 404,
   notice_version_mismatch: 409,
@@ -264,9 +274,14 @@ class ConsentController {
       const user = await userRepository.getUser(userId);
       const contact = await loadGuardianContactForCurrentUser(studentId, userId);
       const activeConsent = await consentService.getActiveConsent(studentId);
+      const resolvedAuthority = await consentAuthorityService.resolveForStudent(studentId);
 
       res.json({
         success: true,
+        // Who must sign (guardian vs. self) so the wizard renders the right
+        // flow. Null when birth date is missing.
+        signerType: resolvedAuthority?.signerType ?? null,
+        consentAuthority: student.consentAuthority ?? "auto",
         student: {
           id: student.id,
           name: student.name,
@@ -296,6 +311,100 @@ class ConsentController {
   }
 
   /**
+   * GET /api/consent/students/:studentId/authority
+   * Returns the stored consent-authority determination plus the currently
+   * resolved signer (guardian vs. self). Permission: institute member.
+   */
+  async getAuthority(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.user as any)?.id;
+      if (!userId) { res.status(401).json({ success: false, message: "Unauthenticated" }); return; }
+      const studentId = req.params.studentId;
+      if (!(await this.userSharesInstituteWithStudent(req, studentId))) {
+        res.status(403).json({ success: false, code: "permission_denied", message: "No access to that student" });
+        return;
+      }
+      const student = await studentRepository.getStudentById(studentId);
+      if (!student) { res.status(404).json({ success: false, message: "Student not found" }); return; }
+      const resolved = await consentAuthorityService.resolveForStudent(studentId);
+      res.json({
+        success: true,
+        consentAuthority: student.consentAuthority ?? "auto",
+        guardianshipBasis: student.guardianshipBasis ?? null,
+        guardianshipEvidence: student.guardianshipEvidence ?? null,
+        guardianshipReviewDate: student.guardianshipReviewDate ?? null,
+        resolved, // { signerType, basis, source } | null
+      });
+    } catch (err) {
+      handleAuthorityError(res, err);
+    }
+  }
+
+  /**
+   * PUT /api/consent/students/:studentId/authority
+   * Sets the consent-authority determination (auto / guardian_required / self)
+   * plus guardianship basis/evidence/review-date. Permission: institute admin.
+   */
+  async setAuthority(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req.user as any)?.id;
+      if (!userId) { res.status(401).json({ success: false, message: "Unauthenticated" }); return; }
+      const studentId = req.params.studentId;
+      if (!(await this.userIsAdminForStudent(req, studentId))) {
+        res.status(403).json({ success: false, code: "permission_denied", message: "Only institute admins can set consent authority" });
+        return;
+      }
+      const parsed = setAuthoritySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "Invalid input", issues: parsed.error.issues });
+        return;
+      }
+      const updated = await consentAuthorityService.setConsentAuthority(
+        studentId,
+        {
+          mode: parsed.data.mode,
+          basis: parsed.data.basis ?? null,
+          evidence: parsed.data.evidence ?? null,
+          reviewDate: parsed.data.reviewDate ?? null,
+        },
+        userId,
+      );
+      const resolved = await consentAuthorityService.resolveForStudent(studentId);
+      res.json({
+        success: true,
+        consentAuthority: updated?.consentAuthority ?? parsed.data.mode,
+        guardianshipBasis: updated?.guardianshipBasis ?? null,
+        guardianshipEvidence: updated?.guardianshipEvidence ?? null,
+        guardianshipReviewDate: updated?.guardianshipReviewDate ?? null,
+        resolved,
+      });
+    } catch (err) {
+      handleAuthorityError(res, err);
+    }
+  }
+
+  /** Institute-membership check shared by authority reads. */
+  private async userSharesInstituteWithStudent(req: Request, studentId: string): Promise<boolean> {
+    if (!!(req.user as any)?.isSystemAdmin) return true;
+    const userId = (req.user as any)?.id;
+    const memberships = await instituteRepository.getInstitutesByStudentId(studentId);
+    const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
+    const ids = new Set(userInstitutes.map((i: any) => i.id));
+    return memberships.some((m: any) => ids.has(m.id));
+  }
+
+  /** Institute-admin check shared by authority writes. */
+  private async userIsAdminForStudent(req: Request, studentId: string): Promise<boolean> {
+    if (!!(req.user as any)?.isSystemAdmin) return true;
+    const userId = (req.user as any)?.id;
+    const memberships = await instituteRepository.getInstitutesByStudentId(studentId);
+    for (const m of memberships as any[]) {
+      if (await instituteRepository.isUserAdminOfInstitute(m.id, userId)) return true;
+    }
+    return false;
+  }
+
+  /**
    * POST /api/consent/students/:studentId/sign
    * Updates the guardian contact (legal-guardian declaration + gov-ID) and
    * signs the consent record in the same transaction.
@@ -315,51 +424,93 @@ class ConsentController {
       const studentId = req.params.studentId;
       const input = parsed.data;
 
-      // Permission: the contact being signed-as must be linked to the
-      // current user (parent/guardian flow). Stronger flows (clinic
-      // in-person attest, etc.) will land at different endpoints.
-      const [contact] = await db
-        .select()
-        .from(studentContacts)
-        .where(eq(studentContacts.id, input.signedByContactId));
-      if (!contact) {
-        res.status(404).json({ success: false, code: "contact_not_found", message: "Contact not found" });
-        return;
-      }
-      if (contact.studentId !== studentId) {
-        res.status(403).json({ success: false, code: "contact_not_for_student", message: "Contact does not belong to that student" });
-        return;
-      }
-      if (contact.linkedUserId !== userId) {
-        res.status(403).json({ success: false, code: "contact_not_owned_by_caller", message: "Only the linked user can sign as this contact" });
-        return;
-      }
+      // Resolve who may sign for this student (guardian vs. self). signConsent
+      // re-validates this server-side; here we branch the permission + contact
+      // handling. A null resolution (missing birth date) falls through to the
+      // guardian path so signConsent surfaces the clearer student_missing_birth_date.
+      const resolved = await consentAuthorityService.resolveForStudent(studentId);
+      const signerType = resolved?.signerType ?? "guardian";
 
-      // Update the guardian contact in the same transaction:
-      //   - flip isLegalGuardian = true (the wizard step asserted it)
-      //   - apply coGuardianAcknowledged
-      //   - persist gov-ID fields if the wizard collected/updated them
-      //   - stamp legalGuardianDeclaredAt
-      const updates: Partial<typeof studentContacts.$inferInsert> = {
-        isLegalGuardian: true,
-        legalGuardianDeclaredAt: new Date(),
-      };
-      if (input.guardianFields) {
-        const g = input.guardianFields;
-        if (g.coGuardianAcknowledged !== undefined) updates.coGuardianAcknowledged = g.coGuardianAcknowledged;
-        if (g.governmentIdNumber !== undefined) {
-          updates.governmentIdNumber = g.governmentIdNumber;
-          updates.governmentIdVerifiedVia = "manual_entry";
-          updates.governmentIdVerificationProvider = "self_declared";
-          updates.governmentIdVerifiedAt = new Date();
+      let signedByContactId: string | null = null;
+      let signedByUserId: string | null = null;
+      let receiptTo: string | null = null;
+
+      if (signerType === "guardian") {
+        if (!input.signedByContactId) {
+          res.status(422).json({ success: false, code: "signer_not_permitted", message: "This student requires guardian consent — a signing contact is required" });
+          return;
         }
-        if (g.governmentIdType !== undefined) updates.governmentIdType = g.governmentIdType;
-        if (g.governmentIdCountry !== undefined) updates.governmentIdCountry = g.governmentIdCountry.toUpperCase();
+        // Permission: the contact being signed-as must be linked to the
+        // current user (parent/guardian flow). Stronger flows (clinic
+        // in-person attest, etc.) will land at different endpoints.
+        const [contact] = await db
+          .select()
+          .from(studentContacts)
+          .where(eq(studentContacts.id, input.signedByContactId));
+        if (!contact) {
+          res.status(404).json({ success: false, code: "contact_not_found", message: "Contact not found" });
+          return;
+        }
+        if (contact.studentId !== studentId) {
+          res.status(403).json({ success: false, code: "contact_not_for_student", message: "Contact does not belong to that student" });
+          return;
+        }
+        if (contact.linkedUserId !== userId) {
+          res.status(403).json({ success: false, code: "contact_not_owned_by_caller", message: "Only the linked user can sign as this contact" });
+          return;
+        }
+
+        // Update the guardian contact in the same transaction:
+        //   - flip isLegalGuardian = true (the wizard step asserted it)
+        //   - apply coGuardianAcknowledged
+        //   - persist gov-ID fields if the wizard collected/updated them
+        //   - stamp legalGuardianDeclaredAt
+        const updates: Partial<typeof studentContacts.$inferInsert> = {
+          isLegalGuardian: true,
+          legalGuardianDeclaredAt: new Date(),
+        };
+        if (input.guardianFields) {
+          const g = input.guardianFields;
+          if (g.coGuardianAcknowledged !== undefined) updates.coGuardianAcknowledged = g.coGuardianAcknowledged;
+          if (g.governmentIdNumber !== undefined) {
+            updates.governmentIdNumber = g.governmentIdNumber;
+            updates.governmentIdVerifiedVia = "manual_entry";
+            updates.governmentIdVerificationProvider = "self_declared";
+            updates.governmentIdVerifiedAt = new Date();
+          }
+          if (g.governmentIdType !== undefined) updates.governmentIdType = g.governmentIdType;
+          if (g.governmentIdCountry !== undefined) updates.governmentIdCountry = g.governmentIdCountry.toUpperCase();
+        }
+        await db
+          .update(studentContacts)
+          .set(updates)
+          .where(eq(studentContacts.id, input.signedByContactId));
+
+        signedByContactId = input.signedByContactId;
+        receiptTo = contact.contactEmail ?? null;
+      } else {
+        // Self-consent: the acting user must be the student's own account (an
+        // active user-student link). No guardian contact is involved.
+        const [link] = await db
+          .select()
+          .from(userStudents)
+          .where(
+            and(
+              eq(userStudents.userId, userId),
+              eq(userStudents.studentId, studentId),
+              eq(userStudents.isActive, true),
+            ),
+          );
+        if (!link) {
+          res.status(403).json({ success: false, code: "contact_not_owned_by_caller", message: "Only the student can self-consent for themselves" });
+          return;
+        }
+        if (input.signedByContactId) {
+          res.status(422).json({ success: false, code: "signer_not_permitted", message: "This student self-consents — a guardian contact cannot sign on their behalf" });
+          return;
+        }
+        signedByUserId = userId;
       }
-      await db
-        .update(studentContacts)
-        .set(updates)
-        .where(eq(studentContacts.id, input.signedByContactId));
 
       // V1 family flow defaults: authenticated_session both legs, standard regime.
       const idvMethod = input.identityVerificationMethod ?? "authenticated_session";
@@ -380,7 +531,8 @@ class ConsentController {
 
       const record = await consentService.signConsent({
         studentId,
-        signedByContactId: input.signedByContactId,
+        signedByContactId,
+        signedByUserId,
         locale: input.locale,
         consentTextVersion: input.consentTextVersion,
         consentTextHash: input.consentTextHash,
@@ -406,10 +558,10 @@ class ConsentController {
       // Information). Awaited before responding so Lambda doesn't freeze it;
       // the helper never throws, so a delivery failure won't fail the sign.
       const student = await studentRepository.getStudentById(studentId);
-      const receiptTo =
-        contact.contactEmail ?? (await userRepository.getUser(userId))?.email ?? null;
+      const finalReceiptTo =
+        receiptTo ?? (await userRepository.getUser(userId))?.email ?? null;
       await sendConsentReceipt({
-        to: receiptTo,
+        to: finalReceiptTo,
         studentName: student?.name ?? "your child",
         consent: record,
       });
@@ -445,14 +597,24 @@ class ConsentController {
         res.status(404).json({ success: false, code: "consent_not_found", message: "Consent not found" });
         return;
       }
-      const [contact] = await db
-        .select()
-        .from(studentContacts)
-        .where(eq(studentContacts.id, existing.signedByContactId));
       const isSystemAdmin = !!(req.user as any)?.isSystemAdmin;
-      if (!isSystemAdmin && contact?.linkedUserId !== userId) {
-        res.status(403).json({ success: false, code: "permission_denied", message: "Only the original signer can revoke this consent" });
-        return;
+      if (!isSystemAdmin) {
+        // Self-signed consent: only the student who signed may revoke.
+        // Guardian-signed: only the signing contact's linked user may revoke.
+        let allowed = false;
+        if (existing.signerType === "self" || !existing.signedByContactId) {
+          allowed = existing.signedByUserId === userId;
+        } else {
+          const [contact] = await db
+            .select()
+            .from(studentContacts)
+            .where(eq(studentContacts.id, existing.signedByContactId));
+          allowed = contact?.linkedUserId === userId;
+        }
+        if (!allowed) {
+          res.status(403).json({ success: false, code: "permission_denied", message: "Only the original signer can revoke this consent" });
+          return;
+        }
       }
 
       const revoked = await consentService.revokeConsent({
@@ -506,6 +668,8 @@ class ConsentController {
       const result = await consentInvitationService.createInvitation({
         studentId: input.studentId,
         contactId: input.contactId,
+        recipientType: input.recipientType,
+        selfDestination: input.selfDestination,
         sourceInstituteId: input.sourceInstituteId,
         createdByUserId: userId,
         channel: input.channel,
@@ -723,10 +887,30 @@ class ConsentController {
   }
 }
 
+// Consent-authority determination
+const setAuthoritySchema = z.object({
+  mode: z.enum(["auto", "guardian_required", "self"]),
+  basis: z
+    .enum([
+      "minor",
+      "court_appointed_guardian",
+      "limited_guardian",
+      "supported_decision_making",
+      "power_of_attorney",
+    ])
+    .nullish(),
+  evidence: z.record(z.unknown()).nullish(),
+  reviewDate: z.string().max(40).nullish(),
+});
+
 // Local helpers for the invitation endpoints
 const createInvitationSchema = z.object({
   studentId: z.string().min(1),
-  contactId: z.string().min(1),
+  // Required for guardian invitations; omitted for self-consent.
+  contactId: z.string().min(1).optional(),
+  recipientType: z.enum(["guardian", "self"]).optional(),
+  // Destination (student's own email/phone) for a self-consent invitation.
+  selfDestination: z.string().min(1).max(320).optional(),
   sourceInstituteId: z.string().min(1),
   channel: z.enum(["email", "sms", "manual"]),
   ttlDays: z.number().int().positive().max(30).optional(),
@@ -763,6 +947,8 @@ const signWithTokenSchema = z.object({
 const invitationErrorStatus: Record<ConsentInvitationErrorCode, number> = {
   contact_not_found: 404,
   contact_missing_channel: 400,
+  recipient_type_mismatch: 409,
+  self_destination_required: 400,
   student_not_found: 404,
   code_not_found: 404,
   code_expired: 410,
@@ -817,6 +1003,26 @@ function handleInvitationError(res: Response, err: unknown): void {
     return;
   }
   console.error("[ConsentController][invitation]", err);
+  res.status(500).json({ success: false, message: "Internal server error" });
+}
+
+const authorityErrorStatus: Record<ConsentAuthorityErrorCode, number> = {
+  student_not_found: 404,
+  invalid_mode: 400,
+  invalid_basis: 400,
+  guardianship_basis_required: 422,
+};
+
+function handleAuthorityError(res: Response, err: unknown): void {
+  if (err instanceof ConsentAuthorityError) {
+    res.status(authorityErrorStatus[err.code] ?? 500).json({
+      success: false,
+      code: err.code,
+      message: err.message,
+    });
+    return;
+  }
+  console.error("[ConsentController][authority]", err);
   res.status(500).json({ success: false, message: "Internal server error" });
 }
 

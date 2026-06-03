@@ -80,6 +80,11 @@ export interface LiveProviderCallbacks {
   onAudioData?: (data: { mimeType: string; data: string }) => void;
   /** Transcription of the model's audio output */
   onOutputTranscription?: (text: string) => void;
+  /** Fires when Gemini emits `outputTranscription.finished: true` — the
+   *  text portion of the model's turn is complete (audio may still be
+   *  streaming). Use this for downstream consumers that need the FULL
+   *  transcript as early as possible. */
+  onOutputTranscriptionFinished?: () => void;
 }
 
 // ---------------------------------------------------------------------------

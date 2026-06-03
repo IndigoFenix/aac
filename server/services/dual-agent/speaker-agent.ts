@@ -28,13 +28,14 @@ import {
   buildSpeakerToolDeclarations,
   type SpeakerToolConfig,
 } from "./tool-declarations-speaker";
+import { flowInput, flowTool, flowOutput } from "./agent-flow-logger";
 import type {
   SpeakerEvent,
   SpeechStartEvent,
+  SpeechTextFinalizedEvent,
   SpeechEndEvent,
   EmoteChangeEvent,
   ModeChangeEvent,
-  InterpretIntentEvent,
   AppOpenRequestedEvent,
   AppCloseRequestedEvent,
   WebsiteOpenRequestedEvent,
@@ -108,6 +109,10 @@ export class SpeakerAgent {
   private currentTurnTranscript = "";
   private currentTurnHadAudio = false;
   private speechStartEmittedThisTurn = false;
+  /** One-shot target the model can set via set_speech_target() before
+   *  speaking. Defaults to "USER" — applied to the next SpeechEnd event
+   *  and reset by resetTurnAccumulators(). */
+  private pendingSpeechTarget: string | undefined;
 
   constructor(providerKey: LLMProviderKey, callbacks: SpeakerCallbacks) {
     this.providerKey = providerKey;
@@ -138,6 +143,7 @@ export class SpeakerAgent {
       onReconnectFailed: this.callbacks.onReconnectFailed,
       onAudioData: (data) => this.handleAudioData(data),
       onOutputTranscription: (text) => this.handleOutputTranscription(text),
+      onOutputTranscriptionFinished: () => this.handleOutputTranscriptionFinished(),
     };
 
     if (this.providerKey !== "gemini") {
@@ -152,9 +158,15 @@ export class SpeakerAgent {
       temperature: 0.7,
       tools: buildSpeakerToolDeclarations(config.toolConfig),
       responseModality: config.useDirectAudio ? "AUDIO" : "TEXT",
-      // Native-audio Speaker uses proactiveAudio so it can choose to stay
-      // silent on an event — the C topology depends on this.
-      proactiveAudio: config.useDirectAudio,
+      // proactiveAudio ON. Lets Speaker DECIDE whether to react to a
+      // context_injection (turnComplete=false) — required so meaningful
+      // observations (a gesture, a new person, an environmental change)
+      // can trigger a brief comment when the model judges it
+      // appropriate. The Speaker prompt's <proactive_speech> rule
+      // narrowly scopes this to keep MALFORMED_FUNCTION_CALL bursts
+      // down: stay silent for routine context, speak only when there's
+      // something genuinely worth saying.
+      proactiveAudio: true,
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
@@ -177,7 +189,11 @@ export class SpeakerAgent {
       temperature: 0.7,
       tools: buildSpeakerToolDeclarations(config.toolConfig),
       responseModality: config.useDirectAudio ? "AUDIO" : "TEXT",
-      proactiveAudio: config.useDirectAudio,
+      // See start() — proactiveAudio ON. Lets Speaker react to context
+      // injections selectively (gesture, environmental change) without
+      // forcing a turn on every one. The prompt's <proactive_speech>
+      // rule keeps this narrow.
+      proactiveAudio: true,
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
@@ -198,6 +214,7 @@ export class SpeakerAgent {
    *  composed sentence). Speaker will respond on the next turn — or
    *  choose to stay silent in native-audio mode with proactiveAudio. */
   sendUserTurn(text: string): void {
+    flowInput("SPEAKER", "user_turn", text);
     this.provider?.sendMessage(text, "user", /* turnComplete */ true);
   }
 
@@ -205,6 +222,7 @@ export class SpeakerAgent {
    *  state notes (mode changes, mute toggles, [BUILDER STATE] from
    *  the client when Speaker doesn't need to react). */
   sendContextInjection(text: string): void {
+    flowInput("SPEAKER", "context", text);
     this.provider?.sendContextInjection(text);
   }
 
@@ -225,15 +243,23 @@ export class SpeakerAgent {
     this.currentTurnTranscript = "";
     this.currentTurnHadAudio = false;
     this.speechStartEmittedThisTurn = false;
+    this.pendingSpeechTarget = undefined;
   }
 
   private maybeEmitSpeechStart(): void {
     if (this.speechStartEmittedThisTurn) return;
     this.speechStartEmittedThisTurn = true;
+    // Snapshot whatever transcript has accumulated by now. In native
+    // audio, Gemini typically emits the full outputTranscription text
+    // BEFORE the first audio chunk, so this is effectively the complete
+    // utterance. BoardManager uses it to build follow-up buttons on the
+    // speech_start trigger instead of waiting for turnComplete.
+    const transcriptSoFar = this.currentTurnTranscript.trim();
     const event: SpeechStartEvent = {
       type: "speech_start",
       source: "speaker",
       timestamp: Date.now(),
+      transcript: transcriptSoFar || undefined,
     };
     this.callbacks.onEvent(event);
   }
@@ -253,6 +279,24 @@ export class SpeakerAgent {
     if (!this.useDirectAudio) return;
     this.currentTurnTranscript += text;
     if (text.trim()) this.callbacks.onTranscriptionDelta?.(text);
+  }
+
+  /** Fires when the text portion of the model's turn is complete
+   *  (audio may still be streaming). Emit SpeechTextFinalized so the
+   *  Coordinator can kick off BoardManager with the FULL transcript
+   *  while audio is still playing out. */
+  private handleOutputTranscriptionFinished(): void {
+    if (!this.useDirectAudio) return;
+    const transcript = this.currentTurnTranscript.trim();
+    if (!transcript) return;
+    flowOutput("SPEAKER", "text_finalized", transcript);
+    const event: SpeechTextFinalizedEvent = {
+      type: "speech_text_finalized",
+      source: "speaker",
+      timestamp: Date.now(),
+      transcript,
+    };
+    this.callbacks.onEvent(event);
   }
 
   private handleOutputText(text: string): void {
@@ -275,11 +319,14 @@ export class SpeakerAgent {
     //   2. Inject [OWN_SPEECH]: <transcript> into Observer for context
     //   3. Trigger Board Manager rebuild for the follow-up surface
     if (this.useDirectAudio && this.currentTurnHadAudio) {
+      const transcript = this.currentTurnTranscript.trim();
+      flowOutput("SPEAKER", "speech", transcript || "(no transcript)");
       const event: SpeechEndEvent = {
         type: "speech_end",
         source: "speaker",
         timestamp: Date.now(),
-        transcript: this.currentTurnTranscript.trim(),
+        transcript,
+        target: this.pendingSpeechTarget ?? "USER",
       };
       this.callbacks.onEvent(event);
     }
@@ -323,6 +370,7 @@ export class SpeakerAgent {
     const now = Date.now();
     for (const call of calls) {
       try {
+        flowTool("SPEAKER", call.name || "?", JSON.stringify(call.args ?? {}));
         const events = this.parseToolCall(call, now);
         for (const event of events) {
           this.callbacks.onEvent(event);
@@ -362,17 +410,11 @@ export class SpeakerAgent {
         return [end];
       }
 
-      case "interpret": {
-        const sentence = asString(args.sentence);
-        if (!sentence) return [];
-        const event: InterpretIntentEvent = {
-          type: "interpret_intent",
-          source: "speaker",
-          timestamp: now,
-          sentence,
-        };
-        return [event];
-      }
+      // `interpret` lives on Board Manager now — Speaker doesn't have
+      // this tool declared. If the model somehow tries to call it, we
+      // ignore the call (return no events). The acknowledgement still
+      // flows back via the tool-response handler so the session doesn't
+      // hang.
 
       case "emote": {
         const emotion = asString(args.emotion) as EmoteChangeEvent["emote"] | undefined;
@@ -387,16 +429,22 @@ export class SpeakerAgent {
       }
 
       case "set_interaction_mode": {
-        const mode = asString(args.mode) as ModeChangeEvent["mode"] | undefined;
-        if (!mode || (mode !== "interact" && mode !== "assist")) return [];
-        const event: ModeChangeEvent = {
-          type: "mode_change",
-          source: "speaker",
-          timestamp: now,
-          mode,
-          reason: asString(args.reason),
-        };
-        return [event];
+        // set_interaction_mode moved to Observer (camera + mic context
+        // makes it the right judge of interact vs. assist). The tool is
+        // no longer declared on Speaker's surface, but the parser keeps
+        // a defensive case in case a stale model call shows up — drop
+        // it silently. Speaker learns the current mode from [MODE]
+        // context injections forwarded by Coordinator.
+        return [];
+      }
+
+      case "set_speech_target": {
+        // Stash for the next SpeechEnd event. Not an event itself — the
+        // target rides along on the next speech the model produces and
+        // is reset by resetTurnAccumulators() afterwards.
+        const target = asString(args.target);
+        if (target) this.pendingSpeechTarget = target;
+        return [];
       }
 
       case "open_app": {
@@ -455,6 +503,20 @@ export class SpeakerAgent {
       }
 
       case "debug_message":
+        return [];
+
+      case "rebuild_board":
+      case "add_context_button":
+      case "show_binary_choice":
+      case "no_change":
+      case "press_button":
+      case "set_board":
+      case "suggest_construction_buttons":
+      case "set_construction_memory_chips":
+      case "interpret":
+        // Legacy single-agent tools the model hallucinates from training.
+        // Speaker doesn't own the board — Board Manager does. Drop the
+        // call; Speaker's native-audio speech goes out independently.
         return [];
 
       default:

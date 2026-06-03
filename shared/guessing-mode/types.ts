@@ -70,11 +70,35 @@ export interface DimensionState {
   lastPressedTurn?: number;
 }
 
+/**
+ * An AI-proposed narrowing step the user has confirmed by pressing one of the
+ * AI's `[NARROW:<dim>] <value>` buttons. Runs on a parallel track to the
+ * registry-driven `pressed` weights — the registry engine ignores these, but
+ * they feed straight into the `[GUESSING STATE]` injection so the AI sees its
+ * own narrowing trail and can pivot when the user rejects a step.
+ */
+export interface CustomNarrowingFact {
+  /** Human-readable dimension label proposed by the AI (e.g. "genre"). */
+  dimension: string;
+  /** Human-readable value the user picked (e.g. "comedy"). */
+  value: string;
+  /** Optional speech text the button voiced — gives the AI back its own framing. */
+  sourceText?: string;
+  /** Wall-clock millis; for ordering only. Persisted into history's order. */
+  addedAt: number;
+}
+
 export interface GuessingModeState {
   category: GuessingCategory | null;
   /** Keyed by DimensionDef.id. Created lazily on first press. */
   dimensions: Record<string, DimensionState>;
-  history: Array<{ turn: number; key: string }>;
+  /**
+   * Ordered press log. Entries with `fact` are AI-proposed custom narrowing
+   * steps; entries with `key` only are registry-driven presses (`<dimId>:<value>`).
+   * The most recent entry — registry or custom — is what `rejectMostRecentFact`
+   * targets.
+   */
+  history: Array<{ turn: number; key: string; fact?: CustomNarrowingFact }>;
   /** Student's known special interests, from monitor memory (snake_case-ish). */
   specialInterests: string[];
   turnCount: number;
@@ -84,6 +108,13 @@ export interface GuessingModeState {
   expandSameDimension?: boolean;
   /** Set by a "none of these" press — next injection tells the AI the user rejected the last options. */
   justRejected?: boolean;
+  /** AI-proposed narrowing steps the user has confirmed, in order added. */
+  customFacts: CustomNarrowingFact[];
+  /**
+   * Facts (registry or custom) the user has explicitly rejected. The AI is
+   * told to NOT propose the same dimension+value again.
+   */
+  rejectedFacts: CustomNarrowingFact[];
 }
 
 /** One suggestion-registry entry. `icon` is an emoji OR a snake_case imageKey. */
@@ -109,4 +140,8 @@ export interface GuessingInjectionWire {
   text: string;
   /** Fully-formed `suggestion:<dim>:<value>` keys the AI is invited to offer. */
   suggestionKeys: string[];
+  /** AI-proposed narrowing steps the user has confirmed, in order added. */
+  customFacts: CustomNarrowingFact[];
+  /** Facts the user has explicitly rejected — AI must not re-propose these. */
+  rejectedFacts: CustomNarrowingFact[];
 }

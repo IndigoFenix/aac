@@ -95,7 +95,7 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
   const isStandbyMode =
     lastModeChange?.mode === "standby" && lastModeChange.source === "ai";
   const isAssistMode =
-    lastModeChange?.mode === "assist" && lastModeChange.source === "ai";
+    lastModeChange?.mode === "facilitator" && lastModeChange.source === "ai";
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
 
   const sleepState = attentiveness?.sleepState;

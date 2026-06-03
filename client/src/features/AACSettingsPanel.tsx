@@ -1707,6 +1707,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
 
+              {/* Musical Microbes */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🎶</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appMusicalMicrobes')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appMusicalMicrobesDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.musical_microbes?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, musical_microbes: { ...prev.musical_microbes, enabled: checked } }))
+                  }
+                />
+              </div>
+
               {/* Space Trader */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

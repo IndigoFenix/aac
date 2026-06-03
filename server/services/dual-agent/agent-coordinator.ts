@@ -58,6 +58,8 @@ import type {
   TranscribedEvent,
   ContextUpdateEvent,
   EngagementChangeEvent,
+  SpeechStartEvent,
+  SpeechTextFinalizedEvent,
   SpeechEndEvent,
   InterpretIntentEvent,
   ModeChangeEvent,
@@ -66,6 +68,7 @@ import type {
   AppCloseRequestedEvent,
   WebsiteOpenRequestedEvent,
   BoardRebuiltEvent,
+  BoardButtonAddedEvent,
   ContextButtonAddedEvent,
   BinaryChoiceShownEvent,
   BuilderSuggestedEvent,
@@ -77,11 +80,22 @@ import type { ClientMessage, ServerMessage } from "./live-relay";
 import type { AACMuteState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
 import { authenticateUpgrade } from "../realtime/ws-auth";
-import { parseBoardButtons } from "./interactive-agent";
+import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
-import { collectGlyphImageKeys } from "./board-button-validator";
+import { collectGlyphImageKeys, validateBoardButtons } from "./board-button-validator";
+import { expandSuggestionKey } from "./interactive-agent";
+import { isValidSuggestionKey } from "@shared/guessing-mode/suggestion-registry";
 import { logLiveSession, logDualAgent, runInSessionContext } from "./dual-agent-logger";
+import {
+  flowSessionStart,
+  flowSystemPrompt,
+  flowInput,
+  flowOutput,
+  flowNote,
+} from "./agent-flow-logger";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
+import { smartMergeButtons, type MergeButton } from "./board-merge";
+import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -91,15 +105,101 @@ import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 const BOARD_MANAGER_DEFAULT_PROVIDER = "gemini" as const;
 const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
 
+// ---------------------------------------------------------------------------
+// Home-board navigation intents — behavior hints attached to each home
+// button. The button press itself flows through the standard SENTENCE
+// BUTTON pipeline (TTS-voiced label, button_pressed event, target=DEVICE).
+// These hints are injected as ADDITIONAL context so each agent has the
+// right framing when the press lands.
+//
+// Keyed by the tag prefix that appears at the start of the home button's
+// `instruction` string in default-home-board.ts (e.g. "INTERACT" for
+// `[INTERACT] ...`).
+//
+// Each entry describes:
+//   - setMode:         programmatic mode set on press (or undefined when
+//                      the button doesn't change the mode)
+//   - topic:           short identifier used in logs
+//   - speakerInteract: behavioral hint for Speaker when in interact mode
+//                      ("Greet warmly", "Ask gently", etc.). Delivered as
+//                      `[HINT] ...` context BEFORE the press.
+//   - speakerAssist:   same, for assist mode. null = no hint (Speaker
+//                      stays quiet by default).
+//   - board:           topic-palette directive for BoardManager. Delivered
+//                      as a synthetic context_update on recent_events.
+// ---------------------------------------------------------------------------
+interface HomeIntent {
+  setMode?: "companion" | "facilitator";
+  topic: string;
+  /** Speaker hint when the session is in `companion` mode. */
+  speakerCompanion: string;
+  /** Speaker hint when the session is in `facilitator` mode. */
+  speakerFacilitator: string | null;
+  board: string;
+  /** When true, skip the student-voice TTS for this press AND skip
+   *  delivering it to Speaker as a user_turn. The button is a mode /
+   *  navigation signal, not something the user is "saying" — there's
+   *  nothing to voice and nothing for Speaker to reply to. Coordinator
+   *  still applies the mode change, fires speaker/board hints, and
+   *  triggers BoardManager. */
+  silent?: boolean;
+}
+const HOME_INTENTS: Record<string, HomeIntent> = {
+  INTERACT: {
+    setMode: "companion",
+    topic: "open conversation",
+    speakerCompanion: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
+    speakerFacilitator: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
+    board: "Topic palette: open-conversation starters — general topics the user might pick from (their interests, their day, their feelings, things they might want to ask you).",
+  },
+  ASSIST: {
+    setMode: "facilitator",
+    topic: "talking to someone else",
+    speakerCompanion: "The user is now talking to someone else, not you. Stay quiet.",
+    speakerFacilitator: "The user is talking to someone else. Stay quiet.",
+    silent: true,
+    board: "Topic palette: conversation starters and replies for the user to say to a person in their environment. Mix GENERIC openers (greetings, 'how are you?', 'I want to tell you something', 'what's up?', 'can I ask you a question?') with CONTEXT-SPECIFIC starters derived from <recent_events> (people present, objects observed, ongoing activities, recent transcripts). Lead with the context-specific ones when there's clear context to build on — they're more useful than generic phrases. The user is initiating a conversation with someone real in the room; pick buttons that help them OPEN that exchange.",
+  },
+  "MY DAY": {
+    topic: "my day",
+    speakerCompanion: "The user wants to talk about their day. Ask an open question about what happened today.",
+    speakerFacilitator: null,
+    board: "Topic palette: today's activities — morning routine, school, lunch, afternoon, evening, plus 'something good happened', 'something hard happened', 'nothing special'.",
+  },
+  INTERESTS: {
+    topic: "interests",
+    speakerCompanion: "The user wants to talk about their interests. Mention one you remember and ask them about it.",
+    speakerFacilitator: null,
+    board: "Topic palette: the user's known interests / hobbies / favorite topics from memory. If memory is thin, offer broad categories the user can pick from.",
+  },
+  FEELINGS: {
+    topic: "feelings",
+    speakerCompanion: "The user wants to talk about how they feel. Ask them gently.",
+    speakerFacilitator: null,
+    board: "Topic palette: emotions — happy, sad, tired, excited, angry, scared, bored, frustrated, calm. Include 'I want to talk about something else'.",
+  },
+  HELP: {
+    topic: "help",
+    speakerCompanion: "The user pressed Help. Ask what they need.",
+    speakerFacilitator: "The user pressed Help while in facilitator mode. Briefly say to the person nearby: they need something.",
+    board: "Topic palette: common needs — I need help, I'm hurt, I need the bathroom, I'm hungry, I'm thirsty, I'm cold, I'm hot, please call someone.",
+  },
+};
+
 const DEBOUNCE_CONTEXT_UPDATE_MS = 400;
 const DEBOUNCE_MONITOR_CALL_MS = 30_000;
-const MIC_MUTE_TAIL_MS = 300;
 const RECENT_EVENTS_WINDOW = 20;
 /** How many conversational events accumulate before a rolling session
  *  summary refresh is triggered. Mirrors LiveRelay's threshold. */
 const SUMMARY_EVERY_N_MESSAGES = 20;
 
-// Compression-window thresholds per profile (mirror LiveRelay).
+// Compression-window thresholds per profile. These are the main cost
+// lever for long quiet sessions: Live bills the FULL running context on
+// every turn, and non-text input (audio + image frames at $3/M tokens)
+// dominates that cost. Tighter resting thresholds keep Observer's context
+// at ~6–12k during quiet stretches instead of ~15–30k, ~2.5× cheaper per
+// turn. Speaker is closed entirely in resting (saves the whole second
+// session), so its thresholds only apply when awake.
 const AWAKE_COMPRESSION_TRIGGER = 30_000;
 const AWAKE_COMPRESSION_TARGET = 15_000;
 const RESTING_COMPRESSION_TRIGGER = 12_000;
@@ -132,6 +232,46 @@ function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
 }
 
 /**
+ * Render a brief, log-friendly summary of an incoming client WS message.
+ * Used only for flow-log visibility — pulls out the salient field(s) from
+ * each message type so a one-line entry tells the operator what the press
+ * carried. Falls back to "(no payload)" for types with no useful detail.
+ */
+function clientMsgSummary(msg: ClientMessage): string {
+  switch (msg.type) {
+    case "button_press": {
+      const labels = msg.buttons?.join(", ") ?? "";
+      const first = msg.buttons?.[0] ?? "";
+      const sentence = (msg.sentences && first && msg.sentences[first] !== first)
+        ? ` → "${msg.sentences[first]}"` : "";
+      return `buttons=[${labels}]${sentence}`;
+    }
+    case "board_exit":
+      return `label="${msg.label}" instruction="${(msg.instruction || "").slice(0, 80)}${(msg.instruction || "").length > 80 ? "…" : ""}"`;
+    case "glyph_press":
+      return `glyph="${msg.glyph}"`;
+    case "guessing_state":
+      return `keys=[${msg.suggestionKeys?.join(", ") ?? ""}] custom=${msg.customFacts?.length ?? 0} rejected=${msg.rejectedFacts?.length ?? 0}${msg.origin ? ` origin=${msg.origin}` : ""}`;
+    case "exit_guessing":
+      return `reason="${msg.reason || ""}"`;
+    case "construction_state":
+      return `category=${(msg.data as any)?.category ?? "?"} partial="${(msg.data as any)?.partial ?? ""}"`;
+    case "set_mute_state":
+      return `mute=${msg.muteState}`;
+    case "set_paused":
+      return `paused=${msg.paused}`;
+    case "user_message":
+      return `text="${msg.text.slice(0, 80)}${msg.text.length > 80 ? "…" : ""}"`;
+    case "context_injection":
+      return `text="${msg.text.slice(0, 80)}${msg.text.length > 80 ? "…" : ""}"`;
+    case "initialize":
+      return `student=${msg.studentId}${msg.sessionId ? ` session=${msg.sessionId}` : ""}`;
+    default:
+      return "(no payload)";
+  }
+}
+
+/**
  * Wrap a list of board buttons into the full board IR the client expects
  * — grid + single "Main" page + per-button row/col/action/style. Mirrors
  * LiveRelay.buildBoardFromButtons so the new path's `set_board`/`board`
@@ -149,8 +289,10 @@ function buildBoardFromButtons(
     glyphFallback?: string;
     rowSpan?: number;
     colSpan?: number;
-    buttonType?: "guess" | "category" | "suggestion";
+    buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
     suggestionKey?: string;
+    narrowDimension?: string;
+    narrowValue?: string;
   }>,
 ): unknown {
   const pageId = `page-${Date.now()}`;
@@ -168,6 +310,8 @@ function buildBoardFromButtons(
         ...(b.sentence ? { sentence: b.sentence } : {}),
         ...(b.buttonType ? { buttonType: b.buttonType } : {}),
         ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
+        ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
+        ...(b.narrowValue ? { narrowValue: b.narrowValue } : {}),
         ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
         ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
         row: Math.floor(i / cols),
@@ -199,10 +343,21 @@ interface BuilderState {
   payloadTarget?: { slotIndex: number; host: string };
 }
 
+interface GuessingNarrowingFact {
+  dimension: string;
+  value: string;
+  sourceText?: string;
+  addedAt: number;
+}
+
 interface GuessingState {
   dimension: string;
   offeredKeys: string[];
   questionHint: string;
+  /** AI-proposed narrowing steps the user has confirmed (parallel track to registry). */
+  customFacts: GuessingNarrowingFact[];
+  /** Facts (registry or custom) the user explicitly rejected — must not be re-proposed. */
+  rejectedFacts: GuessingNarrowingFact[];
 }
 
 // ---------------------------------------------------------------------------
@@ -237,12 +392,25 @@ export class AgentCoordinator {
   private observerModel = "";
   private speakerModel = "";
   private useVertex = false;
+  /** Cached provider key from settingsRepository — needed by createSpeakerAgent
+   *  to bind onUsage outside of the original start() closure. */
+  private aacChatProvider: string = "gemini";
   private useDirectAudio = true;
   private aiVoiceName: string | undefined;
   private debugMode = false;
   /** Current session profile — drives the tool set + compression on the
    *  two Live agents. Toggled by Observer's rest()/wake_up() events. */
   private sessionProfile: "awake" | "resting" = "awake";
+
+  /** Deferred-rest mechanism. Observer's `rest()` is a REQUEST, not an
+   *  immediate command — we only honor it when the user has been
+   *  conversation-inactive for REST_DEBOUNCE_MS. A button press,
+   *  composed sentence, USER-or-DEVICE-targeted transcript, or
+   *  Speaker utterance is "conversation activity" and resets the
+   *  timer + clears any pending rest. */
+  private static readonly REST_DEBOUNCE_MS = 60_000;
+  private lastEngagementActivityAt = Date.now();
+  private pendingRestTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Voice routing (fallback Speaker + student-interpret paths)
   private aiVoice: ResolvedVoice | null = null;
@@ -256,19 +424,56 @@ export class AgentCoordinator {
    *  forward frames/audio to Observer. */
   private paused = false;
 
+  /** Coordinator-owned interaction mode. Speaker emits the change via
+   *  set_interaction_mode, but the source of truth lives here so it
+   *  survives profile transitions (awake ↔ resting reconnect both Live
+   *  agents with fresh prompts; without persistence the mode would
+   *  default to whatever the new prompt's defaults imply). Re-broadcast
+   *  to all three agents at the end of every wake transition. */
+  private currentInteractionMode: "companion" | "facilitator" = "companion";
+
+  /** Cached AI name from this session's settings, used for DEVICE
+   *  identity matching in transcripts. */
+  private aiName: string | undefined;
+  /** Cached active-student first-name; treated as a synonym for USER in
+   *  transcript speaker/target comparisons. */
+  private currentStudentName: string | undefined;
+
+  /** Default target the BoardManager's next rebuild applies to its
+   *  buttons. Updated by routeBoardRebuilt (carries through to
+   *  ButtonPressedEvent.target on the next press). */
+  private currentBoardTarget: string = "DEVICE";
+
   /** Counters for periodic flow-confirmation logging. */
   private frameCount = 0;
   private pcmCount = 0;
 
-  // Echo suppression
-  private speakerSpeaking = false;
-  private micMuteReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  // Echo suppression is prompt-side only — Observer's <transcription>
+  // section tells it to ignore device-speaker playback (button-press TTS
+  // + Speaker's own voice), and we inject [OWN_SPEECH] / [BUTTON PRESS]
+  // context so it knows which audio to disregard. No hard mic mute; the
+  // single-agent system relied on the same prompt-side mechanism and it
+  // worked reliably.
 
   /** Buffer for Speaker native-audio chunks. Raw PCM (base64) — flushed
    *  as a single WAV every 250ms (or on SpeechEnd). Mirrors the legacy
    *  LiveRelay's directAudioChunks/flushDirectAudio pattern. */
   private speakerAudioChunks: string[] = [];
   private speakerAudioFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Cancellation handle for the in-flight student-voice TTS stream.
+   *  A new press / interpret aborts the previous and tells the client
+   *  to clear any queued utterance audio so the SENTENCE plays once. */
+  private studentTtsAbortController: AbortController | null = null;
+
+  /** Type of the most recent user input. interpret() is only valid
+   *  immediately after a sentence_composed turn; the tool description
+   *  says so but native audio doesn't always honor it. We gate
+   *  interpret_intent server-side so a stray call on a button press
+   *  doesn't fire a second student-TTS for the same SENTENCE. Reset
+   *  to "none" once consumed (after interpret runs) so a duplicate
+   *  interpret on the same composed turn is also blocked. */
+  private lastUserInputType: "button_pressed" | "sentence_composed" | "transcribed" | "none" = "none";
 
   // Debouncing
   private contextUpdateBuffer: ContextUpdateEvent[] = [];
@@ -282,12 +487,46 @@ export class AgentCoordinator {
   // per session — chained instead).
   private boardMgrInFlight = false;
   private boardMgrPendingTriggers: AgentEvent[] = [];
+  /**
+   * Deferred press-triggered BoardManager invocation. When the user presses
+   * a button addressed to DEVICE, Speaker will reply within ~2s and
+   * speech_text_finalized supersedes the press for the board rebuild —
+   * running FOLLOW-UPS first and REPLIES second wastes ~4s of latency
+   * AND doubles MALFORMED exposure. We defer the press invocation and let
+   * speech_text_finalized cancel it. If Speaker doesn't reply (mute mode,
+   * MALFORMED, etc.) within DEFERRED_BM_PRESS_MS, the timer fires and BM
+   * builds FOLLOW-UPS as a fallback so the user isn't stranded.
+   */
+  private deferredBoardMgrTrigger: AgentEvent | null = null;
+  private deferredBoardMgrTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly DEFERRED_BM_PRESS_MS = 4_000;
+
+  /** Validator-error feedback to fold into the NEXT BoardManager
+   *  invocation's prompt. When set, the next invoke uses this as a
+   *  retry context so the model can correct the rejected buttons.
+   *  Cleared after delivery; bounded by `boardMgrRetryAttempt` so a
+   *  pathological input can't loop forever. */
+  private boardMgrPendingFeedback: string | null = null;
+  private boardMgrRetryAttempt = 0;
+  private static readonly BOARD_MGR_MAX_RETRIES = 1;
 
   // Recent events window — feeds BoardMgr invocations for continuity.
   private recentEvents: AgentEvent[] = [];
 
   // State mirrors (so each BoardMgr invocation has a snapshot)
   private currentBoardLabels: string[] = [];
+  /**
+   * Full button objects of the current MAIN board. Tracked alongside
+   * `currentBoardLabels` so `add_board_button` can run `smartMergeButtons`
+   * against the real button shapes (not just labels) — preserves slot
+   * positions for the client's animation and matches incoming buttons
+   * against existing ones by glyph/sentence overlap, not just label.
+   */
+  private currentBoardButtons: MergeButton[] = [];
+  /** Max buttons on the main board. Mirrors maxBoardItems on the
+   *  BoardManager tool config; kept here so add_board_button merge has
+   *  a single source of truth. */
+  private static readonly MAIN_BOARD_MAX = 8;
   private contextSidebarLabels: string[] = [];
   private loadedBoardId: string | null = null;
   private builderState: BuilderState | null = null;
@@ -370,10 +609,27 @@ export class AgentCoordinator {
     this.state = "closing";
 
     // Clear timers
-    if (this.micMuteReleaseTimer) clearTimeout(this.micMuteReleaseTimer);
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     if (this.monitorCallDedupTimer) clearTimeout(this.monitorCallDedupTimer);
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
+    if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
+    if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
+    // Cancel any in-flight student TTS so the synthesizeStream loop
+    // exits promptly instead of pushing chunks at a dead WebSocket.
+    if (this.studentTtsAbortController) {
+      this.studentTtsAbortController.abort();
+      this.studentTtsAbortController = null;
+    }
+
+    // Final Monitor flush — push a [SESSION_CLOSED] directive into
+    // pendingMessages and force-trigger Monitor so it summarizes the
+    // session and consolidates Student_Notes before we lose the
+    // conversation. Fire-and-forget; the Monitor pipeline reads from
+    // the DB so it doesn't depend on the Live agents staying open.
+    // Mirrors legacy LiveRelay.handleSessionClose.
+    this.runFinalMonitorPass().catch(err => {
+      console.error("[AgentCoordinator] Final monitor pass failed:", err);
+    });
 
     // Close agents
     try { this.observer?.close(); } catch {}
@@ -390,6 +646,41 @@ export class AgentCoordinator {
     this.state = "closed";
   }
 
+  /**
+   * On session close: queue a final directive and force-fire Monitor so
+   * the session ends with a clean summary + deduped Student_Notes.
+   * Mirrors legacy LiveRelay.handleSessionClose.
+   *
+   * Skipped when the session's privacy options disable notes — we don't
+   * write any persistent observations in that mode.
+   */
+  private async runFinalMonitorPass(): Promise<void> {
+    if (!this.sessionId) return;
+    const cache = dualAgentService.getSessionCache(this.sessionId);
+    if (cache?.state?.privacyOptions?.allowNotes === false) {
+      flowNote("MONITOR", "Final pass skipped — allowNotes=false");
+      return;
+    }
+
+    flowNote("MONITOR", "Session closed — queueing final directive and forcing Monitor.");
+    await dualAgentService.addPendingMessage(this.sessionId, {
+      role: "user",
+      content: `[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:
+1. Summarize the session — note anything significant that happened.
+2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.`,
+      timestamp: Date.now(),
+    });
+    await dualAgentService.triggerMonitor(this.sessionId, /* force */ true);
+
+    // Populate the generic session summary/title/importance used by
+    // deep-analysis search. Runs after the Monitor pass so any final
+    // Student_Notes updates are already persisted.
+    const sessionId = this.sessionId;
+    import("../sessionSummary").then(({ generateSessionSummaryAsync }) => {
+      generateSessionSummaryAsync(sessionId);
+    }).catch(() => {});
+  }
+
   // -------------------------------------------------------------------------
   // Raw WS message ingest
   // -------------------------------------------------------------------------
@@ -402,13 +693,40 @@ export class AgentCoordinator {
       console.warn("[AgentCoordinator] malformed WS message:", (err as Error).message);
       return;
     }
-    this.handleClientMessage(msg).catch(err => {
-      console.error("[AgentCoordinator] handleClientMessage error:", err);
-      this.sendError(`internal error: ${(err as Error).message}`);
+    // Wrap the message handler in a session-scoped context so every
+    // flow-logger call (and any nested async work) gets its session_debug_logs
+    // row attributed to this session. AsyncLocalStorage propagates through
+    // awaits + EventEmitter listeners registered inside, so events from the
+    // Observer/Speaker that arrive later inherit the context too.
+    this.withSessionContext(() => {
+      this.handleClientMessage(msg).catch(err => {
+        console.error("[AgentCoordinator] handleClientMessage error:", err);
+        this.sendError(`internal error: ${(err as Error).message}`);
+      });
     });
   }
 
+  /**
+   * Run `fn` inside a session-scoped AsyncLocalStorage context, so the
+   * shared flow-logger / live-session-logger know which session their
+   * entries belong to. Sessions before initialize() ran (no sessionId
+   * yet) bind with "?" so logs still get attributed somewhere stable.
+   */
+  private withSessionContext<T>(fn: () => T): T {
+    return runInSessionContext(this.sessionId || "?", this.debugMode, fn);
+  }
+
   private async handleClientMessage(msg: ClientMessage): Promise<void> {
+    // High-signal client-message visibility — every non-streaming press /
+    // navigation / state event gets surfaced in the flow log so "did the
+    // press even reach the server?" can be answered by reading the log.
+    // Excludes the high-volume streaming types (frame_grid, pcm_audio) —
+    // those have their own periodic sampling counters below.
+    if (msg.type !== "frame_grid" && msg.type !== "pcm_audio") {
+      const summary = clientMsgSummary(msg);
+      flowInput("CLIENT", msg.type, summary);
+    }
+
     switch (msg.type) {
       case "initialize":
         await this.handleInitialize(msg);
@@ -430,7 +748,7 @@ export class AgentCoordinator {
         this.pcmCount += 1;
         if (this.pcmCount === 1 || this.pcmCount % 500 === 0) {
           runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-            logLiveSession("CLIENT → pcm_audio", `count=${this.pcmCount} micMutedByEcho=${this.speakerSpeaking}`);
+            logLiveSession("CLIENT → pcm_audio", `count=${this.pcmCount}`);
           });
         }
         return;
@@ -453,22 +771,29 @@ export class AgentCoordinator {
         // Legacy non-PCM paths — ignore in live mode.
         return;
       case "button_press":
-        this.handleButtonPress(msg);
+        await this.handleButtonPress(msg);
         return;
       case "board_exit":
         this.handleBoardExit(msg);
         return;
       case "glyph_press":
-        // Sentence builder glyph press — same fan-out shape as a regular
-        // button press; client also sends an explicit sentence_composed
-        // separately on the Play action.
+        // The client sends `glyph_press` when the user presses Play in
+        // the sentence builder — the glyph IS the composed sentence,
+        // ready for BoardManager to interpret() into natural language.
+        // This must emit a `sentence_composed` event (not button_pressed):
+        // the interpret-intent gate in routeInterpretIntent requires
+        // lastUserInputType === "sentence_composed", and a button_pressed
+        // event would cause every interpret() call from BoardManager to
+        // be rejected as "spurious."
+        //
+        // Split the glyph string on '+' to recover the individual GLYPHs;
+        // the field is informational (sentence is the canonical payload).
         this.emitClientEvent({
-          type: "button_pressed",
+          type: "sentence_composed",
           source: "client",
           timestamp: Date.now(),
-          label: msg.glyph,
+          glyphs: msg.glyph.split("+").map(s => s.trim()).filter(Boolean),
           sentence: msg.glyph,
-          glyph: msg.glyph,
         });
         return;
       case "construction_state":
@@ -476,6 +801,12 @@ export class AgentCoordinator {
         return;
       case "guessing_state":
         this.handleGuessingState(msg);
+        return;
+      case "exit_guessing":
+        // Single client-initiated exit path for the Word Finder. Replaces
+        // the older [EXIT GUESSING]-tagged board_exit kludge (which also
+        // emitted a spurious "Back" button_pressed event downstream).
+        this.clearGuessingState(`client_exit:${msg.reason || "user_request"}`);
         return;
       case "builder_open":
         this.builderState = null; // cleared until first construction_state arrives
@@ -487,6 +818,8 @@ export class AgentCoordinator {
         return;
       case "builder_close":
         this.builderState = null;
+        // Closing the builder also ends any in-progress word finder.
+        this.clearGuessingState("builder_close");
         this.emitClientEvent({
           type: "builder_closed",
           source: "client",
@@ -561,6 +894,7 @@ export class AgentCoordinator {
     this.observerModel = process.env.AAC_OBSERVER_MODEL || aacChat.model;
     this.speakerModel = process.env.AAC_SPEAKER_MODEL || aacChat.model;
     this.useVertex = aacChat.provider === "gemini";
+    this.aacChatProvider = aacChat.provider;
     // useDirectAudio is true when the SPEAKER's configured Live model is
     // native-audio. Observer never produces audio anyway.
     this.useDirectAudio = this.speakerModel.includes("native-audio") || this.speakerModel.includes("live");
@@ -627,15 +961,7 @@ export class AgentCoordinator {
       onClose: () => console.log("[AgentCoordinator] Observer closed"),
       onUsage: (usage) => this.trackLiveUsage("observer", aacChat.provider, this.observerModel, usage),
     });
-    this.speaker = new SpeakerAgent("gemini", {
-      onEvent: (e) => this.onSpeakerEvent(e),
-      onAudioChunk: (data) => this.onSpeakerAudioChunk(data),
-      onTranscriptionDelta: (text) => this.onSpeakerTranscriptionDelta(text),
-      onSpeakText: (text) => this.onSpeakerSpeakText(text),
-      onError: (err) => console.error("[AgentCoordinator] Speaker error:", err),
-      onClose: () => console.log("[AgentCoordinator] Speaker closed"),
-      onUsage: (usage) => this.trackLiveUsage("speaker", aacChat.provider, this.speakerModel, usage),
-    });
+    this.speaker = this.createSpeakerAgent();
     this.boardManager = new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER);
 
     // 7. Connect Observer + Speaker in parallel. If either fails, tear down.
@@ -678,6 +1004,26 @@ export class AgentCoordinator {
     this.observer.setDebugSessionContext(this.sessionId, this.debugMode);
     this.speaker.setDebugSessionContext(this.sessionId, this.debugMode);
 
+    // 7c. Prime Speaker with the initial interaction mode. Without this,
+    //     Speaker has no signal about which mode it's in until Observer
+    //     fires set_interaction_mode mid-session — and the
+    //     transitionToProfile re-broadcast only fires on wake, not at
+    //     fresh start. Default mode is `companion`; the injection here
+    //     keeps Speaker aligned from turn one.
+    flowNote("COORDINATOR", `Initial mode = ${this.currentInteractionMode}`);
+    const initialModeRendered = `[MODE] ${this.currentInteractionMode} (session start)`;
+    this.speaker.sendContextInjection(initialModeRendered);
+    this.observer.sendContextInjection(initialModeRendered);
+
+    // 7d. Reset the rest debounce window now that the session is actually
+    //     ready. The class-field initializer set lastEngagementActivityAt
+    //     at Coordinator construction time, which can be several seconds
+    //     before agents finish connecting — so Observer's very first
+    //     rest() call after coming online sees a depleted window and the
+    //     session drops to resting almost immediately. Reset here so the
+    //     user gets a fresh full 60s before the first rest is considered.
+    this.noteEngagementActivity();
+
     // 7b. Log session start. Wrap in runInSessionContext so the
     //     SESSION START / SYSTEM PROMPT / TOOL DECLARATIONS entries get
     //     DB-attributed when debugMode is on.
@@ -696,6 +1042,19 @@ export class AgentCoordinator {
       logLiveSession("SPEAKER PROMPT", speakerPrompt);
       logLiveSession("BOARD MANAGER PROMPT", boardManagerPrompt);
     });
+
+    // High-signal flow log (separate from the verbose live-session log).
+    const studentRow = sessionCache?.monitorAgent.getStudent?.();
+    flowSessionStart(this.sessionId, {
+      studentName: studentRow?.firstName || studentRow?.name?.split(" ")[0],
+      observerModel: this.observerModel,
+      speakerModel: this.speakerModel,
+      boardMgrModel: BOARD_MANAGER_DEFAULT_MODEL,
+      useDirectAudio: this.useDirectAudio,
+    });
+    flowSystemPrompt("OBSERVER", observerPrompt);
+    flowSystemPrompt("SPEAKER", speakerPrompt);
+    flowSystemPrompt("BOARD_MGR", boardManagerPrompt);
 
     // 8. Announce ready to client.
     this.state = "ready";
@@ -789,6 +1148,11 @@ export class AgentCoordinator {
     const studentName = student?.firstName || student?.name?.split(" ")[0] || "the user";
     const language = student?.primaryLanguage || undefined;
     const sections = state.enhancedSections;
+    const aiName = student?.aacSettings?.aiName || undefined;
+
+    // Cache for downstream speech-party comparisons (routeTranscribed, etc.)
+    this.currentStudentName = studentName;
+    this.aiName = aiName;
 
     const base = {
       studentName,
@@ -796,7 +1160,7 @@ export class AgentCoordinator {
       studentAge: undefined as string | undefined,
       studentGender: (student as any)?.gender,
       studentDiagnosis: state.cachedDiagnosis || undefined,
-      aiName: student?.aacSettings?.aiName || undefined,
+      aiName,
       knownContacts: state.cachedContacts,
       classroom: undefined as any, // classroom plumbing wired in a follow-up
       gestureOverrides: sections?.gestureOverrides,
@@ -816,9 +1180,15 @@ export class AgentCoordinator {
         muteState: state.muteState,
         useDirectAudio: this.useDirectAudio,
         sessionGoals: sections?.sessionGoals,
-        interactModeExamples: sections?.interactModeExamples,
-        assistModeExamples: sections?.assistModeExamples,
-        sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+        // Three-agent path uses speech-only examples; DON'T fall back to
+        // the legacy interactModeExamples (those contain rebuild_board
+        // calls Speaker doesn't have). When the enhancer hasn't been
+        // re-run, buildSpeakerPrompt falls back to the static
+        // speaker.interact_dialogue / speaker.assist_dialogue examples.
+        interactModeExamples: sections?.speakerInteractExamples,
+        assistModeExamples: sections?.speakerAssistExamples,
+        // sentenceInterpretationExamples moved to Board Manager along
+        // with the interpret() tool — Speaker no longer needs it.
         sessionSummary: state.sessionSummary,
         availableBoards: state.availableBoards?.map(b => ({ key: b.key, name: b.name, hint: b.hint })),
       },
@@ -833,6 +1203,7 @@ export class AgentCoordinator {
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
         boardManagerGuidance: sections?.boardManagerGuidance,
         sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
+        boardManagerExamples: sections?.boardManagerExamples,
       },
     };
   }
@@ -841,11 +1212,73 @@ export class AgentCoordinator {
   // Client → bus
   // -------------------------------------------------------------------------
 
-  private handleButtonPress(msg: Extract<ClientMessage, { type: "button_press" }>): void {
-    // Client packs button presses as an array of labels with an optional
-    // sentences map. For routing we treat each as one event.
+  private async handleButtonPress(msg: Extract<ClientMessage, { type: "button_press" }>): Promise<void> {
     const label = msg.buttons[0] || "";
     const sentence = msg.sentences?.[label] || label;
+
+    // 0. Stamp engagement activity IMMEDIATELY on arrival. The press is
+    //    real user activity the moment it lands on the server. Without
+    //    this, a pending rest timer can fire during the ~2-3s TTS
+    //    streaming await below — the press is honored later, but the
+    //    session has already dropped to resting in the meantime,
+    //    triggering a needless wake cycle (and possible MALFORMED on
+    //    the freshly-rebuilt Speaker). emitClientEvent later in this
+    //    handler also calls noteEngagementActivity, but that's gated
+    //    behind the await; we need the timer cancellation NOW.
+    this.noteEngagementActivity();
+
+    // 0a. "More" button — the user wants more options on the current
+    //     board, NOT to say "[MORE]" aloud or to trigger a conversational
+    //     beat. Skip TTS, skip Speaker user_turn, and just kick
+    //     BoardManager with a "give me more options" hint. The hint
+    //     rides in on recentEvents as a synthetic context_update so
+    //     BoardManager's next invocation sees the intent.
+    if (label === "[MORE]") {
+      if (this.sessionProfile === "resting") {
+        flowNote("COORDINATOR", "[MORE] arrived while resting — waking before invoking BoardManager.");
+        await this.transitionToProfile("awake");
+      }
+      const moreHint: ContextUpdateEvent = {
+        type: "context_update",
+        source: "observer",
+        timestamp: Date.now(),
+        updateType: "other",
+        key: "more_options_requested",
+        description: "The user pressed More — they couldn't find the right button on the current board. Call add_board_button or rebuild_board with FRESH alternative options (different angles on the same topic, related but not previously offered). Do NOT speak; this is a board-only request.",
+      };
+      this.recordEvent(moreHint);
+      // Tell Speaker silently so it knows the press happened but does
+      // not respond — this is not a conversational turn.
+      this.speaker?.sendContextInjection(`[MORE] The user pressed More — they want more button options. Do NOT speak; let BoardManager refresh the surface.`);
+      flowNote("COORDINATOR", `[MORE] pressed — BoardManager invoked, no TTS, no Speaker user_turn.`);
+      void this.invokeBoardManager([moreHint]);
+      return;
+    }
+
+    // 1. Surface the utterance to the client UI immediately (clears
+    //    previous text). noAudioClear=false matches the legacy contract.
+    //    NOTE: this message is for UI display only — it carries text,
+    //    not audio. If the client TTSes this text locally in addition
+    //    to playing the streamed utterance_audio, we'd hear the SENTENCE
+    //    twice. The flow log below makes the send visible so the source
+    //    of any doubling is traceable.
+    if (sentence) {
+      flowOutput("COORDINATOR", "ws_send_utterance", sentence);
+      this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
+    }
+
+    // 2. Stream the student-voice TTS AND WAIT for it to finish before
+    //    delivering the press to Speaker. Without the await, the AI's
+    //    response audio sometimes lands before the student voice has
+    //    finished playing on the client — the press feels skipped.
+    //    The await covers server-side stream completion; the client
+    //    plays the audio out a beat later, but at this point the audio
+    //    chunks have arrived in order ahead of Speaker's reply.
+    if (sentence) {
+      try { await this.streamStudentTts(sentence, "button_press"); } catch { /* logged inside */ }
+    }
+
+    // 3. Route the event so Observer / Speaker / Board Manager all see it.
     this.emitClientEvent({
       type: "button_pressed",
       source: "client",
@@ -867,6 +1300,30 @@ export class AgentCoordinator {
    * AI roundtrip so the user always gets back to the menu instantly.
    */
   private handleBoardExit(msg: Extract<ClientMessage, { type: "board_exit" }>): void {
+    // Hoist the wake-gate: ANY board-exit press while resting wakes the
+    // session before downstream routing. The downstream paths
+    // (routeHomeTopicPress, emitClientEvent) each have their own wake
+    // checks, but they only fire on specific event shapes — a press
+    // that takes the "reload home" fast-path below or the fallback
+    // generic-press path would otherwise miss the wake. Doing it here
+    // covers every menu-button press uniformly.
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `Board exit "${msg.label}" arrived while resting; waking before routing.`);
+      void this.transitionToProfile("awake").then(() => this.handleBoardExitInner(msg));
+      return;
+    }
+    this.handleBoardExitInner(msg);
+  }
+
+  private handleBoardExitInner(msg: Extract<ClientMessage, { type: "board_exit" }>): void {
+    // Client signals an explicit word-finder cancel via an EXIT GUESSING
+    // tag on the instruction. Clear server-side guessingState before
+    // routing, so BoardManager's next invocation doesn't keep producing
+    // suggestion-keyed buttons.
+    if (msg.instruction?.includes("[EXIT GUESSING]")) {
+      this.clearGuessingState("board_exit_tag");
+    }
+
     const isHomePress = msg.label === "Home" ||
       (msg.instruction && /set_board\(["']home["']\)|load.*home board/i.test(msg.instruction));
 
@@ -892,17 +1349,130 @@ export class AgentCoordinator {
       return;
     }
 
-    // Non-home exits: treat as a button press with the AI-directed
-    // instruction as the SENTENCE. The home buttons' instructions are
-    // tagged ([INTERACT], [ASSIST], [BUILD], etc.) which gives Speaker
-    // enough context to respond + Board Manager enough context to
-    // produce the appropriate board.
+    // Home-board navigation presses carry a tag prefix on their
+    // instruction (`[INTERACT] ...`, `[FEELINGS] ...`, etc.). Each tag
+    // maps to a HOME_INTENTS entry: an optional mode-set + per-agent
+    // behavior hints. The press itself is routed exactly like any other
+    // SENTENCE BUTTON tap (TTS-voiced label + button_pressed event); the
+    // hints are injected as ADDITIONAL context so each agent has the
+    // right framing when the press lands.
+    const tagMatch = (msg.instruction ?? "").match(/^\[([A-Z ]+)\]/);
+    const tag = tagMatch?.[1]?.trim();
+    if (tag && this.routeHomeTopicPress(tag, msg.label)) return;
+
+    // Fallback: any other exit-button press (custom boards, etc.) goes
+    // through the normal button-press flow with the raw instruction.
     this.emitClientEvent({
       type: "button_pressed",
       source: "client",
       timestamp: Date.now(),
       label: msg.label,
       sentence: msg.instruction || msg.label,
+    });
+  }
+
+  /**
+   * Home-board navigation press: same downstream flow as a regular
+   * SENTENCE BUTTON tap (TTS-voice the label, then emit a button_pressed
+   * event), plus the HOME_INTENTS entry's behavior hints fed to Speaker
+   * and BoardManager as context. Returns true on a recognized tag.
+   */
+  private routeHomeTopicPress(tag: string, label: string): boolean {
+    const intent = HOME_INTENTS[tag];
+    if (!intent) return false;
+
+    // Wake the session before any per-agent routing — same reason as
+    // the gate in emitClientEvent. Otherwise the press lands on resting
+    // Speaker and gets swallowed.
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `Home press ${tag} arrived while resting; waking before routing.`);
+      void this.transitionToProfile("awake").then(() => this.routeHomeTopicPressInner(intent, label));
+      return true;
+    }
+    void this.routeHomeTopicPressInner(intent, label);
+    return true;
+  }
+
+  private async routeHomeTopicPressInner(intent: HomeIntent, label: string): Promise<void> {
+    // Mode set: programmatically switch BEFORE routing so downstream
+    // hints see the new mode. We bypass Speaker's set_interaction_mode
+    // tool — this came from the user, not the AI.
+    if (intent.setMode && this.currentInteractionMode !== intent.setMode) {
+      this.routeModeChange({
+        type: "mode_change",
+        source: "observer",
+        timestamp: Date.now(),
+        mode: intent.setMode,
+        reason: "User pressed home-board navigation.",
+      });
+    }
+    const effectiveMode = intent.setMode ?? this.currentInteractionMode;
+
+    // Inject behavior hints BEFORE the press lands so each agent has the
+    // framing when they process the button_pressed event. Speaker gets a
+    // behavioral hint; BoardManager gets a topic-palette directive that
+    // rides in via a context_update entry on the recent-events trail.
+    const speakerHint = effectiveMode === "companion"
+      ? intent.speakerCompanion
+      : intent.speakerFacilitator;
+    if (speakerHint) {
+      this.speaker?.sendContextInjection(`[HINT] ${speakerHint}`);
+    }
+    const boardHint: ContextUpdateEvent = {
+      type: "context_update",
+      source: "observer",
+      timestamp: Date.now(),
+      updateType: "other",
+      key: "topic_palette",
+      description: intent.board,
+    };
+    this.recordEvent(boardHint);
+
+    if (intent.silent) {
+      // Silent home press — the button is a navigation/mode signal, not
+      // a user utterance. Skip the student-voice TTS and the
+      // [BUTTON PRESS to YOU] route to Speaker entirely. The mode change,
+      // speaker hint, and board hint above are the whole effect; trigger
+      // BoardManager directly so the new surface arrives without
+      // needing a press event to ride on. We DO note engagement
+      // activity so the rest debounce resets.
+      this.noteEngagementActivity();
+      flowNote("COORDINATOR", `Silent home press "${label}" — no TTS, BoardManager invoked directly.`);
+      void this.invokeBoardManager([]);
+      return;
+    }
+
+    // Now emit the press through the normal flow: this voices the label
+    // via TTS (so the room hears it the way any SENTENCE BUTTON would)
+    // AND emits button_pressed, which routes through emitClientEvent ->
+    // routeClientEvent like a regular tap. Target defaults to DEVICE so
+    // Speaker sees `[BUTTON PRESS → YOU] "<label>"` and replies.
+    await this.handleSyntheticPress(label);
+  }
+
+  /**
+   * Voice a press through TTS and route it as a button_pressed event,
+   * the same way handleButtonPress does for client-originated presses.
+   * Used by home-board navigation so synthetic presses get the full
+   * standard treatment (utterance display + student-voice TTS + the
+   * standard target-aware routing).
+   */
+  private async handleSyntheticPress(label: string): Promise<void> {
+    // Stamp engagement activity immediately — see handleButtonPress for
+    // the rationale. The press is real activity the moment it lands;
+    // the TTS await below mustn't let a pending rest timer slip through.
+    this.noteEngagementActivity();
+    if (label) {
+      flowOutput("COORDINATOR", "ws_send_utterance", label);
+      this.send({ type: "utterance", text: label, confidence: "high", noAudioClear: false });
+      try { await this.streamStudentTts(label, "button_press"); } catch { /* logged inside */ }
+    }
+    this.emitClientEvent({
+      type: "button_pressed",
+      source: "client",
+      timestamp: Date.now(),
+      label,
+      sentence: label,
     });
   }
 
@@ -917,6 +1487,23 @@ export class AgentCoordinator {
   }
 
   private handleConstructionState(data: any): void {
+    // Composing in the sentence builder is real user activity — each
+    // construction_state push (glyph added, removed, slot changed)
+    // counts. Without this reset, a long compose session can let a
+    // pending rest timer fire mid-composition. Also wake if we're
+    // currently resting so the BoardManager can produce suggestions
+    // (resting profile gates BM out — see invokeBoardManager).
+    this.noteEngagementActivity();
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", "construction_state arrived while resting — waking before routing.");
+      void this.transitionToProfile("awake").then(() => this.applyConstructionState(data));
+      return;
+    }
+    this.applyConstructionState(data);
+  }
+
+  /** Inner half of handleConstructionState — runs after the wake gate. */
+  private applyConstructionState(data: any): void {
     this.builderState = {
       category: data.category,
       modeChip: data.modeChip,
@@ -928,23 +1515,193 @@ export class AgentCoordinator {
         ? { slotIndex: data.payloadTarget.slotIndex, host: data.payloadTarget.hostKey }
         : undefined,
     };
-    // Driving Board Manager directly — the builder state change IS the trigger.
-    this.invokeBoardManager([]);
+
+    // Notify Observer so it can flag environmental objects that match the
+    // category the user is filling — when something becomes the likely
+    // referent, Observer emits update_context with relevance:
+    // "builder-candidate", which loops back through routeContextUpdate to
+    // re-invoke BoardManager with a fresh suggest_construction_buttons call.
+    this.observer?.sendContextInjection(
+      `[${T.tagBuilderState}] category=${data.category} target_slot=${data.targetSlot ?? "next_empty"} partial="${data.glyph || "(empty)"}". Watch the environment for objects the user might be referencing for this slot — flag them via update_context(person_indicates_object / new_object) with relevance: "builder-candidate".`,
+    );
+
+    // Drive Board Manager — the builder state change IS the trigger.
+    void this.invokeBoardManager([]);
   }
 
   private handleGuessingState(
     msg: Extract<ClientMessage, { type: "guessing_state" }>,
   ): void {
+    // A guessing-state push IS user activity — a button was just pressed (or
+    // the user entered the word-finder). Reset the rest-debounce window so
+    // an Observer-requested rest doesn't fire mid-narrowing, and wake from
+    // resting profile if we're there — otherwise Speaker is on the resting
+    // prompt and won't voice a narrowing question.
+    this.noteEngagementActivity();
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", "guessing_state arrived while resting — waking before broadcasting.");
+      void this.transitionToProfile("awake").then(() => {
+        this.applyGuessingState(msg);
+      });
+      return;
+    }
+    this.applyGuessingState(msg);
+  }
+
+  /** Inner half of handleGuessingState — runs after the wake gate. Splits
+   *  the state update from the wake transition so the post-wake
+   *  re-broadcast in transitionToProfile can call it too. */
+  private applyGuessingState(
+    msg: Extract<ClientMessage, { type: "guessing_state" }>,
+  ): void {
+    const wasInGuessing = this.guessingState !== null;
     this.guessingState = {
       dimension: "",  // not in the wire shape; tracked by builder system
       offeredKeys: msg.suggestionKeys,
       questionHint: msg.text,
+      customFacts: (msg.customFacts ?? []).map((f) => ({ ...f })),
+      rejectedFacts: (msg.rejectedFacts ?? []).map((f) => ({ ...f })),
     };
+
+    // First state push starts the mode — fan out the entered-event so
+    // both Live agents see the [GUESSING ENTERED] context.
+    if (!wasInGuessing) {
+      this.emitClientEvent({
+        type: "guessing_entered",
+        source: "client",
+        timestamp: Date.now(),
+      });
+      this.send({ type: "guessing_mode", active: true });
+    }
+
+    this.broadcastGuessingStateToAgents();
+
+    // Trigger BoardManager so it rebuilds with the offered suggestion
+    // keys. The guessingState hint (added above in renderInvocationContext)
+    // tells the model to use these keys as the buttons' `sentence` fields.
+    void this.invokeBoardManager([]);
+  }
+
+  /** Single point of exit-guessing cleanup. Clears server state, notifies
+   *  the client (so its `guessingMode` / refs clear too), tells the Live
+   *  agents that the word-finder closed, and kicks BoardManager so the
+   *  board returns to conversation context rather than leaving stale
+   *  suggestion buttons on screen. Safe to call when not in guessing
+   *  mode — no-op in that case.
+   */
+  private clearGuessingState(reason: string): void {
+    if (!this.guessingState) return;
+    flowNote("COORDINATOR", `Clearing guessing state: ${reason}`);
+    const aiInitiated = reason.startsWith("ai_exit:");
+    this.guessingState = null;
+    this.send({ type: "guessing_mode", active: false });
+    // Tell Speaker the word-finder closed so it switches back to normal
+    // conversation framing on its next turn. Skip raw [GUESSING] tags in
+    // the directive — native-audio models echo those.
+    this.speaker?.sendContextInjection(
+      aiInitiated
+        ? `The Word Finder is over — you ended it because narrowing converged. Continue the conversation normally about whatever was just resolved. No more narrowing questions.`
+        : `The user closed the word-finder. Return to normal conversation — no more narrowing questions.`,
+    );
+    this.observer?.sendContextInjection(`[GUESSING] Word-finder closed.`);
     this.emitClientEvent({
-      type: "guessing_entered",
+      type: "guessing_exited",
       source: "client",
       timestamp: Date.now(),
     });
+    // Re-trigger BoardManager with an EXPLICIT directive on what to build
+    // next. An empty triggers array + a bare [GUESSING EXITED] event in
+    // recent_events isn't enough — the model needs to know it's no longer
+    // narrowing. Without this hint, recent-events tails of `[YOU]
+    // rebuild_board(suggestion:...)` keep nudging the model toward more
+    // suggestion buttons and it tends to MALFORMED instead of rebuilding
+    // for normal conversation.
+    const exitHint: ContextUpdateEvent = {
+      type: "context_update",
+      source: "observer", // synthetic — sourced from Coordinator on behalf
+      timestamp: Date.now(),
+      updateType: "other",
+      key: "guessing_just_ended",
+      description: aiInitiated
+        ? `The Word Finder narrowing session just ended (you called exit_guessing: ${reason.replace(/^ai_exit:/, "")}). The user's word/concept has been identified. Rebuild the USER RESPONSE BOARD with a FRESH set of normal SENTENCE BUTTONs for talking about what was just resolved — reactions to the topic, follow-up questions, related things the user might want to say. Do NOT include suggestion:/[NARROW:]/[GUESS] buttons; those are for active narrowing only.`
+        : `The Word Finder was just closed by the user (no AI-initiated exit). Rebuild the USER RESPONSE BOARD with a FRESH set of normal SENTENCE BUTTONs appropriate to the current conversation. Do NOT include suggestion:/[NARROW:]/[GUESS] buttons; those are for active narrowing only.`,
+    };
+    void this.invokeBoardManager([exitHint]);
+  }
+
+  /** Push the current guessingState to Speaker (as a directive user_turn)
+   *  and Observer (as a context_injection). Called from applyGuessingState
+   *  for every state push, and from transitionToProfile on wake when
+   *  guessing is active — both Live sessions just reconnected with fresh
+   *  prompts and lost the prior [GUESSING STATE] context. Speaker hears
+   *  a synthesized natural-language framing (NOT the raw [GUESSING STATE]
+   *  text dump) because native-audio models that see structured tags in
+   *  their input often echo those tags verbatim in voiced speech.
+   */
+  private broadcastGuessingStateToAgents(): void {
+    if (!this.guessingState) return;
+    const s = this.guessingState;
+    const muted = this.muteState === "muted";
+    const directive = muted
+      ? `[GUESSING STATE — muted, do not speak]`
+      : this.buildSpeakerGuessingDirective(s);
+    this.speaker?.sendUserTurn(directive);
+    // Observer gets a brief one-liner — it doesn't need to ask, just to
+    // know we're in word-finder mode so its environment scanning frames
+    // detected objects as candidate referents.
+    this.observer?.sendContextInjection(
+      `[GUESSING] Word-finder active. The user is trying to find a specific word. Watch the environment for candidate referents.`,
+    );
+  }
+
+  /** Convert the structured guessing state into a Speaker-friendly prose
+   *  directive. Native-audio models echo whatever shape they see; feeding
+   *  them `suggestion:dim:value`/`custom_facts: [...]`/`rejected_facts:`
+   *  caused the Speaker to voice those tags. This builder yields plain
+   *  English the model can act on directly. */
+  private buildSpeakerGuessingDirective(s: GuessingState): string {
+    const text = s.questionHint || "";
+    const parts: string[] = [];
+
+    // What to ask about (priority: registry's "Suggested next dimension",
+    // falling back to a generic prompt when the registry is exhausted or
+    // the AI is driving open-ended narrowing).
+    const dimMatch = text.match(
+      /Suggested next dimension:\s*([a-z_]+)(?:\s*—\s*([^\n]*?))?(?=\s+(?:Offer|Ready|Presses|$))/i,
+    );
+    const dimensionHint = dimMatch?.[2]?.trim() || dimMatch?.[1]?.trim();
+    if (dimensionHint) {
+      parts.push(`Voice ONE short, warm question helping the user narrow down: ${dimensionHint}.`);
+    } else if (text.includes("No more narrowing dimensions") || text.includes("Ready for guesses: yes")) {
+      parts.push(`Voice ONE short, warm guess (or "is it X or Y?") about what the user is trying to say.`);
+    } else if (text.includes("No category chosen yet")) {
+      parts.push(`The user just opened the word finder. Voice ONE short, warm question: "What kind of thing are you thinking of?"`);
+    } else {
+      parts.push(`Voice ONE short, warm narrowing question to help the user find their word.`);
+    }
+    parts.push(`Don't list the options — the buttons appear on screen.`);
+
+    // Known facts (registry-confirmed, prose form).
+    const knownMatch = text.match(/^Known:\s*(.+)$/m);
+    if (knownMatch) {
+      parts.push(`What we know so far: ${knownMatch[1]}.`);
+    }
+
+    // Custom narrowing facts the AI already established with the user.
+    if (s.customFacts.length) {
+      const formatted = s.customFacts.map((f) => `${f.dimension} = ${f.value}`).join(", ");
+      parts.push(`The user already confirmed: ${formatted}.`);
+    }
+
+    // Rejected facts — the user just said "no" to something. Pivot.
+    if (s.rejectedFacts.length) {
+      const formatted = s.rejectedFacts.map((f) => `${f.dimension} = ${f.value}`).join(", ");
+      parts.push(`The user rejected: ${formatted}. Do NOT ask about those again — pivot to a different angle.`);
+    } else if (text.includes("none of these")) {
+      parts.push(`The user just said "none of these" to the last batch. Try a fresh angle or a [GUESS].`);
+    }
+
+    return parts.join(" ");
   }
 
   // Route a client-originated event to the agents per the spec table.
@@ -959,19 +1716,93 @@ export class AgentCoordinator {
   ): void {
     this.recordEvent(event);
 
+    // A real user action (button press, composed sentence, builder open)
+    // must wake the session before routing. Otherwise Speaker, still on
+    // the resting profile, receives the user_turn and stays silent until
+    // Observer eventually notices and calls wake_up — sometimes 10+
+    // seconds after the press, by which point the press is dead.
+    const wakeRequired =
+      this.sessionProfile === "resting" &&
+      (event.type === "button_pressed" ||
+        event.type === "sentence_composed" ||
+        event.type === "builder_opened");
+    if (wakeRequired) {
+      flowNote("COORDINATOR", `User action ${event.type} arrived while resting; waking before routing.`);
+      void this.transitionToProfile("awake").then(() => {
+        this.routeClientEvent(event);
+      });
+      return;
+    }
+
+    this.routeClientEvent(event);
+  }
+
+  /** Inner half of emitClientEvent — the actual fan-out. Split out so
+   *  the wake-up gate can defer it until the awake profile is live. */
+  private routeClientEvent(event:
+    | ButtonPressedEvent
+    | SentenceComposedEvent
+    | MuteToggledEvent
+    | BuilderOpenedEvent
+    | BuilderClosedEvent
+    | GuessingEnteredEvent
+    | GuessingExitedEvent,
+  ): void {
     switch (event.type) {
       case "button_pressed": {
-        const rendered = `[${T.tagPress}] "${event.sentence}"`;
-        this.observer?.sendContextInjection(rendered);
-        this.speaker?.sendUserTurn(rendered);
-        this.invokeBoardManager([event]);
-        this.appendToConversationLog("user", rendered);
+        this.lastUserInputType = "button_pressed";
+        // User just acted — this is conversation engagement. Reset the
+        // rest debounce window and cancel any pending rest request.
+        this.noteEngagementActivity();
+        // Target comes from the loaded board's target if the event
+        // didn't carry one (synthetic home presses set their own).
+        const target = event.target ?? this.currentBoardTarget ?? PARTY_DEVICE;
+        const toDevice = isDeviceTarget(target, this.aiName);
+        const targetLabel = toDevice ? "YOU" : target;
+
+        // A button press is functionally a USER statement — the press
+        // is just the mechanism. Speaker and BoardManager see it as
+        // `[USER to <target>] "..."` so it slots into the same
+        // "someone said something" mental model as a transcript.
+        // Observer keeps the explicit `[BUTTON PRESS to <target>]`
+        // marker because it's the agent that records HOW statements
+        // were made.
+        const pressInner = T.tagPress.replace(/^\[|\]$/g, "");
+        const observerRendered = `[${pressInner} to ${targetLabel}] "${event.sentence}"`;
+        const speakerRendered = `[USER to ${targetLabel}] "${event.sentence}"`;
+
+        this.observer?.sendContextInjection(observerRendered);
+        if (toDevice) {
+          // Press addressed to the AI — Speaker should respond.
+          this.speaker?.sendUserTurn(speakerRendered);
+          // Defer the BM invocation: Speaker's reply will trigger a
+          // REPLIES rebuild that supersedes FOLLOW-UPS. If Speaker
+          // doesn't reply within DEFERRED_BM_PRESS_MS, the timer fires
+          // FOLLOW-UPS as a fallback.
+          this.scheduleDeferredBoardMgrFromPress(event);
+        } else {
+          // Press addressed to someone else (or USER itself) — Speaker
+          // stays quiet, no REPLIES event coming. Build FOLLOW-UPS now.
+          this.speaker?.sendContextInjection(speakerRendered);
+          this.invokeBoardManager([event]);
+        }
+        this.appendToConversationLog("user", speakerRendered);
         return;
       }
       case "sentence_composed": {
+        this.lastUserInputType = "sentence_composed";
+        this.noteEngagementActivity();
         const rendered = `[${T.tagComposed}] "${event.sentence}"`;
         this.observer?.sendContextInjection(rendered);
-        this.speaker?.sendUserTurn(rendered);
+        // Speaker gets this as CONTEXT, not a user_turn. The composed
+        // glyph string is not what the user is "saying" — BoardManager
+        // interprets it via interpret() into natural language, the
+        // student TTS voices the interpretation, and then Speaker
+        // receives a synthetic [BUTTON PRESS] turn with the natural
+        // language to respond to. Sending Speaker the raw glyph string
+        // as a user_turn here would make it respond to symbol notation
+        // directly, skipping the interpretation entirely.
+        this.speaker?.sendContextInjection(rendered);
         this.invokeBoardManager([event]);
         this.appendToConversationLog("user", rendered);
         return;
@@ -1017,6 +1848,14 @@ export class AgentCoordinator {
       case "focus_request":
         this.routeFocusRequest(event);
         return;
+      case "mode_change":
+        // Observer owns the interact/assist switch in the three-agent
+        // path — it has the camera/mic context to judge whether the
+        // user is conversing with the AI or with someone in the room.
+        // Coordinator persists currentInteractionMode and forwards the
+        // resulting [MODE] context injection to Speaker.
+        this.routeModeChange(event);
+        return;
       case "monitor_call_requested":
         this.requestMonitor(event.reason, "observer");
         return;
@@ -1029,17 +1868,66 @@ export class AgentCoordinator {
   }
 
   private routeTranscribed(event: TranscribedEvent): void {
-    const rendered = `[TRANSCRIPT] ${event.speaker} → ${event.direction}: "${event.text}"`;
-    // Echo back to Observer for unified action log (per spec discussion).
+    const target = event.target ?? "UNKNOWN";
+    const aiName = this.aiName;
+    const studentName = this.currentStudentName;
+    const toDevice = isDeviceTarget(target, aiName);
+    const toUser = isUserTarget(target, studentName);
+
+    // Same `<speaker> to <target>` shape as button presses. Speaker
+    // identity is the actual person who spoke (or USER for a USER alias).
+    const targetLabel = toDevice ? "YOU" : target;
+    const rendered = `[${event.speaker} to ${targetLabel}] "${event.text}"`;
+
+    // Conversation activity — transcripts directed at USER or DEVICE
+    // (i.e. someone speaking with the user or the AI) reset the rest
+    // debounce. Ambient / third-party transcripts don't count.
+    if (toDevice || toUser) this.noteEngagementActivity();
+
+    // Wake from resting on directed live speech. Without this, Speaker
+    // stays on the resting profile and won't respond to DEVICE-targeted
+    // speech, and BoardManager runs in a stale-context state when the
+    // USER is being addressed. Match the button-press wake gate in
+    // emitClientEvent.
+    if ((toDevice || toUser) && this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `Directed transcript arrived while resting; waking before routing.`);
+      void this.transitionToProfile("awake").then(() => {
+        this.routeTranscribedInner(event, rendered, toDevice, toUser);
+      });
+      return;
+    }
+    this.routeTranscribedInner(event, rendered, toDevice, toUser);
+  }
+
+  /** Inner half of routeTranscribed — runs after the wake gate. Split
+   *  out so the wake transition can defer execution to the awake
+   *  profile. */
+  private routeTranscribedInner(
+    event: TranscribedEvent,
+    rendered: string,
+    toDevice: boolean,
+    toUser: boolean,
+  ): void {
+    // Echo back to Observer for unified action log.
     this.observer?.sendContextInjection(rendered);
-    // Time-sensitive: no debounce. Direct to Speaker as a user turn (unless ambient).
-    if (event.direction !== "ambient") {
+
+    if (toDevice) {
+      // Someone addressed the AI directly — deliver as a user_turn from
+      // Speaker's perspective (Speaker prompt treats DEVICE-targeted
+      // speech as "addressed to YOU").
+      this.lastUserInputType = "transcribed";
       this.speaker?.sendUserTurn(rendered);
       this.appendToConversationLog("user", rendered);
     } else {
+      // Either USER-targeted or 3rd-party / UNKNOWN. Speaker sees it as
+      // context only — it doesn't respond unless directly addressed.
       this.speaker?.sendContextInjection(rendered);
     }
-    this.invokeBoardManager([event]);
+
+    // BoardManager rebuilds whenever the USER needs to reply — i.e. the
+    // target was USER. DEVICE-targeted speech goes to Speaker; ambient
+    // speech doesn't move the board.
+    if (toUser) this.invokeBoardManager([event]);
   }
 
   private enqueueContextUpdate(event: ContextUpdateEvent): void {
@@ -1068,33 +1956,67 @@ export class AgentCoordinator {
     this.invokeBoardManager(batch);
   }
 
-  private routeEngagementChange(event: EngagementChangeEvent): void {
-    let sleepStateLabel: "resting" | "awake" | "asleep" | "hibernation";
-    switch (event.state) {
-      case "rest": sleepStateLabel = "resting"; break;
-      case "wake_up": sleepStateLabel = "awake"; break;
-      case "sleep": sleepStateLabel = "asleep"; break;
-      case "end_session": sleepStateLabel = "hibernation"; break;
+  /** A user-or-device-directed action just happened — reset the rest
+   *  debounce window and cancel any pending rest. Called from
+   *  routeClientEvent (button presses, composed sentences), from
+   *  routeTranscribed (live transcripts targeted at USER or DEVICE),
+   *  and from the Speaker speech_end handler. */
+  private noteEngagementActivity(): void {
+    this.lastEngagementActivityAt = Date.now();
+    if (this.pendingRestTimer) {
+      clearTimeout(this.pendingRestTimer);
+      this.pendingRestTimer = null;
+      flowNote("COORDINATOR", "Engagement activity — pending rest request cleared.");
     }
-    this.send({
-      type: "sleep_state_change",
-      data: { state: sleepStateLabel, source: "ai" },
-    });
+  }
+
+  /** Observer asked to enter rest. If the last engagement activity was
+   *  more than REST_DEBOUNCE_MS ago, transition immediately; otherwise
+   *  schedule it for when the timer expires. The schedule is canceled
+   *  by noteEngagementActivity if activity resumes meanwhile. */
+  private requestRest(reason?: string): void {
+    if (this.sessionProfile === "resting") return;
+    const elapsed = Date.now() - this.lastEngagementActivityAt;
+    if (elapsed >= AgentCoordinator.REST_DEBOUNCE_MS) {
+      flowNote("COORDINATOR", `Rest request: ${elapsed}ms since last activity — resting now.${reason ? ` (${reason})` : ""}`);
+      void this.transitionToProfile("resting");
+      return;
+    }
+    const remaining = AgentCoordinator.REST_DEBOUNCE_MS - elapsed;
+    if (this.pendingRestTimer) clearTimeout(this.pendingRestTimer);
+    flowNote("COORDINATOR", `Rest request deferred ~${Math.round(remaining / 1000)}s (last activity ${Math.round(elapsed / 1000)}s ago).${reason ? ` (${reason})` : ""}`);
+    this.pendingRestTimer = setTimeout(() => {
+      this.pendingRestTimer = null;
+      if (this.sessionProfile === "resting") return;
+      flowNote("COORDINATOR", "Deferred rest timer expired — entering rest.");
+      void this.transitionToProfile("resting");
+    }, remaining);
+  }
+
+  private routeEngagementChange(event: EngagementChangeEvent): void {
     this.observer?.sendContextInjection(`[ENGAGEMENT] ${event.state}${event.reason ? ` — ${event.reason}` : ""}`);
 
     // Execute the actual profile transition. Fire-and-forget — failures
     // are logged inside transitionToProfile and must not block the bus.
+    // sleep_state_change for resting/awake transitions is emitted by
+    // transitionToProfile itself, so both Observer-initiated transitions
+    // AND press-initiated wakes notify the client. sleep/end_session
+    // don't go through transitionToProfile — we send their state here.
     switch (event.state) {
       case "rest":
-        void this.transitionToProfile("resting");
+        this.requestRest(event.reason);
         return;
       case "wake_up":
+        // wake_up is immediate — note the activity and transition. The
+        // transitionToProfile call sends sleep_state_change.
+        this.noteEngagementActivity();
         void this.transitionToProfile("awake");
         return;
       case "sleep":
         // Cost-saving close: tear down both Live sessions, keep the WS
         // open so the client can re-wake on activity. Coordinator stays
         // ready and can rebuild agents on the next client signal.
+        this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
         try { this.observer?.close(); } catch {}
         try { this.speaker?.close(); } catch {}
         this.observer = null;
@@ -1103,6 +2025,7 @@ export class AgentCoordinator {
       case "end_session":
         // Full cleanup including WS close. Client should re-initialize
         // a fresh session on subsequent activity.
+        this.send({ type: "sleep_state_change", data: { state: "hibernation", source: "ai" } });
         this.cleanup(`end_session: ${event.reason || ""}`);
         return;
     }
@@ -1112,62 +2035,155 @@ export class AgentCoordinator {
   // Profile transitions (awake ↔ resting)
   // -------------------------------------------------------------------------
 
-  /** Reconnect Observer + Speaker with the target profile's tool config
-   *  and compression window. BoardManager has no persistent session;
-   *  its next invocation just sees a smaller tool surface. */
+  /**
+   * Profile transition (awake ↔ resting).
+   *
+   * Observer reconnects with the SAME prompt and tools — only its
+   * compression thresholds change. The Live session resumption handle
+   * preserves conversation history across the reconnect, so Observer
+   * doesn't lose context (and doesn't drift into a different persona).
+   * Tighter resting compression is the main cost lever during long
+   * quiet stretches — Observer's billed context drops from ~15–30k to
+   * ~6–12k per turn.
+   *
+   * Speaker is closed entirely on resting and freshly started on wake
+   * (it's the expensive second Live session, and we want it gone during
+   * quiet stretches — not just compressed).
+   *
+   * BoardManager is HTTP/stateless — no "close." Instead invokeBoardManager
+   * short-circuits while resting (see its profile gate).
+   */
   private async transitionToProfile(target: "awake" | "resting"): Promise<void> {
     if (this.sessionProfile === target) return;
-    if (!this.observer || !this.speaker) {
-      console.warn(`[AgentCoordinator] transitionToProfile(${target}): agents missing`);
+    if (!this.observer) {
+      console.warn(`[AgentCoordinator] transitionToProfile(${target}): observer missing`);
       return;
     }
 
-    const observerToolConfig: ObserverToolConfig = {
-      ...this.observerToolConfigBase,
-      restingMode: target === "resting",
-    };
-    const speakerToolConfig: SpeakerToolConfig = {
-      ...this.speakerToolConfigBase,
-      restingMode: target === "resting",
-    };
-    const triggerTokens = target === "resting" ? RESTING_COMPRESSION_TRIGGER : AWAKE_COMPRESSION_TRIGGER;
-    const targetTokens = target === "resting" ? RESTING_COMPRESSION_TARGET : AWAKE_COMPRESSION_TARGET;
+    // Notify the client of the new state.
+    this.send({
+      type: "sleep_state_change",
+      data: { state: target === "resting" ? "resting" : "awake", source: "ai" },
+    });
+    if (target === "awake" && this.pendingRestTimer) {
+      clearTimeout(this.pendingRestTimer);
+      this.pendingRestTimer = null;
+    }
 
     runInSessionContext(this.sessionId!, this.debugMode, () => {
       logLiveSession("PROFILE_TRANSITION", `${this.sessionProfile} → ${target}`);
     });
+    flowNote("COORDINATOR", `Profile transition: ${this.sessionProfile} → ${target}`);
+
+    const observerTrigger = target === "resting" ? RESTING_COMPRESSION_TRIGGER : AWAKE_COMPRESSION_TRIGGER;
+    const observerTarget = target === "resting" ? RESTING_COMPRESSION_TARGET : AWAKE_COMPRESSION_TARGET;
 
     try {
-      await Promise.all([
-        this.observer.reconnectWithConfig({
-          systemPrompt: this.observerPrompt,
-          model: this.observerModel,
-          toolConfig: observerToolConfig,
-          useVertex: this.useVertex,
-          compressionTriggerTokens: triggerTokens,
-          compressionTargetTokens: targetTokens,
-        }),
-        this.speaker.reconnectWithConfig({
-          systemPrompt: this.speakerPrompt,
-          model: this.speakerModel,
-          toolConfig: speakerToolConfig,
-          useVertex: this.useVertex,
-          voiceName: this.aiVoiceName,
-          useDirectAudio: this.useDirectAudio,
-          compressionTriggerTokens: triggerTokens,
-          compressionTargetTokens: targetTokens,
-        }),
-      ]);
+      // Observer: reconnect with new compression thresholds. Same prompt,
+      // same tools — session-resumption handle preserves conversation
+      // history. Don't await Speaker close/start together with this — if
+      // Speaker fails to come back, Observer's reconnect should still
+      // complete and the session can recover.
+      await this.observer.reconnectWithConfig({
+        systemPrompt: this.observerPrompt,
+        model: this.observerModel,
+        toolConfig: this.observerToolConfigBase,
+        useVertex: this.useVertex,
+        compressionTriggerTokens: observerTrigger,
+        compressionTargetTokens: observerTarget,
+      });
+
+      if (target === "resting") {
+        // Tear down Speaker.
+        try { this.speaker?.close(); } catch (err) {
+          console.warn("[AgentCoordinator] Speaker close failed on transition to resting:", err);
+        }
+        this.speaker = null;
+      } else {
+        // target === "awake" — bring Speaker back online. Already running
+        // means we're recovering from a partial transition — leave it alone.
+        if (!this.speaker) {
+          this.speaker = this.createSpeakerAgent();
+          await this.speaker.start({
+            systemPrompt: this.speakerPrompt,
+            model: this.speakerModel,
+            toolConfig: this.speakerToolConfigBase,
+            useVertex: this.useVertex,
+            voiceName: this.aiVoiceName,
+            useDirectAudio: this.useDirectAudio,
+            compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
+            compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+          });
+          this.speaker.setDebugSessionContext(this.sessionId!, this.debugMode);
+        }
+      }
       this.sessionProfile = target;
       runInSessionContext(this.sessionId!, this.debugMode, () => {
         logLiveSession("PROFILE_TRANSITION_DONE", `now=${target}`);
       });
+
+      // After waking, prime the fresh Speaker with everything it needs
+      // to pick up the conversation: recent dialogue, rolling session
+      // summary (if any), interaction mode, active guessing context.
+      // Without history replay the fresh Speaker had ZERO context — a
+      // press of "something light" landed without the food discussion
+      // that preceded rest, and got reinterpreted as "you want to take
+      // it easy." Observer doesn't need this — its Live session was
+      // preserved via reconnectWithConfig.
+      if (target === "awake" && this.speaker) {
+        // 1. Replay rolling session summary (built every N user/assistant
+        //    messages by the Monitor) if it exists — gives the fresh
+        //    Speaker the long-tail context that's been compressed out of
+        //    the per-turn replay below.
+        if (this.currentSessionSummary) {
+          flowNote("COORDINATOR", `Replaying [SESSION SUMMARY] (${this.currentSessionSummary.length} chars) to fresh Speaker`);
+          this.speaker.sendContextInjection(`[SESSION SUMMARY]\n${this.currentSessionSummary}`);
+        }
+        // 2. Replay the last N conversation turns so the model sees what
+        //    just happened. Cap at 20 to avoid blowing the new session's
+        //    context window on history alone.
+        const replayCount = Math.min(20, this.conversationLog.length);
+        if (replayCount > 0) {
+          const recent = this.conversationLog.slice(-replayCount).map(t => ({
+            role: t.role === "assistant" ? ("model" as const) : ("user" as const),
+            text: t.content,
+          }));
+          flowNote("COORDINATOR", `Replaying ${recent.length} recent turns to fresh Speaker`);
+          this.speaker.sendConversationHistory(recent);
+        }
+        // 3. Persistent state the new Speaker doesn't otherwise know.
+        const rendered = `[MODE] ${this.currentInteractionMode} (restored on wake)`;
+        flowNote("COORDINATOR", `Re-broadcasting mode=${this.currentInteractionMode} to fresh Speaker`);
+        this.speaker.sendContextInjection(rendered);
+        if (this.guessingState) {
+          flowNote("COORDINATOR", "Re-broadcasting active guessing state to fresh Speaker");
+          this.broadcastGuessingStateToAgents();
+        }
+      }
     } catch (err) {
       console.error(`[AgentCoordinator] transitionToProfile(${target}) failed:`, err);
       runInSessionContext(this.sessionId!, this.debugMode, () => {
         logLiveSession("PROFILE_TRANSITION_ERROR", `target=${target} err=${(err as Error).message}`);
       });
     }
+  }
+
+  /** Build a fresh SpeakerAgent with the standard callback bundle. Used
+   *  by initial start AND by transitionToProfile("awake") when recreating
+   *  Speaker after a resting close. */
+  private createSpeakerAgent(): SpeakerAgent {
+    const provider = "gemini" as const;
+    const aacChatProvider = this.aacChatProvider;
+    const speakerModel = this.speakerModel;
+    return new SpeakerAgent(provider, {
+      onEvent: (e) => this.onSpeakerEvent(e),
+      onAudioChunk: (data) => this.onSpeakerAudioChunk(data),
+      onTranscriptionDelta: (text) => this.onSpeakerTranscriptionDelta(text),
+      onSpeakText: (text) => this.onSpeakerSpeakText(text),
+      onError: (err) => console.error("[AgentCoordinator] Speaker error:", err),
+      onClose: () => console.log("[AgentCoordinator] Speaker closed"),
+      onUsage: (usage) => this.trackLiveUsage("speaker", aacChatProvider, speakerModel, usage),
+    });
   }
 
   private routeFocusRequest(event: FocusRequestEvent): void {
@@ -1186,7 +2202,10 @@ export class AgentCoordinator {
 
     switch (event.type) {
       case "speech_start":
-        this.onSpeakerSpeechStart();
+        this.onSpeakerSpeechStart(event);
+        return;
+      case "speech_text_finalized":
+        this.onSpeakerSpeechTextFinalized(event);
         return;
       case "speech_end":
         this.onSpeakerSpeechEnd(event);
@@ -1196,9 +2215,6 @@ export class AgentCoordinator {
         return;
       case "mode_change":
         this.routeModeChange(event);
-        return;
-      case "interpret_intent":
-        this.routeInterpretIntent(event);
         return;
       case "app_open_requested":
         this.routeAppOpen(event);
@@ -1218,35 +2234,79 @@ export class AgentCoordinator {
     }
   }
 
-  private onSpeakerSpeechStart(): void {
-    this.speakerSpeaking = true;
-    if (this.micMuteReleaseTimer) {
-      clearTimeout(this.micMuteReleaseTimer);
-      this.micMuteReleaseTimer = null;
-    }
-    this.observer?.setMicMuted(true);
+  private onSpeakerSpeechStart(event: SpeechStartEvent): void {
+    // No mic mute — Observer's prompt handles echo via the
+    // <transcription> rule + the [OWN_SPEECH] / [BUTTON PRESS] context
+    // we inject around AAC audio playback.
+
+    // Speech_start fires on the FIRST audio chunk — at that point the
+    // transcript is typically only partial (text and audio interleave
+    // in native audio, contrary to an earlier assumption). Don't fire
+    // BoardManager here; wait for speech_text_finalized which carries
+    // the FULL transcript and arrives well before turnComplete.
+    void event;
+  }
+
+  /** Text portion of Speaker's turn finished. Audio may still be
+   *  streaming, but the transcript is complete. Fire BoardManager so
+   *  it can build REPLIES to what the AI just said — distinct from the
+   *  press-time rebuild which builds FOLLOW-UPS to the user's own
+   *  statement. Both rebuild perspectives matter, especially when the
+   *  user is conversing with a non-AI person (the press is the user's
+   *  turn, the speech is the other side's turn). */
+  private onSpeakerSpeechTextFinalized(event: SpeechTextFinalizedEvent): void {
+    this.noteEngagementActivity();
+    // Speaker replied — supersede any deferred press-triggered BM
+    // invocation. REPLIES (built from this event) is more current than
+    // FOLLOW-UPS (built from the press) for an AI-targeted press.
+    this.clearDeferredBoardMgr("speech_text_finalized supersedes press");
+    this.invokeBoardManager([event]);
   }
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
-    this.speakerSpeaking = false;
     // Flush any remaining buffered PCM chunks so the tail of the
     // utterance reaches the client even when the timer hasn't fired yet.
     this.flushSpeakerAudio();
-    // Schedule mic unmute with a tail to cover speaker decay.
-    this.micMuteReleaseTimer = setTimeout(() => {
-      this.observer?.setMicMuted(false);
-      this.micMuteReleaseTimer = null;
-    }, MIC_MUTE_TAIL_MS);
+    // Signal end-of-turn to the client so its text accumulator resets
+    // for the next utterance. Without this, each Speaker turn's text is
+    // appended to the previous instead of replacing it. Mirrors the
+    // legacy LiveRelay.processTurnEnd's `complete` send.
+    this.send({ type: "complete", data: {} });
 
+    // Speaker addressed `target` (default USER). Mirror the unified
+    // `[<speaker> to <target>] "..."` shape used everywhere else.
+    const target = event.target ?? PARTY_USER;
+    const targetForLog = isUserTarget(target, this.currentStudentName)
+      ? "USER"
+      : target;
     if (event.transcript) {
-      this.observer?.sendContextInjection(`[OWN_SPEECH] ${event.transcript}`);
-      // Echo to Speaker so it has the transcript in its own history.
-      this.speaker?.sendContextInjection(`[OWN_SPEECH] (you said) ${event.transcript}`);
+      // Observer hears the speakers playback through the mic — tag it
+      // as the AI's voice so it doesn't transcribe the room playback.
+      this.observer?.sendContextInjection(`[AI to ${targetForLog}] "${event.transcript}"`);
+      // Echo back to Speaker so it remembers what it said.
+      this.speaker?.sendContextInjection(`[YOU to ${targetForLog}] "${event.transcript}" (you just said this)`);
       this.appendToConversationLog("assistant", event.transcript);
     }
 
-    // Trigger Board Manager rebuild for the follow-up surface.
-    this.invokeBoardManager([event]);
+    // BoardManager rebuild already fired on speech_start (where the
+    // SpeechStartEvent carries the same transcript). Do NOT fire again
+    // here — it would duplicate the call with no new information and
+    // produce flicker.
+
+    // Monitor heartbeat — turn-end is the natural hook to let Monitor
+    // catch up on accumulated pending messages. Non-forced; the service
+    // throttle (MONITOR_THROTTLE_MS, ~2 min) drops excess calls so this
+    // effectively runs every couple of turns at peak conversation, then
+    // backs off to once per throttle window. Without this hook, Monitor
+    // only ever fires when an agent explicitly emits monitor_call_requested,
+    // which means Student_Notes / Student_Interests / Student_People are
+    // never written. Mirrors legacy LiveRelay's per-turn triggerMonitor.
+    if (this.sessionId) {
+      flowNote("MONITOR", "turn-end heartbeat — triggerMonitor(force=false)");
+      dualAgentService.triggerMonitor(this.sessionId, false).catch(err => {
+        console.warn("[AgentCoordinator] triggerMonitor failed:", (err as Error).message);
+      });
+    }
   }
 
   private routeEmoteChange(event: EmoteChangeEvent): void {
@@ -1255,6 +2315,15 @@ export class AgentCoordinator {
   }
 
   private routeModeChange(event: ModeChangeEvent): void {
+    // Persist on the Coordinator so the mode survives profile
+    // transitions. transitionToProfile("awake") re-broadcasts whatever
+    // value lives here after the Live agents reconnect.
+    const prev = this.currentInteractionMode;
+    this.currentInteractionMode = event.mode;
+    flowNote(
+      "COORDINATOR",
+      `Mode change: ${prev} → ${event.mode}${event.reason ? ` (${event.reason})` : ""}`,
+    );
     this.send({
       type: "interaction_mode_changed",
       data: { mode: event.mode, reason: event.reason, source: "ai" },
@@ -1265,8 +2334,29 @@ export class AgentCoordinator {
   }
 
   private routeInterpretIntent(event: InterpretIntentEvent): void {
+    // Gate: interpret() is only valid as Speaker's response to a
+    // sentence_composed turn (user played the SENTENCE BUILDER's Play
+    // button). Native audio's tool-calling sometimes calls interpret()
+    // on regular button presses anyway, which double-voices the user's
+    // SENTENCE. Server-side drop on a wrong context.
+    if (this.lastUserInputType !== "sentence_composed") {
+      flowNote(
+        "SPEAKER",
+        `Dropped spurious interpret_intent (lastInput=${this.lastUserInputType}; expected sentence_composed). sentence="${event.sentence}"`,
+      );
+      // Inform Speaker that the call was rejected so it doesn't keep
+      // retrying. No TTS, no re-injection of the SENTENCE.
+      this.speaker?.sendContextInjection(
+        `[INTERPRET REJECTED] interpret() is only valid after a [${T.tagComposed}] turn. The most recent user input was a ${this.lastUserInputType === "button_pressed" ? `[${T.tagPress}] (the device already voiced it; do NOT call interpret)` : "transcript / context update"}. Respond normally instead.`,
+      );
+      return;
+    }
+    // Consume the sentence_composed context so a duplicate interpret on
+    // the same turn is also blocked.
+    this.lastUserInputType = "none";
+
     // Stream the user's interpreted sentence through student-voice TTS.
-    void this.streamStudentTts(event.sentence);
+    void this.streamStudentTts(event.sentence, "interpret_intent");
     // Inject OWN_SPEECH (tagged as student-voice) so Observer doesn't
     // transcribe the device speakers as a fresh user statement.
     this.observer?.sendContextInjection(`[OWN_SPEECH] (student voice) ${event.sentence}`);
@@ -1351,14 +2441,54 @@ export class AgentCoordinator {
     }
   }
 
-  private async streamStudentTts(text: string): Promise<void> {
+  private async streamStudentTts(text: string, source: string = "?"): Promise<void> {
     if (!this.studentVoice) return;
+
+    // Cancel any in-flight TTS from a prior press / interpret AND tell
+    // the client to drop queued utterance audio. Without this, a second
+    // press while the first stream is still arriving on the client
+    // produces doubled playback. The `audio_clear_tag` is tag-scoped
+    // so the AI's avatar_audio queue is preserved.
+    if (this.studentTtsAbortController) {
+      this.studentTtsAbortController.abort();
+      this.send({ type: "audio_clear_tag", tag: "utterance" });
+    }
+    const controller = new AbortController();
+    this.studentTtsAbortController = controller;
+
+    flowOutput("COORDINATOR", "student_tts_start", `[${source}] "${text}"`);
+    let chunkCount = 0;
     try {
-      for await (const chunk of ttsFacade.synthesizeStream(text, this.studentVoice)) {
+      // Track TTS credits via the facade's onUsage callback. Fires once
+      // for the provider that actually rendered the audio (the facade
+      // may fall back through several before landing). Aborted streams
+      // report nothing — we don't bill for cancelled synthesis.
+      const onUsage = (usage: { provider: import("../chat/cost-helpers").TtsProvider; characters: number }) => {
+        if (!this.sessionId || !this.studentId) return;
+        dualAgentService
+          .trackTtsUsage(this.sessionId, this.studentId, this.userId, usage.provider, usage.characters)
+          .catch(err => console.error("[AgentCoordinator] trackTtsUsage failed:", err));
+      };
+      for await (const chunk of ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, onUsage)) {
+        if (controller.signal.aborted) break;
         this.send({ type: "utterance_audio", data: chunk.toString("base64") });
+        chunkCount += 1;
       }
     } catch (err) {
-      console.error("[AgentCoordinator] student TTS failed:", err);
+      if (!controller.signal.aborted) {
+        console.error("[AgentCoordinator] student TTS failed:", err);
+      }
+    } finally {
+      // Only clear the controller pointer if this call is still the
+      // owner — a later call may have already replaced it.
+      if (this.studentTtsAbortController === controller) {
+        this.studentTtsAbortController = null;
+      }
+      flowOutput(
+        "COORDINATOR",
+        controller.signal.aborted ? "student_tts_aborted" : "student_tts_end",
+        `[${source}] chunks=${chunkCount}`,
+      );
     }
   }
 
@@ -1366,17 +2496,81 @@ export class AgentCoordinator {
   // Board Manager invocation
   // -------------------------------------------------------------------------
 
+  /**
+   * Schedule a deferred BoardManager invocation for a DEVICE-targeted
+   * press. The press's FOLLOW-UPS rebuild is mostly useless because
+   * Speaker is about to reply (within ~2s) and the speech_text_finalized
+   * REPLIES rebuild will supersede it. We hold the press for
+   * DEFERRED_BM_PRESS_MS; if Speaker replies first, the deferred press
+   * gets cleared. If Speaker doesn't reply (mute mode, MALFORMED,
+   * etc.), the timer fires and BM builds FOLLOW-UPS as a fallback.
+   */
+  private scheduleDeferredBoardMgrFromPress(event: AgentEvent): void {
+    this.clearDeferredBoardMgr("superseded by newer press");
+    this.deferredBoardMgrTrigger = event;
+    this.deferredBoardMgrTimer = setTimeout(() => {
+      const trigger = this.deferredBoardMgrTrigger;
+      this.deferredBoardMgrTrigger = null;
+      this.deferredBoardMgrTimer = null;
+      if (!trigger) return;
+      flowNote("BOARD_MGR", `Deferred press timer fired — Speaker didn't reply within ${AgentCoordinator.DEFERRED_BM_PRESS_MS}ms; building FOLLOW-UPS.`);
+      void this.invokeBoardManager([trigger]);
+    }, AgentCoordinator.DEFERRED_BM_PRESS_MS);
+  }
+
+  /** Cancel a scheduled deferred BM invocation. Called when something
+   *  supersedes it (Speaker replies, profile transition, new press, etc.). */
+  private clearDeferredBoardMgr(reason: string): void {
+    if (!this.deferredBoardMgrTimer) return;
+    clearTimeout(this.deferredBoardMgrTimer);
+    this.deferredBoardMgrTimer = null;
+    this.deferredBoardMgrTrigger = null;
+    flowNote("BOARD_MGR", `Deferred press cleared: ${reason}`);
+  }
+
   private async invokeBoardManager(triggeringEvents: AgentEvent[]): Promise<void> {
     if (!this.boardManager) return;
+    // Profile gate — resting means no board mutations. Observer keeps
+    // running and recording; the board stays frozen at whatever was last
+    // emitted. Wake-from-rest gates (button press, directed transcript,
+    // builder open, board exit) wake first and then route, so legitimate
+    // user-triggered rebuilds get through; this is just a safety against
+    // ambient context-update invocations rebuilding the board while
+    // nobody is at the device.
+    if (this.sessionProfile === "resting") {
+      flowNote("BOARD_MGR", "Skipped invocation — session is resting.");
+      return;
+    }
     if (this.boardMgrInFlight) {
       this.boardMgrPendingTriggers.push(...triggeringEvents);
       return;
     }
     this.boardMgrInFlight = true;
+    // Pull and clear the pending validator-feedback (if any) so the
+    // next invocation knows to retry. Bump the retry counter; reset on
+    // a successful no-error invocation below.
+    const pendingFeedback = this.boardMgrPendingFeedback;
+    this.boardMgrPendingFeedback = null;
+    if (pendingFeedback) this.boardMgrRetryAttempt += 1;
     try {
+      // Tool config is rebuilt per invocation so `guessingActive` reflects
+      // the LIVE state — the exit_guessing tool only appears while the
+      // Word Finder is active, and is gone the next turn after exit.
+      // hasLoadedBoard / loadedBoardName likewise track the current board
+      // state so press_button surfaces only when there's a custom board.
+      const dynamicToolConfig: BoardManagerToolConfig = {
+        ...this.boardManagerToolConfig,
+        guessingActive: this.guessingState !== null,
+        hasLoadedBoard: this.loadedBoardId !== null,
+        loadedBoardName: this.loadedBoardId
+          ? this.boardManagerToolConfig.loadedBoardName ?? null
+          : null,
+      };
       const input: BoardManagerInvocationInput = {
-        systemPrompt: this.boardManagerPrompt,
-        toolConfig: this.boardManagerToolConfig,
+        systemPrompt: pendingFeedback
+          ? `${this.boardManagerPrompt}\n\n<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`
+          : this.boardManagerPrompt,
+        toolConfig: dynamicToolConfig,
         triggeringEvents,
         recentEvents: [...this.recentEvents],
         currentBoardLabels: [...this.currentBoardLabels],
@@ -1388,6 +2582,11 @@ export class AgentCoordinator {
         model: BOARD_MANAGER_DEFAULT_MODEL,
       };
       const result = await this.boardManager.invoke(input);
+      // Reset the retry counter when no fresh validator feedback was
+      // queued during dispatch (i.e. the call's buttons were clean).
+      // queueBoardMgrFeedback below — running synchronously inside the
+      // event-dispatch loop — will increment again if needed.
+      if (!this.boardMgrPendingFeedback) this.boardMgrRetryAttempt = 0;
       // Track Board Manager HTTP usage (no modality details — text-only).
       if (result.usage) {
         this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, BOARD_MANAGER_DEFAULT_MODEL, {
@@ -1398,11 +2597,100 @@ export class AgentCoordinator {
       for (const event of result.events) {
         this.onBoardManagerEvent(event);
       }
+      // Fusion-feedback retry. The model called a fused PascalCase tool
+      // name (e.g. RebuildBoardButtons) instead of the canonical
+      // rebuild_board. parseToolCall already rewrote the call to the
+      // real tool and dispatched the event (and downgraded single-button
+      // rebuilds to add_board_button so the existing board isn't
+      // wiped). BoardManager is stateless — each invocation rebuilds
+      // its message list from scratch with no history of prior tool
+      // calls — so there's no carry-over "memory" of the fused name
+      // for a retry to correct. A `<retry_feedback>` block would just
+      // burn tokens for nothing: the model's next invocation can't see
+      // its previous bad call either way. We log the fusion below for
+      // debugging visibility but do NOT queue a retry.
+      if (result.fusionFeedback && result.fusionFeedback.length > 0) {
+        const summary = result.fusionFeedback
+          .map(f => `${f.fusedName}→${f.toolName}`)
+          .join(", ");
+        flowNote("BOARD_MGR", `Fusion detected & auto-corrected (no retry — BM is stateless, no memory to inject into): ${summary}`);
+      }
+      // Retry policy. Two distinct failure modes, both warrant a retry:
+      //
+      //  (a) MALFORMED / empty response — the model produced ZERO valid
+      //      tool calls (MALFORMED_FUNCTION_CALL, safety block, empty
+      //      output). We have no information from this invocation
+      //      regardless of trigger type. ALWAYS retry; the retry cap
+      //      prevents loops if the failure is structural.
+      //
+      //  (b) Beat needed a rebuild but model gave up — the model
+      //      emitted a real no_change(reason) for a trigger that
+      //      genuinely required a board update (button press, AI
+      //      reply, etc.). This is a judgment error, not a failure;
+      //      we re-prompt with an explicit directive so the next turn
+      //      produces buttons.
+      //
+      // Fusion-feedback retries are a separate path (queued elsewhere)
+      // — skip the empty-response/beat retries when fusion was the
+      // problem, to avoid double-retrying.
+      const isMalformedOrEmpty = result.rawToolCalls.length === 0;
+      const hadFusion = !!(result.fusionFeedback && result.fusionFeedback.length > 0);
+      const producedRebuild = result.events.some(
+        e => e.type === "board_rebuilt"
+          || e.type === "board_button_added"
+          || e.type === "binary_choice_shown",
+      );
+      const producedBuilderSuggestions = result.events.some(
+        e => e.type === "builder_suggested",
+      );
+      const onlyNoChange = result.events.length > 0
+        && result.events.every(e => e.type === "board_no_change");
+      const triggerDemandsRebuild = triggeringEvents.some(
+        e => e.type === "button_pressed"
+          || e.type === "sentence_composed"
+          || e.type === "speech_text_finalized"
+          || e.type === "transcribed",
+      );
+      const stateTriggered = triggeringEvents.length === 0 &&
+        (!!this.guessingState || !!this.builderState);
+      const stateRequiresOutput = stateTriggered && !producedRebuild && !producedBuilderSuggestions && !hadFusion && onlyNoChange;
+      // A REAL no_change tool call (model judged the surface fine) on
+      // a trigger that genuinely required a rebuild → judgment-error
+      // retry. Distinct from malformed: rawToolCalls.length > 0 here.
+      const beatGotNoChange = triggerDemandsRebuild
+        && !producedRebuild
+        && !hadFusion
+        && onlyNoChange
+        && !isMalformedOrEmpty;
+
+      if ((isMalformedOrEmpty && !hadFusion) || beatGotNoChange || stateRequiresOutput) {
+        const why = isMalformedOrEmpty
+          ? `malformed/empty (finish: ${result.finishReason ?? "unknown"})`
+          : beatGotNoChange
+            ? `no_change on a beat that needed rebuild (${triggeringEvents.map(e => e.type).join("+")})`
+            : "state-triggered no-output";
+        flowNote("BOARD_MGR", `Queueing retry — ${why}.`);
+        this.queueBoardMgrEmptyResponseRetry();
+      }
     } catch (err) {
       console.error("[AgentCoordinator] BoardManager invocation failed:", err);
     } finally {
       this.boardMgrInFlight = false;
-      if (this.boardMgrPendingTriggers.length > 0) {
+      // Re-invoke if EITHER triggers were queued during the in-flight
+      // invocation OR pending feedback is set (retry path —
+      // queueBoardMgrEmptyResponseRetry / queueBoardMgrFeedback set
+      // pendingFeedback and call invokeBoardManager([]) which, while
+      // we're still inFlight, just pushes [] onto pendingTriggers —
+      // adding nothing, since push(...[]) is a no-op). Without the
+      // feedback check, the retry sets pendingFeedback but the finally
+      // block sees zero queued triggers and skips re-entry — the retry
+      // is orphaned. (Fusion-correction retries were removed: fused
+      // calls are now auto-corrected in parseToolCall and dispatched,
+      // and BoardManager is stateless so there's no memory for a retry
+      // to fix — see the fusion-detection branch in the try block.)
+      const hasFeedback = !!this.boardMgrPendingFeedback;
+      const hasTriggers = this.boardMgrPendingTriggers.length > 0;
+      if (hasFeedback || hasTriggers) {
         const queued = this.boardMgrPendingTriggers;
         this.boardMgrPendingTriggers = [];
         // Re-enter via microtask to avoid stack growth.
@@ -1423,6 +2711,9 @@ export class AgentCoordinator {
       case "board_rebuilt":
         this.applyBoardRebuilt(event);
         return;
+      case "board_button_added":
+        this.applyBoardButtonAdded(event);
+        return;
       case "context_button_added":
         this.applyContextButtonAdded(event);
         return;
@@ -1435,6 +2726,21 @@ export class AgentCoordinator {
       case "board_no_change":
         // No-op. Logged via recentEvents only.
         return;
+      case "guessing_exit_requested":
+        // BoardManager declared narrowing has converged (user confirmed
+        // a guess, conversation moved on, etc.). Run the same exit path
+        // as a client-initiated cancel, but with the AI's reason for
+        // audit + flow-log visibility.
+        flowNote("BOARD_MGR", `exit_guessing requested: ${event.reason}`);
+        this.clearGuessingState(`ai_exit:${event.reason}`);
+        return;
+      case "interpret_intent":
+        // BoardManager produced a natural-language interpretation of a
+        // composed SENTENCE — route to the existing TTS + follow-up
+        // pipeline. Server-side gate still applies (drops if the last
+        // user input wasn't sentence_composed).
+        this.routeInterpretIntent(event);
+        return;
       case "monitor_call_requested":
         this.requestMonitor(event.reason, "board-manager");
         return;
@@ -1446,35 +2752,204 @@ export class AgentCoordinator {
   }
 
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
+    // Partition: suggestion buttons (whose `glyph` is a valid
+    // `suggestion:dim:value` key) are trusted system-expanded content
+    // — they bypass the validator (which would reject them as unknown
+    // imageKeys) and are rendered via expandSuggestionKey which
+    // attaches the system-provided icon + label. Non-suggestion
+    // buttons go through the normal validator.
+    type Btn = {
+      label: string;
+      glyph?: string;
+      glyphFallback?: string;
+      imageKey?: string;
+      iconRef?: string;
+      symbolPath?: string;
+      [k: string]: unknown;
+    };
+    const suggestionExpanded: any[] = [];
+    const specialButtons: Btn[] = [];     // wordfinder / more — bypass validator
+    const regular: Btn[] = [];
+    for (const b of event.buttons) {
+      const glyph = (b.glyph || "").trim();
+      if (glyph && isValidSuggestionKey(glyph)) {
+        const expanded = expandSuggestionKey(glyph);
+        if (expanded) {
+          suggestionExpanded.push(expanded);
+          continue;
+        }
+      }
+      const entry: Btn = {
+        label: b.label,
+        glyph: b.glyph,
+        glyphFallback: b.glyphFallback,
+        imageKey: b.imageKey,
+        iconRef: b.iconRef,
+        symbolPath: b.symbolPath,
+        sentence: b.sentence,
+        speech: b.speech,
+        buttonType: b.buttonType,
+        narrowDimension: (b as any).narrowDimension,
+        narrowValue: (b as any).narrowValue,
+        rowSpan: b.rowSpan,
+        colSpan: b.colSpan,
+      };
+      if (b.buttonType === "wordfinder") {
+        // Drop the wordfinder entry while already guessing — the entry
+        // is a no-op in that state and the gate keeps it off-screen.
+        if (this.guessingState !== null) {
+          flowNote("COORDINATOR", "rebuild_board: dropping wordfinder button — already in guessing mode.");
+          continue;
+        }
+        specialButtons.push(entry);
+      } else if (b.buttonType === "more") {
+        specialButtons.push(entry);
+      } else {
+        regular.push(entry);
+      }
+    }
+
+    const { buttons: kept, errors } = validateBoardButtons(regular);
+    if (errors.length > 0) {
+      this.queueBoardMgrFeedback("rebuild_board", errors);
+    }
+    // When in guessing mode, tag every non-suggestion button as a
+    // "guess" so the word-finder UI on the client renders it alongside
+    // the system suggestion buttons. The AI's prompt asks it to prefix
+    // these labels with [GUESS] but it doesn't always do so reliably —
+    // applying the type server-side guarantees they reach the strip.
+    if (this.guessingState) {
+      for (const b of kept) {
+        if (!(b as any).buttonType) (b as any).buttonType = "guess";
+      }
+    }
+    const merged = [...kept, ...specialButtons, ...suggestionExpanded].slice(0, 8);
+    if (merged.length === 0) {
+      // Nothing renderable in the rebuild — leave the current surface
+      // intact rather than wipe the board to empty.
+      return;
+    }
+
     // If a custom board is loaded (e.g. the home board pushed at init),
     // the client is in "custom board mode" and ignores `board` updates
-    // until the custom board is unloaded. Mirror the legacy behavior of
-    // sending `unload_board` first so the rebuild lands.
+    // until the custom board is unloaded.
     if (this.loadedBoardId) {
       this.send({ type: "unload_board", data: {} });
       this.loadedBoardId = null;
     }
-    // Update state mirror.
-    this.currentBoardLabels = event.buttons.map(b => b.label);
-    // Forward to client as a full board IR — the client expects
-    // { grid, pages: [{ id, name, buttons: [...] }], currentPageId },
-    // not the bare buttons[] we used to send.
+    this.currentBoardLabels = merged.map(b => b.label);
+    this.currentBoardButtons = merged.map(b => ({ ...b } as MergeButton));
+    // Remember who this board's buttons are addressed to. Always default
+    // to DEVICE unless BoardManager explicitly set a different target;
+    // never inherit from a prior transcript speaker. (BoardManager is
+    // told to set target explicitly when the user is replying to a
+    // person in the room.)
+    this.currentBoardTarget = event.target ?? PARTY_DEVICE;
     this.send({
       type: "board",
-      data: buildBoardFromButtons(event.buttons),
+      data: buildBoardFromButtons(merged as any),
     });
-    // Resolve and queue symbol generation for any generate:KEY references.
-    void this.applySymbolPipeline(event.buttons);
+    void this.applySymbolPipeline(merged as any);
+  }
+
+  /**
+   * Merge a single incoming button into the current main board via
+   * smartMergeButtons. Preserves slot positions for the client's
+   * fade-in/fade-out animation; if the board is full, the most-similar
+   * (or in the worst case, oldest) existing button is displaced.
+   */
+  private applyBoardButtonAdded(event: BoardButtonAddedEvent): void {
+    const b = event.button;
+    // Special-type buttons (wordfinder, more) skip the visual-content
+    // validator — they have no glyph or sentence, just a hardcoded marker
+    // the client renders with its own styling.
+    const isSpecial = b.buttonType === "wordfinder" || b.buttonType === "more";
+    if (b.buttonType === "wordfinder" && this.guessingState !== null) {
+      // Gate: don't surface a Word Finder entry when one's already active.
+      flowNote(
+        "COORDINATOR",
+        "wordfinder button dropped — already in guessing mode.",
+      );
+      return;
+    }
+    if (!isSpecial) {
+      // Run the same validator path as add_context_button — drop on
+      // structural errors and queue feedback.
+      const { buttons: kept, errors } = validateBoardButtons([{
+        label: b.label,
+        glyph: b.glyph,
+        glyphFallback: b.glyphFallback,
+        imageKey: b.imageKey,
+        iconRef: b.iconRef,
+        symbolPath: b.symbolPath,
+      }]);
+      if (errors.length > 0) {
+        this.queueBoardMgrFeedback("add_board_button", errors);
+      }
+      if (kept.length === 0) return;
+    }
+
+    const incoming: MergeButton = {
+      label: b.label,
+      glyph: b.glyph,
+      glyphFallback: b.glyphFallback,
+      imageKey: b.imageKey,
+      iconRef: b.iconRef,
+      symbolPath: b.symbolPath,
+      sentence: b.sentence,
+      speech: b.speech,
+      buttonType: b.buttonType,
+      narrowDimension: (b as any).narrowDimension,
+      narrowValue: (b as any).narrowValue,
+    };
+
+    let newIdCounter = 0;
+    const newId = () => `btn-${Date.now()}-${newIdCounter++}`;
+    const { merged } = smartMergeButtons(
+      this.currentBoardButtons,
+      [incoming],
+      AgentCoordinator.MAIN_BOARD_MAX,
+      newId,
+    );
+    if (merged.length === 0) return;
+
+    // If a custom board is loaded, unload it before pushing the new merged
+    // board — the client only renders dynamic boards otherwise.
+    if (this.loadedBoardId) {
+      this.send({ type: "unload_board", data: {} });
+      this.loadedBoardId = null;
+    }
+    this.currentBoardLabels = merged.map(m => m.label);
+    this.currentBoardButtons = merged.map(m => ({ ...m }));
+    if (event.target !== undefined) this.currentBoardTarget = event.target;
+    this.send({
+      type: "board",
+      data: buildBoardFromButtons(merged as any),
+    });
+    void this.applySymbolPipeline(merged as any);
   }
 
   private applyContextButtonAdded(event: ContextButtonAddedEvent): void {
-    this.contextSidebarLabels.push(event.button.label);
+    // Same validator — one-button input. Drops on any rule violation
+    // and queues feedback for the next invocation.
+    const b = event.button;
+    const { buttons: kept, errors } = validateBoardButtons([{
+      label: b.label,
+      glyph: b.glyph,
+      glyphFallback: b.glyphFallback,
+      imageKey: b.imageKey,
+      iconRef: b.iconRef,
+      symbolPath: b.symbolPath,
+    }]);
+    if (errors.length > 0) {
+      this.queueBoardMgrFeedback("add_context_button", errors);
+    }
+    if (kept.length === 0) return;
+
+    this.contextSidebarLabels.push(b.label);
     if (this.contextSidebarLabels.length > 4) {
       this.contextSidebarLabels.shift();
     }
-    // The client expects a flat object with label/iconRef/symbolPath/etc.
-    // (not wrapped). Mirror the legacy LiveRelay's send shape.
-    const b = event.button;
     this.send({
       type: "context_button_add",
       data: {
@@ -1488,7 +2963,56 @@ export class AgentCoordinator {
         buttonType: b.buttonType,
       },
     });
-    void this.applySymbolPipeline([event.button]);
+    void this.applySymbolPipeline([b]);
+  }
+
+  /** Queue a corrective retry when BoardManager produced no tool calls
+   *  on a user-input trigger that demanded a rebuild. Same retry-cap as
+   *  the validator/fusion paths so a pathological loop can't lock the
+   *  agent. */
+  private queueBoardMgrEmptyResponseRetry(): void {
+    if (this.boardMgrRetryAttempt >= AgentCoordinator.BOARD_MGR_MAX_RETRIES) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("BOARD_MGR_EMPTY", `Past retry cap — dropping empty-response retry.`);
+      });
+      return;
+    }
+    // Tailor the retry instruction to the current state.
+    let directive: string;
+    if (this.guessingState) {
+      directive = `The user is in word-finder mode. Call \`rebuild_board(buttons=[...])\` using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`sentence\` fields.`;
+    } else if (this.builderState) {
+      directive = `The user is composing in the ${T.builder}. Call \`suggest_construction_buttons(slot_index, head_candidates, modifier_candidates)\` with appropriate SYMBOLs.`;
+    } else {
+      directive = `The user (or someone speaking to them) just took an action — they need response options now. Call \`rebuild_board(buttons=[...])\` with a fresh set of ${T.button}s.`;
+    }
+    this.boardMgrPendingFeedback =
+      `[empty response]\nYour previous response had no tool calls. ${directive}`;
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      logLiveSession("BOARD_MGR_EMPTY", `Queued empty-response retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}.`);
+    });
+    void this.invokeBoardManager([]);
+  }
+
+  /** Queue validator-error feedback for the next BoardManager
+   *  invocation, with a retry cap so a pathological response can't
+   *  loop forever. */
+  private queueBoardMgrFeedback(toolName: string, errors: string[]): void {
+    if (this.boardMgrRetryAttempt >= AgentCoordinator.BOARD_MGR_MAX_RETRIES) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("BOARD_MGR_VALIDATOR", `Errors past retry cap — dropping. tool=${toolName} errors=${errors.length}`);
+      });
+      return;
+    }
+    const header = `[${toolName} — rejected ${T.button}s]`;
+    const body = errors.map(e => `• ${e}`).join("\n");
+    this.boardMgrPendingFeedback = `${header}\n${body}\n\nRebuild correctly — supply a fallback when sentence uses \`generate:\`, omit the fallback field entirely otherwise, use only canonical modifiers, and give every ${T.button} a unique visual.`;
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      logLiveSession("BOARD_MGR_VALIDATOR", `${toolName} → ${errors.length} errors, queued retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}`);
+    });
+    // Fire a self-rebuild invocation with the feedback. Synthetic
+    // trigger lets renderInvocationContext display the retry framing.
+    void this.invokeBoardManager([]);
   }
 
   private applyBinaryChoiceShown(event: BinaryChoiceShownEvent): void {
@@ -1500,9 +3024,10 @@ export class AgentCoordinator {
 
   private applyBuilderSuggested(event: BuilderSuggestedEvent): void {
     // Map our typed event to the existing wire shape the AAC client expects.
+    // Use parseSinglePipeButton (NOT parseBoardButtons) so a comma inside a
+    // label fragment doesn't split the candidate into two empty pieces.
     const toCandidate = (raw: string) => {
-      const parsed = parseBoardButtons(raw);
-      const b = parsed[0];
+      const b = parseSinglePipeButton(raw);
       if (!b) return null;
       return {
         key: b.glyph || b.sentence || b.label,
@@ -1528,6 +3053,7 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
 
   private requestMonitor(reason: string, source: string): void {
+    flowInput("MONITOR", "call_request", `from=${source} reason="${reason}"`);
     this.pendingMonitorCalls.push({ reason, source });
     if (this.monitorCallDedupTimer) return; // already scheduled
     this.monitorCallDedupTimer = setTimeout(() => {
@@ -1543,12 +3069,16 @@ export class AgentCoordinator {
     const combinedReason = calls
       .map(c => `(${c.source}) ${c.reason}`)
       .join(" | ");
+    flowNote("MONITOR", `Invoking monitor — ${combinedReason}`);
     console.log(`[AgentCoordinator] Monitor call: ${combinedReason}`);
+    const t0 = Date.now();
     try {
       await dualAgentService.triggerMonitor(this.sessionId, /* force */ true);
+      flowNote("MONITOR", `Monitor invocation completed in ${Date.now() - t0}ms`);
       // Response is broadcast via state.onContextInjection which we wired up
       // in handleInitialize.
     } catch (err) {
+      flowNote("MONITOR", `Monitor invocation failed: ${(err as Error).message}`);
       console.error("[AgentCoordinator] Monitor invocation failed:", err);
     }
   }
@@ -1562,6 +3092,7 @@ export class AgentCoordinator {
     };
     this.recordEvent(event);
 
+    flowOutput("MONITOR", "broadcast", text);
     const rendered = `[MONITOR CONTEXT] ${text}`;
     this.observer?.sendContextInjection(rendered);
     this.speaker?.sendContextInjection(rendered);
@@ -1573,10 +3104,26 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
 
   /** Append a conversational turn to the rolling log and check whether a
-   *  new summary is due. */
+   *  new summary is due. Also pushes the turn into the session's
+   *  pendingMessages queue so Monitor can process it on its next run —
+   *  without this the three-agent path never feeds Monitor, and
+   *  Student_Notes / Student_Interests / Student_People never update
+   *  (the queue Monitor reads from stays permanently empty). Mirrors
+   *  the legacy LiveRelay's addPendingMessage calls in every turn-end
+   *  path. */
   private appendToConversationLog(role: "user" | "assistant", content: string): void {
     this.conversationLog.push({ role, content });
     this.maybeProduceSessionSummary();
+    if (this.sessionId) {
+      // Fire-and-forget — Monitor's atomic DB-pending lock handles
+      // concurrency. A failure here is non-fatal; we already have the
+      // turn in conversationLog for summary purposes.
+      dualAgentService
+        .addPendingMessage(this.sessionId, { role, content, timestamp: Date.now() })
+        .catch(err => {
+          console.warn("[AgentCoordinator] addPendingMessage failed:", (err as Error).message);
+        });
+    }
   }
 
   /** Fire a summarizer call when enough new turns have landed. Async
@@ -1593,17 +3140,37 @@ export class AgentCoordinator {
     const newMessages = this.conversationLog.slice(this.summarizedMsgCount);
     const markCount = total;
     this.summaryInFlight = true;
+    flowInput("MONITOR", "summarize_request", `${newMessages.length} new msgs (total=${total})`);
+    const summaryT0 = Date.now();
     monitor
       .produceSessionSummary(this.currentSessionSummary, newMessages)
-      .then((summary: string | undefined) => {
+      .then((result: { summary?: string; usage?: { provider: any; model: string; promptTokens: number; completionTokens: number; cachedTokens?: number } }) => {
         this.summaryInFlight = false;
+        // Bill credits regardless of whether the summary changed — the
+        // LLM call still happened and tokens were consumed.
+        if (result.usage && this.sessionId && this.studentId) {
+          dualAgentService.trackHttpUsage(
+            this.sessionId,
+            this.studentId,
+            this.userId,
+            result.usage.provider,
+            result.usage.model,
+            result.usage.promptTokens,
+            result.usage.completionTokens,
+            result.usage.cachedTokens ?? 0,
+            "monitor-summary",
+          ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(summary) failed:", err));
+        }
+        const summary = result.summary;
         if (!summary || summary === this.currentSessionSummary) {
+          flowNote("MONITOR", `summarize: no change after ${Date.now() - summaryT0}ms`);
           // Advance the marker so we don't re-summarize the same batch.
           this.summarizedMsgCount = markCount;
           return;
         }
         this.currentSessionSummary = summary;
         this.summarizedMsgCount = markCount;
+        flowOutput("MONITOR", "session_summary", `${summary.length} chars (${Date.now() - summaryT0}ms)`);
         // Mirror onto session state so reconnects / profile-switches see
         // the latest summary in their prompt rebuild.
         if (cache?.state) cache.state.sessionSummary = summary;
@@ -1617,6 +3184,7 @@ export class AgentCoordinator {
       })
       .catch((err: Error) => {
         this.summaryInFlight = false;
+        flowNote("MONITOR", `summarize failed: ${err.message}`);
         console.warn(`[AgentCoordinator] session summary failed:`, err.message);
       });
   }

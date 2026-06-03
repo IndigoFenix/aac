@@ -35,17 +35,26 @@ import type {
   PrivateNoteEvent,
   BoardButton,
   BoardRebuiltEvent,
+  BoardButtonAddedEvent,
   ContextButtonAddedEvent,
   BinaryChoiceShownEvent,
   BuilderSuggestedEvent,
   BoardNoChangeEvent,
+  InterpretIntentEvent,
+  GuessingExitRequestedEvent,
 } from "./agent-events";
 import {
   buildBoardManagerToolDeclarations,
   type BoardManagerToolConfig,
 } from "./tool-declarations-board-manager";
-import { parseBoardButtons } from "./interactive-agent";
+import { parseBoardButtons, parseStructuredBoardButton } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
+import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
+import {
+  buildFusionMap,
+  applyFusionEntry,
+  type FusionEntry,
+} from "./tool-fusion-normalizer";
 
 // ---------------------------------------------------------------------------
 // Structured-button input shapes — what the AI returns inside a tool call's
@@ -53,48 +62,67 @@ import { T } from "../memory-schema/canonical-terms";
 // schemas in tool-declarations-board-manager.ts.
 // ---------------------------------------------------------------------------
 
-interface StructuredButtonInput {
-  speech?: unknown;
-  sentence?: unknown;
-  fallback?: unknown;
-  label?: unknown;
-  rowSpan?: unknown;
-  colSpan?: unknown;
-  buttonType?: unknown;
+/**
+ * Special button kinds — the AI declares them via `button_type` on any
+ * regular button in rebuild_board / add_board_button. The system renders
+ * a FIXED appearance and the model's speech/sentence/label are discarded.
+ *
+ * Kept as a typed string list (not a union) so adding a new kind is one
+ * line here + one line in the client renderer; no follow-on union edits.
+ */
+const SPECIAL_BUTTON_TYPES = ["wordfinder", "more"] as const;
+type SpecialButtonType = (typeof SPECIAL_BUTTON_TYPES)[number];
+
+function extractSpecialButtonType(input: unknown): SpecialButtonType | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as { buttonType?: unknown; button_type?: unknown };
+  // Accept either spelling — Gemini's tool-arg keys are snake_case by
+  // convention, but the model occasionally emits camelCase.
+  const raw = o.button_type ?? o.buttonType;
+  if (typeof raw !== "string") return null;
+  return (SPECIAL_BUTTON_TYPES as readonly string[]).includes(raw)
+    ? (raw as SpecialButtonType)
+    : null;
+}
+
+/** Build the canonical shape for a special button. Server-side fields are
+ *  placeholders the client overrides at render time using i18n + fixed
+ *  styling; we still set them so logs / merge-dedupe / accessibility have
+ *  meaningful values. */
+function buildSpecialButton(kind: SpecialButtonType): ReturnType<typeof parseBoardButtons>[number] {
+  if (kind === "wordfinder") {
+    return {
+      label: "Find word",
+      sentence: "wordfinder",
+      iconRef: "fas fa-magnifying-glass",
+      glyphFallback: "🔍",
+      buttonType: "wordfinder" as any,
+    } as ReturnType<typeof parseBoardButtons>[number];
+  }
+  // kind === "more"
+  return {
+    label: "More",
+    sentence: "more",
+    iconRef: "fas fa-plus",
+    glyphFallback: "➕",
+    buttonType: "more" as any,
+  } as ReturnType<typeof parseBoardButtons>[number];
 }
 
 /**
- * Re-encode a structured-button object back into the pipe-encoded
- * `speech|sentence|fallback|label[|rowSpan|colSpan]` string parseBoardButtons
- * already knows how to parse. The pipe parser does the iconRef / symbolPath
- * / imageKey derivation and the [GUESS] prefix handling, so re-using it
- * lets the structured path share that logic without duplication.
+ * Parse one structured button object from the AI's tool args.
+ *
+ *  - When `button_type` is set to a known special kind (wordfinder / more),
+ *    short-circuit and emit the canonical fixed shape — the AI's speech /
+ *    sentence / label are discarded for these meta buttons.
+ *  - Otherwise route to `parseStructuredBoardButton` which reads the
+ *    structured fields directly (no pipe round-trip, no comma-fragmentation
+ *    risk).
  */
-function structuredToPipeButton(input: StructuredButtonInput): string | null {
-  const speech = typeof input.speech === "string" ? input.speech : "";
-  const sentence = typeof input.sentence === "string" ? input.sentence : "";
-  const fallback = typeof input.fallback === "string" ? input.fallback : "";
-  const label = typeof input.label === "string" ? input.label : "";
-  if (!label) return null; // a button without a label is unusable
-  const rowSpan = typeof input.rowSpan === "number" && input.rowSpan >= 2
-    ? String(input.rowSpan) : "";
-  const colSpan = typeof input.colSpan === "number" && input.colSpan >= 2
-    ? String(input.colSpan) : "";
-  // Always emit four core pipe fields; trailing rowSpan/colSpan only when
-  // present.
-  let pipe = `${speech}|${sentence}|${fallback}|${label}`;
-  if (rowSpan || colSpan) pipe += `|${rowSpan}|${colSpan}`;
-  return pipe;
-}
-
-/** Convert an array of structured-button inputs to a comma-joined pipe
- *  string, suitable for parseBoardButtons. Filters out invalid entries. */
-function structuredArrayToPipeString(inputs: unknown): string {
-  if (!Array.isArray(inputs)) return "";
-  return inputs
-    .map(item => (item && typeof item === "object") ? structuredToPipeButton(item as StructuredButtonInput) : null)
-    .filter((s): s is string => !!s)
-    .join(",");
+function parseStructuredButton(input: unknown): ReturnType<typeof parseBoardButtons>[number] | null {
+  const kind = extractSpecialButtonType(input);
+  if (kind) return buildSpecialButton(kind);
+  return parseStructuredBoardButton(input);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +182,10 @@ export interface BoardManagerInvocationInput {
     dimension: string;
     offeredKeys: string[];
     questionHint: string;
+    /** AI-proposed narrowing steps the user has confirmed (parallel track). */
+    customFacts: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>;
+    /** Facts the user explicitly rejected — model must not re-propose them. */
+    rejectedFacts: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>;
   };
 
   /** Model selection for the HTTP call. */
@@ -173,6 +205,11 @@ export interface BoardManagerInvocationResult {
   usage?: { promptTokens: number; completionTokens: number };
   /** Provider finish reason (STOP, MAX_TOKENS, etc.) for diagnostics. */
   finishReason?: string;
+  /** Fused tool names the model emitted that we silently rewrote.
+   *  Coordinator turns these into a `<retry_feedback>` block on the
+   *  NEXT invocation so the model learns the correct tool name without
+   *  us telling it we patched the previous call. Empty if none. */
+  fusionFeedback?: Array<{ fusedName: string; toolName: string; paramName: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +256,28 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   }
   lines.push(`</current_state>`);
 
-  // Builder / guessing mode (mutually exclusive)
+  // Builder + guessing state. Guessing mode is a sub-mode of the
+  // builder — when the user opens word-finder from inside the builder,
+  // BOTH states are set, and the offered suggestion keys are the
+  // actionable info the model needs. Render guessing_state FIRST when
+  // present (it overrides builder behavior); fall through to
+  // builder_state otherwise.
+  if (input.guessingState) {
+    lines.push("");
+    lines.push(`<guessing_state>`);
+    if (input.guessingState.dimension) lines.push(`dimension: ${input.guessingState.dimension}`);
+    lines.push(`offered_keys: [${input.guessingState.offeredKeys.join(", ")}]`);
+    lines.push(`question_hint: ${input.guessingState.questionHint}`);
+    const renderFact = (f: { dimension: string; value: string; sourceText?: string }) =>
+      f.sourceText ? `${f.dimension}=${f.value} ("${f.sourceText}")` : `${f.dimension}=${f.value}`;
+    if (input.guessingState.customFacts.length) {
+      lines.push(`custom_facts: [${input.guessingState.customFacts.map(renderFact).join(", ")}]`);
+    }
+    if (input.guessingState.rejectedFacts.length) {
+      lines.push(`rejected_facts (NEVER re-propose): [${input.guessingState.rejectedFacts.map(renderFact).join(", ")}]`);
+    }
+    lines.push(`</guessing_state>`);
+  }
   if (input.builderState) {
     lines.push("");
     lines.push(`<${T.tagBuilderState.replace(/[\[\]]/g, "").toLowerCase().replace(/\s+/g, "_")}>`);
@@ -237,13 +295,6 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
       lines.push(`exclude_keys: [${input.builderState.excludeKeys.join(", ")}]`);
     }
     lines.push(`</builder_state>`);
-  } else if (input.guessingState) {
-    lines.push("");
-    lines.push(`<guessing_state>`);
-    lines.push(`dimension: ${input.guessingState.dimension}`);
-    lines.push(`offered_keys: [${input.guessingState.offeredKeys.join(", ")}]`);
-    lines.push(`question_hint: ${input.guessingState.questionHint}`);
-    lines.push(`</guessing_state>`);
   }
 
   // Recent events (for conversation continuity)
@@ -257,7 +308,8 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
     lines.push(`</recent_events>`);
   }
 
-  // What just happened (the trigger)
+  // What just happened (the trigger) + an action hint that nudges the
+  // model toward the right tool per trigger type.
   lines.push("");
   lines.push(`<this_invocation>`);
   lines.push(`Triggered by:`);
@@ -265,20 +317,77 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
     const rendered = renderEventLine(event);
     if (rendered) lines.push(`- ${rendered}`);
   }
-  lines.push(`Choose one or more board actions, or call no_change(reason) if the current ${T.board} is still appropriate.`);
+  // Hint priority: mode-state (builder/guessing) overrides per-trigger
+  // hints, because those modes constrain which tool is appropriate.
+  let hint = "";
+  if (input.guessingState) {
+    hint = `Action: rebuild_board using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`sentence\` fields. Don't invent new suggestion keys.`;
+  } else if (input.builderState) {
+    hint = `Action: suggest_construction_buttons (up to 4 head_candidates; up to 4 modifier_candidates when a HEAD SYMBOL is placed). Don't touch the main ${T.board} while the ${T.builder} is open.`;
+  } else {
+    hint = invocationActionHint(input.triggeringEvents);
+  }
+  if (hint) lines.push("", hint);
   lines.push(`</this_invocation>`);
 
   return lines.join("\n");
+}
+
+/**
+ * Per-trigger guidance for which tool the Board Manager should typically
+ * reach for. Keeps the framing aligned with the legacy system's
+ * board-vs-context-sidebar split (rebuild_board for conversational
+ * response surfaces; add_context_button for ambient observations).
+ *
+ * Returns "" when the trigger mix doesn't suggest a clear default —
+ * model picks from the full tool list as usual.
+ */
+function invocationActionHint(events: AgentEvent[]): string {
+  // Categorize what the batch contains.
+  let hasUserInput = false;
+  let hasAiSpoke = false;
+  let hasContextUpdate = false;
+  let hasInterpret = false;
+  for (const e of events) {
+    if (e.type === "button_pressed" || e.type === "sentence_composed") hasUserInput = true;
+    // speech_text_finalized is the canonical "AI spoke" trigger (full
+    // transcript available, audio possibly still playing). speech_end
+    // is also valid as a fallback for code paths that didn't surface
+    // text_finalized.
+    if (e.type === "speech_text_finalized" || e.type === "speech_end") hasAiSpoke = true;
+    if (e.type === "context_update") hasContextUpdate = true;
+    if (e.type === "interpret_intent") hasInterpret = true;
+  }
+
+  if (hasUserInput) {
+    return `Action: rebuild_board. The USER just acted — build FOLLOW-UPS that continue or clarify their statement. Think "what might they want to say NEXT after this?" (not "how would the AI reply"). Include options to elaborate the topic, switch direction, or correct themselves.`;
+  }
+  if (hasInterpret) {
+    return `Action: rebuild_board. The USER played a composed SENTENCE — build FOLLOW-UPS that continue or clarify the thought they just voiced.`;
+  }
+  if (hasAiSpoke) {
+    return `Action: rebuild_board. The AI just spoke TO the user — build REPLIES the user might say back. Think "what would they say in response to this question/statement?" (not "what might they say next on their own"). If the AI asked a question, the buttons are the user's plausible answers.`;
+  }
+  if (hasContextUpdate) {
+    return `Action: no_change. Observations don't change what the USER wants to say next — the ${T.board} stays. If the observation is genuinely worth surfacing for the user (a person they know walking in, an object they might want to react to), use add_context_button to add ONE sidebar item. Do NOT call rebuild_board.`;
+  }
+  return "";
 }
 
 /** One-line summary of an event for the recent-events listing. Returns
  *  empty string for events that don't need to surface to Board Manager. */
 function renderEventLine(event: AgentEvent): string {
   switch (event.type) {
-    case "button_pressed":
-      return `[${T.tagPress}] (user pressed) "${event.sentence}"`;
+    case "button_pressed": {
+      // A press is functionally a USER statement; render the same shape
+      // as a transcript so BoardManager has one consistent mental model
+      // for "who said what to whom". Default target is the device.
+      const tgt = event.target ?? "AI";
+      const label = tgt === "DEVICE" ? "AI" : tgt;
+      return `[USER to ${label}] "${event.sentence}"`;
+    }
     case "sentence_composed":
-      return `[${T.tagComposed}] (user played from builder) "${event.sentence}"`;
+      return `[USER (composed) to AI] "${event.sentence}"`;
     case "mute_toggled":
       return `[MUTE TOGGLED] now ${event.state}`;
     case "builder_opened":
@@ -289,29 +398,60 @@ function renderEventLine(event: AgentEvent): string {
       return `[GUESSING ENTERED]`;
     case "guessing_exited":
       return `[GUESSING EXITED]`;
-    case "transcribed":
-      return `[TRANSCRIPT] ${event.speaker} → ${event.direction}: "${event.text}"`;
+    case "transcribed": {
+      const tgt = event.target ?? "AI";
+      const label = tgt === "DEVICE" ? "AI" : tgt;
+      return `[${event.speaker} to ${label}] "${event.text}"`;
+    }
     case "context_update":
       return `[CONTEXT] ${event.updateType}: ${event.key} — ${event.description}${event.relevance ? ` (relevance: ${event.relevance})` : ""}`;
     case "engagement_change":
       return `[ENGAGEMENT] ${event.state}${event.reason ? ` — ${event.reason}` : ""}`;
+    case "speech_text_finalized":
+      // BoardManager fires on speech_text_finalized — the moment the
+      // FULL transcript is available (audio may still be playing).
+      return `[AI] "${event.transcript}"`;
+    case "speech_start":
     case "speech_end":
-      return `[SPEAKER] "${event.transcript}"`;
+      // Both are no-ops for BoardManager — speech_text_finalized is
+      // the canonical trigger for AI-utterance rebuilds.
+      return "";
     case "interpret_intent":
       return `[INTERPRET] (student voice) "${event.sentence}"`;
     case "mode_change":
       return `[MODE] ${event.mode}${event.reason ? ` — ${event.reason}` : ""}`;
     case "monitor_broadcast":
       return `[MONITOR CONTEXT] ${event.contextInjection}`;
+    // BoardManager's OWN prior tool calls. Surfacing them in
+    // <recent_events> gives the model a self-history — it sees the
+    // CANONICAL tool name (rebuild_board, add_board_button, etc.) even
+    // when its previous turn emitted a fused PascalCase variant
+    // (RebuildBoardButtons), because parseToolCall rewrites the fused
+    // call before this event is recorded. Net effect: the model's view
+    // of its own past actions always uses the right tool name, which
+    // anchors its next turn toward emitting the same correct name.
+    case "board_rebuilt": {
+      const labels = event.buttons.map((b: any) => `"${b.label}"`).join(", ");
+      return `[YOU] rebuild_board(${event.buttons.length} buttons: ${labels})`;
+    }
+    case "board_button_added":
+      return `[YOU] add_board_button("${event.button.label}")`;
+    case "binary_choice_shown":
+      return `[YOU] show_binary_choice("${event.option1.label}" / "${event.option2.label}")`;
+    case "context_button_added":
+      return `[YOU] add_context_button("${event.button.label}")`;
+    case "board_no_change":
+      return `[YOU] no_change${event.reason ? `(${event.reason})` : "()"}`;
+    case "guessing_exit_requested":
+      return `[YOU] exit_guessing(${event.reason})`;
+    case "builder_suggested": {
+      const heads = (event.headCandidates ?? []).length;
+      const mods = (event.modifierCandidates ?? []).length;
+      return `[YOU] suggest_construction_buttons(slot ${event.slotIndex}, ${heads} heads, ${mods} modifiers)`;
+    }
     // The following don't help Board Manager decide:
-    case "speech_start":
     case "emote_change":
     case "focus_request":
-    case "board_rebuilt":
-    case "context_button_added":
-    case "binary_choice_shown":
-    case "builder_suggested":
-    case "board_no_change":
     case "monitor_call_requested":
     case "private_note":
       return "";
@@ -343,6 +483,7 @@ function renderEventLine(event: AgentEvent): string {
 function parseToolCall(
   call: { name: string; arguments: string },
   now: number,
+  fusionMap?: ReadonlyMap<string, FusionEntry>,
 ): BoardManagerOutputEvent | null {
   let args: Record<string, any>;
   try {
@@ -352,15 +493,37 @@ function parseToolCall(
     return null;
   }
 
+  // Generic fusion normalization. The model occasionally fuses a tool
+  // name with one of its param names into a single PascalCase identifier
+  // (rebuild_board + buttons → "RebuildBoardButtons"). The fusion map,
+  // built once from the declared tool schemas, identifies these and
+  // rewrites them to the real tool name with args wrapped under the
+  // matched param. See buildFusionMap.
+  if (fusionMap && call.name) {
+    const entry = fusionMap.get(call.name);
+    if (entry) {
+      const rewritten = applyFusionEntry(entry, args);
+      flowNote("BOARD_MGR", `Fused tool name "${call.name}" rewritten → ${entry.toolName}(${entry.paramName}=…)`);
+      call = { name: entry.toolName, arguments: JSON.stringify(rewritten) };
+      args = rewritten;
+    }
+  }
+
   switch (call.name) {
     case "rebuild_board": {
-      // The tool schema declares this as a structured array; re-encode
-      // each item as a pipe string so parseBoardButtons handles the
-      // iconRef / symbolPath / imageKey derivation the same way it
-      // always has.
-      const arr = args[T.paramUserResponseButtons] ?? args.user_response_buttons ?? args.buttons;
-      const pipeStr = structuredArrayToPipeString(arr);
-      const parsed = parseBoardButtons(pipeStr);
+      // The tool schema declares this as a structured array. Parse each
+      // entry through parseStructuredButton so any per-button
+      // `button_type` (wordfinder / more) short-circuits to its canonical
+      // shape and the rest go through the pipe parser (which handles
+      // iconRef / symbolPath / imageKey derivation). Going button-by-
+      // button (instead of bulk pipe-flatten) also avoids the comma-inside-
+      // speech fragmentation bug.
+      // Schema declares `buttons`; older models occasionally emit the
+      // legacy `user_response_buttons` name — accept both.
+      const arr = args.buttons ?? args.user_response_buttons ?? args[T.paramUserResponseButtons];
+      const parsed: ReturnType<typeof parseBoardButtons> = Array.isArray(arr)
+        ? arr.map(item => parseStructuredButton(item)).filter((b): b is NonNullable<typeof b> => !!b)
+        : [];
       const buttons: BoardButton[] = parsed.map(b => ({
         label: b.label,
         sentence: b.sentence,
@@ -373,24 +536,42 @@ function parseToolCall(
         rowSpan: b.rowSpan,
         colSpan: b.colSpan,
         buttonType: b.buttonType,
+        narrowDimension: b.narrowDimension,
+        narrowValue: b.narrowValue,
       }));
+      // Charitable downgrade — a single-button rebuild is almost certainly
+      // a mistake (often the RebuildBoardButtons fusion the model keeps
+      // emitting, one button at a time). Wiping the whole board to show
+      // one option is rarely intended. Route to add_board_button instead
+      // so the existing board is preserved and the new button slots in
+      // via smartMergeButtons. Coordinator's queueBoardMgrFeedback may
+      // also nudge the model toward the right tool on the next turn.
+      if (buttons.length === 1) {
+        flowNote("BOARD_MGR", `rebuild_board with 1 button → downgraded to add_board_button("${buttons[0].label}")`);
+        const event: BoardButtonAddedEvent = {
+          type: "board_button_added",
+          source: "board-manager",
+          timestamp: now,
+          button: buttons[0],
+          target: typeof args.target === "string" ? args.target : undefined,
+        };
+        return event;
+      }
       const event: BoardRebuiltEvent = {
         type: "board_rebuilt",
         source: "board-manager",
         timestamp: now,
         buttons,
+        target: typeof args.target === "string" ? args.target : undefined,
       };
       return event;
     }
 
     case "add_context_button": {
-      // Structured object input — wrap in an array, re-encode, parse.
-      const obj = args.button;
-      if (!obj || typeof obj !== "object") return null;
-      const pipeStr = structuredArrayToPipeString([obj]);
-      const parsed = parseBoardButtons(pipeStr);
-      if (parsed.length === 0) return null;
-      const b = parsed[0];
+      // Structured object input — parse directly (no comma round-trip;
+      // see parseStructuredButton for why).
+      const b = parseStructuredButton(args.button);
+      if (!b) return null;
       const button: BoardButton = {
         label: b.label,
         sentence: b.sentence,
@@ -401,12 +582,43 @@ function parseToolCall(
         glyph: b.glyph,
         glyphFallback: b.glyphFallback,
         buttonType: b.buttonType,
+        narrowDimension: b.narrowDimension,
+        narrowValue: b.narrowValue,
       };
       const event: ContextButtonAddedEvent = {
         type: "context_button_added",
         source: "board-manager",
         timestamp: now,
         button,
+      };
+      return event;
+    }
+
+    case "add_board_button": {
+      // Single-button additive on the MAIN board. Coordinator runs
+      // smartMergeButtons to slot it into the current board, displacing
+      // similar/oldest if the board is at capacity.
+      const b = parseStructuredButton(args.button);
+      if (!b) return null;
+      const button: BoardButton = {
+        label: b.label,
+        sentence: b.sentence,
+        speech: b.sentence,
+        iconRef: b.iconRef,
+        symbolPath: b.symbolPath,
+        imageKey: b.imageKey,
+        glyph: b.glyph,
+        glyphFallback: b.glyphFallback,
+        buttonType: b.buttonType,
+        narrowDimension: b.narrowDimension,
+        narrowValue: b.narrowValue,
+      };
+      const event: BoardButtonAddedEvent = {
+        type: "board_button_added",
+        source: "board-manager",
+        timestamp: now,
+        button,
+        target: typeof args.target === "string" ? args.target : undefined,
       };
       return event;
     }
@@ -439,14 +651,14 @@ function parseToolCall(
     }
 
     case "show_binary_choice": {
-      const opt1Raw = args.option1;
-      const opt2Raw = args.option2;
-      if (!opt1Raw || typeof opt1Raw !== "object") return null;
-      if (!opt2Raw || typeof opt2Raw !== "object") return null;
-      const p1 = parseBoardButtons(structuredArrayToPipeString([opt1Raw]));
-      const p2 = parseBoardButtons(structuredArrayToPipeString([opt2Raw]));
-      if (p1.length === 0 || p2.length === 0) return null;
-      const toEventButton = (b: typeof p1[0]) => ({
+      // Single-button parse for each option — avoid the comma round-trip
+      // (a comma inside a speech field like "כן, אני רוצה" would
+      // otherwise fragment the button and drop its glyph, leaving the
+      // overlay with the default fontawesome bubble).
+      const o1 = parseStructuredButton(args.option1);
+      const o2 = parseStructuredButton(args.option2);
+      if (!o1 || !o2) return null;
+      const toEventButton = (b: NonNullable<ReturnType<typeof parseStructuredButton>>) => ({
         label: b.label,
         speech: b.sentence,
         sentence: b.sentence,
@@ -460,15 +672,19 @@ function parseToolCall(
         type: "binary_choice_shown",
         source: "board-manager",
         timestamp: now,
-        option1: toEventButton(p1[0]),
-        option2: toEventButton(p2[0]),
+        option1: toEventButton(o1),
+        option2: toEventButton(o2),
+        target: typeof args.target === "string" ? args.target : undefined,
       };
       return event;
     }
 
     case "suggest_construction_buttons": {
-      const category = args.category as BuilderSuggestedEvent["category"] | undefined;
-      if (!category) return null;
+      // `category` isn't in the tool schema and isn't used by the
+      // Coordinator's applyBuilderSuggested — the client uses the
+      // builder's own state for that. Default it to "what" so the event
+      // type stays satisfied without dropping legitimate calls.
+      const category = (args.category as BuilderSuggestedEvent["category"] | undefined) ?? "what";
       const slotIndex = typeof args.slot_index === "number" ? args.slot_index : 0;
       // SUGGESTIONs arrive as { symbol, fallback?, label } objects;
       // convert to `|symbol|fallback|label` pipe strings so the downstream
@@ -520,6 +736,28 @@ function parseToolCall(
         source: "board-manager",
         timestamp: now,
         reason: typeof args.reason === "string" ? args.reason : undefined,
+      };
+      return event;
+    }
+
+    case "exit_guessing": {
+      const event: GuessingExitRequestedEvent = {
+        type: "guessing_exit_requested",
+        source: "board-manager",
+        timestamp: now,
+        reason: typeof args.reason === "string" ? args.reason : "(no reason provided)",
+      };
+      return event;
+    }
+
+    case "interpret": {
+      const sentence = typeof args.sentence === "string" ? args.sentence : "";
+      if (!sentence) return null;
+      const event: InterpretIntentEvent = {
+        type: "interpret_intent",
+        source: "board-manager",
+        timestamp: now,
+        sentence,
       };
       return event;
     }
@@ -578,9 +816,11 @@ export class BoardManagerAgent {
 
     // Build tool list from the per-invocation config.
     const declarations = buildBoardManagerToolDeclarations(input.toolConfig);
-    const tools: ChatTool[] = declarations
-      .flatMap(t => t.functionDeclarations ?? [])
-      .map(toChatTool);
+    const flatDecls = declarations.flatMap(t => t.functionDeclarations ?? []);
+    const tools: ChatTool[] = flatDecls.map(toChatTool);
+    // Pre-compute the fusion map once. Cheap (a few entries per tool) and
+    // saves rebuilding per tool call below.
+    const fusionMap = buildFusionMap(flatDecls);
 
     // Render the user-role context message.
     const contextMessage = renderInvocationContext(input);
@@ -589,6 +829,16 @@ export class BoardManagerAgent {
       { role: "system", content: input.systemPrompt },
       { role: "user", content: contextMessage },
     ];
+
+    // Flow log: what BoardManager is being asked to act on.
+    const triggerSummary = input.triggeringEvents.length === 0
+      ? input.builderState
+        ? "builder_state_change"
+        : input.guessingState
+          ? "guessing_state_change"
+          : "(no triggers)"
+      : input.triggeringEvents.map(e => renderEventLine(e) || e.type).filter(Boolean).join(" | ");
+    flowInput("BOARD_MGR", "trigger", triggerSummary);
 
     let result: ChatCompletionResult;
     try {
@@ -618,11 +868,35 @@ export class BoardManagerAgent {
       };
     }
 
-    // Parse each tool call into a typed event.
+    // Parse each tool call into a typed event. Collect any fusion
+    // detections so the Coordinator can issue a corrective retry turn.
     const now = Date.now();
     const events: BoardManagerOutputEvent[] = [];
+    const fusionFeedback: NonNullable<BoardManagerInvocationResult["fusionFeedback"]> = [];
     for (const call of result.toolCalls) {
-      const event = parseToolCall(call, now);
+      flowTool("BOARD_MGR", call.name || "?", call.arguments);
+      // Detect fusion BEFORE parseToolCall mutates `call.name`, so the
+      // Coordinator can queue a corrective retry telling the model the
+      // right tool name.
+      const fusedEntry = call.name ? fusionMap.get(call.name) : undefined;
+      if (fusedEntry) {
+        fusionFeedback.push({
+          fusedName: call.name,
+          toolName: fusedEntry.toolName,
+          paramName: fusedEntry.paramName,
+        });
+        // Fall through — DON'T suppress the call. parseToolCall handles
+        // the fusion rewrite (RebuildBoardButtons → rebuild_board) and
+        // the single-button downgrade (rebuild_board with one button →
+        // add_board_button so the existing board isn't wiped). The
+        // user's intent ("add a button" — the model emits these
+        // one-per-call) gets honored AND the fusion feedback queued so
+        // the model is told its tool name was wrong. Earlier suppression
+        // here meant we dropped the model's intent entirely and waited
+        // for a retry that never adopted the corrected name — net
+        // effect: the board never updated.
+      }
+      const event = parseToolCall(call, now, fusionMap);
       if (event) events.push(event);
     }
 
@@ -632,6 +906,11 @@ export class BoardManagerAgent {
     if (events.length === 0 && result.toolCalls.length === 0) {
       const reason = result.finishReason ? `no tool calls (finish: ${result.finishReason})` : "no tool calls";
       console.warn(`[BoardManagerAgent] empty response — ${reason}. usage=${JSON.stringify(result.usage)}`);
+      // Surface in the flow log so silent failures are visible. Without
+      // this, the Coordinator simply does nothing and the board on the
+      // client stays stale — the user-visible "first home press doesn't
+      // work" symptom.
+      flowNote("BOARD_MGR", `Empty response: ${reason}`);
       events.push({
         type: "board_no_change",
         source: "board-manager",
@@ -645,6 +924,7 @@ export class BoardManagerAgent {
       rawToolCalls: result.toolCalls,
       usage: result.usage,
       finishReason: result.finishReason,
+      fusionFeedback: fusionFeedback.length > 0 ? fusionFeedback : undefined,
     };
   }
 }
