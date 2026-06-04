@@ -1919,16 +1919,7 @@ export class AgentCoordinator {
     } else if (text.includes("No more narrowing dimensions") || text.includes("Ready for guesses: yes")) {
       parts.push(`Voice ONE short, warm guess (or "is it X or Y?") about what the user is trying to say.`);
     } else if (text.includes("No category chosen yet")) {
-      // Topic-aware opener: when the conversation has already established
-      // what the user wants to talk about (animals, food, a place…),
-      // asking "what kind of thing?" is condescending and wastes a turn.
-      // Tell the model to USE its own conversation memory to either ask
-      // a more specific narrowing question (the BoardManager's [NARROW:]
-      // buttons will track it) OR fall back to the generic opener only
-      // when nothing in the recent dialogue suggests a topic.
-      parts.push(
-        `The user just opened the word finder. If the conversation so far has been about a clear topic (animals, food, a place, an activity), voice ONE short, warm question that NARROWS WITHIN that topic ("which kind of animal — one that swims, one that flies, one that lives near us?"). Otherwise ask a generic opener like "what kind of thing are you thinking of?"`,
-      );
+      parts.push(`The user just opened the word finder. Voice ONE short, warm question: "What kind of thing are you thinking of?"`);
     } else {
       parts.push(`Voice ONE short, warm narrowing question to help the user find their word.`);
     }

@@ -800,25 +800,16 @@ NEVER pass the raw composed-sentence string to interpret(). NEVER echo SYMBOLs a
 </sentence_builder>
 
 <guessing_mode>
-On [GUESSING STATE] / [GUESSING ENTERED] the user is finding a word they can't reach directly. You build the word-finder ${T.board}. Each ${T.button} either NARROWS DOWN what they mean or takes a concrete GUESS — mix the three shapes below on the same ${T.board}.
+On [GUESSING STATE] the user is finding a word they can't reach directly. You build the word-finder ${T.board}. Each ${T.button} either NARROWS DOWN what they mean or takes a concrete GUESS — mix the three shapes below on the same ${T.board}, lead with whichever fits the conversation.
 
-**PRIORITY ORDER for what to lead with.** Pick by what the live conversation gives you, not by the engine's default:
+**1. Registry-driven narrowing (\`suggestion:dim:value\`)** — when the registry's "Suggested next dimension" actually fits the live conversation, use the EXACT keys in the latest [GUESSING STATE] \`offered_keys\` list. Emit ONE key per ${T.button}'s \`label\` (no \`speech\`/\`sentence\`/\`fallback\` needed — the system fills picture + voiced label automatically). NEVER invent new \`suggestion:\` keys.
 
-  A. **Conversation context is clear** (the user has been talking ABOUT a topic — animals, food, a movie, a place, an activity). Lead with **AI-driven narrowing** ([NARROW:] buttons, shape #2 below) tailored to that topic. SKIP the engine's "what kind of thing?" step — it would waste a turn and feel jarring. Add 1-2 [GUESS] candidates if any specific word is plausible, and 1 broader "actually, something else" escape.
-  B. **Conversation context is vague** (the user opened the finder cold, or the topic is genuinely unclear). Fall back to **registry-driven narrowing** (\`fallback_offered_keys\` from the [GUESSING STATE] block, shape #1 below). Surface those keys verbatim — no extras.
-  C. **Narrowing has converged** (\`custom_facts\` plus the conversation make a specific word likely). Skip narrowing entirely and surface **[GUESS] buttons** (shape #3) — the user confirming one of them is the goal of the whole flow.
-
-The engine's \`engine_default_question\` line tells you what IT would ask if you let it drive. Treat that as a fallback, not a command. The whole point of having an LLM in the loop is to be smarter about the starting point than a registry's first-step suggestion.
-
-**1. Registry-driven narrowing (\`suggestion:dim:value\`)** — when conversation context gives you nothing to lean on, use the EXACT keys in the [GUESSING STATE] \`fallback_offered_keys\` list. Emit ONE key per ${T.button}'s \`label\` (no \`speech\`/\`sentence\`/\`fallback\` needed — the system fills picture + voiced label automatically). NEVER invent new \`suggestion:\` keys outside that list.
-
-**2. AI-driven narrowing (\`[NARROW:<dimension>] <value>\`)** — your default when conversation context tells you the topic. Propose YOUR OWN narrowing step. Emit a normal structured ${T.button} object with the \`[NARROW:<dimension>] <value>\` prefix in the \`label\` field:
+**2. AI-driven narrowing (\`[NARROW:<dimension>] <value>\`)** — when the registry's offered dimension DOESN'T fit the conversation (e.g. registry asks "what kind of thing?" mid-movie chat), propose YOUR OWN narrowing step. Emit a normal structured ${T.button} object with the \`[NARROW:<dimension>] <value>\` prefix in the \`label\` field:
   { speech: "what kind of movie?", sentence: "😂", label: "[NARROW:genre] Comedy" }
   { speech: "what kind of movie?", sentence: "🎭", label: "[NARROW:genre] Drama" }
   { speech: "what kind of movie?", sentence: "💥", label: "[NARROW:genre] Action" }
-  - \`<dimension>\` is a SHORT human-readable label (\`genre\`, \`habitat\`, \`size\`, \`mood\`, \`era\`, \`kind of place\`). Use the SAME dimension across the batch of options.
+  - \`<dimension>\` is a SHORT human-readable label (\`genre\`, \`time of day\`, \`kind of place\`, \`mood\`, \`era\`). Use the SAME dimension across the batch of options.
   - \`<value>\` is the option the user picks — becomes the visible button text after the prefix is stripped.
-  - Stay BROAD on the first round: 3-5 options that genuinely cleave the space. Avoid over-specific options (\`[NARROW:breed] Golden Retriever\`) before the user has confirmed the broader shape (\`[NARROW:habitat] pet\`). It's better to take two rounds to land than to lock in too fast.
   - On press, the user's pick is recorded as a custom narrowing fact. The next [GUESSING STATE] you receive will list it under \`custom_facts\`.
 
 **3. Final guess (\`[GUESS] <text>\`)** — emit a normal structured ${T.button} with the \`[GUESS] <text>\` prefix in the \`label\` field. Use when narrowing has converged enough to commit to a specific word ("Spider-Man", "the kitchen", "tired"). SPEAKER voices the guess; your job is to surface the candidate ${T.button}.
