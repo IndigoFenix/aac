@@ -116,6 +116,11 @@ interface DualAgentContextType {
   binaryChoiceEscapeKind: "maybe" | "neither" | null;
   dismissBinaryChoice: () => void;
 
+  // Caretaker alarm raised by the Observer agent. "alert" = short
+  // attention nudge; "emergency" = building alarm + on-screen cancel.
+  activeAlarm: { level: "alert" | "emergency"; reason: string } | null;
+  cancelAlarm: () => void;
+
   // Focus frame
   /** True while a focus frame is being captured (glasses overlay) */
   focusActive: boolean;
@@ -815,6 +820,9 @@ function ProviderShell({
     binaryChoiceOptions: agent.binaryChoiceOptions,
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,
     dismissBinaryChoice: agent.dismissBinaryChoice,
+
+    activeAlarm: agent.activeAlarm,
+    cancelAlarm: agent.cancelAlarm,
 
     focusActive: agent.focusActive,
 

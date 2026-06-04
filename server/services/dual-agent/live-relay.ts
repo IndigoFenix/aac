@@ -727,6 +727,7 @@ export type ServerMessage =
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
+  | { type: "alarm"; data: { level: "alert" | "emergency"; reason: string } }  // Observer raised a caretaker alarm: "alert" = short attention nudge, "emergency" = rising urgent alarm with on-screen cancel
   | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip
   | { type: "construction_symbol_ready"; data: ConstructionSymbolReadyWire }  // a queued construction-key symbol finished generating — client patches the AI strip by key
   | { type: "construction_memory_chips"; data: ConstructionMemoryChipsWire }  // AI-curated dynamic chips for one tab on the construction board

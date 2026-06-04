@@ -290,6 +290,12 @@ export interface UseDualAgentReturn {
   // implicit "Neither". Yes/no questions are surfaced through this same
   // overlay (using the canonical `yes` / `no` SYMBOLs).
   binaryChoiceOptions: BinaryChoiceOption[] | null;
+  /** Caretaker alarm raised by the Observer agent, or null when none is
+   *  active. "alert" = short attention nudge; "emergency" = building alarm
+   *  with an on-screen cancel button. `reason` is the AI's description. */
+  activeAlarm: { level: "alert" | "emergency"; reason: string } | null;
+  /** Clear the active alarm (cancel button / alert auto-dismiss). */
+  cancelAlarm: () => void;
   /** Server-supplied escape-button kind: "maybe" (yellow) when the pair
    *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
    *  overlay is active. The display layer doesn't decide the kind. */

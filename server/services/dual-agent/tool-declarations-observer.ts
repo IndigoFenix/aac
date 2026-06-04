@@ -201,6 +201,41 @@ const SET_INTERACTION_MODE: FunctionDeclaration = {
 };
 
 // ---------------------------------------------------------------------------
+// Alarm tools — Observer is the only agent with live visual/audio context,
+// so it owns raising caretaker alarms. Two distinct tools (rather than one
+// tool with a level argument) so the model has to make a deliberate choice
+// and is less likely to escalate a minor situation to an emergency.
+// ---------------------------------------------------------------------------
+
+const ALERT: FunctionDeclaration = {
+  name: "alert",
+  description:
+    `Get the attention of a caretaker who may be nearby — a NON-emergency nudge. Use when [the user] needs a person's help and isn't getting it: they seem stuck, frustrated, repeatedly asking for someone, or mildly distressed, and no caretaker appears to be responding. This sounds a gentle attention signal on the device. It is NOT for danger — for injury, a seizure, or anything physically dangerous use emergency_alarm instead. Do not call repeatedly for the same situation; once is enough until something changes.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "What the caretaker is needed for (e.g. 'Daniel keeps looking around and asking for mom but no one has come')." },
+    },
+    required: ["reason"],
+  },
+};
+
+const EMERGENCY_ALARM: FunctionDeclaration = {
+  name: "emergency_alarm",
+  description:
+    `Raise a SERIOUS EMERGENCY alarm to summon a caretaker immediately. Use ONLY when you have clear evidence of a real emergency: [the user] appears injured, is having a seizure, is choking or in physical distress, or is doing something acutely dangerous. This sounds a loud, urgent alarm on the device. Do NOT use it for frustration, a stuck conversation, or ordinary requests for help — that is what alert() is for. When in genuine doubt about whether something is an emergency, it is acceptable to err toward raising it, but never fire it on a hunch with no observable evidence.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "What you observed that constitutes the emergency (e.g. 'Daniel collapsed and his limbs are jerking — looks like a seizure')." },
+    },
+    required: ["reason"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Builder
 // ---------------------------------------------------------------------------
 
@@ -225,6 +260,8 @@ export function buildObserverToolDeclarations(_config: ObserverToolConfig = {}):
   declarations.push(REST);
   declarations.push(SLEEP);
   declarations.push(END_SESSION);
+  declarations.push(ALERT);
+  declarations.push(EMERGENCY_ALARM);
   declarations.push(CALL_MONITOR);
   if (debugIntrospectionEnabled()) declarations.push(DEBUG_MESSAGE);
 

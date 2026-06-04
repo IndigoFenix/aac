@@ -2268,3 +2268,21 @@ function pitchForward(forward: THREE.Vector3, up: THREE.Vector3, amount: number)
   const q = new THREE.Quaternion().setFromAxisAngle(right, -amount);
   forward.applyQuaternion(q).normalize();
 }
+
+/*
+Conceptual note: The player is not actually traveling faster than light in the physics model;
+instead their in-game "time" is accelerating relative to the outside universe. This means that 
+as the player builds up speed, time for them passes more quickly compared to the rest of the world, 
+allowing them to cover more distance in what feels like a normal amount of time from their perspective. 
+The `timeAccelMultiplier` function calculates how much faster time is passing for the player based on 
+their current speed `w`, using a formula derived from special relativity.
+
+This allows the player to explore time as well as space by traveling at relativistic speeds;
+visiting a planet after traveling in space "fast forwards" time on that planet.
+*/
+
+const C = 299792458; // speed of light in m/s
+
+function timeAccelMultiplier(w: number): number { // w = apparent velocity (celerity), in units of C
+    return Math.sqrt(1 + (w / C) ** 2);
+}

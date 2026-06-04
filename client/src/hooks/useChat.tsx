@@ -1018,20 +1018,41 @@ export const ChatProvider = ({
         return streamingResult;
       }
 
-      // Retry streaming with a short delay (handles cold-start on new Lambda instance)
-      console.log('[useChat] Streaming did not complete, retrying after delay...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Streaming didn't complete — fall back to the non-streaming endpoint.
+      // A freshly-spun Lambda instance can be mid-cold-start and answer
+      // 502/503/504 for a few seconds. Rather than surfacing "service
+      // unavailable" on the first miss, retry with gentle backoff for a bounded
+      // window so a normal cold start resolves invisibly. Only SERVICE_UNAVAILABLE
+      // is retried; any real error surfaces immediately.
+      console.log('[useChat] Streaming did not complete, falling back to non-streaming...');
 
-      if (stoppedByUserRef.current) return null;
+      const coldStartDeadline = Date.now() + 25000; // ~25s total retry budget
+      let retryDelay = 3000;
+      let lastRetryErr: any = null;
 
-      try {
-        const retryResponse = await apiRequest('POST', '/api/chat', requestBody);
-        const retryData = await retryResponse.json();
-        return processResponseData(retryData);
-      } catch (retryErr: any) {
-        console.error('Retry also failed:', retryErr);
-        throw retryErr; // let the outer catch handle it
+      while (!stoppedByUserRef.current) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        if (stoppedByUserRef.current) return null;
+
+        try {
+          const retryResponse = await apiRequest('POST', '/api/chat', requestBody);
+          const retryData = await retryResponse.json();
+          return processResponseData(retryData);
+        } catch (retryErr: any) {
+          lastRetryErr = retryErr;
+          const warmingUp = retryErr instanceof ServiceUnavailableError;
+          if (!warmingUp || Date.now() >= coldStartDeadline) {
+            console.error('Retry also failed:', retryErr);
+            throw retryErr; // let the outer catch handle it
+          }
+          console.warn('[useChat] Server warming up (503), retrying...');
+          retryDelay = Math.min(retryDelay * 1.5, 6000); // gentle backoff, capped
+        }
       }
+
+      // Loop only exits here if the user stopped mid-retry.
+      if (lastRetryErr) throw lastRetryErr;
+      return null;
     } catch (err: any) {
       console.error('Send message failed:', err);
       const errorText = err instanceof ServiceUnavailableError

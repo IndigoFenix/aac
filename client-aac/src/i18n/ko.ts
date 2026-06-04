@@ -40,6 +40,11 @@ export const ko: Translations = {
     or: "또는",
   },
 
+  alarm: {
+    emergency: "비상 상황",
+    cancel: "경보 취소",
+  },
+
   auth: {
     selectStudent: "학생 선택",
     loggedInAs: "로그인 계정",

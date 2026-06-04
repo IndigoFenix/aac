@@ -243,6 +243,10 @@ export interface ObserverPromptConfig extends BaseStudentContext {
    *  clinician's prompt (gestures to watch for, what's relevant, what
    *  NOT to transcribe). */
   observerInstructions?: string;
+  /** From EnhancedPromptSections — per-student criteria for when to raise
+   *  a caretaker alarm (e.g. seizure history, self-injurious behaviors).
+   *  Appended to the static two-tier alarm instructions. Optional. */
+  alarmConditions?: string;
   /** Subset of the chatMemory-driven runtime context that's relevant to
    *  perception — people, environment, recent events. The Coordinator
    *  selects this subset; this builder just renders it. */
@@ -252,7 +256,7 @@ export interface ObserverPromptConfig extends BaseStudentContext {
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
-    observerInstructions, perceptionMemory, safetyNotes, gestureOverrides,
+    observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -314,7 +318,20 @@ When to switch:
   - facilitator → companion: the other person leaves, the in-person conversation winds down, or [${studentName}] turns back to the device and addresses the AI.
 
 Call this only when the mode genuinely should change — don't switch on every minor shift. After your call, the Coordinator forwards a \`[MODE]\` context note to Speaker so its behavior aligns. Speaker has NO way to change its own mode; the decision is yours.
-</interaction_mode>`;
+</interaction_mode>
+
+<alarm_conditions>
+You can summon a caretaker who may be physically near [${studentName}]. You are the only part of the system that can see and hear, so this is your responsibility. There are two levels, each a separate tool:
+
+  - alert(reason) — a NON-emergency nudge for a caretaker's attention. Use when [${studentName}] needs a person and isn't getting one: stuck, frustrated, repeatedly asking for someone, or mildly distressed, with no caretaker responding. The device plays a brief attention signal.
+  - emergency_alarm(reason) — a SERIOUS emergency. Use ONLY with clear, observable evidence that [${studentName}] is injured, having a seizure, choking, in physical distress, or doing something acutely dangerous. The device plays a loud, building alarm until a caretaker cancels it.
+
+Judgement rules:
+  - Base an alarm on what you actually SEE or HEAR, never on a guess with no evidence.
+  - Prefer alert() for anything short of physical danger. Reserve emergency_alarm() for real emergencies — over-using it trains caretakers to ignore it.
+  - Once you've raised either alarm, do NOT raise it again for the same situation; the device is already signalling. Raise again only if the situation meaningfully changes (e.g. an alert escalates into an emergency).
+  - These alarms are silent to [${studentName}] from your side — do not announce or narrate them. The Speaker agent keeps talking normally.${alarmConditions ? `\n\nSpecific signs to watch for with [${studentName}]:\n${alarmConditions}` : ""}
+</alarm_conditions>`;
 
   if (observerInstructions) {
     prompt += `\n\n<observer_instructions>\n${observerInstructions}\n</observer_instructions>`;
@@ -443,7 +460,25 @@ ${gestureOverrideBlock(gestureOverrides)}
 
 <composed_sentences>
 When the user plays a SENTENCE composed in the ${T.builder}, the system interprets and voices it for them — you'll see the resulting first-person line arrive as a ${T.tagPress}. Respond to that like any other ${T.tagPress}.
-</composed_sentences>`;
+</composed_sentences>
+
+<guessing_mode>
+When you see \`[GUESSING ENTERED]\` followed by a directive to ask a narrowing question, the user has opened a Word Finder assistant — they're trying to surface a specific word they can't reach directly. Your job is to ask ONE short narrowing question per turn so the board can offer matching options. Keep it warm, casual, and SHORT — you're a friendly guesser, not an interviewer.
+
+The system pre-classifies what the user wants to talk about (when possible) from your most recent question, so the directive you receive will already point at a sensible dimension to ask about. Trust it. Don't list options aloud — the BOARD MANAGER paints the answers as ${T.button}s right after you speak.
+
+EXAMPLE narrowing flow:
+  [GUESSING ENTERED] — directive says "narrow within animals: ask about kind/habitat/size"
+  YOU: "Is it a big animal or a small one?"
+  [USER to YOU] "big"
+  YOU: "Big animal! Does it swim, walk, or fly?"
+  [USER to YOU] "swims"
+  YOU: "A swimmer! Is it a whale, a shark, or a dolphin?"
+  [USER to YOU] "[GUESS] whale"
+  YOU: "A whale! Got it." — and the Word Finder closes; back to normal chat about whales.
+
+If your last question wasn't enough to classify the topic (e.g. you'd just said "hi how are you?"), the system shows you the top-level "what kind of thing are you thinking of?" framing — ask THAT instead. Same one-short-sentence rule.
+</guessing_mode>`;
 
   // Apps + websites — SPEAKER triggers these conversationally.
   const hasBuiltInApps = !!(enabledApps && enabledApps.length > 0);
@@ -817,6 +852,28 @@ On [GUESSING STATE] the user is finding a word they can't reach directly. You bu
 **The "No" press rejects the MOST RECENT positive fact** (registry press OR custom fact). The next [GUESSING STATE] will list it under \`rejected_facts\` — when you see one, do NOT propose the same dimension+value again. Pivot to a different angle (different dimension, or [GUESS] from the conversation context).
 
 **Ending the Word Finder (\`exit_guessing\`)** — call this when narrowing has CONVERGED and the user has confirmed the word: a [GUESS] button you offered was just pressed, OR the user said "yes" to "is it X?", OR they explicitly named the concept they were looking for. The Word Finder is a means to an end — once the word is found, exit so the conversation can continue normally ABOUT that word. Calling exit_guessing flips the device out of word-finder mode (the violet entry button clears) and your NEXT invocation gets a clean board to rebuild for normal conversation about whatever was just resolved. Do NOT call this just because narrowing feels stuck — grind through more dimensions or commit a [GUESS] first. The tool only appears in your tool list WHILE guessing is active.
+
+**Follow SPEAKER, don't lead.** Your invocation is normally triggered AFTER Speaker has just asked a narrowing question aloud. Your ${T.button}s should be the answer options to that question — same axis, similar phrasing. If Speaker hasn't spoken yet (rare — happens on cold entry with no context), default to the \`offered_keys\` from [GUESSING STATE] OR offer 3-5 broad [GUESS]/\[NARROW:] candidates based on what you do know about the user.
+
+EXAMPLE narrowing flow (custom topic, no registry dimensions involved):
+  Trigger: SPEAKER just asked aloud "A movie! Is it funny, scary, or exciting?"
+  Action:  rebuild_board with three matching narrowing ${T.button}s, e.g.
+             { label: "[NARROW:mood] funny",     sentence: "😂", speech: "funny" }
+             { label: "[NARROW:mood] scary",     sentence: "😱", speech: "scary" }
+             { label: "[NARROW:mood] exciting",  sentence: "💥", speech: "exciting" }
+
+  Next turn — user pressed "scary". [GUESSING STATE] now lists custom_facts: [mood=scary]. Speaker asks "Was it made recently, or old?"
+  Action:  rebuild_board with
+             { label: "[NARROW:era] recent", sentence: "🆕", speech: "recent" }
+             { label: "[NARROW:era] old",    sentence: "📼", speech: "old" }
+
+  Next turn — user pressed "old". Enough narrowing. Speaker now offers candidates: "How about The Shining? Jaws? Something else?"
+  Action:  rebuild_board with [GUESS] ${T.button}s
+             { label: "[GUESS] The Shining", sentence: "🪓", speech: "The Shining" }
+             { label: "[GUESS] Jaws",        sentence: "🦈", speech: "Jaws" }
+             { label: "[GUESS] something else", sentence: "❓", speech: "something else" }
+
+The same pattern works for predefined categories (animals/places/feelings/…): when [GUESSING STATE] shows that a category is already known, your ${T.button}s narrow WITHIN that category, mirroring Speaker's question.
 </guessing_mode>${gestureOverrideBlock(gestureOverrides)}`;
 
   if (boardManagerGuidance) {

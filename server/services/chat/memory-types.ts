@@ -402,6 +402,18 @@ export interface MemoryDBOperations<T = any> {
    * Used to identify which DB record to update/delete.
    */
   getDBKey?: (value: T) => string | number;
+
+  /**
+   * When true, an `id` field supplied by the AI on create operations
+   * (`add`/`insert`) is a *reference to an existing row* (e.g. assigning an
+   * existing custom app) and must be preserved.
+   *
+   * When false/absent (the default), `id` is a database-generated primary key
+   * (`gen_random_uuid()`), so any AI-supplied `id` is stripped on create to
+   * prevent the AI from inventing primary keys. IDs are still fully visible on
+   * reads so the AI can reference existing rows.
+   */
+  clientProvidesId?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

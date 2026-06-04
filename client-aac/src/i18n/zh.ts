@@ -40,6 +40,11 @@ export const zh: Translations = {
     or: "或",
   },
 
+  alarm: {
+    emergency: "紧急情况",
+    cancel: "取消警报",
+  },
+
   auth: {
     selectStudent: "选择学生",
     loggedInAs: "已登录为",

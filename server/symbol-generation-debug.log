@@ -3068,3 +3068,109 @@
 [2026-06-04T08:57:10.849Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
 [2026-06-04T08:57:11.023Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
 [2026-06-04T08:57:11.025Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:14:55.280Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:14:55.504Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:14:55.505Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:16:00.416Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:16:00.577Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:16:00.577Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:17:02.616Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:17:02.782Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:17:02.783Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:17:09.651Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:17:09.819Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:17:09.820Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:17:19.952Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:17:20.111Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:17:20.115Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:17:41.803Z] [resolveImageKeys] Resolving 2 keys: confused, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:17:41.961Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-04T20:17:42.121Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:17:42.123Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-04T20:18:13.078Z] [resolveImageKeys] Resolving 2 keys: confused, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:18:13.236Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-04T20:18:13.395Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:18:13.399Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-04T20:18:35.644Z] [resolveImageKeys] Resolving 2 keys: confused, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:18:35.803Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-04T20:18:35.958Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:18:35.959Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-04T20:19:00.411Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:19:00.591Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:19:00.592Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:19:19.185Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-04T20:19:19.356Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-04T20:19:19.360Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:19:32.383Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:19:32.551Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:19:32.552Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:19:38.536Z] [resolveImageKeys] Resolving 2 keys: confused, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:19:38.718Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-04T20:19:38.883Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:19:38.884Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-04T20:20:21.370Z] [resolveImageKeys] Resolving 2 keys: cool, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:21.695Z] [resolveImageKeys] No symbol found for "cool"
+[2026-06-04T20:20:21.854Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:21.855Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: cool
+[2026-06-04T20:20:21.857Z] [queueGeneration] Queuing 1 keys: cool (hasCallback=true)
+[2026-06-04T20:20:22.014Z] [processQueue] Generating "cool"...
+[2026-06-04T20:20:33.597Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:33.773Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:33.774Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:43.245Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.247Z] [resolveImageKeys] Resolving 2 keys: youre_welcome, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.249Z] [resolveImageKeys] Resolving 2 keys: youre_welcome, finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.253Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.256Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.260Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:43.263Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:44.653Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:44.655Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:44.701Z] [resolveImageKeys] No symbol found for "youre_welcome"
+[2026-06-04T20:20:44.710Z] [resolveImageKeys] No symbol found for "youre_welcome"
+[2026-06-04T20:20:44.822Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:44.822Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:44.856Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:44.858Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:44.867Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:44.867Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:44.987Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:44.987Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:20:45.023Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:45.024Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: youre_welcome
+[2026-06-04T20:20:45.025Z] [queueGeneration] Queuing 1 keys: youre_welcome (hasCallback=true)
+[2026-06-04T20:20:45.153Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:45.154Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: youre_welcome
+[2026-06-04T20:20:45.155Z] [queueGeneration] Queuing 1 keys: youre_welcome (hasCallback=true)
+[2026-06-04T20:20:47.698Z] [COST] imageKey="cool" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=43 | image: openai/gpt-image-1 in=49 out=272
+[2026-06-04T20:20:47.699Z] [processQueue] Generated "cool" → 2f41b67c-32b8-4055-aa6b-bc2e20e172c5 (1 total)
+[2026-06-04T20:20:47.700Z] [processQueue] FULL REFINED PROMPT for "cool": A generic human figure with a slightly stylized head, simple dots for eyes, and a small curve for the mouth, wearing sunglasses, with one hand raised in a thumbs-up gesture, in flat AAC icon style.
+[2026-06-04T20:20:51.864Z] [processQueue] Generating "youre_welcome"...
+[2026-06-04T20:20:59.650Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:20:59.818Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:20:59.819Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:21:09.371Z] [COST] imageKey="youre_welcome" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=44 | image: openai/gpt-image-1 in=51 out=272
+[2026-06-04T20:21:09.372Z] [processQueue] Generated "youre_welcome" → d086130e-8e2a-4c00-a866-6d25069a5f81 (2 total)
+[2026-06-04T20:21:09.374Z] [processQueue] FULL REFINED PROMPT for "youre_welcome": A generic human figure with a simple dot for an eye and a small curve for a mouth, facing forward with both arms extended outwards and slightly upwards, palms open, in a welcoming gesture, in flat AAC icon style.
+[2026-06-04T20:21:13.552Z] [processQueue] "youre_welcome" already exists → d086130e-8e2a-4c00-a866-6d25069a5f81
+[2026-06-04T20:21:31.769Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:21:31.941Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:21:31.943Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:21:45.599Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:21:45.766Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:21:45.767Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:22:08.468Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:22:08.631Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:22:08.632Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:22:22.589Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:22:22.754Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:22:22.755Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:22:29.223Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:22:29.398Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:22:29.399Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:22:40.117Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:22:40.283Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:22:40.284Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T20:23:05.907Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T20:23:06.063Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T20:23:06.065Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

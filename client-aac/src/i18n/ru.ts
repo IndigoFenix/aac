@@ -40,6 +40,11 @@ export const ru: Translations = {
     or: "\u0438\u043b\u0438",
   },
 
+  alarm: {
+    emergency: "Экстренная ситуация",
+    cancel: "Отменить тревогу",
+  },
+
   auth: {
     selectStudent: "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0443\u0447\u0435\u043d\u0438\u043a\u0430",
     loggedInAs: "\u0412\u044b \u0432\u043e\u0448\u043b\u0438 \u043a\u0430\u043a",

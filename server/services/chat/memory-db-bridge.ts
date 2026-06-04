@@ -138,6 +138,31 @@ export function mergeInheritedContext(
   return { ...context.inherited, ...value };
 }
 
+/**
+ * Strips an AI-supplied `id` from a value on create operations (add/insert).
+ *
+ * Primary keys are database-generated (`gen_random_uuid()`); letting the AI
+ * supply its own `id` on create lets it invent primary keys instead of getting
+ * a real UUID. Stripping it here — a single choke point for every entity — forces
+ * the DB default. IDs remain visible on reads so the AI can still reference rows.
+ *
+ * Opt out per-entity with `clientProvidesId: true` (e.g. custom-app assignment,
+ * where `id` references an existing row rather than naming a new one).
+ */
+function stripClientProvidedId(value: any, dbOps: MemoryDBOperations): any {
+  if (
+    dbOps.clientProvidesId ||
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    !('id' in value)
+  ) {
+    return value;
+  }
+  const { id: _discarded, ...rest } = value;
+  return rest;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Memory Load State (tracks what's loaded from DB)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1194,7 +1219,7 @@ export async function processDBOperation(
         if (dbOps.add) {
           // Merge inherited context (parent IDs like goalId, studentId) into the value
           // This allows AI to add child records without explicitly specifying parent IDs
-          const valueWithContext = mergeInheritedContext(value, context);
+          const valueWithContext = stripClientProvidedId(mergeInheritedContext(value, context), dbOps);
           const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.add(context, dbValue, { key, index });
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
@@ -1206,14 +1231,14 @@ export async function processDBOperation(
 
       case 'insert':
         if (dbOps.insert && index !== undefined) {
-          const valueWithContext = mergeInheritedContext(value, context);
+          const valueWithContext = stripClientProvidedId(mergeInheritedContext(value, context), dbOps);
           const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.insert(context, dbValue, index);
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markStale(loadState, path, false);
           dbExecuted = true;
         } else if (dbOps.add) {
-          const valueWithContext = mergeInheritedContext(value, context);
+          const valueWithContext = stripClientProvidedId(mergeInheritedContext(value, context), dbOps);
           const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.add(context, dbValue, { index });
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);

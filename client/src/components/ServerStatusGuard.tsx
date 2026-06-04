@@ -45,7 +45,12 @@ export function ServerStatusGuard({ children }: { children: ReactNode }) {
 
   if (status === "ready") return <>{children}</>;
 
-  if (status === "checking") {
+  // A normal cold start resolves within the first few health retries, so keep
+  // showing a plain spinner (not the worded "service starting" panel) until a
+  // couple of attempts have failed. This stops the scary message from flashing
+  // on every first-connect-after-idle while still surfacing it for a genuinely
+  // stuck backend.
+  if (status === "checking" || attempt < 2) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -53,7 +58,7 @@ export function ServerStatusGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  // unavailable
+  // unavailable (persisted past the initial cold-start window)
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4 px-4 text-center">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />

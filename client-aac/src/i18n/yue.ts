@@ -40,6 +40,11 @@ export const yue: Translations = {
     or: "或者",
   },
 
+  alarm: {
+    emergency: "緊急情況",
+    cancel: "取消警報",
+  },
+
   auth: {
     selectStudent: "揀學生",
     loggedInAs: "已登入為",

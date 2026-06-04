@@ -198,6 +198,9 @@ export const STUDENT_CUSTOM_APPS_FIELD: AgentMemoryFieldArrayWithDB = {
     required: ["id"],
   } as AgentMemoryFieldObjectWithDB,
   db: {
+    // `id` on add is a reference to an existing custom_apps row (the app being
+    // assigned), not a generated primary key — so it must NOT be stripped.
+    clientProvidesId: true,
     read: readAssignments,
     write: writeAssignments,
     add: addAssignment,

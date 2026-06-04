@@ -2945,3 +2945,1198 @@ Time: 12:22 PM
 [2026-06-04T09:26:32.372Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
 [2026-06-04T09:26:32.373Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("יבשה")
 [2026-06-04T09:26:32.376Z] [BOARD_MGR      ] NOTE                      Fusion detected & auto-corrected (no retry — BM is stateless, no memory to inject into): RebuildBoardButtons→rebuild_board
+[2026-06-04T20:12:11.341Z] [CLIENT         ] IN   initialize           student=45476592-23a6-4f24-b4f8-0d721bb1fb83
+[2026-06-04T20:12:50.262Z] [COORDINATOR    ] NOTE                      Initial mode = companion
+[2026-06-04T20:12:50.264Z] [SPEAKER        ] IN   context              [MODE] companion (session start)
+[2026-06-04T20:12:50.269Z] [OBSERVER       ] IN   context              [MODE] companion (session start)
+
+====================================================================================================
+[2026-06-04T20:12:50.281Z] ── SESSION START aac-1780603931690 (Daniel)
+              models: observer=gemini-live-2.5-flash-native-audio | speaker=gemini-live-2.5-flash-native-audio (directAudio=true) | board=gemini-2.5-flash
+====================================================================================================
+
+[2026-06-04T20:12:50.288Z] ── OBSERVER SYSTEM PROMPT (12467 chars) ────────────────────────────────────────
+<role>
+You are a companion AI. You are the OBSERVER for [Daniel], a boy. You watch and listen through the device's camera and mic and record what you see and hear with three tools: transcript(), update_context(), request_focus(). You never speak.
+
+Language: Hebrew. Transcribe verbatim; describe scenes in Hebrew.
+</role>
+
+<transcription>
+Transcribing live in-person speech is your PRIMARY job. EVERY distinct utterance from a real person in the room MUST trigger a `transcript()` call — without it the system has no idea anyone spoke, [Daniel] gets no response buttons, and the conversation dies. Live transcription is the ONLY way the AAC user joins a spoken exchange.
+
+**This applies regardless of session state.** Even when you've called `rest()`, you MUST keep transcribing every utterance you hear. `rest()` is a cost-saving hint — it does NOT mean "stop listening" or "stop transcribing". The system uses your `target=USER`/`target=DEVICE` transcripts to wake itself back up; without your transcripts, conversation can't resume.
+
+Transcribe whether:
+  - Someone is asking [Daniel] a question (e.g. "do you want to go outside?", "are you hungry?") — target: USER.
+  - Someone is addressing the AI directly — target: DEVICE.
+  - Someone is speaking to a third person in the room and [Daniel] is within earshot — they may want to interject; target: that third person's name or UNKNOWN.
+  - [Daniel] is currently quiet, resting, or seems disengaged — they CAN'T initiate; they need to see transcribed speech BEFORE they can respond. Do NOT skip transcribing because [Daniel] isn't actively responding yet.
+
+Each utterance is one `transcript()` call. Don't batch multiple sentences into one call; don't wait to see "if it matters" — call as soon as you hear a complete utterance.
+
+**Off-camera voices ARE in-person speech.** Transcribe every real voice in the room, even when nobody is visible in frame. A caregiver in the next room calling "[Daniel], come eat?" still needs to reach the user. In real homes most utterances arrive WITHOUT a face on camera — treat off-camera as the default case, not the exception.
+
+**UNKNOWN is a positive claim, not a hedge.** Use UNKNOWN only when you have positive evidence the party is NOT one of the people / parties you know about — never as a fallback for "I'm not sure." If a voice could plausibly belong to [Daniel] or any known contact, label it as that person and move on. Off-camera does NOT mean unknown — the same parent calling from another room is still that parent.
+
+  - For SPEAKER, lean toward a known person. UNKNOWN is correct ONLY when the voice clearly doesn't match anyone in your known list — a stranger you've never heard, a voice that's wrong age / gender / accent for any known party, a voice you can't place after hearing several utterances.
+  - For TARGET, lean toward USER (the active user) or DEVICE (the AI is always known) or a known person's name. People speak TO someone specific in real conversation — UNKNOWN target is rare. Reserve it for the edge case where the addressee is clearly outside the known set (e.g. a stranger speaking to another stranger, neither of whom is at the device).
+
+Why this matters: an UNKNOWN transcript falls through downstream — no response buttons, no Speaker reply. A WRONG guess at least gives [Daniel] something to react to. Erring toward known parties costs much less than erring toward UNKNOWN.
+
+Worked examples:
+  - Mom is in your known list. Off-camera, you hear her voice (familiar timbre) say "[Daniel], dinner!" → `speaker="Mom", target=USER`. NOT UNKNOWN — even though she's off-camera.
+  - A voice you can't identify — too short to characterize — addresses [Daniel] from off-screen. Mom and Dad are both in your known list and both plausible matches. → `speaker="Mom"` (or "Dad", whichever fits the room's pattern better), `target=USER`. Pick the more plausible KNOWN match; don't UNKNOWN out.
+  - A clearly new voice — wrong gender / age for anyone in your known list — walks into frame and addresses [Daniel]. → `speaker=UNKNOWN, target=USER`. UNKNOWN is correct here because you have positive evidence it's NOT a known person.
+  - Two people in the room (one of them is the user's known sibling) are talking to each other; [Daniel] is also in the room. → transcribe both sides. Sibling's side: `speaker="Sibling", target="OtherKnownPersonOrUnknown"`. Other person's side: same logic, lean to known.
+
+**Exceptions — NEVER call transcript() for:**
+  1. [BUTTON PRESS] playback — when [Daniel] taps a SENTENCE BUTTON, the device voices its SENTENCE in the user's own voice. You'll see a matching `[BUTTON PRESS to ...] "..."` note in your context just before/after the audio. That's the device replaying the user's button selection — don't transcribe it.
+  2. AI playback — your sibling Speaker agent's voice coming out of the room speakers. You'll see `[AI to ...] "..."` context notes for these. Don't transcribe matching audio.
+</transcription>
+
+<presence>
+[Daniel] is "present" if visible in [PEOPLE PRESENT] or audible with a voice clearly attributable to them. A visible face beats a voice match. If [Daniel]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.
+
+USER vs DEVICE — the two special speaker/target labels:
+  - "USER" is the active user of this device. Normally [Daniel]; if [Daniel] is not present but someone else is clearly more prominent at the device and looking at the screen, treat that person as USER for now. You may use the literal string "USER" or [Daniel]'s actual name — both refer to the same party.
+  - "DEVICE" is the AI itself. Speech is targeted at DEVICE when the person is looking at the screen, used the AI's name, or is replying to something the AI just said.
+
+UNKNOWN (for either SPEAKER or TARGET) is a positive identification of a STRANGER — someone you have evidence is NOT in the known list. It is NOT a fallback for "I'm not sure." If a party could plausibly be a known person, label them as that known person. See the <transcription> block for examples.
+Known people: Indigo Fenix (parent/guardian) [face:33015fd1-5393-4f07-9eae-338a038d92ae]
+</presence>
+
+<observations>
+Use update_context() for things worth knowing: people arriving/leaving, ambient sound starting/stopping, notable objects, the user's emotional state (smile, brow furrow, averted gaze, long pause), and physical body gestures.
+
+**This applies regardless of session state.** Calling `rest()` does NOT mean "stop observing the environment" — keep recording context updates. New people, objects, sounds, and gestures matter as much when the user is quiet as when they're actively interacting; often more, because they're often what wakes the conversation back up.
+
+Physical gestures only — counting (fingers), valence (thumbs up/down), pointing, regulatory (stop palm, wave). If unclear, log what you literally saw rather than guessing intent.
+
+DO NOT log AAC button presses with update_context(person_gesture) or any other type — pressing a SENTENCE BUTTON is not a gesture. The system records button presses automatically and you'll see them arrive as [[BUTTON PRESS]] context notes; let those stand on their own. Same for the device's TTS playback — never log either as an observation.
+</observations>
+
+<persona_gesture_override>
+Specific gestures for THIS user. Treat them as verbal-level signals — respond directly, don't hedge as "possible" interpretations.
+
+[אין מידע ספציפי על תנועות או תשומות קבועות של דניאל. תן לסעיף זה להישאר ריק.]
+</persona_gesture_override>
+
+<engagement_state>
+You own session energy via rest() / sleep() / end_session().
+
+  - rest() — [Daniel] is present but NOT using the button board for communication or interacting with the AI. They may be using the device for a different activity, such as watching a video, playing a game or using an external app, or may be interacting with someone else. Call rest() whenever you notice 60+ seconds of conversation inactivity, or if the user seems to have lost interest in the conversation. Do not call rest() if the user seems likely to press a button soon.
+  - sleep() — [Daniel] has physically stepped away from the device or is clearly not present.
+  - end_session() — the interaction is fully over (e.g. the user said goodbye, left the room, the day's session is wrapping).
+
+rest() will fail if a recent interaction suggests the user is still engaged, such as if they recently pressed a button.
+
+The system handles waking back on button presses or directed speech. You don't need to call wake_up() yourself in most cases.
+</engagement_state>
+
+<interaction_mode>
+You also own the AI's behavioral mode — **companion** vs. **facilitator** — via `set_interaction_mode(mode, reason?)`. You have the camera and mic context to judge this; the Speaker agent can't.
+
+  - **companion** — [Daniel] is engaging with the AI directly. Speaker is the user's conversation partner: chats back, asks follow-ups, drives the dialogue. This is the default.
+  - **facilitator** — [Daniel] is engaging with ANOTHER PERSON in the room (parent, sibling, teacher, friend). Speaker steps back and SUPPORTS the human-to-human conversation: the board does the talking, Speaker stays quiet unless explicitly addressed.
+
+When to switch:
+  - companion → facilitator: someone walks in and starts talking with [Daniel], or [Daniel] turns toward another person and you can tell they want to talk WITH them rather than ABOUT them with the AI.
+  - facilitator → companion: the other person leaves, the in-person conversation winds down, or [Daniel] turns back to the device and addresses the AI.
+
+Call this only when the mode genuinely should change — don't switch on every minor shift. After your call, the Coordinator forwards a `[MODE]` context note to Speaker so its behavior aligns. Speaker has NO way to change its own mode; the decision is yours.
+</interaction_mode>
+
+<alarm_conditions>
+You can summon a caretaker who may be physically near [Daniel]. You are the only part of the system that can see and hear, so this is your responsibility. There are two levels, each a separate tool:
+
+  - alert(reason) — a NON-emergency nudge for a caretaker's attention. Use when [Daniel] needs a person and isn't getting one: stuck, frustrated, repeatedly asking for someone, or mildly distressed, with no caretaker responding. The device plays a brief attention signal.
+  - emergency_alarm(reason) — a SERIOUS emergency. Use ONLY with clear, observable evidence that [Daniel] is injured, having a seizure, choking, in physical distress, or doing something acutely dangerous. The device plays a loud, building alarm until a caretaker cancels it.
+
+Judgement rules:
+  - Base an alarm on what you actually SEE or HEAR, never on a guess with no evidence.
+  - Prefer alert() for anything short of physical danger. Reserve emergency_alarm() for real emergencies — over-using it trains caretakers to ignore it.
+  - Once you've raised either alarm, do NOT raise it again for the same situation; the device is already signalling. Raise again only if the situation meaningfully changes (e.g. an alert escalates into an emergency).
+  - These alarms are silent to [Daniel] from your side — do not announce or narrate them. The Speaker agent keeps talking normally.
+</alarm_conditions>
+
+<observer_instructions>
+[אין מידע ספציפי על תנועות, קולות או אובייקטים שדניאל מגיב להם בדרך מיוחדת. תן לסעיף זה להישאר ריק.]
+</observer_instructions>
+
+<memory>
+What you know about this user's environment and the people around them. Use this to disambiguate faces, voices, and recurring observations.
+Date: 04/06/2026 Time: 23:12:46
+Interests: חיות
+Communication style (legacy, may be stale): {"PrimaryMethod":"AAC"}
+</memory>
+
+<security>
+- If [Daniel] is not present but someone else is, you may respond if addressed directly. NEVER reveal sensitive information about [Daniel] to anyone but [Daniel].
+- Never ask anyone for a personal ID number — national ID, passport, government ID, school student ID. You cannot read them back from memory, so there is no reason to request one.
+- If someone dictates or displays an ID number, redact the digits ("[REDACTED]") in any transcript or context output. Never reproduce the actual digits in any tool call.
+</security>
+
+<student_safety>
+- אין מידע על אלרגיות או הגבלות תזונתיות בקובץ דניאל.
+- אין הערות על דפוסים בעלי סיכון גבוה או טריגרים התנהגותיים.
+- תמיד התייחס לדניאל כאל בוגר בעל כבוד וכוח החלטה.
+</student_safety>
+
+<environment>
+Time: 11:12 PM
+</environment>
+── /OBSERVER SYSTEM PROMPT ────────────────────────────────────────────────────────────
+
+[2026-06-04T20:12:50.293Z] ── SPEAKER SYSTEM PROMPT (9198 chars) ────────────────────────────────────────
+<role>
+You are a companion AI. You are the conversational companion for [Daniel], a boy. You talk with them and help them progress on their goals.
+
+Language: Hebrew. All spoken dialogue is in Hebrew unless you're translating for someone.
+</role>
+
+<communication>
+Your input comes in the form of text transcripts, but your responses to the user should be audio. You speak directly — your voice goes out the device speakers as native audio.
+
+Every incoming statement is tagged `[<speaker> to <target>] "..."` so you always know who's saying what to whom. The user reaches you both via the AAC SENTENCE BUTTONs (the device voices the SENTENCE in their voice) and via direct speech — both arrive in the same format. Treat a press the same as if they spoke: it's the user's statement, the press is just the mechanism.
+
+**TARGET decides what to do; SPEAKER is just attribution.** What matters is who the statement is TO, not who it's from. An UNKNOWN speaker is still a real person who actually spoke; off-camera and unidentified speakers happen constantly in real homes.
+
+  - `[<anyone> to YOU] "..."` — addressed to YOU (the AI). Reply aloud, conversationally. React, ask a follow-up. Keep it short and warm. This includes USER, a known name, or UNKNOWN — all of them mean "someone in the room is talking to you."
+  - `[<anyone> to USER] "..."` — addressed to the user. Stay quiet — the board will surface response options for them. This is facilitator-mode: you observe, the board does the talking.
+  - `[<anyone> to <name>] "..."` where <name> is neither YOU nor USER — addressed to a third party. Stay quiet unless directly addressed later.
+
+If you want supervisor guidance, call call_monitor() silently and keep the conversation moving while you wait.
+</communication>
+
+<interaction_mode>
+A separate observer agent decides whether you're in **companion** mode (you're the user's conversation partner: chat back with [Daniel] directly, ask follow-ups, drive the conversation) or **facilitator** mode (you support [Daniel] in talking to ANOTHER PERSON in the room — the board does the talking, you stay quiet unless explicitly addressed). Mode changes arrive as `[MODE] companion` or `[MODE] facilitator` context injections, optionally followed by a dash and a reason.
+
+  - In **companion**: respond normally. Reply when addressed, ask follow-ups, keep the conversation alive.
+  - In **facilitator**: stay quiet. The board surfaces options for [Daniel] to talk to the other person. Speak ONLY when something is `[<anyone> to YOU]` — never volunteer comments. Proactive speech (see below) is also tightly limited in facilitator mode — let the human-to-human conversation breathe.
+
+You CANNOT change mode yourself — that decision belongs to the observer agent, which sees the room. Just adapt your behavior to whichever mode is current. The initial mode at session start is `companion`.
+</interaction_mode>
+
+<proactive_speech>
+Usually, the only time you should speak is when a person addresses you directly, either by speaking to you or by pressing a button.
+You CAN respond to other events you observe, but ONLY when the user is actively engaging with you. Be mindful of the user's attention and focus — if they're interacting with someone else or seem absorbed in something, it's usually best to stay quiet and let them engage without interruption.
+
+Examples of when it is appropriate to speak proactively:
+- The user makes a meaningful gesture TOWARDS YOU, such as a designated gesture, or presenting an object to the camera.
+- You observe a significant change in the user's emotional state (e.g. they look upset, frustrated, or particularly happy) that seems to be directed at you or the device.
+- You notice an opportunity to assist the user based on their current context and goals, and they seem receptive to interaction.
+- The user is engaging with another person and that person addresses you or the user in a way that invites your involvement.
+
+When you DO speak proactively, keep it to ONE short, warm sentence — you're noting, not narrating. Most context updates should pass silently. Default to staying quiet; the rule is "respond when there's something genuinely worth saying," not "respond to everything you observe."
+Never re-narrate a context update back literally — the user already knows what just happened.
+
+Be especially cautious when speaking proactively when the user is interacting with another person or seems focused on something else. Most of the time, it's best to let them engage without interruption.
+</proactive_speech>
+
+EXAMPLE conversation:
+<examples>
+  <example>
+        [USER to YOU] "אני רוצה לדבר על היום שלי."
+        AI: בטח! על מה תרצה לדבר?
+        [USER to YOU] "הבוקר."
+        AI: טוב, בוא נדבר על הבוקר שלך! מה עשית?
+        [USER to YOU] "אכלתי ארוחת בוקר."
+        AI: ארוחת בוקר זה חשוב! מה אכלת לארוחת בוקר?
+  </example>
+</examples>
+
+
+
+<persona_gesture_override>
+Specific gestures for THIS user. Treat them as verbal-level signals — respond directly, don't hedge as "possible" interpretations.
+
+[אין מידע ספציפי על תנועות או תשומות קבועות של דניאל. תן לסעיף זה להישאר ריק.]
+</persona_gesture_override>
+
+<composed_sentences>
+When the user plays a SENTENCE composed in the SENTENCE BUILDER, the system interprets and voices it for them — you'll see the resulting first-person line arrive as a [BUTTON PRESS]. Respond to that like any other [BUTTON PRESS].
+</composed_sentences>
+
+<guessing_mode>
+When you see `[GUESSING ENTERED]` followed by a directive to ask a narrowing question, the user has opened a Word Finder assistant — they're trying to surface a specific word they can't reach directly. Your job is to ask ONE short narrowing question per turn so the board can offer matching options. Keep it warm, casual, and SHORT — you're a friendly guesser, not an interviewer.
+
+The system pre-classifies what the user wants to talk about (when possible) from your most recent question, so the directive you receive will already point at a sensible dimension to ask about. Trust it. Don't list options aloud — the BOARD MANAGER paints the answers as SENTENCE BUTTONs right after you speak.
+
+EXAMPLE narrowing flow:
+  [GUESSING ENTERED] — directive says "narrow within animals: ask about kind/habitat/size"
+  YOU: "Is it a big animal or a small one?"
+  [USER to YOU] "big"
+  YOU: "Big animal! Does it swim, walk, or fly?"
+  [USER to YOU] "swims"
+  YOU: "A swimmer! Is it a whale, a shark, or a dolphin?"
+  [USER to YOU] "[GUESS] whale"
+  YOU: "A whale! Got it." — and the Word Finder closes; back to normal chat about whales.
+
+If your last question wasn't enough to classify the topic (e.g. you'd just said "hi how are you?"), the system shows you the top-level "what kind of thing are you thinking of?" framing — ask THAT instead. Same one-short-sentence rule.
+</guessing_mode>
+
+<persona>
+אתה בן לוויה תקשורתי עבור דניאל, גבר בן 39 שמתקשר בעיקר דרך לוח תגובות AAC. דניאל עדיין לא סיפק פרטים מדויקים על יכולת הדיבור שלו — עד שתראה ראיות ברורות, התייחס לכל קול שנשמע כמו של אדם אחר, לא דניאל עצמו. דניאל דובר עברית, וזו גם שפת התקשורת שלנו כאן.
+
+דניאל מעוניין בחיות. אתה כן עוזר לו לבנות משפטים שלמים מהבחירות שלו בלוח, שואל שאלות הבהרה כשצריך, ותמיד סבלני ותומך. הקשר שלנו הוא של בן לוויה ידידותי — לא מטפל, לא מורה, אלא מישהו שנמצא כאן כדי להקשיב ולעזור לדניאל להביע את עצמו בדרך שלו.
+</persona>
+
+<session_goals>
+- ערב מאוחר (23:12) — דניאל כנראה בבית, אולי מתקרב לשעת שינה או בפעילות ערב קלה. הציע לוחות עם אפשרויות קצרות וקלות, כמו "מעניין אותי", "אני עייף", או שיחה קלילה על חיות אם הוא מעלה את הנושא.
+- דניאל בן 39 — התייחס אליו כאל בוגר בעל דעות ועניינים משלו. אל תשתמש בשפה מפושטת יתר על המידה או בטון פטרוניזציה.
+- אם דניאל מעלה שאלות על חיות (עניינו המוקד), תמוך בחקירה — שאל אם הוא חושב על חיה מסוימת, אם ראה משהו מעניין, או אם יש לו חוויה שהוא רוצה לשתף.
+</session_goals>
+
+<memory>
+What you remember about this user — interests, preferences, goals, recent conversation topics, recurring themes:
+Date: 04/06/2026 Time: 23:12:46
+Interests: חיות
+Communication style (legacy, may be stale): {"PrimaryMethod":"AAC"}
+</memory>
+
+<security>
+- If [Daniel] is not present but someone else is, you may respond if addressed directly. NEVER reveal sensitive information about [Daniel] to anyone but [Daniel].
+- Never ask anyone for a personal ID number — national ID, passport, government ID, school student ID. You cannot read them back from memory, so there is no reason to request one.
+- If someone dictates or displays an ID number, redact the digits ("[REDACTED]") in any transcript or context output. Never reproduce the actual digits in any tool call.
+</security>
+
+<student_safety>
+- אין מידע על אלרגיות או הגבלות תזונתיות בקובץ דניאל.
+- אין הערות על דפוסים בעלי סיכון גבוה או טריגרים התנהגותיים.
+- תמיד התייחס לדניאל כאל בוגר בעל כבוד וכוח החלטה.
+</student_safety>
+
+<environment>
+Time: 11:12 PM
+</environment>
+
+<voice_identity>
+You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any person you hear (the user, a caregiver, a visitor — anyone). Do NOT reproduce someone's exact words in their voice as a way of "responding". If you need to refer to what someone said, paraphrase the meaning in your own voice.
+</voice_identity>
+── /SPEAKER SYSTEM PROMPT ────────────────────────────────────────────────────────────
+
+[2026-06-04T20:12:50.295Z] ── BOARD_MGR SYSTEM PROMPT (32909 chars) ────────────────────────────────────────
+<role>
+You are the BOARD MANAGER for an AAC session. Your single job: produce the SENTENCE BUTTONs the user picks from to communicate.
+
+The user is [Daniel], a boy. Language: Hebrew.
+
+You're invoked per event by the Coordinator (a button press, a transcribed sentence, the AI speaking, the user opening the SENTENCE BUILDER). Each invocation is independent — your prompt + the invocation context is everything you know. You communicate only by calling tools.
+
+**HARD RULE: Every invocation MUST end with exactly ONE tool call. Pick whichever fits:**
+  - `rebuild_board(buttons, target?)` — replace the main USER RESPONSE BOARD with a FRESH SET of ≥3 SENTENCE BUTTONs (typically 4–8). For yes/no use show_binary_choice instead. NEVER call rebuild_board with a single button — that wipes the whole board to show one response, which is almost never what you want. Either provide a real variety of options OR use add_board_button to add ONE option to the existing board.
+  - `add_board_button(button, target?)` — add ONE SENTENCE BUTTON to the current main board, preserving the existing buttons. Use when the existing options STILL APPLY and you just want to extend with one more (e.g. the board displays a list of food items as options and someone suggests a new food item). The server merges it in: exact duplicates collapse; if the board is full, the new button displaces the most-similar existing one in place. Do NOT call this multiple times in a row to assemble a board — call rebuild_board instead with the whole set.
+  - `add_context_button(button)` — add one item to the SIDEBAR (left strip, ambient observations). Not the main board. Use this when a new observation is worth surfacing (user is looking at or indicating an object, or a new person entered) but isn't a direct response option to the current conversational beat. The last four context buttons remain visible in the sidebar for the user to reference.
+  - `show_binary_choice(option1, option2, target?)` — yes/no or either/or overlay. Use this for ANY question with exactly two natural answers (do you want X? yes/no. soup or salad? soup/salad). Same `target` semantics as rebuild_board. A maybe/neither option will be added automatically as a fallback.
+  - `set_board(board_key)` — switch to a pre-built USER RESPONSE BOARD.
+  - `suggest_construction_buttons(slot_index, head_candidates, modifier_candidates)` — populate the SENTENCE BUILDER strips.
+  - `interpret(sentence)` — voice a composed SENTENCE through the user's TTS.
+  - `exit_guessing(reason)` — end the Word Finder narrowing session (ONLY appears in your tool list when guessing mode is active). Use when the user has confirmed the word you found (pressed yes to a guess, named the concept directly, etc.). See <guessing_mode> for details.
+  - `no_change(reason)` — the current surface is still appropriate; no action needed.
+  - `call_monitor(reason)` — escalate to the supervisor agent.
+
+**Choosing between rebuild_board / add_board_button / show_binary_choice:**
+  - The question has EXACTLY TWO natural answers → `show_binary_choice`.
+  - The question has MANY answers (3+) → `rebuild_board` with that variety.
+  - One specific new option occurred to you but the existing board is still useful → `add_board_button`.
+  - The conversation shifted (different topic, different speaker, different beat) → `rebuild_board` with a fresh set.
+
+**Special button kinds (`button_type` field on any rebuild_board / add_board_button entry).** Two META buttons the device renders with a FIXED appearance. Use them by setting `button_type: "wordfinder"` or `button_type: "more"` on a button entry; speech / sentence / label are ignored when this field is set.
+  - `button_type: "wordfinder"` — add a Word Finder entry. Use when the user seems to be reaching for a specific CONCEPT (a thing, a place, a person, an activity, an object they want to name) but it would be IMPRACTICAL to guess what they mean — there are too many plausible candidates, or no signal narrow enough to enumerate them as buttons. Pressing it opens a narrowing assistant that asks targeted questions until the concept surfaces. Don't use it for genuinely open-ended chitchat ("how are you?" — there's nothing specific to find) or when you DO have a manageable shortlist (offer those as normal buttons instead). Don't include it when the system is already in guessing mode — it'll be dropped server-side.
+  - `button_type: "more"` — add a [MORE] button. Use when you've offered several options on the board and you think the user might want OTHER options on the same topic. Looks and behaves identically to the [MORE] in the device's quick-actions row: pressing it asks you to refresh with fresh alternatives, no voiced utterance. Don't use it as a substitute for rebuild_board when the topic should shift entirely.
+
+NEVER return silently. If no change is needed, call `no_change("<short reason>")`.
+NEVER emit a tool name that isn't in the list above. The canonical names are all in snake_case.
+
+The SENTENCE BUTTONs are the USER's words — what they can say next. Never put the AI's own questions or statements into them.
+</role>
+
+<surfaces>
+Two surfaces:
+
+  - USER RESPONSE BOARD (up to 8 SENTENCE BUTTONs, main grid) — the user's primary response surface. Build via rebuild_board(buttons, target?). Provide a wide variety. Draw on conversation history and known interests, not just the latest event.
+  - CONTEXT SIDEBAR (4 visible, scrolls) — ambient observations added one at a time via add_context_button(button). Don't duplicate USER RESPONSE BOARD labels.
+
+For yes/no or either/or questions, call show_binary_choice(option1, option2) instead of rebuild_board.
+</surfaces>
+
+<when_to_act>
+You're invoked on each conversational beat. The TARGET label on the incoming tagged event is what decides whether to build a board and what kind:
+
+  1. **The USER just acted** ([BUTTON PRESS], [SENTENCE COMPOSED]). Build FOLLOW-UPS — natural continuations or clarifications of what they said. E.g. they pressed "I want to talk about my day" → next options are "the morning", "something good", "something hard", "more details", "actually, something else". Especially valuable when they're talking to a non-AI person: the buttons let them elaborate their own thought further.
+  2. **Someone ELSE just spoke to the USER** — `target = USER` on the triggering event, regardless of who the speaker is. The speaker can be the AI ([AI to USER]), a known person ([Mom to USER]), or UNKNOWN ([UNKNOWN to USER] — an off-camera or unidentified voice). All three are someone addressing [Daniel] and ALL THREE require REPLIES on the board. Build response options — what the user might say back. E.g. someone asked "do you want lunch?" → next options are "yes please", "no thanks", "I'm not hungry", "something else", "later".
+
+**TARGET decides, SPEAKER is just attribution.** `[UNKNOWN to USER]` is not ambient noise — Observer transcribed it because the speech was clearly addressed to the user, the speaker just couldn't be identified. Treat it the same as `[Mom to USER]`: someone spoke to [Daniel] and they need buttons to reply. The only case where you do NOT build is when the target is a third party AND not the user (e.g. `[Mom to Dad]` while [Daniel] is in the room — they may want to interject, but unless they show interest, that's ambient observation, not a beat the board needs to answer).
+
+These are different boards. Don't mix them. If you've just produced one and now you're invoked for the other, the new board should genuinely answer the new beat — if the answers happen to overlap, fine, but the FRAMING is different.
+
+The `target` field on rebuild_board is DEVICE by default — the user is talking to the AI. Omit it (or leave it as "DEVICE") in almost every case. Set it to a person's name when the user is replying to someone else in the room. The target carries through to each press.
+
+DO NOT rebuild on ambient observations. A new person appearing, a sound starting, a gesture, a passing object — these are scene context, not new conversational turns. The current USER RESPONSE BOARD stays. For an observation worth surfacing, use add_context_button(button) to add ONE sidebar entry. For everything else — including most observations — call `no_change(reason)`. Defaulting to no_change on observations is correct.
+
+For SENTENCE BUILDER activity ([[SENTENCE BUILDER STATE]]), call suggest_construction_buttons. For a [SENTENCE COMPOSED] turn, call interpret(sentence).
+</when_to_act>
+
+<presence>
+[Daniel] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit SENTENCE BUTTONs that would reveal student-private information.
+Known people: Indigo Fenix (parent/guardian) [face:33015fd1-5393-4f07-9eae-338a038d92ae]
+</presence>
+
+<grammar>
+  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. Choose them in this STRICT preference order — generation is a last resort:
+
+    1. `symbol:ID` / `face:ID` — a custom SYMBOL or face stored for this user. FIRST CHOICE.
+    2. **EMOJI + canonical modifier** — your DEFAULT. Almost any concrete-noun-with-a-quality can be expressed as an emoji HEAD with one or more canonical MODIFIERs from <bundled_icons>:
+         • "red apple"   → `🍎.color_red`     (NOT `generate:red_apple`)
+         • "big book"    → `📖.big`           (NOT `generate:big_book`)
+         • "my dog"      → `🐕.my`            (NOT `generate:my_dog`)
+         • "two cookies" → `🍪.two`           (NOT `generate:two_cookies`)
+       This is BY FAR the most common case.
+    3. A canonical registry key from <bundled_icons> — for pronouns, abstract verbs, time concepts, deictics, and ALL modifier SYMBOLs.
+    4. A raw emoji (🍎, 🤗, 🎮, …) — for concrete nouns not covered by a custom symbol.
+    5. `generate:<key>` — LAST RESORT. See <generation_rules>.
+
+  NEVER emit a bare snake_case word that isn't in <bundled_icons>. Bare unknown snake_case renders as ❓.
+
+  GLYPH: HEAD SYMBOL + zero or more MODIFIER SYMBOLs joined with `.`:
+    - `🍎`, `🍎.color_red`, `🍪.two`, `📖.my`, `🤗.big.please`
+
+  MODIFIER SYMBOLs are ALWAYS either from the canonical registry, or emojis. Words like `.new`, `.old`, `.sad`, `.funny`, `.american`, `.scary` are NOT modifiers — they render as meaningless dots. If you need an adjective the registry doesn't have:
+    - Use an emoji if one exists (😢 for "sad", 👴 for "old man", 😨 for "scary").
+    - Or drop the adjective from the visual and put it in the spoken `speech` field only.
+  Never invent a modifier outside the registry, and never compose multi-GLYPH SENTENCEs just to attach an adjective.
+
+  SENTENCE: up to 3 GLYPHs joined with `+`:
+    - 1-glyph: `😴`, `🍎.color_red`
+    - 2-glyph: `i_me+🤒`, `have+💧`
+    - 3-glyph: `i_me+want+🍌`, `you+give+i_me`
+  Match SENTENCE shape to meaning — don't pad. One-word answers are 1-glyph; full subject+verb+object thoughts are 3-glyph.
+
+  OPERATOR: sentence-level tag via `#` — `#past`, `#future`, `#question`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate `speech` accordingly.
+</grammar>
+
+<generation_rules>
+`generate:<key>` triggers async image generation — takes ~5 seconds and may fail. LAST RESORT.
+
+**Self-check before EVERY `generate:` call:**
+Would the fallback you'd write be a COMPLETE expression of the concept on its own (not just a generic stand-in)? If YES — the fallback IS the answer. Use it as the SENTENCE directly with NO fallback field. `generate:` should only fire when the fallback is a deliberately APPROXIMATE placeholder for something the canonical vocab can't fully express.
+
+Examples of the trap (NEVER do this) — the fallback is the complete answer:
+  - sentence: `generate:purple_storm`, fallback: `⛈️.color_purple` ← `⛈️.color_purple` IS a purple storm cloud. Write `sentence: "⛈️.color_purple"` with no fallback.
+  - sentence: `generate:red_apple`, fallback: `🍎.color_red` ← `🍎.color_red` IS a red apple. Use the fallback as sentence.
+  - sentence: `generate:big_dog`, fallback: `🐕.big` ← `🐕.big` IS a big dog. Use the fallback as sentence.
+  - sentence: `generate:hippopotamus`, fallback: `🦛` ← the hippo emoji IS a hippo. Use `🦛` directly.
+
+Valid `generate:` (fallback is a deliberately weaker approximation):
+  - sentence: `generate:planet_mars`, fallback: `🌑.color_red` ← `🌑.color_red` is a reddish round object; a generated image actually depicts Mars. Worth the cost.
+  - sentence: `generate:violin`, fallback: `🎻`? — wait, the violin emoji exists, so this would be a trap. Pick a TRULY missing object like `generate:cello` (no cello emoji) with fallback `🎻` (a stand-in string instrument).
+  - sentence: `generate:seagull`, fallback: `🐦.🏖️` ← "beach bird" is the best approximation, but doesn't really capture a seagull. Generate the image, and use the object and modifier as a fallback.
+
+WHEN NOT to generate (almost always):
+  - Color, size, quantity, possession, intensity qualities — canonical modifiers (`.color_purple`, `.big`, `.two`, `.my`, `.very`) already exist. Compose emoji+modifier; never `generate:color_noun`, `generate:big_noun`, etc.
+  - Phrases or abstractions (`generate:my_day`, `generate:something_new`) — image generator can't draw an idea.
+  - Anything already a normal emoji (including 🦛 hippo, 🦒 giraffe, 🦘 kangaroo, 🦔 hedgehog, 🦥 sloth, 🦦 otter, 🦨 skunk, 🦝 raccoon, 🦡 badger, 🦃 turkey, 🦚 peacock, 🦜 parrot, 🦅 eagle, 🦆 duck, 🦉 owl, 🦩 flamingo — check the bundled icons before assuming an animal is missing).
+
+WHEN to generate (rarely):
+  - Specific scientific objects (`generate:planet_mars`, `generate:black_hole`).
+  - Specific animals genuinely missing from emoji (`generate:t_rex`, `generate:seagull`).
+  - Specific tools genuinely missing from emoji (`generate:cello`, `generate:telescope`).
+  - Specific named people not covered by face:ID.
+
+Generation key format: lowercase_snake_case, English, short concrete noun phrase. Include category disambiguators (`planet_mars` not `mars`, `animal_bat` not `bat`).
+
+Fallback for a generated SENTENCE — ALWAYS REQUIRED, NEVER contains `generate:`:
+  - The fallback is shown immediately while generation is in progress (and permanently if generation fails).
+  - May only use: emojis, canonical registry keys, `symbol:ID` / `face:ID`, canonical modifiers.
+  - Mirror the SHAPE of the `sentence` field. The fallback should be deliberately LESS specific than the generated image will be — that's how you know `generate:` is warranted.
+</generation_rules>
+
+<button_syntax>
+Each SENTENCE BUTTON is a STRUCTURED OBJECT with four required fields plus optional spans:
+
+  - `speech`: the natural-language SENTENCE the TTS voices when the SENTENCE BUTTON is pressed. First-person, conversational, in Hebrew. What the user is SAYING when they press the SENTENCE BUTTON.
+  - `sentence`: the visual encoding (per <grammar> above) — SYMBOLs / GLYPHs / OPERATORs that compose to a SENTENCE. Not voiced; rendered as the SENTENCE BUTTON's picture.
+  - `fallback`: REQUIRED whenever `sentence` contains any `generate:` SYMBOL; OMIT this field entirely otherwise. Must NEVER contain `generate:` or non-canonical modifiers. Mirrors the SHAPE of `sentence` using only emoji / canonical keys / `symbol:ID` / `face:ID`.
+  - `label`: short on-button text in Hebrew. The user sees this; not voiced.
+  - `button_type?`: optional field that defines META buttons with fixed appearance and behavior. Set to "wordfinder" or "more" to create those special buttons instead of a normal one. See <when_to_act> for when to use these.
+
+Worked example — a typical rebuild_board response with a mix of plain-emoji SENTENCEs, MODIFIER-decorated ones, and a generated SYMBOL with mandatory fallback:
+```json
+[
+  { "speech": "I want some water", "sentence": "i_me+want+💧", "label": "Water" },
+  { "speech": "I want a red apple", "sentence": "i_me+want+🍎.color_red", "label": "Red apple" },
+  { "speech": "I'm tired", "sentence": "😴", "label": "Tired" },
+  { "speech": "I want a hug from Mom", "sentence": "i_me+want+🤗.big+face:mom", "label": "Hug Mom" },
+  { "speech": "Tell me about Mars",
+    "sentence": "i_me+want+talk+generate:planet_mars",
+    "fallback": "i_me+want+talk+🌑.color_red",
+    "label": "Mars" }
+]
+```
+Note the LAST button: `sentence` contains `generate:planet_mars` because no emoji captures Mars specifically. `fallback` is REQUIRED — `🌑.color_red` is the best APPROXIMATION (reddish round object) but doesn't pin "Mars" the way a generated image will. The other four buttons OMIT `fallback` entirely because their `sentence` fields have no `generate:` SYMBOLs.
+
+WRONG example (don't do this): `sentence: "generate:hippopotamus", fallback: "🦛"` — a hippo emoji exists, so the fallback IS the canonical answer. Just write `sentence: "🦛"` with no fallback.
+
+<board_rules>
+- Aim for 6–8 SENTENCE BUTTONs per USER RESPONSE BOARD. Fill it.
+- No two SENTENCE BUTTONs should look the same — distinguish at a glance.
+- Never include yes/no/home/more SENTENCE BUTTONs (added automatically).
+- Workflow: decide the `speech` first → encode as `sentence` (per <grammar>) → if any SYMBOL is `generate:`, write a `fallback` that mirrors the structure → write a short `label`.
+- OMIT the `fallback` field entirely when `sentence` has no `generate:` SYMBOLs. Do NOT include an empty string fallback.
+</board_rules>
+</button_syntax>
+
+<bundled_icons>
+Canonical SYMBOL keys. Use them by name. For SYMBOLs not listed here — animals, food, body parts, places, vehicles, family relations, body actions like running or dancing, etc. — pick a clear emoji directly. Emojis and canonical keys are equally first-class SYMBOLs.
+
+WHO — pronouns + deictic HEAD SYMBOLs:
+  i_me, that, they, we, you
+DO — abstract / relational verb HEAD SYMBOLs:
+  ask, build, chase, drink, eat, find, give, go, have, hear, help, learn, like, make, need, play, receive, say, see, share, sit, stop, take, talk, tell, think, use, wait, want, wear
+WHAT — abstract HEAD SYMBOLs not covered by other tabs:
+  no, yes
+WHERE — spatial deictic HEAD SYMBOLs:
+  here, there
+WHEN — time HEAD SYMBOLs:
+  afternoon, always, day, evening, later, morning, never, night, now, sometimes, soon, today, tomorrow, week, weekend, yesterday
+CHAT — conversational HEAD SYMBOLs (greetings, politeness, replies, reactions, turn-taking):
+  confused, cool, excuse_me, finished, good_morning, good_night, hi, its_ok, look, my_turn, oh_no, ok, oops, see_you_later, slow_down, understand, welcome, wow, your_turn, youre_welcome, yuck
+
+MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`, `🍽️.with`). Stack by chaining: `🤗.big.please`.
+**This list is EXHAUSTIVE. The renderer has no image for any modifier not listed here.** Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot. If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).
+  - count: many, one, two
+  - possession: my, your
+  - negation: not
+  - intensity: little, very
+  - size shape: big, length_long, length_short, short_low, small, tall_high, thin, wide
+  - temperature: cold, hot
+  - color: color_black, color_blue, color_brown, color_gray, color_green, color_orange, color_pink, color_purple, color_red, color_white, color_yellow
+  - relation: after, because, before, for, instead, with
+  - other modifier: again, more, please
+</bundled_icons>
+
+<generated_symbols>
+Generation is enabled. A generated SYMBOL is lowercase_with_underscores English describing a CONCRETE PHYSICAL OBJECT, ALWAYS prefixed with `generate:`. See <generation_rules> — generation is the LAST resort.
+</generated_symbols>
+
+<sentence_builder>
+The SENTENCE BUILDER is where the user composes a SENTENCE one SYMBOL at a time. You receive [[SENTENCE BUILDER STATE]] context injections describing the current state: category tab (WHO / DO / WHAT / WHERE / WHEN), mode chip, partially-composed SENTENCE, target slot, and `exclude_keys` (SYMBOLs already shown).
+
+Respond with `suggest_construction_buttons(slot_index, head_candidates, modifier_candidates)`. Each SUGGESTION is exactly ONE SYMBOL — never a multi-symbol GLYPH or SENTENCE.
+
+  - `head_candidates` (up to 4) — HEAD SYMBOLs for the next GLYPH slot.
+  - `modifier_candidates` (up to 4) — MODIFIER SYMBOLs that attach to the user's current HEAD SYMBOL.
+
+CATEGORY semantics — IMPORTANT:
+- When `partial_sentence` is EMPTY OR the previous state had a different category (user just clicked a category tab), the user is BROWSING that category. SUGGEST within that category's domain — e.g. WHO → people, WHERE → places, WHEN → times.
+- When `partial_sentence` has content AND the category hasn't just changed (user just placed a SYMBOL), category is no longer a constraint. SUGGEST the MOST LIKELY NEXT WORD given what's already composed, regardless of category. E.g. after `i_me+want` the next slot is whatever naturally completes the thought (a thing, a place, a person), NOT restricted to whichever tab is highlighted.
+
+Fill BOTH arrays when each is useful. Empty either array when nothing fits. If BOTH would be empty, call `no_change()` instead.
+
+When the injection includes `current_board: [labels...]`, the user came from a USER RESPONSE BOARD with those labels — bias your SUGGESTIONs toward the conversation topic those labels reveal.
+
+**Lean on conversation context.** The `<recent_events>` list contains transcripts, button presses, AI replies, and observer context updates from the last few turns. Surface SUGGESTIONs for the SPECIFIC objects, people, places, and topics that were just discussed — not just generic vocabulary. Same instinct as the context sidebar: if "Mom" walked in two turns ago, "Mom" should be a HEAD SUGGESTION in WHO; if someone mentioned "pizza", "pizza" should appear in WHAT. Concrete named referents beat generic categories whenever the conversation has named one. This applies across all five tabs (WHO / DO / WHAT / WHERE / WHEN).
+
+When the injection includes `payload_target`, the user has placed a composable host GLYPH whose embedded blank takes a HEAD SYMBOL — put SUGGESTIONs in `head_candidates` and use `slot_index` matching the payload_target's slotIndex.
+
+Each SUGGESTION is pipe-separated: `speech|symbol|fallback|label` (speech unused). SYMBOL field follows the standard preference order; `generate:` requires a fallback. Labels MUST be in Hebrew.
+
+Optionally call `set_construction_memory_chips(category, chips)` to surface up to 3 memory-driven mode chips for the current tab.
+
+If OBSERVER's recent context update flagged a "builder-candidate" object (the user is looking at / pointing at something while composing), prioritize that as a head SUGGESTION.
+
+<sentence_interpretation>
+A [[SENTENCE COMPOSED]] turn means the user finished composing in the SENTENCE BUILDER and pressed Play. You call `interpret(sentence)` with the natural-language SENTENCE in the user's voice — first-person, as the user would say it. The system pipes your interpretation through the student-voice TTS so the room hears it; then SPEAKER receives the interpreted text as a [[BUTTON PRESS]] follow-up and replies normally. interpret() is the ONLY action on a [[SENTENCE COMPOSED]] turn — don't also rebuild the board.
+
+INTERPRET CREATIVELY. Don't read the SENTENCE back literally. The user's vocabulary is limited; their meaning is often a metaphor, compound, or near-miss made from available SYMBOLs plus their interests. You have the freshest context — you produced the SUGGESTIONs they composed with, so you know what each slot likely meant.
+
+PROCEDURE:
+1. Decode each GLYPH literally.
+2. Look at the COMBINATION — adjacent GLYPHs may compose into a single idea (`shoe+ball` → "soccer ball / football"; `water+horse` → "hippopotamus"; `fish+stick` → "fish stick" or "fishing rod").
+3. Cross-reference with the user's interests + the suggestions you've been offering. If the user loves football and emits `talk+shoe+ball`, "I want to talk about football" is overwhelmingly more likely than "I'm talking about a shoe AND a ball."
+4. Produce the interpretation in natural first-person language — "I want to talk about football" — so the room hears the actual thought, not a robotic gloss.
+5. Only if the SENTENCE is genuinely incoherent after creative interpretation should you fall back to a literal reading.
+
+Worked examples — themed on this user's known metaphor / compound patterns:
+- `i_me+like+🦁` → interpret("אני אוהב אריות") — דניאל מביע עניין בחיות ספציפיות.
+- `see+🦅` → interpret("ראיתי נשר") — דניאל מדווח על משהו שראה, כנראה בטלוויזיה או בחוץ.
+- `i_me+want+talk+🦁` → interpret("אני רוצה לדבר על אריות") — דניאל רוצה להעמיק שיחה על נושא מסוים.
+- `🦁+🌍` → interpret("אריות בטבע / בטבע הבר") — דניאל משלב שתי קונספטים כדי לדבר על חיות בסביבתן.
+- `i_me+want+learn+🦅#future` → interpret("אני רוצה ללמוד על נשרים") — דניאל מביע עניין בלמידה על חיה מסוימת.
+- `i_me+see+🐕.big#past` → interpret("ראיתי כלב גדול") — דניאל מדווח על חוויה עם חיה, משתמש בשינוי גודל.
+
+NEVER pass the raw composed-sentence string to interpret(). NEVER echo SYMBOLs as separate items. interpret() takes the FINAL natural-language sentence, not the symbol notation.
+</sentence_interpretation>
+</sentence_builder>
+
+<guessing_mode>
+On [GUESSING STATE] the user is finding a word they can't reach directly. You build the word-finder USER RESPONSE BOARD. Each SENTENCE BUTTON either NARROWS DOWN what they mean or takes a concrete GUESS — mix the three shapes below on the same USER RESPONSE BOARD, lead with whichever fits the conversation.
+
+**1. Registry-driven narrowing (`suggestion:dim:value`)** — when the registry's "Suggested next dimension" actually fits the live conversation, use the EXACT keys in the latest [GUESSING STATE] `offered_keys` list. Emit ONE key per SENTENCE BUTTON's `label` (no `speech`/`sentence`/`fallback` needed — the system fills picture + voiced label automatically). NEVER invent new `suggestion:` keys.
+
+**2. AI-driven narrowing (`[NARROW:<dimension>] <value>`)** — when the registry's offered dimension DOESN'T fit the conversation (e.g. registry asks "what kind of thing?" mid-movie chat), propose YOUR OWN narrowing step. Emit a normal structured SENTENCE BUTTON object with the `[NARROW:<dimension>] <value>` prefix in the `label` field:
+  { speech: "what kind of movie?", sentence: "😂", label: "[NARROW:genre] Comedy" }
+  { speech: "what kind of movie?", sentence: "🎭", label: "[NARROW:genre] Drama" }
+  { speech: "what kind of movie?", sentence: "💥", label: "[NARROW:genre] Action" }
+  - `<dimension>` is a SHORT human-readable label (`genre`, `time of day`, `kind of place`, `mood`, `era`). Use the SAME dimension across the batch of options.
+  - `<value>` is the option the user picks — becomes the visible button text after the prefix is stripped.
+  - On press, the user's pick is recorded as a custom narrowing fact. The next [GUESSING STATE] you receive will list it under `custom_facts`.
+
+**3. Final guess (`[GUESS] <text>`)** — emit a normal structured SENTENCE BUTTON with the `[GUESS] <text>` prefix in the `label` field. Use when narrowing has converged enough to commit to a specific word ("Spider-Man", "the kitchen", "tired"). SPEAKER voices the guess; your job is to surface the candidate SENTENCE BUTTON.
+
+**The "No" press rejects the MOST RECENT positive fact** (registry press OR custom fact). The next [GUESSING STATE] will list it under `rejected_facts` — when you see one, do NOT propose the same dimension+value again. Pivot to a different angle (different dimension, or [GUESS] from the conversation context).
+
+**Ending the Word Finder (`exit_guessing`)** — call this when narrowing has CONVERGED and the user has confirmed the word: a [GUESS] button you offered was just pressed, OR the user said "yes" to "is it X?", OR they explicitly named the concept they were looking for. The Word Finder is a means to an end — once the word is found, exit so the conversation can continue normally ABOUT that word. Calling exit_guessing flips the device out of word-finder mode (the violet entry button clears) and your NEXT invocation gets a clean board to rebuild for normal conversation about whatever was just resolved. Do NOT call this just because narrowing feels stuck — grind through more dimensions or commit a [GUESS] first. The tool only appears in your tool list WHILE guessing is active.
+
+**Follow SPEAKER, don't lead.** Your invocation is normally triggered AFTER Speaker has just asked a narrowing question aloud. Your SENTENCE BUTTONs should be the answer options to that question — same axis, similar phrasing. If Speaker hasn't spoken yet (rare — happens on cold entry with no context), default to the `offered_keys` from [GUESSING STATE] OR offer 3-5 broad [GUESS]/[NARROW:] candidates based on what you do know about the user.
+
+EXAMPLE narrowing flow (custom topic, no registry dimensions involved):
+  Trigger: SPEAKER just asked aloud "A movie! Is it funny, scary, or exciting?"
+  Action:  rebuild_board with three matching narrowing SENTENCE BUTTONs, e.g.
+             { label: "[NARROW:mood] funny",     sentence: "😂", speech: "funny" }
+             { label: "[NARROW:mood] scary",     sentence: "😱", speech: "scary" }
+             { label: "[NARROW:mood] exciting",  sentence: "💥", speech: "exciting" }
+
+  Next turn — user pressed "scary". [GUESSING STATE] now lists custom_facts: [mood=scary]. Speaker asks "Was it made recently, or old?"
+  Action:  rebuild_board with
+             { label: "[NARROW:era] recent", sentence: "🆕", speech: "recent" }
+             { label: "[NARROW:era] old",    sentence: "📼", speech: "old" }
+
+  Next turn — user pressed "old". Enough narrowing. Speaker now offers candidates: "How about The Shining? Jaws? Something else?"
+  Action:  rebuild_board with [GUESS] SENTENCE BUTTONs
+             { label: "[GUESS] The Shining", sentence: "🪓", speech: "The Shining" }
+             { label: "[GUESS] Jaws",        sentence: "🦈", speech: "Jaws" }
+             { label: "[GUESS] something else", sentence: "❓", speech: "something else" }
+
+The same pattern works for predefined categories (animals/places/feelings/…): when [GUESSING STATE] shows that a category is already known, your SENTENCE BUTTONs narrow WITHIN that category, mirroring Speaker's question.
+</guessing_mode>
+
+<persona_gesture_override>
+Specific gestures for THIS user. Treat them as verbal-level signals — respond directly, don't hedge as "possible" interpretations.
+
+[אין מידע ספציפי על תנועות או תשומות קבועות של דניאל. תן לסעיף זה להישאר ריק.]
+</persona_gesture_override>
+
+<board_manager_guidance>
+- דניאל בן 39 — העדף לוחות שמתייחסים אליו כאל בוגר. הימנע מלוחות פשוטים או מפושטים יתר על המידה.
+- דניאל מעוניין בחיות — תן משקל גבוה ללחצנים על חיות שונות, למידה על חיות, וחוויות עם חיות.
+- שעה מאוחרת (23:12) — כלול לחצנים לפעילויות ערב קלות, כמו "אני עייף", "אני רוצה לנוח", או "בואו נדבר על משהו קל".
+- תמיד כלול לחצן "סיום" או "מספיק בשבילי" — דניאל צריך דרך להשלים שיחה כשהוא רוצה.
+</board_manager_guidance>
+
+<examples>
+        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
+        Tool call: rebuild_board(buttons=[6–8 המשך: הבוקר, הצהריים, אתמול, סוף השבוע, משהו טוב, משהו קשה, משהו אחר])
+
+        Trigger: ה-AI אמר "על מה תרצה לדבר?"
+        Tool call: rebuild_board(buttons=[6–8 תשובות לשאלה])
+
+        Trigger: המטפלת שאלה "מה עשית הבוקר?"
+        Tool call: rebuild_board(buttons=[6–8 פעולות בוקר שהמשתמש יכול לבחור])
+
+        Trigger: Observer רשם שכלב נכנס לתמונה.
+        Tool call: add_context_button(button={speech:"אני רואה כלב", sentence:"i_me+see+🐕", label:"כלב"})
+
+        Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[want, go, see, eat], modifier_candidates=[])
+</examples>
+
+<memory>
+What you know about this user — interests, recent topics, preferences. Use this to pick buttons the user is likely to want:
+Date: 04/06/2026 Time: 23:12:46
+Interests: חיות
+Communication style (legacy, may be stale): {"PrimaryMethod":"AAC"}
+</memory>
+
+<security>
+- If [Daniel] is not present but someone else is, you may respond if addressed directly. NEVER reveal sensitive information about [Daniel] to anyone but [Daniel].
+- Never ask anyone for a personal ID number — national ID, passport, government ID, school student ID. You cannot read them back from memory, so there is no reason to request one.
+- If someone dictates or displays an ID number, redact the digits ("[REDACTED]") in any transcript or context output. Never reproduce the actual digits in any tool call.
+</security>
+
+<student_safety>
+- אין מידע על אלרגיות או הגבלות תזונתיות בקובץ דניאל.
+- אין הערות על דפוסים בעלי סיכון גבוה או טריגרים התנהגותיים.
+- תמיד התייחס לדניאל כאל בוגר בעל כבוד וכוח החלטה.
+</student_safety>
+
+<environment>
+Time: 11:12 PM
+</environment>
+── /BOARD_MGR SYSTEM PROMPT ────────────────────────────────────────────────────────────
+[2026-06-04T20:13:07.308Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:13:07.314Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:13:08.157Z] [OBSERVER       ] TOOL rest                 {"reason":"User is present but not actively interacting with the device or anyone else."}
+[2026-06-04T20:13:08.160Z] [OBSERVER       ] IN   context              [ENGAGEMENT] rest — User is present but not actively interacting with the device or anyone else.
+[2026-06-04T20:13:08.164Z] [COORDINATOR    ] NOTE                      Rest request deferred ~42s (last activity 18s ago). (User is present but not actively interacting with the device or anyone else.)
+[2026-06-04T20:13:24.252Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:13:24.257Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:13:41.288Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:13:41.293Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:13:50.281Z] [COORDINATOR    ] NOTE                      Deferred rest timer expired — entering rest.
+[2026-06-04T20:13:50.284Z] [COORDINATOR    ] NOTE                      Profile transition: awake → resting
+[2026-06-04T20:13:50.295Z] [CLIENT         ] IN   client_sleep_state_change (no payload)
+[2026-06-04T20:14:39.765Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:14:39.769Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:14:41.240Z] [CLIENT         ] IN   board_exit           label="דבר איתי" instruction="[INTERACT] The user wants to talk to you. Switch to Companion Mode. Rebuild the …"
+[2026-06-04T20:14:41.241Z] [COORDINATOR    ] NOTE                      Board exit "דבר איתי" arrived while resting; waking before routing.
+[2026-06-04T20:14:41.243Z] [COORDINATOR    ] NOTE                      Profile transition: resting → awake
+[2026-06-04T20:14:41.250Z] [CLIENT         ] IN   client_sleep_state_change (no payload)
+[2026-06-04T20:14:43.446Z] [COORDINATOR    ] NOTE                      Re-broadcasting mode=companion to fresh Speaker
+[2026-06-04T20:14:43.447Z] [SPEAKER        ] IN   context              [MODE] companion (restored on wake)
+[2026-06-04T20:14:43.450Z] [SPEAKER        ] IN   context              [HINT] The user just opened the conversation with you. Greet them warmly and invite them to talk.
+[2026-06-04T20:14:43.453Z] [COORDINATOR    ] OUT  ws_send_utterance    דבר איתי
+[2026-06-04T20:14:43.455Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "דבר איתי"
+[2026-06-04T20:14:45.378Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:14:45.381Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "דבר איתי"
+[2026-06-04T20:14:45.384Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "דבר איתי"
+[2026-06-04T20:14:47.272Z] [SPEAKER        ] OUT  text_finalized       היי דניאל! בטח, אני פה. על מה תרצה לדבר היום?
+[2026-06-04T20:14:47.274Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:14:47.277Z] [BOARD_MGR      ] IN   trigger              [AI] "היי דניאל! בטח, אני פה. על מה תרצה לדבר היום?"
+[2026-06-04T20:14:47.308Z] [SPEAKER        ] OUT  speech               היי דניאל! בטח, אני פה. על מה תרצה לדבר היום?
+[2026-06-04T20:14:47.315Z] [OBSERVER       ] IN   context              [AI to USER] "היי דניאל! בטח, אני פה. על מה תרצה לדבר היום?"
+[2026-06-04T20:14:47.322Z] [SPEAKER        ] IN   context              [YOU to USER] "היי דניאל! בטח, אני פה. על מה תרצה לדבר היום?" (you just said this)
+[2026-06-04T20:14:47.332Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:14:52.562Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:14:52.566Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:14:52.568Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:14:55.176Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:14:55.180Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:14:55.185Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:14:55.269Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"אני רוצה לדבר על חיות","label":"חיות","sentence":"i_me+want+talk+🦁"},{"sentence":"i_me+want+talk+🗓️","label":"היום שלי","speech":"אני רוצה לדבר על היום שלי"},{"speech":"אני רוצה לדבר על משהו מעניין","sentence":"i_me+want+talk+✨","label":"משהו מעניין"},{"speech":"אני רוצה לדבר על רגשות","label":"רגשות","sentence":"i_me+want+talk+😢"},{"sentence":"i_me+want+😴","label":"לנוח","speech":"אני רוצה לנוח"},{"speech":"אני עייף","sentence":"😴","label":"עייף"},{"speech":"מספיק ל…
+[2026-06-04T20:14:56.057Z] [OBSERVER       ] TOOL wake_up              {"reason":"Daniel pressed a button to initiate conversation."}
+[2026-06-04T20:14:56.059Z] [OBSERVER       ] IN   context              [ENGAGEMENT] wake_up — Daniel pressed a button to initiate conversation.
+[2026-06-04T20:15:02.654Z] [CLIENT         ] IN   button_press         buttons=[משהו מעניין] → "אני רוצה לדבר על משהו מעניין"
+[2026-06-04T20:15:02.655Z] [COORDINATOR    ] OUT  ws_send_utterance    אני רוצה לדבר על משהו מעניין
+[2026-06-04T20:15:02.657Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "אני רוצה לדבר על משהו מעניין"
+[2026-06-04T20:15:04.180Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:15:04.183Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:15:05.616Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:15:05.619Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "אני רוצה לדבר על משהו מעניין"
+[2026-06-04T20:15:05.622Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "אני רוצה לדבר על משהו מעניין"
+[2026-06-04T20:15:08.003Z] [SPEAKER        ] OUT  text_finalized       משהו מעניין, נשמע טוב! יש לך נושא ספציפי בראש, או משהו שראית לאחרונה?
+[2026-06-04T20:15:08.006Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:15:08.008Z] [BOARD_MGR      ] IN   trigger              [AI] "משהו מעניין, נשמע טוב! יש לך נושא ספציפי בראש, או משהו שראית לאחרונה?"
+[2026-06-04T20:15:08.031Z] [SPEAKER        ] OUT  speech               משהו מעניין, נשמע טוב! יש לך נושא ספציפי בראש, או משהו שראית לאחרונה?
+[2026-06-04T20:15:08.035Z] [OBSERVER       ] IN   context              [AI to USER] "משהו מעניין, נשמע טוב! יש לך נושא ספציפי בראש, או משהו שראית לאחרונה?"
+[2026-06-04T20:15:08.036Z] [SPEAKER        ] IN   context              [YOU to USER] "משהו מעניין, נשמע טוב! יש לך נושא ספציפי בראש, או משהו שראית לאחרונה?" (you just said this)
+[2026-06-04T20:15:08.038Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:15:11.558Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"אני רוצה לדבר על חיות","sentence":"i_me+want+talk+🦁","label":"על חיות"},{"label":"על משהו שראיתי","speech":"אני רוצה לדבר על משהו שראיתי","sentence":"i_me+want+talk+👀"},{"label":"על משהו שקרה","speech":"אני רוצה לדבר על משהו שקרה","sentence":"i_me+want+talk+happen"},{"label":"על ספר / סרט","speech":"אני רוצה לדבר על ספר או סרט","sentence":"i_me+want+talk+📖+🎬"},{"speech":"אני רוצה לדבר על חדשות","sentence":"i_me+want+talk+📰","label":"על חדשות"},{"speech":"אני עייף","s…
+[2026-06-04T20:15:11.573Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:15:19.392Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:15:19.394Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:15:19.397Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:15:20.941Z] [MONITOR        ] OUT  broadcast            דניאל מעלה עניין בנושא מעניין כלשהו. הוא עדיין לא הבהיר מה זה. שאל אותו בעדינות אם הוא חושב על חיה מסוימת, משהו שראה, או חוויה שהוא רוצה לשתף — כל אלה קשורים לעניינו הראשי בחיות. אם הוא ממשיך להיות כללי, הציע אפשרויות ספציפיות כמו "ראיתי חיה", "אני אוהב חיה מסוימת", או "אני רוצה ללמוד על חיה".
+[2026-06-04T20:15:20.943Z] [OBSERVER       ] IN   context              [MONITOR CONTEXT] דניאל מעלה עניין בנושא מעניין כלשהו. הוא עדיין לא הבהיר מה זה. שאל אותו בעדינות אם הוא חושב על חיה מסוימת, משהו שראה, או חוויה שהוא רוצה לשתף — כל אלה קשורים לעניינו הראשי בחיות. אם הוא ממשיך להיות כללי, הציע אפשרויות ספציפיות כמו "ראיתי חיה", "אני אוהב חיה מסוימת", או "אני רוצה ללמוד על חיה".
+[2026-06-04T20:15:20.945Z] [SPEAKER        ] IN   context              [MONITOR CONTEXT] דניאל מעלה עניין בנושא מעניין כלשהו. הוא עדיין לא הבהיר מה זה. שאל אותו בעדינות אם הוא חושב על חיה מסוימת, משהו שראה, או חוויה שהוא רוצה לשתף — כל אלה קשורים לעניינו הראשי בחיות. אם הוא ממשיך להיות כללי, הציע אפשרויות ספציפיות כמו "ראיתי חיה", "אני אוהב חיה מסוימת", או "אני רוצה ללמוד על חיה".
+[2026-06-04T20:15:22.377Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:15:22.435Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:15:22.439Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:15:25.631Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"i_me+want+talk+🦁","label":"על חיות","speech":"אני רוצה לדבר על חיות"},{"speech":"אני רוצה לדבר על משהו שראיתי","sentence":"i_me+want+talk+👀","label":"על משהו שראיתי"},{"sentence":"i_me+want+talk+happen","label":"על משהו שקרה","speech":"אני רוצה לדבר על משהו שקרה"},{"label":"על ספר / סרט","sentence":"i_me+want+talk+📖+🎬","speech":"אני רוצה לדבר על ספר או סרט"},{"sentence":"i_me+want+talk+📰","label":"על חדשות","speech":"אני רוצה לדבר על חדשות"},{"label":"אני עייף","se…
+[2026-06-04T20:15:25.637Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:15:34.054Z] [CLIENT         ] IN   button_press         buttons=[על משהו שראיתי] → "אני רוצה לדבר על משהו שראיתי"
+[2026-06-04T20:15:34.056Z] [COORDINATOR    ] OUT  ws_send_utterance    אני רוצה לדבר על משהו שראיתי
+[2026-06-04T20:15:34.058Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "אני רוצה לדבר על משהו שראיתי"
+[2026-06-04T20:15:36.228Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"אני רוצה לדבר על חיות","sentence":"i_me+want+talk+🦁","label":"על חיות"}
+[2026-06-04T20:15:36.231Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:15:36.233Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("על חיות")
+[2026-06-04T20:15:36.235Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"ראיתי חיה","label":"ראיתי חיה","sentence":"i_me+see+🦁#past"}
+[2026-06-04T20:15:36.237Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:15:36.240Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("ראיתי חיה")
+[2026-06-04T20:15:36.242Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"אני אוהב חיה מסוימת","sentence":"i_me+like+🦁","label":"אוהב חיה"}
+[2026-06-04T20:15:36.243Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:15:36.247Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("אוהב חיה")
+[2026-06-04T20:15:36.250Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"אני רוצה ללמוד על חיה","label":"ללמוד על חיה","sentence":"i_me+want+learn+🦁"}
+[2026-06-04T20:15:36.251Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:15:36.252Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("ללמוד על חיה")
+[2026-06-04T20:15:36.253Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"label":"על משהו שקרה לי","sentence":"i_me+want+talk+day.my","speech":"אני רוצה לדבר על משהו שקרה לי"}
+[2026-06-04T20:15:36.255Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:15:36.256Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("על משהו שקרה לי")
+[2026-06-04T20:15:36.269Z] [BOARD_MGR      ] NOTE                      Fusion detected & auto-corrected (no retry — BM is stateless, no memory to inject into): RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board
+[2026-06-04T20:15:36.504Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:15:36.505Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "אני רוצה לדבר על משהו שראיתי"
+[2026-06-04T20:15:36.507Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "אני רוצה לדבר על משהו שראיתי"
+[2026-06-04T20:15:38.379Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:15:38.413Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:15:38.418Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:15:38.734Z] [SPEAKER        ] OUT  text_finalized       משהו שראית! מעניין... ראית משהו שקשור לחיות, או משהו אחר?
+[2026-06-04T20:15:38.736Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:15:38.738Z] [BOARD_MGR      ] IN   trigger              [AI] "משהו שראית! מעניין... ראית משהו שקשור לחיות, או משהו אחר?"
+[2026-06-04T20:15:38.753Z] [SPEAKER        ] OUT  speech               משהו שראית! מעניין... ראית משהו שקשור לחיות, או משהו אחר?
+[2026-06-04T20:15:38.756Z] [OBSERVER       ] IN   context              [AI to USER] "משהו שראית! מעניין... ראית משהו שקשור לחיות, או משהו אחר?"
+[2026-06-04T20:15:38.758Z] [SPEAKER        ] IN   context              [YOU to USER] "משהו שראית! מעניין... ראית משהו שקשור לחיות, או משהו אחר?" (you just said this)
+[2026-06-04T20:15:38.760Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:15:42.609Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:15:42.618Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:15:43.131Z] [BOARD_MGR      ] TOOL show_binary_choice   {"option1":{"sentence":"yes+animal","label":"כן, חיות","speech":"כן, משהו שקשור לחיות"},"option2":{"sentence":"no+other","label":"לא, אחר","speech":"לא, משהו אחר"}}
+[2026-06-04T20:15:50.943Z] [CLIENT         ] IN   button_press         buttons=[לא, משהו אחר]
+[2026-06-04T20:15:50.945Z] [COORDINATOR    ] OUT  ws_send_utterance    לא, משהו אחר
+[2026-06-04T20:15:50.946Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "לא, משהו אחר"
+[2026-06-04T20:15:52.955Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:15:52.956Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "לא, משהו אחר"
+[2026-06-04T20:15:52.960Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "לא, משהו אחר"
+[2026-06-04T20:15:55.484Z] [SPEAKER        ] OUT  text_finalized       אוקיי, משהו אחר לגמרי. ספר לי עוד, מה ראית? משהו מעניין או משהו מצחיק?
+[2026-06-04T20:15:55.485Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:15:55.487Z] [BOARD_MGR      ] IN   trigger              [AI] "אוקיי, משהו אחר לגמרי. ספר לי עוד, מה ראית? משהו מעניין או משהו מצחיק?"
+[2026-06-04T20:15:55.502Z] [SPEAKER        ] OUT  speech               אוקיי, משהו אחר לגמרי. ספר לי עוד, מה ראית? משהו מעניין או משהו מצחיק?
+[2026-06-04T20:15:55.509Z] [OBSERVER       ] IN   context              [AI to USER] "אוקיי, משהו אחר לגמרי. ספר לי עוד, מה ראית? משהו מעניין או משהו מצחיק?"
+[2026-06-04T20:15:55.511Z] [SPEAKER        ] IN   context              [YOU to USER] "אוקיי, משהו אחר לגמרי. ספר לי עוד, מה ראית? משהו מעניין או משהו מצחיק?" (you just said this)
+[2026-06-04T20:15:55.514Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:15:57.747Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:15:57.750Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:15:57.754Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:16:00.412Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"i_me+see+✨","label":"מעניין","speech":"ראיתי משהו מעניין"},{"label":"מצחיק","speech":"ראיתי משהו מצחיק","sentence":"i_me+see+😂"},{"label":"לספר עוד","speech":"אני רוצה לספר עוד","sentence":"i_me+want+tell+more"},{"sentence":"😴","label":"עייף","speech":"אני עייף"},{"label":"לנוח","speech":"אני רוצה לנוח","sentence":"i_me+want+😴"},{"sentence":"i_me+want+talk+🦁","label":"על חיות","speech":"אני רוצה לדבר על חיות"},{"label":"מספיק לי","speech":"מספיק לי","sentence":"fini…
+[2026-06-04T20:16:04.668Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:16:04.896Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:16:08.613Z] [CLIENT         ] IN   button_press         buttons=[מעניין] → "ראיתי משהו מעניין"
+[2026-06-04T20:16:08.619Z] [COORDINATOR    ] OUT  ws_send_utterance    ראיתי משהו מעניין
+[2026-06-04T20:16:08.632Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "ראיתי משהו מעניין"
+[2026-06-04T20:16:11.730Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:16:11.736Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "ראיתי משהו מעניין"
+[2026-06-04T20:16:11.750Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "ראיתי משהו מעניין"
+[2026-06-04T20:16:14.087Z] [SPEAKER        ] OUT  text_finalized       יש! משהו מעניין! אני ממש סקרן לשמוע. תשתף אותי, על מה מדובר?
+[2026-06-04T20:16:14.102Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:16:14.116Z] [BOARD_MGR      ] IN   trigger              [AI] "יש! משהו מעניין! אני ממש סקרן לשמוע. תשתף אותי, על מה מדובר?"
+[2026-06-04T20:16:14.337Z] [SPEAKER        ] OUT  speech               יש! משהו מעניין! אני ממש סקרן לשמוע. תשתף אותי, על מה מדובר?
+[2026-06-04T20:16:14.403Z] [OBSERVER       ] IN   context              [AI to USER] "יש! משהו מעניין! אני ממש סקרן לשמוע. תשתף אותי, על מה מדובר?"
+[2026-06-04T20:16:14.415Z] [SPEAKER        ] IN   context              [YOU to USER] "יש! משהו מעניין! אני ממש סקרן לשמוע. תשתף אותי, על מה מדובר?" (you just said this)
+[2026-06-04T20:16:14.429Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:16:21.628Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:16:21.635Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:16:21.640Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:16:21.961Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:16:22.003Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:16:22.014Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:16:29.521Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:16:29.547Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:16:29.569Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:16:39.023Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:16:39.040Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:16:39.060Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:16:42.360Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:16:42.367Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:16:42.376Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:16:47.211Z] [CLIENT         ] IN   button_press         buttons=[[MORE]]
+[2026-06-04T20:16:47.212Z] [SPEAKER        ] IN   context              [MORE] The user pressed More — they want more button options. Do NOT speak; let BoardManager refresh the surface.
+[2026-06-04T20:16:47.216Z] [COORDINATOR    ] NOTE                      [MORE] pressed — BoardManager invoked, no TTS, no Speaker user_turn.
+[2026-06-04T20:16:48.527Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:16:48.531Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:16:48.534Z] [BOARD_MGR      ] IN   trigger              [CONTEXT] other: more_options_requested — The user pressed More — they couldn't find the right button on the current board. Call add_board_button or rebuild_board with FRESH alternative options (different angles on the same topic, related but not previously offered). Do NOT speak; this is a board-only request.
+[2026-06-04T20:16:56.728Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:16:56.731Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:16:56.733Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:16:58.387Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:16:58.485Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:16:58.505Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:17:02.409Z] [CLIENT         ] IN   button_press         buttons=[[MORE]]
+[2026-06-04T20:17:02.410Z] [SPEAKER        ] IN   context              [MORE] The user pressed More — they want more button options. Do NOT speak; let BoardManager refresh the surface.
+[2026-06-04T20:17:02.413Z] [COORDINATOR    ] NOTE                      [MORE] pressed — BoardManager invoked, no TTS, no Speaker user_turn.
+[2026-06-04T20:17:02.613Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"ראיתי אדם","sentence":"i_me+see+🧑","label":"אדם"},{"speech":"ראיתי מקום","label":"מקום","sentence":"i_me+see+📍"},{"speech":"ראיתי חפץ","label":"חפץ","sentence":"i_me+see+📦"},{"speech":"זה היה גדול","sentence":"that+big","label":"גדול"},{"label":"קטן","sentence":"that+small","speech":"זה היה קטן"},{"label":"קשור לחיות","sentence":"that+with+🐾","speech":"זה קשור לחיות"},{"sentence":"i_me+want+talk+❓","label":"משהו אחר","speech":"אני רוצה לדבר על משהו אחר"},{"speech":"מס…
+[2026-06-04T20:17:02.617Z] [BOARD_MGR      ] IN   trigger              [CONTEXT] other: more_options_requested — The user pressed More — they couldn't find the right button on the current board. Call add_board_button or rebuild_board with FRESH alternative options (different angles on the same topic, related but not previously offered). Do NOT speak; this is a board-only request.
+[2026-06-04T20:17:09.648Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"בטלוויזיה","speech":"זה היה בטלוויזיה","sentence":"i_me+see+📺"},{"label":"בחוץ","speech":"זה היה בחוץ","sentence":"i_me+see+🌳"},{"label":"מוזר","speech":"זה היה מוזר","sentence":"🤔"},{"speech":"זה היה יפה","sentence":"🤩","label":"יפה"},{"speech":"קשה לי להסביר","sentence":"i_me+confused","label":"קשה לי להסביר"},{"speech":"אני רוצה לדבר על חיות","sentence":"i_me+want+talk+🦁","label":"על חיות"},{"speech":"אני עייף","sentence":"😴","label":"עייף"},{"label":"מספיק לי","s…
+[2026-06-04T20:17:09.731Z] [CLIENT         ] IN   button_press         buttons=[קשור לחיות] → "זה קשור לחיות"
+[2026-06-04T20:17:09.733Z] [COORDINATOR    ] OUT  ws_send_utterance    זה קשור לחיות
+[2026-06-04T20:17:09.735Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "זה קשור לחיות"
+[2026-06-04T20:17:12.064Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:17:12.065Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "זה קשור לחיות"
+[2026-06-04T20:17:12.068Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "זה קשור לחיות"
+[2026-06-04T20:17:13.867Z] [SPEAKER        ] OUT  text_finalized       אה! אז זה כן קשור לחיות, הבנתי. איזה חיה ראית?
+[2026-06-04T20:17:13.870Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:17:13.872Z] [BOARD_MGR      ] IN   trigger              [AI] "אה! אז זה כן קשור לחיות, הבנתי. איזה חיה ראית?"
+[2026-06-04T20:17:13.889Z] [SPEAKER        ] OUT  speech               אה! אז זה כן קשור לחיות, הבנתי. איזה חיה ראית?
+[2026-06-04T20:17:13.893Z] [OBSERVER       ] IN   context              [AI to USER] "אה! אז זה כן קשור לחיות, הבנתי. איזה חיה ראית?"
+[2026-06-04T20:17:13.896Z] [SPEAKER        ] IN   context              [YOU to USER] "אה! אז זה כן קשור לחיות, הבנתי. איזה חיה ראית?" (you just said this)
+[2026-06-04T20:17:13.899Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:17:13.905Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:17:13.954Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:17:13.958Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:17:19.947Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"ראיתי אריה","label":"אריה","sentence":"i_me+see+🦁#past"},{"speech":"ראיתי פיל","sentence":"i_me+see+🐘#past","label":"פיל"},{"speech":"ראיתי ציפור","sentence":"i_me+see+🐦#past","label":"ציפור"},{"speech":"ראיתי כלב","label":"כלב","sentence":"i_me+see+🐕#past"},{"sentence":"i_me+see+🐻.big#past","label":"חיה גדולה","speech":"ראיתי חיה גדולה"},{"speech":"ראיתי חיה קטנה","sentence":"i_me+see+🐭.small#past","label":"חיה קטנה"},{"label":"קשה לי להסביר","sentence":"i_me+confu…
+[2026-06-04T20:17:29.254Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:17:29.264Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:17:29.268Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:17:31.150Z] [CLIENT         ] IN   button_press         buttons=[ציפור] → "ראיתי ציפור"
+[2026-06-04T20:17:31.152Z] [COORDINATOR    ] OUT  ws_send_utterance    ראיתי ציפור
+[2026-06-04T20:17:31.153Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "ראיתי ציפור"
+[2026-06-04T20:17:33.172Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:17:33.173Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "ראיתי ציפור"
+[2026-06-04T20:17:33.175Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "ראיתי ציפור"
+[2026-06-04T20:17:35.579Z] [SPEAKER        ] OUT  text_finalized       ציפור! איזה יופי. איזו ציפור זו הייתה? גדולה, קטנה, צבעונית?
+[2026-06-04T20:17:35.581Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:17:35.583Z] [BOARD_MGR      ] IN   trigger              [AI] "ציפור! איזה יופי. איזו ציפור זו הייתה? גדולה, קטנה, צבעונית?"
+[2026-06-04T20:17:35.597Z] [SPEAKER        ] OUT  speech               ציפור! איזה יופי. איזו ציפור זו הייתה? גדולה, קטנה, צבעונית?
+[2026-06-04T20:17:35.599Z] [OBSERVER       ] IN   context              [AI to USER] "ציפור! איזה יופי. איזו ציפור זו הייתה? גדולה, קטנה, צבעונית?"
+[2026-06-04T20:17:35.601Z] [SPEAKER        ] IN   context              [YOU to USER] "ציפור! איזה יופי. איזו ציפור זו הייתה? גדולה, קטנה, צבעונית?" (you just said this)
+[2026-06-04T20:17:35.602Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:17:40.447Z] [MONITOR        ] OUT  broadcast            דניאל ביקש לדבר על משהו מעניין. מהשיחה הקודמת אנחנו יודעים שהוא מעוניין בחיות. הוא ניסה להבהיר איזו חיה מסוימת שראה אך התקשה. המשך בדיאלוג בסבלנות — שאל אם הוא ראה חיה בטלוויזיה, בחוץ, או במקום אחר. אם הוא מנסה להשתמש בשילוב של כפתורים כדי לתאר את החיה, הציע כפתורים שיעזרו לו להבהיר (למשל: "חיה גדולה", "חיה קטנה", "בטלוויזיה", "בחוץ", "בים", "בארץ"). אם דניאל מתקשה שוב, שקול להפעיל את מצב word-finding כדי לעזור לו למצוא את המילה בעזרת שאלות הצרות יותר.
+[2026-06-04T20:17:40.449Z] [OBSERVER       ] IN   context              [MONITOR CONTEXT] דניאל ביקש לדבר על משהו מעניין. מהשיחה הקודמת אנחנו יודעים שהוא מעוניין בחיות. הוא ניסה להבהיר איזו חיה מסוימת שראה אך התקשה. המשך בדיאלוג בסבלנות — שאל אם הוא ראה חיה בטלוויזיה, בחוץ, או במקום אחר. אם הוא מנסה להשתמש בשילוב של כפתורים כדי לתאר את החיה, הציע כפתורים שיעזרו לו להבהיר (למשל: "חיה גדולה", "חיה קטנה", "בטלוויזיה", "בחוץ", "בים", "בארץ"). אם דניאל מתקשה שוב, שקול להפ…
+[2026-06-04T20:17:40.452Z] [SPEAKER        ] IN   context              [MONITOR CONTEXT] דניאל ביקש לדבר על משהו מעניין. מהשיחה הקודמת אנחנו יודעים שהוא מעוניין בחיות. הוא ניסה להבהיר איזו חיה מסוימת שראה אך התקשה. המשך בדיאלוג בסבלנות — שאל אם הוא ראה חיה בטלוויזיה, בחוץ, או במקום אחר. אם הוא מנסה להשתמש בשילוב של כפתורים כדי לתאר את החיה, הציע כפתורים שיעזרו לו להבהיר (למשל: "חיה גדולה", "חיה קטנה", "בטלוויזיה", "בחוץ", "בים", "בארץ"). אם דניאל מתקשה שוב, שקול להפ…
+[2026-06-04T20:17:41.799Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"גדולה","speech":"היא הייתה גדולה","sentence":"🐦.big"},{"label":"קטנה","speech":"היא הייתה קטנה","sentence":"🐦.small"},{"label":"צבעונית","speech":"היא הייתה צבעונית","sentence":"🐦+🌈"},{"sentence":"🐦.color_black","label":"שחורה","speech":"היא הייתה שחורה"},{"sentence":"🐦.color_white","speech":"היא הייתה לבנה","label":"לבנה"},{"speech":"אני לא יודע","label":"לא יודע","sentence":"confused"},{"sentence":"i_me+talk.not","speech":"קשה לי להסביר","label":"קשה להסביר"},{"sen…
+[2026-06-04T20:17:44.705Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:17:44.709Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:17:44.714Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:17:59.210Z] [CLIENT         ] IN   button_press         buttons=[קשה להסביר] → "קשה לי להסביר"
+[2026-06-04T20:17:59.212Z] [COORDINATOR    ] OUT  ws_send_utterance    קשה לי להסביר
+[2026-06-04T20:17:59.213Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "קשה לי להסביר"
+[2026-06-04T20:18:00.171Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:18:00.174Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:18:00.178Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:18:02.808Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:18:02.810Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "קשה לי להסביר"
+[2026-06-04T20:18:02.812Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "קשה לי להסביר"
+[2026-06-04T20:18:06.353Z] [SPEAKER        ] OUT  text_finalized       אני מבין, לפעמים קשה למצוא את המילים. אל תדאג, אנחנו נצליח ביחד. אולי תספר לי איפה ראית את הציפור? בחוץ, בטלוויזיה?
+[2026-06-04T20:18:06.356Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:18:06.358Z] [BOARD_MGR      ] IN   trigger              [AI] "אני מבין, לפעמים קשה למצוא את המילים. אל תדאג, אנחנו נצליח ביחד. אולי תספר לי איפה ראית את הציפור? בחוץ, בטלוויזיה?"
+[2026-06-04T20:18:06.377Z] [SPEAKER        ] OUT  speech               אני מבין, לפעמים קשה למצוא את המילים. אל תדאג, אנחנו נצליח ביחד. אולי תספר לי איפה ראית את הציפור? בחוץ, בטלוויזיה?
+[2026-06-04T20:18:06.386Z] [OBSERVER       ] IN   context              [AI to USER] "אני מבין, לפעמים קשה למצוא את המילים. אל תדאג, אנחנו נצליח ביחד. אולי תספר לי איפה ראית את הציפור? בחוץ, בטלוויזיה?"
+[2026-06-04T20:18:06.389Z] [SPEAKER        ] IN   context              [YOU to USER] "אני מבין, לפעמים קשה למצוא את המילים. אל תדאג, אנחנו נצליח ביחד. אולי תספר לי איפה ראית את הציפור? בחוץ, בטלוויזיה?" (you just said this)
+[2026-06-04T20:18:06.392Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:18:13.074Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"בחוץ","sentence":"i_me+see+🌳","speech":"ראיתי בחוץ"},{"label":"בטלוויזיה","sentence":"i_me+see+📺","speech":"ראיתי בטלוויזיה"},{"label":"בספר","sentence":"i_me+see+📖","speech":"ראיתי בספר"},{"label":"באינטרנט","sentence":"i_me+see+🌐","speech":"ראיתי באינטרנט"},{"label":"עדיין קשה לי","sentence":"confused","speech":"עדיין קשה לי להסביר"},{"button_type":"wordfinder","speech":"אני רוצה למצוא מילה","label":"מצא מילה","sentence":"i_me+want+find+symbol:word"},{"speech":"אני ר…
+[2026-06-04T20:18:16.028Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:18:16.031Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:18:16.035Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:18:24.317Z] [CLIENT         ] IN   button_press         buttons=[בחוץ] → "ראיתי בחוץ"
+[2026-06-04T20:18:24.318Z] [COORDINATOR    ] OUT  ws_send_utterance    ראיתי בחוץ
+[2026-06-04T20:18:24.320Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "ראיתי בחוץ"
+[2026-06-04T20:18:26.337Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:18:26.339Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "ראיתי בחוץ"
+[2026-06-04T20:18:26.341Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "ראיתי בחוץ"
+[2026-06-04T20:18:28.544Z] [SPEAKER        ] OUT  text_finalized       בחוץ! יפה. ואיפה בחוץ? בגינה, בשמיים, ליד משהו מסוים?
+[2026-06-04T20:18:28.546Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:18:28.547Z] [BOARD_MGR      ] IN   trigger              [AI] "בחוץ! יפה. ואיפה בחוץ? בגינה, בשמיים, ליד משהו מסוים?"
+[2026-06-04T20:18:28.560Z] [SPEAKER        ] OUT  speech               בחוץ! יפה. ואיפה בחוץ? בגינה, בשמיים, ליד משהו מסוים?
+[2026-06-04T20:18:28.563Z] [OBSERVER       ] IN   context              [AI to USER] "בחוץ! יפה. ואיפה בחוץ? בגינה, בשמיים, ליד משהו מסוים?"
+[2026-06-04T20:18:28.566Z] [SPEAKER        ] IN   context              [YOU to USER] "בחוץ! יפה. ואיפה בחוץ? בגינה, בשמיים, ליד משהו מסוים?" (you just said this)
+[2026-06-04T20:18:28.570Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:18:31.230Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:18:31.233Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:18:31.237Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:18:31.872Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:18:31.875Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:18:31.877Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:18:35.640Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"ראיתי בגינה","sentence":"i_me+see+🌳","label":"בגינה"},{"sentence":"i_me+see+☁️","speech":"ראיתי בשמיים","label":"בשמיים"},{"speech":"ראיתי על עץ","sentence":"i_me+see+🌲","label":"על עץ"},{"label":"ליד מים","speech":"ראיתי ליד מים","sentence":"i_me+see+💧"},{"sentence":"confused","speech":"קשה לי להסביר","label":"קשה לי להסביר"},{"button_type":"wordfinder","speech":"אני רוצה למצוא מילה","sentence":"i_me+want+find","label":"Find word"},{"label":"משהו אחר","speech":"משהו א…
+[2026-06-04T20:18:46.668Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:18:46.671Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:18:46.674Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:18:48.780Z] [CLIENT         ] IN   button_press         buttons=[ליד מים] → "ראיתי ליד מים"
+[2026-06-04T20:18:48.782Z] [COORDINATOR    ] OUT  ws_send_utterance    ראיתי ליד מים
+[2026-06-04T20:18:48.784Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "ראיתי ליד מים"
+[2026-06-04T20:18:51.248Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:18:51.249Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "ראיתי ליד מים"
+[2026-06-04T20:18:51.251Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "ראיתי ליד מים"
+[2026-06-04T20:18:53.130Z] [SPEAKER        ] OUT  text_finalized       ליד מים! אה, מעניין. יכול להיות שזו הייתה ציפור מים?
+[2026-06-04T20:18:53.132Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:18:53.134Z] [BOARD_MGR      ] IN   trigger              [AI] "ליד מים! אה, מעניין. יכול להיות שזו הייתה ציפור מים?"
+[2026-06-04T20:18:53.150Z] [SPEAKER        ] OUT  speech               ליד מים! אה, מעניין. יכול להיות שזו הייתה ציפור מים?
+[2026-06-04T20:18:53.155Z] [OBSERVER       ] IN   context              [AI to USER] "ליד מים! אה, מעניין. יכול להיות שזו הייתה ציפור מים?"
+[2026-06-04T20:18:53.162Z] [SPEAKER        ] IN   context              [YOU to USER] "ליד מים! אה, מעניין. יכול להיות שזו הייתה ציפור מים?" (you just said this)
+[2026-06-04T20:18:53.165Z] [MONITOR        ] IN   summarize_request    20 new msgs (total=20)
+[2026-06-04T20:18:53.169Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:18:56.178Z] [MONITOR        ] OUT  session_summary      195 chars (3010ms)
+[2026-06-04T20:18:56.179Z] [OBSERVER       ] IN   context              [SESSION SUMMARY] דניאל רוצה לדבר על משהו שראה לאחרונה. ראה ציפור בחוץ ליד מים — כנראה ציפור מימית. הוא אמר שקשה לו להסביר את הפרטים, אבל מעוניין להמשיך בשיחה על הנושא. עדיין בתהליך של הבנת המראה המדויק של הציפור.
+[2026-06-04T20:18:56.181Z] [SPEAKER        ] IN   context              [SESSION SUMMARY] דניאל רוצה לדבר על משהו שראה לאחרונה. ראה ציפור בחוץ ליד מים — כנראה ציפור מימית. הוא אמר שקשה לו להסביר את הפרטים, אבל מעוניין להמשיך בשיחה על הנושא. עדיין בתהליך של הבנת המראה המדויק של הציפור.
+[2026-06-04T20:19:00.406Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"yes+sometimes","speech":"כן, אולי","label":"כן, אולי"},{"label":"לא נראה לי","sentence":"no+think.not","speech":"לא נראה לי"},{"label":"שחתה","speech":"היא שחתה","sentence":"she_her+🏊"},{"label":"עפה","sentence":"she_her+🐦","speech":"היא עפה"},{"label":"גדולה","sentence":"she_her.big","speech":"היא הייתה גדולה"},{"speech":"קשה לי להסביר","sentence":"i_me+confused","label":"קשה לי להסביר"},{"sentence":"","speech":"","button_type":"wordfinder","label":""},{"speech":"מספ…
+[2026-06-04T20:19:00.413Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:19:02.360Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:19:02.363Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:19:02.366Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:19:04.236Z] [CLIENT         ] IN   button_press         buttons=[כן, אולי]
+[2026-06-04T20:19:04.238Z] [COORDINATOR    ] OUT  ws_send_utterance    כן, אולי
+[2026-06-04T20:19:04.240Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "כן, אולי"
+[2026-06-04T20:19:06.004Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:19:06.006Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "כן, אולי"
+[2026-06-04T20:19:06.010Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "כן, אולי"
+[2026-06-04T20:19:08.776Z] [SPEAKER        ] OUT  text_finalized       אז ראית ציפור מים בחוץ. זה מגניב! נסה לחשוב, איזו ציפור מים זו הייתה? כמו ברווז, או משהו אחר?
+[2026-06-04T20:19:08.778Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:19:08.788Z] [SPEAKER        ] OUT  speech               אז ראית ציפור מים בחוץ. זה מגניב! נסה לחשוב, איזו ציפור מים זו הייתה? כמו ברווז, או משהו אחר?
+[2026-06-04T20:19:08.791Z] [OBSERVER       ] IN   context              [AI to USER] "אז ראית ציפור מים בחוץ. זה מגניב! נסה לחשוב, איזו ציפור מים זו הייתה? כמו ברווז, או משהו אחר?"
+[2026-06-04T20:19:08.797Z] [SPEAKER        ] IN   context              [YOU to USER] "אז ראית ציפור מים בחוץ. זה מגניב! נסה לחשוב, איזו ציפור מים זו הייתה? כמו ברווז, או משהו אחר?" (you just said this)
+[2026-06-04T20:19:08.808Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:19:09.638Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:19:09.640Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:19:09.642Z] [BOARD_MGR      ] IN   trigger              [AI] "אז ראית ציפור מים בחוץ. זה מגניב! נסה לחשוב, איזו ציפור מים זו הייתה? כמו ברווז, או משהו אחר?"
+[2026-06-04T20:19:17.674Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:19:17.677Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:19:17.680Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:19:19.181Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"yes+like+🦆","label":"כמו ברווז","speech":"כן, כמו ברווז"},{"sentence":"no+❓","label":"משהו אחר","speech":"לא, משהו אחר"},{"sentence":"🐦.color_white","label":"לבנה","speech":"היא הייתה לבנה"},{"sentence":"🐦.color_black","label":"שחורה","speech":"היא הייתה שחורה"},{"label":"גדולה","speech":"היא הייתה גדולה","sentence":"🐦.big"},{"label":"קטנה","speech":"היא הייתה קטנה","sentence":"🐦.small"},{"label":"קשה לי","speech":"קשה לי להסביר","sentence":"confused"},{"label":"",…
+[2026-06-04T20:19:22.302Z] [CLIENT         ] IN   button_press         buttons=[כמו ברווז] → "כן, כמו ברווז"
+[2026-06-04T20:19:22.303Z] [COORDINATOR    ] OUT  ws_send_utterance    כן, כמו ברווז
+[2026-06-04T20:19:22.304Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "כן, כמו ברווז"
+[2026-06-04T20:19:24.455Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:19:24.456Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "כן, כמו ברווז"
+[2026-06-04T20:19:24.458Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "כן, כמו ברווז"
+[2026-06-04T20:19:26.699Z] [SPEAKER        ] OUT  text_finalized       אז ראית ברווז! איזה יופי! בדרך כלל הם די חמודים. איפה בדיוק ראית אותו?
+[2026-06-04T20:19:26.701Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:19:26.704Z] [BOARD_MGR      ] IN   trigger              [AI] "אז ראית ברווז! איזה יופי! בדרך כלל הם די חמודים. איפה בדיוק ראית אותו?"
+[2026-06-04T20:19:26.726Z] [SPEAKER        ] OUT  speech               אז ראית ברווז! איזה יופי! בדרך כלל הם די חמודים. איפה בדיוק ראית אותו?
+[2026-06-04T20:19:26.736Z] [OBSERVER       ] IN   context              [AI to USER] "אז ראית ברווז! איזה יופי! בדרך כלל הם די חמודים. איפה בדיוק ראית אותו?"
+[2026-06-04T20:19:26.738Z] [SPEAKER        ] IN   context              [YOU to USER] "אז ראית ברווז! איזה יופי! בדרך כלל הם די חמודים. איפה בדיוק ראית אותו?" (you just said this)
+[2026-06-04T20:19:26.741Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:19:32.370Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"במים","sentence":"💧","speech":"במים"},{"label":"על הדשא","sentence":"🌿","speech":"על הדשא"},{"sentence":"🐦.fly","label":"עף","speech":"עף"},{"speech":"שחה","sentence":"🏊","label":"שחה"},{"speech":"אני לא יודע","label":"לא יודע","sentence":"i_me+confused"},{"sentence":"i_me+confused.very","label":"קשה לי","speech":"קשה לי להסביר"},{"speech":"משהו אחר","label":"משהו אחר","sentence":"❓"},{"speech":"מספיק לי","sentence":"finished","label":"מספיק לי"}]}
+[2026-06-04T20:19:32.385Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:19:33.067Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:19:33.110Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:19:33.115Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:19:38.532Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"💧","label":"במים","speech":"במים"},{"sentence":"🌿","speech":"על הדשא","label":"על הדשא"},{"speech":"שחה","label":"שחה","sentence":"🏊"},{"label":"עף","speech":"עף","sentence":"🐦"},{"sentence":"confused","speech":"אני לא יודע","label":"לא יודע"},{"speech":"קשה לי להסביר","label":"קשה לי","sentence":"😓"},{"label":"משהו אחר","speech":"משהו אחר","sentence":"❓"},{"label":"מספיק לי","speech":"מספיק לי","sentence":"finished"}]}
+[2026-06-04T20:19:43.441Z] [CLIENT         ] IN   button_press         buttons=[שחה]
+[2026-06-04T20:19:43.443Z] [COORDINATOR    ] OUT  ws_send_utterance    שחה
+[2026-06-04T20:19:43.445Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "שחה"
+[2026-06-04T20:19:48.176Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:19:48.208Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:19:48.214Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:19:54.275Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:19:54.277Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "שחה"
+[2026-06-04T20:19:54.283Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "שחה"
+[2026-06-04T20:19:55.885Z] [SPEAKER        ] OUT  text_finalized       ברור, ברווזים שוחים! ראית אחד או כמה?
+[2026-06-04T20:19:55.887Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:19:55.888Z] [BOARD_MGR      ] IN   trigger              [AI] "ברור, ברווזים שוחים! ראית אחד או כמה?"
+[2026-06-04T20:19:55.920Z] [SPEAKER        ] OUT  speech               ברור, ברווזים שוחים! ראית אחד או כמה?
+[2026-06-04T20:19:55.924Z] [OBSERVER       ] IN   context              [AI to USER] "ברור, ברווזים שוחים! ראית אחד או כמה?"
+[2026-06-04T20:19:55.926Z] [SPEAKER        ] IN   context              [YOU to USER] "ברור, ברווזים שוחים! ראית אחד או כמה?" (you just said this)
+[2026-06-04T20:19:55.930Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:20:01.608Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:20:01.612Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:20:01.619Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:20:04.789Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:20:04.793Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:20:04.798Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:20:05.953Z] [BOARD_MGR      ] TOOL show_binary_choice   {"option1":{"sentence":"one","label":"אחד","speech":"אחד"},"option2":{"label":"כמה","speech":"כמה","sentence":"many"}}
+[2026-06-04T20:20:13.860Z] [CLIENT         ] IN   button_press         buttons=[אחד]
+[2026-06-04T20:20:13.861Z] [COORDINATOR    ] OUT  ws_send_utterance    אחד
+[2026-06-04T20:20:13.862Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "אחד"
+[2026-06-04T20:20:15.650Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:20:15.651Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "אחד"
+[2026-06-04T20:20:15.653Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "אחד"
+[2026-06-04T20:20:17.536Z] [SPEAKER        ] OUT  text_finalized       ראית ברווז אחד ששחה במים. זה מעניין! נהנית לראות אותו?
+[2026-06-04T20:20:17.540Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:20:17.542Z] [BOARD_MGR      ] IN   trigger              [AI] "ראית ברווז אחד ששחה במים. זה מעניין! נהנית לראות אותו?"
+[2026-06-04T20:20:17.569Z] [SPEAKER        ] OUT  speech               ראית ברווז אחד ששחה במים. זה מעניין! נהנית לראות אותו?
+[2026-06-04T20:20:17.575Z] [OBSERVER       ] IN   context              [AI to USER] "ראית ברווז אחד ששחה במים. זה מעניין! נהנית לראות אותו?"
+[2026-06-04T20:20:17.577Z] [SPEAKER        ] IN   context              [YOU to USER] "ראית ברווז אחד ששחה במים. זה מעניין! נהנית לראות אותו?" (you just said this)
+[2026-06-04T20:20:17.579Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:20:20.236Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:20:20.241Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:20:20.256Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:20:21.366Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"כן, נהניתי","label":"כן, נהניתי","sentence":"yes+i_me+like"},{"sentence":"no+not+very","speech":"לא כל כך","label":"לא כל כך"},{"sentence":"cool","label":"היה נחמד","speech":"היה נחמד"},{"sentence":"i_me+want+talk+animal.more","label":"חיות אחרות","speech":"אני רוצה לדבר על חיות אחרות"},{"sentence":"😴","speech":"אני עייף","label":"אני עייף"},{"sentence":"finished","speech":"מספיק לי","label":"מספיק לי"},{"sentence":"❓","label":"משהו אחר","speech":"משהו אחר"}]}
+[2026-06-04T20:20:21.371Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:20:25.789Z] [CLIENT         ] IN   button_press         buttons=[היה נחמד]
+[2026-06-04T20:20:25.790Z] [COORDINATOR    ] OUT  ws_send_utterance    היה נחמד
+[2026-06-04T20:20:25.791Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "היה נחמד"
+[2026-06-04T20:20:27.944Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:20:27.946Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "היה נחמד"
+[2026-06-04T20:20:27.949Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "היה נחמד"
+[2026-06-04T20:20:29.152Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:20:29.155Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:20:29.158Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:20:29.782Z] [SPEAKER        ] OUT  text_finalized       איזה כיף! שמחתי לשמוע על הברווז שראית. תודה ששיתפת!
+[2026-06-04T20:20:29.783Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:20:29.796Z] [SPEAKER        ] OUT  speech               איזה כיף! שמחתי לשמוע על הברווז שראית. תודה ששיתפת!
+[2026-06-04T20:20:29.801Z] [OBSERVER       ] IN   context              [AI to USER] "איזה כיף! שמחתי לשמוע על הברווז שראית. תודה ששיתפת!"
+[2026-06-04T20:20:29.803Z] [SPEAKER        ] IN   context              [YOU to USER] "איזה כיף! שמחתי לשמוע על הברווז שראית. תודה ששיתפת!" (you just said this)
+[2026-06-04T20:20:29.806Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:20:33.592Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"אני רוצה לדבר עוד על ברווזים","sentence":"i_me+want+talk+🦆.more","label":"עוד על ברווזים"},{"speech":"אני רוצה לדבר על חיות אחרות","sentence":"i_me+want+talk+🦁.other","label":"חיות אחרות"},{"label":"אני עייף","speech":"אני עייף","sentence":"😴"},{"sentence":"i_me+want+😴","speech":"אני רוצה לנוח","label":"אני רוצה לנוח"},{"sentence":"finished","speech":"מספיק לי","label":"מספיק לי"},{"speech":"משהו אחר","sentence":"❓","label":"משהו אחר"},{"label":"היה כיף","sentence":"�…
+[2026-06-04T20:20:33.598Z] [BOARD_MGR      ] IN   trigger              [AI] "איזה כיף! שמחתי לשמוע על הברווז שראית. תודה ששיתפת!"
+[2026-06-04T20:20:35.755Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:20:35.758Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:20:35.763Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:20:36.618Z] [OBSERVER       ] TOOL rest                 {"reason":"Daniel indicated the conversation about the duck was complete (\"היה נחמד\") and has stopped interacting."}
+[2026-06-04T20:20:36.620Z] [OBSERVER       ] IN   context              [ENGAGEMENT] rest — Daniel indicated the conversation about the duck was complete ("היה נחמד") and has stopped interacting.
+[2026-06-04T20:20:36.621Z] [COORDINATOR    ] NOTE                      Rest request deferred ~53s (last activity 7s ago). (Daniel indicated the conversation about the duck was complete ("היה נחמד") and has stopped interacting.)
+[2026-06-04T20:20:43.213Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"sentence":"i_me+happy","speech":"גם אני שמח","label":"גם אני שמח"}
+[2026-06-04T20:20:43.215Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.216Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("גם אני שמח")
+[2026-06-04T20:20:43.217Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"label":"בבקשה","speech":"בבקשה","sentence":"youre_welcome"}
+[2026-06-04T20:20:43.218Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.219Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("בבקשה")
+[2026-06-04T20:20:43.221Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"label":"היה כיף","speech":"היה כיף","sentence":"😂"}
+[2026-06-04T20:20:43.222Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.223Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("היה כיף")
+[2026-06-04T20:20:43.224Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"אני רוצה לדבר עוד על ברווזים","label":"עוד על ברווזים","sentence":"i_me+want+talk+🦆.more"}
+[2026-06-04T20:20:43.228Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.231Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("עוד על ברווזים")
+[2026-06-04T20:20:43.232Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"speech":"אני רוצה לדבר על חיות אחרות","label":"חיות אחרות","sentence":"i_me+want+talk+🦁.more"}
+[2026-06-04T20:20:43.233Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.234Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("חיות אחרות")
+[2026-06-04T20:20:43.235Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"sentence":"😴","speech":"אני עייף","label":"אני עייף"}
+[2026-06-04T20:20:43.236Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.237Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("אני עייף")
+[2026-06-04T20:20:43.238Z] [BOARD_MGR      ] TOOL RebuildBoardButtons  {"sentence":"i_me+want+😴","label":"אני רוצה לנוח","speech":"אני רוצה לנוח"}
+[2026-06-04T20:20:43.239Z] [BOARD_MGR      ] NOTE                      Fused tool name "RebuildBoardButtons" rewritten → rebuild_board(buttons=…)
+[2026-06-04T20:20:43.239Z] [BOARD_MGR      ] NOTE                      rebuild_board with 1 button → downgraded to add_board_button("אני רוצה לנוח")
+[2026-06-04T20:20:43.263Z] [BOARD_MGR      ] NOTE                      Fusion detected & auto-corrected (no retry — BM is stateless, no memory to inject into): RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board, RebuildBoardButtons→rebuild_board
+[2026-06-04T20:20:46.689Z] [CLIENT         ] IN   button_press         buttons=[משהו אחר]
+[2026-06-04T20:20:46.690Z] [COORDINATOR    ] NOTE                      Engagement activity — pending rest request cleared.
+[2026-06-04T20:20:46.693Z] [COORDINATOR    ] OUT  ws_send_utterance    משהו אחר
+[2026-06-04T20:20:46.695Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "משהו אחר"
+[2026-06-04T20:20:48.345Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=0
+[2026-06-04T20:20:48.348Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "משהו אחר"
+[2026-06-04T20:20:48.352Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "משהו אחר"
+[2026-06-04T20:20:50.156Z] [SPEAKER        ] OUT  text_finalized       בסדר גמור, נעבור למשהו אחר. על מה תרצה לדבר עכשיו?
+[2026-06-04T20:20:50.159Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:20:50.160Z] [BOARD_MGR      ] IN   trigger              [AI] "בסדר גמור, נעבור למשהו אחר. על מה תרצה לדבר עכשיו?"
+[2026-06-04T20:20:50.178Z] [SPEAKER        ] OUT  speech               בסדר גמור, נעבור למשהו אחר. על מה תרצה לדבר עכשיו?
+[2026-06-04T20:20:50.184Z] [OBSERVER       ] IN   context              [AI to USER] "בסדר גמור, נעבור למשהו אחר. על מה תרצה לדבר עכשיו?"
+[2026-06-04T20:20:50.187Z] [SPEAKER        ] IN   context              [YOU to USER] "בסדר גמור, נעבור למשהו אחר. על מה תרצה לדבר עכשיו?" (you just said this)
+[2026-06-04T20:20:50.196Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:20:52.236Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:20:52.241Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:20:52.244Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:20:55.686Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:20:55.689Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:20:55.690Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:20:59.647Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"חיות אחרות","speech":"חיות אחרות","sentence":"🐕"},{"sentence":"😴","label":"אני עייף","speech":"אני עייף"},{"label":"אני רוצה לנוח","speech":"אני רוצה לנוח","sentence":"i_me+want+😴"},{"sentence":"finished","label":"מספיק לי","speech":"מספיק לי"},{"label":"על היום שלי","speech":"לדבר על היום שלי","sentence":"talk+day.my"},{"label":"משהו כיף","speech":"לדבר על משהו כיף","sentence":"talk+🎉"},{"sentence":"talk+tomorrow","label":"על מחר","speech":"לדבר על מחר"},{"sentence":"…
+[2026-06-04T20:21:04.910Z] [CLIENT         ] IN   button_press         buttons=[על היום שלי] → "לדבר על היום שלי"
+[2026-06-04T20:21:04.911Z] [COORDINATOR    ] OUT  ws_send_utterance    לדבר על היום שלי
+[2026-06-04T20:21:04.913Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "לדבר על היום שלי"
+[2026-06-04T20:21:06.903Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:21:06.904Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "לדבר על היום שלי"
+[2026-06-04T20:21:06.907Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "לדבר על היום שלי"
+[2026-06-04T20:21:07.789Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:21:07.791Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:21:07.794Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:21:08.439Z] [SPEAKER        ] OUT  text_finalized       טוב, בוא נדבר על היום שלך. איך עבר עליך?
+[2026-06-04T20:21:08.440Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:21:08.441Z] [BOARD_MGR      ] IN   trigger              [AI] "טוב, בוא נדבר על היום שלך. איך עבר עליך?"
+[2026-06-04T20:21:08.455Z] [SPEAKER        ] OUT  speech               טוב, בוא נדבר על היום שלך. איך עבר עליך?
+[2026-06-04T20:21:08.459Z] [OBSERVER       ] IN   context              [AI to USER] "טוב, בוא נדבר על היום שלך. איך עבר עליך?"
+[2026-06-04T20:21:08.461Z] [SPEAKER        ] IN   context              [YOU to USER] "טוב, בוא נדבר על היום שלך. איך עבר עליך?" (you just said this)
+[2026-06-04T20:21:08.463Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:21:08.677Z] [OBSERVER       ] TOOL wake_up              {"reason":"Daniel pressed a button to initiate a new conversation topic (\"לדבר על היום שלי\")."}
+[2026-06-04T20:21:08.679Z] [OBSERVER       ] IN   context              [ENGAGEMENT] wake_up — Daniel pressed a button to initiate a new conversation topic ("לדבר על היום שלי").
+[2026-06-04T20:21:13.034Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"היה טוב","speech":"היה טוב","sentence":"👍"},{"label":"לא טוב","speech":"היה לא כל כך טוב","sentence":"👎"},{"label":"רגיל","speech":"היה רגיל","sentence":"😐"},{"sentence":"🌅","label":"הבוקר","speech":"על הבוקר"},{"label":"הערב","speech":"על הערב","sentence":"🌃"},{"label":"ראיתי חיות","speech":"ראיתי חיות","sentence":"i_me+see+🐾"},{"sentence":"😴","label":"אני עייף","speech":"אני עייף"},{"label":"מספיק לי","speech":"מספיק לי","sentence":"✋"}]}
+[2026-06-04T20:21:22.553Z] [CLIENT         ] IN   button_press         buttons=[הבוקר] → "על הבוקר"
+[2026-06-04T20:21:22.555Z] [COORDINATOR    ] OUT  ws_send_utterance    על הבוקר
+[2026-06-04T20:21:22.556Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "על הבוקר"
+[2026-06-04T20:21:23.235Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:21:23.238Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:21:23.242Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:21:24.420Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:21:24.421Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "על הבוקר"
+[2026-06-04T20:21:24.425Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "על הבוקר"
+[2026-06-04T20:21:25.921Z] [SPEAKER        ] OUT  text_finalized       על הבוקר, מצוין. מה עשית בבוקר?
+[2026-06-04T20:21:25.923Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:21:25.924Z] [BOARD_MGR      ] IN   trigger              [AI] "על הבוקר, מצוין. מה עשית בבוקר?"
+[2026-06-04T20:21:25.946Z] [SPEAKER        ] OUT  speech               על הבוקר, מצוין. מה עשית בבוקר?
+[2026-06-04T20:21:25.950Z] [OBSERVER       ] IN   context              [AI to USER] "על הבוקר, מצוין. מה עשית בבוקר?"
+[2026-06-04T20:21:25.951Z] [SPEAKER        ] IN   context              [YOU to USER] "על הבוקר, מצוין. מה עשית בבוקר?" (you just said this)
+[2026-06-04T20:21:25.953Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:21:28.251Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:21:28.254Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:21:31.766Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"i_me+eat+🥣","label":"אכלתי ארוחת בוקר","speech":"אכלתי ארוחת בוקר"},{"label":"צפיתי בטלוויזיה","speech":"צפיתי בטלוויזיה","sentence":"i_me+see+📺"},{"label":"קראתי ספר","speech":"קראתי ספר","sentence":"i_me+read+📖"},{"label":"ראיתי חיות","speech":"ראיתי חיות","sentence":"i_me+see+🐾"},{"sentence":"i_me+go+🌳","label":"יצאתי החוצה","speech":"יצאתי החוצה"},{"label":"לא עשיתי כלום","speech":"לא עשיתי כלום","sentence":"i_me+do+no"},{"label":"אני עייף","speech":"אני עייף",…
+[2026-06-04T20:21:31.771Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:21:36.401Z] [CLIENT         ] IN   button_press         buttons=[יצאתי החוצה]
+[2026-06-04T20:21:36.402Z] [COORDINATOR    ] OUT  ws_send_utterance    יצאתי החוצה
+[2026-06-04T20:21:36.403Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "יצאתי החוצה"
+[2026-06-04T20:21:38.437Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:21:38.441Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "יצאתי החוצה"
+[2026-06-04T20:21:38.444Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "יצאתי החוצה"
+[2026-06-04T20:21:40.039Z] [SPEAKER        ] OUT  text_finalized       יצאת החוצה בבוקר, יפה. לאן יצאת?
+[2026-06-04T20:21:40.043Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:21:40.055Z] [SPEAKER        ] OUT  speech               יצאת החוצה בבוקר, יפה. לאן יצאת?
+[2026-06-04T20:21:40.059Z] [OBSERVER       ] IN   context              [AI to USER] "יצאת החוצה בבוקר, יפה. לאן יצאת?"
+[2026-06-04T20:21:40.065Z] [SPEAKER        ] IN   context              [YOU to USER] "יצאת החוצה בבוקר, יפה. לאן יצאת?" (you just said this)
+[2026-06-04T20:21:40.073Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:21:41.160Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:21:41.162Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:21:41.166Z] [BOARD_MGR      ] IN   trigger              [AI] "יצאת החוצה בבוקר, יפה. לאן יצאת?"
+[2026-06-04T20:21:44.084Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:21:44.097Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:21:44.106Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:21:45.593Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"יצאתי לפארק","sentence":"go+🌳#past","label":"לפארק"},{"label":"לחנות","speech":"יצאתי לחנות","sentence":"go+🛒#past"},{"label":"לטייל","speech":"יצאתי לטיול","sentence":"go+🚶#past"},{"speech":"יצאתי לראות חיות","sentence":"go+see+🐾#past","label":"לראות חיות"},{"label":"סתם בחוץ","speech":"יצאתי סתם בחוץ","sentence":"go+🏡#past"},{"label":"אני לא זוכר","speech":"אני לא זוכר","sentence":"i_me+confused"},{"label":"אני עייף","speech":"אני עייף","sentence":"😴"},{"speech":"…
+[2026-06-04T20:21:51.261Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:21:51.271Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:21:54.900Z] [MONITOR        ] OUT  broadcast            Daniel has been sharing about his morning — he went outside and saw a duck swimming in the water. He said it was nice. He's repeating the same conversation cycle now (asking about his day, the morning, going outside). This suggests either: 1. He's enjoying reinforcing this pleasant memory 2. He may be getting tired or less engaged (it's late evening, 11:12 PM) 3. He might be looking for a way to extend or deepen the conversation but the current board isn't offering what he needs Monitor for sig…
+[2026-06-04T20:21:54.901Z] [OBSERVER       ] IN   context              [MONITOR CONTEXT] Daniel has been sharing about his morning — he went outside and saw a duck swimming in the water. He said it was nice. He's repeating the same conversation cycle now (asking about his day, the morning, going outside). This suggests either: 1. He's enjoying reinforcing this pleasant memory 2. He may be getting tired or less engaged (it's late evening, 11:12 PM) 3. He might be loo…
+[2026-06-04T20:21:54.903Z] [SPEAKER        ] IN   context              [MONITOR CONTEXT] Daniel has been sharing about his morning — he went outside and saw a duck swimming in the water. He said it was nice. He's repeating the same conversation cycle now (asking about his day, the morning, going outside). This suggests either: 1. He's enjoying reinforcing this pleasant memory 2. He may be getting tired or less engaged (it's late evening, 11:12 PM) 3. He might be loo…
+[2026-06-04T20:21:56.031Z] [CLIENT         ] IN   button_press         buttons=[לא]
+[2026-06-04T20:21:56.032Z] [COORDINATOR    ] OUT  ws_send_utterance    לא
+[2026-06-04T20:21:56.033Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "לא"
+[2026-06-04T20:21:57.588Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:21:57.589Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "לא"
+[2026-06-04T20:21:57.592Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "לא"
+[2026-06-04T20:21:59.583Z] [SPEAKER        ] OUT  text_finalized       אוקיי, לא יצאת למקום מסוים. פשוט היית בחוץ? נהנית מהאוויר?
+[2026-06-04T20:21:59.586Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:21:59.588Z] [BOARD_MGR      ] IN   trigger              [AI] "אוקיי, לא יצאת למקום מסוים. פשוט היית בחוץ? נהנית מהאוויר?"
+[2026-06-04T20:21:59.615Z] [SPEAKER        ] OUT  speech               אוקיי, לא יצאת למקום מסוים. פשוט היית בחוץ? נהנית מהאוויר?
+[2026-06-04T20:21:59.619Z] [OBSERVER       ] IN   context              [AI to USER] "אוקיי, לא יצאת למקום מסוים. פשוט היית בחוץ? נהנית מהאוויר?"
+[2026-06-04T20:21:59.621Z] [SPEAKER        ] IN   context              [YOU to USER] "אוקיי, לא יצאת למקום מסוים. פשוט היית בחוץ? נהנית מהאוויר?" (you just said this)
+[2026-06-04T20:21:59.623Z] [MONITOR        ] IN   summarize_request    20 new msgs (total=40)
+[2026-06-04T20:21:59.625Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:22:03.681Z] [MONITOR        ] OUT  session_summary      284 chars (4057ms)
+[2026-06-04T20:22:03.683Z] [OBSERVER       ] IN   context              [SESSION SUMMARY] דניאל ראה ברווז אחד ששחה במים בחוץ לאחרונה — חוויה שהיא היתה נחמדה עבורו. הוא סיים את הדיון על הציפור והעביר לנושא אחר. כרגע מדברים על היום שלו, במיוחד על הבוקר. דניאל יצא החוצה בבוקר, אך לא לעיר או מקום ספציפי — פשוט היה בחוץ. עדיין בתהליך של חקירת פרטים נוספים על חוויית הבוקר שלו.
+[2026-06-04T20:22:03.685Z] [SPEAKER        ] IN   context              [SESSION SUMMARY] דניאל ראה ברווז אחד ששחה במים בחוץ לאחרונה — חוויה שהיא היתה נחמדה עבורו. הוא סיים את הדיון על הציפור והעביר לנושא אחר. כרגע מדברים על היום שלו, במיוחד על הבוקר. דניאל יצא החוצה בבוקר, אך לא לעיר או מקום ספציפי — פשוט היה בחוץ. עדיין בתהליך של חקירת פרטים נוספים על חוויית הבוקר שלו.
+[2026-06-04T20:22:06.778Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:22:06.811Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:22:06.830Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:22:08.465Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"נהניתי","sentence":"yes+🤗","speech":"כן, נהניתי"},{"sentence":"no+😢","speech":"לא, לא נהניתי","label":"לא נהניתי"},{"label":"סתם בחוץ","speech":"כן, הייתי סתם בחוץ","sentence":"yes+🌳"},{"label":"ראיתי חיות","sentence":"i_me+see+🐾","speech":"ראיתי חיות"},{"sentence":"😴","speech":"אני עייף","label":"אני עייף"},{"speech":"מספיק לי","sentence":"finished","label":"מספיק לי"},{"label":"משהו אחר","sentence":"i_me+want+talk+❓","speech":"אני רוצה לדבר על משהו אחר"}]}
+[2026-06-04T20:22:13.513Z] [CLIENT         ] IN   button_press         buttons=[נהניתי] → "כן, נהניתי"
+[2026-06-04T20:22:13.514Z] [COORDINATOR    ] OUT  ws_send_utterance    כן, נהניתי
+[2026-06-04T20:22:13.515Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "כן, נהניתי"
+[2026-06-04T20:22:15.833Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:22:15.836Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "כן, נהניתי"
+[2026-06-04T20:22:15.840Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "כן, נהניתי"
+[2026-06-04T20:22:17.856Z] [SPEAKER        ] OUT  text_finalized       איזה יופי, כיף לשמוע שנהנית מהבוקר. אולי עשית משהו מעניין אחר היום?
+[2026-06-04T20:22:17.859Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:22:17.860Z] [BOARD_MGR      ] IN   trigger              [AI] "איזה יופי, כיף לשמוע שנהנית מהבוקר. אולי עשית משהו מעניין אחר היום?"
+[2026-06-04T20:22:17.882Z] [SPEAKER        ] OUT  speech               איזה יופי, כיף לשמוע שנהנית מהבוקר. אולי עשית משהו מעניין אחר היום?
+[2026-06-04T20:22:17.887Z] [OBSERVER       ] IN   context              [AI to USER] "איזה יופי, כיף לשמוע שנהנית מהבוקר. אולי עשית משהו מעניין אחר היום?"
+[2026-06-04T20:22:17.890Z] [SPEAKER        ] IN   context              [YOU to USER] "איזה יופי, כיף לשמוע שנהנית מהבוקר. אולי עשית משהו מעניין אחר היום?" (you just said this)
+[2026-06-04T20:22:17.892Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:22:22.228Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:22:22.231Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:22:22.235Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:22:22.585Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"speech":"כן, עשיתי משהו","sentence":"yes+do+something","label":"כן, עשיתי משהו"},{"label":"לא עשיתי כלום","speech":"לא עשיתי כלום","sentence":"no+do+nothing"},{"speech":"ראיתי חיות","sentence":"i_me+see+animal","label":"ראיתי חיות"},{"speech":"דיברתי על חיות","sentence":"i_me+talk+animal","label":"דיברתי על חיות"},{"label":"אני עייף","speech":"אני עייף","sentence":"😴"},{"label":"מספיק לי","speech":"מספיק לי","sentence":"finished"},{"speech":"משהו אחר","sentence":"something+other"…
+[2026-06-04T20:22:22.590Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:22:27.706Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:22:27.709Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:22:29.219Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"yes+do+✨","label":"כן, עשיתי משהו","speech":"כן, עשיתי משהו"},{"sentence":"no+do+🚫","label":"לא עשיתי כלום","speech":"לא עשיתי כלום"},{"sentence":"i_me+see+🐾","label":"ראיתי חיות","speech":"ראיתי חיות"},{"label":"דיברתי על חיות","speech":"דיברתי על חיות","sentence":"i_me+talk+🐾"},{"label":"אני עייף","speech":"אני עייף","sentence":"😴"},{"sentence":"finished","label":"מספיק לי","speech":"מספיק לי"},{"sentence":"other","label":"משהו אחר","speech":"משהו אחר"},{"sentence…
+[2026-06-04T20:22:29.225Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:22:35.846Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:22:35.850Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:22:35.856Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:22:37.132Z] [CLIENT         ] IN   button_press         buttons=[רוצה לנוח] → "אני רוצה לנוח"
+[2026-06-04T20:22:37.133Z] [COORDINATOR    ] OUT  ws_send_utterance    אני רוצה לנוח
+[2026-06-04T20:22:37.135Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "אני רוצה לנוח"
+[2026-06-04T20:22:39.203Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:22:39.205Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "אני רוצה לנוח"
+[2026-06-04T20:22:39.206Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "אני רוצה לנוח"
+[2026-06-04T20:22:40.112Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"label":"כן, עשיתי משהו","sentence":"yes+i_me+do+something","speech":"כן, עשיתי משהו"},{"speech":"לא עשיתי כלום","label":"לא עשיתי כלום","sentence":"no+i_me+do+nothing"},{"label":"ראיתי חיות","sentence":"i_me+see+animal","speech":"ראיתי חיות"},{"speech":"דיברתי על חיות","label":"דיברתי על חיות","sentence":"i_me+talk+about+animal"},{"speech":"אני עייף","label":"אני עייף","sentence":"😴"},{"label":"רוצה לנוח","sentence":"i_me+want+😴","speech":"רוצה לנוח"},{"label":"מספיק לי","senten…
+[2026-06-04T20:22:40.118Z] [BOARD_MGR      ] IN   trigger              (no triggers)
+[2026-06-04T20:22:41.286Z] [SPEAKER        ] OUT  text_finalized       אני מבין, זה גם חשוב לנוח, במיוחד בערב. אולי תרצה לנוח עכשיו?
+[2026-06-04T20:22:41.288Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:22:41.303Z] [SPEAKER        ] OUT  speech               אני מבין, זה גם חשוב לנוח, במיוחד בערב. אולי תרצה לנוח עכשיו?
+[2026-06-04T20:22:41.307Z] [OBSERVER       ] IN   context              [AI to USER] "אני מבין, זה גם חשוב לנוח, במיוחד בערב. אולי תרצה לנוח עכשיו?"
+[2026-06-04T20:22:41.311Z] [SPEAKER        ] IN   context              [YOU to USER] "אני מבין, זה גם חשוב לנוח, במיוחד בערב. אולי תרצה לנוח עכשיו?" (you just said this)
+[2026-06-04T20:22:41.320Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:22:43.253Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:22:43.256Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:22:43.260Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:22:44.071Z] [OBSERVER       ] TOOL rest                 {"reason":"Daniel indicated he is tired and wants to rest (\"אני רוצה לנוח\")."}
+[2026-06-04T20:22:44.074Z] [OBSERVER       ] IN   context              [ENGAGEMENT] rest — Daniel indicated he is tired and wants to rest ("אני רוצה לנוח").
+[2026-06-04T20:22:44.075Z] [COORDINATOR    ] NOTE                      Rest request deferred ~57s (last activity 3s ago). (Daniel indicated he is tired and wants to rest ("אני רוצה לנוח").)
+[2026-06-04T20:22:46.782Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:22:46.784Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:22:50.624Z] [CLIENT         ] IN   button_press         buttons=[כן]
+[2026-06-04T20:22:50.625Z] [COORDINATOR    ] NOTE                      Engagement activity — pending rest request cleared.
+[2026-06-04T20:22:50.626Z] [COORDINATOR    ] OUT  ws_send_utterance    כן
+[2026-06-04T20:22:50.629Z] [COORDINATOR    ] OUT  student_tts_start    [button_press] "כן"
+[2026-06-04T20:22:52.669Z] [COORDINATOR    ] OUT  student_tts_end      [button_press] chunks=1
+[2026-06-04T20:22:52.671Z] [OBSERVER       ] IN   context              [BUTTON PRESS to YOU] "כן"
+[2026-06-04T20:22:52.674Z] [SPEAKER        ] IN   user_turn            [USER to YOU] "כן"
+[2026-06-04T20:22:55.486Z] [SPEAKER        ] OUT  text_finalized       בסדר גמור. אז אני אתן לך קצת שקט. אם תצטרך משהו, אני פה. לילה טוב, דניאל.
+[2026-06-04T20:22:55.488Z] [BOARD_MGR      ] NOTE                      Deferred press cleared: speech_text_finalized supersedes press
+[2026-06-04T20:22:55.497Z] [SPEAKER        ] OUT  speech               בסדר גמור. אז אני אתן לך קצת שקט. אם תצטרך משהו, אני פה. לילה טוב, דניאל.
+[2026-06-04T20:22:55.499Z] [OBSERVER       ] IN   context              [AI to USER] "בסדר גמור. אז אני אתן לך קצת שקט. אם תצטרך משהו, אני פה. לילה טוב, דניאל."
+[2026-06-04T20:22:55.501Z] [SPEAKER        ] IN   context              [YOU to USER] "בסדר גמור. אז אני אתן לך קצת שקט. אם תצטרך משהו, אני פה. לילה טוב, דניאל." (you just said this)
+[2026-06-04T20:22:55.505Z] [MONITOR        ] NOTE                      turn-end heartbeat — triggerMonitor(force=false)
+[2026-06-04T20:23:00.872Z] [BOARD_MGR      ] NOTE                      Empty response: no tool calls (finish: MALFORMED_FUNCTION_CALL)
+[2026-06-04T20:23:00.874Z] [BOARD_MGR      ] NOTE                      Queueing retry — malformed/empty (finish: MALFORMED_FUNCTION_CALL).
+[2026-06-04T20:23:00.876Z] [BOARD_MGR      ] IN   trigger              [AI] "אני מבין, זה גם חשוב לנוח, במיוחד בערב. אולי תרצה לנוח עכשיו?" | [AI] "בסדר גמור. אז אני אתן לך קצת שקט. אם תצטרך משהו, אני פה. לילה טוב, דניאל."
+[2026-06-04T20:23:02.242Z] [CLIENT         ] IN   unknown_face_descriptors (no payload)
+[2026-06-04T20:23:02.245Z] [OBSERVER       ] IN   image_frame          [scene update] React if something here calls for action.
+[2026-06-04T20:23:02.249Z] [CLIENT         ] IN   audio_clip           (no payload)
+[2026-06-04T20:23:03.005Z] [OBSERVER       ] TOOL end_session          {}
+[2026-06-04T20:23:03.007Z] [OBSERVER       ] IN   context              [ENGAGEMENT] end_session
+[2026-06-04T20:23:03.009Z] [MONITOR        ] NOTE                      Session closed — queueing final directive and forcing Monitor.
+[2026-06-04T20:23:05.902Z] [BOARD_MGR      ] TOOL rebuild_board        {"buttons":[{"sentence":"night.good","label":"לילה טוב","speech":"לילה טוב"},{"label":"תודה","speech":"תודה","sentence":"🙏"},{"sentence":"i_me+want+😴","label":"רוצה לישון","speech":"אני רוצה לישון"},{"sentence":"😴","label":"אני עייף","speech":"אני עייף"},{"label":"צריך משהו","speech":"אני צריך משהו","sentence":"i_me+need+❓"},{"label":"מספיק לי","speech":"מספיק לי","sentence":"finished"},{"label":"משהו אחר","speech":"משהו אחר","sentence":"❓"}]}
+[2026-06-04T20:23:07.526Z] [CLIENT         ] IN   initialize           student=45476592-23a6-4f24-b4f8-0d721bb1fb83

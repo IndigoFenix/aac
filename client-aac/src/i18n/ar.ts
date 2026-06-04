@@ -40,6 +40,11 @@ export const ar: Translations = {
     or: "\u0623\u0648",
   },
 
+  alarm: {
+    emergency: "حالة طارئة",
+    cancel: "إلغاء الإنذار",
+  },
+
   auth: {
     selectStudent: "\u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u0637\u0627\u0644\u0628",
     loggedInAs: "\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0628\u0627\u0633\u0645",

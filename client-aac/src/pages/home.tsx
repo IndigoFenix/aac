@@ -29,6 +29,7 @@ import { usePeopleDirectory } from "@/hooks/usePeopleDirectory";
 import { setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
+import AlarmOverlay from "@/components/AlarmOverlay";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
 import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
@@ -78,7 +79,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -90,6 +91,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
   onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, dismiss: () => void) => void;
+  onAlarmChange?: (alarm: { level: "alert" | "emergency"; reason: string } | null, cancel: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
@@ -109,7 +111,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -210,6 +212,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   useEffect(() => {
     onBinaryChoiceChange?.(binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice);
   }, [binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice, onBinaryChoiceChange]);
+
+  useEffect(() => {
+    onAlarmChange?.(activeAlarm, cancelAlarm);
+  }, [activeAlarm, cancelAlarm, onAlarmChange]);
 
   useEffect(() => {
     onRestartSessionReady?.(() => {
@@ -494,6 +500,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Display layer doesn't decide — server tells it.
   const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
   const dismissBinaryChoiceRef = useRef<(() => void) | null>(null);
+
+  // Caretaker alarm state (bridged from DualAgentContext). Set by the
+  // Observer agent; the audible/visible effect lives in <AlarmOverlay>.
+  const [alarmInfo, setAlarmInfo] = useState<{ level: "alert" | "emergency"; reason: string } | null>(null);
+  const cancelAlarmRef = useRef<(() => void) | null>(null);
   const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
@@ -1606,6 +1617,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             }}
           />
 
+          <AlarmOverlay
+            alarm={alarmInfo}
+            onCancel={() => {
+              cancelAlarmRef.current?.();
+              setAlarmInfo(null);
+            }}
+          />
+
           {showAppsBoard && (
             // Static apps page — same dwell-trap pattern as the sentence
             // builder so gaze over empty areas doesn't fall through to buttons
@@ -2048,6 +2067,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
             onBinaryChoiceChange={(options, escapeKind, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); dismissBinaryChoiceRef.current = dismiss; }}
+            onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onEnabledAppsChange={setEnabledApps}

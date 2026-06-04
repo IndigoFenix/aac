@@ -55,6 +55,10 @@ A fully-contained AI-powered system for special-needs education.
 
 Found in docs/SYSTEM_OVERVIEW.md
 
+## IMPORTANT: Multi-Agent AAC system update
+
+Previously, the AAC used a two-agent architecture (Interactive Agent + Monitor Agent). We have since split the Interactive Agent into 3 distinct agents (Observer, Speaker, and Board Manager), along with the Monitor. We are leaving the old system in, in case a better live-chat model is developed, but for now we are only using the 4-agent system. Don't get them mixed up, and make sure to update any notes you have referencing the Interactive Agent accordingly.
+
 ## AAC Construction Strategy
 
 The AAC is distributed as a standalone app. In order to make tweaks to the AI logic without forcing the users to constantly update, aim to have logic systems live mainly on the server, with the client serving mainly an input and display engine. Make client-side displays flexible so that they can consume and display a wide variety of information from the server.

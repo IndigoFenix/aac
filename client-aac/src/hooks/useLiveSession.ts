@@ -225,6 +225,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     setBinaryChoiceEscapeKind(null);
   }, []);
 
+  // Caretaker alarm raised by the Observer agent. "alert" = a short
+  // attention nudge; "emergency" = a building alarm with an on-screen
+  // cancel button. The audible/visible effect lives in <AlarmOverlay>;
+  // here we just hold the active alarm and expose a way to clear it.
+  const [activeAlarm, setActiveAlarm] = useState<{ level: "alert" | "emergency"; reason: string } | null>(null);
+  const cancelAlarm = useCallback(() => setActiveAlarm(null), []);
+
   // Focus frame active state — briefly true when AI requests a focus frame
   const [focusActive, setFocusActive] = useState(false);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -653,6 +660,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             onFalseWakeReportRef.current?.(msg.data.reason);
           }
           break;
+
+        case "alarm": {
+          // Observer raised a caretaker alarm. A new alarm always replaces
+          // any current one (an alert escalating to an emergency just
+          // swaps the level). <AlarmOverlay> drives the sound + cancel UI.
+          const level = msg.data?.level === "emergency" ? "emergency" : "alert";
+          const reason = typeof msg.data?.reason === "string" ? msg.data.reason : "";
+          setActiveAlarm({ level, reason });
+          break;
+        }
 
         case "video_play":
           setActiveApp({ appId: "youtube", appData: msg.data });
@@ -1472,6 +1489,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     binaryChoiceOptions,
     binaryChoiceEscapeKind,
     dismissBinaryChoice,
+
+    // Caretaker alarm raised by the Observer agent
+    activeAlarm,
+    cancelAlarm,
 
     // Focus frame
     focusActive,

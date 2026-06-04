@@ -36,6 +36,7 @@ import type {
   ContextUpdateEvent,
   EngagementChangeEvent,
   FocusRequestEvent,
+  AlarmRaisedEvent,
   ModeChangeEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
@@ -190,6 +191,18 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
         timestamp: now,
         state: call.name as EngagementChangeEvent["state"],
         reason: asString(args.reason),
+      };
+      return event;
+    }
+
+    case "alert":
+    case "emergency_alarm": {
+      const event: AlarmRaisedEvent = {
+        type: "alarm_raised",
+        source: "observer",
+        timestamp: now,
+        level: call.name === "emergency_alarm" ? "emergency" : "alert",
+        reason: asString(args.reason) ?? "(no reason provided)",
       };
       return event;
     }

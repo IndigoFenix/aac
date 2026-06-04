@@ -40,6 +40,11 @@ export const de: Translations = {
     or: "oder",
   },
 
+  alarm: {
+    emergency: "Notfall",
+    cancel: "Alarm abbrechen",
+  },
+
   auth: {
     selectStudent: "Sch\u00fcler ausw\u00e4hlen",
     loggedInAs: "Angemeldet als",

@@ -38,6 +38,11 @@ export const en = {
     or: "or",
   },
 
+  alarm: {
+    emergency: "Emergency",
+    cancel: "Cancel alarm",
+  },
+
   auth: {
     selectStudent: "Select Student",
     loggedInAs: "Logged in as",

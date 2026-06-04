@@ -40,6 +40,11 @@ export const he: Translations = {
     or: "או",
   },
 
+  alarm: {
+    emergency: "חירום",
+    cancel: "ביטול אזעקה",
+  },
+
   auth: {
     selectStudent: "בחירת תלמיד",
     loggedInAs: "מחובר כ",

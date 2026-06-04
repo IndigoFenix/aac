@@ -452,6 +452,7 @@ function renderEventLine(event: AgentEvent): string {
     // The following don't help Board Manager decide:
     case "emote_change":
     case "focus_request":
+    case "alarm_raised":
     case "monitor_call_requested":
     case "private_note":
       return "";

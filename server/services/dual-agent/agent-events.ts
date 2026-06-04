@@ -188,11 +188,31 @@ export interface FocusRequestEvent extends BaseEvent {
   reason: string;
 }
 
+/**
+ * Observer raised a caretaker-facing alarm based on what it sees/hears.
+ * Two tiers, chosen by the model via two distinct tools to keep misfires
+ * down:
+ *   - "alert"     — non-emergency: get a nearby caretaker's attention
+ *     (user seems stuck, distressed, repeatedly asking for help).
+ *   - "emergency" — serious: user appears injured, having a seizure, or
+ *     doing something physically dangerous.
+ * Coordinator pushes this straight to the client (it does NOT route
+ * through the blind Monitor) so the device can sound/show the alarm
+ * regardless of session profile.
+ */
+export interface AlarmRaisedEvent extends BaseEvent {
+  type: "alarm_raised";
+  source: "observer";
+  level: "alert" | "emergency";
+  reason: string;
+}
+
 export type ObserverEvent =
   | TranscribedEvent
   | ContextUpdateEvent
   | EngagementChangeEvent
-  | FocusRequestEvent;
+  | FocusRequestEvent
+  | AlarmRaisedEvent;
 
 // ---------------------------------------------------------------------------
 // Speaker-emitted events

@@ -207,8 +207,11 @@ export function LicenseList() {
                     <TableCell>
                       <div>
                         <span className="text-sm">{ownerDisplay}</span>
-                        {license.instituteName && license.userEmail && (
-                          <span className="block text-xs text-muted-foreground">{license.userEmail}</span>
+                        {/* When an institute is the owner, show the contact email
+                            below it: the linked user's once registered, otherwise
+                            the still-pending invite email. */}
+                        {license.instituteName && (license.userEmail || license.inviteEmail) && (
+                          <span className="block text-xs text-muted-foreground">{license.userEmail || license.inviteEmail}</span>
                         )}
                       </div>
                     </TableCell>

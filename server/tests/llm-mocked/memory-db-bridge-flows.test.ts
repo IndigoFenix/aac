@@ -567,6 +567,114 @@ describe('memory-db-bridge flows', () => {
   // --------------------------------------------------------------------------
   // Error reporting paths
   // --------------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // Client-supplied id stripping on create
+  //
+  // The AI sees `id` fields on reads (to reference rows) but must never set one
+  // on create — primary keys are DB-generated. The bridge strips an AI-supplied
+  // `id` on add/insert before it reaches the DB op, unless the field opts in
+  // with `clientProvidesId: true` (where `id` references an existing row).
+  // --------------------------------------------------------------------------
+  describe('client-supplied id on create', () => {
+    // A field whose add/insert spread `...value` straight into the insert — the
+    // realistic vulnerable pattern (goals/objectives do exactly this). It records
+    // the value the bridge actually handed to the op so we can assert on it.
+    function makeSpreadingField(opts: {
+      received: { value?: any };
+      clientProvidesId?: boolean;
+    }): AgentMemoryFieldMapWithDB {
+      return {
+        id: 'Context_TestItems',
+        type: 'map',
+        title: 'Test Items',
+        description: 'Items for id-stripping tests',
+        opened: true,
+        displayKey: 'name',
+        values: {
+          id: 'TestItem',
+          type: 'object',
+          title: 'Test Item',
+          properties: {
+            id: { id: 'id', type: 'string', title: 'id' } as AgentMemoryFieldWithDB,
+            name: { id: 'name', type: 'string', title: 'Name' } as AgentMemoryFieldWithDB,
+            type: { id: 'type', type: 'string', title: 'Type' } as AgentMemoryFieldWithDB,
+          },
+          required: ['name', 'type'],
+        } as AgentMemoryFieldObjectWithDB,
+        db: {
+          clientProvidesId: opts.clientProvidesId,
+          list: async (_ctx, { offset, limit }) => {
+            const all = await db.select().from(institutes);
+            const paged = all.slice(offset, offset + limit);
+            return {
+              items: paged.map((i) => ({ id: i.id, name: i.name, type: i.type })),
+              total: all.length,
+              keys: paged.map((i) => i.id),
+            };
+          },
+          add: async (_ctx, value) => {
+            opts.received.value = value;
+            const [row] = await db
+              .insert(institutes)
+              .values({ ...value, type: value.type ?? 'school', isActive: true } as any)
+              .returning();
+            return { id: row.id, name: row.name, type: row.type };
+          },
+          getDBKey: (value) => value?.id,
+        },
+      };
+    }
+
+    async function buildSpreadingManager(field: AgentMemoryFieldMapWithDB): Promise<MemoryManager> {
+      const manager = new MemoryManager({
+        fields: [field],
+        baseContext: { userId },
+        originalProcessor: processMemoryToolResponse,
+      });
+      await manager.initialize({}, { visible: [], page: {} });
+      return manager;
+    }
+
+    it('strips an AI-supplied id so the DB generates the primary key', async () => {
+      const received: { value?: any } = {};
+      const manager = await buildSpreadingManager(makeSpreadingField({ received }));
+
+      const result = await manager.processToolCall({
+        action: 'add',
+        path: '/Context_TestItems',
+        value: { id: 'synthetic-evil-id', name: 'Acme School', type: 'school' },
+      });
+
+      expect(result.success).toBe(true);
+      // The bridge stripped id before handing the value to the DB op.
+      expect(received.value).toBeDefined();
+      expect('id' in received.value).toBe(false);
+      // The persisted row got a DB-generated id, not the AI's synthetic one.
+      const row = await findInstituteByName('Acme School');
+      expect(row).toBeDefined();
+      expect(row!.id).not.toBe('synthetic-evil-id');
+    });
+
+    it('preserves an id reference when clientProvidesId is set', async () => {
+      const received: { value?: any } = {};
+      const manager = await buildSpreadingManager(
+        makeSpreadingField({ received, clientProvidesId: true }),
+      );
+
+      const result = await manager.processToolCall({
+        action: 'add',
+        path: '/Context_TestItems',
+        value: { id: 'reference-to-existing', name: 'Linked Clinic', type: 'clinic' },
+      });
+
+      expect(result.success).toBe(true);
+      // Opt-out path: the id flows through to the op untouched.
+      expect(received.value.id).toBe('reference-to-existing');
+      const row = await findInstituteByName('Linked Clinic');
+      expect(row!.id).toBe('reference-to-existing');
+    });
+  });
+
   describe('error reporting', () => {
     it('returns a path-required error when mutation has no path', async () => {
       const calls = freshCalls();

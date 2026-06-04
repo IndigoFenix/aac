@@ -131,6 +131,18 @@ export interface EnhancedPromptSections {
    */
   observerInstructions?: string;
   /**
+   * Three-agent system only: per-student criteria for when the Observer
+   * should raise a caretaker alarm — folded out of the clinician's
+   * chatAgentPrompt by the enhancer (e.g. "has epilepsy, watch for
+   * absence/tonic-clonic seizures"; "self-injurious head-banging when
+   * overwhelmed"). The Observer prompt always carries the generic
+   * two-tier alarm behavior; this adds student-specific signs. There is
+   * intentionally NO dedicated settings column — alarm conditions live in
+   * the AAC prompt for now. Optional; undefined until the enhancer is
+   * taught to emit it.
+   */
+  alarmConditions?: string;
+  /**
    * Three-agent system only: Board-Manager-specific guidance extracted by
    * the enhancer. Surface preferences (e.g. "always include a 'finished'
    * button for this student"). Empty in the single-agent path.

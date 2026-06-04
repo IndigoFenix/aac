@@ -75,6 +75,7 @@ import type {
   BuilderSuggestedEvent,
   MonitorBroadcastEvent,
   FocusRequestEvent,
+  AlarmRaisedEvent,
 } from "./agent-events";
 
 import type { ClientMessage, ServerMessage } from "./live-relay";
@@ -93,6 +94,7 @@ import {
   rejectCurrentDimension as rejectGuessingDimension,
   buildStateInjection as buildGuessingInjection,
 } from "@shared/guessing-mode/state";
+import { seedGuessingFromConversation } from "./guessing-seeder";
 import type { GuessingModeState } from "@shared/guessing-mode/types";
 import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions";
 
@@ -1290,6 +1292,7 @@ export class AgentCoordinator {
       observer: {
         ...base,
         observerInstructions: sections?.observerInstructions,
+        alarmConditions: sections?.alarmConditions,
         perceptionMemory: state.memoryContext,
       },
       speaker: {
@@ -1699,14 +1702,15 @@ export class AgentCoordinator {
 
   /** Run `fn` inside the wake gate + engagement-activity reset that every
    *  guessing-mode intent needs. `label` is for the flow-log on the wake
-   *  message. */
-  private async wakeForGuessingIntent(label: string, fn: () => void): Promise<void> {
+   *  message. `fn` may be async (e.g. `handleGuessingEnter` awaits the
+   *  category seeder before applying it). */
+  private async wakeForGuessingIntent(label: string, fn: () => void | Promise<void>): Promise<void> {
     this.noteEngagementActivity();
     if (this.sessionProfile === "resting") {
       flowNote("COORDINATOR", `${label} arrived while resting — waking before applying.`);
       await this.transitionToProfile("awake");
     }
-    fn();
+    await fn();
   }
 
   /**
@@ -1720,19 +1724,78 @@ export class AgentCoordinator {
   private handleGuessingEnter(
     msg: Extract<ClientMessage, { type: "guessing_enter" }>,
   ): void {
-    void this.wakeForGuessingIntent("guessing_enter", () => {
+    void this.wakeForGuessingIntent("guessing_enter", async () => {
       this.guessingEngineState = createGuessingState();
       if (msg.builderContext) {
+        // Builder origin: the active builder tab maps directly to a
+        // top-level category, so we know the right starting point
+        // without consulting an LLM. Skip the seeder entirely.
         this.guessingOrigin = "builder";
         this.guessingBuilderContext = msg.builderContext;
         const cat = BUILDER_TAB_TO_GUESSING[msg.builderContext.category];
         if (cat) applyGuessingPress(this.guessingEngineState, CATEGORY_DIM_ID, cat);
       } else {
+        // Conversation origin: ask a fast LLM to classify the most
+        // recent AI question into one of the 6 predefined categories,
+        // a "new" freeform topic, or "unknown". On predefined we
+        // pre-press the engine so the first narrowing board lands
+        // inside the right category; on "new" we record the topic as
+        // a custom fact (so subsequent AI [NARROW:]/[GUESS] buttons
+        // have it as context); on "unknown" we leave the engine as
+        // is and the user sees the generic category menu.
         this.guessingOrigin = "conversation";
         this.guessingBuilderContext = null;
+        await this.applyConversationSeedToGuessingEngine();
       }
       this.refreshGuessingSnapshot(/* firstEntry */ true);
     });
+  }
+
+  /** Run the conversation classifier and apply the result to the engine.
+   *  Best-effort: any failure (no recent AI question, LLM error, parse
+   *  fail) leaves the engine in its initial state, which is correct —
+   *  the user just sees the top-level category menu. */
+  private async applyConversationSeedToGuessingEngine(): Promise<void> {
+    if (!this.guessingEngineState) return;
+    const lastAIQuestion = this.findLastAIQuestion();
+    if (!lastAIQuestion) {
+      flowNote("COORDINATOR", "guessing seeder skipped — no recent AI question to seed from.");
+      return;
+    }
+    const seed = await seedGuessingFromConversation({ lastAIQuestion }).catch((err) => {
+      flowNote("COORDINATOR", `guessing seeder errored: ${err?.message ?? err}`);
+      return null;
+    });
+    if (!seed) {
+      flowNote("COORDINATOR", "guessing seeder returned no result — using top-level menu.");
+      return;
+    }
+    switch (seed.kind) {
+      case "predefined":
+        flowNote("COORDINATOR", `guessing seeded: category=${seed.category}`);
+        applyGuessingPress(this.guessingEngineState, CATEGORY_DIM_ID, seed.category);
+        return;
+      case "new":
+        flowNote("COORDINATOR", `guessing seeded: new topic="${seed.label}"`);
+        applyGuessingCustomFact(this.guessingEngineState, "topic", seed.label);
+        return;
+      case "unknown":
+        flowNote("COORDINATOR", "guessing seeded: unknown — using top-level menu.");
+        return;
+    }
+  }
+
+  /** Scan `recentEvents` newest-first for the most recent finalized AI
+   *  utterance. Used by the guessing seeder to anchor its classification
+   *  on what was just being discussed. */
+  private findLastAIQuestion(): string | null {
+    for (let i = this.recentEvents.length - 1; i >= 0; i--) {
+      const e = this.recentEvents[i];
+      if (e.type === "speech_text_finalized" && e.transcript) {
+        return e.transcript;
+      }
+    }
+    return null;
   }
 
   /** A suggestion-key press (e.g. `suggestion:things.kind:animal`). */
@@ -1811,16 +1874,27 @@ export class AgentCoordinator {
     };
 
     if (firstEntry) {
+      // emitClientEvent("guessing_entered") schedules the deferred
+      // BoardMgr (see the guessing_entered branch of emitClientEvent);
+      // we don't need to invoke BM again here.
       this.emitClientEvent({
         type: "guessing_entered",
         source: "client",
         timestamp: Date.now(),
       });
       this.send({ type: "guessing_mode", active: true });
+      this.broadcastGuessingStateToAgents();
+      return;
     }
 
+    // Subsequent state refresh (a press / reject / narrow). Broadcast
+    // the new state to the live agents and defer BoardMgr so its
+    // buttons follow whatever Speaker says next. Empty trigger is
+    // fine — renderInvocationContext already labels an empty-trigger
+    // invocation with `guessingState` set as "guessing_state_change"
+    // in its flow-log summary.
     this.broadcastGuessingStateToAgents();
-    void this.invokeBoardManager([]);
+    this.scheduleDeferredBoardMgr(null, "guessing_state_change");
   }
 
   /** Single point of exit-guessing cleanup. Clears server state, notifies
@@ -1914,10 +1988,18 @@ export class AgentCoordinator {
       /Suggested next dimension:\s*([a-z_]+)(?:\s*—\s*([^\n]*?))?(?=\s+(?:Offer|Ready|Presses|$))/i,
     );
     const dimensionHint = dimMatch?.[2]?.trim() || dimMatch?.[1]?.trim();
+    // The conversation-classifier seeder records a "new"-shaped result
+    // as a custom fact with dimension="topic" (engine category stays
+    // null — the topic doesn't fit any predefined branch). Surface
+    // that topic to Speaker so it asks WITHIN it, instead of falling
+    // through to the generic "what kind of thing?" opener.
+    const seededTopic = s.customFacts.find((f) => f.dimension === "topic")?.value;
     if (dimensionHint) {
       parts.push(`Voice ONE short, warm question helping the user narrow down: ${dimensionHint}.`);
     } else if (text.includes("No more narrowing dimensions") || text.includes("Ready for guesses: yes")) {
       parts.push(`Voice ONE short, warm guess (or "is it X or Y?") about what the user is trying to say.`);
+    } else if (seededTopic && text.includes("No category chosen yet")) {
+      parts.push(`The user just opened the word finder. The conversation has been about ${seededTopic} — voice ONE short, warm narrowing question WITHIN that topic.`);
     } else if (text.includes("No category chosen yet")) {
       parts.push(`The user just opened the word finder. Voice ONE short, warm question: "What kind of thing are you thinking of?"`);
     } else {
@@ -2023,7 +2105,7 @@ export class AgentCoordinator {
           // REPLIES rebuild that supersedes FOLLOW-UPS. If Speaker
           // doesn't reply within DEFERRED_BM_PRESS_MS, the timer fires
           // FOLLOW-UPS as a fallback.
-          this.scheduleDeferredBoardMgrFromPress(event);
+          this.scheduleDeferredBoardMgr(event, "press");
         } else {
           // Press addressed to someone else (or USER itself) — Speaker
           // stays quiet, no REPLIES event coming. Build FOLLOW-UPS now.
@@ -2060,12 +2142,26 @@ export class AgentCoordinator {
       }
       case "builder_opened":
       case "builder_closed":
-      case "guessing_entered":
       case "guessing_exited": {
         const rendered = `[${event.type.toUpperCase().replace(/_/g, " ")}]`;
         this.observer?.sendContextInjection(rendered);
         this.speaker?.sendContextInjection(rendered);
         this.invokeBoardManager([event]);
+        return;
+      }
+      case "guessing_entered": {
+        // Word Finder just opened. Notify both live agents — Speaker
+        // will get a follow-up user_turn directive with the actual
+        // narrowing question via broadcastGuessingStateToAgents — and
+        // DEFER BoardMgr so its buttons match whatever Speaker decides
+        // to ask aloud. The defer is cleared by
+        // onSpeakerSpeechTextFinalized, which invokes BM with the
+        // speech as context. If Speaker stays silent, the 4s timer
+        // fires BM with the guessing_entered event alone.
+        const rendered = `[${event.type.toUpperCase().replace(/_/g, " ")}]`;
+        this.observer?.sendContextInjection(rendered);
+        this.speaker?.sendContextInjection(rendered);
+        this.scheduleDeferredBoardMgr(event, "guessing_entered");
         return;
       }
     }
@@ -2099,6 +2195,9 @@ export class AgentCoordinator {
         // Coordinator persists currentInteractionMode and forwards the
         // resulting [MODE] context injection to Speaker.
         this.routeModeChange(event);
+        return;
+      case "alarm_raised":
+        this.routeAlarm(event);
         return;
       case "monitor_call_requested":
         this.requestMonitor(event.reason, "observer");
@@ -2436,6 +2535,22 @@ export class AgentCoordinator {
     this.observer?.sendContextInjection(`[FOCUS REQUESTED] ${event.reason}`);
   }
 
+  /**
+   * Observer raised a caretaker alarm. Push it straight to the client —
+   * NOT through the Monitor, which is blind (text/HTTP only) and too slow
+   * for something time-sensitive. The client owns the audible/visible
+   * effect (short nudge for "alert"; rising tone + on-screen cancel for
+   * "emergency"). We deliberately do not gate this on session profile:
+   * the message reaches the device even while resting. Echo the alarm
+   * back into Observer's own context so it doesn't re-fire the same alarm
+   * every frame.
+   */
+  private routeAlarm(event: AlarmRaisedEvent): void {
+    this.send({ type: "alarm", data: { level: event.level, reason: event.reason } });
+    const tag = event.level === "emergency" ? "EMERGENCY ALARM RAISED" : "ALERT RAISED";
+    this.observer?.sendContextInjection(`[${tag}] ${event.reason} — the device is now signalling a caretaker; do not raise it again unless the situation changes.`);
+  }
+
   // -------------------------------------------------------------------------
   // Speaker → bus
   // -------------------------------------------------------------------------
@@ -2741,24 +2856,33 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
 
   /**
-   * Schedule a deferred BoardManager invocation for a DEVICE-targeted
-   * press. The press's FOLLOW-UPS rebuild is mostly useless because
-   * Speaker is about to reply (within ~2s) and the speech_text_finalized
-   * REPLIES rebuild will supersede it. We hold the press for
-   * DEFERRED_BM_PRESS_MS; if Speaker replies first, the deferred press
-   * gets cleared. If Speaker doesn't reply (mute mode, MALFORMED,
-   * etc.), the timer fires and BM builds FOLLOW-UPS as a fallback.
+   * Schedule a deferred BoardManager invocation that holds for
+   * DEFERRED_BM_PRESS_MS waiting for Speaker to speak first. If Speaker's
+   * speech_text_finalized fires within the window, the deferred trigger
+   * is cleared (see onSpeakerSpeechTextFinalized) and BoardMgr is fired
+   * with the SPEECH as context — so the buttons it builds match what
+   * Speaker just said. If Speaker stays silent (mute mode, MALFORMED,
+   * Word Finder with no question), the timer fires and BM builds from
+   * the deferred trigger alone.
+   *
+   * Used by: DEVICE-targeted presses (the original use), guessing-mode
+   * entries, and guessing-mode state refreshes. The wait-for-Speaker
+   * pattern is the same in all three cases.
    */
-  private scheduleDeferredBoardMgrFromPress(event: AgentEvent): void {
-    this.clearDeferredBoardMgr("superseded by newer press");
+  private scheduleDeferredBoardMgr(event: AgentEvent | null, contextLabel: string): void {
+    this.clearDeferredBoardMgr("superseded by newer schedule");
     this.deferredBoardMgrTrigger = event;
+    // The timer is always set, even when event is null (state-change
+    // refresh). The active timer is what onSpeakerSpeechTextFinalized
+    // looks for to know there's something to supersede; without it,
+    // Speaker's reply wouldn't drive a board rebuild and we'd lose
+    // alignment between what Speaker asks and what BM offers.
     this.deferredBoardMgrTimer = setTimeout(() => {
       const trigger = this.deferredBoardMgrTrigger;
       this.deferredBoardMgrTrigger = null;
       this.deferredBoardMgrTimer = null;
-      if (!trigger) return;
-      flowNote("BOARD_MGR", `Deferred press timer fired — Speaker didn't reply within ${AgentCoordinator.DEFERRED_BM_PRESS_MS}ms; building FOLLOW-UPS.`);
-      void this.invokeBoardManager([trigger]);
+      flowNote("BOARD_MGR", `Deferred ${contextLabel} timer fired — Speaker didn't reply within ${AgentCoordinator.DEFERRED_BM_PRESS_MS}ms; building from the trigger alone.`);
+      void this.invokeBoardManager(trigger ? [trigger] : []);
     }, AgentCoordinator.DEFERRED_BM_PRESS_MS);
   }
 
