@@ -3000,6 +3000,12 @@ export const fr = {
       dashboardLevel: "Niveau du tableau de bord",
       expertAgents: "Agents experts",
       deepAnalysisEnabled: "Analyse approfondie",
+      complianceRegimes: "Cadres de conformité",
+      complianceRegimesHint: "Sélectionnez les cadres réglementaires (HIPAA, RGPD, ministère israélien de l'Éducation, etc.) qui s'appliquent à cet établissement. Chaque choix définit la durée de conservation des journaux d'audit, le délai de notification d'une violation de données, la norme d'accessibilité revendiquée par l'application et le fournisseur d'identité de connexion attendu. Lorsque plusieurs s'appliquent, la règle la plus stricte l'emporte.",
+      insuranceBridgeEnabled: "Passerelle d'assurance",
+      billingRegime: "Régime de facturation",
+      billingRegimeNone: "Aucun",
+      billingRegimeUsCpt: "États-Unis (codes CPT)",
       // Actions
       resendInvite: "Renvoyer l'invitation",
       inviteResent: "Invitation renvoyée avec succès",

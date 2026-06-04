@@ -14,30 +14,42 @@ The platform comprises two distinct client applications sharing a common backend
 
 A single shared backend mediates between them, enforcing a strict information-flow boundary (described in §6).
 
-## 3. Dual-Agent AAC Architecture
+## 3. Four-Agent AAC Architecture
 
-The Student Platform is driven by **two specialized AI agents that communicate with each other**, each with a distinct role, model class, and permission scope:
+The Student Platform is driven by **four specialized AI agents coordinated through a central event bus**, each with a distinct role, model class, and permission scope. Holding perception, voice, board surface, and long-term memory as separate processes — each with a small focused tool surface — substantially improves reliability over a single monolithic agent: function-call malformation, missed turns, voice-mimicry leakage, and audio safety rejections all scale with surface size, and splitting flattens them.
 
-### 3a. Interactive Agent (real-time, multimodal)
-- Implemented on a low-latency multimodal model (Gemini Live, with OpenAI Realtime as an alternate provider).
-- Receives a continuous stream of camera frames, raw PCM microphone audio, and user button presses.
-- Generates spoken responses, dynamically composes AAC boards, and emits structured tool calls representing communicative acts.
-- Operates under one of two **mute states** (set only by the user, never by the AI):
-  - *Unmuted* — the agent speaks directly to the student.
-  - *Muted* — the agent remains silent.
-- Operates in one of three **AI behavioral modes** (set by the AI itself, distinct from mute state):
-  - *Interactive* — actively engages, teaches, plays games, advances goals.
-  - *Facilitator* — passive, provides board options to facilitate communication with a third party.
-  - *Standby* — low-activity holding state.
+A central **Coordinator** owns the WebSocket to the client, the session state, and the routing table that fans events between agents. Agents never communicate directly with each other — every event passes through the Coordinator, which decides who needs to see it (context injection, user turn, or HTTP invocation).
 
-### 3b. Monitor Agent (slower, reflective)
+### 3a. Observer Agent (perception and behavioral-mode steering)
+- Implemented on a low-latency multimodal model with native audio + video input (Gemini Live).
+- Continuously consumes camera frames and raw PCM microphone audio.
+- Emits structured observation events: speech transcripts (with speaker attribution and direction — `device` / `user` / `ambient`), context updates (new person identified, gesture noted, scene change), and engagement-state transitions (rest / wake / sleep).
+- Owns AI **behavioral mode** — the multimodal scene context (who is in the room, who is being addressed, whether the user is engaging the device or talking to someone else) is exactly what determines whether the AI should be in *Companion*, *Facilitator*, or *Standby* mode, so the mode tool lives on the agent with that context. The mode broadcasts to Speaker as a `[MODE]` context injection on every change.
+- **Never speaks, never modifies the button surface.** Pure sensing plus mode steering.
+
+### 3b. Speaker Agent (voice)
+- Implemented on the same live multimodal class as Observer but configured **text-in, audio-out** (Gemini Live native audio).
+- Consumes textualized events from the Coordinator (button presses, transcripts, observations) and produces the AI's spoken responses.
+- Receives the current behavioral mode passively from Observer as a `[MODE]` injection. Highly interactive in *Companion Mode*, instructed to speak only when necessary in *Facilitator Mode*.
+- Can by manually disabled using the *mute* command, selected through the interface.
+- Contains custom personality and student goals; handles the main conversation flow.
+- **Never touches the button surface.** Voice only.
+
+### 3c. Board Manager Agent (button surface)
+- Implemented on a fast HTTP-completion model (Gemini Flash) — no Live transport.
+- Stateless across invocations: the Coordinator passes the recent-events snapshot, board state, and any active builder / guessing context per call.
+- Produces structured board updates (rebuild, single-button add, sidebar additions, binary-choice overlays, sentence-builder suggestions) or an explicit `no_change` when the current surface is still appropriate.
+- Drives the Response Board, Sentence Builder suggestions, and Word Finder narrowing buttons (§5).
+
+### 3d. Monitor Agent (long-term memory and supervision)
 - Implemented on a reasoning-oriented model (Claude).
 - Has **read access to the clinical database** (reports, goals, plans, contacts, calendar).
-- Does **not** have write access to clinical records — only to a constrained "session notes" and "incident reports" channel.
-- Periodically refreshes the Interactive Agent's prompt with current goals, upcoming events, and contextual reminders.
+- Does **not** have write access to clinical records — only a constrained "session notes" and "incident reports" channel.
+- Runs on a slower cadence: every ~2 minutes during active sessions, plus a forced final pass at session close that consolidates notes and writes the rolling session summary.
 - Performs **Deep Analysis**: periodic high-level review of accumulated session data to detect behavioral patterns, regression, or progress, surfaced back to the Clinician Platform.
+- Receives a constrained view of session events from the Coordinator and broadcasts its `[CONTEXT]` injections back to Observer / Speaker / Board Manager simultaneously to update their behavior according to long-term goals.
 
-The two agents communicate via a structured message-passing protocol; the Interactive Agent treats the Monitor as a privileged context source, and the Monitor cannot directly speak to the student.
+The Monitor is treated by the three live agents as a privileged context source, and the Monitor cannot directly speak to the student.
 
 ## 4. Glyph Composition System
 
@@ -55,7 +67,7 @@ Communicative output is structured as **glyphs** rather than single icons:
 
 The system provides three nested fallback paths for a student to express a concept:
 
-1. **Response Board** — The Interactive Agent generates context-appropriate response buttons in real time, based on the current visual scene, conversational history, and student preferences.
+1. **Response Board** — The Board Manager generates context-appropriate response buttons in real time on every conversational beat, based on the current visual scene (relayed by Observer), conversational history, and student preferences.
 2. **Sentence Builder** — When no response button fits, the student opens a parts-of-speech grid. The AI suggests the most probable next symbol based on the partially-built sentence, the student's memory profile, and the current scene.
 3. **Word Finder ("20 Questions" engine)** — When the desired concept isn't in any board, a frontend-owned **deterministic narrowing engine** guides the AI through targeted clarifying questions. The narrowing state is held client-side; the AI is *constrained* by injected state rather than driving freely. Resolved concepts are persisted to the student's memory and surfaced proactively in future sessions.
 
@@ -67,7 +79,7 @@ Because the Student Platform is always-on and multimodally observant, the system
 
 - The Clinician AI may read and write the full clinical record.
 - The Monitor Agent may **read** the clinical record but writes only to a non-clinical journal (session notes, incident reports).
-- The Interactive Agent receives only an AI-curated, redacted prompt — never raw clinical data — automatically prepared by the Monitor Agent and reviewable by clinicians.
+- The Observer / Speaker / Board Manager agents receive only an AI-curated, redacted prompt — never raw clinical data — automatically prepared by the Monitor Agent and reviewable by clinicians.
 - Sensitive identifiers (e.g. government ID numbers) are write-only at the database layer, returned as redacted placeholders on read.
 - Cross-institute sharing of student records is gated through an explicit consent and invitation flow; cross-institute reads are audit-logged separately from owned reads.
 
@@ -75,7 +87,7 @@ This division allows the AAC agent to behave with full situational awareness wit
 
 ## 7. Multimodal Context Pipeline
 
-The Interactive Agent's awareness is built from several parallel sensing channels:
+The Observer's awareness — which it relays to Speaker and Board Manager via the Coordinator — is built from several parallel sensing channels:
 
 - **Camera stream** — frames passed to the live model continuously, gated by an activity-driven detection pipeline (replacing fixed-interval polling).
 - **Microphone stream** — raw PCM audio for ambient awareness and direct speech-from-others recognition.
@@ -104,7 +116,7 @@ The platform includes a generator for **bespoke educational games** built from a
 
 ## Summary of Technically Novel Contributions
 
-1. **Dual-agent AAC architecture** with asymmetric clinical-data permissions.
+1. **Four-agent AAC architecture** (Observer / Speaker / Board Manager / Monitor) with asymmetric clinical-data permissions and a star-topology Coordinator that lets each live agent specialize on a small, reliable tool surface.
 2. **Real-time, multimodally-driven dynamic board generation** replacing static AAC vocabularies.
 3. **Glyph composition system** with mixed canonical/custom/AI-generated symbol resolution and IP-safe refinement.
 4. **Frontend-deterministic narrowing engine** guiding AI-driven concept search.

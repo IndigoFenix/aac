@@ -34,6 +34,7 @@ import {
 } from '@/hooks/useAdminData';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { KNOWN_REGIMES, getRegimeBundle, type RegimeSlug } from '@shared/regime';
+import type { BillingRegime } from '@shared/license-permissions';
 
 interface LicenseFormProps {
   open: boolean;
@@ -109,6 +110,11 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   // accessibility-statement variant, identity-provider hint. Stored on
   // licensePermissions.complianceRegimes JSONB. See shared/regime/regimes.ts.
   const [complianceRegimes, setComplianceRegimes] = useState<RegimeSlug[]>([]);
+  // Insurance Bridge module — RTM/LMN billing. Enabled + billing market are
+  // stored on licensePermissions; the schema requires both, so the form must
+  // always round-trip them (otherwise create 400s and edits wipe the values).
+  const [insuranceBridgeEnabled, setInsuranceBridgeEnabled] = useState(false);
+  const [billingRegime, setBillingRegime] = useState<BillingRegime>('none');
 
   // Reset form when dialog opens/closes or license changes
   useEffect(() => {
@@ -139,6 +145,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
               (KNOWN_REGIMES as readonly string[]).includes(s),
             ),
           );
+          setInsuranceBridgeEnabled(perms.insuranceBridgeEnabled ?? false);
+          setBillingRegime(perms.billingRegime ?? 'none');
         } else {
           resetPermissions();
         }
@@ -162,6 +170,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setExpertAgentsUnlimited(false);
     setDeepAnalysisEnabled(false);
     setComplianceRegimes([]);
+    setInsuranceBridgeEnabled(false);
+    setBillingRegime('none');
   }
 
   function resetAll() {
@@ -211,6 +221,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         expertAgentsCount: -1,
         deepAnalysisEnabled: true,
         complianceRegimes,
+        insuranceBridgeEnabled,
+        billingRegime,
       };
     }
     return {
@@ -225,6 +237,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       expertAgentsCount: expertAgentsUnlimited ? -1 : expertAgentsCount,
       deepAnalysisEnabled,
       complianceRegimes,
+      insuranceBridgeEnabled,
+      billingRegime,
     };
   }
 
@@ -663,6 +677,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                     <Label className="text-sm">{t('admin.licenses.deepAnalysisEnabled')}</Label>
                     <Switch checked={deepAnalysisEnabled} onCheckedChange={setDeepAnalysisEnabled} />
                   </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <Label className="text-sm">{t('admin.licenses.insuranceBridgeEnabled')}</Label>
+                    <Switch checked={insuranceBridgeEnabled} onCheckedChange={setInsuranceBridgeEnabled} />
+                  </div>
                 </div>
 
                 {/* Dashboard Level */}
@@ -704,6 +722,23 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                     </div>
                   </div>
                 </div>
+
+                {/* Billing regime — only meaningful when the Insurance Bridge
+                    module is enabled. Drives the RTM/LMN code system + thresholds. */}
+                {insuranceBridgeEnabled && (
+                  <div className="flex items-center justify-between">
+                    <Label>{t('admin.licenses.billingRegime')}</Label>
+                    <Select value={billingRegime} onValueChange={(v) => setBillingRegime(v as BillingRegime)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('admin.licenses.billingRegimeNone')}</SelectItem>
+                        <SelectItem value="us_cpt">{t('admin.licenses.billingRegimeUsCpt')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Compliance regimes — drives audit retention, breach window,
                     accessibility-statement variant, identity-provider hint. */}

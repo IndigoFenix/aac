@@ -19,6 +19,7 @@ import type {
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
 import { parseBoardButtons, parseSinglePipeButton, splitOutSuggestionButtons, extractSuggestionButtonsFromRaw, type SuggestionButton } from "./interactive-agent";
+import type { ClientConfig } from "./client-config";
 import { createState as createGuessingState, buildStateInjection as buildGuessingInjection } from "@shared/guessing-mode/state.js";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
@@ -667,7 +668,14 @@ export type ClientMessage =
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
   | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
   | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
-  | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }; customFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>; rejectedFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }> } // guessing-mode narrowing assistant — relay injects [GUESSING STATE] + triggers a rebuild; custom/rejected facts carry the AI-driven narrowing trail
+  | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }; customFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>; rejectedFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }> } // LEGACY guessing-mode narrowing (client-owned state) — kept for the legacy single-agent live-relay path. The three-agent path uses the intent messages below.
+  // Three-agent Word Finder — client sends INTENTS, server owns the GuessingModeState.
+  // The server runs applyPress / applyCustomFact / rejectCurrentDimension and
+  // broadcasts the rendered injection via guessing_mode + the agent fan-out.
+  | { type: "guessing_enter"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string } }
+  | { type: "guessing_press"; suggestionKey: string }                   // user pressed a `suggestion:<dim>:<value>` button
+  | { type: "guessing_reject" }                                          // user pressed "no" / "none of these"
+  | { type: "guessing_narrow"; dimension: string; value: string; sourceText?: string }
   | { type: "exit_guessing"; reason?: string }                          // user-initiated word-finder cancel (any surface — quick-button toggle, sentence-builder toggle, etc.)
   | { type: "builder_open" }                                            // sentence builder opened — begin a conversation detour
   | { type: "builder_close" }                                           // sentence builder closed — end the builder detour
@@ -677,7 +685,7 @@ export type ClientMessage =
 
 /** Messages from server → client */
 export type ServerMessage =
-  | { type: "initialized"; sessionId: string }
+  | { type: "initialized"; sessionId: string; clientConfig?: ClientConfig }
   | { type: "text"; data: string; noAudioClear?: boolean }
   | { type: "speak"; text: string; audio?: string }
   | { type: "utterance"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
@@ -701,8 +709,8 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "utterance")
-  | { type: "binary_choice"; data: { options: any[] } }  // Binary-choice (incl. yes/no) — trigger overlay with two AI-supplied ${T.button} options
-  | { type: "ask_binary_choice"; data: { options: any[] } } // Deferred binary choice — show after TTS playback
+  | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection.
+  | { type: "ask_binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student" } }

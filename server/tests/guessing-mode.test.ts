@@ -557,3 +557,87 @@ describe("custom narrowing facts", () => {
     expect(s.rejectedFacts.map((f) => f.value)).toEqual(["modern", "animal"]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Contradiction prevention — new positive knowledge about a dimension
+// overrides older contradicting knowledge (customFacts + rejectedFacts).
+// Within a single dimension, newest-press-wins on weights too.
+// ─────────────────────────────────────────────────────────────────────────
+describe("contradiction prevention", () => {
+  it("applyPress on a new value resets weights so the newest press wins decisively", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    const dim = "things.kind";
+    applyPress(s, dim, "animal");
+    expect(dominantValue(s, DIMENSION_BY_ID[dim])).toBe("animal");
+    // Switch to a different value within the same dimension — should win cleanly.
+    applyPress(s, dim, "food");
+    expect(dominantValue(s, DIMENSION_BY_ID[dim])).toBe("food");
+    // And the AI's "Known:" line reflects the newest value, not a tie.
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/kind=food/);
+    expect(inj.text).not.toMatch(/kind=animal/);
+  });
+
+  it("applyPress clears a matching rejectedFact for the same dimension", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyPress(s, "things.kind", "animal");
+    rejectMostRecentFact(s);
+    expect(s.rejectedFacts.some((f) => f.dimension === "kind")).toBe(true);
+    // User changes their mind and presses a value for the same dimension —
+    // the prior rejection no longer applies.
+    applyPress(s, "things.kind", "food");
+    expect(s.rejectedFacts.some((f) => f.dimension === "kind")).toBe(false);
+  });
+
+  it("applyPress clears a customFact about the same dimension (registry overrides custom)", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "kind", "creature");
+    expect(s.customFacts.map((f) => f.value)).toEqual(["creature"]);
+    // A registry press for the same dimension supersedes the ad-hoc custom fact.
+    applyPress(s, "things.kind", "animal");
+    expect(s.customFacts.map((f) => f.value)).toEqual([]);
+  });
+
+  it("applyCustomFact replaces a prior customFact for the same dimension", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "size", "big");
+    applyCustomFact(s, "size", "small");
+    expect(s.customFacts.map((f) => f.value)).toEqual(["small"]);
+  });
+
+  it("applyCustomFact clears a matching rejectedFact for the same dimension", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, "shape", "round");
+    rejectMostRecentFact(s);
+    expect(s.rejectedFacts.some((f) => f.dimension === "shape")).toBe(true);
+    // User changes mind via a new custom fact for the same dimension.
+    applyCustomFact(s, "shape", "long");
+    expect(s.rejectedFacts.some((f) => f.dimension === "shape")).toBe(false);
+    expect(s.customFacts.map((f) => f.value)).toEqual(["long"]);
+  });
+
+  it("rejectCurrentDimension does NOT push the dimension into rejectedFacts", () => {
+    // Regression: prior behavior of routing the 'no' press through
+    // rejectMostRecentFact pushed `where_found=far_away` to BOTH
+    // customFacts/Known AND rejectedFacts — a contradiction the AI
+    // can't reconcile. The 'no' press now goes through
+    // rejectCurrentDimension, which dismisses without adding a fact.
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    // Force the next dim to be things.kind by suggesting & confirming the press;
+    // then a 'no' on the NEXT batch should not retroactively mark kind=animal
+    // as rejected.
+    applyPress(s, "things.kind", "animal");
+    rejectCurrentDimension(s);
+    expect(s.rejectedFacts).toHaveLength(0);
+    // The user's earlier positive ("animal") stays as Known.
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/Known:.*kind=animal/);
+    expect(inj.text).not.toMatch(/Rejected.*kind=animal/);
+  });
+});

@@ -89,7 +89,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
-  onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, dismiss: () => void) => void;
+  onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, dismiss: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
@@ -109,7 +109,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -208,8 +208,8 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   }, [isInitialized, onInitializedChange]);
 
   useEffect(() => {
-    onBinaryChoiceChange?.(binaryChoiceOptions, dismissBinaryChoice);
-  }, [binaryChoiceOptions, dismissBinaryChoice, onBinaryChoiceChange]);
+    onBinaryChoiceChange?.(binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice);
+  }, [binaryChoiceOptions, binaryChoiceEscapeKind, dismissBinaryChoice, onBinaryChoiceChange]);
 
   useEffect(() => {
     onRestartSessionReady?.(() => {
@@ -490,6 +490,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // questions are surfaced through this same overlay using the canonical
   // `yes` / `no` SYMBOLs — there's no separate yes/no overlay anymore.
   const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null>(null);
+  // Server-supplied escape-button kind ("maybe"/"neither") for the overlay.
+  // Display layer doesn't decide — server tells it.
+  const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
   const dismissBinaryChoiceRef = useRef<(() => void) | null>(null);
   const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
@@ -1577,9 +1580,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         >
           <BinaryChoiceOverlay
             options={binaryChoiceOptions}
+            escapeKind={binaryChoiceEscapeKind}
             onSelect={(option) => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
+              setBinaryChoiceEscapeKind(null);
               // Prefer the AI-supplied sentence; fall back to label.
               const spoken = (option.sentence?.trim() || option.label).trim();
               if (!spoken) return;
@@ -1592,10 +1597,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onCancel={() => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
+              setBinaryChoiceEscapeKind(null);
             }}
             onDismiss={() => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
+              setBinaryChoiceEscapeKind(null);
             }}
           />
 
@@ -2040,7 +2047,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSetBuilderVisibleReady={(fn) => { setBuilderVisibleRef.current = fn; }}
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
-            onBinaryChoiceChange={(options, dismiss) => { setBinaryChoiceOptions(options); dismissBinaryChoiceRef.current = dismiss; }}
+            onBinaryChoiceChange={(options, escapeKind, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); dismissBinaryChoiceRef.current = dismiss; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onEnabledAppsChange={setEnabledApps}

@@ -221,3 +221,33 @@ variable "redis_snapshot_retention_days" {
   type        = number
   default     = 7
 }
+
+# =============================================================================
+# AAC Auto-Update Channel
+# =============================================================================
+# Provisions the S3 bucket + CloudFront distribution + DNS record that the
+# Aivota AAC desktop client (Electron + electron-updater) polls for new
+# versions. See docs/AAC_AUTO_UPDATE.md for the runtime side.
+#
+# The published artifacts are NOT PHI — they're installer binaries and a
+# manifest, intentionally world-readable so the desktop client can fetch
+# them without auth. Lives outside the encrypted-PHI-bucket pattern used
+# for the rest of the storage stack on purpose.
+
+variable "enable_aac_auto_update" {
+  description = "Provision the S3 + CloudFront + DNS stack the desktop AAC client polls for auto-update. Off by default so adding the resources doesn't churn existing deploys; flip to true and apply once before running `npm run release:aac` for the first time."
+  type        = bool
+  default     = false
+}
+
+variable "aac_update_subdomain" {
+  description = "Subdomain under domain_name to serve the AAC update channel from. Final URL = https://<subdomain>.<domain_name>/. Ignored when domain_name is empty (the bucket still gets a CloudFront-only URL output)."
+  type        = string
+  default     = "updates"
+}
+
+variable "aac_update_installer_max_age_seconds" {
+  description = "Cache-Control max-age (seconds) for installer + blockmap artifacts at the CloudFront edge. The artifacts are immutable per version, so a long TTL is safe. `latest.yml` is always served with no-cache regardless of this value."
+  type        = number
+  default     = 3600
+}

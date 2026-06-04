@@ -16,18 +16,24 @@
 import { useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { SentenceButton, detectYesNoDefaultColor, type SentenceButtonInput } from "@/components/SentenceButton";
+import { SentenceButton, type SentenceButtonInput } from "@/components/SentenceButton";
 import type { BinaryChoiceOption } from "@/hooks/dual-agent-types";
 
 interface BinaryChoiceOverlayProps {
   options: BinaryChoiceOption[] | null;
+  /** Server-supplied escape-button kind: "maybe" (yellow) when the two
+   *  options form a yes/no pair; "neither" (red, no-symbol) otherwise.
+   *  Decided server-side so this display layer doesn't need to know the
+   *  rule. Null falls back to "neither" for the rare case of an older
+   *  server build that didn't ship the field. */
+  escapeKind?: "maybe" | "neither" | null;
   onSelect: (option: BinaryChoiceOption) => void;
   /** Dismiss without voicing anything (the small Cancel button + 30s timeout). */
   onCancel: () => void;
   onDismiss: () => void;
 }
 
-export default function BinaryChoiceOverlay({ options, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
+export default function BinaryChoiceOverlay({ options, escapeKind, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
   const { t } = useLanguage();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -35,17 +41,15 @@ export default function BinaryChoiceOverlay({ options, onSelect, onCancel, onDis
 
   const active = !!options && options.length >= 2;
 
-  // The escape button: when the two options form a yes/no pair (one resolves
-  // to the green `yes` default, the other to the red `no` default), offer a
-  // yellow "Maybe"; otherwise a red "Neither of these" wearing the `no` image.
+  // Escape button shape is driven entirely by the server-supplied
+  // `escapeKind`. "maybe" = yellow + maybe-glyph; "neither" = red + no-glyph.
+  // Older server builds that didn't ship the field default to "neither",
+  // which matches the legacy display.
   const escapeButton = useMemo<SentenceButtonInput>(() => {
-    const pair = (options ?? []).slice(0, 2);
-    const colors = pair.map((o) => detectYesNoDefaultColor(o.glyph));
-    const isYesNo = colors.includes("green") && colors.includes("red");
-    return isYesNo
+    return escapeKind === "maybe"
       ? { label: t("quickActions.maybe"), glyph: "maybe", color: "yellow" }
       : { label: t("quickActions.neitherOfThese"), glyph: "no", color: "red" };
-  }, [options, t]);
+  }, [escapeKind, t]);
 
   // Shrunk dimensions so three equal buttons fit across the row.
   const overlaySize = { button: "min(28vw, 240px)", icon: "min(17vw, 150px)" };

@@ -3,6 +3,12 @@
  *
  * Client-side utilities for converting AAC board data to/from the formSchema/formValues system.
  * This allows the AI to see and update the board in a single response pass.
+ *
+ * @legacy LEGACY SINGLE-AGENT PATH ONLY. Used by `ConversationContext` ↔ `ConversationBox`,
+ *         which renders only when `useDualAgent === false` in `home.tsx`. The three-agent
+ *         AAC system (default since 2026-06) does NOT use any of these helpers — the
+ *         Board Manager has its own structured-tool schemas server-side. Slated for removal
+ *         once the legacy ConversationBox path is fully retired; do not extend.
  */
 
 import type { ParsedBoardData, BoardButton, BoardGrid } from "@shared/schema";

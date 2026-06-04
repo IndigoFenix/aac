@@ -110,6 +110,10 @@ interface DualAgentContextType {
   // implicit "Neither". Yes/no questions are surfaced through this same
   // overlay (using the canonical `yes` / `no` SYMBOLs).
   binaryChoiceOptions: BinaryChoiceOption[] | null;
+  /** Server-supplied escape-button kind: "maybe" (yellow) when the pair
+   *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
+   *  overlay is active. */
+  binaryChoiceEscapeKind: "maybe" | "neither" | null;
   dismissBinaryChoice: () => void;
 
   // Focus frame
@@ -527,9 +531,15 @@ function DualAgentProviderInner({
     onTrigger: handleActivityTrigger,
     // Stream raw PCM audio to Gemini Live API (continuous mic → WebSocket → Gemini)
     onPcmChunk: handlePcmChunk,
-    // In Live mode, audio goes via continuous PCM — frame grids are decoupled
-    // from speech activity. Only motion settle + heartbeat trigger frame sends.
-    options: { speechTriggerEnabled: false },
+    // Tuning constants come from the server's `clientConfig.activityMonitor`
+    // (shipped in the `initialized` message) so capture rate, settle/silence
+    // windows, pre/post-roll, etc. can be tweaked without a client rebuild.
+    // The fixed local overrides (speechTriggerEnabled: false in Live mode)
+    // win over server-supplied values.
+    options: {
+      ...(liveAgent.clientConfig?.activityMonitor ?? {}),
+      speechTriggerEnabled: false,
+    },
     // Sleep-system data-flow config: heartbeat interval, attached audio,
     // grid size, motion-trigger gating all read from this ref per-tick.
     flowConfigRef: flowRef,
@@ -803,6 +813,7 @@ function ProviderShell({
     speakingVolume: agent.speakingVolume,
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
+    binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,
     dismissBinaryChoice: agent.dismissBinaryChoice,
 
     focusActive: agent.focusActive,

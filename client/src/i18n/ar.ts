@@ -3000,6 +3000,12 @@ export const ar = {
       dashboardLevel: "مستوى لوحة التحكم",
       expertAgents: "وكلاء خبراء",
       deepAnalysisEnabled: "تحليل معمق",
+      complianceRegimes: "أطر الامتثال",
+      complianceRegimesHint: "اختر الأطر التنظيمية (HIPAA وGDPR ووزارة التعليم الإسرائيلية وغيرها) التي تنطبق على هذه المؤسسة. كل اختيار يحدد مدة الاحتفاظ بسجلات التدقيق، والموعد النهائي للإبلاغ عن خرق البيانات، ومعيار إمكانية الوصول الذي يعلنه التطبيق، ومزوّد الهوية المتوقع لتسجيل الدخول. وعند انطباق أكثر من إطار، تسود القاعدة الأكثر صرامة.",
+      insuranceBridgeEnabled: "جسر التأمين",
+      billingRegime: "نظام الفوترة",
+      billingRegimeNone: "بلا",
+      billingRegimeUsCpt: "الولايات المتحدة (رموز CPT)",
       // Actions
       resendInvite: "إعادة إرسال الدعوة",
       inviteResent: "تم إعادة إرسال الدعوة بنجاح",

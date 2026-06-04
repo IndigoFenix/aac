@@ -233,6 +233,37 @@ function toChatTool(decl: FunctionDeclaration): ChatTool {
 // Invocation-context renderer
 // ---------------------------------------------------------------------------
 
+/**
+ * One-line summary of what the narrowing engine would ask if left to its
+ * own devices. Used in the <guessing_state> block so the model can see
+ * the engine's default plan as a SINGLE concise field — without having
+ * to parse the multi-line `[GUESSING STATE]` dump that the engine
+ * generates for human readers.
+ *
+ * Parses `questionHint`'s first informative line because the engine
+ * already shapes that text per scenario (no-category-yet vs.
+ * narrowing-within-category). Falls back to a generic descriptor when
+ * the hint is missing or unrecognized.
+ */
+function summarizeGuessingEngineDefault(g: {
+  questionHint: string;
+  offeredKeys: string[];
+}): string {
+  const text = g.questionHint || "";
+  if (text.includes("No category chosen yet")) {
+    return "no category chosen yet — engine wants you to ask 'what kind of thing?' with the fallback_offered_keys (skip this if conversation already tells you the topic).";
+  }
+  const dim = text.match(/Suggested next dimension:\s*([a-z_.]+)(?:\s*—\s*([^\n]+?))?(?=\s+(?:Offer|Ready|Presses|Custom|Rejected|$))/i);
+  if (dim) {
+    const label = dim[2]?.trim() || dim[1]?.trim();
+    return `narrow ${label}`;
+  }
+  if (text.includes("No more narrowing dimensions") || text.includes("Ready for guesses: yes")) {
+    return "engine has run out of registry dimensions — commit to [GUESS] buttons.";
+  }
+  return g.offeredKeys.length ? "use fallback_offered_keys" : "ask a fresh narrowing question";
+}
+
 /** Render the recent events + state snapshot as a single user-role
  *  message that gives the model "what's happening right now." */
 function renderInvocationContext(input: BoardManagerInvocationInput): string {
@@ -265,13 +296,17 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   if (input.guessingState) {
     lines.push("");
     lines.push(`<guessing_state>`);
-    if (input.guessingState.dimension) lines.push(`dimension: ${input.guessingState.dimension}`);
-    lines.push(`offered_keys: [${input.guessingState.offeredKeys.join(", ")}]`);
-    lines.push(`question_hint: ${input.guessingState.questionHint}`);
+    // Surface the engine's default ask in ONE line — either "no category
+    // chosen yet, here are the top-level categories" OR "narrowing within
+    // <category>: <subquestion>". The model can take it or — preferably,
+    // if recent conversation makes the topic obvious — skip ahead with
+    // its own [NARROW:] buttons (see the action hint below).
+    lines.push(`engine_default_question: ${summarizeGuessingEngineDefault(input.guessingState)}`);
+    lines.push(`fallback_offered_keys: [${input.guessingState.offeredKeys.join(", ")}]`);
     const renderFact = (f: { dimension: string; value: string; sourceText?: string }) =>
       f.sourceText ? `${f.dimension}=${f.value} ("${f.sourceText}")` : `${f.dimension}=${f.value}`;
     if (input.guessingState.customFacts.length) {
-      lines.push(`custom_facts: [${input.guessingState.customFacts.map(renderFact).join(", ")}]`);
+      lines.push(`custom_facts (already known about the user's intent): [${input.guessingState.customFacts.map(renderFact).join(", ")}]`);
     }
     if (input.guessingState.rejectedFacts.length) {
       lines.push(`rejected_facts (NEVER re-propose): [${input.guessingState.rejectedFacts.map(renderFact).join(", ")}]`);
@@ -321,7 +356,20 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   // hints, because those modes constrain which tool is appropriate.
   let hint = "";
   if (input.guessingState) {
-    hint = `Action: rebuild_board using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`sentence\` fields. Don't invent new suggestion keys.`;
+    // Topic-aware narrowing: when the conversation already establishes
+    // what the user wants to talk about (animals, food, a movie, a
+    // place), starting from the top-level category step ("what kind of
+    // thing?") wastes a turn and feels jarring. Lead with [NARROW:]
+    // options THAT FIT the inferred topic; the offered_keys are a
+    // FALLBACK for when context gives you nothing to lean on.
+    hint = [
+      `Action: rebuild_board with a MIX of narrowing ${T.button}s.`,
+      `1) READ <recent_events> first. If the user has been talking ABOUT a clear topic (animals, food, a place, an activity, a movie/show), LEAD with 3-5 \`[NARROW:<short-label>] <value>\` ${T.button}s that fit THAT topic (the press records a custom narrowing fact). Examples: conversation about animals → \`[NARROW:habitat] savanna\`, \`[NARROW:habitat] ocean\`, \`[NARROW:size] big\`, \`[NARROW:size] small\`.`,
+      `2) Add 1-2 [GUESS] ${T.button}s if you can already commit to a specific candidate ("Spider-Man", "the kitchen", "tired").`,
+      `3) Always include 1 broader "actually, something else" escape — either a single \`fallback_offered_keys\` entry or a [NARROW:topic] option that pivots away. Don't lock the user in.`,
+      `4) ONLY when conversation context gives you nothing — the user just opened the finder cold, no clear topic — fall back to surfacing the \`fallback_offered_keys\` verbatim as the ${T.button}s' \`sentence\` fields.`,
+      `Never invent new \`suggestion:\` keys outside the fallback list. [NARROW:] and [GUESS] are open-ended; \`suggestion:\` keys are not.`,
+    ].join("\n");
   } else if (input.builderState) {
     hint = `Action: suggest_construction_buttons (up to 4 head_candidates; up to 4 modifier_candidates when a HEAD SYMBOL is placed). Don't touch the main ${T.board} while the ${T.builder} is open.`;
   } else {
@@ -395,7 +443,12 @@ function renderEventLine(event: AgentEvent): string {
     case "builder_closed":
       return `[BUILDER CLOSED]`;
     case "guessing_entered":
-      return `[GUESSING ENTERED]`;
+      // The trigger doubles as a directive: the model's FIRST guessing-mode
+      // board needs to either (a) leverage conversation context if a topic
+      // is obvious, or (b) surface the fallback_offered_keys when context
+      // gives it nothing. Saying so explicitly here is much more reliable
+      // than leaving the model to figure it out from the bare event name.
+      return `[GUESSING ENTERED] — build the FIRST narrowing board now. Look at <recent_events> first; if the user has been talking about a clear topic, LEAD with [NARROW:<short-label>] buttons fitting that topic. Use fallback_offered_keys only when context truly tells you nothing.`;
     case "guessing_exited":
       return `[GUESSING EXITED]`;
     case "transcribed": {

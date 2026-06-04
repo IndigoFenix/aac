@@ -3002,6 +3002,12 @@ export const he = {
       dashboardLevel: "רמת לוח מחוונים",
       expertAgents: "סוכנים מומחים",
       deepAnalysisEnabled: "ניתוח מעמיק",
+      complianceRegimes: "מסגרות ציות",
+      complianceRegimesHint: "בחר את מסגרות הרגולציה (HIPAA, GDPR, משרד החינוך הישראלי וכו') החלות על מוסד זה. כל בחירה קובעת למשך כמה זמן נשמרים יומני הביקורת, את מועד הדיווח על אירוע אבטחה, את תקן הנגישות שהמערכת מצהירה עליו, ואת ספק הזהות הצפוי להתחברות. כאשר חלות כמה מסגרות, הכלל המחמיר ביותר גובר.",
+      insuranceBridgeEnabled: "גשר ביטוח",
+      billingRegime: "משטר חיוב",
+      billingRegimeNone: "ללא",
+      billingRegimeUsCpt: "ארה״ב (קודי CPT)",
       // Actions
       resendInvite: "שליחת הזמנה מחדש",
       inviteResent: "ההזמנה נשלחה בהצלחה",

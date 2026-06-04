@@ -3000,6 +3000,12 @@ export const ko = {
       dashboardLevel: "대시보드 수준",
       expertAgents: "전문가 에이전트",
       deepAnalysisEnabled: "심층 분석",
+      complianceRegimes: "규정 준수 체계",
+      complianceRegimesHint: "이 기관에 적용되는 규제 체계(HIPAA, GDPR, 이스라엘 교육부 등)를 선택하세요. 각 선택은 감사 로그 보관 기간, 데이터 유출 신고 기한, 앱이 표방하는 접근성 표준, 로그인에 예상되는 ID 공급자를 결정합니다. 여러 체계가 적용될 경우 가장 엄격한 규칙이 우선합니다.",
+      insuranceBridgeEnabled: "보험 브리지",
+      billingRegime: "청구 체계",
+      billingRegimeNone: "없음",
+      billingRegimeUsCpt: "미국 (CPT 코드)",
       // Actions
       resendInvite: "초대 재전송",
       inviteResent: "초대가 성공적으로 재전송되었습니다",

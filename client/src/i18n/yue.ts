@@ -3000,6 +3000,12 @@ export const yue = {
       dashboardLevel: "儀表板級別",
       expertAgents: "專家代理",
       deepAnalysisEnabled: "深度分析",
+      complianceRegimes: "合規制度",
+      complianceRegimesHint: "揀選適用於呢間機構嘅監管框架（例如 HIPAA、GDPR、以色列教育部等）。每項揀選都會決定審計日誌嘅保留時間、數據外洩嘅通報期限、應用程式所聲明嘅無障礙標準，以及登入所需嘅身份提供方。若果同時適用多項，以最嚴格嘅規則為準。",
+      insuranceBridgeEnabled: "保險橋接",
+      billingRegime: "計費制度",
+      billingRegimeNone: "無",
+      billingRegimeUsCpt: "美國（CPT 代碼）",
       // Actions
       resendInvite: "重新傳送邀請",
       inviteResent: "邀請已成功重新傳送",

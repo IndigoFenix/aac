@@ -16,4 +16,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     clearDll: (device: string) => ipcRenderer.invoke("gaze:clearDll", device),
     openLog: () => ipcRenderer.invoke("gaze:openLog"),
   },
+  // Auto-update channel. The renderer subscribes via `update.onStatus(cb)`
+  // to react to download progress / "restart to apply" prompts, calls
+  // `update.check()` for a manual refresh, and `update.installNow()` when
+  // the user clicks "Restart now". `update.getStatus()` returns the most
+  // recent state for the initial render.
+  update: {
+    getStatus: () => ipcRenderer.invoke("aac-update:getStatus"),
+    check: () => ipcRenderer.invoke("aac-update:check"),
+    installNow: () => ipcRenderer.invoke("aac-update:installNow"),
+    onStatus: (cb: (status: unknown) => void) => {
+      const listener = (_e: unknown, status: unknown) => cb(status);
+      ipcRenderer.on("aac-update:status", listener);
+      return () => ipcRenderer.removeListener("aac-update:status", listener);
+    },
+  },
 });

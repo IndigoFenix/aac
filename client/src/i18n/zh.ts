@@ -3000,6 +3000,12 @@ export const zh = {
       dashboardLevel: "仪表板级别",
       expertAgents: "专家代理",
       deepAnalysisEnabled: "深度分析",
+      complianceRegimes: "合规制度",
+      complianceRegimesHint: "选择适用于本机构的监管框架（如 HIPAA、GDPR、以色列教育部等）。每项选择都会决定审计日志的保留时长、数据泄露的上报期限、应用所声明的无障碍标准，以及登录所需的身份提供方。当多项同时适用时，以最严格的规则为准。",
+      insuranceBridgeEnabled: "保险桥接",
+      billingRegime: "计费制度",
+      billingRegimeNone: "无",
+      billingRegimeUsCpt: "美国（CPT 代码）",
       // Actions
       resendInvite: "重新发送邀请",
       inviteResent: "邀请已成功重新发送",

@@ -3044,3 +3044,27 @@
 [2026-06-03T19:57:22.574Z] [COST] imageKey="now" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=64 | image: openai/gpt-image-1 in=71 out=272
 [2026-06-03T19:57:22.575Z] [processQueue] Generated "now" → 97119e53-7222-4824-82d6-1464ed5d1593 (2 total)
 [2026-06-03T19:57:22.576Z] [processQueue] FULL REFINED PROMPT for "now": A bold AAC icon of a green arrow pointing to the right, overlaid on a blue circle. The arrow is thick and solid, with a sharp point. The circle is centered and prominent, with the arrow positioned horizontally across its middle. The icon has thick black outlines and flat, solid colors, on a transparent background.
+[2026-06-04T08:44:34.533Z] [resolveImageKeys] Resolving 1 keys: generate:another_animal (format=internal, useUnapproved=true)
+[2026-06-04T08:44:34.737Z] [resolveImageKeys] No symbol found for "generate:another_animal"
+[2026-06-04T08:44:34.738Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: generate:another_animal
+[2026-06-04T08:44:34.739Z] [queueGeneration] Queuing 1 keys: generate:another_animal (hasCallback=true)
+[2026-06-04T08:44:34.741Z] [resolveImageKeys] Resolving 1 keys: another_animal (format=api-path, useUnapproved=true)
+[2026-06-04T08:44:34.909Z] [processQueue] Generating "generate:another_animal"...
+[2026-06-04T08:44:34.919Z] [resolveImageKeys] No symbol found for "another_animal"
+[2026-06-04T08:44:34.920Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: another_animal
+[2026-06-04T08:44:34.922Z] [queueGeneration] Queuing 1 keys: another_animal (hasCallback=true)
+[2026-06-04T08:55:07.569Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T08:55:07.829Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T08:55:07.830Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T08:55:28.029Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T08:55:28.201Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T08:55:28.212Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T08:55:46.231Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T08:55:46.404Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T08:55:46.408Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T08:56:29.643Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T08:56:29.963Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T08:56:29.963Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-04T08:57:10.849Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-04T08:57:11.023Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-04T08:57:11.025Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

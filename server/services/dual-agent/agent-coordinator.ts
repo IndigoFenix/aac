@@ -43,6 +43,7 @@ import {
 import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
+import { buildDefaultClientConfig } from "./client-config";
 import { APP_REGISTRY, getEnabledAppsFromConfig } from "./app-registry";
 import type { AppConfig } from "./app-registry";
 
@@ -84,7 +85,28 @@ import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { collectGlyphImageKeys, validateBoardButtons } from "./board-button-validator";
 import { expandSuggestionKey } from "./interactive-agent";
-import { isValidSuggestionKey } from "@shared/guessing-mode/suggestion-registry";
+import { isValidSuggestionKey, parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry";
+import {
+  createState as createGuessingState,
+  applyPress as applyGuessingPress,
+  applyCustomFact as applyGuessingCustomFact,
+  rejectCurrentDimension as rejectGuessingDimension,
+  buildStateInjection as buildGuessingInjection,
+} from "@shared/guessing-mode/state";
+import type { GuessingModeState } from "@shared/guessing-mode/types";
+import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions";
+
+/** Builder category → top-level guessing category. The sentence builder's
+ *  active tab is what tells the engine which top-level dimension to land
+ *  in when guessing is launched from the builder (instead of starting at
+ *  the "what kind of thing are you looking for?" category step). */
+const BUILDER_TAB_TO_GUESSING: Record<string, string> = {
+  who: "people",
+  do: "actions",
+  what: "things",
+  where: "places",
+  when: "time",
+};
 import { logLiveSession, logDualAgent, runInSessionContext } from "./dual-agent-logger";
 import {
   flowSessionStart,
@@ -232,6 +254,46 @@ function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
 }
 
 /**
+ * Inspect a single glyph for the canonical `yes` / `no` SYMBOL token.
+ * Mirrors the client's `detectYesNoDefaultColor` so the server can decide
+ * binary-choice escape semantics without round-tripping to the renderer.
+ * Splits on the same set of glyph delimiters (`+ . # ( )`).
+ */
+function detectYesNoColor(glyph: string | undefined): "green" | "red" | undefined {
+  if (!glyph) return undefined;
+  const tokens = glyph.split(/[+.#()]/).map((t) => t.trim()).filter(Boolean);
+  let hasYes = false;
+  let hasNo = false;
+  for (const t of tokens) {
+    if (t === "yes") hasYes = true;
+    else if (t === "no") hasNo = true;
+  }
+  if (hasYes && hasNo) return undefined;
+  if (hasYes) return "green";
+  if (hasNo) return "red";
+  return undefined;
+}
+
+/**
+ * Decide which escape button to render alongside a binary-choice overlay.
+ * Yes/no pair (one option yes-tagged, one no-tagged) → `"maybe"` (yellow);
+ * anything else → `"neither"` (red, no-symbol).
+ *
+ * Server-side decision so the client can ship a generic 3-button renderer
+ * without baking the yes/no detection rule into its display layer.
+ */
+function detectBinaryChoiceEscapeKind(
+  glyph1: string | undefined,
+  glyph2: string | undefined,
+): "maybe" | "neither" {
+  const c1 = detectYesNoColor(glyph1);
+  const c2 = detectYesNoColor(glyph2);
+  const colors = [c1, c2];
+  if (colors.includes("green") && colors.includes("red")) return "maybe";
+  return "neither";
+}
+
+/**
  * Render a brief, log-friendly summary of an incoming client WS message.
  * Used only for flow-log visibility — pulls out the salient field(s) from
  * each message type so a one-line entry tells the operator what the press
@@ -251,7 +313,17 @@ function clientMsgSummary(msg: ClientMessage): string {
     case "glyph_press":
       return `glyph="${msg.glyph}"`;
     case "guessing_state":
-      return `keys=[${msg.suggestionKeys?.join(", ") ?? ""}] custom=${msg.customFacts?.length ?? 0} rejected=${msg.rejectedFacts?.length ?? 0}${msg.origin ? ` origin=${msg.origin}` : ""}`;
+      return `(legacy) keys=[${msg.suggestionKeys?.join(", ") ?? ""}] custom=${msg.customFacts?.length ?? 0} rejected=${msg.rejectedFacts?.length ?? 0}${msg.origin ? ` origin=${msg.origin}` : ""}`;
+    case "guessing_enter":
+      return msg.builderContext
+        ? `from=builder category=${msg.builderContext.category} slot=${msg.builderContext.targetSlot ?? "?"}`
+        : "from=conversation";
+    case "guessing_press":
+      return `key=${msg.suggestionKey}`;
+    case "guessing_reject":
+      return "(no payload)";
+    case "guessing_narrow":
+      return `${msg.dimension}=${msg.value}${msg.sourceText ? ` ("${msg.sourceText}")` : ""}`;
     case "exit_guessing":
       return `reason="${msg.reason || ""}"`;
     case "construction_state":
@@ -531,6 +603,26 @@ export class AgentCoordinator {
   private loadedBoardId: string | null = null;
   private builderState: BuilderState | null = null;
   private guessingState: GuessingState | null = null;
+  /**
+   * Authoritative Word Finder engine state (from `shared/guessing-mode/`).
+   * Owns the dimensions / weights / history / facts that drive narrowing.
+   * The flat `guessingState` field above is a DERIVED snapshot recomputed
+   * from this whenever the engine state changes (so all the downstream
+   * readers — Speaker directive, BoardManager invocation, etc. — keep
+   * their existing shape).
+   *
+   * Moved server-side 2026-06: previously the client owned the engine
+   * and shipped a rendered injection per turn, which meant any logic
+   * tweak required a client rebuild + redeploy. With the engine here,
+   * intent messages (`guessing_enter` / `guessing_press` /
+   * `guessing_reject` / `guessing_narrow`) drive all mutations.
+   */
+  private guessingEngineState: GuessingModeState | null = null;
+  /** Where the current Word Finder session was launched from. Used so a
+   *  builder-origin resolution can feed the concept back into the active
+   *  slot when guessing ends. */
+  private guessingOrigin: "conversation" | "builder" = "conversation";
+  private guessingBuilderContext: { targetSlot: number | null; partialGlyph: string; category: string } | null = null;
 
   // Cached prompts + tool configs — reused by profile transitions so we
   // don't have to walk back through buildPromptInputs on every switch.
@@ -800,7 +892,26 @@ export class AgentCoordinator {
         this.handleConstructionState(msg.data);
         return;
       case "guessing_state":
-        this.handleGuessingState(msg);
+        // LEGACY client-owned-state path. Older client builds still send
+        // this; new clients use the intent messages below. The legacy
+        // path is preserved temporarily — once all clients have shipped
+        // with the intent protocol it can be removed entirely. For now,
+        // map it into the engine by overwriting the snapshot only (no
+        // engine-state hydration — the legacy state is opaque to us).
+        flowNote("COORDINATOR", "Received legacy guessing_state — treating snapshot as authoritative; new client builds should send intents instead.");
+        this.handleLegacyGuessingState(msg);
+        return;
+      case "guessing_enter":
+        this.handleGuessingEnter(msg);
+        return;
+      case "guessing_press":
+        this.handleGuessingPress(msg);
+        return;
+      case "guessing_reject":
+        this.handleGuessingReject();
+        return;
+      case "guessing_narrow":
+        this.handleGuessingNarrow(msg);
         return;
       case "exit_guessing":
         // Single client-initiated exit path for the Word Finder. Replaces
@@ -1058,7 +1169,15 @@ export class AgentCoordinator {
 
     // 8. Announce ready to client.
     this.state = "ready";
-    this.send({ type: "initialized", sessionId: this.sessionId });
+    this.send({
+      type: "initialized",
+      sessionId: this.sessionId,
+      // Ship the tunable client-side constants (activity monitor cadence,
+      // sleep thresholds, gesture window) from the server so they can
+      // change without a client rebuild. Future: read per-student
+      // overrides from settings and merge here.
+      clientConfig: buildDefaultClientConfig(),
+    });
 
     // 9. Push the default home board so the client has a surface to render
     //    before Board Manager produces anything. The legacy path does the
@@ -1529,43 +1648,169 @@ export class AgentCoordinator {
     void this.invokeBoardManager([]);
   }
 
-  private handleGuessingState(
+  /**
+   * Legacy compat shim — accepts a pre-rendered snapshot from older
+   * client builds that still own their own GuessingModeState. We can't
+   * recreate the engine state from the snapshot (the wire shape doesn't
+   * carry weights/history), so we accept it verbatim and any subsequent
+   * intent messages from the same session will trigger a fresh engine
+   * on the server. This path will be removed once all clients have
+   * shipped with the intent protocol.
+   */
+  private handleLegacyGuessingState(
     msg: Extract<ClientMessage, { type: "guessing_state" }>,
   ): void {
-    // A guessing-state push IS user activity — a button was just pressed (or
-    // the user entered the word-finder). Reset the rest-debounce window so
-    // an Observer-requested rest doesn't fire mid-narrowing, and wake from
-    // resting profile if we're there — otherwise Speaker is on the resting
-    // prompt and won't voice a narrowing question.
     this.noteEngagementActivity();
+    const apply = () => {
+      const wasInGuessing = this.guessingState !== null;
+      this.guessingState = {
+        dimension: "",
+        offeredKeys: msg.suggestionKeys,
+        questionHint: msg.text,
+        customFacts: (msg.customFacts ?? []).map((f) => ({ ...f })),
+        rejectedFacts: (msg.rejectedFacts ?? []).map((f) => ({ ...f })),
+      };
+      if (!wasInGuessing) {
+        this.emitClientEvent({
+          type: "guessing_entered",
+          source: "client",
+          timestamp: Date.now(),
+        });
+        this.send({ type: "guessing_mode", active: true });
+      }
+      this.broadcastGuessingStateToAgents();
+      void this.invokeBoardManager([]);
+    };
     if (this.sessionProfile === "resting") {
-      flowNote("COORDINATOR", "guessing_state arrived while resting — waking before broadcasting.");
-      void this.transitionToProfile("awake").then(() => {
-        this.applyGuessingState(msg);
-      });
+      flowNote("COORDINATOR", "legacy guessing_state arrived while resting — waking before broadcasting.");
+      void this.transitionToProfile("awake").then(apply);
       return;
     }
-    this.applyGuessingState(msg);
+    apply();
   }
 
-  /** Inner half of handleGuessingState — runs after the wake gate. Splits
-   *  the state update from the wake transition so the post-wake
-   *  re-broadcast in transitionToProfile can call it too. */
-  private applyGuessingState(
-    msg: Extract<ClientMessage, { type: "guessing_state" }>,
+  // ─────────────────────────────────────────────────────────────────────
+  // Word Finder intent handlers. The client sends INTENTS (enter / press /
+  // reject / narrow / exit); the server owns the engine state and runs
+  // applyPress / applyCustomFact / rejectCurrentDimension. Each handler
+  // wakes-from-resting if needed, mutates the engine state, refreshes the
+  // snapshot, and broadcasts.
+  // ─────────────────────────────────────────────────────────────────────
+
+  /** Run `fn` inside the wake gate + engagement-activity reset that every
+   *  guessing-mode intent needs. `label` is for the flow-log on the wake
+   *  message. */
+  private async wakeForGuessingIntent(label: string, fn: () => void): Promise<void> {
+    this.noteEngagementActivity();
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `${label} arrived while resting — waking before applying.`);
+      await this.transitionToProfile("awake");
+    }
+    fn();
+  }
+
+  /**
+   * Begin a Word Finder session. If launched from the sentence builder, the
+   * builder's active tab pre-selects the top-level category (via
+   * `BUILDER_TAB_TO_GUESSING`) so the user skips the "what kind of thing
+   * are you looking for?" step. The origin + builderContext are remembered
+   * so a builder-origin resolution can feed back into the active slot
+   * when guessing ends.
+   */
+  private handleGuessingEnter(
+    msg: Extract<ClientMessage, { type: "guessing_enter" }>,
   ): void {
-    const wasInGuessing = this.guessingState !== null;
+    void this.wakeForGuessingIntent("guessing_enter", () => {
+      this.guessingEngineState = createGuessingState();
+      if (msg.builderContext) {
+        this.guessingOrigin = "builder";
+        this.guessingBuilderContext = msg.builderContext;
+        const cat = BUILDER_TAB_TO_GUESSING[msg.builderContext.category];
+        if (cat) applyGuessingPress(this.guessingEngineState, CATEGORY_DIM_ID, cat);
+      } else {
+        this.guessingOrigin = "conversation";
+        this.guessingBuilderContext = null;
+      }
+      this.refreshGuessingSnapshot(/* firstEntry */ true);
+    });
+  }
+
+  /** A suggestion-key press (e.g. `suggestion:things.kind:animal`). */
+  private handleGuessingPress(
+    msg: Extract<ClientMessage, { type: "guessing_press" }>,
+  ): void {
+    if (!this.guessingEngineState) {
+      flowNote("COORDINATOR", `guessing_press "${msg.suggestionKey}" dropped — no active session.`);
+      return;
+    }
+    const parsed = parseSuggestionKey(msg.suggestionKey);
+    if (!parsed) {
+      flowNote("COORDINATOR", `guessing_press dropped — unparseable key "${msg.suggestionKey}".`);
+      return;
+    }
+    void this.wakeForGuessingIntent("guessing_press", () => {
+      if (!this.guessingEngineState) return;
+      applyGuessingPress(this.guessingEngineState, parsed.dimension, parsed.value);
+      this.refreshGuessingSnapshot(false);
+    });
+  }
+
+  /** "No" / "none of these" — drop the current dimension (the AI asked
+   *  about something the user can't answer with the offered options) and
+   *  flag `justRejected` so the next injection nudges the AI to a fresh
+   *  angle. Does NOT pop a previously-confirmed positive fact — that
+   *  produced the "Known: X" + "Rejected: X" contradiction the engine
+   *  used to ship. */
+  private handleGuessingReject(): void {
+    if (!this.guessingEngineState) {
+      flowNote("COORDINATOR", "guessing_reject dropped — no active session.");
+      return;
+    }
+    void this.wakeForGuessingIntent("guessing_reject", () => {
+      if (!this.guessingEngineState) return;
+      rejectGuessingDimension(this.guessingEngineState);
+      this.refreshGuessingSnapshot(false);
+    });
+  }
+
+  /** AI-proposed `[NARROW:<dim>] <value>` press — records as a custom
+   *  fact on the parallel track. */
+  private handleGuessingNarrow(
+    msg: Extract<ClientMessage, { type: "guessing_narrow" }>,
+  ): void {
+    if (!this.guessingEngineState) {
+      flowNote("COORDINATOR", `guessing_narrow ${msg.dimension}=${msg.value} dropped — no active session.`);
+      return;
+    }
+    void this.wakeForGuessingIntent("guessing_narrow", () => {
+      if (!this.guessingEngineState) return;
+      applyGuessingCustomFact(this.guessingEngineState, msg.dimension, msg.value, msg.sourceText);
+      this.refreshGuessingSnapshot(false);
+    });
+  }
+
+  /**
+   * Re-derive the flat `guessingState` snapshot from the engine state and
+   * fan it out. On first entry, also emits the `guessing_entered` event
+   * and tells the client to flip its `guessingMode` flag. Subsequent
+   * refreshes just rebroadcast the latest snapshot to the live agents
+   * and trigger a BoardManager rebuild.
+   *
+   * This is the ONLY path that updates `this.guessingState` —
+   * everything else reads it as a derived view of `guessingEngineState`.
+   */
+  private refreshGuessingSnapshot(firstEntry: boolean): void {
+    if (!this.guessingEngineState) return;
+    const inj = buildGuessingInjection(this.guessingEngineState);
     this.guessingState = {
-      dimension: "",  // not in the wire shape; tracked by builder system
-      offeredKeys: msg.suggestionKeys,
-      questionHint: msg.text,
-      customFacts: (msg.customFacts ?? []).map((f) => ({ ...f })),
-      rejectedFacts: (msg.rejectedFacts ?? []).map((f) => ({ ...f })),
+      dimension: "",
+      offeredKeys: inj.suggestionKeys,
+      questionHint: inj.text,
+      customFacts: inj.customFacts.map((f) => ({ ...f })),
+      rejectedFacts: inj.rejectedFacts.map((f) => ({ ...f })),
     };
 
-    // First state push starts the mode — fan out the entered-event so
-    // both Live agents see the [GUESSING ENTERED] context.
-    if (!wasInGuessing) {
+    if (firstEntry) {
       this.emitClientEvent({
         type: "guessing_entered",
         source: "client",
@@ -1575,10 +1820,6 @@ export class AgentCoordinator {
     }
 
     this.broadcastGuessingStateToAgents();
-
-    // Trigger BoardManager so it rebuilds with the offered suggestion
-    // keys. The guessingState hint (added above in renderInvocationContext)
-    // tells the model to use these keys as the buttons' `sentence` fields.
     void this.invokeBoardManager([]);
   }
 
@@ -1594,6 +1835,9 @@ export class AgentCoordinator {
     flowNote("COORDINATOR", `Clearing guessing state: ${reason}`);
     const aiInitiated = reason.startsWith("ai_exit:");
     this.guessingState = null;
+    this.guessingEngineState = null;
+    this.guessingOrigin = "conversation";
+    this.guessingBuilderContext = null;
     this.send({ type: "guessing_mode", active: false });
     // Tell Speaker the word-finder closed so it switches back to normal
     // conversation framing on its next turn. Skip raw [GUESSING] tags in
@@ -1675,7 +1919,16 @@ export class AgentCoordinator {
     } else if (text.includes("No more narrowing dimensions") || text.includes("Ready for guesses: yes")) {
       parts.push(`Voice ONE short, warm guess (or "is it X or Y?") about what the user is trying to say.`);
     } else if (text.includes("No category chosen yet")) {
-      parts.push(`The user just opened the word finder. Voice ONE short, warm question: "What kind of thing are you thinking of?"`);
+      // Topic-aware opener: when the conversation has already established
+      // what the user wants to talk about (animals, food, a place…),
+      // asking "what kind of thing?" is condescending and wastes a turn.
+      // Tell the model to USE its own conversation memory to either ask
+      // a more specific narrowing question (the BoardManager's [NARROW:]
+      // buttons will track it) OR fall back to the generic opener only
+      // when nothing in the recent dialogue suggests a topic.
+      parts.push(
+        `The user just opened the word finder. If the conversation so far has been about a clear topic (animals, food, a place, an activity), voice ONE short, warm question that NARROWS WITHIN that topic ("which kind of animal — one that swims, one that flies, one that lives near us?"). Otherwise ask a generic opener like "what kind of thing are you thinking of?"`,
+      );
     } else {
       parts.push(`Voice ONE short, warm narrowing question to help the user find their word.`);
     }
@@ -3016,9 +3269,16 @@ export class AgentCoordinator {
   }
 
   private applyBinaryChoiceShown(event: BinaryChoiceShownEvent): void {
+    // Decide the third "escape" button kind server-side so the client
+    // doesn't need to re-derive it from glyph inspection. Mirrors the
+    // client's `detectYesNoDefaultColor`: when both options together
+    // form a yes/no pair (one yes-tagged, one no-tagged), the escape
+    // becomes a yellow "maybe"; otherwise a red "neither of these"
+    // (using the `no` symbol). Client renders by the kind only.
+    const escapeKind = detectBinaryChoiceEscapeKind(event.option1?.glyph, event.option2?.glyph);
     this.send({
       type: "binary_choice",
-      data: { options: [event.option1, event.option2] },
+      data: { options: [event.option1, event.option2], escapeKind },
     });
   }
 

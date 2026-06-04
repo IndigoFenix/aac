@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { GazeSidecarSupervisor, GazeSupervisorPaths } from "./hardware/gaze-sidecar-supervisor";
+import { setupAutoUpdater, stopAutoUpdater } from "./auto-update";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -180,6 +181,15 @@ app.on("ready", async () => {
   gazeSupervisor = new GazeSidecarSupervisor(gazeSupervisorPaths());
 
   createWindow();
+
+  // Background auto-update — fetches `latest.yml` from the publish URL,
+  // downloads new installers in the background, raises lifecycle events
+  // the renderer can show to the user. No-ops in dev (app.isPackaged is
+  // false there). Started after the window so the renderer is wired up
+  // before any status events fire.
+  if (mainWindow) {
+    setupAutoUpdater(mainWindow);
+  }
 });
 
 // IPC handlers
@@ -231,6 +241,7 @@ ipcMain.handle("gaze:locateDll", async (_e, device: string) => {
 
 app.on("window-all-closed", () => {
   gazeSupervisor?.stop();
+  stopAutoUpdater();
   if (process.platform !== "darwin") {
     app.quit();
   }

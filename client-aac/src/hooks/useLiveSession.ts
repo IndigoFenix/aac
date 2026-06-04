@@ -10,25 +10,12 @@ import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
-import {
-  createState as createGuessingState,
-  applyPress as applyGuessingPress,
-  applyCustomFact as applyGuessingCustomFact,
-  buildStateInjection as buildGuessingInjection,
-  rejectCurrentDimension as rejectGuessingDimension,
-  rejectMostRecentFact as rejectGuessingMostRecentFact,
-  GUESSING_REJECT,
-  type GuessingModeState,
-} from "@shared/guessing-mode/state.js";
-import { parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry.js";
-import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions.js";
+import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
-/** Context passed when guessing is launched from the sentence builder for a slot. */
+/** Context passed when guessing is launched from the sentence builder for a slot.
+ *  The server uses this to pre-select the top-level guessing category from
+ *  the builder's active tab so the user skips the "what kind of thing?" step. */
 export interface GuessingBuilderContext { targetSlot: number | null; partialGlyph: string; category: string }
-// Builder category tab → top-level guessing category.
-const BUILDER_TAB_TO_GUESSING: Record<string, string> = {
-  who: "people", do: "actions", what: "things", where: "places", when: "time",
-};
 
 // Re-export shared types
 export type {
@@ -148,6 +135,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Session state
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Server-supplied tuning bundle. Stored as state so any consumer that
+  // wants to react to a new config (e.g. when reconnecting against a
+  // server with different thresholds) re-renders. Defaults to null —
+  // consumers fall back to their built-in defaults until the first
+  // `initialized` message lands.
+  const [clientConfig, setClientConfig] = useState<import("./dual-agent-types").ClientConfig | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   // Mirror of isInitialized for use inside long-lived closures (ws.onclose)
   // that would otherwise capture a stale `false` from the initial render.
@@ -199,16 +192,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // App canvas capture ref (for drawing app, etc.)
   const captureAppCanvasRef = useRef<(() => Promise<Blob | null>) | null>(null);
 
-  // Guessing mode state
+  // Guessing mode state — the engine (dimensions, weights, history, facts)
+  // lives on the SERVER now. This hook only tracks the UI flag so the
+  // surface can highlight Word Finder buttons; mutations go through the
+  // intent messages (guessing_enter / guessing_press / guessing_reject /
+  // guessing_narrow / exit_guessing). Was previously client-owned but
+  // every logic tweak required a client rebuild + redeploy.
   const [guessingMode, setGuessingMode] = useState(false);
-  // Client-owned narrowing state for guessing mode (shared/guessing-mode). The
-  // server builds the initial [GUESSING STATE] on entry; from the first
-  // suggestion press onward this ref is authoritative and drives the injection.
-  const guessingStateRef = useRef<GuessingModeState | null>(null);
-  // Non-null while guessing was launched from the builder — every guessing_state
-  // send then carries origin:"builder" + the slot context so the resolved
-  // concept fills the sentence slot instead of becoming a conversational reply.
-  const guessingOriginRef = useRef<{ origin: "builder"; builderContext: GuessingBuilderContext } | null>(null);
   const [constructionSuggestions, setConstructionSuggestions] = useState<
     import("./dual-agent-types").ConstructionSuggestionsClient | null
   >(null);
@@ -225,13 +215,22 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // `yes` / `no` SYMBOLs render with animated icons and auto-color the
   // SENTENCE BUTTON green / red), so there's no separate yes_no surface.
   const [binaryChoiceOptions, setBinaryChoiceOptions] = useState<BinaryChoiceOption[] | null>(null);
-  const dismissBinaryChoice = useCallback(() => setBinaryChoiceOptions(null), []);
+  // Escape-button kind for the binary-choice overlay — server-supplied.
+  // "maybe" (yellow) when the pair forms a yes/no; "neither" (red, no-symbol)
+  // otherwise. The display layer doesn't need to know the rule — it just
+  // renders the kind it's told.
+  const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
+  const dismissBinaryChoice = useCallback(() => {
+    setBinaryChoiceOptions(null);
+    setBinaryChoiceEscapeKind(null);
+  }, []);
 
   // Focus frame active state — briefly true when AI requests a focus frame
   const [focusActive, setFocusActive] = useState(false);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Deferred ask_binary_choice: same pattern — buffered options until TTS ends
   const pendingAskBinaryChoiceRef = useRef<BinaryChoiceOption[] | null>(null);
+  const pendingAskBinaryChoiceEscapeKindRef = useRef<"maybe" | "neither" | null>(null);
 
   // Local storage config (from server) — stored as ref to avoid re-renders
   const localStorageConfigRef = useRef<AacLocalStorageConfig | null>(null);
@@ -262,8 +261,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       // Show deferred binary-choice overlay after TTS finishes.
       if (pendingAskBinaryChoiceRef.current) {
         const opts = pendingAskBinaryChoiceRef.current;
+        const kind = pendingAskBinaryChoiceEscapeKindRef.current;
         pendingAskBinaryChoiceRef.current = null;
+        pendingAskBinaryChoiceEscapeKindRef.current = null;
         setBinaryChoiceOptions(opts);
+        setBinaryChoiceEscapeKind(kind);
       }
     },
   });
@@ -369,6 +371,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       switch (msg.type) {
         case "initialized":
           setSessionId(msg.sessionId);
+          // Capture server-driven tuning (activity monitor / sleep / gesture)
+          // if present. Newer servers ship this; older builds omit it and
+          // consumers fall back to their built-in defaults.
+          if ((msg as any).clientConfig) {
+            setClientConfig((msg as any).clientConfig);
+          }
           setIsInitialized(true);
           isInitializedRef.current = true;
           // Session is ready — clear the "waking up" indicator. Previously we
@@ -652,14 +660,22 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "binary_choice": {
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
-          if (opts.length >= 2) setBinaryChoiceOptions(opts.slice(0, 2));
+          const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
+          if (opts.length >= 2) {
+            setBinaryChoiceOptions(opts.slice(0, 2));
+            setBinaryChoiceEscapeKind(escapeKind ?? null);
+          }
           break;
         }
 
         case "ask_binary_choice": {
           // Deferred binary-choice — show overlay after TTS playback completes
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
-          if (opts.length >= 2) pendingAskBinaryChoiceRef.current = opts.slice(0, 2);
+          const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
+          if (opts.length >= 2) {
+            pendingAskBinaryChoiceRef.current = opts.slice(0, 2);
+            pendingAskBinaryChoiceEscapeKindRef.current = escapeKind ?? null;
+          }
           break;
         }
 
@@ -764,15 +780,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "guessing_mode":
+          // Server-driven flag — the engine state lives on the server now
+          // (see agent-coordinator's intent handlers). All this hook does
+          // is flip a boolean so UI surfaces (quick-button highlight,
+          // sentence-builder Find-word highlight) reflect the current mode.
           setGuessingMode(msg.active ?? false);
-          if (msg.active) {
-            // Mirror the server's starting narrowing state (category not yet
-            // chosen). The server already sent the initial [GUESSING STATE].
-            if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
-          } else {
-            guessingStateRef.current = null;
-            guessingOriginRef.current = null;
-          }
           break;
 
         case "construction_suggestions": {
@@ -878,8 +890,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // is playing (e.g. silent mode), show the overlay immediately.
           if (pendingAskBinaryChoiceRef.current && !audioPlayer.isPlaying) {
             const opts = pendingAskBinaryChoiceRef.current;
+            const kind = pendingAskBinaryChoiceEscapeKindRef.current;
             pendingAskBinaryChoiceRef.current = null;
+            pendingAskBinaryChoiceEscapeKindRef.current = null;
             setBinaryChoiceOptions(opts);
+            setBinaryChoiceEscapeKind(kind);
           }
           break;
       }
@@ -1149,115 +1164,56 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   );
 
   /**
-   * Handle a guessing-mode SUGGESTION button press. Updates the client-owned
-   * narrowing state and pushes a fresh [GUESSING STATE] up to the server,
-   * which injects it and prompts the AI to rebuild with the next suggestions.
-   * Deliberately does NOT go through voiceButtons — a suggestion press is
-   * a narrowing signal, not an utterance.
+   * Handle a guessing-mode SUGGESTION button press. Server-side engine —
+   * we send an INTENT (`guessing_press` or `guessing_reject`), the server
+   * runs applyPress / rejectCurrentDimension on its authoritative state,
+   * and rebroadcasts the rendered injection to the agents.
+   *
+   * Deliberately does NOT go through voiceButtons — a suggestion press
+   * is a narrowing signal, not an utterance.
    */
-  // Send the current guessing state, carrying builder origin/context when set.
-  const sendGuessingStateMsg = useCallback((state: GuessingModeState) => {
-    const inj = buildGuessingInjection(state);
-    const o = guessingOriginRef.current;
-    console.debug("[guessing] → guessing_state", {
-      category: state.category,
-      keys: inj.suggestionKeys,
-      custom: inj.customFacts.length,
-      rejected: inj.rejectedFacts.length,
-      origin: o?.origin ?? "conversation",
-    });
-    wsSend({
-      type: "guessing_state",
-      text: inj.text,
-      suggestionKeys: inj.suggestionKeys,
-      customFacts: inj.customFacts,
-      rejectedFacts: inj.rejectedFacts,
-      ...(o ? { origin: o.origin, builderContext: o.builderContext } : {}),
-    });
-  }, [wsSend]);
-
   const pressSuggestion = useCallback((suggestionKey: string) => {
     console.debug("[guessing] pressSuggestion", suggestionKey);
-    try {
-      if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
-      const state = guessingStateRef.current;
-
-      if (suggestionKey === GUESSING_REJECT) {
-        // "No" / "none of these" — prefer rejecting the most recent positive
-        // narrowing step (custom fact OR registry press). The AI sees the
-        // rejection in the next [GUESSING STATE] and is told to pivot to a
-        // different angle. If there's nothing positive to undo (the user
-        // pressed "no" on a freshly-proposed dimension before picking a
-        // value), fall back to the legacy "drop current dimension" behavior.
-        const undid = rejectGuessingMostRecentFact(state);
-        if (!undid) rejectGuessingDimension(state);
-      } else {
-        const parsed = parseSuggestionKey(suggestionKey);
-        if (!parsed) {
-          console.warn("[guessing] could not parse suggestion key:", suggestionKey);
-          return;
-        }
-        applyGuessingPress(state, parsed.dimension, parsed.value);
-      }
-      sendGuessingStateMsg(state);
-    } catch (err) {
-      console.error("[guessing] pressSuggestion failed:", err);
+    if (suggestionKey === GUESSING_REJECT) {
+      // "No" / "none of these" — see server handleGuessingReject for the
+      // full rationale (it drops the current dimension without producing
+      // a contradictory "rejected fact" that would conflict with prior
+      // positive presses).
+      wsSend({ type: "guessing_reject" });
+    } else {
+      wsSend({ type: "guessing_press", suggestionKey });
     }
-  }, [sendGuessingStateMsg]);
+  }, [wsSend]);
 
   /**
    * Press handler for AI-driven narrowing buttons (`buttonType: "narrow"`).
-   * Records the user's confirmation of an AI-proposed narrowing step as a
-   * CustomNarrowingFact in the guessing state, then re-pushes the state so
-   * the AI sees the new fact in its next `[GUESSING STATE]` injection and
-   * proposes the next step (or commits to `[GUESS]` if narrowing has
-   * converged). `sourceText` is the button's voiced speech, used as the
-   * AI's own framing of what was asked.
+   * Sends a `guessing_narrow` intent; the server records the user's
+   * confirmation as a CustomNarrowingFact and re-broadcasts so the AI
+   * sees the new fact in its next [GUESSING STATE] injection.
+   * `sourceText` is the button's voiced speech — gives the AI back its
+   * own framing of what was asked.
    */
   const pressNarrow = useCallback((dimension: string, value: string, sourceText?: string) => {
     console.debug("[guessing] pressNarrow", { dimension, value, sourceText });
-    try {
-      if (!guessingStateRef.current) guessingStateRef.current = createGuessingState();
-      const state = guessingStateRef.current;
-      applyGuessingCustomFact(state, dimension, value, sourceText);
-      sendGuessingStateMsg(state);
-    } catch (err) {
-      console.error("[guessing] pressNarrow failed:", err);
-    }
-  }, [sendGuessingStateMsg]);
+    wsSend({ type: "guessing_narrow", dimension, value, sourceText });
+  }, [wsSend]);
 
   /**
-   * Unified word-finder entry point.
+   * Unified word-finder entry point. Sends a `guessing_enter` intent;
+   * the server initializes its engine state, applies the builder
+   * category pre-selection (if launched from the builder), and
+   * broadcasts `guessing_mode: true` back so this hook flips the UI flag.
    *
-   * - From the BUILDER: pass a builderContext. The category is pre-selected
-   *   from the builder tab so the user skips the top-level category step,
-   *   and the origin is recorded so the resolved concept feeds back into
-   *   the composed sentence.
+   * - From the BUILDER: pass a builderContext. The server pre-selects
+   *   the top-level category from the builder's active tab so the user
+   *   skips the "what kind of thing?" step.
    * - From CONVERSATION: omit builderContext. The user starts at the
-   *   top-level "what kind of thing are you looking for?" step. The
-   *   resolved concept flows back as a normal SENTENCE BUTTON press.
-   *
-   * Both paths build the same shaped GuessingModeState and push it via
-   * the same WS message — so the server, the AI prompts, and the
-   * client-side display flow are identical regardless of entry point.
+   *   top-level category step.
    */
   const enterGuessing = useCallback((builderContext?: GuessingBuilderContext) => {
-    try {
-      const state = createGuessingState();
-      if (builderContext) {
-        const cat = BUILDER_TAB_TO_GUESSING[builderContext.category];
-        if (cat) applyGuessingPress(state, CATEGORY_DIM_ID, cat);
-        guessingOriginRef.current = { origin: "builder", builderContext };
-      } else {
-        guessingOriginRef.current = { origin: "conversation" };
-      }
-      guessingStateRef.current = state;
-      console.debug("[guessing] enterGuessing", { origin: guessingOriginRef.current.origin });
-      sendGuessingStateMsg(state);
-    } catch (err) {
-      console.error("[guessing] enterGuessing failed:", err);
-    }
-  }, [sendGuessingStateMsg]);
+    console.debug("[guessing] enterGuessing", { from: builderContext ? "builder" : "conversation" });
+    wsSend({ type: "guessing_enter", ...(builderContext ? { builderContext } : {}) });
+  }, [wsSend]);
 
   /** Legacy alias — same as enterGuessing(builderContext). Retained because
    *  SentenceConstructorBoard's `onEnterGuessing` prop is wired to this
@@ -1454,6 +1410,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   return {
     // Session state
     sessionId,
+    clientConfig,
     isInitialized,
     isLoading,
     error,
@@ -1513,6 +1470,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     // Binary-choice overlay (yes/no now routed through this same surface)
     binaryChoiceOptions,
+    binaryChoiceEscapeKind,
     dismissBinaryChoice,
 
     // Focus frame

@@ -3000,6 +3000,12 @@ export const de = {
       dashboardLevel: "Dashboard-Stufe",
       expertAgents: "Experten-Agenten",
       deepAnalysisEnabled: "Tiefenanalyse",
+      complianceRegimes: "Compliance-Vorgaben",
+      complianceRegimesHint: "Wählen Sie die rechtlichen Rahmenwerke (HIPAA, DSGVO, israelisches Bildungsministerium usw.), die für diese Einrichtung gelten. Jede Auswahl legt fest, wie lange Audit-Protokolle aufbewahrt werden, die Frist zur Meldung einer Datenpanne, den von der App angegebenen Barrierefreiheitsstandard und den erwarteten Identitätsanbieter für die Anmeldung. Gelten mehrere, hat die strengste Regel Vorrang.",
+      insuranceBridgeEnabled: "Versicherungs-Bridge",
+      billingRegime: "Abrechnungsregime",
+      billingRegimeNone: "Keines",
+      billingRegimeUsCpt: "USA (CPT-Codes)",
       // Actions
       resendInvite: "Einladung erneut senden",
       inviteResent: "Einladung erfolgreich erneut gesendet",

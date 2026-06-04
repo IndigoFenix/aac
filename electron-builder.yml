@@ -33,3 +33,19 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Aivota AAC
+
+# Auto-update channel — electron-updater fetches latest.yml from this URL on
+# launch (and every ~10 minutes thereafter while the app is running). When
+# the manifest's `version` is newer than the installed build, the new
+# installer is downloaded in the background and applied on next quit.
+#
+# `generic` provider: a static URL that serves the artifacts. Point this at
+# S3 + CloudFront (or any static host). The release script (npm run
+# release:aac) syncs `release/` to this prefix after a packaged build.
+#
+# Override via env var `AAC_UPDATE_URL` at build time if you need separate
+# beta / stable channels or per-tenant release feeds.
+publish:
+  provider: generic
+  url: ${env.AAC_UPDATE_URL:https://updates.aivota.com/aac/win/}
+  channel: latest

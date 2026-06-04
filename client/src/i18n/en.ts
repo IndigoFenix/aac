@@ -3002,6 +3002,12 @@ export const en = {
       dashboardLevel: "Dashboard Level",
       expertAgents: "Expert Agents",
       deepAnalysisEnabled: "Deep Analysis",
+      complianceRegimes: "Compliance regimes",
+      complianceRegimesHint: "Select the regulatory frameworks (HIPAA, GDPR, Israeli Ministry of Education, etc.) that apply to this institute. Each choice sets how long audit logs are kept, the deadline for reporting a data breach, the accessibility standard the app claims, and the expected sign-in identity provider. When several apply, the strictest rule wins.",
+      insuranceBridgeEnabled: "Insurance Bridge",
+      billingRegime: "Billing regime",
+      billingRegimeNone: "None",
+      billingRegimeUsCpt: "US (CPT codes)",
       // Actions
       resendInvite: "Resend Invite",
       inviteResent: "Invite resent successfully",

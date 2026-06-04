@@ -188,3 +188,29 @@ output "deployment_summary" {
     ""
   ])
 }
+
+# =============================================================================
+# AAC Auto-Update Channel
+# =============================================================================
+# Surfaced for the publisher script and for editing electron-builder.yml's
+# `publish.url`. Both are null when `enable_aac_auto_update` is false so
+# downstream tooling can detect "stack not provisioned".
+
+output "aac_update_bucket" {
+  description = "S3 bucket name for AAC desktop client release artifacts. Pass to `npm run release:aac` as AAC_UPDATE_BUCKET."
+  value       = var.enable_aac_auto_update ? aws_s3_bucket.aac_updates[0].bucket : null
+}
+
+output "aac_update_url" {
+  description = "Public HTTPS URL the desktop client polls for `latest.yml`. Set as `publish.url` in electron-builder.yml. Falls back to the raw CloudFront domain when no custom domain is configured."
+  value = var.enable_aac_auto_update ? (
+    var.domain_name != ""
+    ? "https://${var.aac_update_subdomain}.${var.domain_name}/"
+    : "https://${aws_cloudfront_distribution.aac_updates[0].domain_name}/"
+  ) : null
+}
+
+output "aac_update_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for the AAC update channel. Use with `aws cloudfront create-invalidation` if you ever need to force-purge `latest.yml` ahead of its no-cache TTL."
+  value       = var.enable_aac_auto_update ? aws_cloudfront_distribution.aac_updates[0].id : null
+}

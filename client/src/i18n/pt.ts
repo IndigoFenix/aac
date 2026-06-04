@@ -3000,6 +3000,12 @@ export const pt = {
       dashboardLevel: "Nível do painel",
       expertAgents: "Agentes especialistas",
       deepAnalysisEnabled: "Análise profunda",
+      complianceRegimes: "Regimes de conformidade",
+      complianceRegimesHint: "Selecione os marcos regulatórios (HIPAA, GDPR, Ministério da Educação de Israel, etc.) que se aplicam a esta instituição. Cada escolha define por quanto tempo os registros de auditoria são mantidos, o prazo para notificar uma violação de dados, o padrão de acessibilidade que o aplicativo declara e o provedor de identidade de login esperado. Quando vários se aplicam, prevalece a regra mais rigorosa.",
+      insuranceBridgeEnabled: "Ponte de seguros",
+      billingRegime: "Regime de faturamento",
+      billingRegimeNone: "Nenhum",
+      billingRegimeUsCpt: "EUA (códigos CPT)",
       // Actions
       resendInvite: "Reenviar convite",
       inviteResent: "Convite reenviado com sucesso",

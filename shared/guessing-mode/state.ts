@@ -172,6 +172,15 @@ function normalizedEntropy(state: GuessingModeState, def: DimensionDef): number 
  * Apply a `suggestion:<dimId>:<value>` press. Mutates and returns `state`
  * (callers managing React state should pass a clone — see `cloneState`).
  * A `dimId` of "category" sets the mode switch instead of touching weights.
+ *
+ * Newest-press-wins semantics within a dimension: the dimension's weights
+ * are RESET before the new press is applied, and any prior contradicting
+ * knowledge about the same dimension (customFacts, rejectedFacts) is
+ * cleared. This makes the user's most recent answer authoritative —
+ * "is it red? yes" followed by "actually, blue" leaves the AI with
+ * "blue" as the unambiguous color, not a tie. (Older soft-overwrite
+ * semantics produced ties + contradictions between "Known" and "Rejected"
+ * in the injection.)
  */
 export function applyPress(state: GuessingModeState, dimId: string, value: string): GuessingModeState {
   state.turnCount += 1;
@@ -191,21 +200,35 @@ export function applyPress(state: GuessingModeState, dimId: string, value: strin
   if (!def) return state; // unknown key — ignored (server logs it separately)
   if (!def.values.includes(value)) return state;
 
+  // Newer knowledge overrides older about the same dimension. Clear any
+  // contradicting custom or rejected entries for this dimension before
+  // bumping weights, so the injection doesn't list the same dim+value
+  // simultaneously in "Known" and "Rejected".
+  const dimLabel = localName(dimId);
+  state.customFacts = state.customFacts.filter((f) => f.dimension !== dimLabel);
+  state.rejectedFacts = state.rejectedFacts.filter((f) => f.dimension !== dimLabel);
+
   const ds = ensureDim(state, def);
+  // Hard reset weights — newest press is the sole positive signal. Without
+  // this, repeated presses with different values within the same dimension
+  // produce ties (PRESS_MULT × CATEGORICAL_OTHER ≈ PRESS_MULT × 1 for the
+  // earlier value), so the AI sees two competing "answers" instead of the
+  // user's latest pick.
+  for (const v of def.values) ds.weights[v] = 1;
+  ds.weights[UNKNOWN] = 1;
+  ds.dismissed = false;          // user is actively pressing in this dim
   ds.lastPressedTurn = state.turnCount;
 
   if (def.type === "binary") {
-    ds.weights[value] = (ds.weights[value] ?? 1) * PRESS_MULT;
+    ds.weights[value] = PRESS_MULT;
     const opposite = def.values.find((v) => v !== value);
-    if (opposite) ds.weights[opposite] = (ds.weights[opposite] ?? 1) * BINARY_OPPOSITE;
+    if (opposite) ds.weights[opposite] = BINARY_OPPOSITE;
   } else {
     // categorical & ternary
     for (const v of def.values) {
-      if (v === value) ds.weights[v] = (ds.weights[v] ?? 1) * PRESS_MULT;
-      else ds.weights[v] = (ds.weights[v] ?? 1) * CATEGORICAL_OTHER;
+      ds.weights[v] = v === value ? PRESS_MULT : CATEGORICAL_OTHER;
     }
   }
-  // "unknown" never decays — this is what tolerates misclicks.
 
   state.focus = dimId.includes(".") ? dimId.slice(0, dimId.indexOf(".")) : dimId;
   return state;
@@ -224,6 +247,11 @@ export function dismissDimension(state: GuessingModeState, dimId: string): Guess
  * `[GUESSING STATE]`) and logs it in `history` so a subsequent rejection can
  * unwind it. Runs on a parallel track to the registry-driven `applyPress` —
  * custom facts do NOT touch dimension weights.
+ *
+ * Newest-fact-wins within the same dimension: any prior customFact OR
+ * rejectedFact about the same `dimension` is removed before the new fact
+ * is appended. This prevents the AI from seeing contradictory state like
+ * `customFacts: [size=big, size=small]` after the user changed their mind.
  */
 export function applyCustomFact(
   state: GuessingModeState,
@@ -234,6 +262,9 @@ export function applyCustomFact(
   const dim = dimension.trim();
   const val = value.trim();
   if (!dim || !val) return state;
+  // Newer knowledge overrides older about the same dimension.
+  state.customFacts = state.customFacts.filter((f) => f.dimension !== dim);
+  state.rejectedFacts = state.rejectedFacts.filter((f) => f.dimension !== dim);
   state.turnCount += 1;
   const fact: CustomNarrowingFact = {
     dimension: dim,

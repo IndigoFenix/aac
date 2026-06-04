@@ -17,6 +17,45 @@ export interface DualAgentMessage {
   isThinking?: boolean;
 }
 
+/**
+ * Server-supplied tuning the AAC client applies on session init. Mirrors
+ * the server-side `ClientConfig` shape from `server/services/dual-agent/
+ * client-config.ts` but kept in a separate declaration so the client
+ * doesn't import from the server. All fields are optional — older
+ * servers omit them; the client falls back to its built-in defaults.
+ */
+export interface ClientConfigActivityMonitor {
+  frameCaptureRate?: number;
+  maxBufferSeconds?: number;
+  gridCols?: number;
+  gridRows?: number;
+  activitySettleMs?: number;
+  maxSilenceMs?: number;
+  minIntervalMs?: number;
+  speechPreRollMs?: number;
+  speechPostRollMs?: number;
+  heartbeatAudioMs?: number;
+}
+
+export interface ClientConfigSleep {
+  sleepThreshold?: number;
+  wakeupThreshold?: number;
+  signalHalfLifeMs?: number;
+  falseWakeBumpFactor?: number;
+  falseWakeDecayHalfLifeMs?: number;
+  falseWakeMaxThreshold?: number;
+}
+
+export interface ClientConfigGestureSerializer {
+  windowMs?: number;
+}
+
+export interface ClientConfig {
+  activityMonitor?: ClientConfigActivityMonitor;
+  sleep?: ClientConfigSleep;
+  gestureSerializer?: ClientConfigGestureSerializer;
+}
+
 /** Identified person from biometric recognition */
 export interface IdentifiedPerson {
   id: string;
@@ -157,6 +196,11 @@ export interface CachedAudioClip {
 export interface UseDualAgentReturn {
   // Session state
   sessionId: string | null;
+  /** Server-supplied tuning bundle (activity monitor / sleep / gesture).
+   *  Null until the first `initialized` message lands, or when running
+   *  against an older server that doesn't ship the field — consumers
+   *  fall back to their built-in defaults in either case. */
+  clientConfig: ClientConfig | null;
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
@@ -246,6 +290,10 @@ export interface UseDualAgentReturn {
   // implicit "Neither". Yes/no questions are surfaced through this same
   // overlay (using the canonical `yes` / `no` SYMBOLs).
   binaryChoiceOptions: BinaryChoiceOption[] | null;
+  /** Server-supplied escape-button kind: "maybe" (yellow) when the pair
+   *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
+   *  overlay is active. The display layer doesn't decide the kind. */
+  binaryChoiceEscapeKind: "maybe" | "neither" | null;
   dismissBinaryChoice: () => void;
 
   // Live API only — raw PCM audio streaming
