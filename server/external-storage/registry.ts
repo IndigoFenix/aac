@@ -31,7 +31,7 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
   },
   aac_settings: {
     core: ["aiName"],
-    log: ["elevenlabsApiKey", "chatAgentPrompt", "knownPeople"],
+    log: ["elevenlabsApiKey", "chatAgentPrompt", "autoAacPrompt", "knownPeople"],
   },
   user_students: {
     log: ["chatMemory"],

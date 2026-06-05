@@ -47,7 +47,8 @@ export type ModifierTransform =
   | "halo_cool"    // cool halo (cold)
   | "dimension"    // arrow decorations + image warp (big/small/long/short/tall/wide/thin)
   | "color"        // colored frame around slot rim — color name lives in modifier.colorValue
-  | "emotion";     // emotion face badge in a corner — rendered like "badge" (uses the modifier's emoji)
+  | "emotion"      // emotion face badge in a corner — rendered like "badge" (uses the modifier's emoji)
+  | "relational";  // directional arrow(s) beneath the symbol (next/prev/this) — details in modifier.relation
 
 /**
  * Dimension-modifier shapes. Each pattern drives both an arrow-decoration
@@ -92,6 +93,31 @@ export interface ModifierFacet {
    * the slot. e.g. "#DC2626" for color_red.
    */
   colorValue?: string;
+  /**
+   * Required when `transform === "relational"`. Drives BOTH the directional
+   * arrow(s) the compositor draws beneath the symbol AND the stack/cancel
+   * logic in `applyRelationalModifier`.
+   *
+   * Modifiers sharing an `axis` interact on a slot:
+   *   - opposite `step` signs cancel one-for-one (next vs prev),
+   *   - same sign stacks up to `maxStack` (default 4) — rendered as that many
+   *     arrows and serialized as `.next.next`,
+   *   - a `step: 0` member ("this"/current) is the neutral point: it's
+   *     mutually exclusive with the directional members on its axis.
+   * This is the generic core — new sequence/relation concepts (e.g. a
+   * "bigger/smaller" comparative axis) can reuse it by declaring their own
+   * `axis` string.
+   */
+  relation?: {
+    /** Arrow drawn beneath the symbol when this acts as a modifier. */
+    arrow: "forward" | "backward" | "up";
+    /** Modifiers on the same axis interact (cancel / stack / exclude). */
+    axis: string;
+    /** Net step along the axis: +1 advances, -1 retreats, 0 is neutral/current. */
+    step: 1 | -1 | 0;
+    /** Max repeats in one direction on a slot. Defaults to 4. */
+    maxStack?: number;
+  };
   /**
    * When true, this modifier is hidden from the generic modifier
    * carousel — the construction board surfaces it through a dedicated
@@ -210,6 +236,15 @@ export interface VocabularyItem {
   dimensionValue?: DimensionValueFacet;
   /** When present, this item is a host with an embedded payload slot. */
   composable?: ComposableFacet;
+  /**
+   * Alias expansion. When set, this item is shorthand for a single composed
+   * slot: the sentence builder and the parser normalize it to this
+   * `head[.mod[.mod]]` fragment, so the alias and its long form converge
+   * (e.g. `tomorrow` → "day.next", `yesterday` → "day.prev"). The expanded
+   * form is what serializes and renders. Must be a SINGLE slot fragment —
+   * no `+` and no `(payload)`.
+   */
+  expandsTo?: string;
   /**
    * When present, the compositor renders the SYMBOL as a hover-animated
    * sprite instead of a static image. Takes precedence over `imagePath`
@@ -817,12 +852,19 @@ const VOCAB: VocabularyItem[] = [
   // ── WHEN ─────────────────────────────────────────────────────────────────
   { key: "now", tKey: "aac.glyph.now", pos: "time", categories: ["when"],
     modeChips: { when: ["quick"] }, tone: "comment", emoji: "⏱️", exposeToAi: true },
+  // today / tomorrow / yesterday are aliases for the `day` SYMBOL carrying a
+  // relational modifier (this / next / prev). They render as the day icon with
+  // a directional arrow beneath and serialize to their long form — so the AI
+  // and the sentence builder converge on `day.this` / `day.next` / `day.prev`.
   { key: "today", tKey: "aac.glyph.today", pos: "time", categories: ["when"],
-    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "📅", exposeToAi: true },
+    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "📅", exposeToAi: true,
+    expandsTo: "day.this" },
   { key: "tomorrow", tKey: "aac.glyph.tomorrow", pos: "time", categories: ["when"],
-    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "➡️", directional: true, exposeToAi: true },
+    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "📅", exposeToAi: true,
+    expandsTo: "day.next" },
   { key: "yesterday", tKey: "aac.glyph.yesterday", pos: "time", categories: ["when"],
-    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "⬅️", directional: true, exposeToAi: true },
+    modeChips: { when: ["quick", "days"] }, tone: "comment", emoji: "📅", exposeToAi: true,
+    expandsTo: "day.prev" },
   { key: "soon", tKey: "aac.glyph.soon", pos: "time", categories: ["when"],
     modeChips: { when: ["quick"] }, tone: "comment", emoji: "⏳", exposeToAi: true },
   { key: "later", tKey: "aac.glyph.later", pos: "time", categories: ["when"],
@@ -833,6 +875,12 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { when: ["time-of-day"] }, tone: "comment", emoji: "🌙", exposeToAi: true },
   { key: "day", tKey: "aac.glyph.day", pos: "time", categories: ["when"],
     modeChips: { when: ["quick"] }, tone: "comment", emoji: "📆", exposeToAi: true },
+  // hour / minute give the relational modifiers a unit to count against, e.g.
+  // `hour.next.next` = "in two hours", `minute.prev` = "a minute ago".
+  { key: "hour", tKey: "aac.glyph.hour", pos: "time", categories: ["when"],
+    modeChips: { when: ["clock"] }, tone: "comment", emoji: "🕐", exposeToAi: true },
+  { key: "minute", tKey: "aac.glyph.minute", pos: "time", categories: ["when"],
+    modeChips: { when: ["clock"] }, tone: "comment", emoji: "⏱️", exposeToAi: true },
   // emoji weak — sun-with-face stands in for "afternoon"; same emoji as `sun`.
   { key: "afternoon", tKey: "aac.glyph.afternoon", pos: "time", categories: ["when"],
     modeChips: { when: ["time-of-day"] }, tone: "comment", emoji: "🌞", exposeToAi: true },
@@ -861,6 +909,26 @@ const VOCAB: VocabularyItem[] = [
   { key: "many", tKey: "aac.glyph.many", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "🔢", exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 32 } },
+
+  // Relational (sequence) — directional arrows drawn BENEATH the symbol that
+  // step a concept along an axis: `this` (current, points up), `next`
+  // (forward), `prev` (backward). next/prev cancel one-for-one and stack up to
+  // 4 (`day.next.next` = "in two days"); `this` is the neutral point and is
+  // mutually exclusive with next/prev on the same slot. As a HEAD SYMBOL each
+  // is just the arrow itself. RTL reverses forward/backward. The `relation`
+  // facet is generic — new sequence axes can reuse the same machinery.
+  { key: "this", tKey: "aac.glyph.this", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬆️", exposeToAi: true,
+    modifier: { appliesTo: ["time", "noun"], transform: "relational", order: 24,
+      relation: { arrow: "up", axis: "sequence", step: 0 } } },
+  { key: "next", tKey: "aac.glyph.next", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "➡️", directional: true, exposeToAi: true,
+    modifier: { appliesTo: ["time", "noun"], transform: "relational", order: 25,
+      relation: { arrow: "forward", axis: "sequence", step: 1, maxStack: 4 } } },
+  { key: "prev", tKey: "aac.glyph.prev", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬅️", directional: true, exposeToAi: true,
+    modifier: { appliesTo: ["time", "noun"], transform: "relational", order: 26,
+      relation: { arrow: "backward", axis: "sequence", step: -1, maxStack: 4 } } },
 
   // Possession — reuse the inward-/outward-hand artwork from the take/give
   // verbs so the directional meaning carries through. `my` (toward speaker)

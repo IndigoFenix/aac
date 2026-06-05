@@ -321,9 +321,19 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   // hints, because those modes constrain which tool is appropriate.
   let hint = "";
   if (input.guessingState) {
-    hint = `Action: rebuild_board using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`sentence\` fields. Don't invent new suggestion keys.`;
+    // When Speaker just asked a question (speech_text_finalized is the
+    // trigger), the answer options should match THAT question — not the
+    // engine's default offered_keys, which may belong to a different
+    // dimension than what Speaker chose to ask. Without this pivot the
+    // model fights itself trying to use both, and frequently MALFORMEDs.
+    const hasAISpeech = input.triggeringEvents.some(
+      (e) => e.type === "speech_text_finalized",
+    );
+    hint = hasAISpeech
+      ? `Action: rebuild_board with ${T.button}s that ANSWER the AI's question in <recent_events>. Pick whichever shape fits — \`suggestion:\` keys from offered_keys when the engine's dimension matches the question, \`[NARROW:<label>] <value>\` when Speaker steered onto a different axis, or \`[GUESS] <text>\` candidates when Speaker is fishing for a specific word. (If the current ${T.board} already covers the question, call \`no_change("<short reason>")\` instead — don't return empty.)`
+      : `Action: rebuild_board using the \`suggestion:dim:value\` keys from <guessing_state> offered_keys as the ${T.button}s' \`sentence\` fields. No AI question to anchor to yet, so the engine's default narrowing is the right starting point. (If the current ${T.board} already shows those keys, call \`no_change("<short reason>")\` instead — don't return empty.)`;
   } else if (input.builderState) {
-    hint = `Action: suggest_construction_buttons (up to 4 head_candidates; up to 4 modifier_candidates when a HEAD SYMBOL is placed). Don't touch the main ${T.board} while the ${T.builder} is open.`;
+    hint = `Action: suggest_construction_buttons (up to 4 head_candidates; up to 4 modifier_candidates when a HEAD SYMBOL is placed). Don't touch the main ${T.board} while the ${T.builder} is open. (If you have nothing useful to suggest for this slot, call \`no_change("<short reason>")\` instead — don't return empty.)`;
   } else {
     hint = invocationActionHint(input.triggeringEvents);
   }
@@ -360,13 +370,13 @@ function invocationActionHint(events: AgentEvent[]): string {
   }
 
   if (hasUserInput) {
-    return `Action: rebuild_board. The USER just acted — build FOLLOW-UPS that continue or clarify their statement. Think "what might they want to say NEXT after this?" (not "how would the AI reply"). Include options to elaborate the topic, switch direction, or correct themselves.`;
+    return `Action: rebuild_board. The USER just acted — build FOLLOW-UPS that continue or clarify their statement. Think "what might they want to say NEXT after this?" (not "how would the AI reply"). Include options to elaborate the topic, switch direction, or correct themselves. (If the current ${T.board} already covers good follow-ups, call \`no_change("<short reason>")\` instead — don't return empty.)`;
   }
   if (hasInterpret) {
-    return `Action: rebuild_board. The USER played a composed SENTENCE — build FOLLOW-UPS that continue or clarify the thought they just voiced.`;
+    return `Action: rebuild_board. The USER played a composed SENTENCE — build FOLLOW-UPS that continue or clarify the thought they just voiced. (If the current ${T.board} already covers good follow-ups, call \`no_change("<short reason>")\` instead — don't return empty.)`;
   }
   if (hasAiSpoke) {
-    return `Action: rebuild_board. The AI just spoke TO the user — build REPLIES the user might say back. Think "what would they say in response to this question/statement?" (not "what might they say next on their own"). If the AI asked a question, the buttons are the user's plausible answers.`;
+    return `Action: rebuild_board. The AI just spoke TO the user — build REPLIES the user might say back. Think "what would they say in response to this question/statement?" (not "what might they say next on their own"). If the AI asked a question, the buttons are the user's plausible answers. (If the current ${T.board} already covers good replies, call \`no_change("<short reason>")\` instead — don't return empty.)`;
   }
   if (hasContextUpdate) {
     return `Action: no_change. Observations don't change what the USER wants to say next — the ${T.board} stays. If the observation is genuinely worth surfacing for the user (a person they know walking in, an object they might want to react to), use add_context_button to add ONE sidebar item. Do NOT call rebuild_board.`;

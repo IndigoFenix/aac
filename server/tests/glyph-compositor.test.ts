@@ -19,6 +19,8 @@ import {
   clearSlot,
   addModifier,
   removeModifier,
+  applyRelationalModifier,
+  expandAlias,
   setPayload,
   clearPayload,
   setToneTags,
@@ -449,5 +451,91 @@ describe("canResolveGlyph — custom symbols", () => {
     // 👤 so the slot never shows ❓.
     expect(canResolveGlyph("face:contact-123")).toBe(true);
     expect(canResolveGlyph("i_me+see+face:contact-123")).toBe(true);
+  });
+});
+
+describe("alias expansion (expandsTo)", () => {
+  it("expandAlias resolves a registered alias to head + modifiers", () => {
+    expect(expandAlias("tomorrow")).toEqual({ key: "day", modifiers: ["next"] });
+    expect(expandAlias("yesterday")).toEqual({ key: "day", modifiers: ["prev"] });
+    expect(expandAlias("today")).toEqual({ key: "day", modifiers: ["this"] });
+  });
+
+  it("expandAlias returns null for non-alias keys", () => {
+    expect(expandAlias("water")).toBeNull();
+    expect(expandAlias("day")).toBeNull();
+    expect(expandAlias("not-a-key")).toBeNull();
+  });
+
+  it("parseGlyph normalizes an alias into its composed slot", () => {
+    const g = parseGlyph("tomorrow");
+    expect(g.slots[0]).toEqual({ key: "day", modifiers: ["next"], unknown: false });
+    // Round-trips to the canonical long form, so alias and long form converge.
+    expect(serializeGlyph(g)).toBe("day.next");
+  });
+
+  it("parseGlyph stacks explicitly-typed modifiers after the alias's own", () => {
+    const g = parseGlyph("tomorrow.next");
+    expect(g.slots[0].key).toBe("day");
+    expect(g.slots[0].modifiers).toEqual(["next", "next"]);
+    expect(serializeGlyph(g)).toBe("day.next.next");
+  });
+
+  it("pushSlot materializes an alias the same way (sentence-builder press)", () => {
+    const g = pushSlot(EMPTY_GLYPH, "yesterday");
+    expect(g.slots[0]).toEqual({ key: "day", modifiers: ["prev"], unknown: false });
+  });
+});
+
+describe("applyRelationalModifier", () => {
+  const base = pushSlot(EMPTY_GLYPH, "day"); // single slot, no modifiers
+
+  it("adds a directional arrow", () => {
+    const g = applyRelationalModifier(base, 0, "next");
+    expect(g.slots[0].modifiers).toEqual(["next"]);
+    expect(serializeGlyph(g)).toBe("day.next");
+  });
+
+  it("stacks the same direction up to the cap (4) and then no-ops", () => {
+    let g = base;
+    for (let i = 0; i < 6; i++) g = applyRelationalModifier(g, 0, "next");
+    expect(g.slots[0].modifiers).toEqual(["next", "next", "next", "next"]);
+    expect(serializeGlyph(g)).toBe("day.next.next.next.next");
+  });
+
+  it("opposite presses cancel one-for-one", () => {
+    let g = applyRelationalModifier(base, 0, "next");
+    g = applyRelationalModifier(g, 0, "next"); // day.next.next
+    expect(g.slots[0].modifiers).toEqual(["next", "next"]);
+    g = applyRelationalModifier(g, 0, "prev"); // cancels one next
+    expect(g.slots[0].modifiers).toEqual(["next"]);
+    g = applyRelationalModifier(g, 0, "prev"); // cancels the last next → empty
+    expect(g.slots[0].modifiers).toEqual([]);
+  });
+
+  it("treats the neutral member (this) as axis-exclusive and toggleable", () => {
+    let g = applyRelationalModifier(base, 0, "next"); // day.next
+    g = applyRelationalModifier(g, 0, "this"); // 'this' clears next, sets this
+    expect(g.slots[0].modifiers).toEqual(["this"]);
+    g = applyRelationalModifier(g, 0, "next"); // 'next' clears the neutral
+    expect(g.slots[0].modifiers).toEqual(["next"]);
+    // Toggling 'this' twice removes it.
+    g = applyRelationalModifier(g, 0, "this");
+    g = applyRelationalModifier(g, 0, "this");
+    expect(g.slots[0].modifiers).toEqual([]);
+  });
+
+  it("falls back to addModifier for non-relational keys", () => {
+    const g = applyRelationalModifier(base, 0, "color_red");
+    expect(g.slots[0].modifiers).toEqual(["color_red"]);
+  });
+
+  it("the 'in two hours' idiom round-trips", () => {
+    let g = pushSlot(EMPTY_GLYPH, "hour");
+    g = applyRelationalModifier(g, 0, "next");
+    g = applyRelationalModifier(g, 0, "next");
+    expect(serializeGlyph(g)).toBe("hour.next.next");
+    // And parses back to the same structure.
+    expect(parseGlyph("hour.next.next").slots[0].modifiers).toEqual(["next", "next"]);
   });
 });

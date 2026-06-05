@@ -25,8 +25,8 @@ import type {
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import {
-  AAC_DEFAULT_PERSONA_PROMPT,
   buildInteractiveAgentPrompt,
+  composeAacPersona,
 } from "../memory-schema/aac-memory-schema";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
@@ -562,7 +562,10 @@ export class DualAgentService {
     let interactivePrompt = "";
     const student = monitorAgent.getStudent?.();
     if (student) {
-      const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      const rawPersona = composeAacPersona({
+        custom: student.aacSettings?.chatAgentPrompt,
+        auto: student.aacSettings?.autoAacPrompt,
+      });
       const sections = initResult.enhancedSections;
       const persona = sections?.persona || rawPersona;
       const { channels: ytChannels, playlists: ytPlaylists, videos: ytVideos } =
@@ -831,7 +834,10 @@ export class DualAgentService {
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
       if (student) {
-        const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const rawPersona = composeAacPersona({
+          custom: student.aacSettings?.chatAgentPrompt,
+          auto: student.aacSettings?.autoAacPrompt,
+        });
         const sections = state.enhancedSections;
         const personaPrompt = sections?.persona || rawPersona;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));

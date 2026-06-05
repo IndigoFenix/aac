@@ -10,7 +10,8 @@
  * - Run state (messages, scratch, step count) is persisted after every turn
  *   so an interrupted run can be resumed from the last checkpoint.
  * - Writes are locked down to a small allowlist: Student_* fields and the
- *   Context_AACPrompt. Everything else is forced read-only for this agent.
+ *   Context_AACAutoPrompt (the AI-generated AAC digest). Everything else —
+ *   including the caretaker-owned Context_AACPrompt — is forced read-only.
  * - The final report is emitted by calling the submit_report tool, which
  *   marks the analysis row complete.
  */
@@ -40,7 +41,7 @@ import { MASTER_MEMORY_FIELDS } from "./sessionService";
 import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { ANALYSIS_MEMORY_FIELDS } from "./memory-schema/analysis-memory-schema";
-import { AAC_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
+import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -64,8 +65,10 @@ const THINKING_BUDGET_TOKENS = 10000;
 const RESUME_STALE_MINUTES = 5;
 
 const WRITABLE_FIELD_IDS = new Set<string>([
-  "Context_AACPrompt",
+  "Context_AACAutoPrompt", // the AUTO prompt — auto-generated digest the analysis maintains
   // Student_* ids are detected by prefix below, not listed individually
+  // NOTE: the CUSTOM prompt (Context_AACPrompt) is intentionally NOT writable
+  // here — it holds caretaker-requested behaviors and is human-owned.
 ]);
 
 const SYSTEM_PROMPT = `You are a clinical deep-analysis agent reviewing a student's progress.
@@ -73,7 +76,7 @@ const SYSTEM_PROMPT = `You are a clinical deep-analysis agent reviewing a studen
 Your task, in order:
 1. INVESTIGATE. Read the student's context, past AAC sessions (Context_StudentSessions), past clinician/user sessions (Context_UserSessions), and prior deep analyses (Context_DeepAnalyses). Sessions are sorted by importance (3 = milestone, 0 = nothing happened) and then by recency, so skim the top of each list first. Use the date and search filters to drill in — you do NOT need to read every session.
 2. REFINE SESSION METADATA. As you review individual sessions, you may (and should) update their title, summary, and importance fields when your broader view reveals a better read than the per-session summarizer had. For example: a session initially rated 1 might deserve a 3 in hindsight (it was the first time a behavior appeared), or a session summary may need clarifying context from surrounding sessions. Only title, summary, and importance are writable on session records — everything else is read-only.
-3. UPDATE STUDENT-LEVEL FINDINGS. Based on what you learn, revise the writable memory fields (Student_People, Student_Interests, Student_CommunicationStyle, Student_Preferences, Student_Notes, Context_AACPrompt) to reflect the current truth. Do not invent information — only update fields where the session record clearly supports a change. If the AAC prompt no longer reflects the student's current goals, update it.
+3. UPDATE STUDENT-LEVEL FINDINGS. Based on what you learn, revise the writable memory fields (Student_People, Student_Interests, Student_CommunicationStyle, Student_Preferences, Student_Notes, Context_AACAutoPrompt) to reflect the current truth. Do not invent information — only update fields where the session record clearly supports a change. Context_AACAutoPrompt is the AUTO AAC prompt: a concise digest of what the AAC needs to know about this student (communication level, interests, relevant medical/behavioral facts, triggers, current goals). The live AAC can't read the student's full reports mid-session, so keep this digest current and useful. The CUSTOM prompt (Context_AACPrompt) is read-only here — it holds behaviors caretakers explicitly requested; respect it but never overwrite it, and don't duplicate its instructions into the auto prompt. If a caretaker-requested behavior in the custom prompt contradicts a fact you'd add to the auto prompt, defer to the custom prompt.
 4. GENERATE THE REPORT. Call the submit_report tool exactly once with:
    - title: a short descriptive title (≤ 80 characters).
    - summary: a 2–4 sentence summary of progress and key findings.
@@ -82,7 +85,7 @@ Your task, in order:
 Guidelines:
 - Take your time and think carefully. Use extended thinking as needed.
 - Do not make up data. If the evidence is thin, say so in the report.
-- Writable memory: Student_* fields, Context_AACPrompt, and the title/summary/importance of any session record. All other memory is read-only.
+- Writable memory: Student_* fields, Context_AACAutoPrompt (the AUTO AAC prompt), and the title/summary/importance of any session record. All other memory — including Context_AACPrompt (the CUSTOM, caretaker-owned prompt) — is read-only.
 - Call submit_report when — and only when — you are ready to finalize. Do not call it more than once.`;
 
 // ---------------------------------------------------------------------------
@@ -97,7 +100,8 @@ function isWritableForDeepAnalysis(fieldId: string): boolean {
 
 /**
  * Build the memory field list for the deep-analysis agent.
- * Writable fields: Student_* and Context_AACPrompt. Everything else: readOnly.
+ * Writable fields: Student_* and Context_AACAutoPrompt. Everything else
+ * (including the caretaker-owned Context_AACPrompt): readOnly.
  */
 function buildMemoryFields(): AgentMemoryFieldWithDB[] {
   const master = MASTER_MEMORY_FIELDS.map(f =>
@@ -113,7 +117,8 @@ function buildMemoryFields(): AgentMemoryFieldWithDB[] {
 
   return [
     ...master,
-    AAC_PROMPT_FIELD,                // writable by design
+    AAC_AUTO_PROMPT_FIELD,                          // writable by design (the AUTO prompt)
+    { ...AAC_PROMPT_FIELD, readOnly: true } as AgentMemoryFieldWithDB, // CUSTOM prompt: read-only context
     ...aacContext,                   // readOnly forced above
     ...SESSION_MEMORY_FIELDS,        // already readOnly
     ...ANALYSIS_MEMORY_FIELDS,       // already readOnly

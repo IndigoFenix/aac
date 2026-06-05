@@ -1941,7 +1941,8 @@ import {
       enabled: { id: "enabled", type: "boolean", description: "Whether AAC mode is enabled" },
       demoMode: { id: "demoMode", type: "boolean", description: "Demo scenario enabled" },
       demoScenario: { id: "demoScenario", type: "string", description: "Which demo scenario to use" },
-      chatAgentPrompt: { id: "chatAgentPrompt", type: "string", description: "Custom prompt override for AAC agent" },
+      chatAgentPrompt: { id: "chatAgentPrompt", type: "string", description: "CUSTOM AAC prompt — specific behaviors caretakers explicitly requested (rigid; takes priority over the auto prompt except on safety)" },
+      autoAacPrompt: { id: "autoAacPrompt", type: "string", description: "AUTO AAC prompt — AI-generated digest of what the AAC needs to know about this student, kept current as new info is learned" },
       modelOverride: { id: "modelOverride", type: "string", description: "AI model override" },
       startupMode: {
         id: "startupMode",

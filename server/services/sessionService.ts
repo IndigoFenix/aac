@@ -62,6 +62,9 @@ import {
   CUSTOM_APP_SYSTEM_PROMPT,
   getSystemPrompt,
 } from "./system-prompts";
+import { buildGlyphSyntax, buildCustomSymbolsBlock, buildKnownPeopleBlock } from "./memory-schema/glyph-syntax";
+import { getBundledIconsBlock } from "./memory-schema/aac-memory-schema";
+import { getContactsByStudent } from "./biometric/recognition-service";
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { aacSettingsRepository } from "../repositories/aacSettingsRepository";
 import { instituteRepository } from "../repositories/instituteRepository";
@@ -153,7 +156,7 @@ import {
   LoopDetectionConfig,
 } from "./chat/tool-router";
 import {
-  AAC_DEFAULT_PERSONA_PROMPT,
+  composeAacPersona,
   getAACMemoryFields,
 } from "./memory-schema/aac-memory-schema";
 import {
@@ -167,6 +170,7 @@ import {
 } from "./memory-schema/incident-memory-schema";
 import {
   getAACSettingsMemoryFields,
+  buildAacClinicianGuidance,
 } from "./memory-schema/aac-settings-memory-schema";
 import {
   USER_MEMORY_FIELDS,
@@ -321,14 +325,13 @@ async function buildAACPersonaSystemPrompt(
   student: Student | StudentWithAacSettings,
   framework: string | null
 ): Promise<string> {
-  // Get the base general prompt for AAC
+  // Get the base general prompt for AAC. Combine both per-student prompt
+  // fields (custom caretaker-requested behaviors + auto-generated digest);
+  // composeAacPersona falls back to the default when both are empty.
   let prompt = `=== Guidelines for interacting with ${student.name} ===\n`;
-  const chatAgentPrompt = (student as StudentWithAacSettings).aacSettings?.chatAgentPrompt;
-  if (chatAgentPrompt && chatAgentPrompt.trim().length > 0) {
-    prompt += processPersonaPrompt(chatAgentPrompt, framework);
-  } else {
-    prompt += AAC_DEFAULT_PERSONA_PROMPT;
-  }
+  const aac = (student as StudentWithAacSettings).aacSettings;
+  const persona = composeAacPersona({ custom: aac?.chatAgentPrompt, auto: aac?.autoAacPrompt });
+  prompt += processPersonaPrompt(persona, framework);
   return prompt;
 }
 // ============================================================================
@@ -523,11 +526,12 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
                 col: { id: "col", type: "integer", title: "Column" },
                 label: { id: "label", type: "string", title: "Label" },
                 spokenText: { id: "spokenText", type: "string", title: "Spoken Text" },
-                color: { id: "color", type: "string", title: "Color" },
-                iconRef: { id: "iconRef", type: "string", title: "Icon" },
-                symbolPath: { id: "symbolPath", type: "string", title: "Symbol Path" },
-                rebusKey: { id: "rebusKey", type: "string", title: "Rebus Key", description: "Widgit Rebus concept name for Grid3 export (e.g. happy, mum, ice cream)" },
-                imageKey: { id: "imageKey", type: "string", title: "Image Key", description: "Unambiguous English key for auto-generated symbol images (e.g. drinking_water, play_activity)" },
+                glyph: { id: "glyph", type: "string", title: "Glyph", description: "PREFERRED visual. One or more SYMBOLs joined by '+'. A SYMBOL is an emoji (🍎), a canonical registry key (water, happy), or generate:lower_snake_case for a custom picture (only when no emoji fits). e.g. 'i_me+want+💧'. Takes precedence over iconRef/symbolPath." },
+                glyphFallback: { id: "glyphFallback", type: "string", title: "Glyph Fallback", description: "Emoji-only version of glyph (no generate:). REQUIRED whenever glyph uses any generate: SYMBOL, so the button shows something immediately while the picture is produced." },
+                color: { id: "color", type: "string", title: "Color", description: "Usually leave EMPTY — the system auto-colors buttons (yes→green, no→red, find, more). Only set to override: a named color (yellow/blue/green/red/orange/purple/pink/white/gray) or a hex." },
+                iconRef: { id: "iconRef", type: "string", title: "Icon", description: "Legacy single emoji/icon. Prefer 'glyph' instead." },
+                symbolPath: { id: "symbolPath", type: "string", title: "Symbol Path", description: "Legacy resolved symbol path. Prefer 'glyph' instead." },
+                imageKey: { id: "imageKey", type: "string", title: "Image Key", description: "Legacy single auto-generated symbol key. Prefer a glyph with a generate: SYMBOL + glyphFallback instead." },
                 selfClosing: { id: "selfClosing", type: "boolean", title: "Self Closing" },
                 action: {
                   id: "action",
@@ -1374,9 +1378,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     });
     contextMemoryFields.push(...aacFields);
 
-    // Add AAC settings fields (writable — AI can modify settings)
-    contextMemoryFields.push(...getAACSettingsMemoryFields());
-    console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields + AAC settings fields');
+    // Add AAC settings fields (writable — AI can modify settings) but NOT the
+    // prompt fields: AAC prompts are only edited during clinician interactions,
+    // never by the student-facing AAC moderator.
+    contextMemoryFields.push(...getAACSettingsMemoryFields({ includePrompts: false }));
+    console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields + AAC settings fields (no prompt fields)');
   } else {
     // Non-AAC modes use chatContextManager fields (includes institute, library, progress, reports)
     contextMemoryFields.push(...chatContextManager.getMemoryFields());
@@ -1390,37 +1396,40 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent, context.institute?.language);
     template.corePrompt = template.corePrompt + additionalPrompt;
 
+    // Teach the assistant about the AAC it configures (capabilities + the two
+    // AAC prompt fields) whenever a student is in scope. Mirrors the AAC
+    // settings memory fields added above.
+    if (hasStudent) {
+      template.corePrompt = template.corePrompt + buildAacClinicianGuidance();
+    }
+
     // === Board Mode Setup ===
     if (feature === 'boards') {
       if (featureContext?.board) {
         let boardPrompt = BOARD_SYSTEM_PROMPT;
 
-        // Load custom symbols for the student and include in prompt
+        // Append the SHARED glyph button-syntax (same source the live AAC agents
+        // use), the student's available custom symbols + faces, single-glyph
+        // mode, and the canonical icon registry — so the clinician board AI
+        // composes buttons exactly like the AAC.
         if (studentId) {
           try {
-            const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
-            if (symbols.length > 0) {
-              const symbolList = symbols.map(s => {
-                const parts = [s.key || s.id];
-                if (s.description) parts.push(`— ${s.description}`);
-                return `- ${parts.join(' ')} (ID: ${s.id})`;
-              }).join('\n');
-              boardPrompt += `\n\n## Custom Symbols
-
-Custom image symbols are available for this student's buttons. Set the \`symbolPath\` field to \`/api/custom-symbols/SYMBOL_ID/image\` to use a custom symbol instead of an emoji.
-Prefer custom symbols over emojis when the symbol clearly represents the concept.
-
-Available symbols:
-${symbolList}
-
-Example button with custom symbol:
-\`\`\`
-{ id: "btn-1", row: 0, col: 0, label: "Water", spokenText: "I want water", color: "#3B82F6", iconRef: "💧", symbolPath: "/api/custom-symbols/${symbols[0].id}/image", action: { type: "speak", text: "I want water" } }
-\`\`\``;
-              console.log(`[getMessageManager] Board mode — loaded ${symbols.length} custom symbols for student ${studentId}`);
-            }
+            const [symbols, contacts] = await Promise.all([
+              customSymbolRepository.getAvailableSymbolsForStudent(studentId),
+              getContactsByStudent(studentId).catch(() => []),
+            ]);
+            const singleGlyphButtons = !!(context.student as any)?.aacSettings?.singleGlyphButtons;
+            boardPrompt += `\n\n${buildGlyphSyntax({ singleGlyphButtons })}`;
+            const customBlock = buildCustomSymbolsBlock(symbols);
+            if (customBlock) boardPrompt += `\n\n${customBlock}`;
+            const peopleBlock = buildKnownPeopleBlock(
+              contacts.map(c => ({ id: c.id, name: c.name, relationship: c.relationship })),
+            );
+            if (peopleBlock) boardPrompt += `\n\n${peopleBlock}`;
+            boardPrompt += `\n\n${getBundledIconsBlock()}`;
+            console.log(`[getMessageManager] Board mode — ${symbols.length} custom symbols, ${contacts.length} contacts (singleGlyph=${singleGlyphButtons})`);
           } catch (err) {
-            console.warn('[getMessageManager] Failed to load custom symbols:', err);
+            console.warn('[getMessageManager] Failed to load board syntax palette:', err);
           }
         }
 
@@ -1730,7 +1739,9 @@ Example button with custom symbol:
         allowReadProgress: aacPrivacy2?.allowReadProgress ?? true,
         allowReadReports: aacPrivacy2?.allowReadReports ?? true,
       }),
-      ...getAACSettingsMemoryFields(),
+      // AAC (student) path: settings only, NEVER the prompt fields. AAC prompts
+      // are edited solely during clinician interactions.
+      ...getAACSettingsMemoryFields({ includePrompts: false }),
     ];
   } else {
     // Non-AAC modes: use chatContextManager fields (includes institute, library, progress, reports)

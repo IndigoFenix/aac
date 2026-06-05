@@ -46,6 +46,7 @@ import {
   Trash2,
   Video,
   ListVideo,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -75,6 +76,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Form state
   const [aiName, setAiName] = useState('');
   const [chatAgentPrompt, setChatAgentPrompt] = useState('');
+  // Auto-generated AAC prompt — AI-owned digest. Shown read-only; clinicians
+  // can clear it but don't hand-edit it (it's regenerated as the assistant learns).
+  const [autoAacPrompt, setAutoAacPrompt] = useState('');
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
@@ -179,6 +183,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setAutoAacPrompt(aac?.autoAacPrompt || '');
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -219,6 +224,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       const originalAiName = aac?.aiName || '';
       const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
+      const originalAutoPrompt = aac?.autoAacPrompt || '';
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
@@ -251,6 +257,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
+        autoAacPrompt !== originalAutoPrompt ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
@@ -281,13 +288,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
       aiName?: string;
       chatAgentPrompt: string;
+      autoAacPrompt: string;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsStudentVoiceId?: string;
@@ -341,6 +349,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     updateMutation.mutate({
       aiName: aiName.trim() || undefined,
       chatAgentPrompt,
+      autoAacPrompt,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
@@ -380,6 +389,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setAutoAacPrompt(aac?.autoAacPrompt || '');
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -1206,6 +1216,36 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <RotateCcw className="w-3 h-3 me-1" />
                 {t('aacSettings.resetToDefault')}
               </Button>
+
+              {/* Auto-generated context — AI-owned digest, shown read-only. The
+                  assistant keeps this current as it learns about the student. */}
+              <div className="space-y-2 border-t pt-4">
+                <Label className="text-base font-medium flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  {t('aacSettings.autoPromptLabel')}
+                </Label>
+                <Textarea
+                  value={autoAacPrompt}
+                  readOnly
+                  placeholder={t('aacSettings.autoPromptEmpty')}
+                  className="min-h-[140px] font-mono text-sm bg-muted/50"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t('aacSettings.autoPromptHint')}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoAacPrompt('')}
+                    disabled={!autoAacPrompt}
+                    className="text-xs shrink-0"
+                  >
+                    <Trash2 className="w-3 h-3 me-1" />
+                    {t('aacSettings.clearAutoPrompt')}
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

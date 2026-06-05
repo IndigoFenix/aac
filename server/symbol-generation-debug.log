@@ -3174,3 +3174,318 @@
 [2026-06-04T20:23:05.907Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
 [2026-06-04T20:23:06.063Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
 [2026-06-04T20:23:06.065Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T11:04:21.992Z] [resolveImageKeys] Resolving 17 keys: person_hungry, person_thirsty, more_food, person_done, water_glass, apple_red, bread_loaf, food_hot, food_cold, person_happy_eating, person_disgusted, person_asking_help, person_grateful, person_polite, thumbs_up, thumbs_down, mealtime_eating (format=api-path, useUnapproved=true)
+[2026-06-05T11:04:22.150Z] [resolveImageKeys] No symbol found for "person_hungry"
+[2026-06-05T11:04:22.307Z] [resolveImageKeys] No symbol found for "person_thirsty"
+[2026-06-05T11:04:22.463Z] [resolveImageKeys] No symbol found for "more_food"
+[2026-06-05T11:04:22.620Z] [resolveImageKeys] No symbol found for "person_done"
+[2026-06-05T11:04:22.776Z] [resolveImageKeys] No symbol found for "water_glass"
+[2026-06-05T11:04:22.934Z] [resolveImageKeys] No symbol found for "apple_red"
+[2026-06-05T11:04:23.093Z] [resolveImageKeys] No symbol found for "bread_loaf"
+[2026-06-05T11:04:23.249Z] [resolveImageKeys] No symbol found for "food_hot"
+[2026-06-05T11:04:23.405Z] [resolveImageKeys] No symbol found for "food_cold"
+[2026-06-05T11:04:23.562Z] [resolveImageKeys] No symbol found for "person_happy_eating"
+[2026-06-05T11:04:23.718Z] [resolveImageKeys] No symbol found for "person_disgusted"
+[2026-06-05T11:04:23.875Z] [resolveImageKeys] No symbol found for "person_asking_help"
+[2026-06-05T11:04:24.033Z] [resolveImageKeys] No symbol found for "person_grateful"
+[2026-06-05T11:04:24.189Z] [resolveImageKeys] No symbol found for "person_polite"
+[2026-06-05T11:04:24.347Z] [resolveImageKeys] Resolved "thumbs_up" → /api/custom-symbols/fd52bec7-b8fa-4297-8c4b-93702e025a29/image
+[2026-06-05T11:04:24.503Z] [resolveImageKeys] Resolved "thumbs_down" → /api/custom-symbols/b132aa37-1bb9-423e-b55d-e9c72c765dd7/image
+[2026-06-05T11:04:24.660Z] [resolveImageKeys] No symbol found for "mealtime_eating"
+[2026-06-05T11:04:24.660Z] [resolveImageKeys] Done. Resolved 2, unresolved 15: person_hungry, person_thirsty, more_food, person_done, water_glass, apple_red, bread_loaf, food_hot, food_cold, person_happy_eating, person_disgusted, person_asking_help, person_grateful, person_polite, mealtime_eating
+[2026-06-05T11:04:24.662Z] [queueGeneration] Queuing 15 keys: person_hungry, person_thirsty, more_food, person_done, water_glass, apple_red, bread_loaf, food_hot, food_cold, person_happy_eating, person_disgusted, person_asking_help, person_grateful, person_polite, mealtime_eating (hasCallback=false)
+[2026-06-05T11:04:24.839Z] [processQueue] Generating "mealtime_eating"...
+[2026-06-05T11:04:42.704Z] [COST] imageKey="mealtime_eating" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=88 | image: openai/gpt-image-1 in=95 out=272
+[2026-06-05T11:04:42.705Z] [processQueue] Generated "mealtime_eating" → 411fc8ba-0c51-49d7-820e-cbb2504c5966 (1 total)
+[2026-06-05T11:04:42.706Z] [processQueue] FULL REFINED PROMPT for "mealtime_eating": A simple, bold AAC icon illustration of a generic person with a slightly stylized head, minimal facial features (dots for eyes, small curve for mouth), and no hair, sitting at a table and eating. The person is holding a fork to their mouth, with a plate of food in front of them on a table. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-06-05T11:04:46.883Z] [processQueue] Generating "person_polite"...
+[2026-06-05T11:05:02.293Z] [COST] imageKey="person_polite" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=92 | image: openai/gpt-image-1 in=99 out=272
+[2026-06-05T11:05:02.295Z] [processQueue] Generated "person_polite" → b304eaf7-d7b1-4ebf-864b-74f92dfcabc1 (2 total)
+[2026-06-05T11:05:02.297Z] [processQueue] FULL REFINED PROMPT for "person_polite": A generic human figure, facing forward, with a slightly stylized head and body. The figure has simple dots for eyes and a small curved smile. One hand is raised to the chest, palm flat, in a gesture of politeness or respect. The figure is wearing a simple, short-sleeved blue shirt and dark gray pants. The illustration features bold black outlines, flat solid colors, and is centered on a transparent background, suitable for an AAC icon.
+[2026-06-05T11:05:06.474Z] [processQueue] Generating "person_grateful"...
+[2026-06-05T11:06:08.746Z] [COST] imageKey="person_grateful" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=79 | image: openai/gpt-image-1 in=84 out=272
+[2026-06-05T11:06:08.748Z] [processQueue] Generated "person_grateful" → bfbb593b-1d25-4d51-99dc-7ab3a55e76b8 (3 total)
+[2026-06-05T11:06:08.750Z] [processQueue] FULL REFINED PROMPT for "person_grateful": A simple, generic human figure with a slightly larger head, facing forward, with hands pressed together at the chest in a gesture of gratitude. The figure has a wide, upward-curving smile and simple dot eyes. The figure is wearing a plain, short-sleeved shirt. The illustration uses bold black outlines and flat, solid colors, on a transparent background, in AAC icon style.
+[2026-06-05T11:06:12.919Z] [processQueue] Generating "person_asking_help"...
+[2026-06-05T11:08:15.254Z] [COST] imageKey="person_asking_help" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=81 | image: openai/gpt-image-1 in=88 out=272
+[2026-06-05T11:08:15.255Z] [processQueue] Generated "person_asking_help" → 2ac879fe-01bc-46d1-84f0-2eaec209b20d (4 total)
+[2026-06-05T11:08:15.255Z] [processQueue] FULL REFINED PROMPT for "person_asking_help": A generic human figure with a slightly stylized body and larger head, standing with both arms raised and palms open, facing forward. The figure has a simple dot for eyes and a small curved line for a mouth, conveying a questioning or pleading expression. A question mark symbol is depicted above the head. The illustration uses bold black outlines and flat, solid colors on a transparent background, suitable for an AAC icon.
+[2026-06-05T11:08:19.422Z] [processQueue] Generating "person_disgusted"...
+[2026-06-05T11:08:40.039Z] [COST] imageKey="person_disgusted" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=98 | image: openai/gpt-image-1 in=106 out=272
+[2026-06-05T11:08:40.040Z] [processQueue] Generated "person_disgusted" → 7bb1837a-376a-4145-864b-a6bc15b93c22 (5 total)
+[2026-06-05T11:08:40.041Z] [processQueue] FULL REFINED PROMPT for "person_disgusted": A simple, generic human figure with a large head and small body, facing forward. The figure has a bright green face with simple black dot eyes and a prominent, exaggerated downturned mouth, indicating disgust. The figure's eyebrows are furrowed downwards, and the nose is slightly wrinkled. The figure's body is a simple, solid color, with no specific clothing details. The illustration uses bold black outlines and flat, solid colors on a transparent background, suitable for an AAC icon.
+[2026-06-05T11:08:44.208Z] [processQueue] Generating "person_happy_eating"...
+[2026-06-05T11:08:58.486Z] [COST] imageKey="person_happy_eating" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=59 | image: openai/gpt-image-1 in=65 out=272
+[2026-06-05T11:08:58.487Z] [processQueue] Generated "person_happy_eating" → 6815dc12-5c6a-4e19-a4e0-4585822d5c92 (6 total)
+[2026-06-05T11:08:58.488Z] [processQueue] FULL REFINED PROMPT for "person_happy_eating": A simple, generic human figure with a large, happy smile and dots for eyes, holding a fork with food on it up to their open mouth, with a small curve indicating the tongue. The figure is depicted from the chest up, centered, with bold black outlines and flat, solid colors.
+[2026-06-05T11:09:02.648Z] [processQueue] Generating "food_cold"...
+[2026-06-05T11:10:33.641Z] [COST] imageKey="food_cold" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=47 out=272
+[2026-06-05T11:10:33.642Z] [processQueue] Generated "food_cold" → b7d939b3-8eed-4b01-8173-ca0d7a1bc32e (7 total)
+[2026-06-05T11:10:33.643Z] [processQueue] FULL REFINED PROMPT for "food_cold": A simple AAC icon illustration of an ice cube, light blue with a bold black outline, with three white stylized snowflakes floating above it, all on a transparent background, in flat AAC icon style.
+[2026-06-05T11:10:37.812Z] [processQueue] Generating "food_hot"...
+[2026-06-05T11:10:52.256Z] [COST] imageKey="food_hot" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=61 | image: openai/gpt-image-1 in=67 out=272
+[2026-06-05T11:10:52.256Z] [processQueue] Generated "food_hot" → ca8955f3-6dfa-4659-b923-a4e489767efb (8 total)
+[2026-06-05T11:10:52.257Z] [processQueue] FULL REFINED PROMPT for "food_hot": A simple, bold AAC icon illustration of a red bowl of hot food, with two white wavy steam lines rising from the top. The bowl is shown from a slight angle, filled with a generic orange-yellow food mass. The icon features thick black outlines and flat, solid colors on a transparent background.
+[2026-06-05T11:10:56.436Z] [processQueue] Generating "bread_loaf"...
+[2026-06-05T11:11:09.876Z] [COST] imageKey="bread_loaf" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=58 | image: openai/gpt-image-1 in=64 out=272
+[2026-06-05T11:11:09.877Z] [processQueue] Generated "bread_loaf" → a91e7f23-d701-4d1f-af0d-dfaf77b75ea6 (9 total)
+[2026-06-05T11:11:09.877Z] [processQueue] FULL REFINED PROMPT for "bread_loaf": A simple, bold illustration of a whole loaf of bread, sliced, shown from the side, with a light brown crust and lighter interior, in flat AAC icon style. The loaf is centered and fills most of the frame, with bold black outlines around all shapes and solid, flat colors.
+[2026-06-05T11:11:14.045Z] [processQueue] Generating "apple_red"...
+[2026-06-05T11:11:29.043Z] [COST] imageKey="apple_red" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=56 | image: openai/gpt-image-1 in=62 out=272
+[2026-06-05T11:11:29.044Z] [processQueue] Generated "apple_red" → a89c4c5f-5919-425b-be56-dc7799c9d4b2 (10 total)
+[2026-06-05T11:11:29.045Z] [processQueue] FULL REFINED PROMPT for "apple_red": A simple, bold illustration of a single bright red apple, shown from a slightly angled side view with a short brown stem and a small green leaf at the top, rendered in flat, solid colors with thick black outlines, suitable for an AAC communication board icon on a transparent background.
+[2026-06-05T11:11:33.226Z] [processQueue] Generating "water_glass"...
+[2026-06-05T11:11:47.552Z] [COST] imageKey="water_glass" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=39 | image: openai/gpt-image-1 in=46 out=272
+[2026-06-05T11:11:47.553Z] [processQueue] Generated "water_glass" → 89ff3f50-7332-407e-be9b-f803f0cc4fac (11 total)
+[2026-06-05T11:11:47.554Z] [processQueue] FULL REFINED PROMPT for "water_glass": A clear glass tumbler filled with blue water, shown from a side view, with a bold black outline and flat, solid colors, centered on a transparent background, in a simple AAC icon style.
+[2026-06-05T11:11:51.734Z] [processQueue] Generating "person_done"...
+[2026-06-05T11:12:05.511Z] [COST] imageKey="person_done" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=80 | image: openai/gpt-image-1 in=89 out=272
+[2026-06-05T11:12:05.512Z] [processQueue] Generated "person_done" → 824743c6-732f-4319-9c37-dd360fa5086e (12 total)
+[2026-06-05T11:12:05.512Z] [processQueue] FULL REFINED PROMPT for "person_done": A simple, generic human figure with a slightly stylized head, standing with arms outstretched to the sides, palms facing forward, in a gesture indicating completion or "done." The figure has a simple dot for eyes and a small curve for the mouth. The clothing is minimal and generic. Bold black outlines, flat solid colors, no gradients or shadows, centered on a transparent background, in AAC icon style.
+[2026-06-05T11:12:09.689Z] [processQueue] Generating "more_food"...
+[2026-06-05T11:12:24.418Z] [COST] imageKey="more_food" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=70 | image: openai/gpt-image-1 in=76 out=272
+[2026-06-05T11:12:24.420Z] [processQueue] Generated "more_food" → 446d04c0-6c01-431e-9b06-2cd5960296ef (13 total)
+[2026-06-05T11:12:24.421Z] [processQueue] FULL REFINED PROMPT for "more_food": A simple AAC icon of a generic human hand holding a fork with a piece of food on it, positioned next to a second, identical piece of food, indicating "more." The hand is light brown, the fork is gray, and the two pieces of food are brown squares. Bold black outlines, flat solid colors, centered on a transparent background.
+[2026-06-05T11:12:28.596Z] [processQueue] Generating "person_thirsty"...
+[2026-06-05T11:12:42.470Z] [COST] imageKey="person_thirsty" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=98 | image: openai/gpt-image-1 in=106 out=272
+[2026-06-05T11:12:42.471Z] [processQueue] Generated "person_thirsty" → 8c14429a-c6f2-4c19-8b72-70358272370f (14 total)
+[2026-06-05T11:12:42.471Z] [processQueue] FULL REFINED PROMPT for "person_thirsty": A simple, generic human figure with a slightly stylized head, light brown skin, and no hair, standing with one hand raised to their open mouth, indicating thirst. The figure has simple black dot eyes and a small curved line for a mouth. A single blue teardrop shape is depicted near the mouth to symbolize thirst. The figure wears a simple blue shirt and dark gray pants. The illustration features bold black outlines and flat, solid colors on a transparent background, suitable for an AAC icon.
+[2026-06-05T11:12:46.643Z] [processQueue] Generating "person_hungry"...
+[2026-06-05T11:13:01.022Z] [COST] imageKey="person_hungry" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=75 | image: openai/gpt-image-1 in=82 out=272
+[2026-06-05T11:13:01.023Z] [processQueue] Generated "person_hungry" → 06dfa044-3332-438a-8db6-5a26fb7cd46f (15 total)
+[2026-06-05T11:13:01.024Z] [processQueue] FULL REFINED PROMPT for "person_hungry": A simple, generic human figure with a slightly stylized body and larger head, standing with hands on their stomach, a simple dot for eyes and a small curve for the mouth, with a thought bubble above their head containing a simple icon of a fork and knife, all rendered in flat, solid colors with bold black outlines on a transparent background, suitable for an AAC communication board.
+[2026-06-05T12:08:36.294Z] [resolveImageKeys] Resolving 13 keys: person_hungry, person_thirsty, more_food, water_glass, juice_box, milk_glass, apple_fruit, bread_loaf, cookie, meal_finished, person_eating_happily, person_saying_no, dining_table (format=api-path, useUnapproved=true)
+[2026-06-05T12:08:36.456Z] [resolveImageKeys] Resolved "person_hungry" → /api/custom-symbols/06dfa044-3332-438a-8db6-5a26fb7cd46f/image
+[2026-06-05T12:08:36.616Z] [resolveImageKeys] Resolved "person_thirsty" → /api/custom-symbols/8c14429a-c6f2-4c19-8b72-70358272370f/image
+[2026-06-05T12:08:36.775Z] [resolveImageKeys] Resolved "more_food" → /api/custom-symbols/446d04c0-6c01-431e-9b06-2cd5960296ef/image
+[2026-06-05T12:08:36.937Z] [resolveImageKeys] Resolved "water_glass" → /api/custom-symbols/89ff3f50-7332-407e-be9b-f803f0cc4fac/image
+[2026-06-05T12:08:37.099Z] [resolveImageKeys] Resolved "juice_box" → /api/custom-symbols/dc5e7288-221c-4407-b26b-32ddfde92e0f/image
+[2026-06-05T12:08:37.261Z] [resolveImageKeys] No symbol found for "milk_glass"
+[2026-06-05T12:08:37.421Z] [resolveImageKeys] No symbol found for "apple_fruit"
+[2026-06-05T12:08:37.584Z] [resolveImageKeys] Resolved "bread_loaf" → /api/custom-symbols/a91e7f23-d701-4d1f-af0d-dfaf77b75ea6/image
+[2026-06-05T12:08:37.747Z] [resolveImageKeys] No symbol found for "cookie"
+[2026-06-05T12:08:37.906Z] [resolveImageKeys] No symbol found for "meal_finished"
+[2026-06-05T12:08:38.068Z] [resolveImageKeys] No symbol found for "person_eating_happily"
+[2026-06-05T12:08:38.227Z] [resolveImageKeys] No symbol found for "person_saying_no"
+[2026-06-05T12:08:38.385Z] [resolveImageKeys] No symbol found for "dining_table"
+[2026-06-05T12:08:38.388Z] [resolveImageKeys] Done. Resolved 6, unresolved 7: milk_glass, apple_fruit, cookie, meal_finished, person_eating_happily, person_saying_no, dining_table
+[2026-06-05T12:08:38.392Z] [queueGeneration] Queuing 7 keys: milk_glass, apple_fruit, cookie, meal_finished, person_eating_happily, person_saying_no, dining_table (hasCallback=false)
+[2026-06-05T12:08:38.565Z] [processQueue] Generating "dining_table"...
+[2026-06-05T12:08:55.297Z] [COST] imageKey="dining_table" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=73 | image: openai/gpt-image-1 in=78 out=272
+[2026-06-05T12:08:55.298Z] [processQueue] Generated "dining_table" → 66e1e9d3-eb0a-4e0f-8f52-97783b18aa01 (1 total)
+[2026-06-05T12:08:55.299Z] [processQueue] FULL REFINED PROMPT for "dining_table": A simple, bold illustration of a rectangular dining table with four straight legs, viewed from a slightly elevated front-side angle. The tabletop is a solid brown, and the legs are a slightly darker brown. The outline is a thick black. The image uses flat, solid colors with no gradients or shadows, suitable for an AAC communication board icon on a transparent background.
+[2026-06-05T12:08:59.475Z] [processQueue] Generating "person_saying_no"...
+[2026-06-05T12:09:18.293Z] [COST] imageKey="person_saying_no" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=74 | image: openai/gpt-image-1 in=81 out=272
+[2026-06-05T12:09:18.294Z] [processQueue] Generated "person_saying_no" → 1e8cb282-e24b-4455-aed4-6360c92e0809 (2 total)
+[2026-06-05T12:09:18.295Z] [processQueue] FULL REFINED PROMPT for "person_saying_no": A simple, generic human figure with a slightly stylized body, facing forward, with arms crossed over the chest in a clear "no" gesture. The head is tilted slightly to one side, and the mouth is a small, flat line. The figure has a bold black outline and is filled with flat, solid colors, on a transparent background, in AAC icon style.
+[2026-06-05T12:09:22.467Z] [processQueue] Generating "person_eating_happily"...
+[2026-06-05T12:09:38.078Z] [COST] imageKey="person_eating_happily" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=81 | image: openai/gpt-image-1 in=88 out=272
+[2026-06-05T12:09:38.079Z] [processQueue] Generated "person_eating_happily" → 0151af31-9efc-4853-91af-48abdeac6959 (3 total)
+[2026-06-05T12:09:38.080Z] [processQueue] FULL REFINED PROMPT for "person_eating_happily": A simple, generic human figure with a slightly stylized head and minimal facial features (dots for eyes, a small upward curve for a happy mouth) is shown from the chest up, holding a fork with food on it near their open mouth. The figure is smiling broadly, conveying happiness. The illustration uses bold black outlines and flat, solid colors, on a transparent background, in a clean AAC icon style.
+[2026-06-05T12:09:42.255Z] [processQueue] Generating "meal_finished"...
+[2026-06-05T12:10:00.440Z] [COST] imageKey="meal_finished" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=67 | image: openai/gpt-image-1 in=73 out=272
+[2026-06-05T12:10:00.441Z] [processQueue] Generated "meal_finished" → 083f4e03-f2c6-43aa-aac0-472ee1c5ea12 (4 total)
+[2026-06-05T12:10:00.442Z] [processQueue] FULL REFINED PROMPT for "meal_finished": A simple AAC icon of a round plate with a few crumbs or small remnants of food, and a fork and knife crossed over the plate, indicating a finished meal. The plate is white, the crumbs are light brown, and the utensils are gray, all with bold black outlines, on a transparent background, in flat AAC icon style.
+[2026-06-05T12:10:04.613Z] [processQueue] Generating "cookie"...
+[2026-06-05T12:10:13.168Z] [resolveImageKeys] Resolving 7 keys: milk_glass, apple_fruit, cookie, meal_finished, person_eating_happily, person_saying_no, dining_table (format=api-path, useUnapproved=true)
+[2026-06-05T12:10:13.329Z] [resolveImageKeys] No symbol found for "milk_glass"
+[2026-06-05T12:10:13.491Z] [resolveImageKeys] No symbol found for "apple_fruit"
+[2026-06-05T12:10:13.650Z] [resolveImageKeys] No symbol found for "cookie"
+[2026-06-05T12:10:13.818Z] [resolveImageKeys] Resolved "meal_finished" → /api/custom-symbols/083f4e03-f2c6-43aa-aac0-472ee1c5ea12/image
+[2026-06-05T12:10:13.981Z] [resolveImageKeys] Resolved "person_eating_happily" → /api/custom-symbols/0151af31-9efc-4853-91af-48abdeac6959/image
+[2026-06-05T12:10:14.140Z] [resolveImageKeys] Resolved "person_saying_no" → /api/custom-symbols/1e8cb282-e24b-4455-aed4-6360c92e0809/image
+[2026-06-05T12:10:14.303Z] [resolveImageKeys] Resolved "dining_table" → /api/custom-symbols/66e1e9d3-eb0a-4e0f-8f52-97783b18aa01/image
+[2026-06-05T12:10:14.304Z] [resolveImageKeys] Done. Resolved 4, unresolved 3: milk_glass, apple_fruit, cookie
+[2026-06-05T12:10:14.306Z] [queueGeneration] Queuing 3 keys: milk_glass, apple_fruit, cookie (hasCallback=false)
+[2026-06-05T12:10:19.149Z] [COST] imageKey="cookie" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=38 | image: openai/gpt-image-1 in=43 out=272
+[2026-06-05T12:10:19.152Z] [processQueue] Generated "cookie" → 78f4a6be-9e19-4714-ac26-52ee6bfe63c3 (5 total)
+[2026-06-05T12:10:19.155Z] [processQueue] FULL REFINED PROMPT for "cookie": A round, flat, light brown cookie with dark brown chocolate chips, depicted from a top-down view, in a simple, bold AAC icon style with flat colors and thick black outlines.
+[2026-06-05T12:10:23.328Z] [processQueue] "cookie" already exists → 78f4a6be-9e19-4714-ac26-52ee6bfe63c3
+[2026-06-05T12:10:27.507Z] [processQueue] Generating "apple_fruit"...
+[2026-06-05T12:10:43.825Z] [COST] imageKey="apple_fruit" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=71 | image: openai/gpt-image-1 in=77 out=272
+[2026-06-05T12:10:43.827Z] [processQueue] Generated "apple_fruit" → 36d2bffc-d8df-405e-975e-47e6c99ef4cd (6 total)
+[2026-06-05T12:10:43.829Z] [processQueue] FULL REFINED PROMPT for "apple_fruit": A simple, bold illustration of a red apple fruit, shown from the side, with a short brown stem and a small green leaf on top. The apple is perfectly round, with a slight indentation at the top where the stem emerges. The illustration uses flat, solid colors with thick black outlines, suitable for an AAC communication board icon on a transparent background.
+[2026-06-05T12:10:47.997Z] [processQueue] Generating "milk_glass"...
+[2026-06-05T12:11:15.330Z] [COST] imageKey="milk_glass" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=32 | image: openai/gpt-image-1 in=38 out=272
+[2026-06-05T12:11:15.332Z] [processQueue] Generated "milk_glass" → 524f6a0f-09d2-4a24-9bbf-5dec10004cea (7 total)
+[2026-06-05T12:11:15.333Z] [processQueue] FULL REFINED PROMPT for "milk_glass": A clear glass filled with white milk, shown from the side, with a simple black outline, flat solid colors, and no background, in AAC icon style.
+[2026-06-05T12:11:19.501Z] [processQueue] "apple_fruit" already exists → 36d2bffc-d8df-405e-975e-47e6c99ef4cd
+[2026-06-05T12:11:23.673Z] [processQueue] "milk_glass" already exists → 524f6a0f-09d2-4a24-9bbf-5dec10004cea
+[2026-06-05T12:34:47.085Z] [resolveImageKeys] Resolving 1 keys: mealtime_eating (format=api-path, useUnapproved=true)
+[2026-06-05T12:34:47.256Z] [resolveImageKeys] Resolved "mealtime_eating" → /api/custom-symbols/411fc8ba-0c51-49d7-820e-cbb2504c5966/image
+[2026-06-05T12:34:47.257Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T12:52:06.357Z] [resolveImageKeys] Resolving 1 keys: play (format=internal, useUnapproved=true)
+[2026-06-05T12:52:06.529Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T12:52:06.530Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T12:52:12.319Z] [resolveImageKeys] Resolving 2 keys: play, go (format=internal, useUnapproved=true)
+[2026-06-05T12:52:12.777Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T12:52:13.418Z] [resolveImageKeys] Resolved "go" → __SYMBOL__:62ac4e14-b596-4da4-8c54-f865a38c1be7
+[2026-06-05T12:52:13.419Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T12:52:50.259Z] [resolveImageKeys] Resolving 4 keys: eat, play, learn, help (format=internal, useUnapproved=true)
+[2026-06-05T12:52:50.543Z] [resolveImageKeys] Resolved "eat" → __SYMBOL__:639be39e-f88c-494e-a064-ed10b490896c
+[2026-06-05T12:52:50.710Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T12:52:50.876Z] [resolveImageKeys] Resolved "learn" → __SYMBOL__:27a17169-c78f-46b6-bceb-2e9028078664
+[2026-06-05T12:52:51.044Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:d2e64259-2520-48fe-9d45-5a9c6dd17d7c
+[2026-06-05T12:52:51.046Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-06-05T12:54:02.389Z] [resolveImageKeys] Resolving 3 keys: little, very, no (format=internal, useUnapproved=true)
+[2026-06-05T12:54:02.546Z] [resolveImageKeys] No symbol found for "little"
+[2026-06-05T12:54:02.708Z] [resolveImageKeys] No symbol found for "very"
+[2026-06-05T12:54:02.864Z] [resolveImageKeys] Resolved "no" → __SYMBOL__:9b8a17d8-b924-4b12-b314-d8b998428090
+[2026-06-05T12:54:02.865Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: little, very
+[2026-06-05T12:54:02.867Z] [queueGeneration] Queuing 2 keys: little, very (hasCallback=true)
+[2026-06-05T12:54:03.027Z] [processQueue] Generating "very"...
+[2026-06-05T12:54:22.384Z] [COST] imageKey="very" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=37 | image: openai/gpt-image-1 in=43 out=272
+[2026-06-05T12:54:22.385Z] [processQueue] Generated "very" → 03145d82-02c5-413b-9abd-141e836da9f2 (1 total)
+[2026-06-05T12:54:22.386Z] [processQueue] FULL REFINED PROMPT for "very": A large, bold black arrow pointing upwards, with three smaller, progressively larger black arrows stacked below it, also pointing upwards, all on a transparent background, in flat AAC icon style.
+[2026-06-05T12:54:26.567Z] [processQueue] Generating "little"...
+[2026-06-05T12:54:42.159Z] [COST] imageKey="little" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=45 | image: openai/gpt-image-1 in=51 out=272
+[2026-06-05T12:54:42.160Z] [processQueue] Generated "little" → 4d896fcd-4ce9-49aa-b9d9-4876475a4a9f (2 total)
+[2026-06-05T12:54:42.162Z] [processQueue] FULL REFINED PROMPT for "little": A small, simple, generic human figure, standing upright, with a slightly larger head relative to the body, minimal facial features (dots for eyes, small curve for mouth), and no hair, in flat AAC icon style.
+[2026-06-05T12:54:52.170Z] [resolveImageKeys] Resolving 1 keys: sandcastle (format=api-path, useUnapproved=true)
+[2026-06-05T12:54:52.329Z] [resolveImageKeys] Resolved "sandcastle" → /api/custom-symbols/44bc68ed-5ba4-4531-b5a6-3ebf074a42e4/image
+[2026-06-05T12:54:52.331Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T12:55:04.780Z] [resolveImageKeys] Resolving 7 keys: generate:united_states, generate:europe, generate:asia, generate:japan, generate:thailand, generate:australia, generate:africa (format=internal, useUnapproved=true)
+[2026-06-05T12:55:04.946Z] [resolveImageKeys] No symbol found for "generate:united_states"
+[2026-06-05T12:55:05.128Z] [resolveImageKeys] No symbol found for "generate:europe"
+[2026-06-05T12:55:05.298Z] [resolveImageKeys] No symbol found for "generate:asia"
+[2026-06-05T12:55:05.463Z] [resolveImageKeys] No symbol found for "generate:japan"
+[2026-06-05T12:55:05.630Z] [resolveImageKeys] No symbol found for "generate:thailand"
+[2026-06-05T12:55:05.796Z] [resolveImageKeys] No symbol found for "generate:australia"
+[2026-06-05T12:55:05.966Z] [resolveImageKeys] No symbol found for "generate:africa"
+[2026-06-05T12:55:05.967Z] [resolveImageKeys] Done. Resolved 0, unresolved 7: generate:united_states, generate:europe, generate:asia, generate:japan, generate:thailand, generate:australia, generate:africa
+[2026-06-05T12:55:05.969Z] [queueGeneration] Queuing 7 keys: generate:united_states, generate:europe, generate:asia, generate:japan, generate:thailand, generate:australia, generate:africa (hasCallback=true)
+[2026-06-05T12:55:05.971Z] [resolveImageKeys] Resolving 7 keys: united_states, europe, asia, japan, thailand, australia, africa (format=api-path, useUnapproved=true)
+[2026-06-05T12:55:06.137Z] [resolveImageKeys] No symbol found for "united_states"
+[2026-06-05T12:55:06.139Z] [processQueue] Generating "generate:africa"...
+[2026-06-05T12:55:06.301Z] [resolveImageKeys] No symbol found for "europe"
+[2026-06-05T12:55:06.465Z] [resolveImageKeys] No symbol found for "asia"
+[2026-06-05T12:55:06.644Z] [resolveImageKeys] No symbol found for "japan"
+[2026-06-05T12:55:06.811Z] [resolveImageKeys] No symbol found for "thailand"
+[2026-06-05T12:55:06.974Z] [resolveImageKeys] No symbol found for "australia"
+[2026-06-05T12:55:07.153Z] [resolveImageKeys] No symbol found for "africa"
+[2026-06-05T12:55:07.154Z] [resolveImageKeys] Done. Resolved 0, unresolved 7: united_states, europe, asia, japan, thailand, australia, africa
+[2026-06-05T12:55:07.155Z] [queueGeneration] Queuing 7 keys: united_states, europe, asia, japan, thailand, australia, africa (hasCallback=true)
+[2026-06-05T12:55:20.956Z] [COST] imageKey="generate:africa" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=34 | image: openai/gpt-image-1 in=40 out=272
+[2026-06-05T12:55:20.956Z] [processQueue] Generated "generate:africa" → 748731fb-95bd-46c6-b974-fca2786730d5 (1 total)
+[2026-06-05T12:55:20.958Z] [processQueue] FULL REFINED PROMPT for "generate:africa": A simplified map outline of the continent of Africa, rendered in a solid green color, with bold black outlines, centered on a transparent background, in flat AAC icon style.
+[2026-06-05T12:55:25.125Z] [processQueue] Generating "africa"...
+[2026-06-05T12:55:41.288Z] [COST] imageKey="africa" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=32 | image: openai/gpt-image-1 in=38 out=272
+[2026-06-05T12:55:41.289Z] [processQueue] Generated "africa" → 24d226f2-1bb4-4601-b314-61682c58fbec (2 total)
+[2026-06-05T12:55:41.289Z] [processQueue] FULL REFINED PROMPT for "africa": A simplified map of the continent of Africa, rendered in a solid green color, with bold black outlines, on a transparent background, in flat AAC icon style.
+[2026-06-05T12:55:45.460Z] [processQueue] Generating "australia"...
+[2026-06-05T12:56:00.071Z] [COST] imageKey="australia" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=43 | image: openai/gpt-image-1 in=49 out=272
+[2026-06-05T12:56:00.072Z] [processQueue] Generated "australia" → 407759a7-18b5-4d1c-a1d7-cf3976822804 (3 total)
+[2026-06-05T12:56:00.073Z] [processQueue] FULL REFINED PROMPT for "australia": A simplified, bold illustration of the continent of Australia, depicted as a solid green landmass with a thick black outline, centered on a transparent background. The shape is instantly recognizable, with no internal details or features.
+[2026-06-05T12:56:04.244Z] [processQueue] Generating "thailand"...
+[2026-06-05T12:56:18.596Z] [COST] imageKey="thailand" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=68 | image: openai/gpt-image-1 in=76 out=272
+[2026-06-05T12:56:18.596Z] [processQueue] Generated "thailand" → 606bafc8-92b8-4b6d-833b-f7a52f38dc8b (4 total)
+[2026-06-05T12:56:18.597Z] [processQueue] FULL REFINED PROMPT for "thailand": A simple, bold AAC icon of the national flag of Thailand: five horizontal stripes, with a wide blue stripe in the center, flanked by two narrower white stripes, which are further flanked by two even narrower red stripes, all with thick black outlines, on a transparent background, flat solid colors, no gradients, no shadows, no text.
+[2026-06-05T12:56:22.766Z] [processQueue] Generating "japan"...
+[2026-06-05T12:56:35.870Z] [COST] imageKey="japan" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=22 | image: openai/gpt-image-1 in=28 out=272
+[2026-06-05T12:56:35.871Z] [processQueue] Generated "japan" → 9ebe85ec-e538-431f-a1d0-2ffa4a7ea989 (5 total)
+[2026-06-05T12:56:35.872Z] [processQueue] FULL REFINED PROMPT for "japan": A bold AAC icon illustration of a red circle centered on a white rectangular flag, with a simple black outline.
+[2026-06-05T12:56:40.044Z] [processQueue] Generating "asia"...
+[2026-06-05T12:56:56.601Z] [COST] imageKey="asia" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=39 | image: openai/gpt-image-1 in=45 out=272
+[2026-06-05T12:56:56.603Z] [processQueue] Generated "asia" → 88155337-8fbb-446b-aa38-5e3d26cb7f6e (6 total)
+[2026-06-05T12:56:56.605Z] [processQueue] FULL REFINED PROMPT for "asia": A simple, bold AAC icon illustration of the continent of Asia, depicted as a large, distinct landmass shape in a solid green color, with a clear black outline, on a transparent background.
+[2026-06-05T12:57:00.787Z] [processQueue] Generating "europe"...
+[2026-06-05T12:57:18.776Z] [COST] imageKey="europe" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=63 | image: openai/gpt-image-1 in=70 out=272
+[2026-06-05T12:57:18.777Z] [processQueue] Generated "europe" → 40f745ed-84f5-4605-8e55-aa8d70cb2ea4 (7 total)
+[2026-06-05T12:57:18.777Z] [processQueue] FULL REFINED PROMPT for "europe": A stylized map of the continent of Europe, depicted with bold black outlines for the landmass and a few major countries, rendered in flat, solid colors. The land is a medium green, and the surrounding water is a medium blue. No country borders or labels are visible, only the recognizable shape of the continent.
+[2026-06-05T12:57:22.942Z] [processQueue] Generating "united_states"...
+[2026-06-05T12:57:37.510Z] [COST] imageKey="united_states" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=46 | image: openai/gpt-image-1 in=51 out=272
+[2026-06-05T12:57:37.512Z] [processQueue] Generated "united_states" → aff9c354-71c9-4a6a-b278-fe9618b546f7 (8 total)
+[2026-06-05T12:57:37.514Z] [processQueue] FULL REFINED PROMPT for "united_states": A bold, flat AAC icon illustration of the continental United States map, rendered in a solid blue color with thick black outlines. The shape of the contiguous 48 states is clearly visible and centered, with no Alaska or Hawaii.
+[2026-06-05T12:57:41.699Z] [processQueue] Generating "generate:australia"...
+[2026-06-05T12:57:55.468Z] [COST] imageKey="generate:australia" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=33 | image: openai/gpt-image-1 in=40 out=272
+[2026-06-05T12:57:55.469Z] [processQueue] Generated "generate:australia" → d8110e2b-aaba-4996-886f-3913d113dbae (9 total)
+[2026-06-05T12:57:55.471Z] [processQueue] FULL REFINED PROMPT for "generate:australia": A stylized map of the continent of Australia, depicted as a solid green shape with a bold black outline, centered on a transparent background, in flat AAC icon style.
+[2026-06-05T12:57:59.646Z] [processQueue] Generating "generate:thailand"...
+[2026-06-05T12:58:16.407Z] [COST] imageKey="generate:thailand" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=71 | image: openai/gpt-image-1 in=77 out=272
+[2026-06-05T12:58:16.408Z] [processQueue] Generated "generate:thailand" → d847c343-21a4-4cc2-985e-60978e8d27ab (10 total)
+[2026-06-05T12:58:16.408Z] [processQueue] FULL REFINED PROMPT for "generate:thailand": A simple, bold AAC icon illustration of the national flag of Thailand: a horizontal triband of red, white, blue, white, and red, with the central blue stripe being twice as wide as the other four stripes. The flag is depicted flat and unfurled, centered on a transparent background, with thick black outlines and flat, solid colors.
+[2026-06-05T12:58:20.582Z] [processQueue] Generating "generate:japan"...
+[2026-06-05T12:58:33.271Z] [COST] imageKey="generate:japan" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=34 | image: openai/gpt-image-1 in=40 out=272
+[2026-06-05T12:58:33.272Z] [processQueue] Generated "generate:japan" → 6b26ac77-d2dc-4922-9e15-32a50c2fdbd8 (11 total)
+[2026-06-05T12:58:33.273Z] [processQueue] FULL REFINED PROMPT for "generate:japan": A simple, bold AAC icon illustration of the national flag of Japan: a white rectangular background with a large, solid red circle perfectly centered, in flat AAC icon style.
+[2026-06-05T12:58:37.516Z] [processQueue] Generating "generate:asia"...
+[2026-06-05T12:58:55.877Z] [COST] imageKey="generate:asia" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=52 | image: openai/gpt-image-1 in=58 out=272
+[2026-06-05T12:58:55.878Z] [processQueue] Generated "generate:asia" → b7270ff9-358d-4f1a-bcf4-26728343acf6 (12 total)
+[2026-06-05T12:58:55.879Z] [processQueue] FULL REFINED PROMPT for "generate:asia": A simple, bold AAC icon illustration of the continent of Asia, depicted as a large, distinct landmass shape in a solid green color, with a clear black outline. The shape is instantly recognizable as the geographical outline of Asia, centered on a transparent background.
+[2026-06-05T12:59:00.056Z] [processQueue] Generating "generate:europe"...
+[2026-06-05T12:59:16.190Z] [COST] imageKey="generate:europe" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=59 | image: openai/gpt-image-1 in=64 out=272
+[2026-06-05T12:59:16.191Z] [processQueue] Generated "generate:europe" → b5cea86a-9907-406d-9c22-df65669864e2 (13 total)
+[2026-06-05T12:59:16.192Z] [processQueue] FULL REFINED PROMPT for "generate:europe": A simple, bold AAC icon illustration of the continent of Europe. The landmass is depicted in a solid, medium-blue color, with a clear, thick black outline. The shape is instantly recognizable, showing the distinct peninsulas and islands associated with Europe, centered on a transparent background.
+[2026-06-05T12:59:20.361Z] [processQueue] Generating "generate:united_states"...
+[2026-06-05T12:59:37.073Z] [COST] imageKey="generate:united_states" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=68 | image: openai/gpt-image-1 in=74 out=272
+[2026-06-05T12:59:37.074Z] [processQueue] Generated "generate:united_states" → 405c60f0-e531-45ca-b3e9-923f81be228a (14 total)
+[2026-06-05T12:59:37.075Z] [processQueue] FULL REFINED PROMPT for "generate:united_states": A bold illustration of the map of the United States of America, including Alaska and Hawaii as smaller insets, rendered in flat, solid colors with a thick black outline. The main continental landmass is green, Alaska is light blue, and Hawaii is yellow. The icon is centered on a transparent background, suitable for an AAC communication board.
+[2026-06-05T13:12:30.785Z] [resolveImageKeys] Resolving 1 keys: weekend (format=internal, useUnapproved=true)
+[2026-06-05T13:12:30.961Z] [resolveImageKeys] No symbol found for "weekend"
+[2026-06-05T13:12:30.962Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: weekend
+[2026-06-05T13:12:30.963Z] [queueGeneration] Queuing 1 keys: weekend (hasCallback=true)
+[2026-06-05T13:12:31.130Z] [processQueue] Generating "weekend"...
+[2026-06-05T13:12:49.040Z] [COST] imageKey="weekend" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=51 | image: openai/gpt-image-1 in=57 out=272
+[2026-06-05T13:12:49.041Z] [processQueue] Generated "weekend" → da2acefc-87ae-4650-b582-f60d85874f18 (1 total)
+[2026-06-05T13:12:49.041Z] [processQueue] FULL REFINED PROMPT for "weekend": A simple AAC icon of a calendar page with "SAT" and "SUN" highlighted in a contrasting color, perhaps with a small sun icon or a relaxed figure next to it, rendered in flat, bold colors with thick black outlines on a transparent background.
+[2026-06-05T14:22:03.855Z] [resolveImageKeys] Resolving 1 keys: ok (format=internal, useUnapproved=true)
+[2026-06-05T14:22:04.015Z] [resolveImageKeys] Resolved "ok" → __SYMBOL__:0df7bbd7-68f9-4f7f-a00b-12eac1a32d8d
+[2026-06-05T14:22:04.016Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T14:22:16.698Z] [resolveImageKeys] Resolving 2 keys: morning, afternoon (format=internal, useUnapproved=true)
+[2026-06-05T14:22:16.883Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-05T14:22:17.045Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-05T14:22:17.048Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:22:26.640Z] [resolveImageKeys] Resolving 2 keys: morning, afternoon (format=internal, useUnapproved=true)
+[2026-06-05T14:22:26.959Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-05T14:22:27.114Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-05T14:22:27.115Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:22:49.556Z] [resolveImageKeys] Resolving 2 keys: play, help (format=internal, useUnapproved=true)
+[2026-06-05T14:22:49.734Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T14:22:49.895Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:d2e64259-2520-48fe-9d45-5a9c6dd17d7c
+[2026-06-05T14:22:49.895Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:23:26.762Z] [resolveImageKeys] Resolving 3 keys: yes, later, now (format=internal, useUnapproved=true)
+[2026-06-05T14:23:26.924Z] [resolveImageKeys] Resolved "yes" → __SYMBOL__:8ea78a1f-76b4-48ab-a92e-4c49372f7011
+[2026-06-05T14:23:27.083Z] [resolveImageKeys] Resolved "later" → __SYMBOL__:cf0e9ad3-09b4-426b-810a-36bad996719a
+[2026-06-05T14:23:27.241Z] [resolveImageKeys] Resolved "now" → __SYMBOL__:97119e53-7222-4824-82d6-1464ed5d1593
+[2026-06-05T14:23:27.243Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-06-05T14:25:02.822Z] [resolveImageKeys] Resolving 2 keys: confused, more (format=internal, useUnapproved=true)
+[2026-06-05T14:25:03.142Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-05T14:25:03.298Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-05T14:25:03.300Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:27:09.057Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-05T14:27:09.274Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-05T14:27:09.276Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T14:27:22.782Z] [resolveImageKeys] Resolving 1 keys: no (format=internal, useUnapproved=true)
+[2026-06-05T14:27:22.939Z] [resolveImageKeys] Resolved "no" → __SYMBOL__:9b8a17d8-b924-4b12-b314-d8b998428090
+[2026-06-05T14:27:22.940Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T14:28:03.106Z] [resolveImageKeys] Resolving 4 keys: eat, play, learn, help (format=internal, useUnapproved=true)
+[2026-06-05T14:28:03.265Z] [resolveImageKeys] Resolved "eat" → __SYMBOL__:639be39e-f88c-494e-a064-ed10b490896c
+[2026-06-05T14:28:03.421Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T14:28:03.579Z] [resolveImageKeys] Resolved "learn" → __SYMBOL__:27a17169-c78f-46b6-bceb-2e9028078664
+[2026-06-05T14:28:03.735Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:d2e64259-2520-48fe-9d45-5a9c6dd17d7c
+[2026-06-05T14:28:03.735Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-06-05T14:28:52.690Z] [resolveImageKeys] Resolving 2 keys: play#question, more (format=internal, useUnapproved=true)
+[2026-06-05T14:28:52.853Z] [resolveImageKeys] Resolved "play#question" → __SYMBOL__:f9cf94a5-5719-4e01-bce7-f6b379c7fc4d
+[2026-06-05T14:28:53.010Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-05T14:28:53.018Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:29:07.604Z] [resolveImageKeys] Resolving 1 keys: drone (format=api-path, useUnapproved=true)
+[2026-06-05T14:29:07.904Z] [resolveImageKeys] Resolved "drone" → /api/custom-symbols/3a2eb2ad-13b9-41e9-8d9a-25925e41da5f/image
+[2026-06-05T14:29:07.906Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T14:31:00.570Z] [resolveImageKeys] Resolving 2 keys: help, play (format=internal, useUnapproved=true)
+[2026-06-05T14:31:00.727Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:d2e64259-2520-48fe-9d45-5a9c6dd17d7c
+[2026-06-05T14:31:00.887Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-05T14:31:00.889Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-05T14:31:33.120Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-05T14:31:33.302Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-05T14:31:33.303Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-05T14:31:33.304Z] [resolveImageKeys] Resolving 1 keys: treasure (format=api-path, useUnapproved=true)
+[2026-06-05T14:31:33.459Z] [resolveImageKeys] No symbol found for "treasure"
+[2026-06-05T14:31:33.462Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: treasure
+[2026-06-05T14:31:33.463Z] [queueGeneration] Queuing 1 keys: treasure (hasCallback=true)
+[2026-06-05T14:31:33.619Z] [processQueue] Generating "treasure"...
+[2026-06-05T14:31:52.048Z] [COST] imageKey="treasure" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=46 | image: openai/gpt-image-1 in=52 out=272
+[2026-06-05T14:31:52.050Z] [processQueue] Generated "treasure" → d8df0877-ed02-435a-9b62-0eb12b33a788 (1 total)
+[2026-06-05T14:31:52.051Z] [processQueue] FULL REFINED PROMPT for "treasure": A closed wooden treasure chest with a domed lid, reinforced with dark metal bands and a prominent gold lock on the front, in flat AAC icon style. The chest is brown with dark gray metal details and a bright yellow lock.
+[2026-06-05T14:32:47.571Z] [resolveImageKeys] Resolving 1 keys: youre_welcome (format=internal, useUnapproved=true)
+[2026-06-05T14:32:47.736Z] [resolveImageKeys] Resolved "youre_welcome" → __SYMBOL__:d086130e-8e2a-4c00-a866-6d25069a5f81
+[2026-06-05T14:32:47.737Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

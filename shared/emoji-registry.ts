@@ -362,6 +362,85 @@ export function hasEmoji(key: string): boolean {
   return resolveEmoji(key) !== undefined;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RTL non-reversible emoji
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// In RTL the glyph compositor mirrors symbol artwork horizontally (so a
+// person/arrow points the natural reading direction). That looks right for
+// pictographs but reads as garbage for emoji that *contain text* — letters,
+// digits, whole words ("SOS", "NEW", "100"), or asymmetric punctuation ("?").
+// A mirrored "🔤" or "💯" is just wrong. This registry flags those so the flip
+// is skipped for them while ordinary pictographs still mirror.
+//
+// Two layers, mirroring the emoji map above:
+//   1. NON_REVERSIBLE_RANGES — Unicode blocks whose glyphs ARE letterforms /
+//      digits / enclosed text. Cheap span checks cover whole alphabets at once.
+//   2. NON_REVERSIBLE_CODEPOINTS — individual pictographs that spell text or
+//      numbers but live outside those blocks (💯, 🔟, © ®, the ? / ! marks).
+//
+// To extend: add a code point to NON_REVERSIBLE_CODEPOINTS (use String.codePointAt,
+// e.g. `"🆕".codePointAt(0) === 0x1f195`), or widen a range when a whole block
+// of text-glyphs needs excluding.
+
+const NON_REVERSIBLE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x0030, 0x0039], // ASCII digits 0-9
+  [0x0041, 0x005a], // ASCII A-Z
+  [0x0061, 0x007a], // ASCII a-z
+  [0x2100, 0x214f], // Letterlike Symbols (™ ℹ № ℡ …)
+  [0x2460, 0x24ff], // Enclosed Alphanumerics (①, ⓐ, Ⓜ …)
+  [0x1f100, 0x1f1ff], // Enclosed Alphanumeric Supplement (🆕 🆘 🆔 🅰 🆎 + flag letters)
+  [0x1f200, 0x1f2ff], // Enclosed Ideographic Supplement (squared CJK 🈁 🈂 🈚 🉐 …)
+  [0x1f520, 0x1f524], // 🔠 🔡 🔢 🔣 🔤 input-symbol keys
+];
+
+// Pictographs that render text/numbers/asymmetric punctuation but sit outside
+// the ranges above. Stored as code points so variation selectors don't break
+// the lookup.
+const NON_REVERSIBLE_CODEPOINTS: ReadonlySet<number> = new Set([
+  0x0021, // !
+  0x003f, // ?
+  0x00a9, // ©
+  0x00ae, // ®
+  0x203c, // ‼
+  0x2049, // ⁉
+  0x2753, // ❓
+  0x2754, // ❔
+  0x2755, // ❕
+  0x2757, // ❗
+  0x1f4af, // 💯
+  0x1f51f, // 🔟 keycap ten
+]);
+
+const KEYCAP_COMBINER = 0x20e3; // builds 0️⃣–9️⃣ #️⃣ *️⃣
+const VARIATION_SELECTOR_16 = 0xfe0f;
+const ZWJ = 0x200d;
+
+/**
+ * True when an emoji (or raw character/sequence) must NOT be horizontally
+ * mirrored in RTL, because it carries letters, digits, a word, or asymmetric
+ * punctuation whose mirror image reads wrong. Ordinary pictographs return
+ * false and still flip.
+ *
+ * Detection scans each code point: a keycap combiner (0️⃣–9️⃣) short-circuits
+ * to true, otherwise the base code point is matched against the explicit set
+ * and the letterform ranges. Variation selectors and ZWJ joiners are skipped
+ * so "0️⃣", "ℹ️" and ZWJ sequences match on their meaningful code points.
+ */
+export function isNonReversibleEmoji(str: string): boolean {
+  if (!str) return false;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0)!;
+    if (cp === VARIATION_SELECTOR_16 || cp === ZWJ) continue;
+    if (cp === KEYCAP_COMBINER) return true;
+    if (NON_REVERSIBLE_CODEPOINTS.has(cp)) return true;
+    for (const [lo, hi] of NON_REVERSIBLE_RANGES) {
+      if (cp >= lo && cp <= hi) return true;
+    }
+  }
+  return false;
+}
+
 // Re-export the pattern check for callers that need to distinguish a
 // raw emoji slot from a snake_case imageKey (e.g. parsers deciding
 // whether to queue symbol generation).

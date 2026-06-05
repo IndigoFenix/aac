@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/dialog';
 import { Cloud, CloudDownload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
+import { registerStudentFace } from '@/lib/glyph-images';
 import { BoardCanvas } from '@/components/syntAACx/board-canvas';
 import { ButtonInspector } from '@/components/syntAACx/button-inspector';
 import { BoardSelector } from '@/components/syntAACx/BoardSelector';
@@ -53,6 +54,25 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   const isDark = theme === 'dark';
 
   const { user } = useAuth();
+
+  // Populate the clinician face cache so `face:<id>` glyphs render the contact's
+  // photo across the board canvas / inspector preview / glyph builder.
+  useEffect(() => {
+    const sid = student?.id;
+    if (!sid) return;
+    apiRequest('GET', `/api/biometric/students/${sid}/contacts`)
+      .then((r) => r.json())
+      .then((d) => {
+        const contacts = Array.isArray(d) ? d : d?.contacts ?? [];
+        for (const c of contacts) {
+          if (c?.id && c?.biometricDataId) {
+            registerStudentFace(c.id, apiUrl(`/api/aac/students/${sid}/people/${c.id}/photo`));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [student?.id]);
+
   const { board, currentPageId, validation, isEditMode, setBoard } = useBoardStore();
   const { toast } = useToast();
   const { sharedState, setSharedState } = useSharedState();

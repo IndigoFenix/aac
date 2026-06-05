@@ -17,7 +17,7 @@ import {
   type DimensionPattern,
   type AnimatedSpriteFacet,
 } from "./glyph-registry.js";
-import { resolveEmoji, isEmoji } from "./emoji-registry.js";
+import { resolveEmoji, isEmoji, isNonReversibleEmoji } from "./emoji-registry.js";
 import {
   parseGlyph,
   computeLayout,
@@ -272,6 +272,10 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   const dimensionPattern = collectDimensionPattern(slot);
   const dimensionScale = dimensionPattern ? DIMENSION_SCALES[dimensionPattern] : null;
 
+  // Relational modifiers (next/prev/this) — directional arrows drawn beneath
+  // the symbol. Empty for an unmodified slot or one whose head IS the arrow.
+  const relationalArrows = collectRelationalArrows(slot);
+
   // Color modifier — draws a colored frame around the slot rim. Doesn't
   // alter the underlying symbol (emoji or image) because reliable
   // emoji-recoloring across browsers is fragile; the frame is unambiguous
@@ -290,7 +294,14 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
     ? { ...item!, imagePath: item!.composable!.emptyImagePath }
     : item;
   const url = slot ? resolveImage?.({ item: resolverItem, key: slot.key }) ?? null : null;
-  const imageReversible = !!item && !isNonReversible(item);
+  // The emoji this slot would fall back to. Computed up here (not just in the
+  // emoji branch below) because reversibility depends on it: a concept whose
+  // representative emoji is text-like (💯, 🔤, a "?") must not mirror in RTL —
+  // and that holds whether it renders as the emoji OR as a generated image of
+  // the same concept, so gating both on it kills the "loads unflipped, then
+  // flips" transition when a generated image arrives to replace the emoji.
+  const emojiChar = slot ? (item?.emoji ?? resolveEmoji(slot.key) ?? "❓") : "❓";
+  const imageReversible = !!item && !isNonReversible(item) && !isNonReversibleEmoji(emojiChar);
   const mainCx = mainX + mainSize / 2;
   const mainCy = mainY + mainSize / 2;
   const imageTransforms: string[] = [];
@@ -311,7 +322,8 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // same <image> path the real-image branch uses. The flip is baked into the
   // bitmap (not applied as an SVG transform) so it composes with the dimension
   // warp without double-flipping.
-  const emojiChar = slot ? (item?.emoji ?? resolveEmoji(slot.key) ?? "❓") : "❓";
+  // `imageReversible` already excludes text-like emoji (see above), so this
+  // also keeps "💯"/"🔤"/"?" upright in RTL.
   const emojiFlip = rtl && imageReversible;
   const wantCanvasEmoji =
     !!slot &&
@@ -427,6 +439,11 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           warp scale above keeps the symbol visually in step. */}
       {dimensionPattern && (
         <DimensionArrows pattern={dimensionPattern} layout={layout} />
+      )}
+
+      {/* Relational arrows (next/prev/this) — directional cue beneath the symbol. */}
+      {relationalArrows.length > 0 && (
+        <RelationalArrows arrows={relationalArrows} layout={layout} rtl={rtl} />
       )}
 
       {/* Composable payload overlay — payload symbol on top of host symbol. */}
@@ -576,6 +593,9 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
 
   const payloadItem = getVocabularyItem(slot.payload);
   const url = resolveImage?.({ item: payloadItem, key: slot.payload }) ?? null;
+  const payloadEmoji = payloadItem?.emoji ?? resolveEmoji(slot.payload) ?? "❓";
+  const payloadReversible =
+    !!payloadItem && !isNonReversible(payloadItem) && !isNonReversibleEmoji(payloadEmoji);
 
   return (
     <g>
@@ -594,7 +614,7 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
           width={size}
           height={size}
           transform={
-            rtl && payloadItem && !isNonReversible(payloadItem)
+            rtl && payloadReversible
               ? `translate(${x + size}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
               : undefined
           }
@@ -648,6 +668,23 @@ function collectDimensionPattern(slot: ParsedSlot | undefined): DimensionPattern
 }
 
 /**
+ * Collect the directional arrows for any relational modifiers on the slot, in
+ * composition order. next/prev/this each contribute one arrow, so a stacked
+ * `day.next.next` yields two forward arrows. Returns [] when none are present.
+ */
+function collectRelationalArrows(
+  slot: ParsedSlot | undefined
+): Array<"forward" | "backward" | "up"> {
+  if (!slot) return [];
+  const out: Array<"forward" | "backward" | "up"> = [];
+  for (const modKey of slot.modifiers) {
+    const rel = getVocabularyItem(modKey)?.modifier?.relation;
+    if (rel) out.push(rel.arrow);
+  }
+  return out;
+}
+
+/**
  * Pick the first color modifier on the slot and return its CSS color.
  * Only one color shows at a time — the AI stacking two contradictory
  * ones (color_red+color_blue) is treated as the first winning so the
@@ -697,8 +734,14 @@ const ARROW_HEAD_LEN = 7;
 function Arrow(props: {
   x1: number; y1: number; x2: number; y2: number;
   doubleHeaded?: boolean;
+  /** Override stroke color (defaults to the dimension-arrow blue). */
+  stroke?: string;
+  /** Override stroke width. */
+  width?: number;
 }): React.ReactElement {
   const { x1, y1, x2, y2, doubleHeaded } = props;
+  const stroke = props.stroke ?? ARROW_STROKE;
+  const width = props.width ?? ARROW_WIDTH;
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const halfSpread = Math.PI / 7;
   const ax = (cx: number, cy: number, dir: number, off: number) => ({
@@ -712,7 +755,7 @@ function Arrow(props: {
   const s1 = ax(x1, y1, 0, halfSpread);
   const s2 = ax(x1, y1, 0, -halfSpread);
   return (
-    <g stroke={ARROW_STROKE} strokeWidth={ARROW_WIDTH} strokeLinecap="round" fill="none">
+    <g stroke={stroke} strokeWidth={width} strokeLinecap="round" fill="none">
       <line x1={x1} y1={y1} x2={x2} y2={y2} />
       <line x1={x2} y1={y2} x2={e1.x} y2={e1.y} />
       <line x1={x2} y1={y2} x2={e2.x} y2={e2.y} />
@@ -806,6 +849,56 @@ function DimensionArrows(props: {
         </g>
       );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Relational arrows (next / prev / this)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REL_ARROW_STROKE = "#0F766E"; // teal — distinct from the dimension blue
+const REL_ARROW_WIDTH = 4;
+
+/**
+ * Draw the directional arrow(s) for relational modifiers, in a centered row
+ * just inside the bottom rim. "forward" points along the reading direction,
+ * "backward" against it, "up" points up; RTL mirrors forward/backward so
+ * "forward" always reads as "ahead of the reader". Multiple arrows (stacked
+ * next/prev) lay out left-to-right.
+ */
+function RelationalArrows(props: {
+  arrows: Array<"forward" | "backward" | "up">;
+  layout: SlotLayout;
+  rtl: boolean;
+}): React.ReactElement | null {
+  const { arrows, layout, rtl } = props;
+  if (!arrows.length) return null;
+  const W = SLOT_UNIT;
+  const cellW = 22;            // horizontal footprint per arrow
+  const gap = 2;
+  const span = arrows.length * cellW + (arrows.length - 1) * gap;
+  const startX = layout.x + W / 2 - span / 2;
+  const yMid = layout.y + W - 11; // sit just inside the bottom rim
+  const half = cellW / 2 - 2;
+  return (
+    <g>
+      {arrows.map((arrow, i) => {
+        const cx = startX + i * (cellW + gap) + cellW / 2;
+        if (arrow === "up") {
+          return (
+            <Arrow key={i} x1={cx} y1={yMid + 8} x2={cx} y2={yMid - 8}
+              stroke={REL_ARROW_STROKE} width={REL_ARROW_WIDTH} />
+          );
+        }
+        const pointsRight = (arrow === "forward") !== rtl;
+        const x1 = pointsRight ? cx - half : cx + half;
+        const x2 = pointsRight ? cx + half : cx - half;
+        return (
+          <Arrow key={i} x1={x1} y1={yMid} x2={x2} y2={yMid}
+            stroke={REL_ARROW_STROKE} width={REL_ARROW_WIDTH} />
+        );
+      })}
+    </g>
+  );
 }
 
 interface BadgeStackProps {

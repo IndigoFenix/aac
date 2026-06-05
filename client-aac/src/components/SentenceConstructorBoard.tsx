@@ -33,6 +33,7 @@ import {
   clearSlot,
   addModifier,
   removeModifier,
+  applyRelationalModifier,
   resolveActiveSlot,
   serializeGlyph,
   setPayload,
@@ -42,7 +43,7 @@ import {
 } from "@shared/glyph-compositor";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
-import { resolveEmoji } from "@shared/emoji-registry";
+import { resolveEmoji, isNonReversibleEmoji } from "@shared/emoji-registry";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import type {
@@ -52,6 +53,7 @@ import type {
 } from "@/hooks/dual-agent-types";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { SentenceButton } from "@/components/SentenceButton";
+import { Glyph } from "@/components/Glyph";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
 /** Compute the slot we want the AI to suggest for. */
@@ -660,6 +662,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const handleModifierPress = useCallback(
     (mod: VocabularyItem) => {
       if (effectiveActiveSlot == null) return;
+      // Relational modifiers (next/prev/this) don't toggle — they stack,
+      // cancel opposites, and the neutral member is axis-exclusive. The pure
+      // helper owns all of that; a repeat press of `next` adds another arrow
+      // (up to the cap) rather than removing the first.
+      if (mod.modifier?.transform === "relational") {
+        setGlyph((g) => applyRelationalModifier(g, effectiveActiveSlot, mod.key));
+        return;
+      }
       setGlyph((g) =>
         activeModifierKeys.has(mod.key)
           ? removeModifier(g, effectiveActiveSlot, mod.key)
@@ -1353,14 +1363,25 @@ function useItemLabel(item: VocabularyItem): string {
 }
 
 /**
- * RTL image-flip style. Matches the sentence display in `glyph-compositor.tsx`,
+ * RTL flip style. Matches the sentence display in `glyph-compositor.tsx`,
  * which mirrors slot images via `scale(-1, 1)` in RTL. Buttons are plain
- * `<img>` (not SVG `<image>`), so the equivalent is a CSS `scaleX(-1)`
- * transform applied at render. The compositor's `isNonReversible` helper
- * currently always returns false, so every item is flipped; mirroring that
- * here keeps the on-button visual consistent with the assembled glyph above.
+ * `<img>` / emoji `<span>` (not SVG), so the equivalent is a CSS `scaleX(-1)`
+ * transform applied at render.
  */
 const RTL_IMG_STYLE: React.CSSProperties = { transform: "scaleX(-1)" };
+
+/**
+ * Decide whether a button's icon should mirror in RTL. Mirrors the compositor:
+ * flip in RTL EXCEPT for text-like emoji (digits/letters/words/"?"), which read
+ * wrong reversed. Both branches of every chip — the `<img>` and the emoji
+ * `<span>` — go through this, so a chip can't flip its emoji one way and a
+ * later-loaded image the other (the "starts one direction, then flips" bug).
+ * Pass the concept's representative emoji for the image branch and the literal
+ * rendered char for the emoji branch.
+ */
+function rtlFlipStyle(isRTL: boolean, emojiChar: string | undefined): React.CSSProperties | undefined {
+  return isRTL && !isNonReversibleEmoji(emojiChar ?? "") ? RTL_IMG_STYLE : undefined;
+}
 
 function ModifierButton(props: {
   item: VocabularyItem;
@@ -1388,9 +1409,9 @@ function ModifierButton(props: {
     >
       <div className="icon-fill-area">
         {url ? (
-          <img src={url} alt="" className="icon-fill-img" style={isRTL ? RTL_IMG_STYLE : undefined} />
+          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, item.emoji ?? resolveEmoji(item.key))} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden>
+          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, item.emoji ?? "•")}>
             {item.emoji ?? "•"}
           </span>
         )}
@@ -1414,10 +1435,14 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
       style={{ padding: 5 }}
     >
       <div className="icon-fill-area">
-        {url ? (
-          <img src={url} alt="" className="icon-fill-img" style={isRTL ? RTL_IMG_STYLE : undefined} />
+        {item.expandsTo ? (
+          // Alias (today/tomorrow/yesterday) — preview the composed glyph it
+          // inserts (day + arrow) so the button matches the result.
+          <Glyph glyph={item.expandsTo} noBackground ariaLabel={label} />
+        ) : url ? (
+          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, item.emoji ?? resolveEmoji(item.key))} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden>
+          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, item.emoji ?? "❓")}>
             {item.emoji ?? "❓"}
           </span>
         )}
@@ -1767,13 +1792,13 @@ function AiCandidateButton(props: {
             src={renderUrl}
             alt=""
             className="icon-fill-img"
-            style={isRTL ? RTL_IMG_STYLE : undefined}
+            style={rtlFlipStyle(isRTL, item?.emoji ?? resolveEmoji(candidate.key))}
             onError={() => {
               if (renderUrl === primary.url) setPrimaryFailed(true);
             }}
           />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden>
+          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, renderEmoji ?? "❓")}>
             {renderEmoji ?? "❓"}
           </span>
         )}

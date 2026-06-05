@@ -1789,6 +1789,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               language={currentLanguage}
               voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
               suppressLocalSpeech={aiSessionActive}
+              iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
+              getFaceImage={resolveFaceImage}
               onBack={() => {
                 // Handle back at root level - could show board selector
               }}

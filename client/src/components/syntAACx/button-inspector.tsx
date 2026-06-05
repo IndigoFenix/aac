@@ -1,8 +1,8 @@
 // src/components/syntAACx/button-inspector.tsx
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useBoardStore, useSelectedButton } from "@/store/board-store";
-import { apiRequest, apiUrl } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/queryClient";
 import { useStudent } from "@/hooks/useStudent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,12 +24,21 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { Copy, Trash2, Upload, Image, X } from "lucide-react";
+import { Copy, Trash2, Image, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ActionLinkIR } from "@/types/board-ir";
 import { Glyph } from "@/components/Glyph";
+import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
+import { useClinicianBoardDeps, irToButtonInput } from "./use-clinician-board-deps";
+import { mapColorToHex, type ColorToken } from "@shared/button-color";
+import { GlyphBuilder } from "./glyph-builder";
+
+// Named color tokens offered as overrides, in display order. The system
+// auto-colors buttons by default ("Auto"); these map to the same pastel hexes
+// the AAC renders (shared/button-color COLOR_MAP).
+const COLOR_SWATCHES: ColorToken[] = ["yellow", "blue", "green", "red", "orange", "purple", "pink", "white", "gray"];
 
 export function ButtonInspector() {
   const { t, isRTL } = useLanguage();
@@ -48,20 +57,12 @@ export function ButtonInspector() {
 
   const selectedBtn = useSelectedButton();
   const [isJumpDialogOpen, setIsJumpDialogOpen] = useState(false);
-  const [isSymbolDialogOpen, setIsSymbolDialogOpen] = useState(false);
+  const [isGlyphBuilderOpen, setIsGlyphBuilderOpen] = useState(false);
   const { student } = useStudent();
-  const [availableSymbols, setAvailableSymbols] = useState<Array<{ id: string; key: string | null; description: string | null }>>([]);
-  const [symbolSearch, setSymbolSearch] = useState('');
-  const [symbolSearchResults, setSymbolSearchResults] = useState<Array<{ id: string; key: string | null; description: string | null }>>([]);
 
-  useEffect(() => {
-    if (isSymbolDialogOpen && student?.id) {
-      apiRequest('GET', `/api/custom-symbols/available/${student.id}`)
-        .then(r => r.json())
-        .then(setAvailableSymbols)
-        .catch(() => {});
-    }
-  }, [isSymbolDialogOpen, student?.id]);
+  // Shared clinician render deps (same as the board canvas) so the inspector
+  // preview matches the canvas + the AAC exactly.
+  const clinicianDeps = useClinicianBoardDeps();
 
   // Don't show in preview mode
   if (!isEditMode) {
@@ -261,28 +262,16 @@ export function ButtonInspector() {
       {/* Content */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-5">
-          {/* Preview */}
+          {/* Preview — shared renderer, identical to the canvas + the AAC. */}
           <div className="flex justify-center">
-            <div
-              className="w-20 h-20 rounded-xl flex flex-col items-center justify-center p-2 shadow-lg"
-              style={{ backgroundColor: selectedBtn.color || "#3B82F6" }}
-            >
-              {selectedBtn.symbolPath ? (
-                <img
-                  src={selectedBtn.symbolPath.startsWith("/api/") ? apiUrl(selectedBtn.symbolPath) : selectedBtn.symbolPath}
-                  alt={selectedBtn.label}
-                  className="w-8 h-8 object-contain mb-1"
-                />
-              ) : selectedBtn.iconRef && (([...selectedBtn.iconRef].length === 1 && !selectedBtn.iconRef.startsWith("fa")) || /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]/u.test(selectedBtn.iconRef)) ? (
-                <span className="text-2xl mb-1 leading-none">{selectedBtn.iconRef}</span>
-              ) : (
-                <i
-                  className={`${selectedBtn.iconRef || "fas fa-square"} text-xl mb-1 text-white`}
-                />
-              )}
-              <span className="text-[10px] text-white text-center leading-tight truncate w-full">
-                {selectedBtn.label}
-              </span>
+            <div className="w-20 h-20">
+              <BoardButtonVisual
+                variant="board"
+                interactive={false}
+                button={irToButtonInput(selectedBtn)}
+                deps={clinicianDeps}
+                textFontSize="0.625rem"
+              />
             </div>
           </div>
 
@@ -330,238 +319,92 @@ export function ButtonInspector() {
             />
           </div>
 
-          {/* Color */}
-          <div className="space-y-1.5">
-            <Label htmlFor="button-inspector-color" className={cn(
-              "text-xs",
-              isDark ? "text-slate-400" : "text-gray-600"
-            )}>
-              {t("button.color")}
-            </Label>
-            <div className="flex items-center gap-2">
-              <input
-                id="button-inspector-color"
-                type="color"
-                value={selectedBtn.color || "#3B82F6"}
-                onChange={(e) => handleUpdate("color", e.target.value)}
-                className={cn(
-                  "w-10 h-8 border rounded-lg cursor-pointer bg-transparent",
-                  isDark ? "border-slate-700" : "border-gray-300"
-                )}
-              />
-              <Input
-                value={selectedBtn.color || "#3B82F6"}
-                onChange={(e) => handleUpdate("color", e.target.value)}
-                className={cn(
-                  "flex-1 h-8 text-xs font-mono",
-                  isDark 
-                    ? "bg-slate-800 border-slate-700 text-slate-200"
-                    : "bg-white border-gray-300 text-gray-800"
-                )}
-              />
-            </div>
-          </div>
-
-          {/* Icon */}
+          {/* Color — "Auto" (the system auto-colors: yes→green, no→red, etc.)
+              or an explicit named override. Auto is the real default; leaving a
+              button on Auto stores no `color`. */}
           <div className="space-y-1.5">
             <Label className={cn(
               "text-xs",
               isDark ? "text-slate-400" : "text-gray-600"
             )}>
-              {t("button.icon")}
+              {t("button.color")}
             </Label>
-            {selectedBtn.symbolPath ? (
-              /* Custom symbol is active — show preview + remove */
-              <div className={cn(
-                "flex items-center gap-2 rounded-md border p-1.5",
-                isDark ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-gray-50"
-              )}>
-                <img
-                  src={selectedBtn.symbolPath.startsWith("/api/") ? apiUrl(selectedBtn.symbolPath) : selectedBtn.symbolPath}
-                  alt="Custom symbol"
-                  className="w-8 h-8 object-contain rounded"
-                />
-                <span className={cn(
-                  "flex-1 text-xs truncate",
-                  isDark ? "text-slate-300" : "text-gray-700"
-                )}>
-                  {(selectedBtn as any).imageKey || "Custom symbol"}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0"
-                  onClick={() => {
-                    handleUpdate("symbolPath", null);
-                    handleUpdate("iconRef", "🔲");
-                  }}
-                  title="Remove custom symbol"
-                >
-                  <X size={14} />
-                </Button>
-              </div>
-            ) : (
-              /* No custom symbol — show emoji input */
-              <Input
-                value={selectedBtn.iconRef || ""}
-                onChange={(e) => handleUpdate("iconRef", e.target.value)}
-                placeholder={t("button.iconPlaceholder")}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleUpdate("color", undefined)}
                 className={cn(
-                  "h-8 text-xs font-mono",
-                  isDark
-                    ? "bg-slate-800 border-slate-700 text-slate-200"
-                    : "bg-white border-gray-300 text-gray-800"
+                  "h-6 px-2 rounded-md text-[11px] border transition-colors",
+                  !selectedBtn.color
+                    ? "border-blue-500 ring-1 ring-blue-400 " + (isDark ? "bg-slate-700 text-slate-100" : "bg-blue-50 text-blue-700")
+                    : (isDark ? "border-slate-700 text-slate-400 hover:bg-slate-800" : "border-gray-300 text-gray-600 hover:bg-gray-100")
                 )}
-              />
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "w-full h-7 text-xs",
-                isDark
-                  ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
-                  : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-              )}
-              onClick={() => setIsSymbolDialogOpen(true)}
-            >
-              <Image size={12} className={cn("mr-1.5", isRTL && "mr-0 ml-1.5")} />
-              {selectedBtn.symbolPath ? t("button.changeSymbol") : t("button.chooseIcon")}
-            </Button>
-          </div>
-
-          {/* Rebus Key (Grid3 export) */}
-          <div className="space-y-1.5">
-            <Label htmlFor="rebusKey" className={cn(
-              "text-xs",
-              isDark ? "text-slate-400" : "text-gray-600"
-            )}>
-              {t("button.rebusKey")}
-            </Label>
-            <Input
-              id="rebusKey"
-              value={(selectedBtn as any).rebusKey || ""}
-              onChange={(e) => handleUpdate("rebusKey", e.target.value || undefined)}
-              placeholder={t("button.rebusKeyPlaceholder")}
-              className={cn(
-                "h-8 text-xs font-mono",
-                isDark
-                  ? "bg-slate-800 border-slate-700 text-slate-200"
-                  : "bg-white border-gray-300 text-gray-800"
-              )}
-            />
-            <p className={cn(
-              "text-[10px]",
-              isDark ? "text-slate-500" : "text-gray-500"
-            )}>
-              {t("button.rebusKeyHint")}
-            </p>
-          </div>
-
-          {/* Image Key (auto-generated symbol) */}
-          <div className="space-y-1.5">
-            <Label htmlFor="imageKey" className={cn(
-              "text-xs",
-              isDark ? "text-slate-400" : "text-gray-600"
-            )}>
-              {t("button.imageKey")}
-            </Label>
-            <Input
-              id="imageKey"
-              value={(selectedBtn as any).imageKey || ""}
-              onChange={(e) => handleUpdate("imageKey", e.target.value || undefined)}
-              placeholder={t("button.imageKeyPlaceholder")}
-              className={cn(
-                "h-8 text-xs font-mono",
-                isDark
-                  ? "bg-slate-800 border-slate-700 text-slate-200"
-                  : "bg-white border-gray-300 text-gray-800"
-              )}
-            />
-            <p className={cn(
-              "text-[10px]",
-              isDark ? "text-slate-500" : "text-gray-500"
-            )}>
-              {t("button.imageKeyHint")}
-            </p>
-          </div>
-
-          {/* Glyph + Fallback — composed multi-image button. When `glyph` is
-              set the board preview uses it instead of the single iconRef /
-              symbolPath / imageKey chain. Fallback renders while imageKey
-              parts of the glyph are still generating. Syntax:
-              slot1+slot2+slot3, with modifiers via `.modifier` and
-              composable payloads via `host(payload)`. */}
-          <div className="space-y-1.5">
-            <Label htmlFor="glyph" className={cn(
-              "text-xs",
-              isDark ? "text-slate-400" : "text-gray-600"
-            )}>
-              {t("button.glyph")}
-            </Label>
-            <Input
-              id="glyph"
-              value={(selectedBtn as any).glyph || ""}
-              onChange={(e) => handleUpdate("glyph", e.target.value || undefined)}
-              placeholder="i_me+want+water"
-              className={cn(
-                "h-8 text-xs font-mono",
-                isDark
-                  ? "bg-slate-800 border-slate-700 text-slate-200"
-                  : "bg-white border-gray-300 text-gray-800"
-              )}
-            />
-            <p className={cn(
-              "text-[10px] leading-tight",
-              isDark ? "text-slate-500" : "text-gray-500"
-            )}>
-              {t("button.glyphHint")}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="glyphFallback" className={cn(
-              "text-xs",
-              isDark ? "text-slate-400" : "text-gray-600"
-            )}>
-              {t("button.glyphFallback")}
-            </Label>
-            <Input
-              id="glyphFallback"
-              value={(selectedBtn as any).glyphFallback || ""}
-              onChange={(e) => handleUpdate("glyphFallback", e.target.value || undefined)}
-              placeholder="👤+🤲+💧"
-              className={cn(
-                "h-8 text-xs font-mono",
-                isDark
-                  ? "bg-slate-800 border-slate-700 text-slate-200"
-                  : "bg-white border-gray-300 text-gray-800"
-              )}
-            />
-            <p className={cn(
-              "text-[10px] leading-tight",
-              isDark ? "text-slate-500" : "text-gray-500"
-            )}>
-              {t("button.glyphFallbackHint")}
-            </p>
-          </div>
-
-          {/* Live glyph preview — only when one is set. */}
-          {((selectedBtn as any).glyph || (selectedBtn as any).glyphFallback) && (
-            <div className={cn(
-              "rounded-md border p-2",
-              isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"
-            )}>
-              <div className="text-[10px] text-gray-500 mb-1">{t("button.glyphPreview")}</div>
-              <div className="h-16 flex items-center justify-center">
-                <Glyph
-                  glyph={(selectedBtn as any).glyph}
-                  fallback={(selectedBtn as any).glyphFallback}
-                  ariaLabel={selectedBtn.label}
-                />
+              >
+                {t("button.colorAuto")}
+              </button>
+              <div className="flex flex-wrap gap-1">
+                {COLOR_SWATCHES.map((token) => {
+                  const isSel = selectedBtn.color?.toLowerCase() === token;
+                  return (
+                    <button
+                      key={token}
+                      type="button"
+                      title={token}
+                      onClick={() => handleUpdate("color", token)}
+                      className={cn(
+                        "w-6 h-6 rounded-md border transition-transform",
+                        isSel
+                          ? "ring-2 ring-blue-500 scale-105 border-blue-500"
+                          : (isDark ? "border-slate-600" : "border-gray-300")
+                      )}
+                      style={{ backgroundColor: mapColorToHex(token) }}
+                    />
+                  );
+                })}
               </div>
             </div>
-          )}
+          </div>
+
+          {/* Visual — the button’s glyph, composed in the glyph builder. */}
+          <div className="space-y-1.5">
+            <Label className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("button.visual") || "Visual"}
+            </Label>
+            <div className={cn(
+              "flex items-center gap-2 rounded-md border p-2",
+              isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"
+            )}>
+              <div className="w-16 h-16 shrink-0 flex items-center justify-center">
+                {selectedBtn.glyph
+                  ? <Glyph glyph={selectedBtn.glyph} fallback={selectedBtn.glyphFallback} ariaLabel={selectedBtn.label} />
+                  : <span className="text-3xl opacity-40">＋</span>}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "flex-1 h-8 text-xs",
+                  isDark
+                    ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
+                    : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                )}
+                onClick={() => setIsGlyphBuilderOpen(true)}
+              >
+                {t("button.editVisual") || "Edit visual"}
+              </Button>
+            </div>
+          </div>
+
+          <GlyphBuilder
+            value={selectedBtn.glyph}
+            onChange={(g) => handleUpdate("glyph", g || undefined)}
+            studentId={student?.id}
+            open={isGlyphBuilderOpen}
+            onOpenChange={setIsGlyphBuilderOpen}
+          />
 
           {/* Action */}
           <div className="space-y-1.5">
@@ -987,64 +830,6 @@ export function ButtonInspector() {
           </div>
         </div>
       </ScrollArea>
-
-      {/* Symbol Selector Dialog */}
-      <Dialog open={isSymbolDialogOpen} onOpenChange={setIsSymbolDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Choose Symbol</DialogTitle>
-            <DialogDescription>Select a custom symbol icon for this button</DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 mb-3">
-            <Input
-              value={symbolSearch}
-              onChange={e => setSymbolSearch(e.target.value)}
-              placeholder="Search symbols..."
-              className="text-sm"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && symbolSearch.trim()) {
-                  apiRequest('GET', `/api/custom-symbols/search?q=${encodeURIComponent(symbolSearch)}`)
-                    .then(r => r.json())
-                    .then(setSymbolSearchResults)
-                    .catch(() => {});
-                }
-              }}
-            />
-          </div>
-          <ScrollArea className="max-h-[300px]">
-            <div className="grid grid-cols-4 gap-2">
-              {(symbolSearch && symbolSearchResults.length > 0 ? symbolSearchResults : availableSymbols).map(s => (
-                <button type="button"
-                  key={s.id}
-                  className="border rounded-lg p-2 flex flex-col items-center gap-1 hover:bg-blue-50 transition-colors cursor-pointer"
-                  onClick={() => {
-                    handleUpdate("symbolPath", apiUrl(`/api/custom-symbols/${s.id}/image`));
-                    handleUpdate("iconRef", "🖼️");
-                    setIsSymbolDialogOpen(false);
-                    // Auto-associate with student if not already
-                    if (student?.id) {
-                      apiRequest('POST', `/api/custom-symbols/${s.id}/student-associate`, { studentId: student.id }).catch(() => {});
-                    }
-                  }}
-                >
-                  <img
-                    src={apiUrl(`/api/custom-symbols/${s.id}/image`)}
-                    alt={s.key || 'Symbol'}
-                    className="w-10 h-10 object-contain"
-                    loading="lazy"
-                  />
-                  <span className="text-[10px] text-center truncate w-full">{s.key || '...'}</span>
-                </button>
-              ))}
-              {availableSymbols.length === 0 && !symbolSearch && (
-                <div className="col-span-4 text-center text-sm text-gray-500 py-4">
-                  No symbols available. Create some in the Symbols panel.
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

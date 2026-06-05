@@ -37,6 +37,11 @@ export class GeminiChatProvider implements ChatProvider {
     };
     if (tools) config.tools = tools;
     if (toolConfig) config.toolConfig = toolConfig;
+    // Honor caller's AbortSignal so a superseded invocation can be
+    // cancelled mid-flight (cancels the local fetch — per SDK docs the
+    // server still bills tokens, but our promise rejects immediately so
+    // we don't pay the wall-clock wait).
+    if (request.signal) config.abortSignal = request.signal;
 
     // Log request summary for debugging
     const contentSummary = contents.map((c: any) => {

@@ -502,7 +502,17 @@ export const aacSettings = pgTable("aac_settings", {
   demoScenario: text("demo_scenario"), // Which demo scenario to use
 
   // AI chat behavior
-  chatAgentPrompt: text("chat_agent_prompt"), // Custom prompt override for AAC agent
+  // Two distinct per-student AAC prompt fields, both edited ONLY during
+  // clinician interactions (the live AAC moderator can never write either):
+  //   chatAgentPrompt — the CUSTOM prompt: specific behaviors caretakers have
+  //     explicitly requested. Rigid; changed only when a caretaker asks. Takes
+  //     priority over the auto prompt (except where it clashes with safety).
+  //   autoAacPrompt — the AUTO prompt: a digest the clinician AI generates and
+  //     keeps current as it learns new things about the student. It is "what the
+  //     AAC needs to know about this student" — the live startup AI can't dig
+  //     through reports, so this stands in for that detail.
+  chatAgentPrompt: text("chat_agent_prompt"), // CUSTOM prompt (caretaker-requested behaviors)
+  autoAacPrompt: text("auto_aac_prompt"), // AUTO prompt (AI-generated student digest)
   modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
   startupMode: integer("startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
 

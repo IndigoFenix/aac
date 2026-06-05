@@ -27,6 +27,13 @@ interface DynamicBoardProps {
   onBack?: () => void;
   /** Called when user or AI navigates to a different page within a multi-page board */
   onNavigate?: (pageId: string, pageName: string, buttons: BoardButton[]) => void;
+  /**
+   * Constructed-board only: load a DIFFERENT saved board entirely
+   * (board-to-board navigation, via a button whose action carries `toBoardId`).
+   * Left undefined on the AI dynamic path — such buttons then fall through to
+   * normal page/speak handling and never crash.
+   */
+  onNavigateToBoard?: (boardId: string) => void;
   language?: string;
   voiceType?: string;
   /** Resolve a contact face image from client-side cache */
@@ -129,6 +136,7 @@ export default function DynamicBoard({
   onButtonClick,
   onBack,
   onNavigate,
+  onNavigateToBoard,
   language = "en",
   voiceType,
   getFaceImage,
@@ -143,20 +151,23 @@ export default function DynamicBoard({
   // Icon/text sizing based on ratio level
   const level = RATIO_LEVELS[Math.max(1, Math.min(5, iconTextRatio))] || RATIO_LEVELS[3];
 
-  // Grid dimensions from board data — needed before computing sizes
-  const gridRows = board?.grid?.rows || DEFAULT_ROWS;
-  const gridCols = board?.grid?.cols || DEFAULT_COLS;
+  // Multi-page navigation state
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
+  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  const isMultiPage = (board?.pages?.length || 0) > 1;
+
+  // Grid dimensions: prefer the current page's per-page `layout` (constructed
+  // boards may size pages independently), then the board grid, then defaults.
+  const activePageForGrid =
+    (currentPageId ? board?.pages?.find((p) => p.id === currentPageId) : undefined) || board?.pages?.[0];
+  const gridRows = activePageForGrid?.layout?.rows || board?.grid?.rows || DEFAULT_ROWS;
+  const gridCols = activePageForGrid?.layout?.cols || board?.grid?.cols || DEFAULT_COLS;
   const totalSlots = gridRows * gridCols;
 
   // Compute icon/text font sizes dynamically based on available height and row count.
   // Available height ≈ 100dvh - header (6rem) - quickActions (~3.5rem) - padding (~1rem) = 100dvh - 10.5rem
   const iconFontSize = `clamp(1rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.iconScale}), 8rem)`;
   const textFontSize = `clamp(0.5rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.textScale}), 1.5rem)`;
-
-  // Multi-page navigation state
-  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
-  const [pageHistory, setPageHistory] = useState<string[]>([]);
-  const isMultiPage = (board?.pages?.length || 0) > 1;
 
   const [slots, setSlots] = useState<SlotState[]>(Array(totalSlots).fill(BLANK_SLOT));
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -376,6 +387,15 @@ export default function DynamicBoard({
       console.debug("[guessing] DynamicBoard click:", button.label, "| buttonType:", (button as any).buttonType);
       const action = button.action;
 
+      // Board-to-board navigation (constructed boards only). If a handler is
+      // wired and the button targets another saved board, load it and stop —
+      // no speak, no page nav. On the dynamic path (no handler) this falls
+      // through to normal handling.
+      if (action?.type === "link" && action.toBoardId && onNavigateToBoard) {
+        onNavigateToBoard(action.toBoardId);
+        return;
+      }
+
       // Handle navigation actions
       if (action?.type === "link" && action.toPageId) {
         navigateToPage(action.toPageId);
@@ -421,7 +441,7 @@ export default function DynamicBoard({
       }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard]
   );
 
   // Render nothing if completely empty
@@ -524,7 +544,11 @@ export default function DynamicBoard({
         ? t("quickActions.guess")
         : t("quickActions.more");
       const icon = kind === "wordfinder" ? "🔍" : "➕";
-      const bg = kind === "wordfinder" ? "#EDE9FE" : "#E5E7EB";
+      // Color now ships from the server (resolveButtonColorToken → find/more).
+      // Fall back to the legacy constants for any pre-fill / cached board.
+      const bg = button.color
+        ? getButtonColor(button.color, button.glyph)
+        : kind === "wordfinder" ? "#EDE9FE" : "#E5E7EB";
       return (
         <motion.button
           data-dwell

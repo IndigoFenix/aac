@@ -36,6 +36,7 @@ import { listAllVocabulary } from "@shared/glyph-registry";
 import { getLanguageName } from "@shared/language-names";
 import { ex } from "./prompt-examples";
 import { T } from "./canonical-terms";
+import { buildGlyphSyntax } from "./glyph-syntax";
 
 /**
  * Compact list of canonical SYMBOL keys. Every entry is a SYMBOL the AI
@@ -130,11 +131,16 @@ function buildBundledIconsBlock(): string {
     lines.push("");
     lines.push("MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`, `🍽️.with`). Stack by chaining: `🤗.big.please`.");
     lines.push("**This list is EXHAUSTIVE. The renderer has no image for any modifier not listed here.** Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot. If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).");
-    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "other_modifier"];
+    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "relational", "other_modifier"];
     for (const group of MODIFIER_ORDER) {
       const items = modifierGroups.get(group);
       if (!items?.length) continue;
       lines.push(`  - ${group.replace("_", " ")}: ${items.sort().join(", ")}`);
+    }
+    if (modifierGroups.get("relational")?.length) {
+      // Relational modifiers step a HEAD SYMBOL along a sequence and are the
+      // canonical way to express adjacent points in time.
+      lines.push("    relational arrows attach beneath a HEAD and step it along a sequence: `this`=current, `next`=one forward, `prev`=one back. next/prev STACK (up to 4) and CANCEL each other one-for-one. Use them for relative time: `day.this`=today, `day.next`=tomorrow, `day.prev`=yesterday, `day.next.next`=in two days, `hour.next.next`=in two hours, `week.prev`=last week. (today/tomorrow/yesterday are accepted aliases for the day forms.)");
     }
   }
 
@@ -583,95 +589,7 @@ When you ask a question, the ${T.board} MUST contain answer ${T.button}s that ma
 ${T.board}s should always provide a WIDE VARIETY of options — don't cluster around one theme. Don't narrate tool calls or board changes — just talk naturally.
 </speech_coordination>
 
-<grammar>
-  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. Choose them in this STRICT preference order — generation is a last resort, not the default:
-
-    1. \`symbol:ID\` / \`face:ID\` — a custom SYMBOL or face stored for this user. FIRST CHOICE when one fits.
-    2. **EMOJI + canonical modifier** — your DEFAULT. Almost any concrete-noun-with-a-quality can be expressed as an emoji HEAD with one or more canonical MODIFIERs from <bundled_icons>. Examples:
-         • "red apple"   → \`🍎.color_red\`     (NOT \`generate:red_apple\`)
-         • "big book"    → \`📖.big\`           (NOT \`generate:big_book\`)
-         • "my dog"      → \`🐕.my\`            (NOT \`generate:my_dog\`)
-         • "two cookies" → \`🍪.two\`           (NOT \`generate:two_cookies\`)
-         • "cold water"  → \`💧.cold\`          (NOT \`generate:cold_water\`)
-       This is BY FAR the most common case. Reach for an emoji + modifier BEFORE considering generation.
-    3. A canonical registry key from <bundled_icons> — for pronouns, abstract verbs, time concepts, deictics, and ALL modifier SYMBOLs.
-    4. A raw emoji (🍎, 🤗, 🎮, …) — for concrete nouns not covered by a custom symbol.
-    5. \`generate:<key>\` — LAST RESORT. See <generation_rules> below. Only when (1)–(4) cannot express the concept.
-
-  NEVER emit a bare snake_case word that isn't in <bundled_icons> (\`talk_about\`, \`my_day\`, \`go_school\`, \`adventure_book\` are not canonical). Bare unknown snake_case renders as ❓.
-
-  GLYPH: one phrase. A GLYPH is a HEAD SYMBOL followed by zero or more MODIFIER SYMBOLs joined with \`.\`:
-    - \`🍎\`              — head 🍎, no modifiers
-    - \`🍎.color_red\`    — head 🍎 + modifier color_red ("red apple")
-    - \`🍪.two\`          — head 🍪 + count modifier ("two cookies")
-    - \`📖.my\`           — head 📖 + possession modifier ("my book")
-    - \`🤗.big.please\`   — modifiers stack
-
-  **MODIFIER SYMBOLs are EITHER from the canonical registry OR a raw emoji.** Canonical list in <bundled_icons>: count, possession, negation, intensity, size_shape, temperature, color, social. Emojis can also serve as modifiers — they render as a small badge in a corner of the HEAD (\`📖.😢\` = sad book; \`🐕.👴\` = old dog; \`🍪.✨\` = new cookie). What's INVALID is bare unknown snake_case (\`.new\`, \`.old\`, \`.funny\`, \`.adventure\`, \`.american\`, \`.scary\`) — those have no image and render as a meaningless dot. If you need an adjective the registry doesn't have:
-    - Use the emoji version of the quality as a modifier (\`.😢\` for "sad", \`.👴\` for "old man", \`.✨\` for "new").
-    - Pick a different HEAD SYMBOL that ALREADY encodes the quality (😢 for "sad", 😂 for "funny", 👴 for "old man").
-    - Or drop the adjective from the visual entirely and put it in the spoken \`speech\` field only — the user hears "sad book" even if the icon just shows 📖.
-  Never invent a modifier outside the registry${singleGlyphButtons ? "" : ", and never compose multiple GLYPHs just to attach an adjective — one phrase = one GLYPH (HEAD + canonical modifiers)"}.
-
-${singleGlyphButtons
-  ? `  SENTENCE: one GLYPH per ${T.button}. Each ${T.button}'s \`sentence\` field is a single GLYPH (head SYMBOL + optional MODIFIER SYMBOLs). Examples:
-    - \`😴\` ("tired")
-    - \`🍎.color_red\` ("red apple")
-    - \`🍪.two\` ("two cookies")
-    - \`🤗.big.please\` ("a big hug, please")
-
-  OPERATOR: sentence-level tag appended with \`#\`. Multiple operators may stack:
-    - \`#past\`     — \`🛝#past\` = "I went to the playground"
-    - \`#future\`   — \`🛝#future\` = "I will go to the playground"
-    - \`#question\` — \`🛝#past#question\` = "Did I go to the playground?"
-  Operators modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.`
-  : `  SENTENCE: up to 3 GLYPHS joined with \`+\`:
-    - 1-glyph: \`😴\` ("tired"), \`🍎.color_red\` ("red apple")
-    - 2-glyph: \`i_me+🤒\` ("I feel sick"), \`have+💧\` ("I have water")
-    - 3-glyph: \`i_me+want+🍌\` ("I want a banana"), \`you+give+i_me\` ("you give me")
-  Match the SENTENCE shape to what's being said — don't pad. One-word answers, exclamations, and feelings are 1-glyph; full subject+verb+object thoughts are 3-glyph; mid-length expressions land at 2.
-
-  OPERATOR: sentence-level tag appended with \`#\`. Multiple operators may stack:
-    - \`#past\`     — \`i_me+go+🛝#past\` = "I went to the playground"
-    - \`#future\`   — \`i_me+go+🛝#future\` = "I will go to the playground"
-    - \`#question\` — \`mom+give+📖#past#question\` = "Did Mom give me the book?" (recipient implied)
-  Operators modify the WHOLE sentence — they never substitute for a GLYPH. Conjugate the spoken-form SENTENCE accordingly; the visual stays the same.`}
-</grammar>
-
-<generation_rules>
-\`generate:<key>\` triggers async image generation. It is the LAST RESORT. Most concepts can be expressed without it — see the SYMBOL preference order above. Reach for generation only when no emoji + canonical-modifier combo can convey the meaning.
-
-**WHEN to generate (rarely — concrete, specific, photographable things):**
-  - Specific scientific objects: \`generate:planet_mars\`, \`generate:black_hole\`, \`generate:saturn_rings\`.
-  - Specific animals where the right emoji is missing: \`generate:seagull\`, \`generate:t_rex\`, \`generate:triceratops\`, \`generate:octopus_giant\`.
-  - Specific tools or instruments: \`generate:violin\`, \`generate:telescope\`, \`generate:microscope\`, \`generate:keyboard_piano\`.
-  - Specific actions that have no emoji or canonical key. For these, use a noun form that the image generator can draw — e.g. "a person doing X" rather than just the verb "X". Examples: \`generate:person_digging\`, \`generate:person_using_computer\`.
-  - Specific people not covered by a \`face:ID\`.
-
-**WHEN NOT to generate (almost always):**
-  - **Adjectival qualities** ("sad book", "old chair", "new toy", "scary movie", "funny story") — these are qualities OF an object, not objects. The right answer is an emoji HEAD with a canonical modifier (\`📖.big\`), or a different emoji that already encodes the quality (😢 for "sad").
-  - **Phrases or abstractions** (\`generate:its_called\`, \`generate:what_is_it\`, \`generate:my_day\`, \`generate:something_new\`) — these have no clear picture; the image generator cannot draw an idea.
-  - **Anything that's already a normal emoji** (\`🍎\`, \`🐕\`, \`🚗\`). Just use the emoji.
-  - **Compound "<quality>_<noun>"** keys like \`generate:adventure_book\`, \`generate:funny_book\`, \`generate:new_book\`, \`generate:sad_book\`. The "_<noun>" suffix is almost always a sign you should be using emoji + modifier instead. The generation pipeline produces poor results for these, and they fragment what should be a stable visual for the noun.
-
-**Generation key format:**
-  - lowercase_snake_case, English.
-  - Read like an image-search query: a SHORT, CONCRETE NOUN PHRASE depicting a specific physical thing.
-  - To avoid ambiguity on words with multiple meanings, include categories that distinguish it from possible synonyms — e.g. "planet_mars" not just "mars", "animal_bat" not just "bat".
-  - Good: \`generate:planet_mars\`, \`generate:seagull\`, \`generate:t_rex\`, \`generate:violin\`, \`generate:telescope\`, \`generate:triceratops\`.
-  - Bad: \`generate:its_called\`, \`generate:funny\`, \`generate:adventure_book\`, \`generate:new_book\`, \`generate:my_favorite\`, \`generate:talk_about\`.
-
-**Fallback for a generated SENTENCE — ALWAYS required, NEVER contains \`generate:\`:**
-  - The fallback is what the user sees IMMEDIATELY while the image is generating (and if generation fails). A \`generate:\` in the fallback throws an error.
-  - Fallback may only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers on the above.
-  - Mirror the SHAPE of the \`sentence\` field so the visual reads the same. The fallback's job is to approximate the generated concept by combining an existing emoji with a canonical modifier — "Mars" has no emoji, but a red planet (\`🌑.color_red\`) reads as the same idea. Example:
-${singleGlyphButtons
-  ? `        sentence  = \`generate:planet_mars\`
-        fallback  = \`🌑.color_red\`   (single GLYPH; substitute existing emoji + canonical modifier)`
-  : `        sentence  = \`i_me+want+generate:planet_mars\`
-        fallback  = \`i_me+want+🌑.color_red\`   (mirror shape; substitute existing emoji + canonical modifier)`}
-  - Modifiers in the fallback follow the same rules — they must be canonical (and an emoji is never a modifier). \`📖.new\` is invalid because \`.new\` isn't a registry modifier; but \`📖.✨\` is allowed.
-</generation_rules>
+${buildGlyphSyntax({ singleGlyphButtons })}
 
 <button_syntax>
 Each ${T.button} is four pipe-separated fields:
@@ -1141,12 +1059,15 @@ You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any
  * Replaces buildAACPersonaSystemPrompt when used in dual-agent context.
  */
 export function buildMonitorSystemPrompt(
-  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
+  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; autoAacPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
   muteState: 'unmuted' | 'muted' = 'unmuted',
   interactivePrompt?: string,
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
 ): string {
-  const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+  const personaPrompt = composeAacPersona({
+    custom: student.aacSettings?.chatAgentPrompt,
+    auto: student.aacSettings?.autoAacPrompt,
+  });
 
   const modeNote = muteState === 'muted'
     ? 'The user has MUTED the Interactive Agent — it generates utterance-style buttons for the user to speak aloud and does NOT talk to the user. Track button press patterns and communicative intent. Only the user can unmute by tapping the cave.'
@@ -1236,7 +1157,9 @@ Use this when you notice the user is in a context that would benefit from a dedi
 - Before creating a new board, check if an appropriate board already exists (see list below). If so, edit it instead.
 - You can only edit boards marked as [generated]. Human-authored boards are read-only.
 - Create boards with commonly-needed buttons for the situation. Use multi-page layouts when appropriate (e.g., main page + sub-pages for categories).
-- Each button needs: label, iconRef (emoji), and optionally a sentence (what the button says when pressed).
+- Each button needs: label, a glyph (its visual — see below), and optionally a sentence (what the button speaks when pressed).
+- glyph: one or more SYMBOLs joined by "+". A SYMBOL is an emoji (🍎, 🤗) or generate:lower_snake_case for a custom picture (use only when no emoji fits). If a glyph uses ANY generate: SYMBOL, also set glyphFallback to an emoji-only version so the button shows something immediately while the picture is produced.
+- Do NOT set a button color — the system colors buttons automatically (e.g. yes/no, find, more). Only include a color if you specifically need to override it.
 - Navigation buttons (action type "link") connect pages. Back buttons (action type "back") return to the previous page.
 - Set automaticSelection to true and provide a hint describing when this board should be used.
 - The board will immediately become available to the Interactive Agent.
@@ -1255,8 +1178,9 @@ Use this when you notice the user is in a context that would benefit from a dedi
         "id": "main",
         "name": "Main",
         "buttons": [
-          { "id": "b1", "row": 0, "col": 0, "label": "I want", "iconRef": "👉", "sentence": "I want something", "color": "yellow" },
-          { "id": "b2", "row": 0, "col": 1, "label": "Food", "iconRef": "🍽️", "action": { "type": "link", "toPageId": "food" } },
+          { "id": "b1", "row": 0, "col": 0, "label": "I want", "glyph": "👉", "sentence": "I want something" },
+          { "id": "b2", "row": 0, "col": 1, "label": "Food", "glyph": "🍽️", "action": { "type": "link", "toPageId": "food" } },
+          { "id": "b3", "row": 0, "col": 2, "label": "Spaghetti", "glyph": "generate:plate_of_spaghetti", "glyphFallback": "🍝", "sentence": "I want spaghetti" },
           { "id": "nav-back", "row": 3, "col": 0, "label": "Back", "action": { "type": "back" } }
         ]
       }
@@ -1290,6 +1214,38 @@ export const AAC_DEFAULT_PERSONA_PROMPT = `You should:
 - Ask clarifying questions when needed
 - Be patient and encouraging
 - Keep the user's communication abilities in mind at all times`;
+
+/**
+ * Combine the two per-student AAC prompt fields into a single persona string
+ * for the fast/raw startup path (no enhancer). The CUSTOM prompt
+ * (caretaker-requested behaviors) takes priority over the AUTO prompt
+ * (AI-generated student digest); both are labeled so the live model knows
+ * which is a directive and which is background. Safety protocols baked into
+ * the system prompt always supersede both. When neither field is set, falls
+ * back to AAC_DEFAULT_PERSONA_PROMPT.
+ *
+ * The thorough-startup enhancer takes the same two fields separately and folds
+ * them into its `persona` section; this helper is for when that enhancer
+ * output isn't available.
+ */
+export function composeAacPersona(opts: {
+  custom?: string | null;
+  auto?: string | null;
+}): string {
+  const custom = opts.custom?.trim() || "";
+  const auto = opts.auto?.trim() || "";
+  if (!custom && !auto) return AAC_DEFAULT_PERSONA_PROMPT;
+  const parts: string[] = [];
+  if (custom) {
+    parts.push(
+      `Caretaker-requested behaviors — follow these. They take priority over the background notes below, except where they would conflict with safety:\n${custom}`,
+    );
+  }
+  if (auto) {
+    parts.push(`What to know about this student:\n${auto}`);
+  }
+  return parts.join("\n\n");
+}
 
 // ============================================================================
 // TYPES

@@ -22,10 +22,8 @@ import {
   Volume2,
   Play,
 } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/queryClient";
-import { useSymbolStore } from "@/store/symbol-store";
 import { CoverImageSelector } from "./cover-image-selector";
 import { YouTubePlayer } from "./youtube-player";
 import { BoardIR } from "@/types/board-ir";
@@ -42,7 +40,9 @@ import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSound } from "@/contexts/SoundContext";
-import { Glyph } from "@/components/Glyph";
+import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
+import { resolveBorderClass } from "@shared/button-color";
+import { useClinicianBoardDeps, irToButtonInput } from "./use-clinician-board-deps";
 
 export function BoardCanvas() {
   const { t, isRTL, language } = useLanguage();
@@ -75,15 +75,9 @@ export function BoardCanvas() {
   
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // Symbol resolution — reads from global store (populated via SSE, not polling)
-  const getSymbolPath = useSymbolStore((s) => s.getSymbolPath);
-  const isPendingSymbol = useSymbolStore((s) => s.isPending);
-
-  // Resolve symbol path URLs — API paths need base URL prefix
-  const resolveSymbolSrc = useCallback((symbolPath: string): string => {
-    if (symbolPath.startsWith("/api/")) return apiUrl(symbolPath);
-    return symbolPath;
-  }, []);
+  // Clinician render deps for the shared <BoardButtonVisual /> (icon chain +
+  // Glyph wrapper), shared with the button inspector's preview.
+  const clinicianDeps = useClinicianBoardDeps();
 
   if (!board) {
     return (
@@ -175,46 +169,6 @@ export function BoardCanvas() {
 
   const zoomOut = () => {
     setZoom(Math.max(zoom - 25, 50));
-  };
-
-  const getButtonColor = (color?: string) => {
-    const colorMap: { [key: string]: string } = {
-      yellow: "#FEF3C7", blue: "#DBEAFE", green: "#D1FAE5",
-      red: "#FEE2E2", orange: "#FFEDD5", purple: "#EDE9FE",
-      pink: "#FCE7F3", white: "#FFFFFF", gray: "#F3F4F6",
-    };
-    return colorMap[color?.toLowerCase() || ""] || color || "#3B82F6";
-  };
-
-  /** Returns true if the string should be rendered as text (emoji or single character/number) rather than a Font Awesome icon class */
-  const isDisplayableIcon = (str: string): boolean => {
-    if (!str || str.startsWith("fa") || str.includes(" ")) return false;
-    // Single characters (letters, numbers, punctuation) are displayable as-is
-    if ([...str].length === 1) return true;
-    return /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|[\u{1F900}-\u{1F9FF}]|[\u{2702}-\u{27B0}]|[\u{E000}-\u{F8FF}]|[\u{200D}]|[\u{20E3}]|[\u{FE0F}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{23FF}]|[\u{2460}-\u{24FF}]|[\u{25A0}-\u{25FF}]|[\u{2B00}-\u{2BFF}]|[\u{3000}-\u{303F}]|[\u{3200}-\u{32FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]/u.test(str);
-  };
-
-  const getEmojiForLabel = (label: string): string => {
-    const emojiMap: { [key: string]: string } = {
-      hello: "\u{1F44B}", hi: "\u{1F44B}", hey: "\u{1F44B}",
-      yes: "\u2705", no: "\u274C", maybe: "\u{1F914}",
-      help: "\u{1F198}", please: "\u{1F64F}", "thank you": "\u{1F64F}", thanks: "\u{1F64F}",
-      more: "\u2795", less: "\u2796", stop: "\u{1F6D1}",
-      eat: "\u{1F37D}\uFE0F", food: "\u{1F37D}\uFE0F", hungry: "\u{1F37D}\uFE0F",
-      drink: "\u{1F964}", water: "\u{1F4A7}", thirsty: "\u{1F4A7}",
-      happy: "\u{1F60A}", sad: "\u{1F622}", angry: "\u{1F620}", tired: "\u{1F634}",
-      play: "\u{1F3AE}", game: "\u{1F3AE}", fun: "\u{1F389}",
-      home: "\u{1F3E0}", school: "\u{1F3EB}", outside: "\u{1F333}",
-      mom: "\u{1F469}", dad: "\u{1F468}", family: "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}",
-      love: "\u2764\uFE0F", like: "\u{1F44D}", want: "\u{1F446}",
-      go: "\u{1F6B6}", come: "\u{1F44B}", wait: "\u23F3",
-      bath: "\u{1F6C1}", toilet: "\u{1F6BD}", sleep: "\u{1F634}",
-    };
-    const lower = label.toLowerCase();
-    for (const [key, emoji] of Object.entries(emojiMap)) {
-      if (lower.includes(key)) return emoji;
-    }
-    return "\u{1F4AC}";
   };
 
   // Handle speaking text (preview mode action)
@@ -632,122 +586,57 @@ export function BoardCanvas() {
                     const btnRowSpan = (button as any).rowSpan ?? 1;
                     const btnColSpan = (button as any).colSpan ?? 1;
                     const isSpanning = btnRowSpan > 1 || btnColSpan > 1;
+                    const actionType = button.action?.type;
+                    const isLink = actionType === "link";
+                    const isBack = actionType === "back" || actionType === "home";
+                    // Outer element owns selection/positioning; the shared
+                    // <BoardButtonVisual /> renders the visual (bg, icon, label,
+                    // border) so editor buttons match the AAC exactly.
                     return (
                       <button
                         type="button"
                         key={button.id}
                         onClick={(e) => handleButtonClick(button, e)}
                         className={cn(
-                          "rounded-xl flex flex-col items-center justify-center p-2 transition-all text-white font-medium text-sm shadow-lg relative",
+                          "relative rounded-xl transition-all",
                           !isSpanning && "aspect-square",
-                          button.action?.type === "link" ? "border-2 border-blue-400" :
-                          button.action?.type === "back" || button.action?.type === "home" ? "border-2 border-amber-400" :
-                          "",
                           isEditMode
                             ? selectedButtonId === button.id
                               ? isDark
                                 ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-900"
                                 : "ring-2 ring-yellow-400 ring-offset-2 ring-offset-white"
                               : "hover:ring-2 hover:ring-white/20"
-                            : "hover:scale-105 hover:shadow-xl active:scale-95"
+                            : "hover:scale-105 active:scale-95"
                         )}
-                        style={{
-                          backgroundColor: getButtonColor(button.color),
-                          ...(isSpanning ? {
-                            gridColumn: `span ${btnColSpan}`,
-                            gridRow: `span ${btnRowSpan}`,
-                          } : {}),
-                        }}
+                        style={isSpanning ? {
+                          gridColumn: `span ${btnColSpan}`,
+                          gridRow: `span ${btnRowSpan}`,
+                        } : undefined}
                       >
-                        {(() => {
-                          // Back/home buttons get a universal FA icon
-                          if (button.action?.type === "back" || button.action?.type === "home") {
-                            const faClass = button.action.type === "home"
-                              ? "fa-house"
-                              : isRTL ? "fa-arrow-right" : "fa-arrow-left";
-                            return <i className={`fas ${faClass} text-xl mb-1`} />;
-                          }
+                        <BoardButtonVisual
+                          variant="board"
+                          interactive={false}
+                          button={irToButtonInput(button)}
+                          deps={clinicianDeps}
+                          borderClassName={resolveBorderClass({ buttonType: (button as any).buttonType, isLink, isBack })}
+                        />
 
-                          // Glyph: composed multi-image button. Renders the
-                          // primary glyph string when every slot resolves;
-                          // falls back to glyphFallback while parts are
-                          // still generating. Takes precedence over the
-                          // legacy single-icon priority chain below.
-                          const btnAny = button as any;
-                          if (btnAny.glyph || btnAny.glyphFallback) {
-                            return (
-                              <div className="w-12 h-8 mb-1 flex items-center justify-center">
-                                <Glyph
-                                  glyph={btnAny.glyph}
-                                  fallback={btnAny.glyphFallback}
-                                  noBackground
-                                  ariaLabel={button.label}
-                                />
-                              </div>
-                            );
-                          }
-
-                          // Icon priority: 1) button.symbolPath (server-resolved), 2) symbol store (SSE-resolved),
-                          // 3) pending spinner, 4) iconRef emoji/icon, 5) fallback emoji
-                          const resolvedPath = button.symbolPath
-                            ? resolveSymbolSrc(button.symbolPath)
-                            : button.imageKey
-                              ? getSymbolPath(button.imageKey)
-                              : undefined;
-
-                          if (resolvedPath) {
-                            return (
-                              <img
-                                src={resolvedPath}
-                                alt={button.label}
-                                className="w-8 h-8 object-contain mb-1"
-                                style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.8))" }}
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = "none";
-                                }}
-                              />
-                            );
-                          }
-
-                          if (button.imageKey && isPendingSymbol(button.imageKey)) {
-                            return (
-                              <span className="relative text-2xl mb-1 leading-none">
-                                {button.iconRef && isDisplayableIcon(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label)}
-                                <span className="absolute -top-1 -right-2 w-3 h-3 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
-                              </span>
-                            );
-                          }
-
-                          if (button.iconRef && isDisplayableIcon(button.iconRef)) {
-                            return <span className="text-2xl mb-1 leading-none">{button.iconRef}</span>;
-                          }
-
-                          if (button.iconRef) {
-                            return <i className={`${button.iconRef} text-xl mb-1`} />;
-                          }
-
-                          return <span className="text-2xl mb-1 leading-none">{getEmojiForLabel(button.label)}</span>;
-                        })()}
-                        <span className="text-xs leading-tight text-center">
-                          {button.label}
-                        </span>
-                        
                         {/* Action type indicators */}
-                        {button.action?.type === "link" && (
+                        {isLink && (
                           <span className={cn(
-                            "absolute top-0.5 text-blue-200 opacity-80 text-[0.5rem]",
+                            "absolute top-0.5 z-10 text-blue-500 opacity-80 text-[0.5rem]",
                             isRTL ? "left-0.5" : "right-0.5"
                           )}>▶</span>
                         )}
-                        {(button.action?.type === "back" || button.action?.type === "home") && (
+                        {isBack && (
                           <span className={cn(
-                            "absolute top-0.5 text-amber-200 opacity-80 text-[0.5rem]",
+                            "absolute top-0.5 z-10 text-amber-500 opacity-80 text-[0.5rem]",
                             isRTL ? "right-0.5" : "left-0.5"
                           )}>◀</span>
                         )}
-                        {!isEditMode && button.action?.type === "youtube" && (
+                        {!isEditMode && actionType === "youtube" && (
                           <Play size={10} className={cn(
-                            "absolute top-1 opacity-60",
+                            "absolute top-1 z-10 opacity-60",
                             isRTL ? "left-1" : "right-1"
                           )} />
                         )}

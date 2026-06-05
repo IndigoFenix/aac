@@ -45,7 +45,7 @@ import { logDualAgent, logLiveSession, runInSessionContext } from "./dual-agent-
 import { activityLogService } from "../activityLogService";
 import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
-import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
+import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, composeAacPersona } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
@@ -57,6 +57,7 @@ import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { getVocabularyItem } from "@shared/glyph-registry";
+import { resolveButtonColorToken } from "@shared/button-color";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
 import { validateBoardButtons, collectGlyphImageKeys } from "./board-button-validator";
@@ -1747,7 +1748,7 @@ export class LiveRelay {
           const state = this.sessionCache?.state;
           const student = this.sessionCache?.monitorAgent?.getStudent?.();
           if (state && student) {
-            const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+            const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
             const sections = state.enhancedSections;
             const persona = sections?.persona || rawPersona;
             const computeAge = (bd: string | null | undefined) => {
@@ -2364,7 +2365,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       if (this.useDirectAudio && cached.monitorAgent.getStudent) {
         const student = cached.monitorAgent.getStudent();
         if (student) {
-          const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+          const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
           const sections = state.enhancedSections;
           const persona = sections?.persona || rawPersona;
           const computeAge = (bd: string | null | undefined) => {
@@ -2519,7 +2520,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       // 9. Store greeting for onReady to send
       const isMuted = this.muteState === "muted";
       const student = cached.monitorAgent.getStudent?.();
-      const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
+      const personaHint = (student?.aacSettings?.chatAgentPrompt?.trim() || student?.aacSettings?.autoAacPrompt?.trim())
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the ${T.button}s contextually relevant." : "";
@@ -5207,7 +5208,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     }
   }
 
-  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; buttonType?: "guess" | "category" | "suggestion" | "narrow"; suggestionKey?: string; narrowDimension?: string; narrowValue?: string; rowSpan?: number; colSpan?: number }>): any {
+  private buildBoardFromButtons(buttons: Array<{ id?: string; label: string; iconRef: string; symbolPath?: string; glyph?: string; glyphFallback?: string; sentence?: string; color?: string; buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more"; suggestionKey?: string; narrowDimension?: string; narrowValue?: string; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -5240,6 +5241,10 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           symbolPath: b.symbolPath,
           ...(b.glyph ? { glyph: b.glyph } : {}),
           ...(b.glyphFallback ? { glyphFallback: b.glyphFallback } : {}),
+          // Color is computed server-side and shipped with the button: explicit
+          // color wins; else auto by buttonType (find/more) or yes/no glyph.
+          // The client just paints the token (no client-side color logic).
+          color: resolveButtonColorToken({ color: b.color, glyph: b.glyph, buttonType: b.buttonType }),
         })),
       }],
       currentPageId: pageId,
@@ -5539,7 +5544,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       return age > 0 ? String(age) : undefined;
     };
-    const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
     const sections = state.enhancedSections;
     const persona = sections?.persona || rawPersona;
 

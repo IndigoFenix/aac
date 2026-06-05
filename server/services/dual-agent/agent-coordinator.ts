@@ -40,6 +40,7 @@ import {
   type SpeakerPromptConfig,
   type BoardManagerPromptConfig,
 } from "./agent-prompts";
+import { composeAacPersona } from "../memory-schema/aac-memory-schema";
 import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
@@ -561,6 +562,29 @@ export class AgentCoordinator {
   // per session — chained instead).
   private boardMgrInFlight = false;
   private boardMgrPendingTriggers: AgentEvent[] = [];
+  /** Single-shot flag set by handleGuessingPress / handleGuessingNarrow /
+   *  handleGuessingReject and consumed by the very next button_pressed
+   *  event. A guessing-intent button press fires TWO server events —
+   *  the button_press (TTS + Speaker user_turn) and the guessing_*
+   *  intent (engine update → narrowing directive to Speaker). Speaker
+   *  responds to both unless one is suppressed. The flag tells the
+   *  button_pressed routing to send the press as a CONTEXT injection
+   *  only; the narrowing directive carries the turn. Cleared on first
+   *  consume so a subsequent non-narrowing press isn't accidentally
+   *  silenced.
+   *
+   *  We can't infer "is this a narrowing press?" from button data alone
+   *  because suggestion buttons render with the registry's English
+   *  labelEn server-side but arrive with the localized Hebrew label
+   *  from the client — a label-match lookup misses every time. */
+  private suppressNextPressUserTurn = false;
+  /** AbortController for the currently in-flight BoardMgr invocation.
+   *  When a newer Speaker speech arrives mid-flight the in-flight result
+   *  is stale by definition — abort the LLM call, skip applying any
+   *  events that do come back, and let the queued invocation run with
+   *  the fresh context. The Gemini SDK cancels client-side only (server
+   *  still bills) but we stop blocking on a useless wait. */
+  private boardMgrAbortController: AbortController | null = null;
   /**
    * Deferred press-triggered BoardManager invocation. When the user presses
    * a button addressed to DEVICE, Speaker will reply within ~2s and
@@ -1297,7 +1321,7 @@ export class AgentCoordinator {
       },
       speaker: {
         ...base,
-        persona: sections?.persona || student?.aacSettings?.chatAgentPrompt || "",
+        persona: sections?.persona || composeAacPersona({ custom: student?.aacSettings?.chatAgentPrompt, auto: student?.aacSettings?.autoAacPrompt }),
         memoryContext: state.memoryContext,
         muteState: state.muteState,
         useDirectAudio: this.useDirectAudio,
@@ -1811,6 +1835,10 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", `guessing_press dropped — unparseable key "${msg.suggestionKey}".`);
       return;
     }
+    // The paired button_press will arrive within milliseconds; the
+    // narrowing directive (from refreshGuessingSnapshot below) carries
+    // the turn, so the press shouldn't double-fire Speaker.
+    this.suppressNextPressUserTurn = true;
     void this.wakeForGuessingIntent("guessing_press", () => {
       if (!this.guessingEngineState) return;
       applyGuessingPress(this.guessingEngineState, parsed.dimension, parsed.value);
@@ -1829,6 +1857,7 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", "guessing_reject dropped — no active session.");
       return;
     }
+    this.suppressNextPressUserTurn = true;
     void this.wakeForGuessingIntent("guessing_reject", () => {
       if (!this.guessingEngineState) return;
       rejectGuessingDimension(this.guessingEngineState);
@@ -1845,6 +1874,7 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", `guessing_narrow ${msg.dimension}=${msg.value} dropped — no active session.`);
       return;
     }
+    this.suppressNextPressUserTurn = true;
     void this.wakeForGuessingIntent("guessing_narrow", () => {
       if (!this.guessingEngineState) return;
       applyGuessingCustomFact(this.guessingEngineState, msg.dimension, msg.value, msg.sourceText);
@@ -2098,14 +2128,41 @@ export class AgentCoordinator {
         const speakerRendered = `[USER to ${targetLabel}] "${event.sentence}"`;
 
         this.observer?.sendContextInjection(observerRendered);
+        // A guessing-mode narrowing press (suggestion: / [NARROW:] /
+        // "no") ALSO fires its own guessing_* intent, which triggers
+        // refreshGuessingSnapshot → broadcastGuessingStateToAgents and
+        // sends Speaker the narrowing directive. Without suppression
+        // Speaker responds twice: once to the press, once to the
+        // directive. The intent handler sets suppressNextPressUserTurn
+        // immediately on arrival; we consume it here. A 1:1 pairing of
+        // guessing intent + button_press is guaranteed by the client
+        // (both fire from the same handler), so single-shot is safe.
+        // (Can't infer "is this a narrowing press?" from button data —
+        // suggestion buttons render the English labelEn server-side
+        // but the press arrives with the localized label, so a
+        // label-match misses every time.)
+        const suppressUserTurn = this.suppressNextPressUserTurn;
+        this.suppressNextPressUserTurn = false;
+
         if (toDevice) {
-          // Press addressed to the AI — Speaker should respond.
-          this.speaker?.sendUserTurn(speakerRendered);
-          // Defer the BM invocation: Speaker's reply will trigger a
-          // REPLIES rebuild that supersedes FOLLOW-UPS. If Speaker
-          // doesn't reply within DEFERRED_BM_PRESS_MS, the timer fires
-          // FOLLOW-UPS as a fallback.
-          this.scheduleDeferredBoardMgr(event, "press");
+          if (suppressUserTurn) {
+            // Speaker just gets context — the narrowing directive
+            // already on its way (from refreshGuessingSnapshot) is the
+            // single turn-driving signal.
+            this.speaker?.sendContextInjection(speakerRendered);
+            flowNote(
+              "COORDINATOR",
+              `narrowing-press "${event.label}" → Speaker context only (directive drives turn).`,
+            );
+          } else {
+            // Press addressed to the AI — Speaker should respond.
+            this.speaker?.sendUserTurn(speakerRendered);
+            // Defer the BM invocation: Speaker's reply will trigger a
+            // REPLIES rebuild that supersedes FOLLOW-UPS. If Speaker
+            // doesn't reply within DEFERRED_BM_PRESS_MS, the timer fires
+            // FOLLOW-UPS as a fallback.
+            this.scheduleDeferredBoardMgr(event, "press");
+          }
         } else {
           // Press addressed to someone else (or USER itself) — Speaker
           // stays quiet, no REPLIES event coming. Build FOLLOW-UPS now.
@@ -2619,6 +2676,14 @@ export class AgentCoordinator {
     // invocation. REPLIES (built from this event) is more current than
     // FOLLOW-UPS (built from the press) for an AI-targeted press.
     this.clearDeferredBoardMgr("speech_text_finalized supersedes press");
+    // If a BM call is already running, its in-flight context is older
+    // than the speech that just landed. Abort it: the queued invocation
+    // we're about to fire will run with this new speech as trigger, so
+    // the result of the in-flight one would only paint stale buttons.
+    if (this.boardMgrInFlight && this.boardMgrAbortController) {
+      flowNote("BOARD_MGR", "Aborting in-flight invocation — newer speech_text_finalized supersedes.");
+      this.boardMgrAbortController.abort();
+    }
     this.invokeBoardManager([event]);
   }
 
@@ -2914,6 +2979,10 @@ export class AgentCoordinator {
       return;
     }
     this.boardMgrInFlight = true;
+    // Fresh AbortController so onSpeakerSpeechTextFinalized can cancel
+    // this call if a newer Speaker turn lands mid-flight.
+    const controller = new AbortController();
+    this.boardMgrAbortController = controller;
     // Pull and clear the pending validator-feedback (if any) so the
     // next invocation knows to retry. Bump the retry counter; reset on
     // a successful no-error invocation below.
@@ -2948,8 +3017,28 @@ export class AgentCoordinator {
         guessingState: this.guessingState ?? undefined,
         provider: BOARD_MANAGER_DEFAULT_PROVIDER,
         model: BOARD_MANAGER_DEFAULT_MODEL,
+        signal: controller.signal,
       };
-      const result = await this.boardManager.invoke(input);
+      let result;
+      try {
+        result = await this.boardManager.invoke(input);
+      } catch (err: any) {
+        // AbortError is the only expected throw — the Gemini SDK
+        // rejects with a DOMException/AbortError when abortSignal fires.
+        // Treat it as a clean cancellation: queued triggers run next,
+        // no events applied, no retry queued.
+        if (controller.signal.aborted) {
+          flowNote("BOARD_MGR", "In-flight invocation aborted — result discarded.");
+          return;
+        }
+        throw err;
+      }
+      // Defensive: if abort fired between the await resolving and here
+      // (unlikely but possible), drop the stale result.
+      if (controller.signal.aborted) {
+        flowNote("BOARD_MGR", "In-flight invocation aborted after resolution — result discarded.");
+        return;
+      }
       // Reset the retry counter when no fresh validator feedback was
       // queued during dispatch (i.e. the call's buttons were clean).
       // queueBoardMgrFeedback below — running synchronously inside the
@@ -3043,6 +3132,13 @@ export class AgentCoordinator {
     } catch (err) {
       console.error("[AgentCoordinator] BoardManager invocation failed:", err);
     } finally {
+      // Clear the abort handle ONLY if it still points at this
+      // invocation's controller. A late stale-abort path could
+      // re-assign before our finally runs; we don't want to null out
+      // someone else's controller.
+      if (this.boardMgrAbortController === controller) {
+        this.boardMgrAbortController = null;
+      }
       this.boardMgrInFlight = false;
       // Re-invoke if EITHER triggers were queued during the in-flight
       // invocation OR pending feedback is set (retry path —
@@ -3355,7 +3451,7 @@ export class AgentCoordinator {
       directive = `The user (or someone speaking to them) just took an action — they need response options now. Call \`rebuild_board(buttons=[...])\` with a fresh set of ${T.button}s.`;
     }
     this.boardMgrPendingFeedback =
-      `[empty response]\nYour previous response had no tool calls. ${directive}`;
+      `[empty response]\nYour previous response had no tool calls. ${directive} If the current ${T.board} genuinely still fits the moment and no rebuild is warranted, call \`no_change("<short reason>")\` instead — empty responses are never valid.`;
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
       logLiveSession("BOARD_MGR_EMPTY", `Queued empty-response retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}.`);
     });
@@ -3374,7 +3470,7 @@ export class AgentCoordinator {
     }
     const header = `[${toolName} — rejected ${T.button}s]`;
     const body = errors.map(e => `• ${e}`).join("\n");
-    this.boardMgrPendingFeedback = `${header}\n${body}\n\nRebuild correctly — supply a fallback when sentence uses \`generate:\`, omit the fallback field entirely otherwise, use only canonical modifiers, and give every ${T.button} a unique visual.`;
+    this.boardMgrPendingFeedback = `${header}\n${body}\n\nRebuild correctly — supply a fallback when sentence uses \`generate:\`, omit the fallback field entirely otherwise, use only canonical modifiers, and give every ${T.button} a unique visual. (If you can't repair the rebuild and the current ${T.board} still fits, call \`no_change("<short reason>")\` instead — don't return empty.)`;
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
       logLiveSession("BOARD_MGR_VALIDATOR", `${toolName} → ${errors.length} errors, queued retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}`);
     });

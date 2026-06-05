@@ -48,7 +48,7 @@ import { deleteExternalData, type EntityRef } from "../external-storage";
 
 /** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients) */
 const AAC_SETTINGS_FIELDS = new Set([
-  "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "modelOverride",
+  "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "autoAacPrompt", "modelOverride",
   "startupMode", "voiceType", "studentVoiceType",
   "customVoiceId", "customStudentVoiceId", "elevenlabsEnabled", "elevenlabsApiKey",
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",

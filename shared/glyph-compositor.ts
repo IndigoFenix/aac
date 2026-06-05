@@ -140,6 +140,20 @@ export function stripBrackets(s: string): string {
 }
 
 /**
+ * Expand an alias key (a registry item with `expandsTo`) into its head key +
+ * modifier list. Returns null when the key isn't an alias. One level only —
+ * the `expandsTo` fragment is authored as a literal `head[.mod[.mod]]` and is
+ * NOT itself re-expanded, which also guards against alias cycles.
+ */
+export function expandAlias(key: string): { key: string; modifiers: string[] } | null {
+  const frag = getVocabularyItem(key)?.expandsTo;
+  if (!frag) return null;
+  const parts = frag.split(".").map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  return { key: parts[0], modifiers: parts.slice(1) };
+}
+
+/**
  * Parse a single slot string like `want(apple).please` into a ParsedSlot.
  * Tolerant of malformed input — missing payload close-paren is treated as
  * no payload; empty `()` is treated as no payload.
@@ -158,8 +172,14 @@ function parseSlot(slotStr: string): ParsedSlot {
     }
   }
   const parts = head.split(".").map((s) => stripBrackets(s)).filter(Boolean);
-  const key = parts[0] ?? "";
-  const modifiers = parts.slice(1);
+  const rawKey = parts[0] ?? "";
+  const rawModifiers = parts.slice(1);
+  // Alias keys (tomorrow → day.next) normalize to their head + modifiers, with
+  // the alias's own modifiers coming first so any explicitly-typed modifiers
+  // stack after them.
+  const expanded = expandAlias(rawKey);
+  const key = expanded ? expanded.key : rawKey;
+  const modifiers = expanded ? [...expanded.modifiers, ...rawModifiers] : rawModifiers;
   const slot: ParsedSlot = {
     key,
     modifiers,
@@ -310,7 +330,15 @@ export const EMPTY_GLYPH: ParsedGlyph = Object.freeze({
 });
 
 function makeSlot(key: string): ParsedSlot {
-  return { key, modifiers: [], unknown: !getVocabularyItem(key) };
+  // Aliases (e.g. pressing "tomorrow" in the sentence builder) materialize as
+  // their composed head + modifiers, so the slot is born as `day.next`.
+  const expanded = expandAlias(key);
+  const head = expanded ? expanded.key : key;
+  return {
+    key: head,
+    modifiers: expanded ? expanded.modifiers.slice() : [],
+    unknown: !getVocabularyItem(head),
+  };
 }
 
 /**
@@ -370,6 +398,68 @@ export function removeModifier(
     modifiers: slot.modifiers.filter((m) => m !== modKey),
   };
   return { ...glyph, slots };
+}
+
+/**
+ * Apply a relational modifier (next / prev / this) to a slot, honoring the
+ * axis rules on the modifier's `relation` facet:
+ *   - a present opposite cancels one occurrence (next vs prev) — the click
+ *     consumes the opposite arrow rather than adding a new one,
+ *   - same direction stacks up to `maxStack` (default 4),
+ *   - a neutral member (step 0, e.g. `this`) is mutually exclusive with the
+ *     directional members on its axis and toggles on/off.
+ * Non-relational keys fall through to `addModifier`, so a caller can route
+ * every modifier press through here and get toggle-stack behavior only where
+ * it's declared.
+ */
+export function applyRelationalModifier(
+  glyph: ParsedGlyph,
+  slotIdx: number,
+  modKey: string
+): ParsedGlyph {
+  if (slotIdx < 0 || slotIdx >= glyph.slots.length) return glyph;
+  const rel = getVocabularyItem(modKey)?.modifier?.relation;
+  if (!rel) return addModifier(glyph, slotIdx, modKey);
+
+  const relOf = (k: string) => getVocabularyItem(k)?.modifier?.relation;
+  const slot = glyph.slots[slotIdx];
+  const mods = slot.modifiers;
+  const write = (next: string[]): ParsedGlyph => {
+    const slots = glyph.slots.slice();
+    slots[slotIdx] = { ...slot, modifiers: next };
+    return { ...glyph, slots };
+  };
+
+  // Neutral ("this"): clear the whole axis, then toggle this key on/off.
+  if (rel.step === 0) {
+    const had = mods.includes(modKey);
+    const cleared = mods.filter((k) => relOf(k)?.axis !== rel.axis);
+    return write(had ? cleared : [...cleared, modKey]);
+  }
+
+  // Directional: a present opposite cancels one occurrence (no new arrow).
+  const oppositeIdx = mods.findIndex((k) => {
+    const r = relOf(k);
+    return !!r && r.axis === rel.axis && r.step === -rel.step;
+  });
+  if (oppositeIdx >= 0) {
+    const next = mods.slice();
+    next.splice(oppositeIdx, 1);
+    return write(next);
+  }
+
+  // Drop any neutral on this axis ("this" then "next" is contradictory),
+  // then stack up to the cap in this direction.
+  const withoutNeutral = mods.filter((k) => {
+    const r = relOf(k);
+    return !(r && r.axis === rel.axis && r.step === 0);
+  });
+  const sameDir = withoutNeutral.filter((k) => {
+    const r = relOf(k);
+    return !!r && r.axis === rel.axis && r.step === rel.step;
+  }).length;
+  if (sameDir >= (rel.maxStack ?? 4)) return write(withoutNeutral);
+  return write([...withoutNeutral, modKey]);
 }
 
 /**

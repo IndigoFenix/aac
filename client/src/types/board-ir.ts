@@ -23,6 +23,18 @@ export interface ButtonIR {
   label: string;
   spokenText?: string;
   color?: string;
+  /**
+   * The button's visual: a composed glyph string (e.g. "i_me+want+💧"). SYMBOLs
+   * joined by `+`, with `.modifiers` and `#operators`. SYMBOLs are emoji,
+   * canonical registry keys, `symbol:ID` (custom image), or `face:ID`. This is
+   * the primary/preferred visual — the renderer prefers it over the legacy
+   * iconRef/symbolPath/imageKey chain.
+   */
+  glyph?: string;
+  /** Safe emoji-only fallback for `glyph` (only when glyph uses a `generate:` SYMBOL). */
+  glyphFallback?: string;
+  // Legacy single-visual fields (still rendered as a fallback for older boards;
+  // the editor no longer authors them — use `glyph`).
   iconRef?: string;
   symbolPath?: string; // Path to Mulberry symbol SVG or custom symbol API URL
   rebusKey?: string;   // Widgit Rebus concept name for Grid3 export (e.g. "happy", "mum", "ice cream")

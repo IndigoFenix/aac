@@ -161,9 +161,10 @@ export interface ChatResponseActions {
   // Calendar updates - trigger CalendarPanel reload
   calendarUpdated?: boolean;
 
-  // AAC settings - extracted from Context_AACSettings / Context_AACPrompt memory fields
+  // AAC settings - extracted from Context_AACSettings / Context_AACPrompt / Context_AACAutoPrompt memory fields
   aacsettings?: any;
   aacprompt?: any;
+  aacautoprompt?: any;
 }
 
 interface ChatContextType {
@@ -672,7 +673,7 @@ export const ChatProvider = ({
     }
 
     // Handle AAC settings updates - triggers AACSettingsPanel reload
-    if (contextData.aacsettings || contextData.aacprompt) {
+    if (contextData.aacsettings || contextData.aacprompt || contextData.aacautoprompt) {
       console.log('[ChatProvider] AAC settings updated by AI, invalidating queries');
       setAiRefreshing(prev => new Set(prev).add('aac-settings'));
 

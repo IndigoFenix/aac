@@ -1,5 +1,4 @@
 import { ChatPersona } from "@shared/schema";
-import { IMAGE_KEY_BOARD_PROMPT } from "./symbol/auto-symbol-service";
 
 export enum Framework {
   us_iep = "us_iep",
@@ -18,7 +17,7 @@ The board is stored at /Context_Board with this structure:
 - coverImage: { iconRef, imageKey, backgroundColor } — Board thumbnail/cover image (same icon system as buttons)
 - pages: Array of pages, each containing:
   - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, imageKey, symbolPath (optional), glyph (optional), glyphFallback (optional), action
+  - buttons: Array of buttons with id, row, col, label, spokenText, glyph (the visual — see Button Guidelines + the <grammar> section), glyphFallback (only when glyph uses a generate: SYMBOL), action. Optional override: color (auto by default). Legacy fields (only for buttons with NO glyph — never set them alongside a glyph): iconRef, imageKey, symbolPath
 
 ## Operations
 
@@ -33,7 +32,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board", value: {
     id: "page-main",
     name: "Main",
     buttons: [
-      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "👋", rebusKey: "hello", imageKey: "greeting_hello", action: { type: "speak", text: "Hello!" } }
+      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", glyph: "👋", action: { type: "speak", text: "Hello!" } }
     ]
   }]
 }}]})
@@ -59,7 +58,7 @@ manageMemory({ ops: [{ action: "delete", path: "/Context_Board/pages/0/buttons/0
 ### Add a button (set at next index):
 \`\`\`
 manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", value: {
-  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "✨", rebusKey: "new", imageKey: "new_item", action: { type: "speak", text: "New button" }
+  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", glyph: "✨", action: { type: "speak", text: "New button" }
 }}]})
 \`\`\`
 
@@ -67,41 +66,25 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Labels:** 1-3 words | **Spoken Text:** Max 8 words | **IDs:** btn-{name}-{n}
 
-**Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
+**Color:** Buttons are AUTO-COLORED by the system (yes→green, no→red, and by type). Do NOT set \`color\` on buttons — only add it to deliberately override one (a named color: yellow/blue/green/red/orange/purple/pink/white/gray, or a hex).
 
-**Icons:** A single emoji (e.g., "🏠") or a single character/number (e.g., "7", "A", "?") in the iconRef field. REQUIRED for every content button — NEVER omit iconRef, it serves as the fallback when symbol images are unavailable. When using a single character or number as the icon (e.g. for number buttons, letter buttons, or punctuation), do NOT set imageKey — the character itself is the visual. Only navigation/utility buttons (Back, Home) may omit iconRef. If custom symbols are available (listed below), also set symbolPath to use the custom image.
+**Visual:** Every content button's picture is its \`glyph\` (see the **Glyph** section below). The glyph is self-contained — it carries its own fallback — so do NOT set \`iconRef\`, \`imageKey\`, or \`symbolPath\` (those are legacy fields, only for buttons that have no glyph).
 
-**Rebus Key:** The rebusKey field maps to Widgit Rebus symbols for Grid3 AAC software export. Required for every content button.
-- Use a single lowercase British English concept word or short phrase: "colour" not "color", "mum" not "mom", "aeroplane" not "airplane"
-- Multi-word concepts use spaces: "ice cream", "thank you", "brush teeth"
-- Use the verb form for actions: "eat", "drink", "play", "sleep", "listen"
-- Use the most specific concept: "hungry" not "I am hungry", "toilet" not "bathroom"
-- For "more", use "more 1"
+**Glyph — the button's visual (use it on EVERY content button).** Set \`glyph\` to a composed glyph string; the renderer lays it out as one tile. One-concept buttons are a single SYMBOL (\`glyph: "🍎"\`); phrases are multi-SYMBOL (\`glyph: "i_me+want+💧"\`). The glyph is the ONLY visual field you set — don't add \`iconRef\`/\`imageKey\`/\`symbolPath\`.
 
-${IMAGE_KEY_BOARD_PROMPT}
+The FULL composition syntax — how SYMBOLs combine with \`+\`, \`.modifiers\`, and \`#operators\`; the SYMBOL preference order; when to use \`generate:\` and the mandatory \`glyphFallback\`; and the canonical vocabulary — is in the \`<grammar>\`, \`<generation_rules>\`, and \`<bundled_icons>\` sections below. Follow them exactly. The student's available custom symbols (\`symbol:ID\`) and faces (\`face:ID\`) are listed there too. Do NOT set \`color\` unless overriding — buttons are auto-colored.
 
-**Glyph (multi-image composition):** Optional. When a button's visual is best expressed as a SHORT PHRASE rather than a single concept, set the \`glyph\` field on the button to a composed glyph string instead of (or in addition to) iconRef + imageKey. The renderer lays the glyph parts out side-by-side as a single tile — the student sees a multi-image button that reads like a sentence.
-
-Glyph syntax (same as the sentence-builder):
-- Slots joined by \`+\` — e.g. \`i_me+want+water\` renders three side-by-side images.
-- Each slot is one of: a registry key (people/me, want, have, big, color_red, etc.), a raw emoji (🍎, 🤗, 🎮), a snake_case imageKey (\`pikachu\`, \`school_bus\` — generated), \`symbol:ID\` (custom symbol), or \`face:ID\` (face).
-- Modifiers attach via \`.modifier\` — e.g. \`water.big.color_blue\` = "big blue water".
-- Composable hosts (want / give / take / receive / have / say / think) accept an embedded payload via \`host(payload)\` — e.g. \`want(water)\` = the want-hands holding water.
-- Tone tags via \`#question\` or \`#exclamation\` — e.g. \`you+ok#question\`.
-
-Always set \`glyphFallback\` whenever \`glyph\` uses snake_case imageKeys. The fallback uses the SAME composition but with NO imageKeys — only registry keys, raw emojis, \`symbol:ID\`, or \`face:ID\` — so the button always has something safe to render while imageKey parts generate. When the glyph is purely registry/emoji-based (no async pieces) you may omit fallback.
-
-When you set \`glyph\`, the board preview uses it instead of the legacy iconRef → symbolPath → imageKey chain. Still set \`iconRef\` to a single emoji as a final safety net (the AAC renderer may fall back to it if both glyph and fallback fail to resolve). \`rebusKey\` is still required when the board will be exported to Grid3.
+\`glyphFallback\` is the glyph's OWN fallback — REQUIRED only when \`glyph\` contains a \`generate:\` SYMBOL (an emoji-only version, shown while the image generates); omit it otherwise. Do NOT set \`color\` (auto-colored) unless deliberately overriding.
 
 Examples (full button objects):
-- A "Have water" button:
-  \`{ id: "btn-water", row: 0, col: 0, label: "Have water", spokenText: "I have water", color: "#3B82F6", iconRef: "💧", rebusKey: "water", glyph: "water.my.your", glyphFallback: "💧", action: { type: "speak", text: "I have water" } }\`
-- A "Want banana" button:
-  \`{ id: "btn-banana", row: 0, col: 1, label: "Banana", spokenText: "I want a banana", color: "#EAB308", iconRef: "🍌", rebusKey: "banana", glyph: "i_me+want+🍌", glyphFallback: "👤+🤲+🍌", action: { type: "speak", text: "I want a banana" } }\`
-- A "Pikachu" button (async imageKey, fallback uses emoji):
-  \`{ id: "btn-pikachu", row: 0, col: 2, label: "Pikachu", spokenText: "I want a Pikachu sticker", color: "#EAB308", iconRef: "✨", rebusKey: "pikachu", imageKey: "pikachu", glyph: "i_me+want+pikachu", glyphFallback: "👤+🤲+✨", action: { type: "speak", text: "I want a Pikachu sticker" } }\`
-
-Prefer a glyph over a single iconRef/imageKey when the button conveys a relation (subject + verb + object, possession, want + object) using common registry vocabulary. Keep a single iconRef/imageKey for one-concept buttons ("Apple", "Mom", "Park") — the glyph system is a tool, not a requirement.
+- "Apple" — one concept, a single SYMBOL:
+  \`{ id: "btn-apple", row: 0, col: 0, label: "Apple", spokenText: "I want an apple", glyph: "🍎", action: { type: "speak", text: "I want an apple" } }\`
+- "Water" — a phrase, multi-SYMBOL glyph:
+  \`{ id: "btn-water", row: 0, col: 1, label: "Water", spokenText: "I want water", glyph: "i_me+want+💧", action: { type: "speak", text: "I want water" } }\`
+- "Mars" — a \`generate:\` SYMBOL, so a \`glyphFallback\` is REQUIRED:
+  \`{ id: "btn-mars", row: 0, col: 2, label: "Mars", spokenText: "Tell me about Mars", glyph: "i_me+want+talk+generate:planet_mars", glyphFallback: "i_me+want+talk+🌑.color_red", action: { type: "speak", text: "Tell me about Mars" } }\`
+- "Mom" — a known face (use the face:ID from <known_people>):
+  \`{ id: "btn-mom", row: 1, col: 0, label: "Mom", spokenText: "I want Mom", glyph: "i_me+want+face:MOM_ID", action: { type: "speak", text: "I want Mom" } }\`
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

@@ -12,6 +12,7 @@ import { useSyncExternalStore } from "react";
 import type { VocabularyItem } from "@shared/glyph-registry";
 import type { ImageResolver } from "@shared/glyph-compositor";
 import { canResolveGlyph } from "@shared/glyph-compositor";
+import { apiUrl } from "@/lib/queryClient";
 
 // Vite root for the clinician client is `client/`, so we walk up two
 // levels to reach `attached_assets/aac-icons/` at the repo root.
@@ -68,6 +69,22 @@ export function hasResolvedSymbol(key: string): boolean {
 }
 
 /**
+ * Clinician-side face cache: `face:<contactId>` → photo URL. The clinician has
+ * no live camera/face cache like the AAC shell, so the board editor populates
+ * this from the student's contacts (see registerStudentFace) and the resolver
+ * reads it. Contacts with no stored photo are simply not registered → the
+ * compositor falls back to the 👤 emoji.
+ */
+const FACE_URL_BY_ID = new Map<string, string>();
+
+/** Register a contact's face photo URL. Safe to call repeatedly. */
+export function registerStudentFace(contactId: string, photoUrl: string): void {
+  if (FACE_URL_BY_ID.get(contactId) === photoUrl) return;
+  FACE_URL_BY_ID.set(contactId, photoUrl);
+  notifySymbolListeners();
+}
+
+/**
  * The default image resolver passed to <GlyphCompositor>. Resolution order:
  *   1. Registry item with imagePath → bundled icon URL
  *   2. Server-resolved symbolPath (AI-generated keys with custom symbols)
@@ -77,6 +94,17 @@ export const defaultImageResolver: ImageResolver = ({ item, key }) => {
   if (item?.imagePath) {
     const url = resolveIconPath(item.imagePath);
     if (url) return url;
+  }
+  // Custom-symbol slot (`symbol:<id>`) → the stored image. Used by the clinician
+  // board editor's glyph builder + previews.
+  if (key.startsWith("symbol:")) {
+    const id = key.slice("symbol:".length).trim();
+    if (id) return apiUrl(`/api/custom-symbols/${id}/image`);
+  }
+  // Face slot (`face:<contactId>`) → the registered contact photo (board editor).
+  if (key.startsWith("face:")) {
+    const id = key.slice("face:".length).trim();
+    return (id && FACE_URL_BY_ID.get(id)) || null;
   }
   return SYMBOL_PATH_BY_KEY.get(key) ?? null;
 };

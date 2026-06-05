@@ -1223,6 +1223,13 @@ export interface BoardButtonAction {
   type: "speak" | "link" | "back" | "home" | "exit" | "open_website";
   text?: string;
   toPageId?: string;
+  /**
+   * For "link" actions on constructed (prebuilt) boards: jump to a DIFFERENT
+   * saved board entirely (board-to-board navigation), as opposed to `toPageId`
+   * which moves between pages within the same board. Ignored on the AAC dynamic
+   * path, which never wires a board-to-board navigation handler.
+   */
+  toBoardId?: string;
   /** For "open_website" actions: the URL to load in the browser app. Must match a permitted website prefix. */
   url?: string;
 }
@@ -1326,8 +1333,10 @@ export interface BoardButton {
    * narrowing-assistant buttons, "narrow" for AI-driven open-ended narrowing
    * steps (Phase 2 of open-ended narrowing — the AI proposes its OWN
    * narrowing dimension when the registry doesn't fit the conversation).
+   * "wordfinder" / "more" are fixed meta-buttons (the board-embedded twins of
+   * the quick-actions Word Finder / More buttons).
    */
-  buttonType?: "normal" | "guess" | "category" | "suggestion" | "narrow";
+  buttonType?: "normal" | "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   /**
    * For `buttonType: "suggestion"` only — the full `suggestion:<dim>:<value>`
    * key this button represents. The AAC client parses it on press to update

@@ -104,3 +104,7 @@
 [2026-06-04T08:52:39.668Z] [aac-1780562997087] no parsed content from provider
 [2026-06-04T09:13:20.179Z] [aac-1780563226830] no parsed content from provider
 [2026-06-04T20:23:06.396Z] [aac-1780603931690] no parsed content from provider
+[2026-06-05T10:39:47.433Z] [aac-1780655712639] error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CbjyDvgaQEgQbUvqFGZWh"}
+[2026-06-05T10:47:47.982Z] [aac-1780655992114] error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CbjyqMCCCbBW4gPgmzZZV"}
+[2026-06-05T12:59:36.414Z] [aac-1780663671372] no parsed content from provider
+[2026-06-05T14:33:07.206Z] [aac-1780669274791] no parsed content from provider
