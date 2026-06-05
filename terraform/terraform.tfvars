@@ -15,6 +15,10 @@ aws_region = "il-central-1"
 # When you get a domain, add it here and Terraform will set up HTTPS
 domain_name = "aivota.ai"
 
+# Provision the S3 + CloudFront + DNS stack the desktop AAC client polls
+# for auto-update. Served from https://updates.aivota.ai/ once applied.
+enable_aac_auto_update = true
+
 # =============================================================================
 # Architecture Variables (Use lambda mode for cost saving)
 # =============================================================================
