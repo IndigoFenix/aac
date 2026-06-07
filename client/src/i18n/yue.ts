@@ -174,6 +174,21 @@ export const yue = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "雙重身份驗證",
+    mfaPrompt: "輸入你身份驗證器應用程式嘅 6 位數字驗證碼",
+    mfaVerify: "驗證",
+    mfaBackToSignIn: "返回登入",
+    mfaLostAccess: "無法存取身份驗證器？",
+    mfaSetupTitle: "設定雙重身份驗證",
+    mfaSetupRequired: "你嘅管理員要求呢個帳戶啟用雙重身份驗證",
+    mfaSetupAdminRequired: "管理員帳戶必須啟用雙重身份驗證",
+    mfaCompleteSetup: "完成設定",
+    mfaSetupLoadFailed: "載入雙重身份驗證設定失敗。請再試一次。",
+    notAnAdmin: "呢個帳戶唔係管理員。正在跳轉…",
+    termsOfService: "服務條款",
+    privacyPolicy: "私隱政策",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const yue = {
     welcomeWithUser: "今日我可以點樣幫你處理{name}嘅事？",
     workingWith: "而家服務對象：",
     newConversation: "開始新對話",
+    history: {
+      newChat: "新對話",
+      untitled: "未命名對話",
+      empty: "冇過往對話",
+      rename: "改名",
+      delete: "刪除",
+      confirmDelete: "刪除？",
+      show: "顯示對話",
+      hide: "隱藏對話",
+    },
     addAttachment: "加附件",
     tools: "工具",
     
@@ -2328,6 +2353,7 @@ export const yue = {
     elevenlabsDesc: "輸入你自己嘅 ElevenLabs API 密鑰同語音 ID 嚟攞到高質素 TTS。設定後會覆蓋所有其他語音設定。",
     elevenlabsApiKey: "ElevenLabs API 密鑰",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "AI 語音 ID",
     elevenlabsStudentVoiceId: "{{STUDENT}}語音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "載入語音緊...",
@@ -2957,6 +2983,8 @@ export const yue = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "管理員登入",
+    loginSubtitle: "受限區域 — 只限管理員",
     licenses: {
       title: "許可證",
       subtitle: "建立同管理用戶及機構許可證。",

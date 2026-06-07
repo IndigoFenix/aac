@@ -302,7 +302,10 @@ export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
   id: "Student_Notes",
   type: "array",
   title: "General Notes",
-  description: "General notes about the student (non-sensitive)",
+  description:
+    "General notes about the student (non-sensitive). This is also where observations recorded during AAC " +
+    "sessions accumulate, so it doubles as the running record of how sessions have been going — read it when " +
+    "asked how the student has been or how interactions have gone.",
   opened: true,
   items: {
     id: "Note",

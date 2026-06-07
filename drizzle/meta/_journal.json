@@ -806,6 +806,13 @@
       "when": 1780204800000,
       "tag": "0114_aac_auto_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1780291200000,
+      "tag": "0115_chat_session_title_manual",
+      "breakpoints": true
     }
   ]
 }

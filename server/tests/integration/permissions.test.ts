@@ -23,8 +23,10 @@ import {
 import { studentShareInviteService } from '../../services/sharing/studentShareInviteService.js';
 import { incidentRepository } from '../../repositories/index.js';
 import { requireLicensePermission } from '../../middleware/auth.js';
-import { objectShares, userStudents } from '@shared/schema';
-import { eq } from 'drizzle-orm';
+import { objectShares, userStudents, programs } from '@shared/schema';
+import { and, eq } from 'drizzle-orm';
+import { programService } from '../../services/programService.js';
+import { withInstituteVisibility, canWriteObject } from '../../services/sharing/visibility.js';
 
 describe('Permissions', () => {
   afterEach(truncateAll);
@@ -149,6 +151,100 @@ describe('Permissions', () => {
 
       const check = await studentService.verifyStudentAccess(student.id, familyMember.id);
       expect(check.hasAccess).toBe(true);
+    });
+
+    // assignStudentToInstitute must distinguish "no such student" from
+    // "exists but you lack access" — the old code returned the access error for
+    // both, which was the misleading hila symptom (a placeholder id that didn't
+    // resolve looked like a permissions problem).
+    it('reports "no student found" when assigning a non-existent student id', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id, { type: 'clinic' });
+
+      const result = await instituteService.assignStudentToInstitute(
+        institute.id,
+        'michael_rozner', // AI placeholder that never resolved to a real student
+        owner.id,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/no student found/i);
+      expect(result.error).not.toMatch(/do not have access/i);
+    });
+
+    it('reports "no access" when assigning a real student the user cannot see', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id, { type: 'clinic' });
+
+      // A different user owns a real student; `owner` has no link to it.
+      const stranger = await makeUser();
+      const { student: othersStudent } = await makeStudent(stranger.id);
+
+      const result = await instituteService.assignStudentToInstitute(
+        institute.id,
+        othersStudent.id,
+        owner.id,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/do not have access/i);
+    });
+  });
+
+  // ============================================================
+  // Personal (null-institute) PHI — owner access
+  // ============================================================
+  // A clinician who OWNS a student directly (personal caseload, no institute
+  // enrollment) creates a program with no institute id. Under an institute-scoped
+  // session it must still be readable/writable by that owner — the bug was that
+  // institute visibility excluded null-institute programs, so Context_Program
+  // loaded empty and writes failed with "owned by another institute".
+  describe('personal (null-institute) program access', () => {
+    const instituteCtx = (instituteId: string, userId: string) =>
+      ({ kind: 'institute' as const, instituteId, userId });
+
+    async function visibleProgramIds(ctx: ReturnType<typeof instituteCtx>, studentId: string) {
+      const rows = await db
+        .select({ id: programs.id })
+        .from(programs)
+        .where(and(eq(programs.studentId, studentId), withInstituteVisibility(programs, ctx, 'program')));
+      return rows.map((r) => r.id);
+    }
+
+    it('lets the student owner read + write a null-institute program under an institute session', async () => {
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id); // owner-linked, no enrollment
+      const { institute } = await makeInstitute(owner.id, { type: 'clinic' }); // owner is admin
+
+      const program = await programService.createProgram({
+        studentId: student.id,
+        framework: 'tala',
+        instituteId: null,
+      } as any);
+
+      const ctx = instituteCtx(institute.id, owner.id);
+
+      expect(await visibleProgramIds(ctx, student.id)).toContain(program.id);
+      expect(await canWriteObject(ctx, 'program', program.id, student.id, null)).toBe(true);
+    });
+
+    it('denies an institute admin who is NOT linked to the student', async () => {
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+      const { institute } = await makeInstitute(owner.id, { type: 'clinic' });
+      const program = await programService.createProgram({
+        studentId: student.id,
+        framework: 'tala',
+        instituteId: null,
+      } as any);
+
+      // Same institute, admin rights — but no userStudents link to this student.
+      const stranger = await makeUser();
+      await addUserToInstitute(institute.id, stranger.id, { isAdmin: true });
+      const ctx = instituteCtx(institute.id, stranger.id);
+
+      expect(await visibleProgramIds(ctx, student.id)).toHaveLength(0);
+      expect(await canWriteObject(ctx, 'program', program.id, student.id, null)).toBe(false);
     });
   });
 

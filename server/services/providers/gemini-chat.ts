@@ -72,7 +72,8 @@ export class GeminiChatProvider implements ChatProvider {
     try { text = response?.text || ""; } catch { /* .text getter can throw if blocked */ }
     const toolCalls = this.extractToolCalls(response);
     const usage = response?.usageMetadata;
-    console.log(`[GeminiChat] Response: finish=${finishReason}, blockReason=${blockReason}, parts=${candidateParts}, text=${text.length}chars, tool_calls=${toolCalls.length}, candidates_tokens=${usage?.candidatesTokenCount}, safety=[${safetyRatings || "none"}]`);
+    const cachedTokens = usage?.cachedContentTokenCount || 0;
+    console.log(`[GeminiChat] Response: finish=${finishReason}, blockReason=${blockReason}, parts=${candidateParts}, text=${text.length}chars, tool_calls=${toolCalls.length}, prompt_tokens=${usage?.promptTokenCount} (cached=${cachedTokens}), candidates_tokens=${usage?.candidatesTokenCount}, safety=[${safetyRatings || "none"}]`);
 
 
     return {
@@ -80,8 +81,14 @@ export class GeminiChatProvider implements ChatProvider {
       toolCalls,
       usage: usage
         ? {
+            // Gemini's promptTokenCount is the EFFECTIVE prompt size and
+            // already includes the cached portion. The cost-helpers split
+            // cached vs. uncached billing using cachedTokens, so we pass
+            // both through and the cost layer does (promptTokens -
+            // cachedTokens) * uncached_rate + cachedTokens * cached_rate.
             promptTokens: usage.promptTokenCount || 0,
             completionTokens: usage.candidatesTokenCount || 0,
+            cachedTokens,
           }
         : undefined,
       finishReason: finishReason || undefined,
@@ -107,7 +114,7 @@ export class GeminiChatProvider implements ChatProvider {
     });
 
     let toolCallIndex = 0;
-    let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
+    let finalUsage: { promptTokens: number; completionTokens: number; cachedTokens?: number } | undefined;
     let lastFinishReason: string | undefined;
     let totalTextLength = 0;
 
@@ -149,6 +156,7 @@ export class GeminiChatProvider implements ChatProvider {
         finalUsage = {
           promptTokens: usage.promptTokenCount || 0,
           completionTokens: usage.candidatesTokenCount || 0,
+          cachedTokens: usage.cachedContentTokenCount || 0,
         };
       }
     }

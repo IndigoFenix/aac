@@ -25,3 +25,4 @@ export { deepAnalysisController, DeepAnalysisController } from "./deepAnalysisCo
 export { shareInviteController, ShareInviteController } from "./shareInviteController";
 export { consentController } from "./consentController";
 export { crmChatController, CrmChatController } from "./crmChatController";
+export { paddleController, PaddleController } from "./paddleController";

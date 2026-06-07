@@ -565,6 +565,84 @@ describe('memory-db-bridge flows', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Batch ID aliasing
+  //
+  // When an op CREATES an entity, the bridge strips the AI's placeholder key and
+  // generates a real DB id. Later ops in the SAME batch that reference the
+  // placeholder (as a path segment / key, or inside a value like
+  // `{ studentId: "<placeholder>" }`) must be rewired to the real id. Without
+  // this, the sibling op targets a non-existent entity — the real-world symptom
+  // was "You do not have access to this student" when enrolling a just-created
+  // student (the enrollment op used the placeholder, not the generated UUID).
+  // --------------------------------------------------------------------------
+  describe('batch ID aliasing', () => {
+    it('rewrites a placeholder key reference in a later op PATH to the generated id', async () => {
+      const calls = freshCalls();
+      const { manager } = await buildManager(userId, calls);
+
+      const result = await manager.processToolCall({
+        ops: [
+          { action: 'add', path: '/Context_TestItems', key: 'temp_acme',
+            value: { name: 'Acme', type: 'school' } },
+          // References the placeholder key as a path segment — must resolve to
+          // the row created above, not the literal "temp_acme".
+          { action: 'set', path: '/Context_TestItems/temp_acme/name', value: 'Acme Renamed' },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.results).toHaveLength(2);
+      expect(result.results[1].ok).toBe(true);
+      expect(calls.add).toBe(1);
+      expect(calls.update).toBe(1);
+      const renamed = await findInstituteByName('Acme Renamed');
+      expect(renamed).toBeDefined();
+      // The renamed row is the very row created by the first op.
+      expect(renamed!.id).toBe(result.results[0].actualKey);
+    });
+
+    it('rewrites a placeholder reference inside a later op VALUE to the generated id', async () => {
+      const calls = freshCalls();
+      const received: Array<{ value: any; key?: string }> = [];
+      const field = makeTestField(calls);
+      // Allow a reference property on the value so the bridge doesn't drop it.
+      (field.values as any).properties.parentRef = { id: 'parentRef', type: 'string', title: 'Parent Ref' };
+      // Record the value the bridge actually hands to the DB op (post-aliasing).
+      const origAdd = field.db!.add!;
+      field.db!.add = async (ctx, value, options) => {
+        received.push({ value: JSON.parse(JSON.stringify(value)), key: (options as any)?.key });
+        return origAdd(ctx, value, options);
+      };
+      const manager = new MemoryManager({
+        fields: [field],
+        baseContext: { userId },
+        originalProcessor: processMemoryToolResponse,
+      });
+      await manager.initialize({}, { visible: [], page: {} });
+
+      const result = await manager.processToolCall({
+        ops: [
+          { action: 'add', path: '/Context_TestItems', key: 'temp_parent',
+            value: { name: 'Parent', type: 'school' } },
+          // The hila shape: a sibling create that references the placeholder
+          // inside its value (mirrors `{ studentId: "<placeholder>" }`).
+          { action: 'add', path: '/Context_TestItems', key: 'temp_child',
+            value: { name: 'Child', type: 'clinic', parentRef: 'temp_parent' } },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      expect(received).toHaveLength(2);
+      const parentId = result.results[0].actualKey;
+      expect(parentId).toBeTruthy();
+      // The second add's value.parentRef was rewritten from the placeholder to
+      // the real generated id.
+      expect(received[1].value.parentRef).toBe(parentId);
+      expect(received[1].value.parentRef).not.toBe('temp_parent');
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Error reporting paths
   // --------------------------------------------------------------------------
   // --------------------------------------------------------------------------

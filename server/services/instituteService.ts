@@ -562,6 +562,29 @@ export class InstituteService {
   }
 
   /**
+   * Resolve student access for an error-bearing caller, distinguishing
+   * "no such student" from "exists but you lack access". The old code returned
+   * "You do not have access to this student" for BOTH, which was misleading —
+   * e.g. when an AI referenced a stale/placeholder id that doesn't resolve to
+   * any student, the message implied a permissions problem rather than a bad id.
+   * (UUID keyspace isn't enumerable, so distinguishing the two leaks nothing useful.)
+   */
+  private async checkStudentAccess(
+    requestingUserId: string,
+    studentId: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const access = await studentRepository.userHasAccessToStudent(requestingUserId, studentId);
+    if (access.hasAccess) return { ok: true };
+    const exists = await studentRepository.getStudentById(studentId);
+    return {
+      ok: false,
+      error: exists
+        ? "You do not have access to this student"
+        : `No student found with id "${studentId}"`,
+    };
+  }
+
+  /**
    * Assign a student to an institute
    * For schools: automatically handles the "one active school" rule
    */
@@ -591,13 +614,10 @@ export class InstituteService {
     }
 
     // Verify the student exists and the user has access
-    const studentAccess = await studentRepository.userHasAccessToStudent(
-      requestingUserId,
-      studentId
-    );
-    if (!studentAccess.hasAccess) {
-      console.log(`User ${requestingUserId} does not have access to student ${studentId}`);
-      return { success: false, error: "You do not have access to this student" };
+    const access = await this.checkStudentAccess(requestingUserId, studentId);
+    if (!access.ok) {
+      console.log(`assignStudentToInstitute: ${access.error} (user ${requestingUserId}, student ${studentId})`);
+      return { success: false, error: access.error };
     }
 
     // For schools, check if student already has an active school
@@ -646,12 +666,9 @@ export class InstituteService {
     requestingUserId: string
   ): Promise<{ success: boolean; institutes?: { institute: Institute; enrollment: InstituteStudent }[]; error?: string }> {
     // Verify the user has access to this student
-    const studentAccess = await studentRepository.userHasAccessToStudent(
-      requestingUserId,
-      studentId
-    );
-    if (!studentAccess.hasAccess) {
-      return { success: false, error: "You do not have access to this student" };
+    const access = await this.checkStudentAccess(requestingUserId, studentId);
+    if (!access.ok) {
+      return { success: false, error: access.error };
     }
 
     const institutes = await instituteRepository.getInstitutesByStudentId(studentId);
@@ -700,18 +717,18 @@ export class InstituteService {
     requestingUserId: string,
     exitReason?: string
   ): Promise<{ success: boolean; error?: string }> {
-    // Verify admin access or student ownership
+    // Verify admin access or student ownership. Admins can remove any enrolled
+    // student; otherwise the caller needs access to the student (and we surface
+    // a "no such student" error when the id doesn't resolve at all).
     const isAdmin = await instituteRepository.isUserAdminOfInstitute(
       instituteId,
       requestingUserId
     );
-    const studentAccess = await studentRepository.userHasAccessToStudent(
-      requestingUserId,
-      studentId
-    );
-
-    if (!isAdmin && !studentAccess.hasAccess) {
-      return { success: false, error: "You must be an admin or have access to this student" };
+    if (!isAdmin) {
+      const access = await this.checkStudentAccess(requestingUserId, studentId);
+      if (!access.ok) {
+        return { success: false, error: access.error };
+      }
     }
 
     const removed = await instituteRepository.removeStudentFromInstitute(
@@ -731,12 +748,9 @@ export class InstituteService {
     requestingUserId: string
   ): Promise<{ success: boolean; school?: { institute: Institute; enrollment: InstituteStudent }; error?: string }> {
     // Verify the user has access to this student
-    const studentAccess = await studentRepository.userHasAccessToStudent(
-      requestingUserId,
-      studentId
-    );
-    if (!studentAccess.hasAccess) {
-      return { success: false, error: "You do not have access to this student" };
+    const access = await this.checkStudentAccess(requestingUserId, studentId);
+    if (!access.ok) {
+      return { success: false, error: access.error };
     }
 
     const school = await instituteRepository.getActiveSchoolForStudent(studentId);

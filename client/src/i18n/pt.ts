@@ -174,6 +174,21 @@ export const pt = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "Autenticação de dois fatores",
+    mfaPrompt: "Insira o código de 6 dígitos do seu aplicativo autenticador",
+    mfaVerify: "Verificar",
+    mfaBackToSignIn: "Voltar ao login",
+    mfaLostAccess: "Perdeu o acesso ao autenticador?",
+    mfaSetupTitle: "Configurar autenticação de dois fatores",
+    mfaSetupRequired: "O seu administrador exige autenticação de dois fatores para esta conta",
+    mfaSetupAdminRequired: "A autenticação de dois fatores é obrigatória para contas de administrador",
+    mfaCompleteSetup: "Concluir configuração",
+    mfaSetupLoadFailed: "Falha ao carregar a configuração de MFA. Tente novamente.",
+    notAnAdmin: "Esta conta não é de administrador. Redirecionando…",
+    termsOfService: "Termos de Serviço",
+    privacyPolicy: "Política de Privacidade",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const pt = {
     welcomeWithUser: "Como posso ajudá-lo com {name} hoje?",
     workingWith: "Trabalhando atualmente com:",
     newConversation: "Iniciar nova conversa",
+    history: {
+      newChat: "Nova conversa",
+      untitled: "Conversa sem título",
+      empty: "Sem conversas anteriores",
+      rename: "Renomear",
+      delete: "Excluir",
+      confirmDelete: "Excluir?",
+      show: "Mostrar conversas",
+      hide: "Ocultar conversas",
+    },
     addAttachment: "Adicionar anexo",
     tools: "Ferramentas",
     
@@ -2328,6 +2353,7 @@ export const pt = {
     elevenlabsDesc: "Insira sua própria chave API do ElevenLabs e IDs de voz para TTS de alta qualidade. Substitui todas as outras configurações de voz quando definido.",
     elevenlabsApiKey: "Chave API do ElevenLabs",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "ID de voz da IA",
     elevenlabsStudentVoiceId: "ID de voz do {{STUDENT}}",
     elevenlabsVoiceIdPlaceholder: "ex. 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "Carregando vozes...",
@@ -2957,6 +2983,8 @@ export const pt = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "Acesso de administrador",
+    loginSubtitle: "Área restrita — apenas administradores",
     licenses: {
       title: "Licenças",
       subtitle: "Criar e gerenciar licenças de usuários e organizações.",

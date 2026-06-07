@@ -8,6 +8,10 @@ export type VoiceType = "man" | "woman" | "boy" | "girl";
 export interface TTSOptions {
   voiceType?: VoiceType;
   voiceName?: string; // Direct Gemini voice name override (e.g. "Puck", "Kore")
+  /** Natural-language style hint prepended to the synth instruction —
+   *  e.g. "Speak warmly and conversationally". The Gemini 2.5 TTS model
+   *  picks up the directive and adjusts prosody. Falsy = no style hint. */
+  prompt?: string;
 }
 
 // Gemini prebuilt voice names
@@ -51,6 +55,16 @@ function getVoiceName(options: TTSOptions): string {
   return VOICE_MAP[options.voiceType || "woman"] || "Zephyr";
 }
 
+/** Compose the synth instruction. When a style prompt is provided the
+ *  model uses it to shape prosody; otherwise we use the neutral
+ *  "exactly as written" framing so the model doesn't ad-lib. */
+function buildContents(text: string, language: string, prompt?: string): string {
+  if (prompt && prompt.trim()) {
+    return `${prompt.trim()}\n\nSay the following in ${language}, exactly as written. Do not add anything else.\n\n${text}`;
+  }
+  return `Say the following in ${language}, exactly as written, with natural intonation. Do not add anything else:\n\n${text}`;
+}
+
 /**
  * Synthesize text to speech using Gemini's generateContent with AUDIO modality.
  * Returns audio as an MP3 buffer.
@@ -67,9 +81,10 @@ export async function synthesize(
   );
 
   const ai = getClient();
+  const contents = buildContents(text, language, options.prompt);
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
-    contents: `Say the following in ${language}, exactly as written, with natural intonation. Do not add anything else:\n\n${text}`,
+    contents,
     config: {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
@@ -113,9 +128,10 @@ export async function* synthesizeStream(
 
   const ai = getClient();
   const t0 = Date.now();
+  const contents = buildContents(text, language, options.prompt);
   const stream = await ai.models.generateContentStream({
     model: "gemini-2.5-flash-preview-tts",
-    contents: `Say the following in ${language}, exactly as written, with natural intonation. Do not add anything else:\n\n${text}`,
+    contents,
     config: {
       responseModalities: [Modality.AUDIO],
       speechConfig: {

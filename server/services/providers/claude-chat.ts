@@ -13,9 +13,38 @@ import type {
 export class ClaudeChatProvider implements ChatProvider {
   private client = getAnthropicClient();
 
+  /**
+   * Apply prompt-cache breakpoints. The system block is cached inline where
+   * params are built; here we also cache the last tool (so the system+tools
+   * prefix stays in the lookback window as messages grow) and the last message
+   * block (incremental conversation caching — the whole conversation-so-far is
+   * read at 0.1x and only the new delta is written next turn). Mirrors
+   * claude-structured.ts. Caps at Anthropic's 4-breakpoint limit
+   * (system + last tool + last message = 3).
+   */
+  private applyCacheBreakpoints(
+    tools: any[],
+    messages: Array<{ role: "user" | "assistant"; content: string | any[] }>,
+  ): void {
+    if (tools.length > 0) {
+      tools[tools.length - 1].cache_control = { type: "ephemeral" };
+    }
+    if (messages.length > 0) {
+      const last = messages[messages.length - 1];
+      // cache_control must sit on a content BLOCK, so coerce a bare string first.
+      if (typeof last.content === "string") {
+        last.content = [{ type: "text", text: last.content }];
+      }
+      if (Array.isArray(last.content) && last.content.length > 0) {
+        last.content[last.content.length - 1].cache_control = { type: "ephemeral" };
+      }
+    }
+  }
+
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
     const model = resolveModelId("claude", request.model);
     const { system, messages, tools, toolChoice } = this.buildRequest(request);
+    this.applyCacheBreakpoints(tools, messages);
 
     const params: any = {
       model,
@@ -58,6 +87,8 @@ export class ClaudeChatProvider implements ChatProvider {
         ? {
             promptTokens: response.usage.input_tokens,
             completionTokens: response.usage.output_tokens,
+            cachedTokens: (response.usage as any).cache_read_input_tokens ?? 0,
+            cacheCreationTokens: (response.usage as any).cache_creation_input_tokens ?? 0,
           }
         : undefined,
     };
@@ -66,6 +97,7 @@ export class ClaudeChatProvider implements ChatProvider {
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
     const model = resolveModelId("claude", request.model);
     const { system, messages, tools, toolChoice } = this.buildRequest(request);
+    this.applyCacheBreakpoints(tools, messages);
 
     const params: any = {
       model,
@@ -130,13 +162,15 @@ export class ClaudeChatProvider implements ChatProvider {
     }
 
     // Get usage from the final aggregated message
-    let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
+    let finalUsage: { promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number } | undefined;
     try {
       const finalMessage = await stream.finalMessage();
       if (finalMessage.usage) {
         finalUsage = {
           promptTokens: finalMessage.usage.input_tokens,
           completionTokens: finalMessage.usage.output_tokens,
+          cachedTokens: (finalMessage.usage as any).cache_read_input_tokens ?? 0,
+          cacheCreationTokens: (finalMessage.usage as any).cache_creation_input_tokens ?? 0,
         };
       }
     } catch (e) {

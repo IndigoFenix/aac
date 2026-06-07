@@ -42,6 +42,7 @@ import type {
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
 } from "./agent-events";
+import type { ISpeakerAgent } from "./speaker-interface";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -99,7 +100,7 @@ export interface SpeakerStartConfig {
 // SpeakerAgent
 // ---------------------------------------------------------------------------
 
-export class SpeakerAgent {
+export class SpeakerAgent implements ISpeakerAgent {
   private provider: LiveProvider | null = null;
   private readonly callbacks: SpeakerCallbacks;
   private readonly providerKey: LLMProviderKey;

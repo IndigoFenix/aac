@@ -881,7 +881,8 @@ import {
                       provider, model,
                       gptResponse.promptTokens,
                       gptResponse.completionTokens,
-                      gptResponse.cachedTokens
+                      gptResponse.cachedTokens,
+                      gptResponse.cacheCreationTokens
                   );
 
                   // Search surcharge only applies to OpenAI
@@ -1317,7 +1318,7 @@ import {
 
               let accumulatedText = '';
               const toolCallAccumulator: Map<number, { name: string; arguments: string }> = new Map();
-              let usage: { promptTokens: number; completionTokens: number } | undefined;
+              let usage: { promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number } | undefined;
 
               const stream = chatProvider.streamChat({
                   model,
@@ -1350,7 +1351,7 @@ import {
               // Calculate credits
               let creditsUsed = 0;
               if (usage) {
-                  creditsUsed = creditsForModelUsage(providerKey, model, usage.promptTokens, usage.completionTokens, 0);
+                  creditsUsed = creditsForModelUsage(providerKey, model, usage.promptTokens, usage.completionTokens, usage.cachedTokens ?? 0, usage.cacheCreationTokens ?? 0);
                   totalCreditsUsed += creditsUsed;
               }
 

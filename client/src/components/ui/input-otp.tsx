@@ -8,8 +8,11 @@ const InputOTP = React.forwardRef<
   React.ElementRef<typeof OTPInput>,
   React.ComponentPropsWithoutRef<typeof OTPInput>
 >(({ className, containerClassName, ...props }, ref) => (
+  // Verification codes are always entered left-to-right, even in RTL layouts.
+  // Forcing dir="ltr" keeps the underlying input from typing right-to-left.
   <OTPInput
     ref={ref}
+    dir="ltr"
     containerClassName={cn(
       "flex items-center gap-2 has-[:disabled]:opacity-50",
       containerClassName
@@ -24,7 +27,8 @@ const InputOTPGroup = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div">
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("flex items-center", className)} {...props} />
+  // dir="ltr" keeps the slots ordered left-to-right inside RTL pages.
+  <div ref={ref} dir="ltr" className={cn("flex items-center", className)} {...props} />
 ))
 InputOTPGroup.displayName = "InputOTPGroup"
 

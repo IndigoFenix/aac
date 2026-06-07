@@ -293,6 +293,10 @@ function SessionLogDialog({
   const chatLog = useChatSessionLog(type === "chat" ? sessionId : null);
   const query = type === "aac" ? aacLog : chatLog;
   const messages = query.data?.data ?? [];
+  const title = query.data?.title ?? null;
+  const summary = query.data?.summary ?? null;
+  const importance = query.data?.importance ?? null;
+  const hasSummary = !!(title || summary);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -304,13 +308,27 @@ function SessionLogDialog({
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !hasSummary ? (
           <p className="text-sm text-muted-foreground py-8 text-center">No messages in this session.</p>
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto pr-4">
             {messages.map((msg: any, i: number) => (
               <LogMessage key={i} msg={msg} />
             ))}
+            {hasSummary && (
+              <div className="mt-4 pt-3 border-t-2 border-dashed bg-muted/30 -mx-4 px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="secondary" className="text-xs">Session Summary</Badge>
+                  {typeof importance === "number" && (
+                    <Badge variant="outline" className="text-xs">importance: {importance}</Badge>
+                  )}
+                </div>
+                {title && <p className="text-sm font-semibold mb-1">{title}</p>}
+                {summary && (
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">{summary}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

@@ -59,18 +59,40 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       });
     }
 
-    // Only enable prompt caching when STATIC_MEMORY_PROMPT is set — the system prompt
-    // must be stable across turns for caching to produce reads instead of just writes.
-    const useCache = process.env.STATIC_MEMORY_PROMPT === 'true';
+    // Prompt caching is always on. The memory schema runs in static mode so the
+    // system prompt is stable across turns, which is what makes the cache produce
+    // reads (0.1x) instead of just writes (1.25x). See prompt-cache-stability.test.ts.
     const systemBlock = systemPrompt
-      ? [{ type: "text" as const, text: systemPrompt, ...(useCache ? { cache_control: { type: "ephemeral" as const } } : {}) }]
+      ? [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" as const } }]
       : undefined;
 
     // Also mark the last tool with cache_control so the system+tools prefix stays
     // within the 20-block lookback window even as messages grow
-    if (useCache && tools.length > 0) {
+    if (tools.length > 0) {
       (tools[tools.length - 1] as any).cache_control = { type: "ephemeral" as const };
     }
+
+    // Incremental conversation caching: put a breakpoint on the LAST message block
+    // so the entire conversation-so-far (system + tools + all prior messages) is
+    // cached. The next turn/round reads that whole prefix (0.1x) and only writes the
+    // newly-appended delta — instead of re-billing the full, growing history at 1x
+    // every round. The cache invalidates from the point history is rewritten
+    // (compression/summary), which is the natural "until we compress" boundary.
+    // Caps at Anthropic's 4-breakpoint limit (system + last tool + last message = 3).
+    if (messages.length > 0) {
+      const last = messages[messages.length - 1];
+      // cache_control must sit on a content BLOCK, so coerce a bare string first.
+      if (typeof last.content === "string") {
+        last.content = [{ type: "text", text: last.content }];
+      }
+      if (Array.isArray(last.content) && last.content.length > 0) {
+        (last.content[last.content.length - 1] as any).cache_control = { type: "ephemeral" as const };
+      }
+    }
+
+    // Opt-in verbose request/usage dump for cache debugging (off by default —
+    // would otherwise append to a file on every production call).
+    const cacheDebug = process.env.CLAUDE_CACHE_DEBUG === 'true';
 
     const params: any = {
       model,
@@ -83,7 +105,7 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
     };
 
     // Dump COMPLETE request params to file for cache debugging
-    if (useCache) {
+    if (cacheDebug) {
       try {
         const fs = await import('fs');
         const { join, dirname } = await import('path');
@@ -101,7 +123,7 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
     const response = await this.client.messages.create(params);
 
-    if (useCache) {
+    if (cacheDebug) {
       try {
         const fs = await import('fs');
         const { join, dirname } = await import('path');
@@ -308,6 +330,9 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       promptTokens: response.usage?.input_tokens ?? 0,
       completionTokens: response.usage?.output_tokens ?? 0,
       cachedTokens: (response.usage as any)?.cache_read_input_tokens ?? 0,
+      // Anthropic bills cache writes at 1.25x base. `input_tokens` EXCLUDES
+      // both cache reads and cache writes, so this must be billed on top.
+      cacheCreationTokens: (response.usage as any)?.cache_creation_input_tokens ?? 0,
       content,
       output: response.content,
       toolCalls: functionCalls,

@@ -650,12 +650,12 @@ export class AdminController {
     try {
       const { id } = req.params;
       // Reuse the chat-session log getter — CRM sessions live in chat_sessions.
-      const log = await chatRepository.getSessionLog(id);
-      if (!log) {
+      const session = await chatRepository.getSessionLog(id);
+      if (!session) {
         res.status(404).json({ success: false, message: "Session not found" });
         return;
       }
-      res.json({ success: true, data: log });
+      res.json({ success: true, data: session.log });
     } catch (error: any) {
       console.error("Error fetching CRM session log:", error);
       res.status(500).json({ success: false, message: "Failed to fetch session log" });

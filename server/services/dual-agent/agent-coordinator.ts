@@ -27,6 +27,8 @@ import { voiceRecordRepository } from "../../repositories/voiceRecordRepository"
 
 import { ObserverAgent, type ObserverOutputEvent } from "./observer-agent";
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
+import { HttpSpeakerAgent } from "./http-speaker-agent";
+import type { ISpeakerAgent } from "./speaker-interface";
 import {
   BoardManagerAgent,
   type BoardManagerOutputEvent,
@@ -459,8 +461,13 @@ export class AgentCoordinator {
   // Agent handles
   // -------------------------------------------------------------------------
   private observer: ObserverAgent | null = null;
-  private speaker: SpeakerAgent | null = null;
+  private speaker: ISpeakerAgent | null = null;
   private boardManager: BoardManagerAgent | null = null;
+  /** Selected Speaker implementation. Driven by AAC_SPEAKER_MODE env var
+   *  (default "http"). HTTP uses Gemini chat completion + streaming TTS;
+   *  "live" uses the legacy Gemini Live path with native audio / speak()
+   *  tool depending on model. Cached once per session. */
+  private speakerMode: "http" | "live" = "http";
 
   // Per-agent runtime config (rebuilt on transitions; cached here so
   // re-routing decisions don't need to walk back to settings).
@@ -682,7 +689,7 @@ export class AgentCoordinator {
   // every SUMMARY_EVERY_N_MESSAGES new entries. The resulting summary is
   // both injected as a [SESSION SUMMARY] context message AND folded into
   // the per-agent prompts on the next profile-switch reconnect.
-  private conversationLog: Array<{ role: "user" | "assistant"; content: string }> = [];
+  private conversationLog: Array<{ role: "user" | "assistant" | "system"; content: string }> = [];
   private summarizedMsgCount = 0;
   private summaryInFlight = false;
   private currentSessionSummary: string | undefined;
@@ -1032,9 +1039,31 @@ export class AgentCoordinator {
     this.speakerModel = process.env.AAC_SPEAKER_MODEL || aacChat.model;
     this.useVertex = aacChat.provider === "gemini";
     this.aacChatProvider = aacChat.provider;
-    // useDirectAudio is true when the SPEAKER's configured Live model is
-    // native-audio. Observer never produces audio anyway.
-    this.useDirectAudio = this.speakerModel.includes("native-audio") || this.speakerModel.includes("live");
+    // HTTP path needs a text-completion-capable model — the configured
+    // `aac_chat` model is typically a Live variant (native-audio) which
+    // 404s on generateContent. Default to the same text model the Board
+    // Manager uses; override via AAC_SPEAKER_HTTP_MODEL when tuning.
+    const httpSpeakerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+    // Speaker backend selection — env-driven. Default "http" for the
+    // cheap/reliable HTTP completion + streaming TTS path; "live" keeps
+    // the legacy Gemini Live behavior (native audio when the model
+    // supports it; speak() tool otherwise). Any other value falls back
+    // to http with a warning.
+    const speakerModeRaw = (process.env.AAC_SPEAKER_MODE || "http").toLowerCase();
+    if (speakerModeRaw !== "http" && speakerModeRaw !== "live") {
+      console.warn(`[AgentCoordinator] Unknown AAC_SPEAKER_MODE="${speakerModeRaw}" — defaulting to "http"`);
+    }
+    this.speakerMode = speakerModeRaw === "live" ? "live" : "http";
+    // Swap the Speaker model when we're on the HTTP path — the configured
+    // aac_chat model is a Live variant that generateContent will 404 on.
+    if (this.speakerMode === "http") {
+      this.speakerModel = httpSpeakerModel;
+    }
+    // useDirectAudio drives runtime audio-chunk routing for the Live
+    // path (native-audio model emits PCM via onAudioChunk). In HTTP mode
+    // there is no live audio stream — text → server TTS → avatar_audio.
+    this.useDirectAudio = this.speakerMode === "live"
+      && (this.speakerModel.includes("native-audio") || this.speakerModel.includes("live"));
     this.aiVoiceName = this.aiVoice?.geminiVoiceName;
     if (this.observerModel !== aacChat.model || this.speakerModel !== aacChat.model) {
       console.log(`[AgentCoordinator] Per-agent model override: observer=${this.observerModel} speaker=${this.speakerModel}`);
@@ -1324,7 +1353,11 @@ export class AgentCoordinator {
         persona: sections?.persona || composeAacPersona({ custom: student?.aacSettings?.chatAgentPrompt, auto: student?.aacSettings?.autoAacPrompt }),
         memoryContext: state.memoryContext,
         muteState: state.muteState,
-        useDirectAudio: this.useDirectAudio,
+        // In HTTP mode the assistant text content IS the spoken reply —
+        // there is no speak() tool. Mirror that to the prompt builder via
+        // the same useDirectAudio flag the native-audio path uses so the
+        // model doesn't get instructed to call a tool that isn't there.
+        useDirectAudio: this.useDirectAudio || this.speakerMode === "http",
         sessionGoals: sections?.sessionGoals,
         // Three-agent path uses speech-only examples; DON'T fall back to
         // the legacy interactModeExamples (those contain rebuild_board
@@ -2322,6 +2355,12 @@ export class AgentCoordinator {
       // Either USER-targeted or 3rd-party / UNKNOWN. Speaker sees it as
       // context only — it doesn't respond unless directly addressed.
       this.speaker?.sendContextInjection(rendered);
+      // Persist USER-targeted and ambient transcripts as observer-side
+      // observations so Monitor (and the admin log) retain conversational
+      // context that wasn't directly aimed at the AI. Without this, the
+      // session log only captures DEVICE turns and the AI never gets
+      // memory updates from real-world conversation around the student.
+      this.appendToConversationLog("system", rendered);
     }
 
     // BoardManager rebuilds whenever the USER needs to reply — i.e. the
@@ -2353,6 +2392,11 @@ export class AgentCoordinator {
     const joined = lines.join("\n");
     this.observer?.sendContextInjection(joined);
     this.speaker?.sendContextInjection(joined);
+    // Observer's observations are session memory — persist them to the
+    // conversation log so Monitor incorporates them into Notes/Interests/
+    // People updates and the admin log shows the perceived context, not
+    // just the spoken turns.
+    this.appendToConversationLog("system", joined);
     this.invokeBoardManager(batch);
   }
 
@@ -2423,10 +2467,16 @@ export class AgentCoordinator {
         this.speaker = null;
         return;
       case "end_session":
-        // Full cleanup including WS close. Client should re-initialize
-        // a fresh session on subsequent activity.
-        this.send({ type: "sleep_state_change", data: { state: "hibernation", source: "ai" } });
-        this.cleanup(`end_session: ${event.reason || ""}`);
+        // Defensive only — the tool is no longer declared on Observer's
+        // surface (we never want the AI to kill a session unilaterally;
+        // sleep() handles "user is done for now"). If a stale model call
+        // ever surfaces, downgrade to sleep instead of cleaning up.
+        flowNote("COORDINATOR", "Ignored stale end_session call — downgrading to sleep");
+        this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
+        try { this.observer?.close(); } catch {}
+        try { this.speaker?.close(); } catch {}
+        this.observer = null;
+        this.speaker = null;
         return;
     }
   }
@@ -2570,11 +2620,26 @@ export class AgentCoordinator {
 
   /** Build a fresh SpeakerAgent with the standard callback bundle. Used
    *  by initial start AND by transitionToProfile("awake") when recreating
-   *  Speaker after a resting close. */
-  private createSpeakerAgent(): SpeakerAgent {
+   *  Speaker after a resting close. Picks SpeakerAgent (Live) or
+   *  HttpSpeakerAgent based on `this.speakerMode`. */
+  private createSpeakerAgent(): ISpeakerAgent {
     const provider = "gemini" as const;
     const aacChatProvider = this.aacChatProvider;
     const speakerModel = this.speakerModel;
+    const callbacks = {
+      onEvent: (e: SpeakerOutputEvent) => this.onSpeakerEvent(e),
+      onAudioChunk: (data: { mimeType: string; data: string }) => this.onSpeakerAudioChunk(data),
+      onTranscriptionDelta: (text: string) => this.onSpeakerTranscriptionDelta(text),
+      onSpeakText: (text: string) => this.onSpeakerSpeakText(text),
+      onError: (err: Error) => console.error("[AgentCoordinator] Speaker error:", err),
+      onClose: () => console.log("[AgentCoordinator] Speaker closed"),
+      onUsage: (usage: any) => this.trackLiveUsage("speaker", aacChatProvider, speakerModel, usage),
+    };
+    if (this.speakerMode === "http") {
+      flowNote("COORDINATOR", `Speaker mode=http (Gemini chat completion + streaming TTS)`);
+      return new HttpSpeakerAgent(provider, callbacks);
+    }
+    flowNote("COORDINATOR", `Speaker mode=live (Gemini Live, useDirectAudio=${this.useDirectAudio})`);
     return new SpeakerAgent(provider, {
       onEvent: (e) => this.onSpeakerEvent(e),
       onAudioChunk: (data) => this.onSpeakerAudioChunk(data),
@@ -2854,25 +2919,76 @@ export class AgentCoordinator {
     }
   }
 
-  private async onSpeakerSpeakText(text: string): Promise<void> {
-    if (!this.aiVoice) return;
+  /** Credit-tracking callback shared by both TTS paths. Fires once per
+   *  synth call for the provider that actually rendered the audio.
+   *  Aborted streams report nothing — we don't bill for cancelled
+   *  synthesis. */
+  private ttsUsageCallback() {
+    return (usage: { provider: import("../chat/cost-helpers").TtsProvider; characters: number }) => {
+      if (!this.sessionId || !this.studentId) return;
+      dualAgentService
+        .trackTtsUsage(this.sessionId, this.studentId, this.userId, usage.provider, usage.characters)
+        .catch(err => console.error("[AgentCoordinator] trackTtsUsage failed:", err));
+    };
+  }
+
+  /** Iterate a pre-started TTS stream and emit each chunk to the client
+   *  as `messageType`. Returns the chunk count. The iterator is started
+   *  by the caller (with first chunk pre-requested) so the HTTP call
+   *  fires immediately — important for the AI path where this method
+   *  runs serialized via `aiTtsChain` while the previous sentence is
+   *  still emitting. */
+  private async drainTtsToClient(opts: {
+    iter: AsyncIterator<Buffer>;
+    firstChunk: Promise<IteratorResult<Buffer>>;
+    messageType: "avatar_audio" | "utterance_audio";
+    signal?: AbortSignal;
+  }): Promise<number> {
+    let count = 0;
     try {
-      for await (const chunk of ttsFacade.synthesizeStream(text, this.aiVoice)) {
-        this.send({ type: "avatar_audio", data: chunk.toString("base64"), format: "mp3" });
+      let result = await opts.firstChunk;
+      while (!result.done) {
+        if (opts.signal?.aborted) break;
+        this.send({ type: opts.messageType, data: result.value.toString("base64") });
+        count++;
+        result = await opts.iter.next();
       }
     } catch (err) {
-      console.error("[AgentCoordinator] AI TTS failed:", err);
+      if (!opts.signal?.aborted) {
+        console.error("[AgentCoordinator] TTS emission failed:", err);
+      }
     }
+    return count;
+  }
+
+  /** Sequential emission queue for AI TTS audio. The HTTP Speaker path
+   *  calls `onSpeakText` once per completed sentence as the LLM stream
+   *  lands. Each call pre-fires the TTS HTTP request IMMEDIATELY, then
+   *  queues client emission behind any in-flight prior sentence — so
+   *  sentence N's TTS rendering overlaps with sentence N-1's playback
+   *  and chunks land back-to-back with no audible gap. The Live
+   *  `speak()` path only fires once per turn, so the chain is a no-op
+   *  there. */
+  private aiTtsChain: Promise<void> = Promise.resolve();
+
+  private onSpeakerSpeakText(text: string): void {
+    if (!this.aiVoice || !text.trim()) return;
+    const iter = ttsFacade.synthesizeStream(text, this.aiVoice, undefined, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    const firstChunk = iter.next();
+    const prior = this.aiTtsChain;
+    this.aiTtsChain = (async () => {
+      await prior;
+      await this.drainTtsToClient({ iter, firstChunk, messageType: "avatar_audio" });
+    })();
   }
 
   private async streamStudentTts(text: string, source: string = "?"): Promise<void> {
     if (!this.studentVoice) return;
-
     // Cancel any in-flight TTS from a prior press / interpret AND tell
     // the client to drop queued utterance audio. Without this, a second
-    // press while the first stream is still arriving on the client
-    // produces doubled playback. The `audio_clear_tag` is tag-scoped
-    // so the AI's avatar_audio queue is preserved.
+    // press while the first stream is still arriving produces doubled
+    // playback. `audio_clear_tag` is tag-scoped — the AI's avatar_audio
+    // queue is preserved.
     if (this.studentTtsAbortController) {
       this.studentTtsAbortController.abort();
       this.send({ type: "audio_clear_tag", tag: "utterance" });
@@ -2881,38 +2997,24 @@ export class AgentCoordinator {
     this.studentTtsAbortController = controller;
 
     flowOutput("COORDINATOR", "student_tts_start", `[${source}] "${text}"`);
-    let chunkCount = 0;
+    const iter = ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    const firstChunk = iter.next();
     try {
-      // Track TTS credits via the facade's onUsage callback. Fires once
-      // for the provider that actually rendered the audio (the facade
-      // may fall back through several before landing). Aborted streams
-      // report nothing — we don't bill for cancelled synthesis.
-      const onUsage = (usage: { provider: import("../chat/cost-helpers").TtsProvider; characters: number }) => {
-        if (!this.sessionId || !this.studentId) return;
-        dualAgentService
-          .trackTtsUsage(this.sessionId, this.studentId, this.userId, usage.provider, usage.characters)
-          .catch(err => console.error("[AgentCoordinator] trackTtsUsage failed:", err));
-      };
-      for await (const chunk of ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, onUsage)) {
-        if (controller.signal.aborted) break;
-        this.send({ type: "utterance_audio", data: chunk.toString("base64") });
-        chunkCount += 1;
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        console.error("[AgentCoordinator] student TTS failed:", err);
-      }
-    } finally {
-      // Only clear the controller pointer if this call is still the
-      // owner — a later call may have already replaced it.
-      if (this.studentTtsAbortController === controller) {
-        this.studentTtsAbortController = null;
-      }
+      const count = await this.drainTtsToClient({
+        iter,
+        firstChunk,
+        messageType: "utterance_audio",
+        signal: controller.signal,
+      });
       flowOutput(
         "COORDINATOR",
         controller.signal.aborted ? "student_tts_aborted" : "student_tts_end",
-        `[${source}] chunks=${chunkCount}`,
+        `[${source}] chunks=${count}`,
       );
+    } finally {
+      if (this.studentTtsAbortController === controller) {
+        this.studentTtsAbortController = null;
+      }
     }
   }
 
@@ -3049,6 +3151,8 @@ export class AgentCoordinator {
         this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, BOARD_MANAGER_DEFAULT_MODEL, {
           promptTokens: result.usage.promptTokens,
           completionTokens: result.usage.completionTokens,
+          cachedTokens: result.usage.cachedTokens ?? 0,
+          cacheCreationTokens: result.usage.cacheCreationTokens ?? 0,
         });
       }
       for (const event of result.events) {
@@ -3582,7 +3686,7 @@ export class AgentCoordinator {
    *  (the queue Monitor reads from stays permanently empty). Mirrors
    *  the legacy LiveRelay's addPendingMessage calls in every turn-end
    *  path. */
-  private appendToConversationLog(role: "user" | "assistant", content: string): void {
+  private appendToConversationLog(role: "user" | "assistant" | "system", content: string): void {
     this.conversationLog.push({ role, content });
     this.maybeProduceSessionSummary();
     if (this.sessionId) {
@@ -3615,7 +3719,7 @@ export class AgentCoordinator {
     const summaryT0 = Date.now();
     monitor
       .produceSessionSummary(this.currentSessionSummary, newMessages)
-      .then((result: { summary?: string; usage?: { provider: any; model: string; promptTokens: number; completionTokens: number; cachedTokens?: number } }) => {
+      .then((result: { summary?: string; usage?: { provider: any; model: string; promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number } }) => {
         this.summaryInFlight = false;
         // Bill credits regardless of whether the summary changed — the
         // LLM call still happened and tokens were consumed.
@@ -3630,6 +3734,7 @@ export class AgentCoordinator {
             result.usage.completionTokens,
             result.usage.cachedTokens ?? 0,
             "monitor-summary",
+            result.usage.cacheCreationTokens ?? 0,
           ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(summary) failed:", err));
         }
         const summary = result.summary;
@@ -3782,8 +3887,9 @@ export class AgentCoordinator {
         this.studentId,
         this.userId,
         provider as any,
-        `${agent}:${model}`,  // prefix so cost rows are attributable per agent
+        model,            // real catalog model id — used for PRICING
         usage,
+        `${agent}:${model}`,  // attribution label — used for the cost LOG only
       )
       .catch(err => console.error(`[AgentCoordinator] trackLiveUsage(${agent}) failed:`, err));
   }

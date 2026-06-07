@@ -229,6 +229,162 @@ export class ChatRepository {
     const ref = studentId ? { type: "student" as const, id: studentId } : undefined;
     return hydrateRecords("chat_sessions", rows, ref);
   }
+
+  // ============================================================================
+  // CLINICIAN (own-data) OPERATIONS
+  //
+  // These power the in-chat "past conversations" sidebar. Unlike the admin
+  // methods above, every query is scoped to the requesting user's own sessions
+  // (userId match) — never institute-wide. AAC and CRM sessions are excluded;
+  // those have their own surfaces.
+  // ============================================================================
+
+  /**
+   * List the requesting user's own chat conversations, newest first. Returns a
+   * lightweight projection (no full log) plus a derived message count and a
+   * snippet of the first message, so the sidebar can show a fallback name when
+   * no AI/manual title exists yet. Empty sessions (0 messages) are omitted.
+   */
+  async getSessionsForUser(opts: {
+    userId: string;
+    studentId?: string;
+    limit?: number;
+  }): Promise<
+    Array<{
+      id: string;
+      title: string | null;
+      titleManual: boolean;
+      importance: number;
+      chatMode: string;
+      status: "open" | "paused" | "closed";
+      started: Date;
+      lastUpdate: Date;
+      messageCount: number;
+      firstMessage: string | null;
+    }>
+  > {
+    const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+    const conditions = [
+      eq(chatSessions.userId, opts.userId),
+      isNull(chatSessions.deletedAt),
+      ne(chatSessions.chatMode, "aac"),
+      isNull(chatSessions.crmPotentialCustomerId),
+      sql`jsonb_array_length(${chatSessions.log}) > 0`,
+    ];
+    if (opts.studentId) {
+      conditions.push(eq(chatSessions.studentId, opts.studentId));
+    }
+
+    return await db
+      .select({
+        id: chatSessions.id,
+        title: chatSessions.title,
+        titleManual: chatSessions.titleManual,
+        importance: chatSessions.importance,
+        chatMode: chatSessions.chatMode,
+        status: chatSessions.status,
+        started: chatSessions.started,
+        lastUpdate: chatSessions.lastUpdate,
+        messageCount: sql<number>`jsonb_array_length(${chatSessions.log})`,
+        // First message is the user's opening line (string content); truncate
+        // for a fallback label. Objects (assistant md/html) yield their JSON
+        // text, which we never reach here since index 0 is the user's message.
+        firstMessage: sql<string | null>`left(${chatSessions.log}->0->>'content', 140)`,
+      })
+      .from(chatSessions)
+      .where(and(...conditions))
+      .orderBy(desc(chatSessions.lastUpdate))
+      .limit(limit);
+  }
+
+  /** Load one of the user's own sessions in full (for resume). Ownership-scoped. */
+  async getSessionForUser(id: string, userId: string): Promise<ChatSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.id, id),
+          eq(chatSessions.userId, userId),
+          isNull(chatSessions.deletedAt),
+        ),
+      );
+    if (!session) return undefined;
+    const [hydrated] = await hydrateRecords("chat_sessions", [session]);
+    return hydrated;
+  }
+
+  /**
+   * Rename one of the user's own sessions and lock the title so the summarizer
+   * never overwrites it. Returns false if the session isn't found / not owned.
+   */
+  async renameSession(id: string, userId: string, title: string): Promise<boolean> {
+    const trimmed = title.trim().slice(0, 200);
+    const result = await db
+      .update(chatSessions)
+      .set({ title: trimmed, titleManual: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(chatSessions.id, id),
+          eq(chatSessions.userId, userId),
+          isNull(chatSessions.deletedAt),
+        ),
+      )
+      .returning({ id: chatSessions.id });
+    return result.length > 0;
+  }
+
+  /** Soft-delete one of the user's own sessions. Returns false if not owned. */
+  async softDeleteSessionForUser(id: string, userId: string): Promise<boolean> {
+    const result = await db
+      .update(chatSessions)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(chatSessions.id, id),
+          eq(chatSessions.userId, userId),
+          isNull(chatSessions.deletedAt),
+        ),
+      )
+      .returning({ id: chatSessions.id });
+    return result.length > 0;
+  }
+
+  /**
+   * IDs of the user's recent sessions that have messages but no title yet.
+   * Used to opportunistically backfill titles when the sidebar is opened —
+   * awaited (not fire-and-forget) so it survives the Lambda post-response freeze.
+   */
+  async getUntitledSessionIdsForUser(opts: {
+    userId: string;
+    studentId?: string;
+    limit?: number;
+  }): Promise<string[]> {
+    const limit = Math.min(Math.max(opts.limit ?? 3, 1), 10);
+    const conditions = [
+      eq(chatSessions.userId, opts.userId),
+      isNull(chatSessions.deletedAt),
+      ne(chatSessions.chatMode, "aac"),
+      isNull(chatSessions.crmPotentialCustomerId),
+      isNull(chatSessions.title),
+      sql`jsonb_array_length(${chatSessions.log}) > 0`,
+      // Only summarize conversations that have gone idle, so we never title an
+      // actively-in-progress chat mid-stream (which would freeze a half-baked
+      // title via the summarizer's idempotency guard).
+      sql`${chatSessions.lastUpdate} < now() - interval '2 minutes'`,
+    ];
+    if (opts.studentId) {
+      conditions.push(eq(chatSessions.studentId, opts.studentId));
+    }
+    const rows = await db
+      .select({ id: chatSessions.id })
+      .from(chatSessions)
+      .where(and(...conditions))
+      .orderBy(desc(chatSessions.lastUpdate))
+      .limit(limit);
+    return rows.map((r) => r.id);
+  }
+
   // ============================================================================
   // ADMIN OPERATIONS
   // ============================================================================
@@ -354,12 +510,31 @@ export class ChatRepository {
     return result?.total ?? 0;
   }
 
-  async getSessionLog(id: string): Promise<ChatMessage[] | undefined> {
+  async getSessionLog(id: string): Promise<
+    | {
+        log: ChatMessage[];
+        title: string | null;
+        summary: string | null;
+        importance: number | null;
+      }
+    | undefined
+  > {
     const [result] = await db
-      .select({ log: chatSessions.log })
+      .select({
+        log: chatSessions.log,
+        title: chatSessions.title,
+        summary: chatSessions.summary,
+        importance: chatSessions.importance,
+      })
       .from(chatSessions)
       .where(and(eq(chatSessions.id, id), isNull(chatSessions.deletedAt)));
-    return (result?.log as ChatMessage[] | undefined) ?? undefined;
+    if (!result) return undefined;
+    return {
+      log: (result.log as ChatMessage[] | null) ?? [],
+      title: result.title ?? null,
+      summary: result.summary ?? null,
+      importance: result.importance ?? null,
+    };
   }
 
   /**

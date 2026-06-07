@@ -141,6 +141,7 @@ export class MonitorAgent {
       promptTokens: number;
       completionTokens: number;
       cachedTokens?: number;
+      cacheCreationTokens?: number;
     };
   }> {
     console.log("[MonitorAgent] Initializing session for student:", this.studentId);
@@ -855,7 +856,7 @@ ${outputSpec}`;
       const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
       const gpt = new GPT({
         provider: llmConfig?.provider || 'claude',
-        model: llmConfig?.model || 'claude-haiku-4-5-20251001',
+        model: llmConfig?.model || 'claude-haiku',
       });
 
       const inputItems: GPTInputItem[] = [{
@@ -908,10 +909,11 @@ ${outputSpec}`;
       // root (not nested under .usage).
       const enhancerUsage = response.promptTokens || response.completionTokens ? {
         provider: (llmConfig?.provider || "claude") as import("@shared/llm-options").LLMProviderKey,
-        model: llmConfig?.model || "claude-haiku-4-5-20251001",
+        model: llmConfig?.model || "claude-haiku",
         promptTokens: response.promptTokens ?? 0,
         completionTokens: response.completionTokens ?? 0,
         cachedTokens: response.cachedTokens ?? 0,
+        cacheCreationTokens: response.cacheCreationTokens ?? 0,
       } : undefined;
 
       const sectionCount = Object.keys(sections).length;
@@ -956,6 +958,7 @@ ${outputSpec}`;
       promptTokens: number;
       completionTokens: number;
       cachedTokens?: number;
+      cacheCreationTokens?: number;
     };
   }> {
     if (recentMessages.length === 0) return { summary: previousSummary };
@@ -1014,7 +1017,7 @@ ${transcript}`;
       const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
       const gpt = new GPT({
         provider: llmConfig?.provider || 'claude',
-        model: llmConfig?.model || 'claude-haiku-4-5-20251001',
+        model: llmConfig?.model || 'claude-haiku',
       });
 
       const inputItems: GPTInputItem[] = [{
@@ -1042,10 +1045,11 @@ ${transcript}`;
       // Token counts live on the response root, not under .usage.
       const usage = response.promptTokens || response.completionTokens ? {
         provider: (llmConfig?.provider || "claude") as import("@shared/llm-options").LLMProviderKey,
-        model: llmConfig?.model || "claude-haiku-4-5-20251001",
+        model: llmConfig?.model || "claude-haiku",
         promptTokens: response.promptTokens ?? 0,
         completionTokens: response.completionTokens ?? 0,
         cachedTokens: response.cachedTokens ?? 0,
+        cacheCreationTokens: response.cacheCreationTokens ?? 0,
       } : undefined;
       if (summary) {
         console.log(`[MonitorAgent] Produced session summary (${summary.length} chars from ${recentMessages.length} new msgs)`);

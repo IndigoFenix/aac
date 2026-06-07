@@ -166,12 +166,11 @@ const SLEEP: FunctionDeclaration = {
   parametersJsonSchema: { type: "object", properties: {} },
 };
 
-const END_SESSION: FunctionDeclaration = {
-  name: "end_session",
-  description: `End the current session. The session enters Hibernation. No further audio or video is captured until the user explicitly re-engages (avatar tap, AAC button press, or sustained eye contact). Use only when you're confident the conversation is complete and the user has fully disengaged.`,
-  behavior: Behavior.NON_BLOCKING,
-  parametersJsonSchema: { type: "object", properties: {} },
-};
+// end_session intentionally NOT declared: the AI shouldn't be able to
+// kill the session unilaterally — that's the user's call (close the
+// app / dismiss the avatar). When the conversation feels finished,
+// call sleep() instead so the session stays available for the user to
+// re-engage at any time.
 
 /**
  * Behavioral mode switch — Observer owns this because Observer has the
@@ -259,7 +258,6 @@ export function buildObserverToolDeclarations(_config: ObserverToolConfig = {}):
   declarations.push(WAKE_UP);
   declarations.push(REST);
   declarations.push(SLEEP);
-  declarations.push(END_SESSION);
   declarations.push(ALERT);
   declarations.push(EMERGENCY_ALARM);
   declarations.push(CALL_MONITOR);

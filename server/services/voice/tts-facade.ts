@@ -2,7 +2,8 @@
 // Routes TTS requests to the correct provider: ElevenLabs > Gemini > Google Cloud TTS
 
 import { googleTtsService, type VoiceType } from "./google-tts-service";
-import { geminiTtsService } from "./gemini-tts-service";
+// geminiTtsService is kept available for future use; not part of the
+// active route. See the comment in synthesize/synthesizeStream below.
 import { elevenlabsTtsService } from "./elevenlabs-tts-service";
 import type { GeminiLiveTtsSession } from "./gemini-live-tts-service";
 import type { Voice } from "@shared/schema";
@@ -26,6 +27,10 @@ export interface ResolvedVoice {
   elevenlabsApiKey?: string; // student-level ElevenLabs API key
   elevenlabsVoiceId?: string; // student-level ElevenLabs voice ID (direct, bypasses voices table)
   geminiVoiceName?: string; // Gemini prebuilt voice name (e.g. "Puck", "Kore")
+  /** Natural-language style hint for Chirp 3 HD voices (Google TTS).
+   *  Adds warmth/intonation control without changing the voice itself.
+   *  Ignored on non-Chirp paths. */
+  prompt?: string;
   // Persistent Gemini Live TTS session owned by the caller (e.g. LiveRelay).
   // When set, streaming TTS goes through this session — no per-call HTTP
   // connection overhead. Ignored by synthesize() (buffered path).
@@ -80,21 +85,18 @@ export async function synthesize(
     }
   }
 
-  // Gemini voice configured — use Gemini TTS
-  if (voice.geminiVoiceName) {
-    try {
-      const buf = await geminiTtsService.synthesize(text, voice.language, {
-        voiceName: voice.geminiVoiceName,
-      });
-      onUsage?.({ provider: "gemini", characters: chars });
-      return buf;
-    } catch (error: any) {
-      console.error(`[TTSFacade] Gemini TTS failed (voice: ${voice.geminiVoiceName}), falling back to Google Cloud:`, error.message);
-    }
-  }
+  // Gemini TTS (`gemini-2.5-flash-preview-tts` via HTTP) supports a
+  // style prompt but is slower than Chirp 3 HD and burns Gemini quota
+  // fast. Currently disabled — kept here behind `force-gemini-tts`
+  // (unused for now) for future experimentation. The default Google
+  // Chirp 3 HD path delivers the same voice names with sub-second
+  // first-audio latency.
 
+  // Google TTS — Chirp 3 HD when a Gemini-style voice name is set
+  // (same voice library), otherwise language-mapped Neural2/Standard.
   const buf = await googleTtsService.synthesize(text, voice.language, {
     voiceType: voice.fallbackType,
+    voiceName: voice.geminiVoiceName,
   });
   onUsage?.({ provider: "google", characters: chars });
   return buf;
@@ -168,21 +170,15 @@ export async function* synthesizeStream(
     }
   }
 
-  // Gemini voice configured — use Gemini TTS
-  if (voice.geminiVoiceName) {
-    try {
-      yield* geminiTtsService.synthesizeStream(text, voice.language, {
-        voiceName: voice.geminiVoiceName,
-      });
-      onUsage?.({ provider: "gemini", characters: chars });
-      return;
-    } catch (error: any) {
-      console.error(`[TTSFacade] Gemini TTS streaming failed (voice: ${voice.geminiVoiceName}), falling back to Google Cloud:`, error.message);
-    }
-  }
+  // Gemini TTS streaming (`gemini-2.5-flash-preview-tts`) is available
+  // here but currently disabled — Chirp 3 HD wins on latency and quota.
+  // Kept importable via `geminiTtsService` for future experimentation.
 
+  // Google TTS — Chirp 3 HD when a Gemini-style voice name is set
+  // (same voice library, faster), otherwise language-mapped Neural2/Standard.
   yield* googleTtsService.synthesizeStream(text, voice.language, {
     voiceType: voice.fallbackType,
+    voiceName: voice.geminiVoiceName,
   });
   onUsage?.({ provider: "google", characters: chars });
 }

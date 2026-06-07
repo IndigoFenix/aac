@@ -174,6 +174,21 @@ export const en = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "Two-Factor Authentication",
+    mfaPrompt: "Enter the 6-digit code from your authenticator app",
+    mfaVerify: "Verify",
+    mfaBackToSignIn: "Back to sign-in",
+    mfaLostAccess: "Lost access to authenticator?",
+    mfaSetupTitle: "Set Up Two-Factor Authentication",
+    mfaSetupRequired: "Your administrator requires MFA for this account",
+    mfaSetupAdminRequired: "MFA is required for administrator accounts",
+    mfaCompleteSetup: "Complete setup",
+    mfaSetupLoadFailed: "Failed to load MFA setup. Please try again.",
+    notAnAdmin: "This account is not an administrator. Redirecting…",
+    termsOfService: "Terms of Service",
+    privacyPolicy: "Privacy Policy",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const en = {
     welcomeWithUser: "How can I help you with {name} today?",
     workingWith: "Currently working with:",
     newConversation: "Start new conversation",
+    history: {
+      newChat: "New chat",
+      untitled: "Untitled conversation",
+      empty: "No past conversations",
+      rename: "Rename",
+      delete: "Delete",
+      confirmDelete: "Delete?",
+      show: "Show conversations",
+      hide: "Hide conversations",
+    },
     addAttachment: "Add attachment",
     tools: "Tools",
     
@@ -2328,6 +2353,7 @@ export const en = {
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsApiKey: "ElevenLabs API Key",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "AI Voice ID",
     elevenlabsStudentVoiceId: "{{STUDENT}} Voice ID",
     elevenlabsVoiceIdPlaceholder: "e.g. 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "Loading voices...",
@@ -2959,6 +2985,8 @@ export const en = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "Administrator Sign-In",
+    loginSubtitle: "Restricted area — administrators only",
     licenses: {
       title: "Licenses",
       subtitle: "Create and manage user and organization licenses.",

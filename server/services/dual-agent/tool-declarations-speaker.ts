@@ -37,6 +37,11 @@ export interface SpeakerToolConfig {
    *  speak() tool is omitted. When false (fallback path), speak() is
    *  declared and the relay routes text through server-side TTS. */
   useDirectAudio: boolean;
+  /** When true, the caller is the HTTP Speaker (not Gemini Live). The
+   *  Live native-audio MALFORMED diagnostic that suppresses the entire
+   *  tool surface doesn't apply — HTTP completion handles tools
+   *  reliably and NEEDS them (private_note, emote, open_app, etc.). */
+  httpMode?: boolean;
   /** Legacy flag — kept for type compatibility. Speaker no longer runs in
    *  the resting profile (Coordinator closes the Speaker entirely on
    *  transition to resting and spins up a fresh one on wake), so the old
@@ -198,13 +203,13 @@ function buildOpenWebsiteTool(permitted: PermittedWebsite[]): FunctionDeclaratio
 // ---------------------------------------------------------------------------
 
 export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] {
-  // TEMPORARY DIAGNOSTIC: disable Speaker's tool surface entirely. If
-  // MALFORMED_FUNCTION_CALL disappears with zero tools declared, we
-  // know the failure is rooted in the tool surface (model attempting a
-  // call that fails Vertex's parser). If MALFORMED persists, the
-  // problem lies elsewhere in the prompt / config. Revert by removing
-  // this early return.
-  if (config.useDirectAudio && !config.isMutedMode) {
+  // Gemini Live native-audio diagnostic: when the model is talking
+  // directly via AUDIO modality, the whole tool surface is suppressed
+  // to dodge MALFORMED_FUNCTION_CALL bursts. This shortcut applies
+  // ONLY to the Live path — HTTP completion handles tools reliably and
+  // actively needs them (private_note prevents <thinking> leakage,
+  // emote / open_app / open_website etc. need a real call surface).
+  if (!config.httpMode && config.useDirectAudio && !config.isMutedMode) {
     return [];
   }
 
@@ -244,8 +249,13 @@ export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] 
     declarations.push(CLOSE_APP);
   }
 
-  // Shared (private_note intentionally omitted — was suppressing speech
-  // output via over-eager note-taking).
+  // Shared. private_note is declared so the HTTP Speaker has a proper
+  // place to put reasoning instead of leaking <thinking> blocks into the
+  // assistant text (which then gets voiced by TTS). The prior concern —
+  // that it gets used as a substitute for speaking — is mitigated in
+  // the prompt's <private_thinking> block (use sparingly, not in place
+  // of replying).
+  declarations.push(PRIVATE_NOTE);
   declarations.push(CALL_MONITOR);
   if (debugIntrospectionEnabled()) declarations.push(DEBUG_MESSAGE);
 

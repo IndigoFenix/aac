@@ -81,6 +81,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [autoAacPrompt, setAutoAacPrompt] = useState('');
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
+  const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
   const [geminiAiVoice, setGeminiAiVoice] = useState('');
   const [geminiStudentVoice, setGeminiStudentVoice] = useState('');
@@ -186,6 +187,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(aac?.autoAacPrompt || '');
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
+      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
@@ -227,6 +229,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAutoPrompt = aac?.autoAacPrompt || '';
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
+      const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
       const originalGeminiAiVoice = aac?.geminiAiVoice || '';
       const originalGeminiStudentVoice = aac?.geminiStudentVoice || '';
@@ -260,6 +263,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         autoAacPrompt !== originalAutoPrompt ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
+        elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
         geminiAiVoice !== originalGeminiAiVoice ||
         geminiStudentVoice !== originalGeminiStudentVoice ||
@@ -288,7 +292,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -298,6 +302,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt: string;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
+      elevenlabsAiVoiceId?: string;
       elevenlabsStudentVoiceId?: string;
       geminiAiVoice?: string;
       geminiStudentVoice?: string;
@@ -352,6 +357,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
+      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       geminiAiVoice: geminiAiVoice || undefined,
       geminiStudentVoice: geminiStudentVoice || undefined,
@@ -392,6 +398,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(aac?.autoAacPrompt || '');
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
+      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
@@ -709,70 +716,136 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 )}
 
                 {debouncedApiKey && !elevenlabsError && (
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm text-muted-foreground">
-                        {t('aacSettings.elevenlabsStudentVoiceId')}
-                      </Label>
-                    </div>
-                    {elevenlabsLoading ? (
-                      <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
-                    ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
-                      <div className="flex gap-2 items-center">
-                        <Select
-                          value={elevenlabsStudentVoiceId || '_none'}
-                          onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
-                        >
-                          <SelectTrigger className="w-full md:w-[280px]">
-                            <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
-                            {elevenlabsVoices.map((v) => (
-                              <SelectItem key={v.voice_id} value={v.voice_id}>
-                                {v.name} {v.category ? `(${v.category})` : ''}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {elevenlabsStudentVoiceId && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => previewVoice(elevenlabsStudentVoiceId)}
-                            disabled={!!previewingVoice}
-                            title={t('aacSettings.elevenlabsTestVoice')}
-                            className="shrink-0 h-8 w-8 p-0"
-                          >
-                            {previewingVoice === elevenlabsStudentVoiceId ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Play className="w-4 h-4" />
-                            )}
-                          </Button>
-                        )}
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsAiVoiceId')}
+                        </Label>
                       </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
-                    )}
-                  </div>
+                      {elevenlabsLoading ? (
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                        <div className="flex gap-2 items-center">
+                          <Select
+                            value={elevenlabsAiVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-full md:w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {elevenlabsAiVoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => previewVoice(elevenlabsAiVoiceId)}
+                              disabled={!!previewingVoice}
+                              title={t('aacSettings.elevenlabsTestVoice')}
+                              className="shrink-0 h-8 w-8 p-0"
+                            >
+                              {previewingVoice === elevenlabsAiVoiceId ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsStudentVoiceId')}
+                        </Label>
+                      </div>
+                      {elevenlabsLoading ? (
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                        <div className="flex gap-2 items-center">
+                          <Select
+                            value={elevenlabsStudentVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-full md:w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {elevenlabsStudentVoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => previewVoice(elevenlabsStudentVoiceId)}
+                              disabled={!!previewingVoice}
+                              title={t('aacSettings.elevenlabsTestVoice')}
+                              className="shrink-0 h-8 w-8 p-0"
+                            >
+                              {previewingVoice === elevenlabsStudentVoiceId ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {!debouncedApiKey && (
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm text-muted-foreground">
-                        {t('aacSettings.elevenlabsStudentVoiceId')}
-                      </Label>
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsAiVoiceId')}
+                        </Label>
+                      </div>
+                      <Input
+                        type="text"
+                        value={elevenlabsAiVoiceId}
+                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                        className="w-full md:w-[280px] font-mono"
+                      />
                     </div>
-                    <Input
-                      type="text"
-                      value={elevenlabsStudentVoiceId}
-                      onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                      placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                      className="w-full md:w-[280px] font-mono"
-                    />
-                  </div>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsStudentVoiceId')}
+                        </Label>
+                      </div>
+                      <Input
+                        type="text"
+                        value={elevenlabsStudentVoiceId}
+                        onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                        className="w-full md:w-[280px] font-mono"
+                      />
+                    </div>
+                  </>
                 )}
                 </div>
               </div>

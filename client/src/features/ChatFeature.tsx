@@ -33,6 +33,8 @@ import {
   VolumeX,
   Copy,
   Check,
+  History,
+  Pencil,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, type AttachedFile } from '@/hooks/useChat';
@@ -44,6 +46,10 @@ import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { ChatHistorySidebar } from '@/components/chat/ChatHistorySidebar';
+import { useChatSessions, useRenameChatSession, chatSessionsKey } from '@/hooks/useChatSessions';
+import { useQueryClient } from '@tanstack/react-query';
+import { Input } from '@/components/ui/input';
 import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { resolveLocalizedText } from '@shared/localized-text';
 import { cn } from '@/lib/utils';
@@ -79,6 +85,8 @@ export function ChatFeature() {
     isSending,
     error,
     startNewSession,
+    loadSession,
+    sessionId,
     persona,
     setPersona,
     getPersonaInfo,
@@ -135,6 +143,63 @@ export function ChatFeature() {
 
   // Check if a panel is currently open
   const isPanelOpen = activeFeature && activeFeature !== 'chat' && panels[activeFeature]?.isOpen;
+
+  // Past-conversations history layout:
+  //  • Pinned (desktop "starting page", no panel open): the list sits as a
+  //    column on the END side — opposite the main app sidebar.
+  //  • Swap (panel open, or mobile): there's no room for a second column, so a
+  //    toggle swaps the chat area between the conversation and the history list.
+  const pinnedHistory = !isMobile && !isPanelOpen;
+  const [pinnedOpen, setPinnedOpen] = useState(true);
+  const [swapShowsHistory, setSwapShowsHistory] = useState(false);
+  const historyVisible = pinnedHistory ? pinnedOpen : swapShowsHistory;
+
+  // Returning to a single-column layout resets the swap view back to the chat.
+  useEffect(() => {
+    if (pinnedHistory && swapShowsHistory) setSwapShowsHistory(false);
+  }, [pinnedHistory, swapShowsHistory]);
+
+  const toggleHistory = useCallback(() => {
+    if (pinnedHistory) setPinnedOpen((v) => !v);
+    else setSwapShowsHistory((v) => !v);
+  }, [pinnedHistory]);
+
+  // Inline-editable conversation title in the header.
+  const [headerEditing, setHeaderEditing] = useState(false);
+  const [headerValue, setHeaderValue] = useState('');
+  const queryClient = useQueryClient();
+  const { data: sessionsData } = useChatSessions(student?.id);
+  const renameSession = useRenameChatSession(student?.id);
+  const activeSession = sessionsData?.sessions.find((s) => s.id === sessionId);
+  const activeTitle = activeSession?.title || activeSession?.firstMessage || '';
+
+  // When a new session id appears (first message of a fresh chat) or we switch
+  // sessions, refresh the list so the sidebar + header title pick it up.
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionId && sessionId !== prevSessionIdRef.current) {
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(student?.id) });
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId, student?.id, queryClient]);
+
+  const handleSelectSession = useCallback(async (id: string) => {
+    await loadSession(id);
+    if (!pinnedHistory) setSwapShowsHistory(false);
+  }, [loadSession, pinnedHistory]);
+
+  const handleNewChat = useCallback(() => {
+    startNewSession();
+    if (!pinnedHistory) setSwapShowsHistory(false);
+  }, [startNewSession, pinnedHistory]);
+
+  const commitHeaderRename = useCallback(() => {
+    const title = headerValue.trim();
+    if (title && sessionId && title !== activeTitle) {
+      renameSession.mutate({ id: sessionId, title });
+    }
+    setHeaderEditing(false);
+  }, [headerValue, sessionId, activeTitle, renameSession]);
 
   // Show mode switch only when there's an open panel and we're in expanded mode (desktop only)
   const showModeSwitch = isPanelOpen && chatMode === 'expanded' && !isFullScreenFeature && !isMobile;
@@ -341,11 +406,12 @@ export function ChatFeature() {
     if (typeof message.content === 'string') {
       text = message.content;
     } else {
-      const content = message.content as ChatMessageContent;
-      if (content.md) {
+      // Resumed sessions can carry content-less entries (tool turns); guard them.
+      const content = message.content as ChatMessageContent | undefined;
+      if (content?.md) {
         return rewriteApiUrls(marked.parse(content.md) as string);
       }
-      text = content.html || content.text || '';
+      text = content?.html || content?.text || '';
     }
     // Translate error codes (e.g. "error:MESSAGE_FAILED" → translated string)
     if (text.startsWith('error:')) {
@@ -482,6 +548,22 @@ export function ChatFeature() {
       data-testid="chat-mode-switch"
     >
       <Minimize2 className="w-3.5 h-3.5" />
+    </Button>
+  );
+
+  // Toggle for the past-conversations history. In pinned mode it shows/hides the
+  // side column; in swap mode it switches the chat area over to the history list.
+  const HistoryToggleButton = (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-8 w-8 rounded-full hover-elevate active-elevate-2 flex-shrink-0"
+      onClick={toggleHistory}
+      title={historyVisible ? t('chat.history.hide') : t('chat.history.show')}
+      aria-label={historyVisible ? t('chat.history.hide') : t('chat.history.show')}
+      data-testid="button-toggle-history"
+    >
+      <History className="w-4 h-4" />
     </Button>
   );
 
@@ -701,10 +783,24 @@ export function ChatFeature() {
   ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError]);
 
   return (
-    <div className="flex flex-col h-full relative">
-      {showWelcome ? (
+    <div className="flex h-full relative">
+      {/* Main area: the chat, or — in swap mode — the history list in its place */}
+      <div className="flex flex-col h-full flex-1 min-w-0 relative">
+      {!pinnedHistory && historyVisible ? (
+        <ChatHistorySidebar
+          studentId={student?.id}
+          activeSessionId={sessionId}
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onDeletedActive={() => startNewSession()}
+          onBack={() => setSwapShowsHistory(false)}
+        />
+      ) : showWelcome ? (
         /* Welcome screen - centered content */
         <div className="flex-1 flex items-center justify-center px-6 overflow-y-auto relative">
+          <div className="absolute top-2 start-2 z-10">
+            {HistoryToggleButton}
+          </div>
           {ModeSwitchButton && (
             <div className="absolute top-2 end-2 z-10">
               {ModeSwitchButton}
@@ -781,10 +877,42 @@ export function ChatFeature() {
       ) : (
         /* Chat conversation view */
         <>
-          {/* Header with persona dropdown */}
-          <div className="flex-shrink-0 border-b border-border px-6 py-3 flex items-center justify-between">
-            {PersonaDropdown}
-            {ModeSwitchButton}
+          {/* Header: history toggle + editable title (left), persona/mode (right) */}
+          <div className="flex-shrink-0 border-b border-border px-6 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {HistoryToggleButton}
+              {sessionId && (
+                headerEditing ? (
+                  <Input
+                    autoFocus
+                    value={headerValue}
+                    onChange={(e) => setHeaderValue(e.target.value)}
+                    onBlur={commitHeaderRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitHeaderRename();
+                      if (e.key === 'Escape') setHeaderEditing(false);
+                    }}
+                    className="h-7 text-sm max-w-[260px]"
+                    data-testid="header-title-input"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="group flex items-center gap-1.5 min-w-0 text-sm text-muted-foreground hover:text-foreground"
+                    onClick={() => { setHeaderValue(activeTitle); setHeaderEditing(true); }}
+                    title={t('chat.history.rename')}
+                    data-testid="header-title"
+                  >
+                    <span className="truncate max-w-[260px]">{activeTitle || t('chat.history.untitled')}</span>
+                    <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 flex-shrink-0" />
+                  </button>
+                )
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {PersonaDropdown}
+              {ModeSwitchButton}
+            </div>
           </div>
 
           {/* Scrollable messages area */}
@@ -974,6 +1102,21 @@ export function ChatFeature() {
             </div>
           </div>
         </>
+      )}
+      </div>
+
+      {/* Pinned history on the END side — opposite the main app sidebar */}
+      {pinnedHistory && pinnedOpen && (
+        <div className="w-72 flex-shrink-0 h-full">
+          <ChatHistorySidebar
+            studentId={student?.id}
+            activeSessionId={sessionId}
+            onSelectSession={handleSelectSession}
+            onNewChat={handleNewChat}
+            onDeletedActive={() => startNewSession()}
+            className="border-s border-border"
+          />
+        </div>
       )}
     </div>
   );

@@ -174,6 +174,21 @@ export const ru = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "Двухфакторная аутентификация",
+    mfaPrompt: "Введите 6-значный код из приложения-аутентификатора",
+    mfaVerify: "Подтвердить",
+    mfaBackToSignIn: "Назад ко входу",
+    mfaLostAccess: "Потеряли доступ к аутентификатору?",
+    mfaSetupTitle: "Настройка двухфакторной аутентификации",
+    mfaSetupRequired: "Ваш администратор требует двухфакторную аутентификацию для этой учётной записи",
+    mfaSetupAdminRequired: "Двухфакторная аутентификация обязательна для учётных записей администраторов",
+    mfaCompleteSetup: "Завершить настройку",
+    mfaSetupLoadFailed: "Не удалось загрузить настройку двухфакторной аутентификации. Повторите попытку.",
+    notAnAdmin: "Эта учётная запись не является администратором. Перенаправление…",
+    termsOfService: "Условия использования",
+    privacyPolicy: "Политика конфиденциальности",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const ru = {
     welcomeWithUser: "Чем я могу помочь с {name} сегодня?",
     workingWith: "Сейчас работаем с:",
     newConversation: "Начать новый разговор",
+    history: {
+      newChat: "Новый чат",
+      untitled: "Разговор без названия",
+      empty: "Нет прошлых разговоров",
+      rename: "Переименовать",
+      delete: "Удалить",
+      confirmDelete: "Удалить?",
+      show: "Показать разговоры",
+      hide: "Скрыть разговоры",
+    },
     addAttachment: "Добавить вложение",
     tools: "Инструменты",
     
@@ -2328,6 +2353,7 @@ export const ru = {
     elevenlabsDesc: "Введите свой ключ API ElevenLabs и ID голосов для высококачественного TTS. При установке переопределяет все другие настройки голоса.",
     elevenlabsApiKey: "Ключ API ElevenLabs",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "ID голоса ИИ",
     elevenlabsStudentVoiceId: "ID голоса {{STUDENT}}",
     elevenlabsVoiceIdPlaceholder: "напр. 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "Загрузка голосов...",
@@ -2957,6 +2983,8 @@ export const ru = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "Вход для администратора",
+    loginSubtitle: "Зона ограниченного доступа — только для администраторов",
     licenses: {
       title: "Лицензии",
       subtitle: "Создание и управление лицензиями пользователей и организаций.",

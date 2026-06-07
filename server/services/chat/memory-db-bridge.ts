@@ -660,9 +660,34 @@ export interface PopulateResult {
 }
 
 /**
+ * Build a safe, AI-/log-facing message from a DB exception.
+ *
+ * Drizzle wraps the driver error as `Failed query: <SQL>\nparams: <values>`,
+ * which leaks the full table schema AND the parameter VALUES (PHI — patient
+ * names, dates, ids) into the LLM context and the persisted session debug log,
+ * where the model could even echo it back to the user. Surface only the
+ * underlying reason (param-free, e.g. "invalid input syntax for type date"),
+ * never the SQL/params. Full detail still goes to the server console via the
+ * existing `console.error(err)` calls for diagnostics.
+ */
+export function sanitizeDbError(err: unknown, fallback = 'database operation failed'): string {
+  const e = err as any;
+  // Prefer the underlying driver error — it states the reason without echoing
+  // the query or bound parameters.
+  const causeMsg = e?.cause?.message;
+  if (typeof causeMsg === 'string' && causeMsg && !/Failed query/i.test(causeMsg)) {
+    return causeMsg.split('\n')[0];
+  }
+  const raw = typeof e?.message === 'string' ? e.message : String(err ?? '');
+  // The Drizzle wrapper carries SQL + param values — never surface it.
+  if (!raw || /Failed query/i.test(raw)) return fallback;
+  return raw.split('\n')[0];
+}
+
+/**
  * Populates memory values from the database based on visibility rules.
  * Only loads data that should be visible and hasn't been loaded yet.
- * 
+ *
  * @param fields Memory field definitions (with DB operations)
  * @param memoryValues Current memory values (will be mutated)
  * @param memoryState Current memory state (visibility, pagination)
@@ -793,8 +818,8 @@ export async function populateMemoryFromDB(
         }
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push({ path, error: message });
+      console.error('[populateMemoryFromDB] load failed for', path, err);
+      errors.push({ path, error: sanitizeDbError(err) });
     }
   }
 
@@ -1003,7 +1028,7 @@ export async function processDBOperation(
         }
       } catch (err: any) {
         console.error('[processDBOperation] Parent container write/update failed:', err);
-        return { error: err.message || 'DB write failed', shouldUpdateMemory: false, dbSynced: false };
+        return { error: sanitizeDbError(err, 'DB write failed'), shouldUpdateMemory: false, dbSynced: false };
       }
     }
 
@@ -1038,7 +1063,7 @@ export async function processDBOperation(
         return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
       } catch (err: any) {
         console.error('[processDBOperation] Array item set failed:', err);
-        return { error: err.message || 'DB set on array item failed', shouldUpdateMemory: false, dbSynced: false };
+        return { error: sanitizeDbError(err, 'DB set on array item failed'), shouldUpdateMemory: false, dbSynced: false };
       }
     }
 
@@ -1085,7 +1110,7 @@ export async function processDBOperation(
         return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
       } catch (err: any) {
         console.error('[processDBOperation] Parent container add failed:', err);
-        return { error: err.message || 'DB add failed', shouldUpdateMemory: false, dbSynced: false };
+        return { error: sanitizeDbError(err, 'DB add failed'), shouldUpdateMemory: false, dbSynced: false };
       }
     }
     
@@ -1107,7 +1132,7 @@ export async function processDBOperation(
           return { shouldUpdateMemory: true, dbSynced: true };
         } catch (err: any) {
           console.error('[processDBOperation] Parent container delete failed:', err);
-          return { error: err.message || 'DB delete failed', shouldUpdateMemory: false, dbSynced: false };
+          return { error: sanitizeDbError(err, 'DB delete failed'), shouldUpdateMemory: false, dbSynced: false };
         }
       } else {
         // Target is too deeply nested - log warning and DON'T use parent delete
@@ -1281,8 +1306,8 @@ export async function processDBOperation(
     // dbSynced is true when ANY DB operation was executed (not just ones that return a value)
     return { dbResult, shouldUpdateMemory: true, dbSynced: dbExecuted, note: writeNote };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { error: `Database error: ${message}`, shouldUpdateMemory: false, dbSynced: false };
+    console.error('[processDBOperation] DB operation failed:', err);
+    return { error: `Database error: ${sanitizeDbError(err)}`, shouldUpdateMemory: false, dbSynced: false };
   }
 }
 
@@ -1302,6 +1327,37 @@ export async function processDBOperation(
  * @param baseContext Base context for DB operations
  * @param originalProcessor The original processMemoryToolResponse function
  */
+/**
+ * Deep-replace whole-string values that exactly match an alias key.
+ * Used for batch ID aliasing — only exact whole-string matches are rewritten,
+ * so it can't corrupt free-text that merely contains a placeholder substring.
+ */
+function aliasReplaceDeep(val: any, aliasMap: Map<string, string>): any {
+  if (typeof val === 'string') return aliasMap.get(val) ?? val;
+  if (Array.isArray(val)) return val.map((v) => aliasReplaceDeep(v, aliasMap));
+  if (val && typeof val === 'object') {
+    const out: Record<string, any> = {};
+    for (const k of Object.keys(val)) out[k] = aliasReplaceDeep(val[k], aliasMap);
+    return out;
+  }
+  return val;
+}
+
+/**
+ * Rewrite references to an AI-supplied placeholder key inside a single op once
+ * the real (DB-generated) key is known. Covers the map key, every path segment,
+ * and any reference inside the value (e.g. `{ studentId: "<placeholder>" }`).
+ * Mutates the op in place — callers share the same `ops` array reference with
+ * the in-memory processor, so both DB and memory see the resolved id.
+ */
+function applyAliasesToOp(op: MemoryToolInput, aliasMap: Map<string, string>): void {
+  const segs = (p: string) => p.split('/').map((s) => aliasMap.get(s) ?? s).join('/');
+  if (op.key && aliasMap.has(op.key)) op.key = aliasMap.get(op.key)!;
+  if (op.path) op.path = segs(op.path);
+  if (op.paths) op.paths = op.paths.map(segs);
+  if (op.value !== undefined) op.value = aliasReplaceDeep(op.value, aliasMap);
+}
+
 export async function processMemoryToolWithDB(
   fields: AgentMemoryFieldWithDB[],
   memoryValues: any,
@@ -1336,10 +1392,22 @@ export async function processMemoryToolWithDB(
 
   const dbResults: Map<number, DbOperationResult> = new Map();
 
+  // Batch ID aliasing: when an earlier op CREATES an entity, the bridge strips
+  // the AI-supplied key and generates a real DB id. Later ops in the same batch
+  // that reference the AI's placeholder (as a key, path segment, or a value like
+  // `{ studentId: "<placeholder>" }`) must be rewired to the real id — otherwise
+  // they resolve to a non-existent entity (e.g. "You do not have access to this
+  // student" when enrolling a just-created student). Maps placeholder → real id.
+  const aliasMap = new Map<string, string>();
+
   // Process DB operations first for mutations
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i];
-    
+
+    // Resolve any aliases established by earlier creates in this batch BEFORE
+    // this op runs (against the DB) and before the in-memory processor sees it.
+    if (aliasMap.size > 0) applyAliasesToOp(op, aliasMap);
+
     if (op.action !== 'view' && op.action !== 'hide') {
       const result = await processDBOperation(
         fields,
@@ -1354,6 +1422,18 @@ export async function processMemoryToolWithDB(
       // result drive ok/message (line ~1473: dbResult === undefined path).
       if (result.dbSynced !== undefined || result.error) {
         dbResults.set(i, result);
+      }
+
+      // If this create generated a real key different from the AI's placeholder,
+      // record the alias so subsequent ops in this batch can reference it.
+      if ((op.action === 'add' || op.action === 'insert') && op.key && op.path && result.dbSynced && result.dbResult) {
+        const resolution = resolveSchemaWithContext(fields, memoryValues, op.path, baseContext);
+        const realKey = resolution.dbOps?.getDBKey
+          ? String(resolution.dbOps.getDBKey(result.dbResult))
+          : undefined;
+        if (realKey && realKey !== op.key) {
+          aliasMap.set(op.key, realKey);
+        }
       }
     }
   }

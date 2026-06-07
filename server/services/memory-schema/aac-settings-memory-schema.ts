@@ -4,18 +4,23 @@
  * Memory field definitions for AAC settings, exposed through the memory system
  * so the AI can read and modify them during regular chat sessions.
  *
+ * The assistant treats the live AAC not as a separate entity but as itself in a
+ * different mode (setup mode here vs. AAC mode during a live session). These two
+ * prompt fields are how its setup-mode self prepares its AAC-mode self.
+ *
  * Fields:
- * - Context_AACPrompt: The CUSTOM AAC prompt — specific behaviors caretakers
- *     have explicitly requested. Rigid; changed only on caretaker request.
+ * - Context_AACPrompt: Caretaker instructions — specific behaviors a caretaker
+ *     has explicitly requested. Rigid; changed only on caretaker request.
  *     (DB column: chatAgentPrompt.)
- * - Context_AACAutoPrompt: The AUTO AAC prompt — an AI-maintained digest of
- *     "what the AAC needs to know about this student". Updated whenever new
- *     information about the student is learned. (DB column: autoAacPrompt.)
+ * - Context_AACAutoPrompt: The assistant's scratchpad — a self-maintained
+ *     consolidation of everything its AAC-mode self needs to know about the
+ *     student. Updated whenever new information about the student is learned.
+ *     (DB column: autoAacPrompt.)
  * - Context_AACSettings: All other AAC settings (voice, display, input, symbols, etc.)
  *
- * Both prompt fields are written ONLY during clinician interactions. The live
- * AAC moderator/agents never receive these writable fields, so they cannot
- * modify either prompt — they only consume the result at session startup.
+ * Both prompt fields are written ONLY during clinician interactions. In AAC mode
+ * the assistant only reads them — the live moderator/agents never receive these
+ * writable fields, so they cannot modify either prompt at session time.
  *
  * Persistence: Writes go directly to the aacSettings table (not chatMemory).
  * Frontend sync: Changes are extracted as contextData "aacprompt" /
@@ -185,24 +190,18 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 // ============================================================================
 
 /**
- * Context_AACPrompt — The CUSTOM AAC prompt (DB: chatAgentPrompt), top-level
- * for visibility. Holds specific behaviors caretakers have explicitly
- * requested. Rigid: change it ONLY when a caretaker asks for a behavior
- * change, not on your own initiative.
+ * Context_AACPrompt — Caretaker instructions (DB: chatAgentPrompt). Behaviors a
+ * caretaker has explicitly requested for AAC sessions. Rigid: change it only on
+ * caretaker request.
  */
 export const AAC_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
   id: "Context_AACPrompt",
   type: "object",
-  title: "AAC Custom Prompt (caretaker-requested)",
+  title: "AAC Caretaker Instructions",
   description:
-    "Specific behaviors a caretaker has EXPLICITLY requested the AAC follow when interacting with the student " +
-    "(e.g. \"always greet her by name\", \"use very short sentences\", \"don't offer food choices\"). " +
-    "This is the rigid, human-owned prompt — update it ONLY when a user asks you to change how the AAC behaves, " +
-    "and write the instruction in plain, direct terms. When a user says something like \"when you're talking to " +
-    "the student, do X\" or \"have the AAC do Y\", that is a request to update THIS field. Custom requests take " +
-    "priority over the auto prompt: if a new custom request contradicts something in the auto prompt, also edit " +
-    "the auto prompt (Context_AACAutoPrompt) to remove the contradicting part. Do not put general background facts " +
-    "about the student here — those belong in the auto prompt.",
+    "Behaviors a caretaker has explicitly asked you to follow in AAC mode " +
+    "(e.g. \"greet her by name\", \"keep sentences short\", \"don't offer food choices\"). " +
+    "Rigid and human-owned — update only when a user asks to change how you behave during sessions. ",
   opened: true,
   properties: {
     prompt: {
@@ -228,25 +227,21 @@ export const AAC_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
 };
 
 /**
- * Context_AACAutoPrompt — The AUTO AAC prompt (DB: autoAacPrompt). An
- * AI-maintained digest of "what the AAC needs to know about this student".
- * The live AAC startup AI cannot dig through the student's reports or detailed
- * data during a session, so this field stands in for that detail. Update it
- * whenever you learn new information about the student that the AAC would
- * benefit from knowing (communication level, interests, triggers, relevant
- * medical/behavioral facts, who's around them). Keep it concise and current.
+ * Context_AACAutoPrompt — Your scratchpad (DB: autoAacPrompt). What your AAC-mode
+ * self needs to know about this student, consolidated in one place because in
+ * AAC mode you can't read their reports mid-session. Update it as you learn new
+ * things about the student.
  */
 export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
   id: "Context_AACAutoPrompt",
   type: "object",
-  title: "AAC Auto Prompt (AI-generated)",
+  title: "AAC Scratchpad (your notes on the student)",
   description:
-    "An AI-maintained digest of what the AAC needs to know about this student — communication level, interests, " +
-    "relevant medical/behavioral facts, triggers, people around them, current goals. The live AAC can't read the " +
-    "student's full reports mid-session, so this is its summary of the student. Whenever new information about a " +
-    "student with AAC access is provided, consider updating this field to reflect it. This is AI-owned background " +
-    "context, NOT explicit caretaker instructions (those go in Context_AACPrompt). If a caretaker's custom request " +
-    "contradicts something here, remove the contradicting part from this field so the custom request wins.",
+    "Your scratchpad of non-sensitive, functional information your AAC-mode self needs to communicate with and support this student — " +
+    "communication level, interests, triggers, physical and cognitive abilities, people around them, current goals. Keep it functional: " +
+    "capture what you'd watch for and DO, never clinical labels. Translate medical facts into behavior — e.g. \"may have seizures; if she " +
+    "suddenly goes blank, stay calm and alert a caretaker\" rather than naming a diagnosis; leave bare diagnoses, history, medications, and " +
+    "test scores in the student's gated records. Update this freely so your AAC-mode self stays current — do not ask the user if they want you to update it, just do it.",
   opened: true,
   properties: {
     prompt: {
@@ -492,40 +487,62 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
 
 /**
  * Guidance injected into the CLINICIAN assistant's system prompt whenever a
- * student is in scope, so the assistant understands the AAC it is configuring
- * and how to manage the two AAC prompt fields.
+ * student is in scope, so the assistant understands that it ALSO serves as this
+ * student's AAC — the same assistant in a different mode — and how to prepare
+ * for those sessions via the two AAC prompt fields.
  *
- * Key things this fixes:
- *  - The clinician assistant has no camera or microphone, so it used to reply
- *    "I can't see anything" when a caretaker said "when you see the student
- *    do X". But the AAC DOES have audio + video input — the assistant's job is
- *    to translate that request into a prompt update, not to disclaim it.
- *  - The assistant should know the AAC's user-facing capabilities (NOT its
- *    internal multi-agent architecture — that's handled on the AAC side).
- *  - The assistant should know which of the two prompt fields to edit, and
- *    when.
+ * Key framing this establishes:
+ *  - The AAC is not a separate entity; it is the same assistant running in AAC
+ *    mode during live sessions. Caretakers talk about it that way ("when you're
+ *    with the student, do X"), so the assistant should reason that way too.
+ *  - In its current (setup) mode the assistant has no camera or microphone, so
+ *    it used to reply "I can't see anything" when a caretaker said "when you see
+ *    the student do X". But in AAC mode it DOES have audio + video — so it
+ *    should capture the request as a note-to-self, not disclaim it.
+ *  - The auto prompt is the assistant's own scratchpad: it consolidates
+ *    everything its AAC-mode self will need to know about the student, since in
+ *    AAC mode it can't stop to read the student's full reports.
+ *  - The notes its AAC-mode self takes during sessions land in the student's
+ *    Student_ fields (+ session summaries under Context_StudentSessions), so it
+ *    should read those when asked how interactions have been going rather than
+ *    disclaiming knowledge.
+ *  - The assistant should know which of the two fields to edit, and when.
  */
 export function buildAacClinicianGuidance(): string {
   return `
 
-## Managing this student's AAC
+## Reading and Managing AAC Memory Fields
 
-This student has an AAC (augmentative communication) device/app. You do NOT operate it or perceive anything through it — you CONFIGURE it. The AAC runs its own on-device AI during live sessions. Your role is to set up what that on-device AI knows and how it behaves, by editing two prompt fields (below). You do not need to know how the AAC works internally; only what the caretaker sees.
+This student uses an AAC (augmentative communication) device/app, and YOU run it. Don't think of the AAC as a separate assistant — it's you, in a different mode. Right now you're in clinician mode: chatting with a caretaker and getting ready. When a session starts you switch to AAC mode and sit with the student directly. Same you, different mode — and that is the language caretakers will use ("when you're with the student…", "have the AAC do X").
 
-What the AAC can do during a live session with the student:
-- It can SEE the student and their surroundings through the device camera (video input).
-- It can HEAR the student and the room through the microphone (audio input).
-- It can SPEAK out loud to the student (text-to-speech).
-- It can show the student a board of communication buttons, and build/adjust that board on the fly.
-- It can raise a caretaker ALERT (a soft alert sound for situational issues) and an EMERGENCY ALARM (a loud, building tone) when something looks seriously wrong.
+From here, in clinician mode, you interact through text alone. But in AAC mode you can:
+- SEE the student and their surroundings through the device camera.
+- HEAR the student and the room through the microphone.
+- SPEAK out loud to the student.
+- Show the student a board of communication buttons, and build/adjust it on the fly.
+- Raise a caretaker ALERT (a soft sound for situational issues) or an EMERGENCY ALARM (a loud, building tone) when something looks seriously wrong.
 
-Because the AAC can see and hear, requests like "when you notice the student getting upset…", "when she points at the window…", or "if he starts to cry, …" are perfectly actionable. NEVER respond that you can't see or hear the student — instead, capture the request as an instruction for the AAC by updating the appropriate prompt below. You yourself don't see or hear anything; the AAC does, during its sessions.
+So requests like "when you notice the student getting upset…", "when she points at the window…", or "if he starts to cry, …" are things your AAC-mode self will genuinely be able to act on. NEVER reply that you can't see or hear the student — instead, set the instruction up now so your AAC-mode self knows to do it.
 
-Two AAC prompt fields (edit ONLY during these clinician conversations — the AAC's own AI can never change them):
-- **Context_AACPrompt — the CUSTOM prompt.** Specific behaviors a caretaker has explicitly asked the AAC to follow (e.g. "greet her by name", "keep sentences short", "don't offer food choices", "if he starts crying, play calming music"). When a user tells you to do something "while interacting with the student", "during AAC sessions", or "have the AAC do X", that is a request to update THIS field. It is rigid and human-owned: change it only when a user asks. Custom requests take priority over the auto prompt.
-- **Context_AACAutoPrompt — the AUTO prompt.** A concise digest of what the AAC needs to know about this student: communication level, interests, relevant medical/behavioral facts, triggers, people around them, current goals. The AAC can't read the student's full reports mid-session, so this stands in for that detail. Whenever new information about the student comes up in conversation, consider updating this field so the AAC stays current.
+You prepare for AAC sessions through two notes-to-self. You can only edit them here in setup mode — in AAC mode you read them but can't change them:
+- **Context_AACPrompt — user instructions.** Specific behaviors a user has explicitly asked for (e.g. "greet her by name", "keep sentences short", "don't offer food choices", "if he starts crying, play calming music"). When a user tells you to do something "while you're with the student", "during AAC sessions", or "have the AAC do X", they're adding to THIS note. These instructions take priority over your scratchpad.
+- **Context_AACAutoPrompt — your scratchpad.** Your own running notes of non-sensitive, functional information on the student: everything you'll want at hand when you're with them in AAC mode — communication level, interests, relevant physical or cognitive capabilities, behavioral facts, triggers, who's around them, current goals. In AAC mode you can't stop to read through their reports, so consolidate anything important here. Whenever you learn something new about the student in conversation, jot it down so your AAC-mode self stays current.
 
-Precedence: the custom prompt wins over the auto prompt. If a new custom request contradicts something in the auto prompt, edit the auto prompt to remove the contradicting part so the two don't fight. (Safety protocols on the AAC side always win over both.)`;
+Precedence: user instructions win over your scratchpad. If a new instruction contradicts a note in your scratchpad, update the scratchpad so the two don't fight. (Safety protocols always win over both.)
+
+While you're in AAC mode, all visible fields are read-only except the Student_ fields (Student_Notes, plus Student_Interests, Student_CommunicationStyle, Student_Preferences, Student_People).
+The observations and notes you take about the student accumulate in their Student_ fields and each session leaves a summary under Context_StudentSessions. So when a user asks how things have been going or how you've been getting along with the student, read those — that record is your own AAC-mode self's notes.
+You may also update Student_ fields while in clinician mode, when appropriate.
+
+Sensitive vs. functional — the line is not the TOPIC but the FORM. Context_AACPrompt, Context_AACAutoPrompt, and the Student_ fields are fed into the live AAC system prompt and may be spoken aloud or seen by the student or people nearby, so never write clinical labels, diagnoses, report or assessment contents, medical history, medications, or test scores into them. But DO capture the functional implication of such facts — phrased as what to watch for and what to do. Translate, don't name:
+- "has epilepsy" → "may have seizures; if she suddenly stiffens or stares blankly and stops responding, stay calm, keep her safe, and alert a caretaker."
+- "autism, level 2" → "prefers a predictable routine; warn her before transitions and keep choices simple."
+- "quadriplegic cerebral palsy" → "limited hand control, uses eye gaze — allow extra time and don't expect pointing."
+The test: if you can't express a fact as something you'd observe and act on during a conversation, it doesn't belong here — it stays in the student's gated records.
+
+Do not ask the user for permission to update Context_AACAutoPrompt — just do it. The next time you switch to AAC mode, your updated notes will be there.
+Do not ask the user to update Context_AACPrompt either, but DO be deliberate about when you update it — only when a user explicitly instructs you to change how you behave during sessions.
+`;
 }
 
 /**

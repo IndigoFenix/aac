@@ -174,6 +174,21 @@ export const de = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "Zwei-Faktor-Authentifizierung",
+    mfaPrompt: "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein",
+    mfaVerify: "Bestätigen",
+    mfaBackToSignIn: "Zurück zur Anmeldung",
+    mfaLostAccess: "Kein Zugriff mehr auf den Authenticator?",
+    mfaSetupTitle: "Zwei-Faktor-Authentifizierung einrichten",
+    mfaSetupRequired: "Ihr Administrator verlangt MFA für dieses Konto",
+    mfaSetupAdminRequired: "Für Administratorkonten ist die Zwei-Faktor-Authentifizierung erforderlich",
+    mfaCompleteSetup: "Einrichtung abschließen",
+    mfaSetupLoadFailed: "Die Einrichtung der Zwei-Faktor-Authentifizierung konnte nicht geladen werden. Bitte versuchen Sie es erneut.",
+    notAnAdmin: "Dieses Konto ist kein Administrator. Weiterleitung…",
+    termsOfService: "Nutzungsbedingungen",
+    privacyPolicy: "Datenschutzrichtlinie",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const de = {
     welcomeWithUser: "Wie kann ich Ihnen heute mit {name} helfen?",
     workingWith: "Arbeitet derzeit mit:",
     newConversation: "Neue Unterhaltung starten",
+    history: {
+      newChat: "Neuer Chat",
+      untitled: "Unbenannte Unterhaltung",
+      empty: "Keine früheren Unterhaltungen",
+      rename: "Umbenennen",
+      delete: "Löschen",
+      confirmDelete: "Löschen?",
+      show: "Unterhaltungen anzeigen",
+      hide: "Unterhaltungen ausblenden",
+    },
     addAttachment: "Anhang hinzufügen",
     tools: "Werkzeuge",
     
@@ -2328,6 +2353,7 @@ export const de = {
     elevenlabsDesc: "Geben Sie Ihren eigenen ElevenLabs-API-Schlüssel und Stimm-IDs für hochwertige TTS ein. Überschreibt alle anderen Stimmeinstellungen wenn gesetzt.",
     elevenlabsApiKey: "ElevenLabs-API-Schlüssel",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "KI-Stimm-ID",
     elevenlabsStudentVoiceId: "{{STUDENT}}-Stimm-ID",
     elevenlabsVoiceIdPlaceholder: "z.B. 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "Stimmen werden geladen...",
@@ -2957,6 +2983,8 @@ export const de = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "Administrator-Anmeldung",
+    loginSubtitle: "Geschützter Bereich – nur für Administratoren",
     licenses: {
       title: "Lizenzen",
       subtitle: "Benutzer- und Organisationslizenzen erstellen und verwalten.",

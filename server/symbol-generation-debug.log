@@ -3489,3 +3489,397 @@
 [2026-06-05T14:32:47.571Z] [resolveImageKeys] Resolving 1 keys: youre_welcome (format=internal, useUnapproved=true)
 [2026-06-05T14:32:47.736Z] [resolveImageKeys] Resolved "youre_welcome" → __SYMBOL__:d086130e-8e2a-4c00-a866-6d25069a5f81
 [2026-06-05T14:32:47.737Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T16:54:06.268Z] [resolveImageKeys] Resolving 2 keys: yes, no (format=internal, useUnapproved=true)
+[2026-06-07T16:54:06.622Z] [resolveImageKeys] Resolved "yes" → __SYMBOL__:8ea78a1f-76b4-48ab-a92e-4c49372f7011
+[2026-06-07T16:54:06.788Z] [resolveImageKeys] Resolved "no" → __SYMBOL__:9b8a17d8-b924-4b12-b314-d8b998428090
+[2026-06-07T16:54:06.789Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-07T16:56:02.837Z] [resolveImageKeys] Resolving 3 keys: i_me, you, they (format=internal, useUnapproved=true)
+[2026-06-07T16:56:03.151Z] [resolveImageKeys] Resolved "i_me" → __SYMBOL__:c7d3989f-0a92-43d5-9876-66f28350cea4
+[2026-06-07T16:56:03.306Z] [resolveImageKeys] Resolved "you" → __SYMBOL__:26a1f068-e0de-472a-9e32-3f4eab0d4b9f
+[2026-06-07T16:56:03.463Z] [resolveImageKeys] No symbol found for "they"
+[2026-06-07T16:56:03.464Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: they
+[2026-06-07T16:56:03.465Z] [queueGeneration] Queuing 1 keys: they (hasCallback=true)
+[2026-06-07T16:56:03.654Z] [processQueue] Generating "they"...
+[2026-06-07T16:56:38.797Z] [resolveImageKeys] Resolving 2 keys: more, yuck (format=internal, useUnapproved=true)
+[2026-06-07T16:56:38.971Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-07T16:56:39.177Z] [resolveImageKeys] No symbol found for "yuck"
+[2026-06-07T16:56:39.179Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: yuck
+[2026-06-07T16:56:39.181Z] [queueGeneration] Queuing 1 keys: yuck (hasCallback=true)
+[2026-06-07T16:58:28.040Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T16:58:28.209Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T16:58:28.210Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T16:58:53.156Z] [resolveImageKeys] Resolving 1 keys: play (format=internal, useUnapproved=true)
+[2026-06-07T16:58:53.160Z] [resolveImageKeys] Resolving 1 keys: play (format=internal, useUnapproved=true)
+[2026-06-07T16:58:53.661Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-07T16:58:53.662Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T16:58:53.790Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-07T16:58:53.791Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T16:59:11.932Z] [COST] imageKey="they" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=49 | image: openai/gpt-image-1 in=53 out=272
+[2026-06-07T16:59:11.933Z] [processQueue] Generated "they" → b2b165d7-fb65-4e1e-b85f-1cee17abaa95 (1 total)
+[2026-06-07T16:59:11.934Z] [processQueue] FULL REFINED PROMPT for "they": A simple AAC icon depicting two generic human figures standing side-by-side, facing forward. Both figures have simple dot eyes and a small curved mouth. They are rendered with bold black outlines and flat, solid colors, on a transparent background.
+[2026-06-07T16:59:16.093Z] [processQueue] Generating "yuck"...
+[2026-06-07T16:59:31.178Z] [COST] imageKey="yuck" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=103 | image: openai/gpt-image-1 in=110 out=272
+[2026-06-07T16:59:31.179Z] [processQueue] Generated "yuck" → 91406889-08ad-43fe-a65b-b25f75a88f7c (2 total)
+[2026-06-07T16:59:31.179Z] [processQueue] FULL REFINED PROMPT for "yuck": A simple, generic human figure with a slightly stylized head and no hair, facing forward with a disgusted expression. The figure's mouth is open in an "o" shape, with the tongue slightly visible, and the eyes are simple dots. The figure's head is tilted slightly back, and one hand is raised with fingers splayed, positioned near the face, conveying a strong sense of distaste or revulsion. The icon uses bold black outlines and flat, solid colors, suitable for an AAC communication board.
+[2026-06-07T16:59:44.323Z] [resolveImageKeys] Resolving 1 keys: thank_you (format=internal, useUnapproved=true)
+[2026-06-07T16:59:44.496Z] [resolveImageKeys] Resolved "thank_you" → __SYMBOL__:4514c35b-35c1-4f1c-94b0-304f66e96c66
+[2026-06-07T16:59:44.497Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T16:59:57.076Z] [resolveImageKeys] Resolving 1 keys: thank_you (format=internal, useUnapproved=true)
+[2026-06-07T16:59:57.250Z] [resolveImageKeys] Resolved "thank_you" → __SYMBOL__:4514c35b-35c1-4f1c-94b0-304f66e96c66
+[2026-06-07T16:59:57.251Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T17:00:57.721Z] [resolveImageKeys] Resolving 4 keys: tower, house, robot, animal (format=api-path, useUnapproved=true)
+[2026-06-07T17:00:57.891Z] [resolveImageKeys] No symbol found for "tower"
+[2026-06-07T17:00:58.051Z] [resolveImageKeys] Resolved "house" → /api/custom-symbols/e6f180bf-e124-4f23-ae62-062fa25cba42/image
+[2026-06-07T17:00:58.207Z] [resolveImageKeys] Resolved "robot" → /api/custom-symbols/e3a0fa9a-8132-4a2b-8bf8-94bb3ede93f7/image
+[2026-06-07T17:00:58.379Z] [resolveImageKeys] Resolved "animal" → /api/custom-symbols/ea61f217-2697-49c3-850d-a11ddda9124e/image
+[2026-06-07T17:00:58.382Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: tower
+[2026-06-07T17:00:58.385Z] [queueGeneration] Queuing 1 keys: tower (hasCallback=true)
+[2026-06-07T17:00:58.544Z] [processQueue] Generating "tower"...
+[2026-06-07T17:01:03.818Z] [resolveImageKeys] Resolving 1 keys: know (format=api-path, useUnapproved=true)
+[2026-06-07T17:01:03.989Z] [resolveImageKeys] No symbol found for "know"
+[2026-06-07T17:01:03.992Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: know
+[2026-06-07T17:01:03.993Z] [queueGeneration] Queuing 1 keys: know (hasCallback=true)
+[2026-06-07T17:01:12.297Z] [COST] imageKey="tower" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=59 | image: openai/gpt-image-1 in=65 out=272
+[2026-06-07T17:01:12.297Z] [processQueue] Generated "tower" → bb2a1984-078a-40f4-a15a-e91fcbfa741a (1 total)
+[2026-06-07T17:01:12.298Z] [processQueue] FULL REFINED PROMPT for "tower": A tall, slender, rectangular tower with a pointed roof, rendered in flat AAC icon style. The tower is light gray with a darker gray roof, and has a single black rectangular window and a black rectangular door at its base. Bold black outlines around all shapes, solid colors, transparent background.
+[2026-06-07T17:01:15.137Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T17:01:15.317Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T17:01:15.318Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T17:01:16.477Z] [processQueue] Generating "know"...
+[2026-06-07T17:01:29.659Z] [resolveImageKeys] Resolving 3 keys: generate:big_robot, generate:small_robot, confused (format=internal, useUnapproved=true)
+[2026-06-07T17:01:29.821Z] [resolveImageKeys] No symbol found for "generate:big_robot"
+[2026-06-07T17:01:29.976Z] [resolveImageKeys] No symbol found for "generate:small_robot"
+[2026-06-07T17:01:30.134Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T17:01:30.136Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: generate:big_robot, generate:small_robot
+[2026-06-07T17:01:30.137Z] [queueGeneration] Queuing 2 keys: generate:big_robot, generate:small_robot (hasCallback=true)
+[2026-06-07T17:01:30.139Z] [resolveImageKeys] Resolving 2 keys: big_robot, small_robot (format=api-path, useUnapproved=true)
+[2026-06-07T17:01:30.299Z] [resolveImageKeys] No symbol found for "big_robot"
+[2026-06-07T17:01:30.455Z] [resolveImageKeys] No symbol found for "small_robot"
+[2026-06-07T17:01:30.456Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: big_robot, small_robot
+[2026-06-07T17:01:30.457Z] [queueGeneration] Queuing 2 keys: big_robot, small_robot (hasCallback=true)
+[2026-06-07T17:01:31.986Z] [COST] imageKey="know" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=78 | image: openai/gpt-image-1 in=87 out=272
+[2026-06-07T17:01:31.987Z] [processQueue] Generated "know" → 8a0f1dd0-e49e-4afb-839b-66363028344b (2 total)
+[2026-06-07T17:01:31.988Z] [processQueue] FULL REFINED PROMPT for "know": A simple, generic human head in profile, facing right, with a stylized brain depicted inside the head using a few wavy lines. A small, bright yellow lightbulb icon is positioned above the head, indicating an idea or understanding. The head has a simple dot for an eye and a small curve for a mouth. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-06-07T17:01:36.162Z] [processQueue] Generating "small_robot"...
+[2026-06-07T17:01:48.856Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T17:01:49.013Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T17:01:49.014Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T17:01:50.466Z] [COST] imageKey="small_robot" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=73 | image: openai/gpt-image-1 in=79 out=272
+[2026-06-07T17:01:50.467Z] [processQueue] Generated "small_robot" → bec95262-0e6b-4cd8-837a-16aaf1de17e6 (3 total)
+[2026-06-07T17:01:50.467Z] [processQueue] FULL REFINED PROMPT for "small_robot": A simple, bold illustration of a small, generic robot with a square body, two round eyes, a simple mouth line, two short arms, and two short legs, standing upright. The robot is primarily light gray with a few blue or red accents, rendered with flat, solid colors and thick black outlines, centered on a transparent background, in AAC icon style.
+[2026-06-07T17:01:54.640Z] [processQueue] Generating "big_robot"...
+[2026-06-07T17:02:08.623Z] [COST] imageKey="big_robot" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=47 | image: openai/gpt-image-1 in=53 out=272
+[2026-06-07T17:02:08.624Z] [processQueue] Generated "big_robot" → d981936d-2783-436b-b6b1-54f094d99dab (4 total)
+[2026-06-07T17:02:08.625Z] [processQueue] FULL REFINED PROMPT for "big_robot": A large, blocky robot with a square head, two rectangular arms, and two sturdy legs, standing upright. The robot is primarily gray with some red and blue accents, featuring simple circular eyes and a flat, solid black outline.
+[2026-06-07T17:02:12.784Z] [processQueue] Generating "generate:small_robot"...
+[2026-06-07T17:02:22.517Z] [resolveImageKeys] Resolving 1 keys: more (format=internal, useUnapproved=true)
+[2026-06-07T17:02:22.702Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-07T17:02:22.703Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T17:02:28.662Z] [COST] imageKey="generate:small_robot" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=61 | image: openai/gpt-image-1 in=67 out=272
+[2026-06-07T17:02:28.664Z] [processQueue] Generated "generate:small_robot" → 45d9ff66-d296-418d-a038-807acdbf9795 (5 total)
+[2026-06-07T17:02:28.666Z] [processQueue] FULL REFINED PROMPT for "generate:small_robot": A small, simple robot with a square body, two round eyes, a small rectangular mouth, two short arms with pincer hands, and two wheels for feet, in flat AAC icon style. The robot is primarily gray with some blue accents, bold black outlines, and is centered on a transparent background.
+[2026-06-07T17:02:33.144Z] [processQueue] Generating "generate:big_robot"...
+[2026-06-07T17:02:47.027Z] [COST] imageKey="generate:big_robot" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=63 | image: openai/gpt-image-1 in=69 out=272
+[2026-06-07T17:02:47.028Z] [processQueue] Generated "generate:big_robot" → 076afed0-5fcb-4bb0-868d-34cd10a1b6cd (6 total)
+[2026-06-07T17:02:47.030Z] [processQueue] FULL REFINED PROMPT for "generate:big_robot": A large, blocky robot with a square head, two circular eyes, a rectangular body, and two articulated arms with simple pincer hands, standing upright, in flat AAC icon style. The robot is primarily gray with some red and blue accents, rendered with bold black outlines and solid colors on a transparent background.
+[2026-06-07T17:55:26.819Z] [resolveImageKeys] Resolving 1 keys: ok (format=internal, useUnapproved=true)
+[2026-06-07T17:55:27.020Z] [resolveImageKeys] Resolved "ok" → __SYMBOL__:0df7bbd7-68f9-4f7f-a00b-12eac1a32d8d
+[2026-06-07T17:55:27.021Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T17:55:50.703Z] [resolveImageKeys] Resolving 2 keys: morning, afternoon (format=internal, useUnapproved=true)
+[2026-06-07T17:55:50.889Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-07T17:55:51.113Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-07T17:55:51.114Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-07T18:02:21.834Z] [resolveImageKeys] Resolving 3 keys: day, help, finished (format=internal, useUnapproved=true)
+[2026-06-07T18:02:22.010Z] [resolveImageKeys] Resolved "day" → __SYMBOL__:02b88553-1500-4a6d-bcbb-5fb8b837a209
+[2026-06-07T18:02:22.178Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:d2e64259-2520-48fe-9d45-5a9c6dd17d7c
+[2026-06-07T18:02:22.345Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-07T18:02:22.346Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-06-07T18:02:45.388Z] [resolveImageKeys] Resolving 4 keys: morning, afternoon, evening, finished (format=internal, useUnapproved=true)
+[2026-06-07T18:02:45.572Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-07T18:02:45.740Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-07T18:02:45.908Z] [resolveImageKeys] Resolved "evening" → __SYMBOL__:69853b5c-55f4-4a72-b7af-d53bde37237f
+[2026-06-07T18:02:46.079Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-07T18:02:46.080Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-06-07T18:02:52.336Z] [resolveImageKeys] Resolving 6 keys: morning, afternoon, evening, play#past, build#past, finished (format=internal, useUnapproved=true)
+[2026-06-07T18:02:52.497Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-07T18:02:52.658Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-07T18:02:52.814Z] [resolveImageKeys] Resolved "evening" → __SYMBOL__:69853b5c-55f4-4a72-b7af-d53bde37237f
+[2026-06-07T18:02:52.969Z] [resolveImageKeys] Resolved "play#past" → __SYMBOL__:15e7adf1-a67b-451e-8f03-4b66eba2f02f
+[2026-06-07T18:02:53.127Z] [resolveImageKeys] No symbol found for "build#past"
+[2026-06-07T18:02:53.283Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-07T18:02:53.284Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: build#past
+[2026-06-07T18:02:53.285Z] [queueGeneration] Queuing 1 keys: build#past (hasCallback=true)
+[2026-06-07T18:02:53.440Z] [processQueue] Generating "build#past"...
+[2026-06-07T18:04:07.600Z] [COST] imageKey="build#past" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=85 | image: openai/gpt-image-1 in=90 out=272
+[2026-06-07T18:04:07.601Z] [processQueue] Generated "build#past" → b7d6b021-a15b-4c29-a156-09ee332fc6ce (1 total)
+[2026-06-07T18:04:07.602Z] [processQueue] FULL REFINED PROMPT for "build#past": A simple, generic human figure with a large head and no hair, wearing a plain blue shirt and brown pants, is shown from the side, bending over and placing a red rectangular block on top of a stack of two other red rectangular blocks. The blocks are simple, solid shapes. The figure's hands are clearly interacting with the top block. Bold black outlines, flat solid colors, transparent background, AAC icon style.
+[2026-06-07T18:30:14.193Z] [resolveImageKeys] Resolving 1 keys: robot (format=api-path, useUnapproved=true)
+[2026-06-07T18:30:14.373Z] [resolveImageKeys] Resolved "robot" → /api/custom-symbols/e3a0fa9a-8132-4a2b-8bf8-94bb3ede93f7/image
+[2026-06-07T18:30:14.375Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:30:41.468Z] [resolveImageKeys] Resolving 1 keys: more (format=internal, useUnapproved=true)
+[2026-06-07T18:30:41.645Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-07T18:30:41.646Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:30:41.647Z] [resolveImageKeys] Resolving 1 keys: robot (format=api-path, useUnapproved=true)
+[2026-06-07T18:30:41.804Z] [resolveImageKeys] Resolved "robot" → /api/custom-symbols/e3a0fa9a-8132-4a2b-8bf8-94bb3ede93f7/image
+[2026-06-07T18:30:41.809Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:30:46.401Z] [resolveImageKeys] Resolving 1 keys: robot (format=api-path, useUnapproved=true)
+[2026-06-07T18:30:46.576Z] [resolveImageKeys] Resolved "robot" → /api/custom-symbols/e3a0fa9a-8132-4a2b-8bf8-94bb3ede93f7/image
+[2026-06-07T18:30:46.577Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:31:02.329Z] [resolveImageKeys] Resolving 1 keys: robot (format=api-path, useUnapproved=true)
+[2026-06-07T18:31:02.694Z] [resolveImageKeys] Resolved "robot" → /api/custom-symbols/e3a0fa9a-8132-4a2b-8bf8-94bb3ede93f7/image
+[2026-06-07T18:31:02.694Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:48:03.356Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T18:48:04.083Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T18:48:04.084Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T18:49:14.157Z] [resolveImageKeys] Resolving 2 keys: thank_you, see_you_later (format=internal, useUnapproved=true)
+[2026-06-07T18:49:14.327Z] [resolveImageKeys] Resolved "thank_you" → __SYMBOL__:4514c35b-35c1-4f1c-94b0-304f66e96c66
+[2026-06-07T18:49:14.490Z] [resolveImageKeys] No symbol found for "see_you_later"
+[2026-06-07T18:49:14.491Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: see_you_later
+[2026-06-07T18:49:14.493Z] [queueGeneration] Queuing 1 keys: see_you_later (hasCallback=true)
+[2026-06-07T18:49:14.679Z] [processQueue] Generating "see_you_later"...
+[2026-06-07T18:49:25.753Z] [resolveImageKeys] Resolving 1 keys: good_night (format=internal, useUnapproved=true)
+[2026-06-07T18:49:25.953Z] [resolveImageKeys] No symbol found for "good_night"
+[2026-06-07T18:49:25.954Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: good_night
+[2026-06-07T18:49:25.955Z] [queueGeneration] Queuing 1 keys: good_night (hasCallback=true)
+[2026-06-07T18:49:31.705Z] [COST] imageKey="see_you_later" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=34 | image: openai/gpt-image-1 in=40 out=272
+[2026-06-07T18:49:31.710Z] [processQueue] Generated "see_you_later" → 94a5f9ff-cf38-44a7-930f-2c126284f55e (1 total)
+[2026-06-07T18:49:31.713Z] [processQueue] FULL REFINED PROMPT for "see_you_later": A generic human figure, facing forward, with one arm raised and hand open in a waving gesture, and a simple smile on their face, in flat AAC icon style.
+[2026-06-07T18:49:35.890Z] [processQueue] Generating "good_night"...
+[2026-06-07T19:07:53.842Z] [resolveImageKeys] Resolving 1 keys: generate:new_robot (format=internal, useUnapproved=true)
+[2026-06-07T19:07:54.031Z] [resolveImageKeys] No symbol found for "generate:new_robot"
+[2026-06-07T19:07:54.032Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: generate:new_robot
+[2026-06-07T19:07:54.033Z] [queueGeneration] Queuing 1 keys: generate:new_robot (hasCallback=true)
+[2026-06-07T19:07:54.035Z] [resolveImageKeys] Resolving 1 keys: new_robot (format=api-path, useUnapproved=true)
+[2026-06-07T19:07:54.197Z] [resolveImageKeys] No symbol found for "new_robot"
+[2026-06-07T19:07:54.198Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: new_robot
+[2026-06-07T19:07:54.199Z] [queueGeneration] Queuing 1 keys: new_robot (hasCallback=true)
+[2026-06-07T19:07:54.204Z] [processQueue] Generating "generate:new_robot"...
+[2026-06-07T19:08:10.543Z] [COST] imageKey="generate:new_robot" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=88 | image: openai/gpt-image-1 in=92 out=272
+[2026-06-07T19:08:10.543Z] [processQueue] Generated "generate:new_robot" → 5e5fd02f-7198-495c-b622-2384dd48e2aa (1 total)
+[2026-06-07T19:08:10.544Z] [processQueue] FULL REFINED PROMPT for "generate:new_robot": A simple, bold illustration of a friendly-looking robot, standing upright and facing forward, with a square head, two round eyes, a small rectangular mouth, and a cylindrical body. It has two simple arms with pincer-like hands and two simple legs with flat feet. The robot is primarily light gray with some blue accents, rendered with flat, solid colors and thick black outlines, on a transparent background, in AAC icon style.
+[2026-06-07T19:08:14.725Z] [processQueue] Generating "new_robot"...
+[2026-06-07T19:08:28.895Z] [COST] imageKey="new_robot" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=92 | image: openai/gpt-image-1 in=98 out=272
+[2026-06-07T19:08:28.896Z] [processQueue] Generated "new_robot" → eaf8c596-f065-43e3-9d7f-7acd5bd4dbad (2 total)
+[2026-06-07T19:08:28.897Z] [processQueue] FULL REFINED PROMPT for "new_robot": A simple, bold illustration of a friendly, stylized robot standing upright, facing forward. The robot has a square head with two simple dot eyes and a small curved mouth, a rectangular body, and two cylindrical arms and legs. It is predominantly silver-gray with a few bright blue accents, like a small light on its chest. The robot has a clean, flat design with thick black outlines, suitable for an AAC communication board icon, on a transparent background.
+[2026-06-07T19:17:10.495Z] [resolveImageKeys] Resolving 1 keys: play (format=internal, useUnapproved=true)
+[2026-06-07T19:17:10.657Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-07T19:17:10.668Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T19:30:58.737Z] [resolveImageKeys] Resolving 1 keys: build (format=internal, useUnapproved=true)
+[2026-06-07T19:30:58.938Z] [resolveImageKeys] No symbol found for "build"
+[2026-06-07T19:30:58.942Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: build
+[2026-06-07T19:30:58.945Z] [queueGeneration] Queuing 1 keys: build (hasCallback=true)
+[2026-06-07T19:30:59.116Z] [processQueue] Generating "build"...
+[2026-06-07T19:31:11.797Z] [resolveImageKeys] Resolving 3 keys: morning, afternoon, evening (format=internal, useUnapproved=true)
+[2026-06-07T19:31:11.953Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-07T19:31:12.110Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-07T19:31:12.293Z] [resolveImageKeys] Resolved "evening" → __SYMBOL__:69853b5c-55f4-4a72-b7af-d53bde37237f
+[2026-06-07T19:31:12.294Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-06-07T19:31:15.803Z] [COST] imageKey="build" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=73 | image: openai/gpt-image-1 in=78 out=272
+[2026-06-07T19:31:15.805Z] [processQueue] Generated "build" → 0b33325a-5cd2-4564-b50d-6e894fc0dd39 (1 total)
+[2026-06-07T19:31:15.806Z] [processQueue] FULL REFINED PROMPT for "build": A generic human figure with a large head and simple features, wearing a blue shirt and brown pants, is shown from the side, actively stacking two yellow rectangular blocks on top of a larger red rectangular block. The figure's hands are positioned to place the top yellow block. The blocks are simple, solid shapes with bold black outlines, in flat AAC icon style.
+[2026-06-07T19:31:53.077Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T19:31:53.245Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T19:31:53.246Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T20:55:25.254Z] [resolveImageKeys] Resolving 3 keys: morning, afternoon, evening (format=internal, useUnapproved=true)
+[2026-06-07T20:55:25.424Z] [resolveImageKeys] Resolved "morning" → __SYMBOL__:7a254a63-77c7-42bf-8656-33e1326c63e3
+[2026-06-07T20:55:25.594Z] [resolveImageKeys] Resolved "afternoon" → __SYMBOL__:c944188e-d76a-472f-9381-342785a5f363
+[2026-06-07T20:55:25.763Z] [resolveImageKeys] Resolved "evening" → __SYMBOL__:69853b5c-55f4-4a72-b7af-d53bde37237f
+[2026-06-07T20:55:25.764Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-06-07T20:55:49.651Z] [resolveImageKeys] Resolving 1 keys: outside (format=internal, useUnapproved=true)
+[2026-06-07T20:55:49.835Z] [resolveImageKeys] No symbol found for "outside"
+[2026-06-07T20:55:49.836Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: outside
+[2026-06-07T20:55:49.837Z] [queueGeneration] Queuing 1 keys: outside (hasCallback=true)
+[2026-06-07T20:55:50.004Z] [processQueue] Generating "outside"...
+[2026-06-07T20:55:53.665Z] [resolveImageKeys] Resolving 1 keys: ⬇️ (format=internal, useUnapproved=true)
+[2026-06-07T20:55:53.838Z] [resolveImageKeys] No symbol found for "⬇️"
+[2026-06-07T20:55:53.839Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: ⬇️
+[2026-06-07T20:55:53.841Z] [queueGeneration] Queuing 1 keys: ⬇️ (hasCallback=true)
+[2026-06-07T20:56:11.417Z] [COST] imageKey="outside" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=40 | image: openai/gpt-image-1 in=46 out=272
+[2026-06-07T20:56:11.418Z] [processQueue] Generated "outside" → de35c734-241c-4ee0-b792-94e43dabb390 (1 total)
+[2026-06-07T20:56:11.419Z] [processQueue] FULL REFINED PROMPT for "outside": A simple AAC icon showing a green grassy hill under a bright blue sky with a yellow sun in the top right corner, all rendered in flat, solid colors with bold black outlines on a transparent background.
+[2026-06-07T20:56:15.582Z] [processQueue] Generating "⬇️"...
+[2026-06-07T20:56:18.239Z] [resolveImageKeys] Resolving 1 keys: ⬇️ (format=internal, useUnapproved=true)
+[2026-06-07T20:56:18.409Z] [resolveImageKeys] No symbol found for "⬇️"
+[2026-06-07T20:56:18.411Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: ⬇️
+[2026-06-07T20:56:18.417Z] [queueGeneration] Queuing 1 keys: ⬇️ (hasCallback=true)
+[2026-06-07T20:56:48.549Z] [COST] imageKey="⬇️" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=33 | image: openai/gpt-image-1 in=39 out=272
+[2026-06-07T20:56:48.550Z] [processQueue] Generated "⬇️" → 6fe3f428-1073-404d-a5ff-060958102241 (2 total)
+[2026-06-07T20:56:48.551Z] [processQueue] FULL REFINED PROMPT for "⬇️": A bold black downward-pointing arrow, thick and simple, with a triangular head and a straight shaft, centered on a transparent background, in flat AAC icon style.
+[2026-06-07T20:56:52.742Z] [processQueue] "⬇️" already exists → 6fe3f428-1073-404d-a5ff-060958102241
+[2026-06-07T20:59:08.205Z] [resolveImageKeys] Resolving 1 keys: robot_bird (format=api-path, useUnapproved=true)
+[2026-06-07T20:59:08.455Z] [resolveImageKeys] No symbol found for "robot_bird"
+[2026-06-07T20:59:08.459Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: robot_bird
+[2026-06-07T20:59:08.460Z] [queueGeneration] Queuing 1 keys: robot_bird (hasCallback=true)
+[2026-06-07T20:59:08.652Z] [processQueue] Generating "robot_bird"...
+[2026-06-07T20:59:23.466Z] [COST] imageKey="robot_bird" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=79 | image: openai/gpt-image-1 in=87 out=272
+[2026-06-07T20:59:23.467Z] [processQueue] Generated "robot_bird" → 8d581bca-25a4-4496-b6f0-2ceafc2315a0 (1 total)
+[2026-06-07T20:59:23.468Z] [processQueue] FULL REFINED PROMPT for "robot_bird": A simple, bold illustration of a stylized robot bird, depicted in profile, with a round body, two small circular eyes, a pointed beak, two wings with segmented lines, and two thin legs with simple feet. The robot bird is composed of flat, solid colors like silver, blue, and black, with bold black outlines around all shapes, on a transparent background, in AAC icon style.
+[2026-06-07T21:00:04.032Z] [resolveImageKeys] Resolving 2 keys: generate:robot_bird, confused (format=internal, useUnapproved=true)
+[2026-06-07T21:00:04.226Z] [resolveImageKeys] No symbol found for "generate:robot_bird"
+[2026-06-07T21:00:04.398Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:00:04.400Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: generate:robot_bird
+[2026-06-07T21:00:04.403Z] [queueGeneration] Queuing 1 keys: generate:robot_bird (hasCallback=true)
+[2026-06-07T21:00:04.405Z] [resolveImageKeys] Resolving 1 keys: robot_bird (format=api-path, useUnapproved=true)
+[2026-06-07T21:00:04.566Z] [resolveImageKeys] Resolved "robot_bird" → /api/custom-symbols/8d581bca-25a4-4496-b6f0-2ceafc2315a0/image
+[2026-06-07T21:00:04.567Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T21:00:04.573Z] [processQueue] Generating "generate:robot_bird"...
+[2026-06-07T21:00:13.937Z] [resolveImageKeys] Resolving 2 keys: generate:robot_bird, confused (format=internal, useUnapproved=true)
+[2026-06-07T21:00:14.271Z] [resolveImageKeys] No symbol found for "generate:robot_bird"
+[2026-06-07T21:00:14.436Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:00:14.437Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: generate:robot_bird
+[2026-06-07T21:00:14.438Z] [queueGeneration] Queuing 1 keys: generate:robot_bird (hasCallback=true)
+[2026-06-07T21:00:14.439Z] [resolveImageKeys] Resolving 1 keys: robot_bird (format=api-path, useUnapproved=true)
+[2026-06-07T21:00:14.603Z] [resolveImageKeys] Resolved "robot_bird" → /api/custom-symbols/8d581bca-25a4-4496-b6f0-2ceafc2315a0/image
+[2026-06-07T21:00:14.604Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T21:00:19.449Z] [COST] imageKey="generate:robot_bird" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=73 | image: openai/gpt-image-1 in=80 out=272
+[2026-06-07T21:00:19.451Z] [processQueue] Generated "generate:robot_bird" → 8e162eed-e085-43a8-b7e2-580c2b33c950 (1 total)
+[2026-06-07T21:00:19.452Z] [processQueue] FULL REFINED PROMPT for "generate:robot_bird": A simple, stylized robot bird in flight, depicted with a metallic gray body, a small red eye, and simple blue wings extended. The bird has a sleek, geometric design with bold black outlines, flying towards the right with two simple white motion lines trailing behind it. The icon uses flat, solid colors on a transparent background, suitable for an AAC communication board.
+[2026-06-07T21:00:23.622Z] [processQueue] "generate:robot_bird" already exists → 8e162eed-e085-43a8-b7e2-580c2b33c950
+[2026-06-07T21:19:10.281Z] [resolveImageKeys] Resolving 2 keys: confused, more (format=internal, useUnapproved=true)
+[2026-06-07T21:19:10.484Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:19:10.654Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-07T21:19:10.655Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-07T21:19:31.241Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-07T21:19:31.439Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:19:31.440Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T21:20:01.407Z] [resolveImageKeys] Resolving 2 keys: build, play (format=internal, useUnapproved=true)
+[2026-06-07T21:20:01.604Z] [resolveImageKeys] Resolved "build" → __SYMBOL__:0b33325a-5cd2-4564-b50d-6e894fc0dd39
+[2026-06-07T21:20:01.782Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-07T21:20:01.783Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-07T21:20:13.967Z] [resolveImageKeys] Resolving 4 keys: generate:bird_nest, generate:tower, generate:big_thing, confused (format=internal, useUnapproved=true)
+[2026-06-07T21:20:14.126Z] [resolveImageKeys] No symbol found for "generate:bird_nest"
+[2026-06-07T21:20:14.290Z] [resolveImageKeys] No symbol found for "generate:tower"
+[2026-06-07T21:20:14.448Z] [resolveImageKeys] No symbol found for "generate:big_thing"
+[2026-06-07T21:20:14.608Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:20:14.610Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: generate:bird_nest, generate:tower, generate:big_thing
+[2026-06-07T21:20:14.615Z] [queueGeneration] Queuing 3 keys: generate:bird_nest, generate:tower, generate:big_thing (hasCallback=true)
+[2026-06-07T21:20:14.626Z] [resolveImageKeys] Resolving 3 keys: bird_nest, tower, big_thing (format=api-path, useUnapproved=true)
+[2026-06-07T21:20:14.789Z] [processQueue] Generating "generate:big_thing"...
+[2026-06-07T21:20:14.814Z] [resolveImageKeys] No symbol found for "bird_nest"
+[2026-06-07T21:20:14.987Z] [resolveImageKeys] Resolved "tower" → /api/custom-symbols/bb2a1984-078a-40f4-a15a-e91fcbfa741a/image
+[2026-06-07T21:20:15.161Z] [resolveImageKeys] No symbol found for "big_thing"
+[2026-06-07T21:20:15.162Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: bird_nest, big_thing
+[2026-06-07T21:20:15.163Z] [queueGeneration] Queuing 2 keys: bird_nest, big_thing (hasCallback=true)
+[2026-06-07T21:20:27.908Z] [COST] imageKey="generate:big_thing" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=56 | image: openai/gpt-image-1 in=62 out=272
+[2026-06-07T21:20:27.910Z] [processQueue] Generated "generate:big_thing" → d553a918-661b-4a52-8d13-15228dbc8e09 (1 total)
+[2026-06-07T21:20:27.914Z] [processQueue] FULL REFINED PROMPT for "generate:big_thing": A large, simple, generic object or shape, significantly larger than typical, centered on a transparent background. It has a bold black outline and is filled with a single, solid, bright color like blue or green, with no internal details or textures, in flat AAC icon style.
+[2026-06-07T21:20:32.103Z] [processQueue] Generating "big_thing"...
+[2026-06-07T21:20:44.355Z] [resolveImageKeys] Resolving 2 keys: generate:flying_bird, confused (format=internal, useUnapproved=true)
+[2026-06-07T21:20:44.556Z] [resolveImageKeys] No symbol found for "generate:flying_bird"
+[2026-06-07T21:20:44.727Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-07T21:20:44.728Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: generate:flying_bird
+[2026-06-07T21:20:44.730Z] [queueGeneration] Queuing 1 keys: generate:flying_bird (hasCallback=true)
+[2026-06-07T21:20:44.732Z] [resolveImageKeys] Resolving 1 keys: flying_bird (format=api-path, useUnapproved=true)
+[2026-06-07T21:20:44.851Z] [COST] imageKey="big_thing" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=51 | image: openai/gpt-image-1 in=57 out=272
+[2026-06-07T21:20:44.852Z] [processQueue] Generated "big_thing" → f9817241-b762-4260-9501-4aaf3df15d0f (2 total)
+[2026-06-07T21:20:44.853Z] [processQueue] FULL REFINED PROMPT for "big_thing": A large, simple, bold illustration of a massive, dark gray rectangular block with a slightly rounded top, filling most of the frame, in flat AAC icon style. The block has a thick black outline and no internal details, rendered on a transparent background.
+[2026-06-07T21:20:44.897Z] [resolveImageKeys] No symbol found for "flying_bird"
+[2026-06-07T21:20:44.898Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: flying_bird
+[2026-06-07T21:20:44.899Z] [queueGeneration] Queuing 1 keys: flying_bird (hasCallback=true)
+[2026-06-07T21:20:49.017Z] [processQueue] Generating "generate:flying_bird"...
+[2026-06-07T21:21:02.207Z] [COST] imageKey="generate:flying_bird" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=93 | image: openai/gpt-image-1 in=101 out=272
+[2026-06-07T21:21:02.208Z] [processQueue] Generated "generate:flying_bird" → c4d32d74-f087-413d-800d-1ccef830e7bd (3 total)
+[2026-06-07T21:21:02.208Z] [processQueue] FULL REFINED PROMPT for "generate:flying_bird": A simple, bold illustration of a bird in flight, depicted from the side with its wings spread upwards in a V-shape, indicating motion. The bird has a round body, a small head with a simple dot for an eye, and a pointed beak. Two simple motion lines extend behind each wing to emphasize movement. The bird is colored in a solid, bright blue with a yellow beak and black outlines, on a transparent background, in flat AAC icon style.
+[2026-06-07T21:21:06.373Z] [processQueue] Generating "flying_bird"...
+[2026-06-07T21:21:21.659Z] [COST] imageKey="flying_bird" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=72 | image: openai/gpt-image-1 in=80 out=272
+[2026-06-07T21:21:21.661Z] [processQueue] Generated "flying_bird" → 3a919351-78ab-4065-9da4-3810a2b984b1 (4 total)
+[2026-06-07T21:21:21.663Z] [processQueue] FULL REFINED PROMPT for "flying_bird": A simple, bold illustration of a bird in flight, depicted from the side with its wings spread upwards, in flat AAC icon style. The bird has a round body, a small head with a simple dot eye, and a pointed beak. Two simple motion lines arc behind its wings to indicate movement. The bird is a solid blue color with a yellow beak.
+[2026-06-07T21:21:25.828Z] [processQueue] Generating "bird_nest"...
+[2026-06-07T21:21:41.292Z] [COST] imageKey="bird_nest" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=25 | image: openai/gpt-image-1 in=31 out=272
+[2026-06-07T21:21:41.293Z] [processQueue] Generated "bird_nest" → 1284d266-6918-4178-86e8-c40e547ce4e3 (5 total)
+[2026-06-07T21:21:41.294Z] [processQueue] FULL REFINED PROMPT for "bird_nest": A brown bird's nest, woven from twigs, with three light blue eggs nestled inside, in flat AAC icon style.
+[2026-06-07T21:21:45.468Z] [processQueue] Generating "generate:tower"...
+[2026-06-07T21:21:58.434Z] [COST] imageKey="generate:tower" | refinement: gemini/gemini-2.5-flash in=1059 (1055 cached) out=51 | image: openai/gpt-image-1 in=57 out=272
+[2026-06-07T21:21:58.435Z] [processQueue] Generated "generate:tower" → 50bcfaea-188c-4708-8597-a11f5f15b093 (6 total)
+[2026-06-07T21:21:58.436Z] [processQueue] FULL REFINED PROMPT for "generate:tower": A tall, rectangular tower with a pointed roof, featuring a few small square windows, rendered in flat AAC icon style. The tower is light gray with a darker gray roof and window frames. It stands centrally on a transparent background, outlined in bold black.
+[2026-06-07T21:22:02.610Z] [processQueue] Generating "generate:bird_nest"...
+[2026-06-07T21:22:16.775Z] [COST] imageKey="generate:bird_nest" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=37 | image: openai/gpt-image-1 in=43 out=272
+[2026-06-07T21:22:16.776Z] [processQueue] Generated "generate:bird_nest" → 401daf8a-68d7-4169-8f04-fbdffdb62fdc (7 total)
+[2026-06-07T21:22:16.777Z] [processQueue] FULL REFINED PROMPT for "generate:bird_nest": A brown bird's nest, woven from twigs and straw, containing three light blue eggs with small dark speckles, viewed from a slightly elevated angle, in flat AAC icon style.
+[2026-06-07T21:45:53.148Z] [resolveImageKeys] Resolving 1 keys: good_night (format=internal, useUnapproved=true)
+[2026-06-07T21:45:53.325Z] [resolveImageKeys] No symbol found for "good_night"
+[2026-06-07T21:45:53.327Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: good_night
+[2026-06-07T21:45:53.330Z] [queueGeneration] Queuing 1 keys: good_night (hasCallback=true)
+[2026-06-07T21:45:53.510Z] [processQueue] Generating "good_night"...
+[2026-06-07T22:04:11.290Z] [resolveImageKeys] Resolving 1 keys: more (format=internal, useUnapproved=true)
+[2026-06-07T22:04:11.504Z] [resolveImageKeys] Resolved "more" → __SYMBOL__:fbb49ccd-7dd7-4f92-90b9-7d9ad30f2916
+[2026-06-07T22:04:11.505Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:05:23.503Z] [resolveImageKeys] Resolving 2 keys: ⏳, big (format=internal, useUnapproved=true)
+[2026-06-07T22:05:23.851Z] [resolveImageKeys] No symbol found for "⏳"
+[2026-06-07T22:05:24.018Z] [resolveImageKeys] Resolved "big" → __SYMBOL__:6e11b4c2-0032-4131-963e-ee6bf8a8d421
+[2026-06-07T22:05:24.020Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: ⏳
+[2026-06-07T22:05:24.021Z] [queueGeneration] Queuing 1 keys: ⏳ (hasCallback=true)
+[2026-06-07T22:05:24.186Z] [processQueue] Generating "⏳"...
+[2026-06-07T22:05:31.124Z] [resolveImageKeys] Resolving 2 keys: ⏳, play (format=internal, useUnapproved=true)
+[2026-06-07T22:05:31.311Z] [resolveImageKeys] No symbol found for "⏳"
+[2026-06-07T22:05:31.475Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-07T22:05:31.476Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: ⏳
+[2026-06-07T22:05:31.477Z] [queueGeneration] Queuing 1 keys: ⏳ (hasCallback=true)
+[2026-06-07T22:05:39.965Z] [COST] imageKey="⏳" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=115 | image: openai/gpt-image-1 in=123 out=272
+[2026-06-07T22:05:39.965Z] [processQueue] Generated "⏳" → 4f7eda37-1bb3-47bf-b6f1-40bdef92d6e6 (1 total)
+[2026-06-07T22:05:39.966Z] [processQueue] FULL REFINED PROMPT for "⏳": A simple, bold illustration of an hourglass, shown from the side, with sand actively flowing from the top bulb to the bottom bulb. The hourglass has a clear, transparent body with a narrow neck in the middle, and flat, circular bases at the top and bottom. The sand is a solid, contrasting color, depicted as a stream of small dots or a solid triangle shape in the upper bulb, and a growing pile in the lower bulb. The entire icon is rendered with thick black outlines and flat, solid colors on a transparent background, suitable for an AAC communication board.
+[2026-06-07T22:05:44.145Z] [processQueue] "⏳" already exists → 4f7eda37-1bb3-47bf-b6f1-40bdef92d6e6
+[2026-06-07T22:05:46.291Z] [resolveImageKeys] Resolving 1 keys: big (format=internal, useUnapproved=true)
+[2026-06-07T22:05:46.506Z] [resolveImageKeys] Resolved "big" → __SYMBOL__:6e11b4c2-0032-4131-963e-ee6bf8a8d421
+[2026-06-07T22:05:46.507Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:06:02.348Z] [resolveImageKeys] Resolving 1 keys: big (format=internal, useUnapproved=true)
+[2026-06-07T22:06:02.678Z] [resolveImageKeys] Resolved "big" → __SYMBOL__:6e11b4c2-0032-4131-963e-ee6bf8a8d421
+[2026-06-07T22:06:02.679Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:06:20.292Z] [resolveImageKeys] Resolving 2 keys: tall_high, wide (format=internal, useUnapproved=true)
+[2026-06-07T22:06:20.456Z] [resolveImageKeys] No symbol found for "tall_high"
+[2026-06-07T22:06:20.619Z] [resolveImageKeys] No symbol found for "wide"
+[2026-06-07T22:06:20.620Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: tall_high, wide
+[2026-06-07T22:06:20.621Z] [queueGeneration] Queuing 2 keys: tall_high, wide (hasCallback=true)
+[2026-06-07T22:06:20.784Z] [processQueue] Generating "wide"...
+[2026-06-07T22:06:34.028Z] [COST] imageKey="wide" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=53 | image: openai/gpt-image-1 in=59 out=272
+[2026-06-07T22:06:34.029Z] [processQueue] Generated "wide" → 099f1d8d-9165-4144-91a3-4fe1c687d458 (1 total)
+[2026-06-07T22:06:34.030Z] [processQueue] FULL REFINED PROMPT for "wide": A simple, bold AAC icon illustration of a horizontal black arrow pointing left and a horizontal black arrow pointing right, both originating from a central vertical black line, indicating expansion or width. The arrows are thick and have flat, solid black color. The background is transparent.
+[2026-06-07T22:06:38.270Z] [processQueue] Generating "tall_high"...
+[2026-06-07T22:06:59.400Z] [resolveImageKeys] Resolving 1 keys: generate:large_structure (format=internal, useUnapproved=true)
+[2026-06-07T22:06:59.590Z] [resolveImageKeys] No symbol found for "generate:large_structure"
+[2026-06-07T22:06:59.593Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: generate:large_structure
+[2026-06-07T22:06:59.599Z] [queueGeneration] Queuing 1 keys: generate:large_structure (hasCallback=true)
+[2026-06-07T22:06:59.604Z] [resolveImageKeys] Resolving 1 keys: large_structure (format=api-path, useUnapproved=true)
+[2026-06-07T22:06:59.786Z] [resolveImageKeys] No symbol found for "large_structure"
+[2026-06-07T22:06:59.789Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: large_structure
+[2026-06-07T22:06:59.793Z] [queueGeneration] Queuing 1 keys: large_structure (hasCallback=true)
+[2026-06-07T22:07:27.435Z] [COST] imageKey="tall_high" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=41 | image: openai/gpt-image-1 in=47 out=272
+[2026-06-07T22:07:27.436Z] [processQueue] Generated "tall_high" → 7eda7623-07cf-416f-a799-15e9ae96abde (2 total)
+[2026-06-07T22:07:27.437Z] [processQueue] FULL REFINED PROMPT for "tall_high": A very tall, thin, dark gray rectangular building with a pointed roof, standing prominently in the center, with two simple upward-pointing arrows on either side of the building, in flat AAC icon style.
+[2026-06-07T22:07:31.615Z] [processQueue] Generating "large_structure"...
+[2026-06-07T22:07:46.063Z] [COST] imageKey="large_structure" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=50 | image: openai/gpt-image-1 in=56 out=272
+[2026-06-07T22:07:46.063Z] [processQueue] Generated "large_structure" → 74623658-cb1d-45ff-b7e8-411db7fcd33e (3 total)
+[2026-06-07T22:07:46.064Z] [processQueue] FULL REFINED PROMPT for "large_structure": A large, imposing building with a simple rectangular base and a triangular roof, featuring a single prominent door and two square windows on the front facade, all rendered with bold black outlines and flat, solid colors on a transparent background, in AAC icon style.
+[2026-06-07T22:07:50.258Z] [processQueue] Generating "generate:large_structure"...
+[2026-06-07T22:08:24.334Z] [resolveImageKeys] Resolving 1 keys: generate:tower (format=internal, useUnapproved=true)
+[2026-06-07T22:08:24.531Z] [resolveImageKeys] Resolved "generate:tower" → __SYMBOL__:50bcfaea-188c-4708-8597-a11f5f15b093
+[2026-06-07T22:08:24.533Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:08:24.538Z] [resolveImageKeys] Resolving 1 keys: tower (format=api-path, useUnapproved=true)
+[2026-06-07T22:08:24.717Z] [resolveImageKeys] Resolved "tower" → /api/custom-symbols/bb2a1984-078a-40f4-a15a-e91fcbfa741a/image
+[2026-06-07T22:08:24.722Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:08:48.126Z] [resolveImageKeys] Resolving 1 keys: observatory (format=api-path, useUnapproved=true)
+[2026-06-07T22:08:48.307Z] [resolveImageKeys] No symbol found for "observatory"
+[2026-06-07T22:08:48.309Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: observatory
+[2026-06-07T22:08:48.310Z] [queueGeneration] Queuing 1 keys: observatory (hasCallback=true)
+[2026-06-07T22:08:52.323Z] [COST] imageKey="generate:large_structure" | refinement: gemini/gemini-2.5-flash in=1060 (1055 cached) out=54 | image: openai/gpt-image-1 in=60 out=272
+[2026-06-07T22:08:52.325Z] [processQueue] Generated "generate:large_structure" → e47466ce-af19-4752-8e9b-87af096bb23c (4 total)
+[2026-06-07T22:08:52.327Z] [processQueue] FULL REFINED PROMPT for "generate:large_structure": A large, simple illustration of a building with a tall, rectangular main section and a triangular roof, featuring a single rectangular door and two square windows on the front, all rendered with bold black outlines and flat, solid colors on a transparent background, in AAC icon style.
+[2026-06-07T22:08:56.509Z] [processQueue] Generating "observatory"...
+[2026-06-07T22:08:59.131Z] [resolveImageKeys] Resolving 1 keys: observatory (format=api-path, useUnapproved=true)
+[2026-06-07T22:08:59.314Z] [resolveImageKeys] No symbol found for "observatory"
+[2026-06-07T22:08:59.314Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: observatory
+[2026-06-07T22:08:59.315Z] [queueGeneration] Queuing 1 keys: observatory (hasCallback=true)
+[2026-06-07T22:09:09.280Z] [COST] imageKey="observatory" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=53 | image: openai/gpt-image-1 in=61 out=272
+[2026-06-07T22:09:09.281Z] [processQueue] Generated "observatory" → e215f79b-96d0-428b-b345-f1469940f2db (5 total)
+[2026-06-07T22:09:09.283Z] [processQueue] FULL REFINED PROMPT for "observatory": A stylized astronomical observatory building with a large domed roof, featuring a prominent telescope lens opening, in flat AAC icon style. The building is white with a gray dome and a dark blue opening. Bold black outlines around all shapes, flat solid colors, transparent background.
+[2026-06-07T22:09:13.457Z] [processQueue] "observatory" already exists → e215f79b-96d0-428b-b345-f1469940f2db
+[2026-06-07T22:09:32.714Z] [resolveImageKeys] Resolving 1 keys: planets (format=api-path, useUnapproved=true)
+[2026-06-07T22:09:32.718Z] [resolveImageKeys] Resolving 2 keys: galaxy, planets (format=api-path, useUnapproved=true)
+[2026-06-07T22:09:32.720Z] [resolveImageKeys] Resolving 1 keys: planets (format=api-path, useUnapproved=true)
+[2026-06-07T22:09:33.384Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-06-07T22:09:33.385Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:09:33.520Z] [resolveImageKeys] Resolved "galaxy" → /api/custom-symbols/b31069bf-6837-47ba-9300-4f865314625a/image
+[2026-06-07T22:09:33.548Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-06-07T22:09:33.549Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-07T22:09:33.676Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
+[2026-06-07T22:09:33.677Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 

@@ -16,6 +16,7 @@ import {
   objectShares,
   programs,
   standingShares,
+  userStudents,
   type ShareableObjectType,
 } from "@shared/schema";
 import { db } from "../../db";
@@ -94,6 +95,35 @@ function visibleStudentIdsViaStandingShares(
 }
 
 /**
+ * Subquery: student ids the user is DIRECTLY linked to (owner / caregiver /
+ * therapist / teacher via userStudents). Used to grant access to *personal*
+ * (null-institute) PHI — objects that belong to the student rather than to any
+ * institute — independent of which institute the session is scoped to.
+ */
+function userLinkedStudentIds(userId: string) {
+  return db
+    .select({ studentId: userStudents.studentId })
+    .from(userStudents)
+    .where(and(eq(userStudents.userId, userId), eq(userStudents.isActive, true)));
+}
+
+/** Does the user hold an active direct link to the student? */
+async function userHasActiveStudentLink(userId: string, studentId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: userStudents.id })
+    .from(userStudents)
+    .where(
+      and(
+        eq(userStudents.userId, userId),
+        eq(userStudents.studentId, studentId),
+        eq(userStudents.isActive, true),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
  * Build a Drizzle WHERE condition that limits a root PHI table read to only
  * rows visible under the given access context.
  *
@@ -127,6 +157,11 @@ export function withInstituteVisibility(
   // institute principal
   return or(
     eq(table.instituteId, ctx.instituteId),
+    // Personal (null-institute) PHI belongs to the student directly — visible to
+    // the student's own linked users (owner/caregiver/etc.), independent of the
+    // session's selected institute. Such objects can't be cross-institute shared
+    // (no owning institute), so the direct link is the only sensible gate.
+    and(isNull(table.instituteId), inArray(table.studentId, userLinkedStudentIds(ctx.userId))),
     inArray(table.id, visibleObjectIdsViaObjectShares(ctx.instituteId, objectType)),
     inArray(table.studentId, visibleStudentIdsViaStandingShares(ctx.instituteId, objectType)),
   )!;
@@ -204,6 +239,14 @@ export async function canAccessObject(
 
   // institute principal
   if (ownerInstituteId === ctx.instituteId) return true;
+
+  // Personal (null-institute) object: governed by the user's direct link to the
+  // student, not by institute ownership/shares. This is what lets a clinician who
+  // OWNS a student (personal caseload, no enrollment) edit that student's program
+  // even while a different institute is selected for the session.
+  if (ownerInstituteId === null) {
+    return userHasActiveStudentLink(ctx.userId, studentId);
+  }
 
   const permissionGate =
     requirePermission === "write"

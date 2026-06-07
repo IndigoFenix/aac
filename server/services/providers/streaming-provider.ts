@@ -51,6 +51,10 @@ export interface ChatCompletionResult {
   usage?: {
     promptTokens: number;
     completionTokens: number;
+    /** Prompt-cache read tokens (Anthropic cache_read_input_tokens), billed 0.1x. */
+    cachedTokens?: number;
+    /** Prompt-cache write tokens (Anthropic cache_creation_input_tokens), billed 1.25x. */
+    cacheCreationTokens?: number;
   };
   /** Provider-specific finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION") */
   finishReason?: string;
@@ -62,7 +66,7 @@ export interface ChatCompletionResult {
 export type StreamChunk =
   | { type: "text_delta"; text: string }
   | { type: "tool_call_delta"; index: number; name?: string; arguments?: string }
-  | { type: "done"; usage?: { promptTokens: number; completionTokens: number } };
+  | { type: "done"; usage?: { promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number } };
 
 /**
  * Provider that can do chat completions and streaming with tool support.

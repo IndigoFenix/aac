@@ -20,9 +20,66 @@ const ChargeToCredits = (charge: number) => {
     return charge;
 }
 
+// Fallback rates used when a (provider, model) pair is NOT found in the
+// MODEL_OPTIONS catalog. Previously these were gpt-4o-mini rates ($0.15/$0.60),
+// which massively under-billed Claude usage (our real calls go to Claude Haiku
+// or pricier). We default to Claude Haiku rates instead so an unrecognized model
+// at least produces a figure in the right ballpark. A miss is still a BUG — the
+// catalog and the configured model id must be kept in sync — so we log loudly.
+const FALLBACK_INPUT_PER_1M  = 0.80;  // Claude Haiku input
+const FALLBACK_OUTPUT_PER_1M = 4.00;  // Claude Haiku output
+
+/**
+ * Look up a model's catalog entry. When it is missing, log a loud warning
+ * (the cost of an unrecognized model is being estimated, not measured) and
+ * return Claude-Haiku fallback rates. Returns the resolved input/output rates
+ * plus the raw option (which may be undefined) so callers can read extra
+ * fields (e.g. audio rates) when present.
+ */
+const warnedUnknownModels = new Set<string>();
+const resolveModelRates = (provider: LLMProviderKey, model: string) => {
+    const option = getModelOption(provider, model);
+    if (!option) {
+        // Dedupe: log once per (provider, model) per process so a recurring
+        // mismatch (e.g. an agent-prefixed model id) can't spam the logs.
+        const key = `${provider}/${model}`;
+        if (!warnedUnknownModels.has(key)) {
+            warnedUnknownModels.add(key);
+            console.error(
+                `[cost-helpers] ⚠ UNRECOGNIZED MODEL "${key}" — not in MODEL_OPTIONS catalog. ` +
+                `Billing at Claude-Haiku fallback rates ($${FALLBACK_INPUT_PER_1M}/$${FALLBACK_OUTPUT_PER_1M} per 1M). ` +
+                `This is an estimate, not the true cost. Add the model to the catalog or fix the configured model id.`
+            );
+        }
+    }
+    return {
+        option,
+        inputPer1M:  option?.inputCostPer1M  ?? FALLBACK_INPUT_PER_1M,
+        outputPer1M: option?.outputCostPer1M ?? FALLBACK_OUTPUT_PER_1M,
+    };
+};
+
+// Anthropic prompt-cache multipliers (relative to base input rate):
+//   cache write (creation) = 1.25x, cache read = 0.10x.
+const CLAUDE_CACHE_WRITE_MULT = 1.25;
+const CLAUDE_CACHE_READ_MULT  = 0.10;
+// OpenAI bills cached input reads at 0.50x base.
+const OPENAI_CACHE_READ_MULT  = 0.50;
+// Gemini implicit cache reads bill at 0.25x base (Gemini 2.5 Flash/Pro).
+const GEMINI_CACHE_READ_MULT  = 0.25;
+
 /**
  * Calculate credits for a specific provider+model using the MODEL_OPTIONS catalog.
- * Falls back to gpt-4o-mini rates if the model is not found.
+ * Falls back to Claude-Haiku rates (with a loud warning) if the model is not found.
+ *
+ * Token-accounting differs by provider:
+ *  - Anthropic: `promptTokens` (input_tokens) EXCLUDES both cache reads and cache
+ *    writes. So we bill input_tokens at 1x, cache *writes* at 1.25x, and cache
+ *    *reads* at 0.1x — all additive. (Previously cache writes were dropped
+ *    entirely and cache reads were wrongly subtracted from input_tokens.)
+ *  - OpenAI/Gemini: `promptTokens` INCLUDES cached reads, so we subtract them and
+ *    bill the remainder at 1x and the cached reads at 0.5x. They don't report a
+ *    separate cache-write bucket.
  */
 export const creditsForModelUsage = (
     provider: LLMProviderKey,
@@ -30,22 +87,34 @@ export const creditsForModelUsage = (
     promptTokens: number,
     completionTokens: number,
     cachedTokens: number = 0,
+    cacheCreationTokens: number = 0,
 ): number => {
-    const option = getModelOption(provider, model);
-    // Fallback: gpt-4o-mini rates
-    const inputPer1M  = option?.inputCostPer1M  ?? 0.15;
-    const outputPer1M = option?.outputCostPer1M ?? 0.60;
+    const { inputPer1M, outputPer1M } = resolveModelRates(provider, model);
 
     const creditsPerInput  = ChargeToCredits(inputPer1M / MILLION);
     const creditsPerOutput = ChargeToCredits(outputPer1M / MILLION);
 
-    const fullPromptCharge   = (promptTokens - cachedTokens) * creditsPerInput;
-    // Anthropic charges cached reads at 10% of base; OpenAI at 50%
-    const cacheDiscount = provider === "claude" ? 0.1 : 0.5;
-    const cachedPromptCharge = cachedTokens * (creditsPerInput * cacheDiscount);
-    const completionCharge   = completionTokens * creditsPerOutput;
+    const completionCharge = completionTokens * creditsPerOutput;
 
-    return fullPromptCharge + cachedPromptCharge + completionCharge;
+    let inputCharge: number;
+    if (provider === "claude") {
+        // input_tokens is already the non-cached, freshly-processed input.
+        inputCharge =
+            promptTokens * creditsPerInput +
+            cacheCreationTokens * creditsPerInput * CLAUDE_CACHE_WRITE_MULT +
+            cachedTokens * creditsPerInput * CLAUDE_CACHE_READ_MULT;
+    } else {
+        // OpenAI + Gemini both report `promptTokens` INCLUDING cached
+        // reads, so split them out. Discount differs by provider — Gemini
+        // 2.5's implicit caching bills at 0.25x; OpenAI at 0.50x.
+        const cacheReadMult = provider === "gemini" ? GEMINI_CACHE_READ_MULT : OPENAI_CACHE_READ_MULT;
+        const fullPromptTokens = Math.max(0, promptTokens - cachedTokens);
+        inputCharge =
+            fullPromptTokens * creditsPerInput +
+            cachedTokens * creditsPerInput * cacheReadMult;
+    }
+
+    return inputCharge + completionCharge;
 };
 
 /**
@@ -71,9 +140,8 @@ export const creditsForLiveUsage = (
     model: string,
     usage: LiveUsageBreakdown,
 ): number => {
-    const option = getModelOption(provider, model);
-    const textInputPer1M   = option?.inputCostPer1M        ?? 0.15;
-    const textOutputPer1M  = option?.outputCostPer1M       ?? 0.60;
+    const { option, inputPer1M: textInputPer1M, outputPer1M: textOutputPer1M } =
+        resolveModelRates(provider, model);
     // Audio/non-text rates fall back to text rates when the catalog entry
     // doesn't provide them (e.g. non-live models getting a Live usage event).
     const audioInputPer1M  = option?.audioInputCostPer1M   ?? textInputPer1M;

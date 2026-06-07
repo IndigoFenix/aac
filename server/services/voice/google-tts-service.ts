@@ -77,8 +77,47 @@ export type VoiceType = "man" | "woman" | "boy" | "girl";
 
 export interface TTSOptions {
   voiceType?: VoiceType;
+  /** Chirp 3 HD voice name (e.g. "Puck", "Kore", "Zephyr") — same
+   *  names as Gemini Live voices. When set, the resolved Google voice
+   *  is `<lang>-Chirp3-HD-<voiceName>`. Falls back to voiceType-mapped
+   *  Neural2/Standard if Chirp 3 HD synthesis errors (unsupported
+   *  language, voice withdrawn, etc.). */
+  voiceName?: string;
+  /** Natural-language style hint passed to Chirp 3 HD voices for
+   *  prosody control (e.g. "Speak warmly, as a friendly companion").
+   *  Ignored when the request falls back to non-Chirp voices. */
+  prompt?: string;
   speakingRate?: number; // 0.25 to 4.0, default 1.0
   pitch?: number; // -20.0 to 20.0, default 0.0
+}
+
+/** Languages that have Chirp 3 HD voices available. Anything outside
+ *  this list falls back to the Neural2/Standard VOICE_MAP path.
+ *  Covers all 11 platform-supported languages (en/he/ar/es/ru/fr/de/pt/zh/yue/ko). */
+const CHIRP3_HD_LANGUAGES = new Set([
+  "en-US", "en-GB", "en-AU", "en-IN",
+  "he-IL",
+  "ar-XA",
+  "es-ES", "es-US",
+  "ru-RU",
+  "fr-FR", "fr-CA",
+  "de-DE",
+  "pt-BR",
+  "cmn-CN",
+  "yue-HK",
+  "ko-KR",
+  "it-IT", "ja-JP",
+]);
+
+function chirpLanguageFor(languageCode: string): string | null {
+  if (CHIRP3_HD_LANGUAGES.has(languageCode)) return languageCode;
+  // Map the base language to a Chirp-supported regional variant if
+  // possible (e.g. "en" → "en-US", "es" → "es-ES", "fr" → "fr-FR").
+  const base = languageCode.split("-")[0];
+  for (const candidate of CHIRP3_HD_LANGUAGES) {
+    if (candidate.startsWith(`${base}-`)) return candidate;
+  }
+  return null;
 }
 
 // Lazy initialization of client
@@ -149,17 +188,49 @@ export async function synthesize(
   options: TTSOptions = {}
 ): Promise<Buffer> {
   const voiceType = options.voiceType || "woman";
-  const voice = getVoiceConfig(language, voiceType);
-
-  console.log(`[GoogleTTSService] Synthesizing: "${text.substring(0, 50)}..." (lang: ${language}, voice: ${voice.name})`);
-
+  const fallbackVoice = getVoiceConfig(language, voiceType);
   const ttsClient = getClient();
+
+  // Chirp 3 HD path — shares voice names with Gemini Live (Puck, Kore,
+  // Leda, Zephyr, etc.) so the configured Gemini voice flows through
+  // seamlessly. Faster + cheaper than the Gemini TTS API path.
+  if (options.voiceName) {
+    const baseLang = fallbackVoice.languageCode; // already resolved from language map
+    const chirpLang = chirpLanguageFor(baseLang);
+    if (chirpLang) {
+      const chirpName = `${chirpLang}-Chirp3-HD-${options.voiceName}`;
+      try {
+        console.log(`[GoogleTTSService] Synthesizing (Chirp3-HD): "${text.substring(0, 50)}..." (voice: ${chirpName}${options.prompt ? `, prompt="${options.prompt}"` : ""})`);
+        const input: protos.google.cloud.texttospeech.v1.ISynthesisInput = options.prompt
+          ? { text, prompt: options.prompt }
+          : { text };
+        const [response] = await ttsClient.synthesizeSpeech({
+          input,
+          voice: { languageCode: chirpLang, name: chirpName },
+          audioConfig: {
+            audioEncoding: "MP3" as const,
+            speakingRate: options.speakingRate || 1.0,
+            pitch: options.pitch || 0.0,
+          },
+        });
+        if (response.audioContent) {
+          return Buffer.from(response.audioContent as Uint8Array);
+        }
+      } catch (err: any) {
+        // Voice not available in this locale, or Chirp 3 HD temporarily
+        // unavailable. Fall through to the language-mapped voice below.
+        console.warn(`[GoogleTTSService] Chirp3-HD ${chirpName} failed (${err?.message ?? err}); falling back to ${fallbackVoice.name}`);
+      }
+    }
+  }
+
+  console.log(`[GoogleTTSService] Synthesizing: "${text.substring(0, 50)}..." (lang: ${language}, voice: ${fallbackVoice.name})`);
 
   const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
     input: { text },
     voice: {
-      languageCode: voice.languageCode,
-      name: voice.name,
+      languageCode: fallbackVoice.languageCode,
+      name: fallbackVoice.name,
     },
     audioConfig: {
       audioEncoding: "MP3" as const,

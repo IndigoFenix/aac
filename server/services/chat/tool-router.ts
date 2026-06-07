@@ -286,6 +286,15 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     deps.loopDetectionConfig || DEFAULT_LOOP_DETECTION_CONFIG
   );
 
+  // =========================================================================
+  // PER-TURN IMAGE BUDGET
+  // =========================================================================
+  // The registry is built once per turn, so this counter resets each turn.
+  // generateImage is expensive AND the model is prone to runaway loops with it
+  // (the hila session fired 24 calls in one turn, drifting off-topic). Cap it.
+  const MAX_GENERATE_IMAGE_CALLS = 6;
+  let generateImageCalls = 0;
+
   return {
     describeActions: async ({ actionDescription }) => {
       if (deps.onThinkingUpdate){
@@ -326,6 +335,16 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       return { frameFileId: frameId, timestampSeconds };
     },
     generateImage: async ({ instruction, referenceImageFileId }) => {
+      // Per-turn budget — stop runaway image loops before they burn cost/rounds.
+      generateImageCalls++;
+      if (generateImageCalls > MAX_GENERATE_IMAGE_CALLS) {
+        return {
+          error:
+            `Image generation limit reached (${MAX_GENERATE_IMAGE_CALLS} per turn). ` +
+            `Stop calling generateImage and respond to the user now with the ` +
+            `images and information you already have.`,
+        };
+      }
       // Resolve file ID to base64 data URL for the API call
       let referenceImage: string | undefined;
       if (referenceImageFileId) {

@@ -55,6 +55,9 @@ interface PaginatedResponse<T> {
 interface LogResponse {
   success: boolean;
   data: any[];
+  title?: string | null;
+  summary?: string | null;
+  importance?: number | null;
 }
 
 // ---------- Hooks ----------

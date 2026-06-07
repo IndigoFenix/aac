@@ -174,6 +174,21 @@ export const zh = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "双重身份验证",
+    mfaPrompt: "输入身份验证器应用中的 6 位验证码",
+    mfaVerify: "验证",
+    mfaBackToSignIn: "返回登录",
+    mfaLostAccess: "无法访问身份验证器？",
+    mfaSetupTitle: "设置双重身份验证",
+    mfaSetupRequired: "您的管理员要求此账户启用双重身份验证",
+    mfaSetupAdminRequired: "管理员账户必须启用双重身份验证",
+    mfaCompleteSetup: "完成设置",
+    mfaSetupLoadFailed: "加载双重身份验证设置失败。请重试。",
+    notAnAdmin: "此账户不是管理员。正在跳转…",
+    termsOfService: "服务条款",
+    privacyPolicy: "隐私政策",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const zh = {
     welcomeWithUser: "今天我能帮您关于{name}做什么？",
     workingWith: "当前服务对象：",
     newConversation: "开始新对话",
+    history: {
+      newChat: "新对话",
+      untitled: "未命名对话",
+      empty: "没有历史对话",
+      rename: "重命名",
+      delete: "删除",
+      confirmDelete: "删除？",
+      show: "显示对话",
+      hide: "隐藏对话",
+    },
     addAttachment: "添加附件",
     tools: "工具",
     
@@ -2328,6 +2353,7 @@ export const zh = {
     elevenlabsDesc: "输入您自己的 ElevenLabs API 密钥和语音 ID 以获得高质量 TTS。设置后将覆盖所有其他语音设置。",
     elevenlabsApiKey: "ElevenLabs API 密钥",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "AI 语音 ID",
     elevenlabsStudentVoiceId: "{{STUDENT}}语音 ID",
     elevenlabsVoiceIdPlaceholder: "例如 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "正在加载语音...",
@@ -2957,6 +2983,8 @@ export const zh = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "管理员登录",
+    loginSubtitle: "受限区域 — 仅限管理员",
     licenses: {
       title: "许可证",
       subtitle: "创建和管理用户及组织许可证。",

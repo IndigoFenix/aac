@@ -15,6 +15,12 @@ export interface GPTResponse {
   promptTokens: number;
   completionTokens: number;
   cachedTokens: number;
+  /**
+   * Tokens written to the prompt cache this turn (Anthropic
+   * `cache_creation_input_tokens`). Billed at 1.25x base by Anthropic.
+   * Omitted/0 for providers that don't report cache writes separately.
+   */
+  cacheCreationTokens?: number;
   content?: any;
   output?: any;
   toolCalls: GPTToolCall[];

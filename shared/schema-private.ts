@@ -1698,6 +1698,9 @@ export const chatSessions = pgTable("chat_sessions", {
   //  2 = potentially interesting findings
   //  3 = major milestone
   importance: integer("importance").notNull().default(0),
+  // True once a clinician has manually renamed the session. The summarizer then
+  // refreshes summary/importance on close but never overwrites the chosen title.
+  titleManual: boolean("title_manual").notNull().default(false),
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),

@@ -219,20 +219,31 @@ export class DualAgentService {
     provider: LLMProviderKey,
     model: string,
     usage: import("./live-provider").LiveUsage,
+    // Human-readable attribution for the cost LOG only (e.g. "board-manager").
+    // MUST NOT be folded into `model` — `model` has to stay a catalog id so
+    // pricing resolves the real rates instead of falling back.
+    label?: string,
   ): Promise<void> {
     let credits: number;
     let logSuffix: string;
+    const attr = label ? `agent=${label} ` : "";
     if (usage.details) {
       credits = creditsForLiveUsage(provider, model, usage.details);
       const d = usage.details;
       logSuffix =
-        `model=${model} ` +
+        `${attr}model=${model} ` +
         `text_in=${d.textInputTokens} non_text_in=${d.nonTextInputTokens} ` +
         `text_out=${d.textOutputTokens} audio_out=${d.audioOutputTokens}` +
         (d.cachedInputTokens ? ` cached=${d.cachedInputTokens}` : "");
     } else {
-      credits = creditsForModelUsage(provider, model, usage.promptTokens, usage.completionTokens);
-      logSuffix = `model=${model} prompt=${usage.promptTokens} completion=${usage.completionTokens} (no-modality-details)`;
+      credits = creditsForModelUsage(
+        provider, model, usage.promptTokens, usage.completionTokens,
+        usage.cachedTokens ?? 0, usage.cacheCreationTokens ?? 0,
+      );
+      logSuffix = `${attr}model=${model} prompt=${usage.promptTokens} completion=${usage.completionTokens}`
+        + (usage.cachedTokens ? ` cacheRead=${usage.cachedTokens}` : "")
+        + (usage.cacheCreationTokens ? ` cacheWrite=${usage.cacheCreationTokens}` : "")
+        + ` (no-modality-details)`;
     }
     await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
   }
@@ -253,9 +264,13 @@ export class DualAgentService {
     completionTokens: number,
     cachedTokens: number = 0,
     label: string = "http",
+    cacheCreationTokens: number = 0,
   ): Promise<void> {
-    const credits = creditsForModelUsage(provider, model, promptTokens, completionTokens, cachedTokens);
-    const logSuffix = `model=${model} prompt=${promptTokens} completion=${completionTokens}${cachedTokens ? ` cached=${cachedTokens}` : ""} [${label}]`;
+    const credits = creditsForModelUsage(provider, model, promptTokens, completionTokens, cachedTokens, cacheCreationTokens);
+    const logSuffix = `model=${model} prompt=${promptTokens} completion=${completionTokens}`
+      + (cachedTokens ? ` cacheRead=${cachedTokens}` : "")
+      + (cacheCreationTokens ? ` cacheWrite=${cacheCreationTokens}` : "")
+      + ` [${label}]`;
     await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
   }
 
@@ -470,6 +485,7 @@ export class DualAgentService {
         u.completionTokens,
         u.cachedTokens ?? 0,
         "monitor-startup-enhancer",
+        u.cacheCreationTokens ?? 0,
       ).catch(err => console.error("[DualAgentService] trackHttpUsage(enhancer) failed:", err));
     }
 

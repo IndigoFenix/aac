@@ -44,12 +44,18 @@ class SessionHistoryController {
   async getAACSessionLog(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const log = await chatRepository.getSessionLog(id);
-      if (!log) {
+      const session = await chatRepository.getSessionLog(id);
+      if (!session) {
         res.status(404).json({ success: false, message: "Session not found" });
         return;
       }
-      res.json({ success: true, data: log });
+      res.json({
+        success: true,
+        data: session.log,
+        title: session.title,
+        summary: session.summary,
+        importance: session.importance,
+      });
     } catch (error: any) {
       console.error("Error fetching AAC session log:", error);
       res.status(500).json({ success: false, message: "Failed to fetch session log" });
@@ -112,12 +118,18 @@ class SessionHistoryController {
   async getChatSessionLog(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const log = await chatRepository.getSessionLog(id);
-      if (!log) {
+      const session = await chatRepository.getSessionLog(id);
+      if (!session) {
         res.status(404).json({ success: false, message: "Session not found" });
         return;
       }
-      res.json({ success: true, data: log });
+      res.json({
+        success: true,
+        data: session.log,
+        title: session.title,
+        summary: session.summary,
+        importance: session.importance,
+      });
     } catch (error: any) {
       console.error("Error fetching chat session log:", error);
       res.status(500).json({ success: false, message: "Failed to fetch session log" });

@@ -431,14 +431,14 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
     }
   };
 
-  const handleMfaVerify = async () => {
-    if (!mfaToken || mfaCode.length !== 6) return;
+  const handleMfaVerify = async (code: string = mfaCode) => {
+    if (!mfaToken || code.length !== 6 || isVerifyingMfa) return;
 
     setIsVerifyingMfa(true);
     try {
       const response = await apiRequest('POST', '/auth/mfa/verify', {
         mfaToken,
-        code: mfaCode,
+        code,
         rememberMe: false,
       });
       const data = await response.json();
@@ -456,15 +456,15 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         }
       } else {
         toast({
-          title: 'Verification Failed',
-          description: data.message || 'Invalid verification code',
+          title: t('settings.mfaVerificationFailed'),
+          description: data.message || t('settings.mfaInvalidCode'),
           variant: 'destructive',
         });
       }
     } catch {
       toast({
-        title: 'Verification Failed',
-        description: 'Failed to verify code',
+        title: t('settings.mfaVerificationFailed'),
+        description: t('settings.mfaVerificationFailedDesc'),
         variant: 'destructive',
       });
     } finally {
@@ -472,14 +472,14 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
     }
   };
 
-  const handleMfaSetupVerify = async () => {
-    if (!mfaToken || mfaCode.length !== 6) return;
+  const handleMfaSetupVerify = async (code: string = mfaCode) => {
+    if (!mfaToken || code.length !== 6 || isVerifyingMfa) return;
 
     setIsVerifyingMfa(true);
     try {
       const response = await apiRequest('POST', '/auth/mfa/verify-setup-with-token', {
         mfaToken,
-        code: mfaCode,
+        code,
         rememberMe: false,
       });
       const data = await response.json();
@@ -487,8 +487,8 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       if (data.success && data.user) {
         await refetchUser();
         toast({
-          title: 'MFA Enabled',
-          description: 'Two-factor authentication has been set up successfully.',
+          title: t('settings.mfaSetupSuccess'),
+          description: t('settings.mfaEnabledDesc'),
         });
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
@@ -497,15 +497,15 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         }
       } else {
         toast({
-          title: 'Setup Failed',
-          description: data.message || 'Invalid verification code',
+          title: t('settings.mfaSetupFailed'),
+          description: data.message || t('settings.mfaInvalidCode'),
           variant: 'destructive',
         });
       }
     } catch {
       toast({
-        title: 'Setup Failed',
-        description: 'Failed to complete MFA setup',
+        title: t('settings.mfaSetupFailed'),
+        description: t('settings.mfaVerificationFailedDesc'),
         variant: 'destructive',
       });
     } finally {
@@ -851,10 +851,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 <Shield className="w-6 h-6 text-primary" />
               </div>
               <CardTitle className="text-2xl font-bold">
-                Two-Factor Authentication
+                {t('auth.mfaTitle')}
               </CardTitle>
               <CardDescription>
-                Enter the 6-digit code from your authenticator app
+                {t('auth.mfaPrompt')}
               </CardDescription>
             </CardHeader>
 
@@ -864,6 +864,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   maxLength={6}
                   value={mfaCode}
                   onChange={(value) => setMfaCode(value)}
+                  onComplete={(value) => handleMfaVerify(value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleMfaVerify();
+                  }}
                 >
                   <InputOTPGroup>
                     <InputOTPSlot index={0} />
@@ -878,16 +882,16 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
 
               <Button
                 className="w-full"
-                onClick={handleMfaVerify}
+                onClick={() => handleMfaVerify()}
                 disabled={mfaCode.length !== 6 || isVerifyingMfa}
               >
                 {isVerifyingMfa ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin me-2" />
-                    Verifying...
+                    {t('settings.mfaVerifying')}
                   </>
                 ) : (
-                  'Verify'
+                  t('auth.mfaVerify')
                 )}
               </Button>
             </CardContent>
@@ -902,14 +906,14 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 }}
                 className="text-sm text-muted-foreground hover:text-primary hover:underline"
               >
-                Back to login
+                {t('auth.mfaBackToSignIn')}
               </button>
               <button
                 type="button"
                 onClick={handleMfaRecoveryRequest}
                 className="text-sm text-muted-foreground hover:text-primary hover:underline"
               >
-                Lost access to authenticator?
+                {t('auth.mfaLostAccess')}
               </button>
             </CardFooter>
           </>
@@ -923,10 +927,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 <KeyRound className="w-6 h-6 text-primary" />
               </div>
               <CardTitle className="text-2xl font-bold">
-                Set Up Two-Factor Authentication
+                {t('auth.mfaSetupTitle')}
               </CardTitle>
               <CardDescription>
-                Your administrator requires MFA for this account
+                {t('auth.mfaSetupRequired')}
               </CardDescription>
             </CardHeader>
 
@@ -938,7 +942,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               ) : mfaQrCode ? (
                 <>
                   <p className="text-sm text-center text-muted-foreground">
-                    Scan this QR code with your authenticator app
+                    {t('settings.mfaScanQr')}
                   </p>
                   <div className="flex justify-center">
                     <img
@@ -949,20 +953,24 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   </div>
                   {mfaManualKey && (
                     <div className="text-center">
-                      <p className="text-xs text-muted-foreground mb-1">Or enter this key manually:</p>
+                      <p className="text-xs text-muted-foreground mb-1">{t('settings.mfaManualKey')}</p>
                       <code className="bg-muted px-2 py-1 rounded text-sm font-mono select-all">
                         {mfaManualKey}
                       </code>
                     </div>
                   )}
                   <div className="space-y-2">
-                    <Label htmlFor="login-mfa-code" className="text-center block">Enter the 6-digit code:</Label>
+                    <Label htmlFor="login-mfa-code" className="text-center block">{t('settings.mfaEnterCode')}</Label>
                     <div className="flex justify-center">
                       <InputOTP
                         id="login-mfa-code"
                         maxLength={6}
                         value={mfaCode}
                         onChange={(value) => setMfaCode(value)}
+                        onComplete={(value) => handleMfaSetupVerify(value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleMfaSetupVerify();
+                        }}
                       >
                         <InputOTPGroup>
                           <InputOTPSlot index={0} />
@@ -977,22 +985,22 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   </div>
                   <Button
                     className="w-full"
-                    onClick={handleMfaSetupVerify}
+                    onClick={() => handleMfaSetupVerify()}
                     disabled={mfaCode.length !== 6 || isVerifyingMfa}
                   >
                     {isVerifyingMfa ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin me-2" />
-                        Setting up...
+                        {t('settings.mfaSettingUp')}
                       </>
                     ) : (
-                      'Complete Setup'
+                      t('auth.mfaCompleteSetup')
                     )}
                   </Button>
                 </>
               ) : (
                 <p className="text-center text-muted-foreground">
-                  Failed to load MFA setup. Please try again.
+                  {t('auth.mfaSetupLoadFailed')}
                 </p>
               )}
             </CardContent>
@@ -1009,7 +1017,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 }}
                 className="text-sm text-muted-foreground hover:text-primary hover:underline"
               >
-                Back to login
+                {t('auth.mfaBackToSignIn')}
               </button>
             </CardFooter>
           </>

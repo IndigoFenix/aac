@@ -232,6 +232,28 @@ interface SendMessageOptions {
 }
 
 // ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * The stored session `log` is the full transcript the AI keeps — including
+ * `role: 'tool'` entries and assistant turns that only carried tool calls (no
+ * text). The chat view only renders user/assistant/system bubbles with
+ * displayable content, so filter the rest out when resuming a session.
+ * (The AI's own continuity comes from `session.state`, not this display log.)
+ */
+function toDisplayHistory(log: ChatMessage[] | null | undefined): ChatMessage[] {
+  if (!Array.isArray(log)) return [];
+  return log.filter((m) => {
+    if (!m || m.role === 'tool') return false;
+    const c = m.content;
+    if (typeof c === 'string') return c.trim().length > 0;
+    if (c && typeof c === 'object') return Boolean(c.md || c.html || c.text);
+    return false;
+  });
+}
+
+// ============================================================================
 // CONTEXT
 // ============================================================================
 
@@ -339,7 +361,7 @@ export const ChatProvider = ({
       if (data?.success && data.session) {
         const loadedSession: ChatSession = data.session;
         setSession(loadedSession);
-        setHistory(loadedSession.log as ChatMessage[] || []);
+        setHistory(toDisplayHistory(loadedSession.log as ChatMessage[] | null));
         
         queryClient.setQueryData(['chat-session', sessionId], loadedSession);
         

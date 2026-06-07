@@ -174,6 +174,21 @@ export const ko = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "2단계 인증",
+    mfaPrompt: "인증 앱의 6자리 코드를 입력하세요",
+    mfaVerify: "확인",
+    mfaBackToSignIn: "로그인으로 돌아가기",
+    mfaLostAccess: "인증 앱에 접근할 수 없나요?",
+    mfaSetupTitle: "2단계 인증 설정",
+    mfaSetupRequired: "관리자가 이 계정에 2단계 인증을 요구합니다",
+    mfaSetupAdminRequired: "관리자 계정에는 2단계 인증이 필요합니다",
+    mfaCompleteSetup: "설정 완료",
+    mfaSetupLoadFailed: "2단계 인증 설정을 불러오지 못했습니다. 다시 시도해 주세요.",
+    notAnAdmin: "이 계정은 관리자가 아닙니다. 이동 중…",
+    termsOfService: "서비스 약관",
+    privacyPolicy: "개인정보 처리방침",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const ko = {
     welcomeWithUser: "오늘 {name}에 대해 어떻게 도와드릴까요?",
     workingWith: "현재 대상:",
     newConversation: "새 대화 시작",
+    history: {
+      newChat: "새 대화",
+      untitled: "제목 없는 대화",
+      empty: "이전 대화가 없습니다",
+      rename: "이름 변경",
+      delete: "삭제",
+      confirmDelete: "삭제할까요?",
+      show: "대화 표시",
+      hide: "대화 숨기기",
+    },
     addAttachment: "첨부파일 추가",
     tools: "도구",
     
@@ -2328,6 +2353,7 @@ export const ko = {
     elevenlabsDesc: "고품질 TTS를 위해 자체 ElevenLabs API 키와 음성 ID를 입력하세요. 설정 시 다른 모든 음성 설정을 대체합니다.",
     elevenlabsApiKey: "ElevenLabs API 키",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "AI 음성 ID",
     elevenlabsStudentVoiceId: "{{STUDENT}} 음성 ID",
     elevenlabsVoiceIdPlaceholder: "예: 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "음성 로딩 중...",
@@ -2957,6 +2983,8 @@ export const ko = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "관리자 로그인",
+    loginSubtitle: "제한 구역 — 관리자 전용",
     licenses: {
       title: "라이선스",
       subtitle: "사용자 및 기관 라이선스를 생성하고 관리합니다.",

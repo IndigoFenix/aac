@@ -174,6 +174,21 @@ export const he = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "אימות דו-שלבי",
+    mfaPrompt: "הזינו את הקוד בן 6 הספרות מאפליקציית האימות שלכם",
+    mfaVerify: "אמת",
+    mfaBackToSignIn: "חזרה להתחברות",
+    mfaLostAccess: "איבדתם גישה לאפליקציית האימות?",
+    mfaSetupTitle: "הגדרת אימות דו-שלבי",
+    mfaSetupRequired: "המנהל שלכם דורש אימות דו-שלבי עבור חשבון זה",
+    mfaSetupAdminRequired: "אימות דו-שלבי נדרש עבור חשבונות מנהל",
+    mfaCompleteSetup: "השלמת ההגדרה",
+    mfaSetupLoadFailed: "טעינת הגדרת האימות הדו-שלבי נכשלה. אנא נסו שוב.",
+    notAnAdmin: "חשבון זה אינו חשבון מנהל. מעביר…",
+    termsOfService: "תנאי שימוש",
+    privacyPolicy: "מדיניות פרטיות",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const he = {
     welcomeWithUser: "איך אני יכול לעזור לך עם {name} היום?",
     workingWith: "עובד כרגע עם:",
     newConversation: "התחל שיחה חדשה",
+    history: {
+      newChat: "צ'אט חדש",
+      untitled: "שיחה ללא שם",
+      empty: "אין שיחות קודמות",
+      rename: "שינוי שם",
+      delete: "מחיקה",
+      confirmDelete: "למחוק?",
+      show: "הצגת שיחות",
+      hide: "הסתרת שיחות",
+    },
     addAttachment: "הוסף קובץ מצורף",
     tools: "כלים",
     
@@ -2328,6 +2353,7 @@ export const he = {
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsApiKey: "מפתח API של ElevenLabs",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "מזהה קול הבינה",
     elevenlabsStudentVoiceId: "מזהה קול ה{{STUDENT}}",
     elevenlabsVoiceIdPlaceholder: "לדוגמה 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "טוען קולות...",
@@ -2959,6 +2985,8 @@ export const he = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "כניסת מנהל",
+    loginSubtitle: "אזור מוגבל — למנהלים בלבד",
     licenses: {
       title: "רישיונות",
       subtitle: "יצירה וניהול רישיונות למשתמשים וארגונים.",

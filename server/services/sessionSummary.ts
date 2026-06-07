@@ -83,11 +83,15 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     if (!session) return;
     if (session.title && session.summary) return; // already done
 
+    // When a clinician has manually renamed the session, generate the summary
+    // for search but never overwrite their chosen title.
+    const keepTitle = session.titleManual === true;
+
     const messages: ChatMessage[] = Array.isArray(session.log) ? (session.log as ChatMessage[]) : [];
     if (messages.length === 0) {
       await db
         .update(chatSessions)
-        .set({ title: "(empty session)", summary: "No messages.", importance: 0 })
+        .set({ summary: "No messages.", importance: 0, ...(keepTitle ? {} : { title: "(empty session)" }) })
         .where(eq(chatSessions.id, sessionId));
       return;
     }
@@ -114,7 +118,18 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
       maxTokens: 400,
     });
 
-    const parsed = response.content;
+    // Structured providers return `content` as a JSON *string* (Claude
+    // JSON.stringifies the tool input; OpenAI returns output_text). Every other
+    // caller JSON.parses it — see chat-handler.ts. Parse it here too.
+    let parsed: any = response.content;
+    if (typeof parsed === "string") {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        log(`[${sessionId}] content was not valid JSON: ${parsed.slice(0, 200)}`);
+        return;
+      }
+    }
     if (!parsed || typeof parsed !== "object") {
       log(`[${sessionId}] no parsed content from provider`);
       return;
@@ -132,9 +147,9 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
 
     await db
       .update(chatSessions)
-      .set({ title, summary, importance })
+      .set({ summary, importance, ...(keepTitle ? {} : { title }) })
       .where(eq(chatSessions.id, sessionId));
-    log(`[${sessionId}] summary generated (importance=${importance})`);
+    log(`[${sessionId}] summary generated (importance=${importance}${keepTitle ? ", title kept (manual)" : ""})`);
   } catch (err) {
     log(`[${sessionId}] error: ${err instanceof Error ? err.message : String(err)}`);
   }

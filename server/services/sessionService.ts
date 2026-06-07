@@ -61,6 +61,7 @@ import {
   BOARD_SYSTEM_PROMPT,
   CUSTOM_APP_SYSTEM_PROMPT,
   getSystemPrompt,
+  framePersonaSection,
 } from "./system-prompts";
 import { buildGlyphSyntax, buildCustomSymbolsBlock, buildKnownPeopleBlock } from "./memory-schema/glyph-syntax";
 import { getBundledIconsBlock } from "./memory-schema/aac-memory-schema";
@@ -315,7 +316,7 @@ async function buildPersonaSystemPrompt(
     // Resolve multilingual title to English for AI system prompts
     const { resolveLocalizedText } = await import("@shared/localized-text");
     const resolvedTitle = resolveLocalizedText(persona.title, 'en');
-    return { prompt: `${basePrompt}\n\n=== Persona: ${resolvedTitle} ===\n${processedPersonaPrompt}`, persona };
+    return { prompt: `${basePrompt}\n\n${framePersonaSection(resolvedTitle, processedPersonaPrompt)}`, persona };
   }
 
   return { prompt: basePrompt, persona };
@@ -1137,13 +1138,12 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     template.corePrompt = personaResult.prompt;
   }
   
-  // Static prompt mode: system prompt shows only schema, data lives in tool responses.
-  // Enable via STATIC_MEMORY_PROMPT=true env var. Defaults to dynamic (current behavior).
-  const useStaticMemoryPrompt = process.env.STATIC_MEMORY_PROMPT === 'true';
-
+  // Static prompt mode is always on: the system prompt shows only the schema and
+  // data lives in tool responses, keeping the system prompt stable across turns so
+  // Anthropic prompt caching produces reads (0.1x) instead of writes (1.25x).
   const newChatState: ChatState = {
     history: [],
-    memoryState: { visible: [], page: {}, staticPromptMode: useStaticMemoryPrompt || undefined },
+    memoryState: { visible: [], page: {}, staticPromptMode: true },
     conversationSummary: "",
     openedTopics: [],
   };

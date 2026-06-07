@@ -29,6 +29,10 @@ export interface ToolResponse {
 export interface LiveUsage {
   promptTokens: number;
   completionTokens: number;
+  /** Prompt-cache read tokens (Anthropic cache_read_input_tokens), billed 0.1x. */
+  cachedTokens?: number;
+  /** Prompt-cache write tokens (Anthropic cache_creation_input_tokens), billed 1.25x. */
+  cacheCreationTokens?: number;
   details?: {
     /** Text tokens in the prompt (system prompt, history, tool responses). */
     textInputTokens: number;

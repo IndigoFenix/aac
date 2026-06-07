@@ -37,6 +37,8 @@ export interface ImageGenerationResult {
   /** File IDs of generated images (stored in server cache) */
   generatedImageFileIds?: string[];
   credits?: number;
+  /** Set when the call produced no image — the caller should NOT blindly retry. */
+  error?: string;
 }
 
 /**
@@ -99,9 +101,24 @@ export async function generateImage(input: ImageGenerationInput): Promise<ImageG
       )
     : 0;
 
+  // No image produced — Gemini sometimes replies with text only (a preamble like
+  // "Sure, here's the form:") and no inline image. Returning that text as if it
+  // were a success made the agent retry endlessly (the hila runaway loop). Surface
+  // an explicit error so the model treats it as a failure, not a partial success.
+  if (generatedImageFileIds.length === 0) {
+    return {
+      text: resultText.join("\n"),
+      credits,
+      error:
+        "Image generation returned NO image (the model replied with text only). " +
+        "Do NOT retry the same request repeatedly. If a visual isn't essential, " +
+        "present the information to the user as text/markdown instead.",
+    };
+  }
+
   return {
-    text: resultText.join("\n") || (generatedImageFileIds.length > 0 ? "Image generated." : "No output."),
-    generatedImageFileIds: generatedImageFileIds.length > 0 ? generatedImageFileIds : undefined,
+    text: resultText.join("\n") || "Image generated.",
+    generatedImageFileIds,
     credits,
   };
 }

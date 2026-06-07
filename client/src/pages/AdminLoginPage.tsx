@@ -30,7 +30,7 @@ type Step = 'login' | 'mfa_verify' | 'mfa_setup';
 
 export default function AdminLoginPage() {
   const { login, refetchUser } = useAuth();
-  const { t, language, direction } = useLanguage();
+  const { t, direction } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -75,16 +75,16 @@ export default function AdminLoginPage() {
         setMfaManualKey(data.manualEntryKey);
       } else {
         toast({
-          title: 'MFA Setup Failed',
-          description: data.message || 'Failed to start MFA setup',
+          title: t('settings.mfaSetupFailed'),
+          description: data.message || t('settings.mfaSetupFailedDesc'),
           variant: 'destructive',
         });
         setStep('login');
       }
     } catch {
       toast({
-        title: 'MFA Setup Failed',
-        description: 'Failed to start MFA setup',
+        title: t('settings.mfaSetupFailed'),
+        description: t('settings.mfaSetupFailedDesc'),
         variant: 'destructive',
       });
       setStep('login');
@@ -128,7 +128,7 @@ export default function AdminLoginPage() {
           // Non-admin used the /admin entry point — bounce them to /home.
           toast({
             title: t('auth.loginSuccess') || 'Logged in',
-            description: 'This account is not an administrator. Redirecting…',
+            description: t('auth.notAnAdmin'),
           });
           setLocation('/home');
           return;
@@ -157,13 +157,13 @@ export default function AdminLoginPage() {
     }
   };
 
-  const handleMfaVerify = async () => {
-    if (!mfaToken || mfaCode.length !== 6) return;
+  const handleMfaVerify = async (code: string = mfaCode) => {
+    if (!mfaToken || code.length !== 6 || isVerifyingMfa) return;
     setIsVerifyingMfa(true);
     try {
       const response = await apiRequest('POST', '/auth/mfa/verify', {
         mfaToken,
-        code: mfaCode,
+        code,
         rememberMe: false,
       });
       const data = await response.json();
@@ -179,14 +179,14 @@ export default function AdminLoginPage() {
       }
 
       toast({
-        title: 'Verification Failed',
-        description: data.message || 'Invalid verification code',
+        title: t('settings.mfaVerificationFailed'),
+        description: data.message || t('settings.mfaInvalidCode'),
         variant: 'destructive',
       });
     } catch {
       toast({
-        title: 'Verification Failed',
-        description: 'Failed to verify code',
+        title: t('settings.mfaVerificationFailed'),
+        description: t('settings.mfaVerificationFailedDesc'),
         variant: 'destructive',
       });
     } finally {
@@ -194,13 +194,13 @@ export default function AdminLoginPage() {
     }
   };
 
-  const handleMfaSetupVerify = async () => {
-    if (!mfaToken || mfaCode.length !== 6) return;
+  const handleMfaSetupVerify = async (code: string = mfaCode) => {
+    if (!mfaToken || code.length !== 6 || isVerifyingMfa) return;
     setIsVerifyingMfa(true);
     try {
       const response = await apiRequest('POST', '/auth/mfa/verify-setup-with-token', {
         mfaToken,
-        code: mfaCode,
+        code,
         rememberMe: false,
       });
       const data = await response.json();
@@ -208,22 +208,22 @@ export default function AdminLoginPage() {
       if (data.success && data.user) {
         await refetchUser();
         toast({
-          title: 'MFA Enabled',
-          description: 'Two-factor authentication has been set up successfully.',
+          title: t('settings.mfaSetupSuccess'),
+          description: t('settings.mfaEnabledDesc'),
         });
         setLocation(data.user.isSystemAdmin ? '/admin' : '/home');
         return;
       }
 
       toast({
-        title: 'Setup Failed',
-        description: data.message || 'Invalid verification code',
+        title: t('settings.mfaSetupFailed'),
+        description: data.message || t('settings.mfaInvalidCode'),
         variant: 'destructive',
       });
     } catch {
       toast({
-        title: 'Setup Failed',
-        description: 'Failed to complete MFA setup',
+        title: t('settings.mfaSetupFailed'),
+        description: t('settings.mfaVerificationFailedDesc'),
         variant: 'destructive',
       });
     } finally {
@@ -248,10 +248,10 @@ export default function AdminLoginPage() {
                 <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
                 <CardTitle className="text-2xl font-bold flex items-center justify-center gap-2">
                   <Shield className="w-6 h-6 text-primary" />
-                  {t('admin.loginTitle') || 'Administrator Sign-In'}
+                  {t('admin.loginTitle')}
                 </CardTitle>
                 <CardDescription>
-                  {t('admin.loginSubtitle') || 'Restricted area — administrators only'}
+                  {t('admin.loginSubtitle')}
                 </CardDescription>
               </CardHeader>
 
@@ -322,7 +322,7 @@ export default function AdminLoginPage() {
                     onClick={() => setLocation('/admin/mfa-recovery')}
                     className="text-sm text-muted-foreground hover:text-primary hover:underline"
                   >
-                    {t('auth.mfaLostAccess') || 'Lost access to authenticator?'}
+                    {t('auth.mfaLostAccess')}
                   </button>
                 </CardFooter>
               </form>
@@ -335,13 +335,21 @@ export default function AdminLoginPage() {
                 <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                   <Shield className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-2xl font-bold">Two-Factor Authentication</CardTitle>
-                <CardDescription>Enter the 6-digit code from your authenticator app</CardDescription>
+                <CardTitle className="text-2xl font-bold">{t('auth.mfaTitle')}</CardTitle>
+                <CardDescription>{t('auth.mfaPrompt')}</CardDescription>
               </CardHeader>
 
               <CardContent className="space-y-6">
                 <div className="flex justify-center">
-                  <InputOTP maxLength={6} value={mfaCode} onChange={(value) => setMfaCode(value)}>
+                  <InputOTP
+                    maxLength={6}
+                    value={mfaCode}
+                    onChange={(value) => setMfaCode(value)}
+                    onComplete={(value) => handleMfaVerify(value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleMfaVerify();
+                    }}
+                  >
                     <InputOTPGroup>
                       <InputOTPSlot index={0} />
                       <InputOTPSlot index={1} />
@@ -355,16 +363,16 @@ export default function AdminLoginPage() {
 
                 <Button
                   className="w-full"
-                  onClick={handleMfaVerify}
+                  onClick={() => handleMfaVerify()}
                   disabled={mfaCode.length !== 6 || isVerifyingMfa}
                 >
                   {isVerifyingMfa ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin me-2" />
-                      Verifying…
+                      {t('settings.mfaVerifying')}
                     </>
                   ) : (
-                    'Verify'
+                    t('auth.mfaVerify')
                   )}
                 </Button>
               </CardContent>
@@ -379,14 +387,14 @@ export default function AdminLoginPage() {
                   }}
                   className="text-sm text-muted-foreground hover:text-primary hover:underline"
                 >
-                  Back to sign-in
+                  {t('auth.mfaBackToSignIn')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setLocation('/admin/mfa-recovery')}
                   className="text-sm text-muted-foreground hover:text-primary hover:underline"
                 >
-                  Lost access to authenticator?
+                  {t('auth.mfaLostAccess')}
                 </button>
               </CardFooter>
             </>
@@ -398,8 +406,8 @@ export default function AdminLoginPage() {
                 <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                   <KeyRound className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-2xl font-bold">Set Up Two-Factor Authentication</CardTitle>
-                <CardDescription>MFA is required for administrator accounts</CardDescription>
+                <CardTitle className="text-2xl font-bold">{t('auth.mfaSetupTitle')}</CardTitle>
+                <CardDescription>{t('auth.mfaSetupAdminRequired')}</CardDescription>
               </CardHeader>
 
               <CardContent className="space-y-6">
@@ -410,7 +418,7 @@ export default function AdminLoginPage() {
                 ) : mfaQrCode ? (
                   <>
                     <p className="text-sm text-center text-muted-foreground">
-                      Scan this QR code with your authenticator app
+                      {t('settings.mfaScanQr')}
                     </p>
                     <div className="flex justify-center">
                       <img src={mfaQrCode} alt="MFA QR Code" className="w-48 h-48 border rounded" />
@@ -418,7 +426,7 @@ export default function AdminLoginPage() {
                     {mfaManualKey && (
                       <div className="text-center">
                         <p className="text-xs text-muted-foreground mb-1">
-                          Or enter this key manually:
+                          {t('settings.mfaManualKey')}
                         </p>
                         <code className="bg-muted px-2 py-1 rounded text-sm font-mono select-all">
                           {mfaManualKey}
@@ -427,7 +435,7 @@ export default function AdminLoginPage() {
                     )}
                     <div className="space-y-2">
                       <Label htmlFor="admin-mfa-code" className="text-center block">
-                        Enter the 6-digit code:
+                        {t('settings.mfaEnterCode')}
                       </Label>
                       <div className="flex justify-center">
                         <InputOTP
@@ -435,6 +443,10 @@ export default function AdminLoginPage() {
                           maxLength={6}
                           value={mfaCode}
                           onChange={(value) => setMfaCode(value)}
+                          onComplete={(value) => handleMfaSetupVerify(value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleMfaSetupVerify();
+                          }}
                         >
                           <InputOTPGroup>
                             <InputOTPSlot index={0} />
@@ -449,22 +461,22 @@ export default function AdminLoginPage() {
                     </div>
                     <Button
                       className="w-full"
-                      onClick={handleMfaSetupVerify}
+                      onClick={() => handleMfaSetupVerify()}
                       disabled={mfaCode.length !== 6 || isVerifyingMfa}
                     >
                       {isVerifyingMfa ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin me-2" />
-                          Setting up…
+                          {t('settings.mfaSettingUp')}
                         </>
                       ) : (
-                        'Complete setup'
+                        t('auth.mfaCompleteSetup')
                       )}
                     </Button>
                   </>
                 ) : (
                   <p className="text-center text-muted-foreground">
-                    Failed to load MFA setup. Please try again.
+                    {t('auth.mfaSetupLoadFailed')}
                   </p>
                 )}
               </CardContent>
@@ -481,7 +493,7 @@ export default function AdminLoginPage() {
                   }}
                   className="text-sm text-muted-foreground hover:text-primary hover:underline"
                 >
-                  Back to sign-in
+                  {t('auth.mfaBackToSignIn')}
                 </button>
               </CardFooter>
             </>
@@ -491,11 +503,11 @@ export default function AdminLoginPage() {
 
       <footer className="p-4 text-center text-sm text-muted-foreground space-x-2 rtl:space-x-reverse">
         <a href="/terms-of-service" className="hover:underline">
-          {language === 'he' ? 'תנאי שימוש' : 'Terms of Service'}
+          {t('auth.termsOfService')}
         </a>
         <span>|</span>
         <a href="/privacy-policy" className="hover:underline">
-          {language === 'he' ? 'מדיניות פרטיות' : 'Privacy Policy'}
+          {t('auth.privacyPolicy')}
         </a>
       </footer>
     </div>

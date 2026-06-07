@@ -20,6 +20,7 @@ import {
   savedLocationController,
   adminController,
   creditPackageController,
+  paddleController,
   interpretationController,
   boardController,
   customAppController,
@@ -53,6 +54,7 @@ import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { apiProviderRepository } from "./repositories";
 import { chatController } from "./controllers/chatController";
 import { chatStreamController } from "./controllers/chatStreamController";
+import { chatSessionsController } from "./controllers/chatSessionsController";
 import { reportController } from "./controllers/reportController";
 import { fileUploadController } from "./controllers/fileUploadController";
 import { personaController } from "./controllers/personaController";
@@ -1169,6 +1171,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     creditPackageController.getCreditPackages(req, res)
   );
 
+  // ============= PADDLE ROUTES =============
+  app.get("/api/paddle/config", requireAuth, (req, res) =>
+    paddleController.getConfig(req, res)
+  );
+  app.get("/api/paddle/prices", requireAuth, (req, res) =>
+    paddleController.listPrices(req, res)
+  );
+  app.post("/api/paddle/test-price", requireAuth, (req, res) =>
+    paddleController.createTestPrice(req, res)
+  );
+
   // ============= CHAT ROUTES =============
   // Chat endpoint with optional image upload for multimodal context
   app.post("/api/chat", optionalAuth, aacUpload.single("image"), (req, res) =>
@@ -1177,6 +1190,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Streaming chat endpoint with real-time thinking updates (SSE)
   app.post("/api/chat/stream", optionalAuth, (req, res) =>
     chatStreamController.onMessage(req, res)
+  );
+
+  // ===== PAST CONVERSATIONS (clinician, own-data) =====
+  // List / load / rename / delete the requesting user's own chat sessions for
+  // the in-chat history sidebar. Scoped to req.user.id (NOT institute-wide —
+  // that's the admin surface under /api/admin/sessions).
+  app.get("/api/chat/sessions", requireAuth, (req, res) =>
+    chatSessionsController.list(req, res)
+  );
+  app.get("/api/chat/sessions/:id", requireAuth, (req, res) =>
+    chatSessionsController.get(req, res)
+  );
+  app.patch("/api/chat/sessions/:id", requireAuth, (req, res) =>
+    chatSessionsController.rename(req, res)
+  );
+  app.delete("/api/chat/sessions/:id", requireAuth, (req, res) =>
+    chatSessionsController.remove(req, res)
   );
 
   // ============= CHAT FILE UPLOAD ROUTES =============

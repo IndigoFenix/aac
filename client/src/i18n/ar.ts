@@ -174,6 +174,21 @@ export const ar = {
 
     // Errors
     passwordResetFailed: 'Failed to reset password',
+
+    // Two-factor authentication (login & admin sign-in)
+    mfaTitle: "المصادقة الثنائية",
+    mfaPrompt: "أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة",
+    mfaVerify: "تحقّق",
+    mfaBackToSignIn: "العودة إلى تسجيل الدخول",
+    mfaLostAccess: "هل فقدت الوصول إلى تطبيق المصادقة؟",
+    mfaSetupTitle: "إعداد المصادقة الثنائية",
+    mfaSetupRequired: "يتطلّب المسؤول لديك المصادقة الثنائية لهذا الحساب",
+    mfaSetupAdminRequired: "المصادقة الثنائية مطلوبة لحسابات المسؤولين",
+    mfaCompleteSetup: "إكمال الإعداد",
+    mfaSetupLoadFailed: "فشل تحميل إعداد المصادقة الثنائية. يُرجى المحاولة مرة أخرى.",
+    notAnAdmin: "هذا الحساب ليس حساب مسؤول. جارٍ إعادة التوجيه…",
+    termsOfService: "شروط الخدمة",
+    privacyPolicy: "سياسة الخصوصية",
   },
 
   // ============================================================================
@@ -320,6 +335,16 @@ export const ar = {
     welcomeWithUser: "كيف يمكنني مساعدتك مع {name} اليوم؟",
     workingWith: "العمل حالياً مع:",
     newConversation: "بدء محادثة جديدة",
+    history: {
+      newChat: "محادثة جديدة",
+      untitled: "محادثة بدون عنوان",
+      empty: "لا توجد محادثات سابقة",
+      rename: "إعادة تسمية",
+      delete: "حذف",
+      confirmDelete: "حذف؟",
+      show: "إظهار المحادثات",
+      hide: "إخفاء المحادثات",
+    },
     addAttachment: "إضافة مرفق",
     tools: "الأدوات",
     
@@ -2328,6 +2353,7 @@ export const ar = {
     elevenlabsDesc: "أدخل مفتاح API ومعرفات الصوت الخاصة بـ ElevenLabs لجودة TTS عالية. يتجاوز جميع إعدادات الصوت الأخرى عند التعيين.",
     elevenlabsApiKey: "مفتاح API لـ ElevenLabs",
     elevenlabsApiKeyPlaceholder: "sk_...",
+    elevenlabsAiVoiceId: "معرف صوت الذكاء الاصطناعي",
     elevenlabsStudentVoiceId: "معرف صوت {{STUDENT}}",
     elevenlabsVoiceIdPlaceholder: "مثال: 21m00Tcm4TlvDq8ikWAM",
     elevenlabsLoadingVoices: "جارٍ تحميل الأصوات...",
@@ -2957,6 +2983,8 @@ export const ar = {
   // ADMIN - LICENSES
   // ============================================================================
   admin: {
+    loginTitle: "تسجيل دخول المسؤول",
+    loginSubtitle: "منطقة مقيّدة — للمسؤولين فقط",
     licenses: {
       title: "التراخيص",
       subtitle: "إنشاء وإدارة تراخيص المستخدمين والمؤسسات.",

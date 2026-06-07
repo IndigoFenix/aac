@@ -202,7 +202,7 @@ export interface BoardManagerInvocationResult {
   events: BoardManagerOutputEvent[];
   /** Raw tool calls for logging / debugging. */
   rawToolCalls: Array<{ name: string; arguments: string }>;
-  usage?: { promptTokens: number; completionTokens: number };
+  usage?: { promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number };
   /** Provider finish reason (STOP, MAX_TOKENS, etc.) for diagnostics. */
   finishReason?: string;
   /** Fused tool names the model emitted that we silently rewrote.

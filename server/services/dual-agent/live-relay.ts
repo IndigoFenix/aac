@@ -5476,6 +5476,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
             result.usage.completionTokens,
             result.usage.cachedTokens ?? 0,
             "monitor-summary",
+            result.usage.cacheCreationTokens ?? 0,
           ).catch(err => console.error("[LiveRelay] trackHttpUsage(summary) failed:", err));
         }
         const summary = result.summary;
