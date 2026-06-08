@@ -126,6 +126,117 @@ function deriveRenderFields(
   return { iconRef, symbolPath, imageKey };
 }
 
+// ---------------------------------------------------------------------------
+// Glyph ⇄ JSON converters. The BoardManager authors buttons as a STRUCTURED
+// glyph array (no `+`/`.`/`#` string-DSL), and is SHOWN the current board in the
+// same JSON shape. The glyph STRING stays canonical for storage / device render
+// / clinician editor, so we convert at the BoardManager boundary in BOTH
+// directions. See feedback_boardmgr_format_symmetry.
+// ---------------------------------------------------------------------------
+
+export type GlyphOp = "past" | "future" | "question";
+
+/** One GLYPH in the structured form: a head SYMBOL (or a `gen` key) plus
+ *  optional MODIFIER keys; a `gen` glyph carries its own visual `fb`. */
+export interface GlyphSym {
+  /** Head SYMBOL: emoji, canonical registry key, `symbol:ID`, or `face:ID`. */
+  sym?: string;
+  /** Generate key (lowercase_snake_case, no `generate:` prefix). Requires `fb`. */
+  gen?: string;
+  /** MODIFIER keys, serialized as `.mod` (chained). */
+  mods?: string[];
+  /** Per-symbol fallback for a `gen` glyph (head + optional mods, never `gen`). */
+  fb?: { sym?: string; mods?: string[] };
+}
+
+const GLYPH_OPS: readonly string[] = ["past", "future", "question"];
+
+function serializeHeadMods(head: string, mods: unknown): string {
+  const m = Array.isArray(mods)
+    ? mods.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => `.${x.trim()}`).join("")
+    : "";
+  return `${head}${m}`;
+}
+
+/** Structured glyph array → legacy glyph strings. `fallback` is emitted ONLY
+ *  when some glyph uses `gen` (each `gen` slot rendered via its `fb`, every
+ *  other slot mirroring itself), so the model never hand-writes a fallback. */
+export function serializeGlyph(
+  glyph: unknown,
+  op?: unknown,
+): { sentence: string; fallback?: string } {
+  const glyphs: GlyphSym[] = Array.isArray(glyph)
+    ? glyph.filter((g): g is GlyphSym => !!g && typeof g === "object")
+    : [];
+  const opTag = typeof op === "string" && GLYPH_OPS.includes(op) ? `#${op}` : "";
+
+  const sentence = glyphs
+    .map((g) => serializeHeadMods(g.gen ? `generate:${g.gen}` : (g.sym ?? ""), g.mods))
+    .filter((s) => s.length > 0)
+    .join("+") + opTag;
+
+  const hasGen = glyphs.some((g) => g.gen);
+  if (!hasGen) return { sentence };
+
+  const fallback = glyphs
+    .map((g) =>
+      g.gen
+        ? serializeHeadMods(g.fb?.sym ?? "", g.fb?.mods)
+        : serializeHeadMods(g.sym ?? "", g.mods),
+    )
+    .filter((s) => s.length > 0)
+    .join("+") + opTag;
+  return { sentence, fallback };
+}
+
+function parseSlot(slot: string): { head: string; mods?: string[] } {
+  // `(`-payload (composable host glyph) is preserved on the head verbatim.
+  const dot = slot.indexOf(".");
+  if (dot < 0) return { head: slot };
+  // Don't split on a `.` that's inside a `(...)` payload.
+  const paren = slot.indexOf("(");
+  if (paren >= 0 && paren < dot) return { head: slot };
+  const head = slot.slice(0, dot);
+  const mods = slot.slice(dot + 1).split(".").map((m) => m.trim()).filter(Boolean);
+  return mods.length ? { head, mods } : { head };
+}
+
+function stripOp(s: string): { body: string; op?: GlyphOp } {
+  const m = s.match(/#(past|future|question)\s*$/);
+  if (!m) return { body: s.trim() };
+  return { body: s.slice(0, m.index).trim(), op: m[1] as GlyphOp };
+}
+
+/** Legacy glyph strings → structured glyph array (inverse of serializeGlyph).
+ *  Used to show the BoardManager the current/loaded board in the JSON shape it
+ *  authors in. */
+export function glyphStringToJson(
+  sentence: string | undefined,
+  fallback?: string | undefined,
+): { glyph: GlyphSym[]; op?: GlyphOp } {
+  const { body, op } = stripOp((sentence ?? "").trim());
+  const fbBody = stripOp((fallback ?? "").trim()).body;
+  const fbSlots = fbBody ? fbBody.split("+").map((s) => s.trim()).filter(Boolean) : [];
+  const slots = body ? body.split("+").map((s) => s.trim()).filter(Boolean) : [];
+
+  const glyph: GlyphSym[] = slots.map((slot, i) => {
+    const { head, mods } = parseSlot(slot);
+    if (head.startsWith("generate:")) {
+      const out: GlyphSym = { gen: head.slice("generate:".length) };
+      if (mods) out.mods = mods;
+      const fbSlot = fbSlots[i];
+      if (fbSlot) {
+        const { head: fbHead, mods: fbMods } = parseSlot(fbSlot);
+        out.fb = fbMods ? { sym: fbHead, mods: fbMods } : { sym: fbHead };
+      }
+      return out;
+    }
+    return mods ? { sym: head, mods } : { sym: head };
+  });
+
+  return op ? { glyph, op } : { glyph };
+}
+
 /**
  * Detect [GUESS] / [NARROW:dim] label prefixes and strip them. Returns the
  * cleaned label plus the structural fields the renderer needs.
@@ -170,12 +281,28 @@ export interface StructuredBoardButton {
   fallback?: unknown;
   /** Short on-button text. May carry [GUESS] / [NARROW:] prefixes. */
   label?: unknown;
+  /** PREFERRED visual encoding: structured GLYPH array (see GlyphSym). When
+   *  present it supersedes the `sentence`/`fallback` strings — the server
+   *  serializes it to those legacy strings. */
+  glyph?: unknown;
+  /** Optional sentence-level OPERATOR for the structured `glyph` form. */
+  op?: unknown;
   rowSpan?: unknown;
   colSpan?: unknown;
   /** Special-kind marker (wordfinder / more) — handled by the caller before
    *  reaching this parser. Accepted in either casing for tolerance. */
   buttonType?: unknown;
   button_type?: unknown;
+  /** Word-finder button KIND — structured replacement for the `[NARROW:]` /
+   *  `[CONTRAST:]` / `[GUESS]` label prefixes. "narrow"/"guess" map to a single
+   *  button; "contrast" expands to one pole button each (via expandContrastButton). */
+  kind?: unknown;
+  /** For kind "narrow"/"contrast" — the narrowing dimension label. */
+  dimension?: unknown;
+  /** For kind "narrow" — the value the user picks (also the visible label). */
+  value?: unknown;
+  /** For kind "contrast" — the poles: each `{ value, speech?, glyph? }`. */
+  poles?: unknown;
 }
 
 export function parseStructuredBoardButton(input: unknown): ParsedBoardButton | null {
@@ -183,12 +310,40 @@ export function parseStructuredBoardButton(input: unknown): ParsedBoardButton | 
   const o = input as StructuredBoardButton;
 
   const speech = typeof o.speech === "string" ? o.speech.trim() : "";
-  const glyph = typeof o.sentence === "string" ? o.sentence.trim() : "";
-  const glyphFallback = typeof o.fallback === "string" ? o.fallback.trim() : "";
+  // PREFERRED: structured `glyph` array → serialize to the legacy glyph strings.
+  // Falls back to the `sentence`/`fallback` string DSL when no glyph array is
+  // supplied (legacy models, the pipe path, or hand-authored buttons).
+  let glyph = typeof o.sentence === "string" ? o.sentence.trim() : "";
+  let glyphFallback = typeof o.fallback === "string" ? o.fallback.trim() : "";
+  if (Array.isArray(o.glyph) && o.glyph.length > 0) {
+    const ser = serializeGlyph(o.glyph, o.op);
+    glyph = ser.sentence;
+    glyphFallback = ser.fallback ?? "";
+  }
   const rawLabel = typeof o.label === "string" ? o.label.trim() : "";
-  if (!rawLabel) return null;
 
+  // Word-finder KIND — structured replacement for the `[NARROW:]`/`[GUESS]`
+  // label prefixes ("contrast" is handled upstream by expandContrastButton).
+  // Falls back to legacy prefix parsing of the label when `kind` is absent.
   const prefix = applyLabelPrefix(rawLabel);
+  let label = prefix.label;
+  let buttonType = prefix.buttonType as ParsedBoardButton["buttonType"];
+  let narrowDimension = prefix.narrowDimension;
+  let narrowValue = prefix.narrowValue;
+  if (o.kind === "narrow" && typeof o.dimension === "string" && typeof o.value === "string" && o.value.trim()) {
+    buttonType = "narrow";
+    narrowDimension = o.dimension.trim();
+    narrowValue = o.value.trim();
+    label = o.value.trim();
+  } else if (o.kind === "guess") {
+    buttonType = "guess";
+    label = (typeof o.value === "string" && o.value.trim()) || prefix.label;
+  }
+
+  // A button needs a label — either provided, or derived from a structured
+  // `value` (kind narrow/guess). A plain button with no label is malformed.
+  if (!label) return null;
+
   const { iconRef, symbolPath, imageKey } = deriveRenderFields(
     glyph || undefined,
     glyphFallback || undefined,
@@ -198,19 +353,115 @@ export function parseStructuredBoardButton(input: unknown): ParsedBoardButton | 
   const colSpan = typeof o.colSpan === "number" && o.colSpan >= 2 ? o.colSpan : undefined;
 
   return {
-    label: prefix.label,
+    label,
     iconRef,
     symbolPath,
     imageKey,
     glyph: glyph || undefined,
     glyphFallback: glyphFallback || undefined,
     sentence: speech || undefined,
-    buttonType: prefix.buttonType,
-    narrowDimension: prefix.narrowDimension,
-    narrowValue: prefix.narrowValue,
+    buttonType,
+    narrowDimension,
+    narrowValue,
     rowSpan,
     colSpan,
   };
+}
+
+/**
+ * Detect a `[CONTRAST:<dim>] A | B [| C…]` label — the "is it closer to A or B?"
+ * bisection primitive. Returns the dimension + the pole values, or null when it
+ * isn't a well-formed contrast (no dim, or fewer than two poles), so the caller
+ * can fall through to normal-button handling and let the validator flag it.
+ */
+function parseContrastLabel(rawLabel: string): { dim: string; poles: string[] } | null {
+  const m = rawLabel.match(/^\[CONTRAST:([^\]]+)\]\s*(.*)$/);
+  if (!m) return null;
+  const dim = m[1].trim();
+  const poles = m[2].split("|").map((p) => p.trim()).filter(Boolean);
+  if (!dim || poles.length < 2) return null;
+  return { dim, poles };
+}
+
+/**
+ * Expand a `[CONTRAST:<dim>] A | B` structured button into one `narrow` button
+ * per pole — a balanced "is it closer to A or B?" choice on the AI-driven
+ * custom-fact track (the same rails as `[NARROW:]`, so no engine/client/WS
+ * changes). Per-pole `speech` / `sentence`(glyph) / `fallback` may be supplied
+ * as `|`-separated lists aligned to the poles; a missing per-pole `speech`
+ * falls back to the pole text (so the press still voices something meaningful
+ * and that text becomes the recorded `sourceText`), and a missing icon routes
+ * through the normal symbol generator. Returns null when the label isn't a
+ * well-formed contrast.
+ */
+export function expandContrastButton(input: unknown): ParsedBoardButton[] | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as StructuredBoardButton;
+
+  // PREFERRED structured form: { kind:"contrast", dimension, poles:[{value, speech?, glyph?}] }
+  if (o.kind === "contrast" && typeof o.dimension === "string" && Array.isArray(o.poles)) {
+    const dim = o.dimension.trim();
+    const poles = o.poles.filter(
+      (p): p is { value: string; speech?: string; glyph?: unknown } =>
+        !!p && typeof p === "object" && typeof (p as any).value === "string" && !!(p as any).value.trim(),
+    );
+    if (!dim || poles.length < 2) return null;
+    return poles.map((p): ParsedBoardButton => {
+      const value = p.value.trim();
+      const ser = Array.isArray(p.glyph) && p.glyph.length ? serializeGlyph(p.glyph) : { sentence: "", fallback: undefined as string | undefined };
+      const glyph = ser.sentence || undefined;
+      const glyphFallback = ser.fallback || undefined;
+      const speech = (typeof p.speech === "string" && p.speech.trim()) || value;
+      const { iconRef, symbolPath, imageKey } = deriveRenderFields(glyph, glyphFallback);
+      return {
+        label: value, iconRef, symbolPath, imageKey, glyph, glyphFallback,
+        sentence: speech, buttonType: "narrow", narrowDimension: dim, narrowValue: value,
+      };
+    });
+  }
+
+  // LEGACY string form: `[CONTRAST:<dim>] A | B` with |-split speech/sentence/fallback.
+  const rawLabel = typeof o.label === "string" ? o.label.trim() : "";
+  const parsed = parseContrastLabel(rawLabel);
+  if (!parsed) return null;
+
+  const splitField = (v: unknown): string[] =>
+    typeof v === "string" ? v.split("|").map((s) => s.trim()) : [];
+  const speeches = splitField(o.speech);
+  const glyphs = splitField(o.sentence);
+  const fallbacks = splitField(o.fallback);
+
+  return parsed.poles.map((pole, idx): ParsedBoardButton => {
+    const glyph = glyphs[idx] || undefined;
+    const glyphFallback = fallbacks[idx] || undefined;
+    const speech = speeches[idx] || pole;
+    const { iconRef, symbolPath, imageKey } = deriveRenderFields(glyph, glyphFallback);
+    return {
+      label: pole,
+      iconRef,
+      symbolPath,
+      imageKey,
+      glyph,
+      glyphFallback,
+      sentence: speech,
+      buttonType: "narrow",
+      narrowDimension: parsed.dim,
+      narrowValue: pole,
+    };
+  });
+}
+
+/**
+ * Structured parse that EXPANDS a `[CONTRAST:]` button into its pole buttons;
+ * any other button parses to a single-element array (or empty on failure). Use
+ * this at array-valued sites (rebuild_board) so one authored contrast becomes a
+ * balanced multi-pole choice.
+ */
+export function parseStructuredButtonsExpanding(input: unknown): ParsedBoardButton[] {
+  const contrast = expandContrastButton(input);
+  if (contrast) return contrast;
+  const single = parseStructuredBoardButton(input);
+  return single ? [single] : [];
 }
 
 /**

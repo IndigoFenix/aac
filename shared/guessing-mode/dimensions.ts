@@ -13,6 +13,7 @@ import {
   BODY_PART_CLUSTER,
   FEELING_CLUSTER,
   ACTION_CLUSTER,
+  THEME_CLUSTER,
 } from "./clusters.js";
 
 /** Top-level category buttons live under the synthetic "category" dimension. */
@@ -38,11 +39,18 @@ const THINGS: DimensionDef[] = [
     type: "categorical",
     role: "steering",
     priority: 10,
-    values: ["animal", "food", "toy", "clothes", "tool", "vehicle", "screen", "nature_thing"],
+    // Child-everyday kinds first (page 1); broader/older-user kinds in the long
+    // tail (page 2+), revealed via "More".
+    values: [
+      "animal", "food", "toy", "clothes", "tool", "vehicle",
+      "screen", "nature_thing", "drink", "furniture", "device", "instrument",
+    ],
     subquestionLabel: "what kind of thing",
   },
   // Universal "where is it found?" — reused place cluster.
   ...instantiate(PLACE_CLUSTER, "things", { focusLabel: "where you find it" }),
+  // Universal "is it related to one of these?" — reused theme cluster.
+  ...instantiate(THEME_CLUSTER, "things", { focusLabel: "is it related to one of these" }),
   // Descriptive facts — low priority, rarely suggested, but sharpen the guess.
   {
     id: "things.size",
@@ -244,6 +252,9 @@ const THINGS: DimensionDef[] = [
 // ─── actions ─────────────────────────────────────────────────────────────
 const ACTIONS: DimensionDef[] = [
   ...instantiate(ACTION_CLUSTER, "actions", { focusLabel: "what kind of action" }),
+  // "is it related to one of these?" — reused theme cluster (e.g. a sport, a
+  // music activity, a game). Same registry entries as things.theme.
+  ...instantiate(THEME_CLUSTER, "actions", { focusLabel: "is it related to one of these" }),
 ];
 
 // ─── people ──────────────────────────────────────────────────────────────
@@ -254,7 +265,8 @@ const PEOPLE: DimensionDef[] = [
     type: "categorical",
     role: "steering",
     priority: 9,
-    values: ["family", "friend", "helper", "new_person"],
+    // Everyday relationships first; adult-life relationships in the long tail.
+    values: ["family", "friend", "helper", "new_person", "coworker", "partner", "neighbor", "professional"],
     subquestionLabel: "who they are to you",
   },
   {
@@ -277,7 +289,7 @@ const PLACES: DimensionDef[] = [
     type: "categorical",
     role: "steering",
     priority: 6,
-    values: ["eat_there", "play_there", "learn_there", "rest_there", "shop_there", "get_help"],
+    values: ["eat_there", "play_there", "learn_there", "rest_there", "shop_there", "get_help", "work_there", "exercise_there"],
     subquestionLabel: "what you do there",
   },
 ];

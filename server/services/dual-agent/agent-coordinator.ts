@@ -95,9 +95,10 @@ import {
   applyPress as applyGuessingPress,
   applyCustomFact as applyGuessingCustomFact,
   rejectCurrentDimension as rejectGuessingDimension,
+  expandDimension as expandGuessingDimension,
   buildStateInjection as buildGuessingInjection,
 } from "@shared/guessing-mode/state";
-import { seedGuessingFromConversation } from "./guessing-seeder";
+import { seedGuessingFromConversation, parseInterestsList, computeAgeYears } from "./guessing-seeder";
 import type { GuessingModeState } from "@shared/guessing-mode/types";
 import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions";
 
@@ -661,7 +662,15 @@ export class AgentCoordinator {
   // don't have to walk back through buildPromptInputs on every switch.
   private observerPrompt = "";
   private speakerPrompt = "";
+  /** Full composed BoardManager prompt — debug/logging only. The live prompt is
+   *  assembled per-invocation by composeBoardManagerPrompt from the parts below. */
   private boardManagerPrompt = "";
+  /** Stable prefix+tail (always sent). */
+  private boardManagerPromptBase = "";
+  /** Appended only while the sentence builder is active. */
+  private boardManagerBuilderBlock = "";
+  /** Appended only while the Word Finder is active. */
+  private boardManagerGuessingBlock = "";
   private observerToolConfigBase: ObserverToolConfig = {};
   private speakerToolConfigBase: Omit<SpeakerToolConfig, "restingMode"> = {
     useDirectAudio: true,
@@ -1073,7 +1082,14 @@ export class AgentCoordinator {
     const promptInputs = await this.buildPromptInputs();
     const observerPrompt = buildObserverPrompt(promptInputs.observer);
     const speakerPrompt = buildSpeakerPrompt(promptInputs.speaker);
-    const boardManagerPrompt = buildBoardManagerPrompt(promptInputs.boardManager);
+    const boardManagerParts = buildBoardManagerPrompt(promptInputs.boardManager);
+    // The mode blocks (builder / guessing) are appended per-invocation only when
+    // that mode is active — see composeBoardManagerPrompt. Store the parts;
+    // `boardManagerPrompt` keeps the full composed string for debug/logging.
+    this.boardManagerPromptBase = boardManagerParts.base;
+    this.boardManagerBuilderBlock = boardManagerParts.builderBlock;
+    this.boardManagerGuessingBlock = boardManagerParts.guessingBlock;
+    const boardManagerPrompt = `${boardManagerParts.base}\n\n${boardManagerParts.builderBlock}\n\n${boardManagerParts.guessingBlock}`;
 
     state.observerPrompt = observerPrompt;
     state.speakerPrompt = speakerPrompt;
@@ -1246,10 +1262,9 @@ export class AgentCoordinator {
     this.loadedBoardId = "__home__";
     const homePage = (homeBoard as any).pages?.[0];
     if (homePage?.buttons) {
-      const nativeLabels: string[] = homePage.buttons
-        .map((b: any) => b.label)
-        .filter((l: any): l is string => typeof l === "string");
-      this.currentBoardLabels = nativeLabels;
+      const nativeButtons = homePage.buttons.filter((b: any) => typeof b?.label === "string");
+      this.currentBoardLabels = nativeButtons.map((b: any) => b.label);
+      this.currentBoardButtons = nativeButtons.map((b: any) => ({ ...b } as MergeButton));
     }
     this.send({
       type: "set_board",
@@ -1413,6 +1428,19 @@ export class AgentCoordinator {
     //     rides in on recentEvents as a synthetic context_update so
     //     BoardManager's next invocation sees the intent.
     if (label === "[MORE]") {
+      // In Word Finder, "More" pages the CURRENT question's long tail (rarer
+      // answers to the same question) via the engine — it does NOT ask
+      // BoardManager for free-form alternatives. The engine owns the narrowing
+      // surface while guessing is active.
+      if (this.guessingEngineState) {
+        void this.wakeForGuessingIntent("guessing_more", () => {
+          if (!this.guessingEngineState) return;
+          expandGuessingDimension(this.guessingEngineState);
+          this.refreshGuessingSnapshot(false);
+        });
+        flowNote("COORDINATOR", "[MORE] pressed in Word Finder — paging current dimension's long tail.");
+        return;
+      }
       if (this.sessionProfile === "resting") {
         flowNote("COORDINATOR", "[MORE] arrived while resting — waking before invoking BoardManager.");
         await this.transitionToProfile("awake");
@@ -1514,9 +1542,9 @@ export class AgentCoordinator {
       this.loadedBoardId = "__home__";
       const homePage = (homeBoard as any).pages?.[0];
       if (homePage?.buttons) {
-        this.currentBoardLabels = homePage.buttons
-          .map((b: any) => b.label)
-          .filter((l: any): l is string => typeof l === "string");
+        const nativeButtons = homePage.buttons.filter((b: any) => typeof b?.label === "string");
+        this.currentBoardLabels = nativeButtons.map((b: any) => b.label);
+        this.currentBoardButtons = nativeButtons.map((b: any) => ({ ...b } as MergeButton));
       }
       this.send({
         type: "set_board",
@@ -1782,7 +1810,14 @@ export class AgentCoordinator {
     msg: Extract<ClientMessage, { type: "guessing_enter" }>,
   ): void {
     void this.wakeForGuessingIntent("guessing_enter", async () => {
-      this.guessingEngineState = createGuessingState();
+      // Seed from what we know about the student: their interests (from monitor
+      // memory) personalize the first board + the AI's guesses; their age keeps
+      // those guesses age-appropriate. Both are best-effort — absent data just
+      // yields the generic, age-agnostic engine.
+      const student = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.();
+      const interests = parseInterestsList((student?.chatMemory as Record<string, any> | undefined)?.Student_Interests);
+      const userAge = computeAgeYears((student as any)?.birthDate);
+      this.guessingEngineState = createGuessingState(interests, userAge);
       if (msg.builderContext) {
         // Builder origin: the active builder tab maps directly to a
         // top-level category, so we know the right starting point
@@ -1879,12 +1914,14 @@ export class AgentCoordinator {
     });
   }
 
-  /** "No" / "none of these" — drop the current dimension (the AI asked
-   *  about something the user can't answer with the offered options) and
-   *  flag `justRejected` so the next injection nudges the AI to a fresh
-   *  angle. Does NOT pop a previously-confirmed positive fact — that
-   *  produced the "Known: X" + "Rejected: X" contradiction the engine
-   *  used to ship. */
+  /** "No" — the offered options don't fit right now. DEFERS (not dismisses)
+   *  the current dimension: the engine moves on to a different question and
+   *  advances this one's page, so it can return later with answers the user
+   *  hasn't seen. Framed positively for the next injection (`lastAction =
+   *  "defer"`). Distinct from "More" (page the SAME question's long tail) and
+   *  from a genuine fact-undo. Does NOT pop a previously-confirmed positive
+   *  fact — that produced the "Known: X" + "Rejected: X" contradiction the
+   *  engine used to ship. */
   private handleGuessingReject(): void {
     if (!this.guessingEngineState) {
       flowNote("COORDINATOR", "guessing_reject dropped — no active session.");
@@ -3090,7 +3127,16 @@ export class AgentCoordinator {
     // a successful no-error invocation below.
     const pendingFeedback = this.boardMgrPendingFeedback;
     this.boardMgrPendingFeedback = null;
+    // Single source of truth for the retry budget: a RETRY invocation
+    // (pendingFeedback set) increments the consecutive-retry counter; a FRESH
+    // invocation (a normal trigger) starts a new chain, so reset it here. Do
+    // NOT reset the counter again later in this handler — a mid-handler reset
+    // (e.g. after a clean dispatch) zeroes it before the state-triggered /
+    // beat / malformed retry decision runs, so the BOARD_MGR_MAX_RETRIES cap in
+    // queueBoardMgrEmptyResponseRetry always sees 0 and a deterministic
+    // no_change (board already matches the state) retries forever.
     if (pendingFeedback) this.boardMgrRetryAttempt += 1;
+    else this.boardMgrRetryAttempt = 0;
     try {
       // Tool config is rebuilt per invocation so `guessingActive` reflects
       // the LIVE state — the exit_guessing tool only appears while the
@@ -3105,14 +3151,27 @@ export class AgentCoordinator {
           ? this.boardManagerToolConfig.loadedBoardName ?? null
           : null,
       };
+      // Compose from cached parts: base is always sent; the builder / guessing
+      // blocks ride along ONLY while that mode is active (saves ~2.9k tok on a
+      // normal turn). The stable base stays cacheable.
+      const composedPrompt = this.boardManagerPromptBase
+        + (this.builderState ? `\n\n${this.boardManagerBuilderBlock}` : "")
+        + (this.guessingState ? `\n\n${this.boardManagerGuessingBlock}` : "");
       const input: BoardManagerInvocationInput = {
         systemPrompt: pendingFeedback
-          ? `${this.boardManagerPrompt}\n\n<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`
-          : this.boardManagerPrompt,
+          ? `${composedPrompt}\n\n<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`
+          : composedPrompt,
         toolConfig: dynamicToolConfig,
         triggeringEvents,
         recentEvents: [...this.recentEvents],
         currentBoardLabels: [...this.currentBoardLabels],
+        currentBoardButtons: this.currentBoardButtons.map((b) => ({
+          label: b.label,
+          speech: b.speech ?? b.sentence,
+          glyph: b.glyph,
+          glyphFallback: b.glyphFallback,
+          buttonType: b.buttonType,
+        })),
         contextSidebarLabels: [...this.contextSidebarLabels],
         loadedBoardId: this.loadedBoardId,
         builderState: this.builderState ?? undefined,
@@ -3141,11 +3200,8 @@ export class AgentCoordinator {
         flowNote("BOARD_MGR", "In-flight invocation aborted after resolution — result discarded.");
         return;
       }
-      // Reset the retry counter when no fresh validator feedback was
-      // queued during dispatch (i.e. the call's buttons were clean).
-      // queueBoardMgrFeedback below — running synchronously inside the
-      // event-dispatch loop — will increment again if needed.
-      if (!this.boardMgrPendingFeedback) this.boardMgrRetryAttempt = 0;
+      // (Retry counter is reset at invocation start — see the pendingFeedback
+      // handling above. Resetting it here would defeat the retry cap.)
       // Track Board Manager HTTP usage (no modality details — text-only).
       if (result.usage) {
         this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, BOARD_MANAGER_DEFAULT_MODEL, {

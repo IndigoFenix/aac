@@ -68,6 +68,22 @@ export interface DimensionState {
   /** User pressed "No" while this dimension was being asked — drop it this session. */
   dismissed?: boolean;
   lastPressedTurn?: number;
+  /**
+   * Start index into the dimension's `values` for the page currently shown.
+   * "More" advances this by MAX_SUGGESTION_VALUES to reveal less-common answers
+   * to the SAME question; "No" also advances it so a deferred dimension returns
+   * with as-yet-unseen values rather than repeating the ones already rejected.
+   * Once it reaches `values.length` the registry is exhausted for this dimension
+   * and the AI takes over with freeform guesses. Default 0.
+   */
+  pageOffset?: number;
+  /**
+   * Turn at which the user pressed "No" on this dimension. Deferred (not
+   * dismissed): it loses to any fresh dimension in scoring but stays eligible,
+   * so the engine can return to it later once the others are spent. Cleared
+   * when the dimension is re-asked.
+   */
+  deferredAtTurn?: number;
 }
 
 /**
@@ -101,12 +117,25 @@ export interface GuessingModeState {
   history: Array<{ turn: number; key: string; fact?: CustomNarrowingFact }>;
   /** Student's known special interests, from monitor memory (snake_case-ish). */
   specialInterests: string[];
+  /**
+   * The user's age in years (from the student's birthDate), seeded at entry.
+   * Rendered into the injection so the AI's guesses stay age-appropriate — an
+   * adult shouldn't be led with "toy"/"show". Undefined when birthDate is unknown.
+   */
+  userAge?: number;
   turnCount: number;
   /** Namespace currently being drilled, for the injection's focus label. */
   focus?: string;
-  /** Set by a "More" press — next injection should expand the same dimension. */
-  expandSameDimension?: boolean;
-  /** Set by a "none of these" press — next injection tells the AI the user rejected the last options. */
+  /**
+   * The user's most recent dimension-level pivot, framed positively for the
+   * next injection: "expand" = pressed More (show less-common answers to the
+   * same question); "defer" = pressed No (move to a different question, may
+   * return later). Distinct from `justRejected`, which is a fact-level undo.
+   * Cleared by the next value press.
+   */
+  lastAction?: "expand" | "defer";
+  /** Set by `rejectMostRecentFact` — a confirmed fact the user later undid; the
+   *  next injection tells the AI not to re-propose that exact dimension+value. */
   justRejected?: boolean;
   /** AI-proposed narrowing steps the user has confirmed, in order added. */
   customFacts: CustomNarrowingFact[];

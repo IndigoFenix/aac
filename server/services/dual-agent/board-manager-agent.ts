@@ -47,7 +47,7 @@ import {
   buildBoardManagerToolDeclarations,
   type BoardManagerToolConfig,
 } from "./tool-declarations-board-manager";
-import { parseBoardButtons, parseStructuredBoardButton } from "./interactive-agent";
+import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
@@ -156,8 +156,21 @@ export interface BoardManagerInvocationInput {
   recentEvents: AgentEvent[];
 
   /** Current button labels on the main board (for de-dup / "still
-   *  appropriate?" reasoning). */
+   *  appropriate?" reasoning). Legacy fallback when `currentBoardButtons`
+   *  isn't supplied. */
   currentBoardLabels: string[];
+
+  /** Full current board buttons (visual glyph STRING + speech + label), shown
+   *  to the model as JSON in the SAME shape it emits — so its view of the board
+   *  matches its output format. The glyph string is converted to the structured
+   *  form via `glyphStringToJson`. */
+  currentBoardButtons?: Array<{
+    label: string;
+    speech?: string;
+    glyph?: string;
+    glyphFallback?: string;
+    buttonType?: string;
+  }>;
 
   /** Labels currently in the context sidebar. */
   contextSidebarLabels: string[];
@@ -246,7 +259,21 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
     lines.push(`<current_state>`);
     lines.push(`Dynamic board mode (no custom board loaded).`);
   }
-  if (input.currentBoardLabels.length > 0) {
+  if (input.currentBoardButtons && input.currentBoardButtons.length > 0) {
+    // Show the board in the SAME JSON shape the model emits, so its view of
+    // what's on screen matches its output format (avoids format confusion).
+    const jsonButtons = input.currentBoardButtons.map((b) => {
+      const out: Record<string, unknown> = { label: b.label };
+      if (b.speech) out.speech = b.speech;
+      if (b.buttonType) { out.button_type = b.buttonType; return out; }
+      const { glyph, op } = glyphStringToJson(b.glyph, b.glyphFallback);
+      if (glyph.length) out.glyph = glyph;
+      if (op) out.op = op;
+      return out;
+    });
+    lines.push(`Current ${T.board} — the ${T.button}s on screen now, in the SAME shape you emit:`);
+    lines.push(JSON.stringify(jsonButtons));
+  } else if (input.currentBoardLabels.length > 0) {
     lines.push(`Current ${T.board} buttons: [${input.currentBoardLabels.join(", ")}]`);
   } else {
     lines.push(`The ${T.board} is currently empty.`);
@@ -532,8 +559,16 @@ function parseToolCall(
       // Schema declares `buttons`; older models occasionally emit the
       // legacy `user_response_buttons` name — accept both.
       const arr = args.buttons ?? args.user_response_buttons ?? args[T.paramUserResponseButtons];
+      // Special meta buttons (wordfinder / more) short-circuit to a fixed shape;
+      // a `[CONTRAST:<dim>] A | B` button expands into one `narrow` pole-button
+      // each ("is it closer to A or B?"); everything else parses to a single
+      // button. Hence flatMap.
       const parsed: ReturnType<typeof parseBoardButtons> = Array.isArray(arr)
-        ? arr.map(item => parseStructuredButton(item)).filter((b): b is NonNullable<typeof b> => !!b)
+        ? arr.flatMap(item => {
+            const kind = extractSpecialButtonType(item);
+            if (kind) return [buildSpecialButton(kind)];
+            return parseStructuredButtonsExpanding(item);
+          }).filter((b): b is NonNullable<typeof b> => !!b)
         : [];
       const buttons: BoardButton[] = parsed.map(b => ({
         label: b.label,

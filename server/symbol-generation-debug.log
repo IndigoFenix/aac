@@ -3883,3 +3883,11 @@
 [2026-06-07T22:09:33.549Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
 [2026-06-07T22:09:33.676Z] [resolveImageKeys] Resolved "planets" → /api/custom-symbols/518b6c61-65df-4571-821f-a7a9e67c961e/image
 [2026-06-07T22:09:33.677Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-06-08T05:44:47.401Z] [resolveImageKeys] Resolving 1 keys: ⏰ (format=internal, useUnapproved=true)
+[2026-06-08T05:44:47.584Z] [resolveImageKeys] No symbol found for "⏰"
+[2026-06-08T05:44:47.585Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: ⏰
+[2026-06-08T05:44:47.592Z] [queueGeneration] Queuing 1 keys: ⏰ (hasCallback=true)
+[2026-06-08T05:44:47.777Z] [processQueue] Generating "⏰"...
+[2026-06-08T05:45:04.612Z] [COST] imageKey="⏰" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=96 | image: openai/gpt-image-1 in=100 out=272
+[2026-06-08T05:45:04.612Z] [processQueue] Generated "⏰" → 7257c29e-f7af-4d46-bae4-92868d5f8f58 (1 total)
+[2026-06-08T05:45:04.613Z] [processQueue] FULL REFINED PROMPT for "⏰": A simple, bold illustration of a classic alarm clock, viewed from the front. The clock is round with two small bells on top and two short legs at the bottom. It has a white face with clear black hour and minute hands pointing to approximately 10:10, and a smaller red alarm hand. A single black outline surrounds all shapes. Flat, solid colors are used with no gradients, shadows, highlights, or 3D effects, on a transparent background.

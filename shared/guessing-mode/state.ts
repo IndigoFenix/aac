@@ -53,12 +53,16 @@ import {
 
 // ─── State lifecycle ───────────────────────────────────────────────────────
 
-export function createState(specialInterests: string[] = []): GuessingModeState {
+export function createState(
+  specialInterests: string[] = [],
+  userAge?: number,
+): GuessingModeState {
   return {
     category: null,
     dimensions: {},
     history: [],
     specialInterests: [...specialInterests],
+    userAge,
     turnCount: 0,
     customFacts: [],
     rejectedFacts: [],
@@ -72,6 +76,8 @@ export function cloneState(s: GuessingModeState): GuessingModeState {
       weights: { ...ds.weights },
       dismissed: ds.dismissed,
       lastPressedTurn: ds.lastPressedTurn,
+      pageOffset: ds.pageOffset,
+      deferredAtTurn: ds.deferredAtTurn,
     };
   }
   return {
@@ -79,9 +85,10 @@ export function cloneState(s: GuessingModeState): GuessingModeState {
     dimensions,
     history: s.history.map((h) => ({ ...h, fact: h.fact ? { ...h.fact } : undefined })),
     specialInterests: [...s.specialInterests],
+    userAge: s.userAge,
     turnCount: s.turnCount,
     focus: s.focus,
-    expandSameDimension: s.expandSameDimension,
+    lastAction: s.lastAction,
     justRejected: s.justRejected,
     customFacts: s.customFacts.map((f) => ({ ...f })),
     rejectedFacts: s.rejectedFacts.map((f) => ({ ...f })),
@@ -185,7 +192,7 @@ function normalizedEntropy(state: GuessingModeState, def: DimensionDef): number 
 export function applyPress(state: GuessingModeState, dimId: string, value: string): GuessingModeState {
   state.turnCount += 1;
   state.history.push({ turn: state.turnCount, key: `${dimId}:${value}` });
-  state.expandSameDimension = false;
+  state.lastAction = undefined;
   state.justRejected = false;
 
   if (dimId === CATEGORY_DIM_ID) {
@@ -217,6 +224,7 @@ export function applyPress(state: GuessingModeState, dimId: string, value: strin
   for (const v of def.values) ds.weights[v] = 1;
   ds.weights[UNKNOWN] = 1;
   ds.dismissed = false;          // user is actively pressing in this dim
+  ds.deferredAtTurn = undefined; // engaging it clears any prior "No" deferral
   ds.lastPressedTurn = state.turnCount;
 
   if (def.type === "binary") {
@@ -274,7 +282,7 @@ export function applyCustomFact(
   };
   state.customFacts.push(fact);
   state.history.push({ turn: state.turnCount, key: `custom:${dim}:${val}`, fact });
-  state.expandSameDimension = false;
+  state.lastAction = undefined;
   state.justRejected = false;
   state.focus = dim;
   return state;
@@ -304,7 +312,7 @@ export function rejectMostRecentFact(state: GuessingModeState): boolean {
       state.rejectedFacts.push({ ...entry.fact });
       state.history.splice(i, 1);
       state.justRejected = true;
-      state.expandSameDimension = false;
+      state.lastAction = undefined;
       return true;
     }
 
@@ -326,15 +334,31 @@ export function rejectMostRecentFact(state: GuessingModeState): boolean {
     state.history.splice(i, 1);
     state.turnCount += 1;
     state.justRejected = true;
-    state.expandSameDimension = false;
+    state.lastAction = undefined;
     return true;
   }
   return false;
 }
 
-/** "More" — ask the assistant to expand values in the same dimension next turn. */
-export function flagExpand(state: GuessingModeState): GuessingModeState {
-  state.expandSameDimension = true;
+/**
+ * "More" — the user wants less-common answers to the SAME question. Advance the
+ * currently-offered dimension's page so the next injection surfaces its long
+ * tail. Once the page runs past the end the registry is spent for that
+ * dimension, so dismiss it and let the AI take over with freeform guesses.
+ * Stays on the same dimension (no different question is asked).
+ */
+export function expandDimension(state: GuessingModeState): GuessingModeState {
+  const next = suggestNextDimension(state);
+  if (!next.def) return state; // category menu or nothing to expand — no-op
+  const def = next.def;
+  const ds = ensureDim(state, def);
+  ds.pageOffset = (ds.pageOffset ?? 0) + MAX_SUGGESTION_VALUES;
+  if (ds.pageOffset >= def.values.length) {
+    // Long tail exhausted — hand this dimension to the AI's own knowledge.
+    ds.dismissed = true;
+  }
+  state.lastAction = "expand";
+  state.justRejected = false;
   return state;
 }
 
@@ -346,11 +370,18 @@ export interface NextDimension {
   isCategory: boolean;
 }
 
+/** A dimension whose page has run past its last value — registry exhausted. */
+function isExhausted(state: GuessingModeState, def: DimensionDef): boolean {
+  const ds = state.dimensions[def.id];
+  return !!ds && (ds.pageOffset ?? 0) >= def.values.length;
+}
+
 function candidateDimensions(state: GuessingModeState): DimensionDef[] {
   if (!state.category) return [];
   return DIMENSIONS_BY_CATEGORY[state.category].filter((def) => {
     const ds = state.dimensions[def.id];
     if (ds?.dismissed) return false;
+    if (isExhausted(state, def)) return false;
     if (def.applicableWhen && !def.applicableWhen(state)) return false;
     if (isConfident(state, def)) return false;
     return true;
@@ -366,32 +397,38 @@ function score(state: GuessingModeState, def: DimensionDef): number {
 export function suggestNextDimension(state: GuessingModeState): NextDimension {
   if (!state.category) return { def: null, isCategory: true };
 
-  // "More" overrides selection: re-ask the most recently pressed dimension
-  // (so the assistant offers additional values for it). The pressed dim may
-  // live in a sub-namespace (e.g. animal.* while category is things).
-  if (state.expandSameDimension && state.history.length) {
-    for (let i = state.history.length - 1; i >= 0; i--) {
-      const id = state.history[i].key.split(":")[0];
-      const def = DIMENSION_BY_ID[id];
-      if (def && !state.dimensions[def.id]?.dismissed) return { def, isCategory: false };
-    }
-  }
-
   const candidates = candidateDimensions(state);
   if (!candidates.length) return { def: null, isCategory: false };
-  candidates.sort((a, b) => score(state, b) - score(state, a));
-  return { def: candidates[0], isCategory: false };
+
+  // Prefer dimensions the user hasn't deferred ("No"). Deferred dimensions
+  // stay eligible but only surface once the fresh ones are spent. The deferral
+  // is cleared when the user actually presses a value on the dimension (see
+  // applyPress), so this stays a pure read.
+  const fresh = candidates.filter((d) => state.dimensions[d.id]?.deferredAtTurn == null);
+  const pool = fresh.length ? fresh : candidates;
+  pool.sort((a, b) => score(state, b) - score(state, a));
+  return { def: pool[0], isCategory: false };
 }
 
 /**
- * "None of these" — the user rejected the currently-offered options. Dismiss
- * the dimension being asked (so it's never suggested again this session) and
- * flag the next injection so the AI is told not to re-offer those options.
+ * "No" — the user can't answer the current question with the offered options,
+ * but it's not necessarily the wrong question. DEFER (don't dismiss) the
+ * dimension being asked: move on to a different question now, while advancing
+ * this dimension's page so that if the engine returns to it later it surfaces
+ * answers the user hasn't already seen. Framed positively for the next
+ * injection via `lastAction = "defer"`.
  */
 export function rejectCurrentDimension(state: GuessingModeState): GuessingModeState {
   const next = suggestNextDimension(state);
-  if (next.def) dismissDimension(state, next.def.id);
-  state.justRejected = true;
+  if (next.def) {
+    const ds = ensureDim(state, next.def);
+    ds.deferredAtTurn = state.turnCount;
+    // Advance the page so a later return shows new (rarer) values, not the
+    // ones just rejected. If this exhausts the dimension it simply won't return.
+    ds.pageOffset = (ds.pageOffset ?? 0) + MAX_SUGGESTION_VALUES;
+  }
+  state.lastAction = "defer";
+  state.justRejected = false;
   return state;
 }
 
@@ -420,6 +457,19 @@ function renderFacts(facts: CustomNarrowingFact[]): string {
     .join(", ");
 }
 
+/** Coarse age band for the injection's "keep guesses age-appropriate" hint. */
+function ageBandLabel(age: number): string {
+  if (age < 13) return "a child";
+  if (age < 18) return "a teen";
+  return "an adult";
+}
+
+/** The "user is …" age line, or null when birthDate (hence age) is unknown. */
+function ageLine(state: GuessingModeState): string | null {
+  if (state.userAge == null || !Number.isFinite(state.userAge)) return null;
+  return `User is ${ageBandLabel(state.userAge)} (age ${state.userAge}) — keep guesses age-appropriate.`;
+}
+
 export function buildStateInjection(state: GuessingModeState): GuessingInjectionWire {
   const lines: string[] = ["[GUESSING STATE]"];
   const next = suggestNextDimension(state);
@@ -428,8 +478,8 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
 
   // Category-selection turn.
   if (next.isCategory) {
-    if (state.justRejected) {
-      lines.push("The user pressed 'none of these' — none of the categories fit. Ask a short, friendly clarifying question, or make a [GUESS] if you have a hunch.");
+    if (state.justRejected || state.lastAction === "defer") {
+      lines.push("None of the categories fit so far — ask a short, friendly clarifying question, or make a [GUESS] if you have a hunch.");
     }
     lines.push("No category chosen yet — offer the top-level category buttons.");
     const keys = CATEGORY_VALUES.map((c) => `${CATEGORY_DIM_ID}:${c}`).map((k) => `suggestion:${k}`);
@@ -438,6 +488,8 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     if (rejectedFacts.length) {
       lines.push(`Rejected so far (do NOT propose these again): ${renderFacts(rejectedFacts)}`);
     }
+    const catAge = ageLine(state);
+    if (catAge) lines.push(catAge);
     if (state.specialInterests.length) {
       lines.push(`Student's known interests: ${state.specialInterests.join(", ")}`);
     }
@@ -450,8 +502,13 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
   const category = state.category!;
   const catDims = DIMENSIONS_BY_CATEGORY[category];
 
+  if (state.lastAction === "expand") {
+    lines.push("The user pressed 'More' — they want LESS-COMMON answers to the SAME question. The keys below are the next, rarer batch for this dimension; offer them, and feel free to add your own [GUESS]es that fit this dimension.");
+  } else if (state.lastAction === "defer") {
+    lines.push("The user pressed 'a different question' — the last question didn't fit right now. Move on to the question below (we may return to the earlier one later). Don't repeat the options they just skipped.");
+  }
   if (state.justRejected) {
-    lines.push("The user pressed 'none of these' — your last options/guesses were wrong. Do NOT repeat them. Use ALL the clues below plus what you know about this user to make a FRESH batch of DIFFERENT [GUESS] buttons (offer several), or ask about a new aspect. Keep going — do not give up.");
+    lines.push("The user rejected one of your earlier guesses — do NOT repeat it. Use ALL the clues below plus what you know about this user to make a FRESH batch of DIFFERENT [GUESS] buttons (offer several), or ask about a new aspect. Keep going — do not give up.");
   }
   if (next.def?.subquestionLabel) lines.push(`Now figuring out: ${next.def.subquestionLabel}`);
   lines.push(`Category: ${category}`);
@@ -475,15 +532,20 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
     .map((d) => localName(d.id));
   if (unknownSteering.length) lines.push(`Still unknown (steering): ${unknownSteering.join(", ")}`);
 
-  // Suggested next dimension + its keys.
+  // Suggested next dimension + its keys (paged: show only the current window of
+  // values, so "More"/"No" can reveal the long tail across turns).
   let keys: string[] = [];
   if (next.def) {
     const label = next.def.subquestionLabel ?? localName(next.def.id);
     lines.push(`Suggested next dimension: ${localName(next.def.id)} — ${label}`);
-    const values = next.def.values.slice(0, MAX_SUGGESTION_VALUES);
+    const offset = state.dimensions[next.def.id]?.pageOffset ?? 0;
+    const values = next.def.values.slice(offset, offset + MAX_SUGGESTION_VALUES);
     keys = values.map((v) => `suggestion:${next.def!.id}:${v}`);
     lines.push("  Offer these as buttons — keys only, COMMA-separated (the system fills picture + label), never pipe-joined:");
     lines.push(`    ${keys.join(",")}`);
+    if (offset + MAX_SUGGESTION_VALUES < next.def.values.length) {
+      lines.push("  (More answers exist for this question — the user can press 'More' to see them.)");
+    }
   } else {
     lines.push("No more narrowing dimensions — offer [GUESS] buttons now.");
   }
@@ -496,6 +558,8 @@ export function buildStateInjection(state: GuessingModeState): GuessingInjection
   }
 
   lines.push(`Ready for guesses: ${readyForGuesses(state) ? "yes" : "not yet (still broad)"}`);
+  const mainAge = ageLine(state);
+  if (mainAge) lines.push(mainAge);
   if (state.specialInterests.length) {
     lines.push(`Student's known interests: ${state.specialInterests.join(", ")}`);
   }

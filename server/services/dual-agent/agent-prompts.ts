@@ -18,7 +18,7 @@ import type { PermittedWebsite } from "@shared/schema";
 import { T } from "../memory-schema/canonical-terms";
 import { ex } from "../memory-schema/prompt-examples";
 import { getBundledIconsBlock } from "../memory-schema/aac-memory-schema";
-import { buildGlyphSyntax, buildCustomSymbolsBlock } from "../memory-schema/glyph-syntax";
+import { buildCustomSymbolsBlock } from "../memory-schema/glyph-syntax";
 
 // ---------------------------------------------------------------------------
 // Shared sub-types
@@ -573,7 +573,16 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   boardManagerExamples?: string;
 }
 
-export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): string {
+/** The BoardManager prompt split into a stable `base` plus the two mode blocks,
+ *  so the coordinator can append `builderBlock` / `guessingBlock` only when those
+ *  modes are active — keeping the common-turn prompt lean and the base cacheable. */
+export interface BoardManagerPromptParts {
+  base: string;
+  builderBlock: string;
+  guessingBlock: string;
+}
+
+export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): BoardManagerPromptParts {
   const {
     studentName, language, memoryContext, muteState,
     knownContacts, classroom,
@@ -599,7 +608,7 @@ You're invoked per event by the Coordinator (a button press, a transcribed sente
 **HARD RULE: Every invocation MUST end with exactly ONE tool call. Pick whichever fits:**
   - \`rebuild_board(buttons, target?)\` — replace the main ${T.board} with a FRESH SET of ≥3 ${T.button}s (typically 4–8). For yes/no use show_binary_choice instead. NEVER call rebuild_board with a single button — that wipes the whole board to show one response, which is almost never what you want. Either provide a real variety of options OR use add_board_button to add ONE option to the existing board.
   - \`add_board_button(button, target?)\` — add ONE ${T.button} to the current main board, preserving the existing buttons. Use when the existing options STILL APPLY and you just want to extend with one more (e.g. the board displays a list of food items as options and someone suggests a new food item). The server merges it in: exact duplicates collapse; if the board is full, the new button displaces the most-similar existing one in place. Do NOT call this multiple times in a row to assemble a board — call rebuild_board instead with the whole set.
-  - \`add_context_button(button)\` — add one item to the SIDEBAR (left strip, ambient observations). Not the main board. Use this when a new observation is worth surfacing (user is looking at or indicating an object, or a new person entered) but isn't a direct response option to the current conversational beat. The last four context buttons remain visible in the sidebar for the user to reference.
+  - \`add_context_button(button)\` — add one item to the SIDEBAR (left strip, last 4 visible + scrolls). Not the main board. Use when a new observation is worth surfacing (user is looking at/indicating an object, or a new person entered) but isn't a direct response option to the current beat. Don't duplicate ${T.board} labels.
   - \`show_binary_choice(option1, option2, target?)\` — yes/no or either/or overlay. Use this for ANY question with exactly two natural answers (do you want X? yes/no. soup or salad? soup/salad). Same \`target\` semantics as rebuild_board. A maybe/neither option will be added automatically as a fallback.
   - \`set_board(board_key)\` — switch to a pre-built ${T.board}.
   - \`suggest_construction_buttons(slot_index, head_candidates, modifier_candidates)\` — populate the ${T.builder} strips.
@@ -621,17 +630,8 @@ You're invoked per event by the Coordinator (a button press, a transcribed sente
 NEVER return silently. If no change is needed, call \`no_change("<short reason>")\`.
 NEVER emit a tool name that isn't in the list above. The canonical names are all in snake_case.
 
-The ${T.button}s are the USER's words — what they can say next. Never put the AI's own questions or statements into them.
+The ${T.button}s are the USER's words — what they can say next. Never put the AI's own questions or statements into them. The ${T.board} holds up to 8; provide a wide variety drawn on conversation history + known interests, not just the latest event.
 </role>${classroomBlock(studentName, classroom)}
-
-<surfaces>
-Two surfaces:
-
-  - ${T.board} (up to 8 ${T.button}s, main grid) — the user's primary response surface. Build via rebuild_board(buttons, target?). Provide a wide variety. Draw on conversation history and known interests, not just the latest event.
-  - CONTEXT SIDEBAR (4 visible, scrolls) — ambient observations added one at a time via add_context_button(button). Don't duplicate ${T.board} labels.
-
-For yes/no or either/or questions, call show_binary_choice(option1, option2) instead of rebuild_board.
-</surfaces>
 
 <when_to_act>
 You're invoked on each conversational beat. The TARGET label on the incoming tagged event is what decides whether to build a board and what kind:
@@ -654,42 +654,32 @@ For ${T.builder} activity ([${T.tagBuilderState}]), call suggest_construction_bu
 [${studentName}] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit ${T.button}s that would reveal student-private information.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
-${buildGlyphSyntax({ singleGlyphButtons })}
+<glyph>
+A ${T.button} is \`{ speech, glyph, label }\` (the tool schema documents every field):
+  - \`speech\`: the first-person SENTENCE the TTS voices on press, in ${languageName} ("I want some water").
+  - \`glyph\`: the VISUAL — an ARRAY of ${singleGlyphButtons ? "exactly 1 GLYPH" : "1–3 GLYPHs (rendered left→right)"}. Each GLYPH is \`{ sym | gen, mods?, fb? }\`. ${singleGlyphButtons ? `One GLYPH per ${T.button}.` : "Match the count to meaning — a one-word answer/feeling is 1 GLYPH, a full subject+verb+object thought is up to 3. Don't pad."}
+  - \`label\`: short on-button text in ${languageName} (seen, not voiced).
+  - \`op?\`: optional "past"/"future"/"question" tag on the whole ${T.button} — conjugate \`speech\` to match; the visual is unchanged.
+  - \`button_type?\`: "wordfinder"/"more" META buttons (see <when_to_act>); other fields ignored when set.
 
-<button_syntax>
-Each ${T.button} is a STRUCTURED OBJECT with four required fields plus optional spans:
+Choose each GLYPH's head in this STRICT preference order — generation is a last resort:
+  1. \`{sym:"symbol:ID"}\` / \`{sym:"face:ID"}\` — this user's custom SYMBOL or face. FIRST choice when one fits.
+  2. \`{sym:"🍎", mods:["color_red"]}\` — emoji head + canonical MODIFIER(s) from <bundled_icons>. Your DEFAULT for a concrete-noun-with-a-quality: "big book"→\`{sym:"📖",mods:["big"]}\`, "two cookies"→\`{sym:"🍪",mods:["two"]}\`, "my dog"→\`{sym:"🐕",mods:["my"]}\`.
+  3. \`{sym:"<key>"}\` — a canonical registry key from <bundled_icons> (pronouns, abstract verbs, times, deictics, and ALL modifiers).
+  4. \`{sym:"🤗"}\` — a raw emoji for a concrete noun not in the registry.
+  5. \`{gen:"planet_mars", fb:{sym:"🌑",mods:["color_red"]}}\` — LAST RESORT image generation, ONLY when no emoji/key captures it. Self-check: if the \`fb\` would itself BE the answer (a 🦛 emoji is a hippo), drop \`gen\` and use it as \`sym\`. The \`fb\` must be a deliberately WEAKER approximation; never \`gen\` a quality an emoji+modifier already covers.
 
-  - \`speech\`: the natural-language SENTENCE the TTS voices when the ${T.button} is pressed. First-person, conversational, in ${languageName}. What the user is SAYING when they press the ${T.button}.
-  - \`sentence\`: the visual encoding (per <grammar> above) — SYMBOLs / GLYPHs / OPERATORs that compose to a SENTENCE. Not voiced; rendered as the ${T.button}'s picture.
-  - \`fallback\`: REQUIRED whenever \`sentence\` contains any \`generate:\` SYMBOL; OMIT this field entirely otherwise. Must NEVER contain \`generate:\` or non-canonical modifiers. Mirrors the SHAPE of \`sentence\` using only emoji / canonical keys / \`symbol:ID\` / \`face:ID\`.
-  - \`label\`: short on-button text in ${languageName}. The user sees this; not voiced.
-  - \`button_type?\`: optional field that defines META buttons with fixed appearance and behavior. Set to "wordfinder" or "more" to create those special buttons instead of a normal one. See <when_to_act> for when to use these.
+MODIFIERs come ONLY from <bundled_icons> (or are emojis). Invented modifiers ("new","sad","scary") render as a meaningless dot — use an emoji that encodes the quality, or carry it in \`speech\` only${singleGlyphButtons ? "" : "; never add a GLYPH just to attach an adjective"}.
 
-Worked example — a typical rebuild_board response with a mix of plain-emoji SENTENCEs, MODIFIER-decorated ones, and a generated SYMBOL with mandatory fallback:
-\`\`\`json
-[
-  { "speech": "I want some water", "sentence": "i_me+want+💧", "label": "Water" },
-  { "speech": "I want a red apple", "sentence": "i_me+want+🍎.color_red", "label": "Red apple" },
-  { "speech": "I'm tired", "sentence": "😴", "label": "Tired" },
-  { "speech": "I want a hug from Mom", "sentence": "i_me+want+🤗.big+face:mom", "label": "Hug Mom" },
-  { "speech": "Tell me about Mars",
-    "sentence": "i_me+want+talk+generate:planet_mars",
-    "fallback": "i_me+want+talk+🌑.color_red",
-    "label": "Mars" }
-]
-\`\`\`
-Note the LAST button: \`sentence\` contains \`generate:planet_mars\` because no emoji captures Mars specifically. \`fallback\` is REQUIRED — \`🌑.color_red\` is the best APPROXIMATION (reddish round object) but doesn't pin "Mars" the way a generated image will. The other four buttons OMIT \`fallback\` entirely because their \`sentence\` fields have no \`generate:\` SYMBOLs.
-
-WRONG example (don't do this): \`sentence: "generate:hippopotamus", fallback: "🦛"\` — a hippo emoji exists, so the fallback IS the canonical answer. Just write \`sentence: "🦛"\` with no fallback.
+Example: \`{ speech: "I want a red apple", glyph: [{sym:"i_me"},{sym:"want"},{sym:"🍎",mods:["color_red"]}], label: "Red apple" }\`
+</glyph>
 
 <board_rules>
 - Aim for 6–8 ${T.button}s per ${T.board}. Fill it.
 - No two ${T.button}s should look the same — distinguish at a glance.
 - Never include yes/no/home/more ${T.button}s (added automatically).
-- Workflow: decide the \`speech\` first → encode as \`sentence\` (per <grammar>) → if any SYMBOL is \`generate:\`, write a \`fallback\` that mirrors the structure → write a short \`label\`.
-- OMIT the \`fallback\` field entirely when \`sentence\` has no \`generate:\` SYMBOLs. Do NOT include an empty string fallback.
+- Decide the \`speech\` first, then build the \`glyph\` array that depicts it.
 </board_rules>
-</button_syntax>
 
 ${getBundledIconsBlock()}`;
 
@@ -769,45 +759,16 @@ NEVER pass the raw composed-sentence string to interpret(). NEVER echo SYMBOLs a
 </sentence_builder>
 
 <guessing_mode>
-On [GUESSING STATE] the user is finding a word they can't reach directly. You build the word-finder ${T.board}. Each ${T.button} either NARROWS DOWN what they mean or takes a concrete GUESS — mix the three shapes below on the same ${T.board}, lead with whichever fits the conversation.
+On [GUESSING STATE] the user is finding a word they can't reach directly. Build the word-finder ${T.board} from a mix of the shapes below, leading with whichever fits. FOLLOW SPEAKER: your options should answer the narrowing question Speaker just asked aloud (same axis). On cold entry with no Speaker turn, default to the \`offered_keys\`.
 
-**1. Registry-driven narrowing (\`suggestion:dim:value\`)** — when the registry's "Suggested next dimension" actually fits the live conversation, use the EXACT keys in the latest [GUESSING STATE] \`offered_keys\` list. Emit ONE key per ${T.button}'s \`label\` (no \`speech\`/\`sentence\`/\`fallback\` needed — the system fills picture + voiced label automatically). NEVER invent new \`suggestion:\` keys.
+1. **Registry key** — when the latest [GUESSING STATE] \`offered_keys\` fit, put ONE key in a ${T.button}'s \`label\` (e.g. \`suggestion:things.kind:animal\`); the system fills its picture + voiced label. NEVER invent keys.
+2. **Your own narrowing** — when no offered dimension fits, propose one: \`{ kind:"narrow", dimension:"genre", value:"Comedy", glyph:[{sym:"😂"}], speech:"funny" }\`. Use the SAME \`dimension\` across the batch; the pick is recorded under \`custom_facts\`.
+3. **"Closer to A or B?"** — to bisect a niche concept space, ONE contrast button: \`{ kind:"contrast", dimension:"feel", poles:[{value:"cat-like", speech:"more like a cat", glyph:[{sym:"🐱"}]}, {value:"dog-like", speech:"more like a dog", glyph:[{sym:"🐶"}]}] }\`. The system renders one ${T.button} per pole and records the chosen pole (its \`speech\` is kept as the clue). 2+ poles allowed.
+4. **Final guess** — when narrowing has converged: \`{ kind:"guess", value:"Spider-Man", glyph:[{sym:"🕷️"}] }\`.
 
-**2. AI-driven narrowing (\`[NARROW:<dimension>] <value>\`)** — when the registry's offered dimension DOESN'T fit the conversation (e.g. registry asks "what kind of thing?" mid-movie chat), propose YOUR OWN narrowing step. Emit a normal structured ${T.button} object with the \`[NARROW:<dimension>] <value>\` prefix in the \`label\` field:
-  { speech: "what kind of movie?", sentence: "😂", label: "[NARROW:genre] Comedy" }
-  { speech: "what kind of movie?", sentence: "🎭", label: "[NARROW:genre] Drama" }
-  { speech: "what kind of movie?", sentence: "💥", label: "[NARROW:genre] Action" }
-  - \`<dimension>\` is a SHORT human-readable label (\`genre\`, \`time of day\`, \`kind of place\`, \`mood\`, \`era\`). Use the SAME dimension across the batch of options.
-  - \`<value>\` is the option the user picks — becomes the visible button text after the prefix is stripped.
-  - On press, the user's pick is recorded as a custom narrowing fact. The next [GUESSING STATE] you receive will list it under \`custom_facts\`.
+Helper buttons ("More"/"No") steer the registry questions — [GUESSING STATE] says which was pressed. "More" → it returns rarer answers to the SAME question (surface the fresh \`offered_keys\`). "No" → that question doesn't fit now; move to the one the next state suggests (it may return later). Neither means you guessed wrong. If the user rejects a candidate WORD, don't repeat it — pivot to fresh guesses or a new dimension.
 
-**3. Final guess (\`[GUESS] <text>\`)** — emit a normal structured ${T.button} with the \`[GUESS] <text>\` prefix in the \`label\` field. Use when narrowing has converged enough to commit to a specific word ("Spider-Man", "the kitchen", "tired"). SPEAKER voices the guess; your job is to surface the candidate ${T.button}.
-
-**The "No" press rejects the MOST RECENT positive fact** (registry press OR custom fact). The next [GUESSING STATE] will list it under \`rejected_facts\` — when you see one, do NOT propose the same dimension+value again. Pivot to a different angle (different dimension, or [GUESS] from the conversation context).
-
-**Ending the Word Finder (\`exit_guessing\`)** — call this when narrowing has CONVERGED and the user has confirmed the word: a [GUESS] button you offered was just pressed, OR the user said "yes" to "is it X?", OR they explicitly named the concept they were looking for. The Word Finder is a means to an end — once the word is found, exit so the conversation can continue normally ABOUT that word. Calling exit_guessing flips the device out of word-finder mode (the violet entry button clears) and your NEXT invocation gets a clean board to rebuild for normal conversation about whatever was just resolved. Do NOT call this just because narrowing feels stuck — grind through more dimensions or commit a [GUESS] first. The tool only appears in your tool list WHILE guessing is active.
-
-**Follow SPEAKER, don't lead.** Your invocation is normally triggered AFTER Speaker has just asked a narrowing question aloud. Your ${T.button}s should be the answer options to that question — same axis, similar phrasing. If Speaker hasn't spoken yet (rare — happens on cold entry with no context), default to the \`offered_keys\` from [GUESSING STATE] OR offer 3-5 broad [GUESS]/\[NARROW:] candidates based on what you do know about the user.
-
-EXAMPLE narrowing flow (custom topic, no registry dimensions involved):
-  Trigger: SPEAKER just asked aloud "A movie! Is it funny, scary, or exciting?"
-  Action:  rebuild_board with three matching narrowing ${T.button}s, e.g.
-             { label: "[NARROW:mood] funny",     sentence: "😂", speech: "funny" }
-             { label: "[NARROW:mood] scary",     sentence: "😱", speech: "scary" }
-             { label: "[NARROW:mood] exciting",  sentence: "💥", speech: "exciting" }
-
-  Next turn — user pressed "scary". [GUESSING STATE] now lists custom_facts: [mood=scary]. Speaker asks "Was it made recently, or old?"
-  Action:  rebuild_board with
-             { label: "[NARROW:era] recent", sentence: "🆕", speech: "recent" }
-             { label: "[NARROW:era] old",    sentence: "📼", speech: "old" }
-
-  Next turn — user pressed "old". Enough narrowing. Speaker now offers candidates: "How about The Shining? Jaws? Something else?"
-  Action:  rebuild_board with [GUESS] ${T.button}s
-             { label: "[GUESS] The Shining", sentence: "🪓", speech: "The Shining" }
-             { label: "[GUESS] Jaws",        sentence: "🦈", speech: "Jaws" }
-             { label: "[GUESS] something else", sentence: "❓", speech: "something else" }
-
-The same pattern works for predefined categories (animals/places/feelings/…): when [GUESSING STATE] shows that a category is already known, your ${T.button}s narrow WITHIN that category, mirroring Speaker's question.
+Call **exit_guessing** once narrowing has CONVERGED and the user confirmed the word (pressed a guess, said "yes" to "is it X?", or named it) — your next board then returns to normal conversation about it. Don't exit just because it feels stuck (grind another dimension or commit a guess). The tool only appears WHILE guessing is active.
 </guessing_mode>${gestureOverrideBlock(gestureOverrides)}`;
 
   if (boardManagerGuidance) {
@@ -821,5 +782,26 @@ The same pattern works for predefined categories (animals/places/feelings/…): 
   prompt += securityBlock(studentName, safetyNotes);
   prompt += environmentBlock();
 
-  return prompt;
+  // Split out the two MODE blocks so the coordinator can include them only when
+  // that mode is active. They were assembled in-place above; extract by tag and
+  // return the remainder as the stable `base` (prefix + tail). The blocks are
+  // appended AFTER the base at compose time → base stays cacheable.
+  const cut = (open: string, close: string): { block: string; rest: string } => {
+    const a = prompt.indexOf(open);
+    if (a < 0) return { block: "", rest: prompt };
+    const b = prompt.indexOf(close, a);
+    if (b < 0) return { block: "", rest: prompt };
+    const end = b + close.length;
+    return { block: prompt.slice(a, end), rest: prompt.slice(0, a) + prompt.slice(end) };
+  };
+  // Anchor the OPEN tag on its trailing newline so an inline cross-reference
+  // (e.g. "See <guessing_mode> for details" in the role) isn't mistaken for the
+  // block start. The real blocks are `<tag>\n<content>`; references are `<tag> `.
+  const builder = cut("<sentence_builder>\n", "</sentence_builder>");
+  prompt = builder.rest;
+  const guessing = cut("<guessing_mode>\n", "</guessing_mode>");
+  prompt = guessing.rest;
+  const base = prompt.replace(/\n{3,}/g, "\n\n").trimEnd();
+
+  return { base, builderBlock: builder.block, guessingBlock: guessing.block };
 }

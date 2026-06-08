@@ -51,6 +51,37 @@ export interface BoardManagerToolConfig {
 // show_binary_choice option1/option2)
 // ---------------------------------------------------------------------------
 
+/** One GLYPH object in a `glyph` array — reused for button glyphs and contrast
+ *  pole glyphs. A head SYMBOL (`sym`) OR a generate key (`gen`+`fb`), + mods. */
+function glyphItemSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    properties: {
+      sym: {
+        type: "string",
+        description: `Head SYMBOL. Preference order: a raw emoji (🍎, 🤗 — the DEFAULT for concrete nouns) or a canonical key from <bundled_icons> (pronouns, abstract verbs, times, deictics); \`symbol:ID\` / \`face:ID\` for this user's custom symbols/faces (FIRST choice when one fits). Provide EITHER \`sym\` OR \`gen\`.`,
+      },
+      gen: {
+        type: "string",
+        description: `LAST RESORT — generate an image for a concrete object the vocabulary can't express (lowercase_snake_case, NO \`generate:\` prefix, e.g. "planet_mars"). Requires \`fb\`. Don't use when an emoji/modifier already captures it (a red apple is \`{sym:"🍎",mods:["color_red"]}\`, not gen).`,
+      },
+      mods: {
+        type: "array",
+        items: { type: "string" },
+        description: `MODIFIER keys from <bundled_icons> only (e.g. "color_red", "big", "two", "my", "please"). Stack as needed. NEVER invent modifiers ("new"/"sad"/"scary" render as a dot) — use an emoji that encodes the quality, or put it in \`speech\` only.`,
+      },
+      fb: {
+        type: "object",
+        description: `Fallback for a \`gen\` GLYPH — shown while the image generates and if it fails. emoji/canonical-key/symbol:ID/face:ID + canonical mods only; NEVER \`gen\`. A deliberately weaker approximation (gen:"planet_mars" → fb:{sym:"🌑",mods:["color_red"]}).`,
+        properties: {
+          sym: { type: "string" },
+          mods: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  };
+}
+
 function buttonObjectSchema(): Record<string, unknown> {
   return {
     type: "object",
@@ -59,13 +90,48 @@ function buttonObjectSchema(): Record<string, unknown> {
         type: "string",
         description: `Natural-language SENTENCE the TTS voices when this ${T.button} is pressed. First-person, conversational (e.g. "I want some water", "I'm tired"). What the user is SAYING when they press the ${T.button}. Ignored when \`button_type\` is set — those buttons are META actions, not utterances.`,
       },
+      glyph: {
+        type: "array",
+        description: `PREFERRED visual encoding for the ${T.button}: 1–3 GLYPHs, rendered left→right. Use this INSTEAD of the legacy \`sentence\` string. Each GLYPH is an object with a head SYMBOL and optional modifiers. Match the count to meaning — one-word answers/feelings are 1 GLYPH; full subject+verb+object thoughts are up to 3. Ignored when \`button_type\` is set.`,
+        items: glyphItemSchema(),
+      },
+      op: {
+        type: "string",
+        enum: ["past", "future", "question"],
+        description: `OPTIONAL sentence-level OPERATOR for the whole ${T.button} — conjugate \`speech\` to match; the visual is unchanged.`,
+      },
+      kind: {
+        type: "string",
+        enum: ["narrow", "contrast", "guess"],
+        description: `WORD FINDER only. The narrowing role of this ${T.button} (see <guessing_mode>):\n  - "narrow": an AI-proposed narrowing step. Set \`dimension\` (short axis label, e.g. "genre") + \`value\` (the option, also the shown label). Use a SHARED \`dimension\` across the batch.\n  - "contrast": an "is it closer to A or B?" choice. Set \`dimension\` + \`poles\` (2+). The system renders one ${T.button} per pole.\n  - "guess": a candidate WORD. Set \`value\` (the word) — or just \`speech\`/\`label\` — when narrowing has converged.\nOmit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (those go in \`label\`).`,
+      },
+      dimension: {
+        type: "string",
+        description: `For kind "narrow"/"contrast": a short human-readable narrowing axis ("genre", "time of day", "feel"). Internal metadata — not shown.`,
+      },
+      value: {
+        type: "string",
+        description: `For kind "narrow"/"guess": the value/word the user picks (becomes the visible label).`,
+      },
+      poles: {
+        type: "array",
+        description: `For kind "contrast": the 2+ poles of the choice. Each pole is { value (shown), speech? (voiced + recorded clue, defaults to value), glyph? (visual GLYPH array) }.`,
+        items: {
+          type: "object",
+          properties: {
+            value: { type: "string" },
+            speech: { type: "string" },
+            glyph: { type: "array", items: glyphItemSchema() },
+          },
+        },
+      },
       sentence: {
         type: "string",
-        description: `Visual encoding for the ${T.button}: up to 3 GLYPHs joined by \`+\`, MODIFIER SYMBOLs attached with \`.\`, sentence-level OPERATORs (\`#past\`, \`#future\`, \`#question\`) appended with \`#\`. Each SYMBOL is one of: a canonical registry key from <bundled_icons>, a raw emoji (🍎, 🤗 — the DEFAULT for anything not in <bundled_icons>), \`symbol:ID\` / \`face:ID\`, or \`generate:lowercase_snake_case\` (LAST RESORT, async-generated). NEVER emit bare unknown snake_case (\`talk_about\`, \`my_day\`) — it renders as ❓ until generation completes. Use MODIFIER SYMBOLs when the SENTENCE carries detail: \`🍎.color_red\`, \`🤗.big.please\`, \`🍪.two\`. Ignored when \`button_type\` is set.`,
+        description: `LEGACY string form of \`glyph\` (prefer \`glyph\`). GLYPHs joined by \`+\`, modifiers with \`.\`, operators with \`#\` (e.g. \`i_me+want+🍎.color_red\`). Ignored when \`glyph\` or \`button_type\` is set.`,
       },
       fallback: {
         type: "string",
-        description: `Visual encoding shown IMMEDIATELY while a \`generate:\` SYMBOL is being produced (and as the permanent visual if generation fails). REQUIRED whenever \`sentence\` contains any \`generate:\` SYMBOL; OMIT this field entirely otherwise. May only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers. NEVER contains \`generate:\` and NEVER contains a non-canonical modifier (\`.new\`, \`.old\`, \`.sad\`, etc.). Mirror the SHAPE of the \`sentence\` field — pair an existing emoji with a canonical modifier to approximate the generated concept (\`generate:planet_mars\` → \`🌑.color_red\`).`,
+        description: `LEGACY string fallback paired with \`sentence\` (prefer per-GLYPH \`fb\` in \`glyph\`). Required when \`sentence\` uses \`generate:\`, omitted otherwise.`,
       },
       label: {
         type: "string",
@@ -85,7 +151,9 @@ function buttonObjectSchema(): Record<string, unknown> {
         description: `OPTIONAL. Special button kind for META actions (NOT a SENTENCE the user voices). When set, the system renders a FIXED appearance (icon, color, label) and the \`speech\` / \`sentence\` / \`fallback\` / \`label\` fields are ignored. Only meaningful on rebuild_board and add_board_button (the main ${T.board}); ignored on add_context_button and show_binary_choice. Available values:\n  - "wordfinder" — a Word Finder entry. Add this when the user seems to be reaching for a specific concrete CONCEPT (a thing, a place, a person, an activity, an object they want to name) but it would be impractical to guess what it is — too many plausible candidates, or no signal narrow enough to enumerate them. Pressing it opens a narrowing assistant that asks targeted questions until the concept surfaces. NOT for genuinely open-ended chitchat ("how are you?" — there's nothing to "find").\n  - "more" — adds a [MORE] button. Add this when you suspect the user might want OTHER options on the same topic than the ones you offered. Looks and behaves identically to the [MORE] in the quick-actions row: pressing it asks for fresh alternatives, no voiced utterance.\n\nWhen using \`button_type\`, you may pass placeholder values (or empty strings) for speech / sentence / label — they're discarded.`,
       },
     },
-    required: ["speech", "sentence", "label"],
+    // `glyph` (preferred) OR legacy `sentence` supplies the visual; neither is
+    // hard-required at the schema level so glyph-only buttons validate.
+    required: ["speech", "label"],
   };
 }
 
@@ -95,7 +163,7 @@ function rebuildBoardButtonsDescription(config: BoardManagerToolConfig): string 
   const exampleA = ex("tool.sbf_speech_water", language);
   const exampleB = ex("tool.sbf_speech_three_glyph_banana", language);
   const exampleC = singleGlyph ? "" : `One-word answers and feelings are 1-glyph (${ex("tool.sbf_speech_one_glyph_tired", language)}); full subject+verb+object thoughts are 3-glyph (${exampleB}). Don't pad. `;
-  return `Up to 8 ${T.button}s for the ${T.board}. Provide a WIDE VARIETY of options. Each ${T.button} is one object with \`speech\` (voiced SENTENCE, e.g. ${exampleA}), \`sentence\` (visual encoding), \`fallback\` (required when sentence uses \`generate:\`, OMITTED otherwise), and \`label\` (on-button text). ${exampleC}`;
+  return `Up to 8 ${T.button}s for the ${T.board}. Provide a WIDE VARIETY of options. Each ${T.button} is one object with \`speech\` (voiced SENTENCE, e.g. ${exampleA}), \`glyph\` (the visual encoding — an array of 1–3 GLYPH objects), and \`label\` (on-button text). ${exampleC}`;
 }
 
 // ---------------------------------------------------------------------------

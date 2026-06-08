@@ -185,7 +185,13 @@ export const FEELING_CLUSTER: ClusterTemplate = {
       type: "categorical",
       role: "steering",
       priority: 8,
-      values: ["happy", "sad", "angry", "afraid", "hurt", "excited", "calm", "tired"],
+      // Common feelings first (page 1); rarer / older-user feelings in the long
+      // tail, revealed via "More". `hurt` opens the body_part + pain follow-ups.
+      values: [
+        "happy", "sad", "angry", "afraid", "hurt", "excited",
+        "calm", "tired", "anxious", "frustrated", "bored", "proud",
+        "lonely", "embarrassed",
+      ],
       subquestionLabel: "which feeling",
     },
     {
@@ -215,6 +221,33 @@ export const FEELING_CLUSTER: ClusterTemplate = {
       role: "descriptive",
       priority: 3,
       values: ["strong", "small"],
+    },
+  ],
+};
+
+/**
+ * `theme` — "is it related to one of these?" A cross-cutting ASSOCIATION facet
+ * (topics + activities), NOT a top-level category. Reused under things and
+ * actions so the same question powers "what topic is this thing about?" and
+ * "what topic is this activity about?". Deliberately long (18 values) so the
+ * long tail surfaces via "More" — this is the main home for special-interest
+ * narrowing and broad adult topics. Common topics first (page 1).
+ */
+export const THEME_CLUSTER: ClusterTemplate = {
+  name: "theme",
+  dims: [
+    {
+      local: "theme",
+      cluster: "theme",
+      type: "categorical",
+      role: "steering",
+      priority: 6,
+      values: [
+        "sports", "music", "shows_movies", "games", "animals", "food_cooking",
+        "vehicles", "outside_nature", "art", "school_learning", "science", "space",
+        "history", "computers", "building_making", "books_reading", "weather", "holidays",
+      ],
+      subquestionLabel: "is it related to one of these",
     },
   ],
 };

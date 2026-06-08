@@ -82,6 +82,12 @@ const TABLE: string[][] = [
   ["named_feeling.excited", "Excited", "נרגש", "Emocionado", "Animado", "Excité", "Взволнованный", "Aufgeregt", "متحمس", "兴奋", "興奮", "신나요"],
   ["named_feeling.calm", "Calm", "רגוע", "Tranquilo", "Calmo", "Calme", "Спокойный", "Ruhig", "هادئ", "平静", "平靜", "차분해요"],
   ["named_feeling.tired", "Tired", "עייף", "Cansado", "Cansado", "Fatigué", "Усталый", "Müde", "متعب", "累", "攰", "피곤해요"],
+  ["named_feeling.anxious", "Worried", "מודאג", "Preocupado", "Preocupado", "Inquiet", "Тревожный", "Besorgt", "قلق", "担心", "擔心", "걱정돼요"],
+  ["named_feeling.frustrated", "Frustrated", "מתוסכל", "Frustrado", "Frustrado", "Frustré", "Раздражённый", "Frustriert", "محبط", "沮丧", "沮喪", "답답해요"],
+  ["named_feeling.bored", "Bored", "משועמם", "Aburrido", "Entediado", "Ennuyé", "Скучно", "Gelangweilt", "ملل", "无聊", "悶", "지루해요"],
+  ["named_feeling.proud", "Proud", "גאה", "Orgulloso", "Orgulhoso", "Fier", "Гордый", "Stolz", "فخور", "自豪", "自豪", "자랑스러워요"],
+  ["named_feeling.lonely", "Lonely", "בודד", "Solo", "Sozinho", "Seul", "Одинокий", "Einsam", "وحيد", "孤单", "孤單", "외로워요"],
+  ["named_feeling.embarrassed", "Embarrassed", "נבוך", "Avergonzado", "Envergonhado", "Gêné", "Смущённый", "Verlegen", "محرج", "尴尬", "尷尬", "부끄러워요"],
 
   // ── pain_scale ──
   ["pain_scale.a_little", "A little", "קצת", "Un poco", "Um pouco", "Un peu", "Немного", "Ein bisschen", "قليلاً", "一点点", "少少", "조금"],
@@ -123,6 +129,10 @@ const TABLE: string[][] = [
   ["kind.vehicle", "Something that goes", "משהו שנוסע", "Algo que se mueve", "Algo que anda", "Quelque chose qui roule", "То, что едет", "Etwas, das fährt", "شيء يتحرك", "会动的东西", "會郁嘅嘢", "타는 것"],
   ["kind.screen", "From a screen", "ממסך", "De una pantalla", "De uma tela", "D'un écran", "С экрана", "Vom Bildschirm", "من الشاشة", "来自屏幕", "嚟自屏幕", "화면 속"],
   ["kind.nature_thing", "Something in nature", "משהו בטבע", "Algo de la naturaleza", "Algo da natureza", "Quelque chose dans la nature", "Что-то в природе", "Etwas in der Natur", "شيء في الطبيعة", "大自然的东西", "大自然嘅嘢", "자연 속 사물"],
+  ["kind.drink", "A drink", "משקה", "Una bebida", "Uma bebida", "Une boisson", "Напиток", "Ein Getränk", "مشروب", "饮料", "飲品", "마실 것"],
+  ["kind.furniture", "Furniture", "רהיט", "Un mueble", "Um móvel", "Un meuble", "Мебель", "Ein Möbelstück", "أثاث", "家具", "傢俬", "가구"],
+  ["kind.device", "A gadget", "מכשיר", "Un aparato", "Um aparelho", "Un appareil", "Гаджет", "Ein Gerät", "جهاز", "电子产品", "電子產品", "기기"],
+  ["kind.instrument", "A musical instrument", "כלי נגינה", "Un instrumento", "Um instrumento", "Un instrument", "Музыкальный инструмент", "Ein Instrument", "آلة موسيقية", "乐器", "樂器", "악기"],
 
   // ── size ──
   ["size.tiny", "Tiny", "זעיר", "Diminuto", "Minúsculo", "Minuscule", "Крошечный", "Winzig", "صغير جداً", "很小", "好細", "아주 작아요"],
@@ -239,6 +249,10 @@ const TABLE: string[][] = [
   ["relationship.friend", "A friend", "חבר", "Un amigo", "Um amigo", "Un ami", "Друг", "Ein Freund", "صديق", "朋友", "朋友", "친구"],
   ["relationship.helper", "Someone who helps", "מישהו שעוזר", "Alguien que ayuda", "Alguém que ajuda", "Quelqu'un qui aide", "Тот, кто помогает", "Jemand, der hilft", "شخص يساعد", "帮忙的人", "幫手嘅人", "도와주는 사람"],
   ["relationship.new_person", "Someone new", "מישהו חדש", "Alguien nuevo", "Alguém novo", "Quelqu'un de nouveau", "Кто-то новый", "Jemand Neues", "شخص جديد", "新的人", "新嘅人", "새로운 사람"],
+  ["relationship.coworker", "Someone I work with", "מישהו מהעבודה", "Alguien del trabajo", "Alguém do trabalho", "Un collègue", "Коллега", "Jemand von der Arbeit", "زميل عمل", "同事", "同事", "직장 동료"],
+  ["relationship.partner", "My partner", "בן או בת הזוג", "Mi pareja", "Meu parceiro", "Mon partenaire", "Партнёр", "Mein Partner", "شريكي", "伴侣", "伴侶", "배우자"],
+  ["relationship.neighbor", "A neighbor", "שכן", "Un vecino", "Um vizinho", "Un voisin", "Сосед", "Ein Nachbar", "جار", "邻居", "鄰居", "이웃"],
+  ["relationship.professional", "A doctor or helper", "רופא או מטפל", "Un médico o ayudante", "Um médico ou ajudante", "Un médecin ou aidant", "Врач или помощник", "Arzt oder Helfer", "طبيب أو مساعد", "医生或助手", "醫生或助手", "의사나 도우미"],
 
   // ── presence ──
   ["presence.here_now", "Here now", "כאן עכשיו", "Aquí ahora", "Aqui agora", "Ici maintenant", "Здесь сейчас", "Jetzt hier", "هنا الآن", "现在在这里", "而家喺度", "지금 여기"],
@@ -251,6 +265,28 @@ const TABLE: string[][] = [
   ["activity.rest_there", "Rest there", "נחים שם", "Descansar ahí", "Descansar lá", "On s'y repose", "Там отдыхают", "Dort ausruhen", "نرتاح هناك", "在那里休息", "喺嗰度休息", "거기서 쉬어요"],
   ["activity.shop_there", "Shop there", "קונים שם", "Comprar ahí", "Comprar lá", "On y fait les courses", "Там покупают", "Dort einkaufen", "نتسوق هناك", "在那里购物", "喺嗰度買嘢", "거기서 사요"],
   ["activity.get_help", "Get help there", "מקבלים עזרה שם", "Pedir ayuda ahí", "Pedir ajuda lá", "On y trouve de l'aide", "Там помогают", "Dort Hilfe holen", "نطلب المساعدة هناك", "在那里求助", "喺嗰度求助", "거기서 도움받아요"],
+  ["activity.work_there", "Work there", "עובדים שם", "Trabajar ahí", "Trabalhar lá", "On y travaille", "Там работают", "Dort arbeiten", "نعمل هناك", "在那里工作", "喺嗰度返工", "거기서 일해요"],
+  ["activity.exercise_there", "Exercise there", "מתעמלים שם", "Hacer ejercicio ahí", "Exercitar-se lá", "On y fait du sport", "Там занимаются спортом", "Dort Sport machen", "نتمرن هناك", "在那里运动", "喺嗰度做運動", "거기서 운동해요"],
+
+  // ── theme ──
+  ["theme.sports", "Sports", "ספורט", "Deportes", "Esportes", "Le sport", "Спорт", "Sport", "رياضة", "运动", "運動", "스포츠"],
+  ["theme.music", "Music", "מוזיקה", "Música", "Música", "La musique", "Музыка", "Musik", "موسيقى", "音乐", "音樂", "음악"],
+  ["theme.shows_movies", "Shows or movies", "תוכניות או סרטים", "Shows o películas", "Programas ou filmes", "Séries ou films", "Шоу или фильмы", "Shows oder Filme", "برامج أو أفلام", "节目或电影", "節目或電影", "쇼나 영화"],
+  ["theme.games", "Games", "משחקים", "Juegos", "Jogos", "Les jeux", "Игры", "Spiele", "ألعاب", "游戏", "遊戲", "게임"],
+  ["theme.animals", "Animals", "חיות", "Animales", "Animais", "Les animaux", "Животные", "Tiere", "حيوانات", "动物", "動物", "동물"],
+  ["theme.food_cooking", "Food or cooking", "אוכל או בישול", "Comida o cocina", "Comida ou culinária", "La cuisine", "Еда или готовка", "Essen oder Kochen", "طعام أو طبخ", "食物或烹饪", "食物或煮嘢", "음식이나 요리"],
+  ["theme.vehicles", "Cars or vehicles", "כלי רכב", "Coches o vehículos", "Carros ou veículos", "Voitures ou véhicules", "Машины или транспорт", "Autos oder Fahrzeuge", "سيارات أو مركبات", "汽车或交通工具", "汽車或交通工具", "자동차나 탈것"],
+  ["theme.outside_nature", "Outside or nature", "בחוץ או בטבע", "Afuera o naturaleza", "Fora ou natureza", "Dehors ou la nature", "Улица или природа", "Draußen oder Natur", "في الخارج أو الطبيعة", "户外或大自然", "戶外或大自然", "야외나 자연"],
+  ["theme.art", "Art", "אמנות", "Arte", "Arte", "L'art", "Искусство", "Kunst", "فن", "艺术", "藝術", "미술"],
+  ["theme.school_learning", "School or learning", "בית ספר או למידה", "Escuela o aprender", "Escola ou aprender", "L'école ou apprendre", "Школа или учёба", "Schule oder Lernen", "المدرسة أو التعلم", "学校或学习", "學校或學習", "학교나 공부"],
+  ["theme.science", "Science", "מדע", "Ciencia", "Ciência", "La science", "Наука", "Wissenschaft", "علوم", "科学", "科學", "과학"],
+  ["theme.space", "Space", "חלל", "El espacio", "O espaço", "L'espace", "Космос", "Weltraum", "الفضاء", "太空", "太空", "우주"],
+  ["theme.history", "History", "היסטוריה", "Historia", "História", "L'histoire", "История", "Geschichte", "تاريخ", "历史", "歷史", "역사"],
+  ["theme.computers", "Computers", "מחשבים", "Computadoras", "Computadores", "Les ordinateurs", "Компьютеры", "Computer", "حواسيب", "电脑", "電腦", "컴퓨터"],
+  ["theme.building_making", "Building or making", "בנייה או יצירה", "Construir o hacer", "Construir ou fazer", "Construire ou fabriquer", "Строить или мастерить", "Bauen oder Basteln", "البناء أو الصنع", "建造或制作", "建造或製作", "만들기"],
+  ["theme.books_reading", "Books or reading", "ספרים או קריאה", "Libros o lectura", "Livros ou leitura", "Les livres ou la lecture", "Книги или чтение", "Bücher oder Lesen", "كتب أو قراءة", "书或阅读", "書或閱讀", "책이나 독서"],
+  ["theme.weather", "Weather", "מזג אוויר", "El clima", "O clima", "La météo", "Погода", "Wetter", "الطقس", "天气", "天氣", "날씨"],
+  ["theme.holidays", "Holidays", "חגים", "Las fiestas", "Feriados", "Les fêtes", "Праздники", "Feiertage", "العطلات", "节日", "節日", "명절"],
 
   // ── time ──
   ["time.now", "Now", "עכשיו", "Ahora", "Agora", "Maintenant", "Сейчас", "Jetzt", "الآن", "现在", "而家", "지금"],
@@ -284,23 +320,56 @@ function buildBlock(localeIdx: number): string {
   return lines.join("\n") + "\n";
 }
 
+/**
+ * Locate an existing top-level `guessing: { … }` block by brace-matching from
+ * its opening brace. Returns the [start, end) span (start at the indented
+ * `guessing:` line, end just past the block's trailing comma if present), or
+ * null when no block exists. The block was originally emitted by buildBlock, so
+ * brace-matching is reliable.
+ */
+function findGuessingBlock(content: string): { start: number; end: number } | null {
+  const keyIdx = content.search(/\n\s*guessing\s*:\s*\{/);
+  if (keyIdx < 0) return null;
+  const lineStart = keyIdx + 1; // skip the leading newline → start of the indented line
+  const braceIdx = content.indexOf("{", keyIdx);
+  let depth = 0;
+  let end = -1;
+  for (let i = braceIdx; i < content.length; i++) {
+    if (content[i] === "{") depth++;
+    else if (content[i] === "}") {
+      depth--;
+      if (depth === 0) { end = i + 1; break; }
+    }
+  }
+  if (end < 0) return null;
+  if (content[end] === ",") end++; // swallow the trailing comma
+  return { start: lineStart, end };
+}
+
 let updated = 0;
 for (let i = 0; i < LOCALES.length; i++) {
   const file = path.join(I18N_DIR, `${LOCALES[i]}.ts`);
   let content = fs.readFileSync(file, "utf-8");
-  if (/\n\s*guessing\s*:\s*\{/.test(content)) {
-    console.log(`skip ${LOCALES[i]}.ts — already has guessing block`);
-    continue;
+  const block = buildBlock(i); // ends with "  },\n"
+
+  const existing = findGuessingBlock(content);
+  if (existing) {
+    // Replace in place so every locale ends up with the identical key set/order
+    // (re-runnable: keeps validate-i18n happy after adding new TABLE rows).
+    const before = content.slice(0, existing.start);
+    let after = content.slice(existing.end);
+    if (after.startsWith("\n")) after = after.slice(1); // block already supplies the newline
+    content = before + block + after;
+  } else {
+    const marker = content.lastIndexOf("\n};");
+    if (marker < 0) {
+      console.error(`!! ${LOCALES[i]}.ts — could not find closing '};'`);
+      continue;
+    }
+    content = content.slice(0, marker + 1) + block + content.slice(marker + 1);
   }
-  const marker = content.lastIndexOf("\n};");
-  if (marker < 0) {
-    console.error(`!! ${LOCALES[i]}.ts — could not find closing '};'`);
-    continue;
-  }
-  const block = buildBlock(i);
-  content = content.slice(0, marker + 1) + block + content.slice(marker + 1);
   fs.writeFileSync(file, content, "utf-8");
   updated++;
-  console.log(`updated ${LOCALES[i]}.ts`);
+  console.log(`${existing ? "replaced" : "inserted"} guessing block in ${LOCALES[i]}.ts`);
 }
 console.log(`\nDone — ${updated} file(s) updated, ${TABLE.length} keys each.`);

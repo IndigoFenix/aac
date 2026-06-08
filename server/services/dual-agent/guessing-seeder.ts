@@ -24,6 +24,31 @@ import { getChatProvider } from "../providers/provider-factory";
 import type { ChatTool } from "../providers/streaming-provider";
 import { GUESSING_CATEGORIES, type GuessingCategory } from "@shared/guessing-mode/types";
 
+/**
+ * Parse the student's interests from monitor memory (`Student_Interests`) into
+ * a clean list. Mirrors the parser in `monitor-agent.ts` — accepts an array or
+ * a comma/semicolon/newline-delimited string. Used to seed the guessing
+ * engine's `specialInterests` so the first board + the AI's guesses reflect
+ * what the student actually cares about.
+ */
+export function parseInterestsList(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean);
+  if (typeof raw === "string") return raw.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+/** Whole-year age from an ISO birthDate, or undefined if missing/unparseable.
+ *  Mirrors the age formula in `monitor-agent.ts`. Seeds the guessing engine so
+ *  the AI keeps its guesses age-appropriate (an adult isn't led with "toy"). */
+export function computeAgeYears(birthDate: unknown): number | undefined {
+  if (!birthDate || (typeof birthDate !== "string" && !(birthDate instanceof Date))) return undefined;
+  const t = new Date(birthDate as string | Date).getTime();
+  if (!Number.isFinite(t)) return undefined;
+  const age = Math.floor((Date.now() - t) / (365.25 * 24 * 60 * 60 * 1000));
+  return age >= 0 && age < 150 ? age : undefined;
+}
+
 // Gemini Flash is fast enough that the round-trip is on the order of
 // the few hundred milliseconds the user wouldn't notice between
 // "tapped the Word Finder button" and "first narrowing board appears."

@@ -873,6 +873,12 @@ export const en = {
       excited: "Excited",
       calm: "Calm",
       tired: "Tired",
+      anxious: "Worried",
+      frustrated: "Frustrated",
+      bored: "Bored",
+      proud: "Proud",
+      lonely: "Lonely",
+      embarrassed: "Embarrassed",
     },
     pain_scale: {
       a_little: "A little",
@@ -914,6 +920,10 @@ export const en = {
       vehicle: "Something that goes",
       screen: "From a screen",
       nature_thing: "Something in nature",
+      drink: "A drink",
+      furniture: "Furniture",
+      device: "A gadget",
+      instrument: "A musical instrument",
     },
     size: {
       tiny: "Tiny",
@@ -1030,6 +1040,10 @@ export const en = {
       friend: "A friend",
       helper: "Someone who helps",
       new_person: "Someone new",
+      coworker: "Someone I work with",
+      partner: "My partner",
+      neighbor: "A neighbor",
+      professional: "A doctor or helper",
     },
     presence: {
       here_now: "Here now",
@@ -1042,6 +1056,28 @@ export const en = {
       rest_there: "Rest there",
       shop_there: "Shop there",
       get_help: "Get help there",
+      work_there: "Work there",
+      exercise_there: "Exercise there",
+    },
+    theme: {
+      sports: "Sports",
+      music: "Music",
+      shows_movies: "Shows or movies",
+      games: "Games",
+      animals: "Animals",
+      food_cooking: "Food or cooking",
+      vehicles: "Cars or vehicles",
+      outside_nature: "Outside or nature",
+      art: "Art",
+      school_learning: "School or learning",
+      science: "Science",
+      space: "Space",
+      history: "History",
+      computers: "Computers",
+      building_making: "Building or making",
+      books_reading: "Books or reading",
+      weather: "Weather",
+      holidays: "Holidays",
     },
     time: {
       now: "Now",
@@ -1055,6 +1091,7 @@ export const en = {
       school_time: "School time",
     },
   },
+
 };
 
 export type Translations = typeof en;

@@ -15,7 +15,7 @@ import {
   applyCustomFact,
   rejectMostRecentFact,
   dismissDimension,
-  flagExpand,
+  expandDimension,
   rejectCurrentDimension,
   suggestNextDimension,
   isConfident,
@@ -23,6 +23,7 @@ import {
   dominantValue,
   readyForGuesses,
   buildStateInjection,
+  MAX_SUGGESTION_VALUES,
   UNKNOWN,
 } from "@shared/guessing-mode/state.js";
 import {
@@ -36,6 +37,11 @@ import {
   splitOutSuggestionButtons,
   extractSuggestionButtonsFromRaw,
   parseBoardButtons,
+  expandContrastButton,
+  parseStructuredButtonsExpanding,
+  serializeGlyph,
+  glyphStringToJson,
+  parseStructuredBoardButton,
 } from "../services/dual-agent/interactive-agent";
 import { validateBoardButtons } from "../services/dual-agent/board-button-validator";
 
@@ -196,29 +202,91 @@ describe("next-dimension selection", () => {
     expect(after?.id).not.toBe(next.id);
   });
 
-  it("'None of these' dismisses the current dimension and asks a different one", () => {
+  it("'No' DEFERS the current dimension (not dismiss) and asks a different one", () => {
     const s = createState();
     applyPress(s, CATEGORY_DIM_ID, "things");
     const before = suggestNextDimension(s).def!;
     expect(before.id).toBe("things.kind");
     rejectCurrentDimension(s);
-    // kind is now dismissed → a different dimension is suggested
+    // kind is deferred → a different dimension is suggested now…
     const after = suggestNextDimension(s).def;
     expect(after?.id).not.toBe("things.kind");
-    expect(s.justRejected).toBe(true);
-    // injection tells the AI not to re-offer the rejected options
-    expect(buildStateInjection(s).text).toMatch(/none of these/i);
-    // a real press clears the rejected flag
+    // …but it is NOT dismissed (defer, not drop).
+    expect(s.dimensions["things.kind"].dismissed).toBeFalsy();
+    expect(s.dimensions["things.kind"].deferredAtTurn).toBeGreaterThanOrEqual(0);
+    expect(s.lastAction).toBe("defer");
+    // injection frames the move positively (not "you were wrong")
+    expect(buildStateInjection(s).text).toMatch(/different question/i);
+    // a real press clears lastAction
     if (after) applyPress(s, after.id, after.values[0]);
-    expect(s.justRejected).toBe(false);
+    expect(s.lastAction).toBeUndefined();
   });
 
-  it("'More' re-asks the most recently pressed dimension", () => {
+  it("a deferred dimension returns once the fresh ones are spent", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "feelings");
+    // Defer dimensions one by one; each defer should pick a different fresh dim,
+    // and eventually the engine must come back to a previously-deferred one
+    // rather than running out (defer ≠ dismiss).
+    const seen = new Set<string>();
+    for (let i = 0; i < 4; i++) {
+      const d = suggestNextDimension(s).def;
+      if (!d) break;
+      seen.add(d.id);
+      rejectCurrentDimension(s);
+    }
+    // After cycling, the engine still offers a dimension (a deferred one returns).
+    expect(suggestNextDimension(s).def).toBeTruthy();
+  });
+
+  it("'More' pages the SAME dimension's long tail (rarer values)", () => {
     const s = createState();
     applyPress(s, CATEGORY_DIM_ID, "things");
+    // things.theme has 18 values → 3 pages of MAX_SUGGESTION_VALUES.
+    // Steer onto a long dimension by making kind+place confident first so the
+    // engine offers theme, OR just exercise paging on whatever is offered.
+    const dim = suggestNextDimension(s).def!;
+    const page1 = buildStateInjection(s).suggestionKeys;
+    expect(page1.length).toBeGreaterThan(0);
+    expandDimension(s);
+    expect(s.lastAction).toBe("expand");
+    // Still the SAME dimension, but a different (later) slice of its values.
+    const next = suggestNextDimension(s).def;
+    if (next && next.id === dim.id && dim.values.length > MAX_SUGGESTION_VALUES) {
+      const page2 = buildStateInjection(s).suggestionKeys;
+      expect(page2).not.toEqual(page1);
+      expect(page2.every((k) => !page1.includes(k))).toBe(true);
+    } else {
+      // Short dimension: paging past the end dismisses it (AI takes over).
+      expect(s.dimensions[dim.id].dismissed).toBe(true);
+    }
+  });
+
+  it("paging through theme's full long tail eventually exhausts it", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    const theme = DIMENSION_BY_ID["things.theme"];
+    expect(theme.values.length).toBeGreaterThan(MAX_SUGGESTION_VALUES);
+    // Force theme to be the offered dimension by exhausting higher-priority dims.
+    // Simpler: drive pageOffset directly via expandDimension once theme is shown.
+    // Walk: make kind confident, then keep expanding whatever is suggested until
+    // theme appears, then exhaust it.
     applyPress(s, "things.kind", "animal");
-    flagExpand(s);
-    expect(suggestNextDimension(s).def?.id).toBe("things.kind");
+    // Collect all theme keys seen across pages.
+    const seen = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      const d = suggestNextDimension(s).def;
+      if (!d) break;
+      if (d.id === "things.theme") {
+        for (const k of buildStateInjection(s).suggestionKeys) seen.add(k);
+        expandDimension(s);
+      } else {
+        // skip non-theme dims by deferring them
+        rejectCurrentDimension(s);
+      }
+    }
+    // We should have surfaced more theme values than a single page holds.
+    expect(seen.size).toBeGreaterThan(MAX_SUGGESTION_VALUES);
   });
 });
 
@@ -277,6 +345,229 @@ describe("injection rendering", () => {
     expect(inj.text).toContain("Category: things");
     expect(inj.text).toMatch(/Known:.*kind=animal/);
     expect(inj.text).toContain("Now figuring out:");
+  });
+});
+
+describe("seeding from interests + age", () => {
+  it("renders the age line and interests in the category-turn injection", () => {
+    const s = createState(["trains", "dinosaurs"], 39);
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/age 39/);
+    expect(inj.text).toMatch(/adult/);
+    expect(inj.text).toContain("trains");
+  });
+
+  it("omits the age line when age is unknown", () => {
+    const s = createState(["trains"]);
+    expect(buildStateInjection(s).text).not.toMatch(/age \d/);
+  });
+
+  it("labels a young user as a child and an older one as an adult", () => {
+    expect(buildStateInjection(createState([], 7)).text).toMatch(/child \(age 7\)/);
+    expect(buildStateInjection(createState([], 45)).text).toMatch(/adult \(age 45\)/);
+  });
+
+  it("carries age + interests into the narrowed (non-category) injection too", () => {
+    const s = createState(["football"], 30);
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyPress(s, "things.kind", "animal");
+    const inj = buildStateInjection(s);
+    expect(inj.text).toMatch(/age 30/);
+    expect(inj.text).toContain("football");
+  });
+
+  it("seeds specialInterests/userAge onto the state and survives a clone", () => {
+    const s = createState(["space"], 12);
+    expect(s.specialInterests).toEqual(["space"]);
+    expect(s.userAge).toBe(12);
+    const c = cloneState(s);
+    expect(c.userAge).toBe(12);
+    expect(c.specialInterests).toEqual(["space"]);
+  });
+});
+
+describe("theme association dimension", () => {
+  it("exposes things.theme and actions.theme sharing one registry cluster", () => {
+    expect(DIMENSION_BY_ID["things.theme"]?.cluster).toBe("theme");
+    expect(DIMENSION_BY_ID["actions.theme"]?.cluster).toBe("theme");
+    // Same cluster ⇒ one shared set of registry entries.
+    expect(DIMENSION_BY_ID["things.theme"].values).toEqual(DIMENSION_BY_ID["actions.theme"].values);
+  });
+
+  it("every theme value resolves to a valid suggestion key under both namespaces", () => {
+    for (const v of DIMENSION_BY_ID["things.theme"].values) {
+      expect(isValidSuggestionKey(`suggestion:things.theme:${v}`)).toBe(true);
+      expect(isValidSuggestionKey(`suggestion:actions.theme:${v}`)).toBe(true);
+    }
+  });
+
+  it("is offered as a steering question under things", () => {
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    const offered = DIMENSIONS_BY_CATEGORY.things.some((d) => d.id === "things.theme");
+    expect(offered).toBe(true);
+  });
+});
+
+describe("glyph ⇄ JSON converters", () => {
+  it("serializes a multi-glyph sentence with a modifier", () => {
+    const { sentence, fallback } = serializeGlyph(
+      [{ sym: "i_me" }, { sym: "want" }, { sym: "🍎", mods: ["color_red"] }],
+    );
+    expect(sentence).toBe("i_me+want+🍎.color_red");
+    expect(fallback).toBeUndefined();
+  });
+
+  it("appends an operator", () => {
+    expect(serializeGlyph([{ sym: "😴" }], "question").sentence).toBe("😴#question");
+  });
+
+  it("synthesizes the fallback from per-glyph fb, mirroring non-gen slots", () => {
+    const { sentence, fallback } = serializeGlyph([
+      { sym: "i_me" }, { sym: "want" }, { sym: "talk" },
+      { gen: "planet_mars", fb: { sym: "🌑", mods: ["color_red"] } },
+    ]);
+    expect(sentence).toBe("i_me+want+talk+generate:planet_mars");
+    expect(fallback).toBe("i_me+want+talk+🌑.color_red");
+  });
+
+  it("glyphStringToJson inverts a plain sentence", () => {
+    expect(glyphStringToJson("i_me+want+🍎.color_red")).toEqual({
+      glyph: [{ sym: "i_me" }, { sym: "want" }, { sym: "🍎", mods: ["color_red"] }],
+    });
+  });
+
+  it("glyphStringToJson recovers op + folds the fallback into the gen glyph's fb", () => {
+    expect(
+      glyphStringToJson("i_me+talk+generate:planet_mars#future", "i_me+talk+🌑.color_red"),
+    ).toEqual({
+      glyph: [
+        { sym: "i_me" }, { sym: "talk" },
+        { gen: "planet_mars", fb: { sym: "🌑", mods: ["color_red"] } },
+      ],
+      op: "future",
+    });
+  });
+
+  it("round-trips JSON → string → JSON for the representative shapes", () => {
+    const cases = [
+      { glyph: [{ sym: "😴" }] },
+      { glyph: [{ sym: "i_me" }, { sym: "🤗", mods: ["big", "please"] }] },
+      { glyph: [{ sym: "face:mom" }], op: "past" as const },
+      { glyph: [{ sym: "i_me" }, { gen: "cello", fb: { sym: "🎻" } }] },
+    ];
+    for (const c of cases) {
+      const { sentence, fallback } = serializeGlyph(c.glyph, (c as any).op);
+      expect(glyphStringToJson(sentence, fallback)).toEqual(c);
+    }
+  });
+
+  it("parseStructuredBoardButton: glyph array and legacy sentence string agree", () => {
+    const viaGlyph = parseStructuredBoardButton({
+      speech: "I want a red apple",
+      glyph: [{ sym: "i_me" }, { sym: "want" }, { sym: "🍎", mods: ["color_red"] }],
+      label: "Red apple",
+    });
+    const viaString = parseStructuredBoardButton({
+      speech: "I want a red apple",
+      sentence: "i_me+want+🍎.color_red",
+      label: "Red apple",
+    });
+    expect(viaGlyph?.glyph).toBe("i_me+want+🍎.color_red");
+    expect(viaGlyph?.glyph).toBe(viaString?.glyph);
+    expect(viaGlyph?.sentence).toBe("I want a red apple"); // speech preserved
+  });
+});
+
+describe("contrast ('closer to A or B?') expansion", () => {
+  it("expands [CONTRAST:dim] A | B into two narrow pole buttons", () => {
+    const out = expandContrastButton({
+      speech: "more like a cat | more like a dog",
+      sentence: "🐱 | 🐶",
+      label: "[CONTRAST:feel] cat-like | dog-like",
+    })!;
+    expect(out).toHaveLength(2);
+    expect(out.map((b) => b.narrowValue)).toEqual(["cat-like", "dog-like"]);
+    expect(out.every((b) => b.buttonType === "narrow")).toBe(true);
+    expect(out.every((b) => b.narrowDimension === "feel")).toBe(true);
+    // The visible label is the pole; the prefix is stripped.
+    expect(out.map((b) => b.label)).toEqual(["cat-like", "dog-like"]);
+    // Per-pole speech + glyph align to the poles.
+    expect(out[0].sentence).toBe("more like a cat");
+    expect(out[1].sentence).toBe("more like a dog");
+    expect(out[0].glyph).toBe("🐱");
+    expect(out[1].glyph).toBe("🐶");
+  });
+
+  it("defaults a pole's voiced speech to the pole text when none is given", () => {
+    const out = expandContrastButton({ label: "[CONTRAST:size] tiny | huge" })!;
+    expect(out.map((b) => b.sentence)).toEqual(["tiny", "huge"]);
+  });
+
+  it("supports more than two poles (a wider split)", () => {
+    const out = expandContrastButton({ label: "[CONTRAST:era] past | present | future" })!;
+    expect(out.map((b) => b.narrowValue)).toEqual(["past", "present", "future"]);
+  });
+
+  it("returns null for a malformed contrast (no dim or <2 poles)", () => {
+    expect(expandContrastButton({ label: "[CONTRAST:] a | b" })).toBeNull();
+    expect(expandContrastButton({ label: "[CONTRAST:feel] only-one" })).toBeNull();
+    expect(expandContrastButton({ label: "just a normal button" })).toBeNull();
+    expect(expandContrastButton({ label: "[NARROW:genre] comedy" })).toBeNull();
+  });
+
+  it("structured kind:contrast expands into narrow pole buttons", () => {
+    const out = expandContrastButton({
+      kind: "contrast",
+      dimension: "feel",
+      poles: [
+        { value: "cat-like", speech: "more like a cat", glyph: [{ sym: "🐱" }] },
+        { value: "dog-like", speech: "more like a dog", glyph: [{ sym: "🐶" }] },
+      ],
+    })!;
+    expect(out.map((b) => b.narrowValue)).toEqual(["cat-like", "dog-like"]);
+    expect(out.every((b) => b.buttonType === "narrow" && b.narrowDimension === "feel")).toBe(true);
+    expect(out[0].sentence).toBe("more like a cat");
+    expect(out[0].glyph).toBe("🐱");
+  });
+
+  it("structured kind:narrow sets narrow fields and labels from value", () => {
+    const b = parseStructuredButtonsExpanding({
+      kind: "narrow", dimension: "genre", value: "Comedy", glyph: [{ sym: "😂" }], speech: "funny",
+    });
+    expect(b).toHaveLength(1);
+    expect(b[0].buttonType).toBe("narrow");
+    expect(b[0].narrowDimension).toBe("genre");
+    expect(b[0].narrowValue).toBe("Comedy");
+    expect(b[0].label).toBe("Comedy");
+    expect(b[0].glyph).toBe("😂");
+  });
+
+  it("structured kind:guess sets guess type with the value as label", () => {
+    const b = parseStructuredBoardButton({ kind: "guess", value: "Spider-Man", glyph: [{ sym: "🕷️" }] });
+    expect(b?.buttonType).toBe("guess");
+    expect(b?.label).toBe("Spider-Man");
+  });
+
+  it("parseStructuredButtonsExpanding: contrast→2, normal→1, invalid→0", () => {
+    expect(parseStructuredButtonsExpanding({ label: "[CONTRAST:feel] a | b" })).toHaveLength(2);
+    expect(parseStructuredButtonsExpanding({ label: "Hello", sentence: "👋" })).toHaveLength(1);
+    expect(parseStructuredButtonsExpanding({ label: "" })).toHaveLength(0);
+  });
+
+  it("a pressed contrast pole records a custom fact the injection surfaces", () => {
+    // Simulate the end-to-end: expand → press a pole → the client would send
+    // guessing_narrow{dimension, value, sourceText=button.sentence} → applyCustomFact.
+    const [poleA] = expandContrastButton({
+      speech: "more like a cat | more like a dog",
+      label: "[CONTRAST:feel] cat-like | dog-like",
+    })!;
+    const s = createState();
+    applyPress(s, CATEGORY_DIM_ID, "things");
+    applyCustomFact(s, poleA.narrowDimension!, poleA.narrowValue!, poleA.sentence);
+    const inj = buildStateInjection(s);
+    expect(inj.text).toContain("feel=cat-like");
+    expect(inj.text).toContain("more like a cat");
   });
 });
 

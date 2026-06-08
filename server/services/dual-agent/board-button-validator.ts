@@ -165,6 +165,20 @@ export function validateBoardButtons<
       continue;
     }
 
+    // (0b) Malformed [CONTRAST:...] prefix surviving the expander. A well-formed
+    // `[CONTRAST:<dim>] A | B` is expanded into one narrow button per pole BEFORE
+    // validation; if the prefix is still here the shape was bad (empty dim, or
+    // fewer than two poles).
+    if (btn.label.startsWith("[CONTRAST")) {
+      errors.push(
+        `Button "${btn.label}" — malformed [CONTRAST:<dimension>] prefix. ` +
+        `Use the exact shape \`[CONTRAST:dimension_label] poleA | poleB\` with a non-empty ` +
+        `dimension AND at least two non-empty poles separated by "|" (e.g. ` +
+        `"[CONTRAST:feel] more like a cat | more like a dog"). Only valid on rebuild_board.`
+      );
+      continue;
+    }
+
     // (1) imageKey without fallback.
     if (btn.glyph && glyphHasImageKey(btn.glyph) && !btn.glyphFallback) {
       errors.push(
