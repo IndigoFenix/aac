@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { students, type User } from "@shared/schema";
 import { settingsRepository } from "../../repositories/settingsRepository";
+import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
@@ -43,6 +44,10 @@ import {
   type BoardManagerPromptConfig,
 } from "./agent-prompts";
 import { composeAacPersona } from "../memory-schema/aac-memory-schema";
+import {
+  buildEmptyResponseRetryFeedback,
+  buildValidatorErrorFeedback,
+} from "./prompts/board-manager";
 import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
@@ -76,6 +81,7 @@ import type {
   ContextButtonAddedEvent,
   BinaryChoiceShownEvent,
   BuilderSuggestedEvent,
+  BoardLoadRequestedEvent,
   MonitorBroadcastEvent,
   FocusRequestEvent,
   AlarmRaisedEvent,
@@ -159,11 +165,19 @@ const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
 interface HomeIntent {
   setMode?: "companion" | "facilitator";
   topic: string;
-  /** Speaker hint when the session is in `companion` mode. */
+  /** Speaker hint when the session is in `companion` mode. Pure
+   *  behavior — what to say / how to react. No board / palette
+   *  instructions (Speaker doesn't own the board). */
   speakerCompanion: string;
   /** Speaker hint when the session is in `facilitator` mode. */
   speakerFacilitator: string | null;
-  board: string;
+  /** BoardManager-specific palette directive — gets attached as the
+   *  `forceRebuildDirective` on the BM invocation, which overrides the
+   *  usual "if existing board covers it, no_change" escape. Phrased as
+   *  a description of WHAT buttons; the "REBUILD even if it looks
+   *  covered" instruction is added by BoardManager's action-hint
+   *  builder. Observer + Monitor do NOT see this. */
+  boardManager: string;
   /** When true, skip the student-voice TTS for this press AND skip
    *  delivering it to Speaker as a user_turn. The button is a mode /
    *  navigation signal, not something the user is "saying" — there's
@@ -178,7 +192,7 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     topic: "open conversation",
     speakerCompanion: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
     speakerFacilitator: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
-    board: "Topic palette: open-conversation starters — general topics the user might pick from (their interests, their day, their feelings, things they might want to ask you).",
+    boardManager: "Palette: open-conversation starters — general topics the user might pick from (their interests, their day, their feelings, things they might want to ask you).",
   },
   ASSIST: {
     setMode: "facilitator",
@@ -186,31 +200,31 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     speakerCompanion: "The user is now talking to someone else, not you. Stay quiet.",
     speakerFacilitator: "The user is talking to someone else. Stay quiet.",
     silent: true,
-    board: "Topic palette: conversation starters and replies for the user to say to a person in their environment. Mix GENERIC openers (greetings, 'how are you?', 'I want to tell you something', 'what's up?', 'can I ask you a question?') with CONTEXT-SPECIFIC starters derived from <recent_events> (people present, objects observed, ongoing activities, recent transcripts). Lead with the context-specific ones when there's clear context to build on — they're more useful than generic phrases. The user is initiating a conversation with someone real in the room; pick buttons that help them OPEN that exchange.",
+    boardManager: "Palette: conversation starters and replies for the user to say to a person in their environment. Mix GENERIC openers (greetings, 'how are you?', 'I want to tell you something', 'what's up?', 'can I ask you a question?') with CONTEXT-SPECIFIC starters derived from <recent_events> (people present, objects observed, ongoing activities, recent transcripts). Lead with the context-specific ones when there's clear context to build on — they're more useful than generic phrases. The user is initiating a conversation with someone real in the room; pick buttons that help them OPEN that exchange.",
   },
   "MY DAY": {
     topic: "my day",
     speakerCompanion: "The user wants to talk about their day. Ask an open question about what happened today.",
     speakerFacilitator: null,
-    board: "Topic palette: today's activities — morning routine, school, lunch, afternoon, evening, plus 'something good happened', 'something hard happened', 'nothing special'.",
+    boardManager: "Palette: today's activities — morning routine, school, lunch, afternoon, evening, plus 'something good happened', 'something hard happened', 'nothing special'.",
   },
   INTERESTS: {
     topic: "interests",
     speakerCompanion: "The user wants to talk about their interests. Mention one you remember and ask them about it.",
     speakerFacilitator: null,
-    board: "Topic palette: the user's known interests / hobbies / favorite topics from memory. If memory is thin, offer broad categories the user can pick from.",
+    boardManager: "Palette: the user's known interests / hobbies / favorite topics from memory. If memory is thin, offer broad categories the user can pick from.",
   },
   FEELINGS: {
     topic: "feelings",
     speakerCompanion: "The user wants to talk about how they feel. Ask them gently.",
     speakerFacilitator: null,
-    board: "Topic palette: emotions — happy, sad, tired, excited, angry, scared, bored, frustrated, calm. Include 'I want to talk about something else'.",
+    boardManager: "Palette: emotions — happy, sad, tired, excited, angry, scared, bored, frustrated, calm. Include 'I want to talk about something else'.",
   },
   HELP: {
     topic: "help",
     speakerCompanion: "The user pressed Help. Ask what they need.",
     speakerFacilitator: "The user pressed Help while in facilitator mode. Briefly say to the person nearby: they need something.",
-    board: "Topic palette: common needs — I need help, I'm hurt, I need the bathroom, I'm hungry, I'm thirsty, I'm cold, I'm hot, please call someone.",
+    boardManager: "Palette: common needs — I need help, I'm hurt, I need the bathroom, I'm hungry, I'm thirsty, I'm cold, I'm hot, please call someone.",
   },
 };
 
@@ -464,10 +478,14 @@ export class AgentCoordinator {
   private observer: ObserverAgent | null = null;
   private speaker: ISpeakerAgent | null = null;
   private boardManager: BoardManagerAgent | null = null;
-  /** Selected Speaker implementation. Driven by AAC_SPEAKER_MODE env var
-   *  (default "http"). HTTP uses Gemini chat completion + streaming TTS;
-   *  "live" uses the legacy Gemini Live path with native audio / speak()
-   *  tool depending on model. Cached once per session. */
+  /** Selected Speaker implementation. Driven by the per-student
+   *  `liveAudioSpeaker` AAC setting (default false → "http"). The
+   *  AAC_SPEAKER_MODE env var, if set to "http" or "live", overrides
+   *  the per-student setting for the whole deployment — useful for
+   *  global dev/debug toggling without touching every student row.
+   *  HTTP uses Gemini chat completion + streaming TTS; "live" uses the
+   *  legacy Gemini Live path with native audio / speak() tool depending
+   *  on model. Cached once per session. */
   private speakerMode: "http" | "live" = "http";
 
   // Per-agent runtime config (rebuilt on transitions; cached here so
@@ -570,6 +588,24 @@ export class AgentCoordinator {
   // per session — chained instead).
   private boardMgrInFlight = false;
   private boardMgrPendingTriggers: AgentEvent[] = [];
+  /** Triggering events of the current in-flight invocation. Captured at
+   *  invocation start so retry queues (empty-response, validator
+   *  feedback) can re-supply them on the retry — without this, retries
+   *  fire with `(no triggers)` and the model has no concrete beat to
+   *  anchor to, producing a disproportionate share of MALFORMEDs. */
+  private boardMgrCurrentTriggers: AgentEvent[] = [];
+  /** Triggers paired with `boardMgrPendingFeedback` — the original beat
+   *  the retry is supposed to address. Set by the retry queues
+   *  alongside pendingFeedback, drained by invokeBoardManager into the
+   *  effective triggers of the next invocation. This is what prevents
+   *  the "observation override" race: when an ambient observation
+   *  arrives between a failed rebuild and its retry, the observation's
+   *  invocation would otherwise consume pendingFeedback without
+   *  carrying the original triggers, and the model would no_change on
+   *  the observation alone — losing the rebuild the original beat
+   *  demanded. With this field, the original triggers are always
+   *  merged in for as long as pendingFeedback is set. */
+  private boardMgrPendingRetryTriggers: AgentEvent[] = [];
   /** Single-shot flag set by handleGuessingPress / handleGuessingNarrow /
    *  handleGuessingReject and consumed by the very next button_pressed
    *  event. A guessing-intent button press fires TWO server events —
@@ -618,6 +654,13 @@ export class AgentCoordinator {
 
   // Recent events window — feeds BoardMgr invocations for continuity.
   private recentEvents: AgentEvent[] = [];
+
+  /** One-shot palette directive consumed by the next BoardManager
+   *  invocation. Set by routeHomeTopicPressInner when the user presses
+   *  a home-board navigation button — forces a rebuild_board with the
+   *  given palette even when the existing board's labels look similar
+   *  to the topic. Cleared after use. */
+  private pendingForceRebuildDirective: string | null = null;
 
   // State mirrors (so each BoardMgr invocation has a snapshot)
   private currentBoardLabels: string[] = [];
@@ -1053,16 +1096,24 @@ export class AgentCoordinator {
     // 404s on generateContent. Default to the same text model the Board
     // Manager uses; override via AAC_SPEAKER_HTTP_MODEL when tuning.
     const httpSpeakerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
-    // Speaker backend selection — env-driven. Default "http" for the
-    // cheap/reliable HTTP completion + streaming TTS path; "live" keeps
-    // the legacy Gemini Live behavior (native audio when the model
-    // supports it; speak() tool otherwise). Any other value falls back
-    // to http with a warning.
-    const speakerModeRaw = (process.env.AAC_SPEAKER_MODE || "http").toLowerCase();
-    if (speakerModeRaw !== "http" && speakerModeRaw !== "live") {
-      console.warn(`[AgentCoordinator] Unknown AAC_SPEAKER_MODE="${speakerModeRaw}" — defaulting to "http"`);
+    // Speaker backend selection.
+    //  - Per-student `liveAudioSpeaker` AAC setting (default false →
+    //    "http"); when true → "live".
+    //  - AAC_SPEAKER_MODE env var (if explicitly set to "http" or "live")
+    //    OVERRIDES the per-student setting for the whole deployment —
+    //    useful for global dev/debug toggling without touching student
+    //    rows. Any other value falls back to the per-student setting
+    //    with a warning.
+    const studentRowForMode = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.();
+    const liveAudioStudent = !!(studentRowForMode?.aacSettings as any)?.liveAudioSpeaker;
+    const envOverrideRaw = process.env.AAC_SPEAKER_MODE?.toLowerCase();
+    let effectiveSpeakerMode: "http" | "live" = liveAudioStudent ? "live" : "http";
+    if (envOverrideRaw === "http" || envOverrideRaw === "live") {
+      effectiveSpeakerMode = envOverrideRaw;
+    } else if (envOverrideRaw) {
+      console.warn(`[AgentCoordinator] Unknown AAC_SPEAKER_MODE="${envOverrideRaw}" — ignoring; using per-student setting`);
     }
-    this.speakerMode = speakerModeRaw === "live" ? "live" : "http";
+    this.speakerMode = effectiveSpeakerMode;
     // Swap the Speaker model when we're on the HTTP path — the configured
     // aac_chat model is a Live variant that generateContent will 404 on.
     if (this.speakerMode === "http") {
@@ -1077,6 +1128,19 @@ export class AgentCoordinator {
     if (this.observerModel !== aacChat.model || this.speakerModel !== aacChat.model) {
       console.log(`[AgentCoordinator] Per-agent model override: observer=${this.observerModel} speaker=${this.speakerModel}`);
     }
+
+    // Ensure the home board is in availableBoards BEFORE building prompts, so
+    // Board Manager always sees it in <prebuilt_boards> and set_board("home")
+    // works. Initialize the array if absent (the DB-load path can leave it
+    // undefined) — the old guard `if (state.availableBoards && …)` silently
+    // skipped the add in that case, and it ran AFTER the prompt was built.
+    if (!state.availableBoards) state.availableBoards = [];
+    if (!state.availableBoards.some(b => b.key === HOME_BOARD_KEY)) {
+      state.availableBoards.unshift({ key: HOME_BOARD_KEY, name: "Home", id: "__home__" } as any);
+    }
+    runInSessionContext(this.sessionId, this.debugMode, () => {
+      logLiveSession("AVAILABLE_BOARDS", `at prompt-build: ${state.availableBoards!.length} board(s) — [${state.availableBoards!.map(b => b.key).join(", ")}]`);
+    });
 
     // 4. Build the three prompts.
     const promptInputs = await this.buildPromptInputs();
@@ -1129,6 +1193,7 @@ export class AgentCoordinator {
     const bmToolConfig: BoardManagerToolConfig = {
       availableBoards: (promptInputs.boardManager.availableBoards ?? []).map(b => ({ key: b.key, name: b.name })),
       hasLoadedBoard: !!promptInputs.boardManager.loadedBoardName,
+      loadedBoardKey: promptInputs.boardManager.loadedBoardKey ?? null,
       loadedBoardName: promptInputs.boardManager.loadedBoardName ?? null,
       maxBoardItems: 12,
       language: promptInputs.boardManager.language,
@@ -1215,7 +1280,7 @@ export class AgentCoordinator {
         `Session: ${this.sessionId}`,
         `Student: ${this.studentId}`,
         `Observer: ${aacChat.provider}/${this.observerModel}`,
-        `Speaker:  ${aacChat.provider}/${this.speakerModel}`,
+        `Speaker:  ${aacChat.provider}/${this.speakerModel} (mode=${this.speakerMode})`,
         `BoardMgr: ${BOARD_MANAGER_DEFAULT_PROVIDER}/${BOARD_MANAGER_DEFAULT_MODEL}`,
         `Mute: ${this.muteState}`,
         `DirectAudio: ${this.useDirectAudio}`,
@@ -1274,11 +1339,7 @@ export class AgentCoordinator {
       logLiveSession("HOME_BOARD_PUSHED", `lang=${studentLang} buttons=[${this.currentBoardLabels.join(", ")}]`);
     });
 
-    // 10. Make sure the home board is in availableBoards so Board Manager
-    //     can call set_board("home") to return to it.
-    if (state.availableBoards && !state.availableBoards.some(b => b.key === HOME_BOARD_KEY)) {
-      state.availableBoards.unshift({ key: HOME_BOARD_KEY, name: "Home", id: "__home__" } as any);
-    }
+    // (Home board is ensured in availableBoards earlier, before prompt build.)
   }
 
   // -------------------------------------------------------------------------
@@ -1362,6 +1423,10 @@ export class AgentCoordinator {
         observerInstructions: sections?.observerInstructions,
         alarmConditions: sections?.alarmConditions,
         perceptionMemory: state.memoryContext,
+        // Same {key, name, hint} shape as the Speaker's availableBoards.
+        // Observer doesn't load boards — it flags matching situations via
+        // update_context so BoardManager can bring up the right surface.
+        availableBoards: state.availableBoards?.map(b => ({ key: b.key, name: b.name, hint: b.hint })),
       },
       speaker: {
         ...base,
@@ -1373,6 +1438,10 @@ export class AgentCoordinator {
         // the same useDirectAudio flag the native-audio path uses so the
         // model doesn't get instructed to call a tool that isn't there.
         useDirectAudio: this.useDirectAudio || this.speakerMode === "http",
+        // liveAudio is strictly the Gemini Live native-audio path — used
+        // to gate mimicry guidance and pacing-aware framing that don't
+        // apply when text → server TTS handles the voicing.
+        liveAudio: this.useDirectAudio,
         sessionGoals: sections?.sessionGoals,
         // Three-agent path uses speech-only examples; DON'T fall back to
         // the legacy interactModeExamples (those contain rebuild_board
@@ -1392,6 +1461,12 @@ export class AgentCoordinator {
         muteState: state.muteState,
         cachedSymbols: state.cachedSymbols,
         availableBoards: state.availableBoards,
+        // Show BOTH key and name so the model never confuses them.
+        // Look up the key by id (the loaded board's row id) — the
+        // availableBoards array carries the normalized key alongside id+name.
+        loadedBoardKey: state.loadedBoardData
+          ? state.availableBoards?.find(b => b.id === state.loadedBoardId)?.key ?? null
+          : null,
         loadedBoardName: state.loadedBoardData?.name ?? null,
         autoSymbolsEnabled: !!(student?.aacSettings?.generateSymbols),
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
@@ -1615,25 +1690,27 @@ export class AgentCoordinator {
     }
     const effectiveMode = intent.setMode ?? this.currentInteractionMode;
 
-    // Inject behavior hints BEFORE the press lands so each agent has the
-    // framing when they process the button_pressed event. Speaker gets a
-    // behavioral hint; BoardManager gets a topic-palette directive that
-    // rides in via a context_update entry on the recent-events trail.
+    // Inject behavior hints BEFORE the press lands. Per-agent split:
+    //  - Speaker: behavioral hint only ("greet warmly", "ask gently",
+    //    etc.). No board / palette instructions — Speaker doesn't own
+    //    the board and rebuild language would confuse it.
+    //  - BoardManager: palette directive stashed as a one-shot
+    //    `forceRebuildDirective` consumed by the next invocation. This
+    //    overrides BM's usual "no_change if existing covers" escape so
+    //    the home-press always refreshes the surface even when the
+    //    parent board's labels overlap the requested topic.
+    //  - Observer: no special hint — just sees the press through the
+    //    normal [BUTTON PRESS] context that handleSyntheticPress emits.
+    //  - Monitor: no special hint — the press lands in the conversation
+    //    log via appendToConversationLog (the regular `[USER to YOU]
+    //    "label"` line), which is all Monitor needs to know.
     const speakerHint = effectiveMode === "companion"
       ? intent.speakerCompanion
       : intent.speakerFacilitator;
     if (speakerHint) {
       this.speaker?.sendContextInjection(`[HINT] ${speakerHint}`);
     }
-    const boardHint: ContextUpdateEvent = {
-      type: "context_update",
-      source: "observer",
-      timestamp: Date.now(),
-      updateType: "other",
-      key: "topic_palette",
-      description: intent.board,
-    };
-    this.recordEvent(boardHint);
+    this.pendingForceRebuildDirective = intent.boardManager;
 
     if (intent.silent) {
       // Silent home press — the button is a navigation/mode signal, not
@@ -2747,7 +2824,34 @@ export class AgentCoordinator {
         this.requestMonitor(event.reason, "speaker");
         return;
       case "private_note":
-        this.speaker?.sendContextInjection(`[PRIVATE NOTE] (you noted) ${event.note}`);
+        // No echo back into Speaker / Observer / BoardManager. Echoing
+        // the note into Speaker's context as text (with a
+        // `[PRIVATE NOTE]` prefix) made the model imitate that pattern
+        // in its own subsequent replies. The HTTP Speaker also drops
+        // private_note tool calls from its long-term history; the only
+        // place a note flows back to Speaker is the in-turn "thinking
+        // chain" re-prompt (an orphan-note turn re-fires with the
+        // accumulated notes injected once, then they're dropped).
+        //
+        // The note IS preserved for SUPERVISOR channels — admin log +
+        // Monitor's pending queue — via writeSupervisorOnly(). We use
+        // this dedicated helper (not appendToConversationLog) because
+        // conversationLog is replayed verbatim to a fresh Speaker on
+        // reconnect and is the source for session-summary generation;
+        // notes in either of those would leak back into the agents'
+        // visible context. flow log already captured the call via
+        // HttpSpeakerAgent's flowTool("private_note", ...).
+        this.writeSupervisorOnly(`[SPEAKER private_note] ${event.note}`);
+        // Visual "thinking" cue to the client so the user sees that
+        // Speaker paused to think rather than wondering why it went
+        // quiet. The client treats this as a one-shot pulse and
+        // auto-dismisses the indicator after a short delay, so we
+        // don't need to send a matching `active: false`.
+        this.send({ type: "thinking", active: true });
+        return;
+      case "remain_silent":
+        // Acknowledged. The event is bus-logged for visibility;
+        // Coordinator takes no further action — silence is the action.
         return;
     }
   }
@@ -3118,6 +3222,31 @@ export class AgentCoordinator {
       return;
     }
     this.boardMgrInFlight = true;
+    // Drain any pending retry triggers (paired with pendingFeedback by
+    // queueBoardMgrEmptyResponseRetry / queueBoardMgrFeedback) into the
+    // effective triggers. Without this, a new event arriving between a
+    // failed rebuild and its retry could consume the feedback alone and
+    // the model would no_change on that event — never honoring the
+    // original beat. Dedupe so a retry-trigger that's ALSO the raw
+    // trigger doesn't get listed twice.
+    if (this.boardMgrPendingRetryTriggers.length > 0) {
+      const seen = new Set<AgentEvent>(triggeringEvents);
+      const merged: AgentEvent[] = [...this.boardMgrPendingRetryTriggers];
+      for (const e of triggeringEvents) {
+        if (!merged.includes(e)) merged.push(e);
+      }
+      void seen; // (no-op — reserved for future identity-based de-dup)
+      flowNote(
+        "BOARD_MGR",
+        `Retry context preserved: merged ${this.boardMgrPendingRetryTriggers.length} pending retry-trigger(s) with ${triggeringEvents.length} fresh.`,
+      );
+      triggeringEvents = merged;
+      this.boardMgrPendingRetryTriggers = [];
+    }
+    // Remember these triggers so a retry queue can re-supply them.
+    // Cleared in the finally block before re-entry so each cycle has a
+    // clean slate.
+    this.boardMgrCurrentTriggers = triggeringEvents.slice();
     // Fresh AbortController so onSpeakerSpeechTextFinalized can cancel
     // this call if a newer Speaker turn lands mid-flight.
     const controller = new AbortController();
@@ -3147,6 +3276,9 @@ export class AgentCoordinator {
         ...this.boardManagerToolConfig,
         guessingActive: this.guessingState !== null,
         hasLoadedBoard: this.loadedBoardId !== null,
+        loadedBoardKey: this.loadedBoardId
+          ? this.boardManagerToolConfig.loadedBoardKey ?? null
+          : null,
         loadedBoardName: this.loadedBoardId
           ? this.boardManagerToolConfig.loadedBoardName ?? null
           : null,
@@ -3157,6 +3289,14 @@ export class AgentCoordinator {
       const composedPrompt = this.boardManagerPromptBase
         + (this.builderState ? `\n\n${this.boardManagerBuilderBlock}` : "")
         + (this.guessingState ? `\n\n${this.boardManagerGuessingBlock}` : "");
+      // Read the home-press directive (set by routeHomeTopicPressInner).
+      // Don't clear here — if BM MALFORMEDs or no_changes the first
+      // attempt and the retry chain runs, we want the directive on
+      // every retry, not just the first. The directive is cleared by
+      // applyBoardRebuilt once BM actually honors it (or replaced when
+      // a different home press arrives).
+      const forceRebuildDirective = this.pendingForceRebuildDirective;
+
       const input: BoardManagerInvocationInput = {
         systemPrompt: pendingFeedback
           ? `${composedPrompt}\n\n<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`
@@ -3179,7 +3319,14 @@ export class AgentCoordinator {
         provider: BOARD_MANAGER_DEFAULT_PROVIDER,
         model: BOARD_MANAGER_DEFAULT_MODEL,
         signal: controller.signal,
+        forceRebuildDirective: forceRebuildDirective ?? undefined,
       };
+      if (forceRebuildDirective) {
+        flowNote(
+          "COORDINATOR",
+          `Home-press force-rebuild directive forwarded to BM (${forceRebuildDirective.slice(0, 60)}…)`,
+        );
+      }
       let result;
       try {
         result = await this.boardManager.invoke(input);
@@ -3300,6 +3447,11 @@ export class AgentCoordinator {
         this.boardMgrAbortController = null;
       }
       this.boardMgrInFlight = false;
+      // Clear the current-invocation triggers — the retry sites above
+      // already captured them into pendingTriggers via invokeBoardManager
+      // re-entry, and a stale value here would leak into the NEXT
+      // cycle's retry context.
+      this.boardMgrCurrentTriggers = [];
       // Re-invoke if EITHER triggers were queued during the in-flight
       // invocation OR pending feedback is set (retry path —
       // queueBoardMgrEmptyResponseRetry / queueBoardMgrFeedback set
@@ -3350,6 +3502,13 @@ export class AgentCoordinator {
       case "board_no_change":
         // No-op. Logged via recentEvents only.
         return;
+      case "board_load_requested":
+        // BoardManager asked to load a pre-built custom board by key.
+        // Fire-and-forget: the DB lookup + WS push happens async, but the
+        // event-routing path must not await it (would block subsequent
+        // events in the same batch).
+        void this.applyBoardLoadRequested(event);
+        return;
       case "guessing_exit_requested":
         // BoardManager declared narrowing has converged (user confirmed
         // a guess, conversation moved on, etc.). Run the same exit path
@@ -3376,6 +3535,14 @@ export class AgentCoordinator {
   }
 
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
+    // Home-press directive was honored — clear it so subsequent
+    // invocations fall back to the normal action-hint flow. (Clearing
+    // here, not at invocation time, lets the directive survive across
+    // BM retry chains so a MALFORMED first attempt still gets the
+    // forced rebuild on the retry.)
+    if (this.pendingForceRebuildDirective) {
+      this.pendingForceRebuildDirective = null;
+    }
     // Partition: suggestion buttons (whose `glyph` is a valid
     // `suggestion:dim:value` key) are trusted system-expanded content
     // — they bypass the validator (which would reject them as unknown
@@ -3395,9 +3562,20 @@ export class AgentCoordinator {
     const specialButtons: Btn[] = [];     // wordfinder / more — bypass validator
     const regular: Btn[] = [];
     for (const b of event.buttons) {
+      // A registry suggestion key may arrive in `glyph` (legacy) OR `label`
+      // (current — the model puts the key in `label` and often adds a
+      // decorative emoji glyph). Recognize it in either field and expand via
+      // the registry (system-provided icon + localized label). Without this the
+      // raw `suggestion:dim:value` key renders as the button text and the press
+      // routes as a normal button (not a guessing_press) — see the category-menu
+      // regression where keys showed untranslated and narrowing stalled.
       const glyph = (b.glyph || "").trim();
-      if (glyph && isValidSuggestionKey(glyph)) {
-        const expanded = expandSuggestionKey(glyph);
+      const labelStr = (b.label || "").trim();
+      const sugKey = glyph && isValidSuggestionKey(glyph)
+        ? glyph
+        : (isValidSuggestionKey(labelStr) ? labelStr : null);
+      if (sugKey) {
+        const expanded = expandSuggestionKey(sugKey);
         if (expanded) {
           suggestionExpanded.push(expanded);
           continue;
@@ -3474,6 +3652,73 @@ export class AgentCoordinator {
       data: buildBoardFromButtons(merged as any),
     });
     void this.applySymbolPipeline(merged as any);
+  }
+
+  /**
+   * BoardManager called set_board(board_key). Look up the board in
+   * `state.availableBoards`, fetch its IR data, and push set_board to
+   * the client — same shape as the home-board push at init / on Home
+   * press. The home board key short-circuits to the in-memory default
+   * (no DB lookup). On a missing key or missing irData, queue
+   * validator-feedback so BoardManager learns the surface didn't load
+   * and can try a different action.
+   */
+  private async applyBoardLoadRequested(event: BoardLoadRequestedEvent): Promise<void> {
+    const { boardKey } = event;
+    const state = this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.state : undefined;
+    const match = state?.availableBoards?.find(b => b.key === boardKey);
+    if (!match) {
+      const availableKeys = state?.availableBoards?.map(b => b.key).join(", ") || "none";
+      flowNote("COORDINATOR", `set_board("${boardKey}") — board not found. Available: ${availableKeys}`);
+      this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" not found. Available keys: ${availableKeys}.`]);
+      return;
+    }
+
+    let boardData: any;
+    if (match.key === HOME_BOARD_KEY) {
+      const studentLang = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.()?.primaryLanguage || "en";
+      boardData = buildDefaultHomeBoard(studentLang);
+    } else {
+      try {
+        const fullBoard = await boardRepository.getBoard(match.id);
+        if (!fullBoard?.irData) {
+          flowNote("COORDINATOR", `set_board("${boardKey}") — board has no IR data (id=${match.id}).`);
+          this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" has no stored data; pick a different board or rebuild dynamically.`]);
+          return;
+        }
+        boardData = fullBoard.irData;
+      } catch (err) {
+        console.error(`[AgentCoordinator] set_board("${boardKey}") DB lookup failed:`, err);
+        flowNote("COORDINATOR", `set_board("${boardKey}") DB lookup failed: ${(err as Error).message}`);
+        return;
+      }
+    }
+
+    // Push to client. The client renders pre-built boards via set_board
+    // (separate from the dynamic `board` channel) and treats the
+    // session as "in custom board mode" until unload_board fires.
+    this.loadedBoardId = match.id;
+    // Update the cached tool config so the NEXT BoardManager invocation's
+    // set_board description reflects the switch (the "Currently loaded —
+    // do NOT re-select" note + the prompt's <prebuilt_boards> loaded line).
+    // Stale cached values would otherwise still point at the previous
+    // board for the rest of the session.
+    this.boardManagerToolConfig.loadedBoardKey = match.key;
+    this.boardManagerToolConfig.loadedBoardName = match.name;
+    const page = (boardData as any).pages?.[0];
+    if (page?.buttons) {
+      const nativeButtons = page.buttons.filter((b: any) => typeof b?.label === "string");
+      this.currentBoardLabels = nativeButtons.map((b: any) => b.label);
+      this.currentBoardButtons = nativeButtons.map((b: any) => ({ ...b } as MergeButton));
+    }
+    this.send({
+      type: "set_board",
+      data: { board: boardData, name: match.name, boardId: match.id },
+    });
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${match.name}" id=${match.id}`);
+    });
+    flowNote("COORDINATOR", `set_board("${boardKey}") — loaded "${match.name}".`);
   }
 
   /**
@@ -3601,17 +3846,18 @@ export class AgentCoordinator {
       });
       return;
     }
-    // Tailor the retry instruction to the current state.
-    let directive: string;
-    if (this.guessingState) {
-      directive = `The user is in word-finder mode. Call \`rebuild_board(buttons=[...])\` using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`sentence\` fields.`;
-    } else if (this.builderState) {
-      directive = `The user is composing in the ${T.builder}. Call \`suggest_construction_buttons(slot_index, head_candidates, modifier_candidates)\` with appropriate SYMBOLs.`;
-    } else {
-      directive = `The user (or someone speaking to them) just took an action — they need response options now. Call \`rebuild_board(buttons=[...])\` with a fresh set of ${T.button}s.`;
-    }
-    this.boardMgrPendingFeedback =
-      `[empty response]\nYour previous response had no tool calls. ${directive} If the current ${T.board} genuinely still fits the moment and no rebuild is warranted, call \`no_change("<short reason>")\` instead — empty responses are never valid.`;
+    // Tailor the retry instruction to the current state. The exact prompt
+    // strings live in prompts/board-manager.ts so all BM-facing text is
+    // co-located; this method owns the queue + invoke side.
+    this.boardMgrPendingFeedback = buildEmptyResponseRetryFeedback({
+      inGuessingMode: this.guessingState !== null,
+      inBuilderMode: this.builderState !== null,
+    });
+    // Pair the original triggers with the feedback. invokeBoardManager
+    // drains this into the NEXT invocation's effective triggers as long
+    // as pendingFeedback is set — so a new event arriving before the
+    // retry fires can't consume the feedback alone.
+    this.boardMgrPendingRetryTriggers = this.boardMgrCurrentTriggers.slice();
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
       logLiveSession("BOARD_MGR_EMPTY", `Queued empty-response retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}.`);
     });
@@ -3628,14 +3874,14 @@ export class AgentCoordinator {
       });
       return;
     }
-    const header = `[${toolName} — rejected ${T.button}s]`;
-    const body = errors.map(e => `• ${e}`).join("\n");
-    this.boardMgrPendingFeedback = `${header}\n${body}\n\nRebuild correctly — supply a fallback when sentence uses \`generate:\`, omit the fallback field entirely otherwise, use only canonical modifiers, and give every ${T.button} a unique visual. (If you can't repair the rebuild and the current ${T.board} still fits, call \`no_change("<short reason>")\` instead — don't return empty.)`;
+    this.boardMgrPendingFeedback = buildValidatorErrorFeedback(toolName, errors);
+    // Pair the original triggers with the feedback so subsequent
+    // invocations always include the beat the retry is fixing, even if
+    // a new event arrives before the retry actually runs.
+    this.boardMgrPendingRetryTriggers = this.boardMgrCurrentTriggers.slice();
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
       logLiveSession("BOARD_MGR_VALIDATOR", `${toolName} → ${errors.length} errors, queued retry attempt ${this.boardMgrRetryAttempt + 1}/${AgentCoordinator.BOARD_MGR_MAX_RETRIES}`);
     });
-    // Fire a self-rebuild invocation with the feedback. Synthetic
-    // trigger lets renderInvocationContext display the retry framing.
     void this.invokeBoardManager([]);
   }
 
@@ -3755,6 +4001,21 @@ export class AgentCoordinator {
           console.warn("[AgentCoordinator] addPendingMessage failed:", (err as Error).message);
         });
     }
+  }
+
+  /** Write a line to the supervisor channels only — DB-persisted admin
+   *  log + Monitor's pending queue — WITHOUT touching `conversationLog`
+   *  (which is replayed to fresh Speakers on reconnect) and without
+   *  triggering session-summary generation. Used for content that
+   *  Monitor / admin should see but interactive agents must not, e.g.
+   *  Speaker's private_note tool calls. */
+  private writeSupervisorOnly(content: string): void {
+    if (!this.sessionId) return;
+    dualAgentService
+      .addPendingMessage(this.sessionId, { role: "system", content, timestamp: Date.now() })
+      .catch(err => {
+        console.warn("[AgentCoordinator] supervisor-only addPendingMessage failed:", (err as Error).message);
+      });
   }
 
   /** Fire a summarizer call when enough new turns have landed. Async

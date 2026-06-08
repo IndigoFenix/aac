@@ -259,6 +259,10 @@ export interface UseDualAgentReturn {
   // Avatar
   emote: "happy" | "sad" | "neutral";
   speakingVolume: number;
+  /** Counter bumped each time the server sends a `thinking` message
+   *  (Speaker emitted a private_note). Consumers use it as a key to
+   *  retrigger a question-mark animation next to the avatar. */
+  thinkingPulse: number;
 
   // Monitor status
   monitorError: string | null;

@@ -40,19 +40,28 @@ import type {
   BinaryChoiceShownEvent,
   BuilderSuggestedEvent,
   BoardNoChangeEvent,
+  BoardLoadRequestedEvent,
   InterpretIntentEvent,
   GuessingExitRequestedEvent,
 } from "./agent-events";
 import {
   buildBoardManagerToolDeclarations,
   type BoardManagerToolConfig,
-} from "./tool-declarations-board-manager";
+  invocationActionHint,
+  renderEventLine,
+  updateAIResponseTarget,
+  buildForceRebuildHint,
+  GUESSING_HINT_AFTER_AI_SPEECH,
+  GUESSING_HINT_COLD,
+  BUILDER_HINT,
+} from "./prompts/board-manager";
 import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
   buildFusionMap,
   applyFusionEntry,
+  mergeFusedToolCalls,
   type FusionEntry,
 } from "./tool-fusion-normalizer";
 
@@ -208,6 +217,17 @@ export interface BoardManagerInvocationInput {
   /** Abort signal so the Coordinator can cancel in-flight invocations
    *  (e.g. when a newer event supersedes this one). */
   signal?: AbortSignal;
+
+  /** Mandatory-rebuild directive — set by the Coordinator when the user
+   *  pressed a home-board navigation button (INTERACT / INTERESTS /
+   *  FEELINGS / etc.). When present, the action hint becomes a
+   *  REQUIRED `rebuild_board` with this palette text; the usual
+   *  "no_change if existing board already covers it" escape is
+   *  suppressed. Without this, the model frequently `no_change`s these
+   *  presses because the home board's parent already includes labels
+   *  like "interests" / "feelings" that look related — but a home press
+   *  is a topic-switch the user expects to refresh the surface. */
+  forceRebuildDirective?: string;
 }
 
 export interface BoardManagerInvocationResult {
@@ -324,12 +344,19 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
     lines.push(`</builder_state>`);
   }
 
+  // Track who's most recently addressed the AI so that
+  // `speech_text_finalized` renders as `[AI to <addressee>]`, accurately
+  // distinguishing "AI talking to USER" (build replies) from "AI talking
+  // to Mom" (ambient exchange). State flows across both event loops.
+  let aiTarget = "USER";
+
   // Recent events (for conversation continuity)
   if (input.recentEvents.length > 0) {
     lines.push("");
     lines.push(`<recent_events>`);
     for (const event of input.recentEvents) {
-      const rendered = renderEventLine(event);
+      aiTarget = updateAIResponseTarget(aiTarget, event);
+      const rendered = renderEventLine(event, aiTarget);
       if (rendered) lines.push(rendered);
     }
     lines.push(`</recent_events>`);
@@ -341,13 +368,22 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   lines.push(`<this_invocation>`);
   lines.push(`Triggered by:`);
   for (const event of input.triggeringEvents) {
-    const rendered = renderEventLine(event);
+    aiTarget = updateAIResponseTarget(aiTarget, event);
+    const rendered = renderEventLine(event, aiTarget);
     if (rendered) lines.push(`- ${rendered}`);
   }
-  // Hint priority: mode-state (builder/guessing) overrides per-trigger
-  // hints, because those modes constrain which tool is appropriate.
+  // Hint priority:
+  //   1. forceRebuildDirective — home-press topic switch is mandatory rebuild.
+  //   2. builder / guessing state — those modes constrain the tool surface.
+  //   3. Per-trigger default.
   let hint = "";
-  if (input.guessingState) {
+  if (input.forceRebuildDirective) {
+    // Home-press topic switch. MUST rebuild — no_change is not an option
+    // here. The directive carries the palette description; the model
+    // turns that into concrete buttons. Existing-board overlap is
+    // IRRELEVANT because the user just asked for a fresh surface.
+    hint = buildForceRebuildHint(input.forceRebuildDirective);
+  } else if (input.guessingState) {
     // When Speaker just asked a question (speech_text_finalized is the
     // trigger), the answer options should match THAT question — not the
     // engine's default offered_keys, which may belong to a different
@@ -356,11 +392,9 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
     const hasAISpeech = input.triggeringEvents.some(
       (e) => e.type === "speech_text_finalized",
     );
-    hint = hasAISpeech
-      ? `Action: rebuild_board with ${T.button}s that ANSWER the AI's question in <recent_events>. Pick whichever shape fits — \`suggestion:\` keys from offered_keys when the engine's dimension matches the question, \`[NARROW:<label>] <value>\` when Speaker steered onto a different axis, or \`[GUESS] <text>\` candidates when Speaker is fishing for a specific word. (If the current ${T.board} already covers the question, call \`no_change("<short reason>")\` instead — don't return empty.)`
-      : `Action: rebuild_board using the \`suggestion:dim:value\` keys from <guessing_state> offered_keys as the ${T.button}s' \`sentence\` fields. No AI question to anchor to yet, so the engine's default narrowing is the right starting point. (If the current ${T.board} already shows those keys, call \`no_change("<short reason>")\` instead — don't return empty.)`;
+    hint = hasAISpeech ? GUESSING_HINT_AFTER_AI_SPEECH : GUESSING_HINT_COLD;
   } else if (input.builderState) {
-    hint = `Action: suggest_construction_buttons (up to 4 head_candidates; up to 4 modifier_candidates when a HEAD SYMBOL is placed). Don't touch the main ${T.board} while the ${T.builder} is open. (If you have nothing useful to suggest for this slot, call \`no_change("<short reason>")\` instead — don't return empty.)`;
+    hint = BUILDER_HINT;
   } else {
     hint = invocationActionHint(input.triggeringEvents);
   }
@@ -370,144 +404,10 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   return lines.join("\n");
 }
 
-/**
- * Per-trigger guidance for which tool the Board Manager should typically
- * reach for. Keeps the framing aligned with the legacy system's
- * board-vs-context-sidebar split (rebuild_board for conversational
- * response surfaces; add_context_button for ambient observations).
- *
- * Returns "" when the trigger mix doesn't suggest a clear default —
- * model picks from the full tool list as usual.
- */
-function invocationActionHint(events: AgentEvent[]): string {
-  // Categorize what the batch contains.
-  let hasUserInput = false;
-  let hasAiSpoke = false;
-  let hasContextUpdate = false;
-  let hasInterpret = false;
-  for (const e of events) {
-    if (e.type === "button_pressed" || e.type === "sentence_composed") hasUserInput = true;
-    // speech_text_finalized is the canonical "AI spoke" trigger (full
-    // transcript available, audio possibly still playing). speech_end
-    // is also valid as a fallback for code paths that didn't surface
-    // text_finalized.
-    if (e.type === "speech_text_finalized" || e.type === "speech_end") hasAiSpoke = true;
-    if (e.type === "context_update") hasContextUpdate = true;
-    if (e.type === "interpret_intent") hasInterpret = true;
-  }
-
-  if (hasUserInput) {
-    return `Action: rebuild_board. The USER just acted — build FOLLOW-UPS that continue or clarify their statement. Think "what might they want to say NEXT after this?" (not "how would the AI reply"). Include options to elaborate the topic, switch direction, or correct themselves. (If the current ${T.board} already covers good follow-ups, call \`no_change("<short reason>")\` instead — don't return empty.)`;
-  }
-  if (hasInterpret) {
-    return `Action: rebuild_board. The USER played a composed SENTENCE — build FOLLOW-UPS that continue or clarify the thought they just voiced. (If the current ${T.board} already covers good follow-ups, call \`no_change("<short reason>")\` instead — don't return empty.)`;
-  }
-  if (hasAiSpoke) {
-    return `Action: rebuild_board. The AI just spoke TO the user — build REPLIES the user might say back. Think "what would they say in response to this question/statement?" (not "what might they say next on their own"). If the AI asked a question, the buttons are the user's plausible answers. (If the current ${T.board} already covers good replies, call \`no_change("<short reason>")\` instead — don't return empty.)`;
-  }
-  if (hasContextUpdate) {
-    return `Action: no_change. Observations don't change what the USER wants to say next — the ${T.board} stays. If the observation is genuinely worth surfacing for the user (a person they know walking in, an object they might want to react to), use add_context_button to add ONE sidebar item. Do NOT call rebuild_board.`;
-  }
-  return "";
-}
-
-/** One-line summary of an event for the recent-events listing. Returns
- *  empty string for events that don't need to surface to Board Manager. */
-function renderEventLine(event: AgentEvent): string {
-  switch (event.type) {
-    case "button_pressed": {
-      // A press is functionally a USER statement; render the same shape
-      // as a transcript so BoardManager has one consistent mental model
-      // for "who said what to whom". Default target is the device.
-      const tgt = event.target ?? "AI";
-      const label = tgt === "DEVICE" ? "AI" : tgt;
-      return `[USER to ${label}] "${event.sentence}"`;
-    }
-    case "sentence_composed":
-      return `[USER (composed) to AI] "${event.sentence}"`;
-    case "mute_toggled":
-      return `[MUTE TOGGLED] now ${event.state}`;
-    case "builder_opened":
-      return `[BUILDER OPENED]`;
-    case "builder_closed":
-      return `[BUILDER CLOSED]`;
-    case "guessing_entered":
-      return `[GUESSING ENTERED]`;
-    case "guessing_exited":
-      return `[GUESSING EXITED]`;
-    case "transcribed": {
-      const tgt = event.target ?? "AI";
-      const label = tgt === "DEVICE" ? "AI" : tgt;
-      return `[${event.speaker} to ${label}] "${event.text}"`;
-    }
-    case "context_update":
-      return `[CONTEXT] ${event.updateType}: ${event.key} — ${event.description}${event.relevance ? ` (relevance: ${event.relevance})` : ""}`;
-    case "engagement_change":
-      return `[ENGAGEMENT] ${event.state}${event.reason ? ` — ${event.reason}` : ""}`;
-    case "speech_text_finalized":
-      // BoardManager fires on speech_text_finalized — the moment the
-      // FULL transcript is available (audio may still be playing).
-      return `[AI] "${event.transcript}"`;
-    case "speech_start":
-    case "speech_end":
-      // Both are no-ops for BoardManager — speech_text_finalized is
-      // the canonical trigger for AI-utterance rebuilds.
-      return "";
-    case "interpret_intent":
-      return `[INTERPRET] (student voice) "${event.sentence}"`;
-    case "mode_change":
-      return `[MODE] ${event.mode}${event.reason ? ` — ${event.reason}` : ""}`;
-    case "monitor_broadcast":
-      return `[MONITOR CONTEXT] ${event.contextInjection}`;
-    // BoardManager's OWN prior tool calls. Surfacing them in
-    // <recent_events> gives the model a self-history — it sees the
-    // CANONICAL tool name (rebuild_board, add_board_button, etc.) even
-    // when its previous turn emitted a fused PascalCase variant
-    // (RebuildBoardButtons), because parseToolCall rewrites the fused
-    // call before this event is recorded. Net effect: the model's view
-    // of its own past actions always uses the right tool name, which
-    // anchors its next turn toward emitting the same correct name.
-    case "board_rebuilt": {
-      const labels = event.buttons.map((b: any) => `"${b.label}"`).join(", ");
-      return `[YOU] rebuild_board(${event.buttons.length} buttons: ${labels})`;
-    }
-    case "board_button_added":
-      return `[YOU] add_board_button("${event.button.label}")`;
-    case "binary_choice_shown":
-      return `[YOU] show_binary_choice("${event.option1.label}" / "${event.option2.label}")`;
-    case "context_button_added":
-      return `[YOU] add_context_button("${event.button.label}")`;
-    case "board_no_change":
-      return `[YOU] no_change${event.reason ? `(${event.reason})` : "()"}`;
-    case "guessing_exit_requested":
-      return `[YOU] exit_guessing(${event.reason})`;
-    case "builder_suggested": {
-      const heads = (event.headCandidates ?? []).length;
-      const mods = (event.modifierCandidates ?? []).length;
-      return `[YOU] suggest_construction_buttons(slot ${event.slotIndex}, ${heads} heads, ${mods} modifiers)`;
-    }
-    // The following don't help Board Manager decide:
-    case "emote_change":
-    case "focus_request":
-    case "alarm_raised":
-    case "monitor_call_requested":
-    case "private_note":
-      return "";
-    // App / website opens — context that buttons may need to reflect
-    // (an open app may want app-specific response buttons).
-    case "app_open_requested":
-      return `[APP OPEN] ${event.appId}${event.data ? ` (${event.data})` : ""}`;
-    case "app_close_requested":
-      return `[APP CLOSE]`;
-    case "website_open_requested":
-      return `[WEBSITE OPEN] ${event.url}${event.label ? ` (${event.label})` : ""}`;
-    default: {
-      const exhaustive: never = event;
-      void exhaustive;
-      return "";
-    }
-  }
-}
+// `invocationActionHint` and `renderEventLine` moved to
+// `./prompts/board-manager` — see the imports at the top of this file.
+// They're imported by name so the existing call sites in
+// renderInvocationContext / parseToolCall continue to compile unchanged.
 
 // ---------------------------------------------------------------------------
 // Tool-call → typed-event parser
@@ -670,17 +570,19 @@ function parseToolCall(
     }
 
     case "set_board": {
-      // Board-key choice is treated as a no-change + Coordinator side
-      // effect; not part of the typed event union currently. Emit a
-      // BoardNoChange with the reason so the Coordinator can act on it
-      // via the raw-tool-call list. (When set_board is wired end-to-end
-      // we'll promote this to its own event type.)
-      const reason = args.board_key ? `set_board(${args.board_key})` : "set_board";
-      const event: BoardNoChangeEvent = {
-        type: "board_no_change",
+      // Normalize the key the same way state.availableBoards keys are built
+      // (lowercased, spaces → underscores). Coordinator looks it up there,
+      // fetches the IR data, and pushes the set_board WS message to the
+      // client. Missing key → no event (the model called set_board with no
+      // argument, which is a malformed call rather than a load request).
+      const raw = typeof args.board_key === "string" ? args.board_key : undefined;
+      if (!raw) return null;
+      const boardKey = raw.toLowerCase().replace(/ /g, "_");
+      const event: BoardLoadRequestedEvent = {
+        type: "board_load_requested",
         source: "board-manager",
         timestamp: now,
-        reason,
+        boardKey,
       };
       return event;
     }
@@ -892,7 +794,15 @@ export class BoardManagerAgent {
         model: input.model,
         messages,
         tools,
-        toolChoice: "auto",
+        // "required" → Gemini functionCallingConfig.mode = "ANY". Forces
+        // the model to emit a tool call every turn. Without this, AUTO
+        // mode lets the model elect plain text on ambiguous beats
+        // (responding to AI speech, no-trigger retries, etc.) and the
+        // result lands as "no tool calls / MALFORMED_FUNCTION_CALL".
+        // BoardManager has NO_CHANGE as a universal fallback in its tool
+        // list, so "required" never traps the model — there's always a
+        // valid call.
+        toolChoice: "required",
         // Board Manager output is structured tool calls — temperature 0.2
         // keeps it close to deterministic without making it brittle.
         temperature: 0.2,
@@ -914,12 +824,27 @@ export class BoardManagerAgent {
       };
     }
 
+    // Pre-pass: collapse parallel fused calls that target the same
+    // (tool, arrayParam). The model sometimes emits one fused call per
+    // intended item (e.g. six `RebuildBoardButtons` calls for a single
+    // intended 6-button rebuild); without merging, each gets rewritten
+    // to a single-item rebuild_board and the per-call dispatch
+    // downgrades them to add_board_button — replacing the intended bulk
+    // rebuild with six sequential adds. See tool-fusion-normalizer.
+    const mergedToolCalls = mergeFusedToolCalls(result.toolCalls, fusionMap);
+    if (mergedToolCalls.length !== result.toolCalls.length) {
+      flowNote(
+        "BOARD_MGR",
+        `Merged ${result.toolCalls.length} fused tool calls → ${mergedToolCalls.length} after array-param coalescing`,
+      );
+    }
+
     // Parse each tool call into a typed event. Collect any fusion
     // detections so the Coordinator can issue a corrective retry turn.
     const now = Date.now();
     const events: BoardManagerOutputEvent[] = [];
     const fusionFeedback: NonNullable<BoardManagerInvocationResult["fusionFeedback"]> = [];
-    for (const call of result.toolCalls) {
+    for (const call of mergedToolCalls) {
       flowTool("BOARD_MGR", call.name || "?", call.arguments);
       // Detect fusion BEFORE parseToolCall mutates `call.name`, so the
       // Coordinator can queue a corrective retry telling the model the

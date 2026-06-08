@@ -27,7 +27,8 @@ import type {
 import {
   buildSpeakerToolDeclarations,
   type SpeakerToolConfig,
-} from "./tool-declarations-speaker";
+  SPEAKER_TOOL_ACK,
+} from "./prompts/speaker";
 import { flowInput, flowTool, flowOutput } from "./agent-flow-logger";
 import type {
   SpeakerEvent,
@@ -41,6 +42,7 @@ import type {
   WebsiteOpenRequestedEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
+  RemainSilentEvent,
 } from "./agent-events";
 import type { ISpeakerAgent } from "./speaker-interface";
 
@@ -51,7 +53,8 @@ import type { ISpeakerAgent } from "./speaker-interface";
 export type SpeakerOutputEvent =
   | SpeakerEvent
   | MonitorCallRequestedEvent
-  | PrivateNoteEvent;
+  | PrivateNoteEvent
+  | RemainSilentEvent;
 
 export interface SpeakerCallbacks {
   /** Called for every parsed event the Coordinator should dispatch. */
@@ -363,7 +366,7 @@ export class SpeakerAgent implements ISpeakerAgent {
         calls.map(c => ({
           id: c.id,
           name: c.name || "unknown",
-          response: { output: "ok" },
+          response: SPEAKER_TOOL_ACK,
         })),
       );
     }

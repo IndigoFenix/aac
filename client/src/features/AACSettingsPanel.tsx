@@ -79,6 +79,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Auto-generated AAC prompt — AI-owned digest. Shown read-only; clinicians
   // can clear it but don't hand-edit it (it's regenerated as the assistant learns).
   const [autoAacPrompt, setAutoAacPrompt] = useState('');
+  const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
@@ -185,6 +186,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
       setAutoAacPrompt(aac?.autoAacPrompt || '');
+      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -227,6 +229,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAiName = aac?.aiName || '';
       const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
       const originalAutoPrompt = aac?.autoAacPrompt || '';
+      const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? false;
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
@@ -261,6 +264,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
         autoAacPrompt !== originalAutoPrompt ||
+        liveAudioSpeaker !== originalLiveAudioSpeaker ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
@@ -292,7 +296,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -300,6 +304,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aiName?: string;
       chatAgentPrompt: string;
       autoAacPrompt: string;
+      liveAudioSpeaker?: boolean;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
@@ -355,6 +360,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aiName: aiName.trim() || undefined,
       chatAgentPrompt,
       autoAacPrompt,
+      liveAudioSpeaker,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -396,6 +402,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
       setAutoAacPrompt(aac?.autoAacPrompt || '');
+      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -574,8 +581,20 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Live Audio Speaker — when on, AI voice comes from Gemini Live
+                  native audio and the ElevenLabs section is hidden. */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.liveAudioSpeakerTitle')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.liveAudioSpeakerDesc')}
+                  </p>
+                </div>
+                <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
+              </div>
+
               {/* Gemini Voice Settings */}
-              <div className="space-y-4">
+              <div className="space-y-4 pt-4 border-t">
                 <div className="space-y-0.5">
                   <Label className="text-base font-medium">{t('aacSettings.voiceSettings')}</Label>
                   <p className="text-sm text-muted-foreground">
@@ -679,7 +698,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
               </div>
 
-              {/* ElevenLabs Direct Voice Settings */}
+              {/* ElevenLabs Direct Voice Settings. The whole block stays
+                  visible regardless of live-audio mode — only the AI voice
+                  picker is hidden when live audio is on (the AI then speaks
+                  via Gemini Live native audio). Student voice + API key stay
+                  applicable since the student-press TTS pipeline is the same
+                  in both modes. */}
               <div className="pt-4 border-t space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -717,6 +741,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 {debouncedApiKey && !elevenlabsError && (
                   <>
+                    {!liveAudioSpeaker && (
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
@@ -764,6 +789,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
                       )}
                     </div>
+                    )}
 
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
@@ -817,6 +843,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 {!debouncedApiKey && (
                   <>
+                    {!liveAudioSpeaker && (
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
@@ -831,6 +858,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         className="w-full md:w-[280px] font-mono"
                       />
                     </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">

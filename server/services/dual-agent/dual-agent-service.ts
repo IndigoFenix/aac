@@ -37,6 +37,7 @@ import { customSymbolRepository } from "../../repositories/customSymbolRepositor
 import { classroomRepository } from "../../repositories/classroomRepository";
 import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
 import { activityLogService } from "../activityLogService";
+import { logLiveSession } from "./dual-agent-logger";
 
 /**
  * Simple promise-based mutex for per-session concurrency control.
@@ -567,7 +568,14 @@ export class DualAgentService {
           const grid = irData?.grid || { rows: 3, cols: 4 };
           return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
         });
-      } catch { /* ignore */ }
+        logLiveSession("AVAILABLE_BOARDS", `loaded ${availableBoards.length} auto-selectable board(s) (createNewSession, user=${userId} student=${studentId}) — [${availableBoards.map(b => b.key).join(", ")}]`);
+      } catch (err) {
+        // Was silently swallowed — surface it: a throw here (e.g. irData
+        // hydration) is indistinguishable from "no boards" downstream.
+        logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (createNewSession, user=${userId} student=${studentId}): ${(err as Error)?.message ?? err}`);
+      }
+    } else {
+      logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (createNewSession, student=${studentId})`);
     }
 
     // Build the function-calling prompt with contacts + boards + symbols + demographics.
@@ -890,7 +898,13 @@ export class DualAgentService {
               const grid = irData?.grid || { rows: 3, cols: 4 };
               return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
             });
-          } catch { state.availableBoards = []; }
+            logLiveSession("AVAILABLE_BOARDS", `loaded ${state.availableBoards.length} auto-selectable board(s) (loadSessionFromDB, user=${state.userId} student=${state.studentId}) — [${state.availableBoards.map(b => b.key).join(", ")}]`);
+          } catch (err) {
+            state.availableBoards = [];
+            logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (loadSessionFromDB, user=${state.userId} student=${state.studentId}): ${(err as Error)?.message ?? err}`);
+          }
+        } else {
+          logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (loadSessionFromDB, student=${state.studentId})`);
         }
 
         state.interactivePrompt = buildInteractiveAgentPrompt({

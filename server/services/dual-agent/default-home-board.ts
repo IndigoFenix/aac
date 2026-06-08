@@ -1,11 +1,22 @@
 // server/services/dual-agent/default-home-board.ts
 // Builds the default AAC home board with translated navigation buttons.
-// Each button uses the "exit" action to unload the board and instruct the AI.
+// Each button uses the "exit" action; the action `text` is just a TAG.
+//
+// The tag is the WHOLE protocol — no descriptive text needed. Routing:
+//   - Server: `handleBoardExitInner` matches `/^\[([A-Z ]+)\]/` and looks
+//     up `HOME_INTENTS` in `agent-coordinator.ts`. The matching entry
+//     supplies the speaker behavioral hint AND the BoardManager
+//     palette directive (`forceRebuildDirective`). Text after the tag
+//     would be discarded.
+//   - Client: `home.tsx` intercepts `[APPS BOARD]` and
+//     `[CONSTRUCTION BOARD]` substring matches and opens the
+//     corresponding overlay locally — these tags never reach the
+//     server. Same rule: only the tag matters.
 
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
-// Button definitions with translations and AI instructions
+// Button definitions
 // ---------------------------------------------------------------------------
 
 interface HomeButtonDef {
@@ -15,8 +26,10 @@ interface HomeButtonDef {
   imageKey?: string;
   /** Static icon path served from /aac-buttons/main-menu/ (overrides emoji when set) */
   staticIcon?: string;
-  /** Instruction sent to the AI when this button is pressed (via exit action text) */
-  instruction: string;
+  /** Routing TAG sent as the exit action's text. Server- and
+   *  client-side routing both match on the bracketed tag and ignore
+   *  any trailing text, so this is just the tag — nothing more. */
+  tag: string;
 }
 
 const HOME_BUTTONS: HomeButtonDef[] = [
@@ -25,26 +38,26 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     labels: { en: "Interact", he: "דבר איתי" },
     icon: "🗣️",
     staticIcon: "/aac-buttons/main-menu/ai_talking.png",
-    instruction: "[INTERACT] The user wants to talk to you. Switch to Companion Mode. Rebuild the board with conversation starters and topics relevant to the student's interests.",
+    tag: "[INTERACT]",
   },
   {
     id: "home_talk",
     labels: { en: "Talk", he: "אני מדבר" },
     icon: "💬",
     staticIcon: "/aac-buttons/main-menu/human_talking.png",
-    instruction: "[ASSIST] The user is talking to someone else. Switch to Facilitator Mode. Rebuild the board with phrases and responses the student might want to say in a conversation.",
+    tag: "[ASSIST]",
   },
   {
     id: "home_my_day",
     labels: { en: "My Day", he: "היום שלי" },
     icon: "📅",
-    instruction: "[MY DAY] The user wants to talk about events in their day. Rebuild the board with time-of-day activities (morning routine, school, lunch, afternoon, evening) and event-related buttons.",
+    tag: "[MY DAY]",
   },
   {
     id: "home_interests",
     labels: { en: "Interests", he: "תחומי עניין" },
     icon: "⭐",
-    instruction: "[INTERESTS] The user wants to explore their interests. Use the student profile from the system prompt to rebuild the board with buttons related to their known interests, hobbies, and favorite topics.",
+    tag: "[INTERESTS]",
   },
   {
     id: "home_feelings",
@@ -52,7 +65,7 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     icon: "😊",
     imageKey: "feelings",
     staticIcon: "/aac-buttons/main-menu/feelings.png",
-    instruction: "[FEELINGS] The user wants to express their feelings. Rebuild the board with emotion buttons (happy, sad, tired, excited, angry, scared, bored, etc.).",
+    tag: "[FEELINGS]",
   },
   {
     id: "home_help",
@@ -60,16 +73,16 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     icon: "⚠️",
     imageKey: "person_help",
     staticIcon: "/aac-buttons/main-menu/person_help.png",
-    instruction: "[HELP] The user needs help with something. Rebuild the board with common requests: I need help, I'm hurt, I need the bathroom, I'm hungry, I'm thirsty, I'm cold/hot, call someone, etc.",
+    tag: "[HELP]",
   },
   {
     id: "home_apps",
     labels: { en: "Apps", he: "אפליקציות" },
     icon: "📱",
-    // Intercepted by the client (see home.tsx handleBoardButtonClick) — opens
-    // the apps board overlay client-side. NOT forwarded to the AI; the overlay
+    // Intercepted by the client (home.tsx handleBoardButtonClick) — opens the
+    // apps board overlay client-side. NOT forwarded to the AI; the overlay
     // sends its own [APP OPENED ...] instruction once the user picks an app.
-    instruction: "[APPS BOARD] Open the apps board.",
+    tag: "[APPS BOARD]",
   },
   {
     id: "home_construct",
@@ -77,10 +90,10 @@ const HOME_BUTTONS: HomeButtonDef[] = [
     icon: "🧩",
     imageKey: "person_thinking",
     staticIcon: "/aac-buttons/main-menu/person_thinking.png",
-    // Intercepted by the client (see home.tsx handleBoardButtonClick) — opens
-    // the sentence construction board as an overlay. NOT forwarded to the AI;
+    // Intercepted by the client (home.tsx handleBoardButtonClick) — opens the
+    // sentence construction board as an overlay. NOT forwarded to the AI;
     // the construction board emits its own state injections once open.
-    instruction: "[CONSTRUCTION BOARD] Open the sentence construction board.",
+    tag: "[CONSTRUCTION BOARD]",
   },
 ];
 
@@ -108,7 +121,7 @@ export function buildDefaultHomeBoard(language: string): ParsedBoardData {
     exitBoard: true,
     action: {
       type: "exit" as const,
-      text: def.instruction,
+      text: def.tag,
     },
   }));
 

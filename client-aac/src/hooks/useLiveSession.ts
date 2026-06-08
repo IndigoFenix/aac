@@ -210,6 +210,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
 
+  // Incrementing counter — bumped every time the server signals Speaker
+  // has issued a private_note. The avatar overlay uses this as a key
+  // prop so each new "thinking" cue restarts the question-mark
+  // animation cleanly, even if two notes fire back-to-back.
+  const [thinkingPulse, setThinkingPulse] = useState(0);
+
   // Binary-choice overlay state — non-null array of two options shows the
   // overlay. Yes/No questions go through this same path now (the canonical
   // `yes` / `no` SYMBOLs render with animated icons and auto-color the
@@ -624,6 +630,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "emote":
           setEmote(msg.data as "happy" | "sad" | "neutral");
+          break;
+
+        case "thinking":
+          // Speaker emitted a private_note — pop the question-mark
+          // animation. Counter restart guarantees the animation
+          // retriggers even if the same cue lands twice in a row.
+          // The server always sends `active: true` (one-shot pulse);
+          // the client owns dismissal via its own timer.
+          if (msg.active) setThinkingPulse((n) => n + 1);
           break;
 
         case "interaction_mode_changed":
@@ -1480,6 +1495,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Avatar — only animate mouth during AI voice ("avatar" tag), not the student utterance
     emote,
     speakingVolume: audioPlayer.currentTag === "avatar" ? audioPlayer.speakingVolume : 0,
+    thinkingPulse,
 
     // Monitor status
     monitorError,

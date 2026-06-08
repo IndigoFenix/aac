@@ -421,6 +421,21 @@ export interface BoardNoChangeEvent extends BaseEvent {
 }
 
 /**
+ * BoardManager asked to load a pre-built custom board by key.
+ * The Coordinator looks up the board in `state.availableBoards`,
+ * fetches its IR data, pushes a `set_board` WS message to the client,
+ * and updates `loadedBoardId` + related state mirrors. Distinct from
+ * `BoardRebuiltEvent` (which is for dynamic, AI-authored boards).
+ */
+export interface BoardLoadRequestedEvent extends BaseEvent {
+  type: "board_load_requested";
+  source: "board-manager";
+  /** Normalized board key (lowercased, spaces → underscores) — matches
+   *  the `key` field on entries in `state.availableBoards`. */
+  boardKey: string;
+}
+
+/**
  * BoardManager declares that the Word Finder narrowing session should
  * end — the user's word has been identified, OR the conversation has
  * clearly moved past finding a word. The Coordinator handles this by
@@ -440,6 +455,7 @@ export type BoardManagerEvent =
   | BinaryChoiceShownEvent
   | BuilderSuggestedEvent
   | BoardNoChangeEvent
+  | BoardLoadRequestedEvent
   | InterpretIntentEvent
   | GuessingExitRequestedEvent;
 
@@ -459,7 +475,21 @@ export interface PrivateNoteEvent extends BaseEvent {
   note: string;
 }
 
-export type CrossAgentEvent = MonitorCallRequestedEvent | PrivateNoteEvent;
+/**
+ * Speaker explicitly chose to stay silent this turn — terminal action.
+ * Replaces "private_note as substitute for replying". Emitted purely
+ * for logging / Monitor visibility; Coordinator does not fan it out.
+ */
+export interface RemainSilentEvent extends BaseEvent {
+  type: "remain_silent";
+  source: "speaker";
+  reason: string;
+}
+
+export type CrossAgentEvent =
+  | MonitorCallRequestedEvent
+  | PrivateNoteEvent
+  | RemainSilentEvent;
 
 // ---------------------------------------------------------------------------
 // Monitor-broadcast event

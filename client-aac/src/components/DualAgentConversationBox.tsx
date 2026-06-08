@@ -2,6 +2,7 @@
 // Conversation UI for the dual-agent AAC system
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
   Volume2,
@@ -124,6 +125,7 @@ export function DualAgentConversationBox({
     safetyBlocked,
     paused,
     setPaused,
+    thinkingPulse,
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
   const socialBot = useSocialBot();
@@ -222,6 +224,19 @@ export function DualAgentConversationBox({
     const timer = setTimeout(() => setAvatarDwellSuppressed(false), 3000);
     return () => clearTimeout(timer);
   }, [isPlaying, avatarDwellSuppressed]);
+
+  // Question-mark overlay shown next to the avatar when Speaker emits a
+  // private_note — signals "I'm thinking" so the user doesn't read the
+  // pause as broken. Auto-dismisses after ~1.6s. We track the pulse via
+  // a counter (not a boolean) so back-to-back notes restart the
+  // animation cleanly.
+  const [showThinking, setShowThinking] = useState(false);
+  useEffect(() => {
+    if (thinkingPulse === 0) return;
+    setShowThinking(true);
+    const timer = setTimeout(() => setShowThinking(false), 1600);
+    return () => clearTimeout(timer);
+  }, [thinkingPulse]);
 
   const attentiveness = useCameraAttentivenessOptional();
 
@@ -349,6 +364,29 @@ export function DualAgentConversationBox({
                     showMouth={sprite.showMouth}
                     focusActive={sprite.focusActive}
                   />
+                  <AnimatePresence>
+                    {showThinking && (
+                      <motion.div
+                        key={thinkingPulse}
+                        initial={{ opacity: 0, scale: 0.4, y: 0 }}
+                        animate={{
+                          opacity: 1,
+                          scale: 1,
+                          y: [-2, -6, -2],
+                        }}
+                        exit={{ opacity: 0, scale: 0.6, y: -10 }}
+                        transition={{
+                          opacity: { duration: 0.18 },
+                          scale: { type: "spring", stiffness: 300, damping: 18 },
+                          y: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
+                        }}
+                        className="pointer-events-none absolute -top-2 -right-2 flex items-center justify-center w-7 h-7 rounded-full bg-yellow-300 text-gray-800 font-bold text-base shadow-md select-none"
+                        aria-label="Thinking"
+                      >
+                        ?
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </button>
               )
             )}

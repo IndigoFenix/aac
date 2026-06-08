@@ -26,17 +26,13 @@ import {
   Loader2,
   AlertTriangle,
   Zap,
-  HelpCircle,
+  Info,
   Trash2,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useBoardStore } from '@/store/board-store';
@@ -75,6 +71,24 @@ export function BoardSelector() {
   } = useBoardStore();
   
   const { sharedState, setSharedState } = useSharedState();
+
+  // "Update Automatically" (isGenerated) only makes sense when the AI is allowed
+  // to manage boards dynamically for this student.
+  const dynamicBoardsEnabled = (student as any)?.aacSettings?.dynamicBoardsEnabled ?? false;
+
+  /** Patch metadata on the loaded board + mirror into the boards list, marking
+   *  it dirty. Mirrors the inline setState the auto-select controls used. */
+  const patchBoardMeta = (patch: Record<string, any>) => {
+    const currentBoard = useBoardStore.getState().board;
+    if (!currentBoard) return;
+    useBoardStore.setState((state) => {
+      const updated = { ...currentBoard, ...patch, isDirty: true } as any;
+      return {
+        board: updated,
+        boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
+      };
+    });
+  };
 
   // ============================================================================
   // LOAD BOARDS LIST FROM SERVER (metadata only, no irData)
@@ -366,15 +380,13 @@ export function BoardSelector() {
 
   return (
     <>
+      {/* The document is dir="rtl" in RTL mode, so flex rows already reverse —
+          do NOT add flex-row-reverse here or it double-flips back to LTR. */}
       <div className={cn(
-        'flex items-center justify-between gap-4 flex-wrap',
-        isRTL && 'flex-row-reverse'
+        'flex items-center justify-between gap-4 flex-wrap'
       )}>
         {/* Left side: Board picker */}
-        <div className={cn(
-          'flex items-center gap-3',
-          isRTL && 'flex-row-reverse'
-        )}>
+        <div className="flex items-center gap-3">
           <Select
             value={board?._id || ''}
             onValueChange={handleBoardSwitch}
@@ -435,15 +447,14 @@ export function BoardSelector() {
         </div>
 
         {/* Right side: Board info, Save button, and Edit/Preview toggle */}
-        <div className={cn(
-          'flex items-center gap-2',
-          isRTL && 'flex-row-reverse'
-        )}>
+        <div className="flex items-center gap-2">
           {/* Board name and status */}
           {board && (
             <div className={cn(
               'flex items-center gap-2 mr-2',
-              isRTL && 'mr-0 ml-2 flex-row-reverse'
+              // Keep the spacing on the correct visual side in RTL (physical
+              // margin swap); NOT flex-row-reverse — dir handles ordering.
+              isRTL && 'mr-0 ml-2'
             )}>
               <span className={cn(
                 'text-xs',
@@ -557,120 +568,87 @@ export function BoardSelector() {
         </div>
       </div>
 
-      {/* AAC Auto-Selection Settings (shown when a board is loaded) */}
+      {/* Auto-Selection settings + (when dynamic boards enabled) Update-Automatically */}
       {board && (
-        <div className={cn(
-          'flex items-center gap-3 mt-2 px-1',
-          isRTL && 'flex-row-reverse'
-        )}>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="auto-select"
-              checked={board.automaticSelection ?? false}
-              onCheckedChange={(checked) => {
-                const currentBoard = useBoardStore.getState().board;
-                if (currentBoard) {
-                  useBoardStore.setState((state) => {
-                    const updated = { ...currentBoard, automaticSelection: !!checked, isDirty: true } as any;
-                    return {
-                      board: updated,
-                      boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
-                    };
-                  });
-                }
-              }}
-            />
-            <Label htmlFor="auto-select" className={cn(
-              'text-xs cursor-pointer',
-              isDark ? 'text-slate-400' : 'text-gray-500'
-            )}>
-              AAC Auto-Select
-            </Label>
-          </div>
-          {board.automaticSelection && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    'h-7 text-xs gap-1.5',
-                    isDark
-                      ? 'border-slate-700 hover:bg-slate-800'
-                      : 'border-gray-300 hover:bg-gray-100',
-                    board.automaticSelectionHint && 'border-blue-500/50 bg-blue-500/10'
-                  )}
-                >
-                  <HelpCircle className="w-3 h-3" />
-                  {board.automaticSelectionHint ? 'Hint set' : 'Add hint'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className={cn(
-                'w-80',
-                isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
+        <div className="flex items-start justify-between gap-3 mt-2 px-1">
+          {/* Left: AAC Auto-Select toggle + always-visible Auto-Select Hint */}
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="auto-select"
+                // Auto-select is meaningless without a hint telling the AI WHEN to load,
+                // so it's gated on one: shown unchecked + disabled when the hint is empty
+                // (even if a stale automaticSelection=true is stored, e.g. from generation).
+                checked={!!(board.automaticSelectionHint ?? '').trim() && (board.automaticSelection ?? false)}
+                disabled={!(board.automaticSelectionHint ?? '').trim()}
+                onCheckedChange={(checked) => patchBoardMeta({ automaticSelection: !!checked })}
+              />
+              <Label htmlFor="auto-select" className={cn(
+                'text-xs cursor-pointer',
+                isDark ? 'text-slate-400' : 'text-gray-500'
               )}>
-                <div className="space-y-2">
-                  <p className={cn(
-                    'text-xs',
-                    isDark ? 'text-slate-400' : 'text-gray-500'
-                  )}>
-                    Tell the AI when to automatically select this board.
-                  </p>
-                  <Input
-                    placeholder="e.g. 'During mealtimes'"
-                    value={board.automaticSelectionHint ?? ''}
-                    onChange={(e) => {
-                      const currentBoard = useBoardStore.getState().board;
-                      if (currentBoard) {
-                        useBoardStore.setState((state) => {
-                          const updated = { ...currentBoard, automaticSelectionHint: e.target.value, isDirty: true } as any;
-                          return {
-                            board: updated,
-                            boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
-                          };
-                        });
-                      }
-                    }}
-                    className={cn(
-                      'h-8 text-xs',
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'
-                    )}
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
-      )}
+                {t('board.autoSelect') || 'AAC Auto-Select'}
+              </Label>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="auto-select-hint" className={cn(
+                'text-xs whitespace-nowrap',
+                isDark ? 'text-slate-400' : 'text-gray-500'
+              )}>
+                {t('board.autoSelectHint') || 'Auto-Select Hint'}
+              </Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className={cn(
+                      'w-3.5 h-3.5 cursor-help shrink-0',
+                      isDark ? 'text-slate-500' : 'text-gray-400'
+                    )} />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    {t('board.autoSelectHintTooltip') || 'If set, the AAC will load this board automatically when the specified conditions are observed.'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Input
+                id="auto-select-hint"
+                placeholder={t('board.autoSelectHintPlaceholder') || "e.g. 'During mealtimes'"}
+                value={board.automaticSelectionHint ?? ''}
+                onChange={(e) => {
+                  const newHint = e.target.value;
+                  const prev = useBoardStore.getState().board as any;
+                  const wasEmpty = !((prev?.automaticSelectionHint ?? '') as string).trim();
+                  const nowEmpty = !newHint.trim();
+                  patchBoardMeta({
+                    automaticSelectionHint: newHint,
+                    // Auto-enable on empty→non-empty; force off when emptied (toggle also disables).
+                    automaticSelection: nowEmpty ? false : (wasEmpty ? true : (prev?.automaticSelection ?? false)),
+                  });
+                }}
+                className={cn(
+                  'h-7 text-xs w-44',
+                  isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'
+                )}
+              />
+            </div>
+          </div>
 
-      {/* AI Generated toggle */}
-      {board && (
-        <div className={cn(
-          'flex items-center gap-2 mt-1',
-          isRTL && 'flex-row-reverse'
-        )}>
-          <Checkbox
-            id="is-generated"
-            checked={(board as any).isGenerated ?? false}
-            onCheckedChange={(checked) => {
-              const currentBoard = useBoardStore.getState().board;
-              if (currentBoard) {
-                useBoardStore.setState((state) => {
-                  const updated = { ...currentBoard, isGenerated: !!checked, isDirty: true } as any;
-                  return {
-                    board: updated,
-                    boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
-                  };
-                });
-              }
-            }}
-          />
-          <Label htmlFor="is-generated" className={cn(
-            'text-xs cursor-pointer',
-            isDark ? 'text-slate-400' : 'text-gray-500'
-          )}>
-            {t('board.aiGenerated') || 'AI Generated'}
-          </Label>
+          {/* Right (opposite side): Update Automatically — only when dynamic boards enabled */}
+          {dynamicBoardsEnabled && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Checkbox
+                id="update-auto"
+                checked={(board as any).isGenerated ?? false}
+                onCheckedChange={(checked) => patchBoardMeta({ isGenerated: !!checked })}
+              />
+              <Label htmlFor="update-auto" className={cn(
+                'text-xs cursor-pointer whitespace-nowrap',
+                isDark ? 'text-slate-400' : 'text-gray-500'
+              )}>
+                {t('board.updateAutomatically') || 'Update Automatically'}
+              </Label>
+            </div>
+          )}
         </div>
       )}
 

@@ -115,7 +115,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         AI: Sure! What would you like to talk about?
         [USER to YOU] "My morning."
         AI: All right, let's talk about your morning! What did you do?
-        [USER to YOU] "I had breakfast."
+        [USER to YOU] "I ate breakfast."
         AI: Breakfast is important! What did you have for breakfast?`,
     he: `        [USER to YOU] "אני רוצה לדבר על היום שלי."
         AI: בטח! על מה תרצה לדבר?
@@ -133,7 +133,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         AI: (silent — addressed to the therapist, not you)
         [Therapist to USER] "What did you do this morning?"
         AI: (silent — therapist is asking the user, not you)
-        [USER to Therapist] "I had breakfast."
+        [USER to Therapist] "I ate breakfast."
         AI: (silent)`,
     he: `        Situation: The user is communicating with a therapist via the device.
 
@@ -148,33 +148,61 @@ const EXAMPLES: Record<string, ExampleEntry> = {
   // ── Three-agent: Board Manager worked examples (trigger → tool call) ─────
   "board_manager.examples": {
     en: `        Trigger: User pressed "[BUTTON PRESS] I want to talk about my day."
-        Tool call: rebuild_board(buttons=[6–8 follow-ups: My morning, Afternoon, Yesterday, Weekend, Something good happened, Something hard happened, Something else])
+        Tool call: rebuild_board(buttons=[
+          {speech:"My morning", glyph:[{sym:"i_me"},{sym:"morning"}], label:"Morning"},
+          {speech:"My afternoon", glyph:[{sym:"i_me"},{sym:"☀️"}], label:"Afternoon"},
+          {speech:"Yesterday", glyph:[{sym:"yesterday"}], label:"Yesterday"},
+          {speech:"Something good happened", glyph:[{sym:"✨"}], label:"Good"},
+          {speech:"Something hard happened", glyph:[{sym:"🌧️"}], label:"Hard"},
+          {speech:"Something else", glyph:[{sym:"🔄"}], label:"Else"}
+        ])
 
         Trigger: AI just said "What would you like to talk about?"
-        Tool call: rebuild_board(buttons=[6–8 replies to that question])
+        Tool call: rebuild_board(buttons=[6–8 reply options like {speech:"...", glyph:[...], label:"..."}])
 
-        Trigger: Therapist asked "What did you do this morning?"
-        Tool call: rebuild_board(buttons=[6–8 morning-activity SENTENCEs the user can pick])
+        Trigger: Therapist asked "What did you do this morning?", target=USER
+        Tool call: rebuild_board(target:"Therapist", buttons=[
+          {speech:"I ate breakfast", glyph:[{sym:"i_me"},{sym:"eat"},{sym:"🍳"}], op:"past", label:"Breakfast"},
+          {speech:"I went to school", glyph:[{sym:"i_me"},{sym:"go"},{sym:"🏫"}], op:"past", label:"School"},
+          ...
+        ])
 
         Trigger: Observer noted a dog walked into view.
-        Tool call: add_context_button(button={speech:"I see a dog", sentence:"i_me+see+🐕", label:"Dog"})
+        Tool call: add_context_button(button={speech:"I see a dog", glyph:[{sym:"i_me"},{sym:"see"},{sym:"🐕"}], label:"Dog"})
 
         Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
-        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[want, go, see, eat], modifier_candidates=[])`,
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[{symbol:"want", label:"want"}, {symbol:"go", label:"go"}, {symbol:"see", label:"see"}, {symbol:"eat", label:"eat"}], modifier_candidates=[])
+
+        Trigger: Observer noted a passing car. (Ambient, not addressed to user.)
+        Tool call: no_change(reason="ambient observation — current board still fits")`,
     he: `        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
-        Tool call: rebuild_board(buttons=[6–8 המשך: הבוקר, הצהריים, אתמול, סוף השבוע, משהו טוב, משהו קשה, משהו אחר])
+        Tool call: rebuild_board(buttons=[
+          {speech:"הבוקר שלי", glyph:[{sym:"i_me"},{sym:"morning"}], label:"בוקר"},
+          {speech:"הצהריים שלי", glyph:[{sym:"i_me"},{sym:"☀️"}], label:"צהריים"},
+          {speech:"אתמול", glyph:[{sym:"yesterday"}], label:"אתמול"},
+          {speech:"משהו טוב קרה", glyph:[{sym:"✨"}], label:"טוב"},
+          {speech:"משהו קשה קרה", glyph:[{sym:"🌧️"}], label:"קשה"},
+          {speech:"משהו אחר", glyph:[{sym:"🔄"}], label:"אחר"}
+        ])
 
         Trigger: ה-AI אמר "על מה תרצה לדבר?"
-        Tool call: rebuild_board(buttons=[6–8 תשובות לשאלה])
+        Tool call: rebuild_board(buttons=[6–8 אפשרויות תשובה בצורת {speech, glyph, label}])
 
-        Trigger: המטפלת שאלה "מה עשית הבוקר?"
-        Tool call: rebuild_board(buttons=[6–8 פעולות בוקר שהמשתמש יכול לבחור])
+        Trigger: המטפלת שאלה "מה עשית הבוקר?", target=USER
+        Tool call: rebuild_board(target:"מטפלת", buttons=[
+          {speech:"אכלתי ארוחת בוקר", glyph:[{sym:"i_me"},{sym:"eat"},{sym:"🍳"}], op:"past", label:"ארוחת בוקר"},
+          {speech:"הלכתי לבית הספר", glyph:[{sym:"i_me"},{sym:"go"},{sym:"🏫"}], op:"past", label:"בית ספר"},
+          ...
+        ])
 
         Trigger: Observer רשם שכלב נכנס לתמונה.
-        Tool call: add_context_button(button={speech:"אני רואה כלב", sentence:"i_me+see+🐕", label:"כלב"})
+        Tool call: add_context_button(button={speech:"אני רואה כלב", glyph:[{sym:"i_me"},{sym:"see"},{sym:"🐕"}], label:"כלב"})
 
         Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
-        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[want, go, see, eat], modifier_candidates=[])`,
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[{symbol:"want", label:"רוצה"}, {symbol:"go", label:"הולך"}, {symbol:"see", label:"רואה"}, {symbol:"eat", label:"אוכל"}], modifier_candidates=[])
+
+        Trigger: Observer רשם מכונית שעוברת. (אמביינט, לא מופנה למשתמש.)
+        Tool call: no_change(reason="תצפית אמביינט — הלוח הנוכחי עדיין מתאים")`,
   },
 
   // ── <interact_mode> worked dialogue (3 turns) ────────────────────────────
@@ -184,8 +212,8 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         You call: rebuild_board(${T.paramOwnSpeech}="Sure! What would you like to talk about?", ${T.paramUserResponseButtons}="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         User turn: "${T.tagPress} My morning."
         You speak: "All right, let's talk about your morning! What did you do?"
-        You call: rebuild_board(${T.paramOwnSpeech}="All right, let's talk about your morning! What did you do?", ${T.paramUserResponseButtons}="Breakfast|i_me+eat+🍳#past||I had breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")
-        User turn: "${T.tagPress} I had breakfast."
+        You call: rebuild_board(${T.paramOwnSpeech}="All right, let's talk about your morning! What did you do?", ${T.paramUserResponseButtons}="Breakfast|i_me+eat+🍳#past||I ate breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")
+        User turn: "${T.tagPress} I ate breakfast."
         You speak: "Breakfast is important! What did you have for breakfast?"
         You call: rebuild_board(${T.paramOwnSpeech}="Breakfast is important! What did you have for breakfast?", ${T.paramUserResponseButtons}="Cereal|🥣||I had cereal, Eggs|egg||I had eggs, Toast|bread||I had toast, Fruit|fruit||I had fruit, Pancakes|🥞||I had pancakes, Yogurt|🍧||I had yogurt, Bagel|🥯||I had a bagel, Something else|🔄||Something else")`,
     he: `        User turn: "${T.tagPress} אני רוצה לדבר על היום שלי."
@@ -209,8 +237,8 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         You call: rebuild_board(${T.paramOwnSpeech}="Sure! What would you like to talk about?", ${T.paramUserResponseButtons}="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         User turn: "${T.tagPress} My morning."
         You speak: "All right, let's talk about your morning! What did you do?"
-        You call: rebuild_board(${T.paramOwnSpeech}="All right, let's talk about your morning! What did you do?", ${T.paramUserResponseButtons}="Breakfast|🍳||I had breakfast, Got dressed|👕||I got dressed, Brushed teeth|🪥||I brushed my teeth, School|🏫||I went to school, Play|🎲||I played, Walk|🚶||I went for a walk, Watched TV|📺||I watched TV, Something else|🔄||Something else")
-        User turn: "${T.tagPress} I had breakfast."
+        You call: rebuild_board(${T.paramOwnSpeech}="All right, let's talk about your morning! What did you do?", ${T.paramUserResponseButtons}="Breakfast|🍳||I ate breakfast, Got dressed|👕||I got dressed, Brushed teeth|🪥||I brushed my teeth, School|🏫||I went to school, Play|🎲||I played, Walk|🚶||I went for a walk, Watched TV|📺||I watched TV, Something else|🔄||Something else")
+        User turn: "${T.tagPress} I ate breakfast."
         You speak: "Breakfast is important! What did you have for breakfast?"
         You call: rebuild_board(${T.paramOwnSpeech}="Breakfast is important! What did you have for breakfast?", ${T.paramUserResponseButtons}="Cereal|🥣||I had cereal, Eggs|egg||I had eggs, Toast|bread||I had toast, Fruit|fruit||I had fruit, Pancakes|🥞||I had pancakes, Yogurt|🍧||I had yogurt, Bagel|🥯||I had a bagel, Something else|🔄||Something else")`,
     he: `        User turn: "${T.tagPress} אני רוצה לדבר על היום שלי."
@@ -249,7 +277,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         You call: rebuild_board(${T.paramUserResponseButtons}="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         Therapist's voice: "What did you do this morning?"
         You call: transcript("What did you do this morning?", "Therapist", "high")
-        You call: rebuild_board(${T.paramUserResponseButtons}="Breakfast|i_me+eat+🍳#past||I had breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")`,
+        You call: rebuild_board(${T.paramUserResponseButtons}="Breakfast|i_me+eat+🍳#past||I ate breakfast, Got dressed|i_me+wear+👕#past||I got dressed, Brushed teeth|i_me+🪥#past||I brushed my teeth, School|i_me+go+🏫#past||I went to school, Play|i_me+play#past||I played, Walk|i_me+go+🚶#past||I went for a walk, Watched TV|i_me+see+📺#past||I watched TV, Something else|🔄||Something else")`,
     he: `        You are facilitating communication between the user (a girl) and a therapist.
 
         User turn: "${T.tagPress} אני רוצה לדבר על היום שלי."
@@ -269,7 +297,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         You call: rebuild_board(${T.paramUserResponseButtons}="Morning|morning||My morning, Afternoon|☀️||My afternoon, Evening|🌆||My evening, Yesterday|yesterday||Yesterday, Last night|night||Last night, Weekend|📅||My weekend, This week|🗓️||This week, Something else|🔄||Something else")
         Therapist's voice: "What did you do this morning?"
         You call: transcript("What did you do this morning?", "Therapist", "high")
-        You call: rebuild_board(${T.paramUserResponseButtons}="Breakfast|🍳||I had breakfast, Got dressed|👕||I got dressed, Brushed teeth|🪥||I brushed my teeth, School|🏫||I went to school, Play|🎲||I played, Walk|🚶||I went for a walk, Watched TV|📺||I watched TV, Something else|🔄||Something else")`,
+        You call: rebuild_board(${T.paramUserResponseButtons}="Breakfast|🍳||I ate breakfast, Got dressed|👕||I got dressed, Brushed teeth|🪥||I brushed my teeth, School|🏫||I went to school, Play|🎲||I played, Walk|🚶||I went for a walk, Watched TV|📺||I watched TV, Something else|🔄||Something else")`,
     he: `        You are facilitating communication between the user (a girl) and a therapist.
 
         User turn: "${T.tagPress} אני רוצה לדבר על היום שלי."
@@ -498,16 +526,22 @@ const EXAMPLES: Record<string, ExampleEntry> = {
   // untranslated.
 
   "tool.sbf_speech_water": {
-    en: `"I want water"`,
-    he: `"אני רוצה מים"`,
+    en: `speech: "I want water"`,
+    he: `speech: "אני רוצה מים"`,
   },
+  // Updated to the structured-array glyph form the schema actually
+  // declares. The prior `"i_me+want+🍌"` pipe encoding was the legacy
+  // string format; the structured `glyph: [...]` array is what
+  // rebuild_board now expects and what the parser sees in successful
+  // calls. Showing the legacy form was teaching the model the wrong
+  // shape — a likely contributor to MALFORMED_FUNCTION_CALL.
   "tool.sbf_speech_three_glyph_banana": {
-    en: `"I want a banana" → "i_me+want+🍌"`,
-    he: `"אני רוצה בננה" → "i_me+want+🍌"`,
+    en: `speech: "I want a banana", glyph: [{sym:"i_me"},{sym:"want"},{sym:"🍌"}]`,
+    he: `speech: "אני רוצה בננה", glyph: [{sym:"i_me"},{sym:"want"},{sym:"🍌"}]`,
   },
   "tool.sbf_speech_one_glyph_tired": {
-    en: `"I'm tired" → "😴"`,
-    he: `"אני עייף" → "😴"`,
+    en: `speech: "I'm tired", glyph: [{sym:"😴"}]`,
+    he: `speech: "אני עייף", glyph: [{sym:"😴"}]`,
   },
 
   // ── tool: BINARY_CHOICE_OPTION_FORMAT inline examples ────────────────────

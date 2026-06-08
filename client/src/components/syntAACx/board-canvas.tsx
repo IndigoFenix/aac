@@ -471,11 +471,11 @@ export function BoardCanvas() {
         onClick={handleCanvasClick}
         data-canvas-area="true"
       >
-        <div className="max-w-2xl mx-auto" data-canvas-area="true">
-          <div 
+        <div className="max-w-2xl mx-auto w-full h-full flex flex-col" data-canvas-area="true">
+          <div
             className={cn(
-              "rounded-2xl p-6 transition-all",
-              isEditMode 
+              "rounded-2xl p-6 transition-all flex flex-col flex-1 min-h-0",
+              isEditMode
                 ? isDark 
                   ? "bg-slate-900 border border-slate-800 shadow-xl" 
                   : "bg-white border border-gray-200 shadow-lg"
@@ -503,9 +503,11 @@ export function BoardCanvas() {
               </div>
             )}
 
-            {/* Button Grid */}
+            {/* Button Grid — fills the available preview area (like the AAC),
+                so cells are sized by the area / rows×cols and buttons fill them
+                rather than being locked to a square. */}
             <div
-              className="grid gap-2 aspect-square max-w-lg mx-auto"
+              className="grid gap-2 w-full flex-1 min-h-0"
               style={{
                 gridTemplateColumns: `repeat(${board.grid.cols}, minmax(0, 1fr))`,
                 gridTemplateRows: `repeat(${board.grid.rows}, minmax(0, 1fr))`,
@@ -599,7 +601,6 @@ export function BoardCanvas() {
                         onClick={(e) => handleButtonClick(button, e)}
                         className={cn(
                           "relative rounded-xl transition-all",
-                          !isSpanning && "aspect-square",
                           isEditMode
                             ? selectedButtonId === button.id
                               ? isDark
@@ -650,8 +651,8 @@ export function BoardCanvas() {
                       <button type="button"
                         key={`empty-${index}`}
                         className={cn(
-                          "aspect-square border-2 border-dashed rounded-xl flex items-center justify-center transition-colors",
-                          isDark 
+                          "border-2 border-dashed rounded-xl flex items-center justify-center transition-colors",
+                          isDark
                             ? "border-slate-700 hover:border-slate-500 bg-slate-800/30"
                             : "border-gray-300 hover:border-gray-400 bg-gray-50"
                         )}
@@ -662,8 +663,8 @@ export function BoardCanvas() {
                     );
                   }
 
-                  // Preview mode - render empty space
-                  return <div key={`empty-${index}`} className="aspect-square" />;
+                  // Preview mode - render empty space (the grid track reserves the cell)
+                  return <div key={`empty-${index}`} />;
                 }
               )}
             </div>

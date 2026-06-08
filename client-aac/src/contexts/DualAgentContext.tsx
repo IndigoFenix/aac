@@ -105,6 +105,10 @@ interface DualAgentContextType {
   // Avatar
   emote: "happy" | "sad" | "neutral";
   speakingVolume: number;
+  /** Bumps every time Speaker emits a private_note. Components key
+   *  question-mark animations off this so each note re-triggers the
+   *  pop-in. */
+  thinkingPulse: number;
 
   // Binary-choice overlay — two AI-supplied SENTENCE BUTTON options + an
   // implicit "Neither". Yes/no questions are surfaced through this same
@@ -816,6 +820,7 @@ function ProviderShell({
 
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,
+    thinkingPulse: agent.thinkingPulse,
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,

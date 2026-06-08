@@ -813,6 +813,13 @@
       "when": 1780291200000,
       "tag": "0115_chat_session_title_manual",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1780377600000,
+      "tag": "0116_aac_live_audio_speaker",
+      "breakpoints": true
     }
   ]
 }

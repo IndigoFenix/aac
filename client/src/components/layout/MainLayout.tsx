@@ -33,6 +33,12 @@ import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
+/** Minimum width (px) for the chat section AND the panel. The resize clamp and
+ *  the chat section's min-width are kept in sync via this single constant — if
+ *  they drift, the chat's min-width can exceed its flex % and push the panel
+ *  off-screen (and desync the drag handle from the border). */
+const CHAT_MIN_PX = 300;
+
 export function MainLayout() {
   const {
     activeFeature,
@@ -103,6 +109,18 @@ export function MainLayout() {
       percentage = ((rect.right - e.clientX) / rect.width) * 100;
     } else {
       percentage = ((e.clientX - rect.left) / rect.width) * 100;
+    }
+
+    // The chat section has a hard min-width (CHAT_MIN_PX, matching its
+    // `min-w-[...]`), and the panel is flex-shrink-0. If the dragged percentage
+    // resolves to fewer than CHAT_MIN_PX, the chat's min-width overrides its
+    // flex %, the panel keeps its (100 - chatSize)% and the two sum past 100%
+    // — the panel spills off-screen and the absolutely-positioned handle (drawn
+    // at chatSize%) desyncs from the real border. Clamp so the chat (and,
+    // symmetrically, the panel) never drop below CHAT_MIN_PX. Direction-agnostic.
+    if (rect.width > CHAT_MIN_PX * 2) {
+      const minPct = (CHAT_MIN_PX / rect.width) * 100;
+      percentage = Math.min(Math.max(percentage, minPct), 100 - minPct);
     }
 
     setChatSize(percentage);
@@ -284,8 +302,9 @@ export function MainLayout() {
   // Chat section (inline mode)
   const ChatSection = showChatInline && (
     <div
-      className="h-full flex flex-col min-w-[300px]"
+      className="h-full flex flex-col"
       style={{
+        minWidth: CHAT_MIN_PX,
         width: getChatWidth(),
         transition: isResizing ? 'none' : `width ${transitionDuration}ms ease-in-out`,
       }}

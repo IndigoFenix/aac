@@ -522,6 +522,13 @@ export const aacSettings = pgTable("aac_settings", {
   customVoiceId: varchar("custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
   customStudentVoiceId: varchar("custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
 
+  // Speaker backend: when true, the AAC Speaker runs as Gemini Live native-audio
+  // (model speaks directly). When false (default), it runs as HTTP completion +
+  // streaming TTS (cheaper, more reliable tool calling). The AI voice in live
+  // mode comes from Gemini Live's prebuilt voices, so the ElevenLabs AI voice
+  // picker is hidden client-side when this is on.
+  liveAudioSpeaker: boolean("live_audio_speaker").default(false).notNull(),
+
   // ElevenLabs voice settings (may be removed later)
   elevenlabsEnabled: boolean("elevenlabs_enabled").default(true), // Toggle ElevenLabs on/off without removing config
   elevenlabsApiKey: text("elevenlabs_api_key"), // Student's own ElevenLabs API key

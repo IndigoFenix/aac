@@ -3891,3 +3891,80 @@
 [2026-06-08T05:45:04.612Z] [COST] imageKey="⏰" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=96 | image: openai/gpt-image-1 in=100 out=272
 [2026-06-08T05:45:04.612Z] [processQueue] Generated "⏰" → 7257c29e-f7af-4d46-bae4-92868d5f8f58 (1 total)
 [2026-06-08T05:45:04.613Z] [processQueue] FULL REFINED PROMPT for "⏰": A simple, bold illustration of a classic alarm clock, viewed from the front. The clock is round with two small bells on top and two short legs at the bottom. It has a white face with clear black hour and minute hands pointing to approximately 10:10, and a smaller red alarm hand. A single black outline surrounds all shapes. Flat, solid colors are used with no gradients, shadows, highlights, or 3D effects, on a transparent background.
+[2026-06-08T08:05:35.560Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-08T08:05:35.736Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-08T08:05:35.737Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T08:05:52.194Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-08T08:05:52.359Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-08T08:05:52.360Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T08:06:28.767Z] [resolveImageKeys] Resolving 1 keys: confused (format=internal, useUnapproved=true)
+[2026-06-08T08:06:28.937Z] [resolveImageKeys] Resolved "confused" → __SYMBOL__:819a8e73-6d7f-4ef6-a8dc-ebf89d629b6b
+[2026-06-08T08:06:28.938Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T10:42:19.753Z] [resolveImageKeys] Resolving 1 keys: play (format=internal, useUnapproved=true)
+[2026-06-08T10:42:19.936Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-08T10:42:19.937Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T14:39:04.598Z] [resolveImageKeys] Resolving 1 keys: day (format=internal, useUnapproved=true)
+[2026-06-08T14:39:04.788Z] [resolveImageKeys] Resolved "day" → __SYMBOL__:02b88553-1500-4a6d-bcbb-5fb8b837a209
+[2026-06-08T14:39:04.790Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T14:43:47.978Z] [resolveImageKeys] Resolving 1 keys: ⏰ (format=internal, useUnapproved=true)
+[2026-06-08T14:43:48.160Z] [resolveImageKeys] Resolved "⏰" → __SYMBOL__:7257c29e-f7af-4d46-bae4-92868d5f8f58
+[2026-06-08T14:43:48.161Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T14:44:00.103Z] [resolveImageKeys] Resolving 3 keys: learn, play, see (format=internal, useUnapproved=true)
+[2026-06-08T14:44:00.284Z] [resolveImageKeys] Resolved "learn" → __SYMBOL__:27a17169-c78f-46b6-bceb-2e9028078664
+[2026-06-08T14:44:00.593Z] [resolveImageKeys] Resolved "play" → __SYMBOL__:b4ec3382-d7bd-4c35-9dec-5bed3da5c9f9
+[2026-06-08T14:44:00.751Z] [resolveImageKeys] No symbol found for "see"
+[2026-06-08T14:44:00.752Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: see
+[2026-06-08T14:44:00.756Z] [queueGeneration] Queuing 1 keys: see (hasCallback=true)
+[2026-06-08T14:44:00.915Z] [processQueue] Generating "see"...
+[2026-06-08T15:24:43.103Z] [resolveImageKeys] Resolving 1 keys: mealtime_eating (format=api-path, useUnapproved=true)
+[2026-06-08T15:24:43.262Z] [resolveImageKeys] Resolved "mealtime_eating" → /api/custom-symbols/411fc8ba-0c51-49d7-820e-cbb2504c5966/image
+[2026-06-08T15:24:43.264Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T16:25:59.974Z] [resolveImageKeys] Resolving 1 keys: ask (format=internal, useUnapproved=true)
+[2026-06-08T16:26:00.135Z] [resolveImageKeys] No symbol found for "ask"
+[2026-06-08T16:26:00.136Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: ask
+[2026-06-08T16:26:00.138Z] [queueGeneration] Queuing 1 keys: ask (hasCallback=true)
+[2026-06-08T16:26:00.300Z] [processQueue] Generating "ask"...
+[2026-06-08T16:26:17.111Z] [COST] imageKey="ask" | refinement: gemini/gemini-2.5-flash in=1057 (1055 cached) out=62 | image: openai/gpt-image-1 in=68 out=272
+[2026-06-08T16:26:17.112Z] [processQueue] Generated "ask" → 29b59c02-1a97-4c47-bd13-182554535010 (1 total)
+[2026-06-08T16:26:17.112Z] [processQueue] FULL REFINED PROMPT for "ask": A simple, generic human figure with a slightly stylized head and no hair, facing forward with a questioning expression. The figure has one hand raised with the palm open, as if asking a question. A small, curved question mark symbol is depicted floating above the figure's head, in flat AAC icon style.
+[2026-06-08T16:43:44.867Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-08T16:43:45.085Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-08T16:43:45.096Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T16:43:59.452Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-08T16:43:59.628Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-08T16:43:59.629Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T16:44:04.636Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
+[2026-06-08T16:44:04.809Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-08T16:44:04.810Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:04:38.755Z] [resolveImageKeys] Resolving 1 keys: delivery_truck (format=api-path, useUnapproved=true)
+[2026-06-08T17:04:38.932Z] [resolveImageKeys] No symbol found for "delivery_truck"
+[2026-06-08T17:04:38.935Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: delivery_truck
+[2026-06-08T17:04:38.937Z] [queueGeneration] Queuing 1 keys: delivery_truck (hasCallback=true)
+[2026-06-08T17:04:39.106Z] [processQueue] Generating "delivery_truck"...
+[2026-06-08T17:05:14.999Z] [COST] imageKey="delivery_truck" | refinement: gemini/gemini-2.5-flash in=1058 (1055 cached) out=62 | image: openai/gpt-image-1 in=68 out=272
+[2026-06-08T17:05:15.000Z] [processQueue] Generated "delivery_truck" → e162cfeb-ec6f-4ec2-b4e0-8d09015a8308 (1 total)
+[2026-06-08T17:05:15.001Z] [processQueue] FULL REFINED PROMPT for "delivery_truck": A side view of a large, boxy delivery truck with a prominent cargo area, a small cab at the front, and two wheels visible, in flat AAC icon style. The truck is light blue with a dark blue stripe along the side of the cargo area. It has bold black outlines and solid colors.
+[2026-06-08T17:05:17.344Z] [resolveImageKeys] Resolving 1 keys: delivery_truck (format=api-path, useUnapproved=true)
+[2026-06-08T17:05:17.514Z] [resolveImageKeys] Resolved "delivery_truck" → /api/custom-symbols/e162cfeb-ec6f-4ec2-b4e0-8d09015a8308/image
+[2026-06-08T17:05:17.515Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:05:24.682Z] [resolveImageKeys] Resolving 1 keys: delivery_truck (format=api-path, useUnapproved=true)
+[2026-06-08T17:05:24.851Z] [resolveImageKeys] Resolved "delivery_truck" → /api/custom-symbols/e162cfeb-ec6f-4ec2-b4e0-8d09015a8308/image
+[2026-06-08T17:05:24.853Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:05:34.447Z] [resolveImageKeys] Resolving 1 keys: delivery_truck (format=api-path, useUnapproved=true)
+[2026-06-08T17:05:34.642Z] [resolveImageKeys] Resolved "delivery_truck" → /api/custom-symbols/e162cfeb-ec6f-4ec2-b4e0-8d09015a8308/image
+[2026-06-08T17:05:34.644Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:19:44.878Z] [resolveImageKeys] Resolving 1 keys: stop (format=internal, useUnapproved=true)
+[2026-06-08T17:19:45.089Z] [resolveImageKeys] Resolved "stop" → __SYMBOL__:7b374053-84d8-4a4e-b669-8a32408c41e3
+[2026-06-08T17:19:45.093Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:19:53.578Z] [resolveImageKeys] Resolving 1 keys: stop (format=internal, useUnapproved=true)
+[2026-06-08T17:19:53.804Z] [resolveImageKeys] Resolved "stop" → __SYMBOL__:7b374053-84d8-4a4e-b669-8a32408c41e3
+[2026-06-08T17:19:53.811Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-08T17:20:32.929Z] [resolveImageKeys] Resolving 3 keys: yes, no, stop (format=internal, useUnapproved=true)
+[2026-06-08T17:20:33.142Z] [resolveImageKeys] Resolved "yes" → __SYMBOL__:8ea78a1f-76b4-48ab-a92e-4c49372f7011
+[2026-06-08T17:20:33.319Z] [resolveImageKeys] Resolved "no" → __SYMBOL__:9b8a17d8-b924-4b12-b314-d8b998428090
+[2026-06-08T17:20:33.495Z] [resolveImageKeys] Resolved "stop" → __SYMBOL__:7b374053-84d8-4a4e-b669-8a32408c41e3
+[2026-06-08T17:20:33.501Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-06-08T17:20:47.352Z] [resolveImageKeys] Resolving 2 keys: finished, stop (format=internal, useUnapproved=true)
+[2026-06-08T17:20:47.589Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
+[2026-06-08T17:20:47.930Z] [resolveImageKeys] Resolved "stop" → __SYMBOL__:7b374053-84d8-4a4e-b669-8a32408c41e3
+[2026-06-08T17:20:47.935Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 

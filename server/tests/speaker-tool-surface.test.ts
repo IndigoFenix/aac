@@ -47,6 +47,15 @@ describe("buildSpeakerToolDeclarations", () => {
     expect(names(decls)).toContain("call_monitor");
   });
 
+  test("HTTP mode declares remain_silent (terminal silence action)", () => {
+    const decls = buildSpeakerToolDeclarations({
+      ...baseConfig,
+      useDirectAudio: true,
+      httpMode: true,
+    });
+    expect(names(decls)).toContain("remain_silent");
+  });
+
   test("HTTP mode does NOT declare speak() (text content is the speech)", () => {
     const decls = buildSpeakerToolDeclarations({
       ...baseConfig,

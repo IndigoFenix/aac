@@ -50,7 +50,8 @@ import { deleteExternalData, type EntityRef } from "../external-storage";
 const AAC_SETTINGS_FIELDS = new Set([
   "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "autoAacPrompt", "modelOverride",
   "startupMode", "voiceType", "studentVoiceType",
-  "customVoiceId", "customStudentVoiceId", "elevenlabsEnabled", "elevenlabsApiKey",
+  "customVoiceId", "customStudentVoiceId", "liveAudioSpeaker",
+  "elevenlabsEnabled", "elevenlabsApiKey",
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
   "geminiAiVoice", "geminiStudentVoice", "aiVoicePitch", "studentVoicePitch",
   "useLocalTts", "iconTextRatio", "singleGlyphButtons",

@@ -1163,7 +1163,7 @@ Use this when you notice the user is in a context that would benefit from a dedi
 - glyph: one or more SYMBOLs joined by "+". A SYMBOL is an emoji (🍎, 🤗) or generate:lower_snake_case for a custom picture (use only when no emoji fits). If a glyph uses ANY generate: SYMBOL, also set glyphFallback to an emoji-only version so the button shows something immediately while the picture is produced.
 - Do NOT set a button color — the system colors buttons automatically (e.g. yes/no, find, more). Only include a color if you specifically need to override it.
 - Navigation buttons (action type "link") connect pages. Back buttons (action type "back") return to the previous page.
-- Set automaticSelection to true and provide a hint describing when this board should be used.
+- If this board is for a SPECIFIC recurring situation, fill in "hint" — a short phrase describing WHEN the AAC should automatically load it (e.g. "during mealtimes", "in math class", "at the playground"). A hint is what enables automatic selection, so set one whenever the board is situational. Omit "hint" (leave it out) for a general-purpose board that shouldn't auto-load.
 - The board will immediately become available to the Interactive Agent.
 
 **To create or edit a board, output a [BOARD] tag with JSON:**

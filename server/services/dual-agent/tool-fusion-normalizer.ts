@@ -33,6 +33,14 @@ export interface FusionEntry {
   /** Whether the declared param is an array — controls how we wrap a
    *  single-object arg. */
   paramIsArray: boolean;
+  /** The other declared params on the same tool. Used by applyFusionEntry
+   *  to decide what to keep as outer siblings (e.g. `target` /
+   *  `slot_index`) vs. what to fold into the wrapped item (e.g. for
+   *  rebuild_board, `label` / `speech` / `glyph` belong INSIDE each
+   *  button, even though `label`/`speech` are string-typed). Without
+   *  this, a naive "strings go to outer scope" heuristic strips fields
+   *  out of the item where they belong. */
+  siblingParamNames: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +67,7 @@ export function buildFusionMap(
       | { properties?: Record<string, { type?: string }> }
       | undefined;
     const properties = schema?.properties ?? {};
+    const allParamNames = Object.keys(properties);
     for (const [paramName, paramSchema] of Object.entries(properties)) {
       const paramPascal = snakeToPascal(paramName);
       const fused = toolPascal + paramPascal;
@@ -70,6 +79,7 @@ export function buildFusionMap(
         toolName: decl.name,
         paramName,
         paramIsArray: (paramSchema as { type?: string })?.type === "array",
+        siblingParamNames: new Set(allParamNames.filter(n => n !== paramName)),
       });
     }
   }
@@ -96,28 +106,159 @@ export function applyFusionEntry(
   // Already shaped correctly — just rename the tool, no arg surgery.
   if (entry.paramName in args) return args;
 
-  // Pull aside any scalar siblings the model included (e.g. slot_index)
-  // so they stay on the rewritten call. Object-shaped fields go into
-  // the wrapped param.
-  const scalars: Record<string, any> = {};
-  const remainder: Record<string, any> = {};
+  // Schema-aware split: keys that match a DECLARED sibling param on
+  // the same tool stay at the outer level (target, slot_index, etc.).
+  // Everything else collapses into the wrapped item — for rebuild_board
+  // that means label/speech/glyph end up INSIDE each button as
+  // intended, instead of being stripped to the outer scope because
+  // they happen to be string-typed.
+  const siblings: Record<string, any> = {};
+  const itemFields: Record<string, any> = {};
   for (const [k, v] of Object.entries(args)) {
-    if (v === null || ["string", "number", "boolean"].includes(typeof v)) {
-      scalars[k] = v;
+    if (entry.siblingParamNames.has(k)) {
+      siblings[k] = v;
     } else {
-      remainder[k] = v;
+      itemFields[k] = v;
     }
   }
 
-  // If a recognizable single-object value is present, use it; else the
-  // entire `args` (sans scalars) becomes the wrapped value.
-  const candidate = Object.keys(remainder).length > 0 ? remainder : args;
-
+  // If the model emitted ONLY sibling-typed args (rare; e.g. a pure
+  // slot_index call with no payload), `itemFields` is empty and we
+  // don't want to invent an empty object. Otherwise wrap normally.
   const value = entry.paramIsArray
-    ? (Array.isArray(candidate) ? candidate : [candidate])
-    : candidate;
+    ? (Object.keys(itemFields).length > 0 ? [itemFields] : [])
+    : itemFields;
 
-  return { ...scalars, [entry.paramName]: value };
+  return { ...siblings, [entry.paramName]: value };
+}
+
+/**
+ * Collapse parallel fused calls that target the same (toolName, paramName)
+ * when the param is an array. The model frequently emits ONE fused call
+ * per item (e.g. six `RebuildBoardButtons` calls in a single response,
+ * one per intended board button); without merging, each gets rewritten
+ * to a single-item `rebuild_board` and the dispatch layer then handles
+ * each one independently — wiping or overlaying as if six discrete
+ * intents arrived, never as the one bulk rebuild the model meant.
+ *
+ * Input is the raw tool-call list returned by the provider. Output is a
+ * new list where:
+ *   - Each cluster of ≥1 fused calls targeting (tool, arrayParam) is
+ *     replaced by ONE call with `{ [paramName]: [item1, item2, ...] }`
+ *     (scalars from the first call in the cluster are preserved as
+ *     siblings).
+ *   - Non-fused calls and fused calls targeting non-array params pass
+ *     through unchanged, in their original positions where possible.
+ *
+ * Order is preserved by the first appearance of each (tool, param) key.
+ */
+export function mergeFusedToolCalls<
+  T extends { name?: string; arguments: string },
+>(
+  calls: T[],
+  fusionMap: Map<string, FusionEntry> | undefined,
+): T[] {
+  if (!fusionMap || calls.length === 0) return calls.slice();
+
+  type Cluster = {
+    firstIndex: number;
+    entry: FusionEntry;
+    items: any[];
+    scalars: Record<string, any>;
+  };
+  const clusters = new Map<string, Cluster>();
+  const output: Array<T | { __cluster: string }> = [];
+
+  for (let i = 0; i < calls.length; i++) {
+    const call = calls[i];
+    const entry = call.name ? fusionMap.get(call.name) : undefined;
+    if (!entry || !entry.paramIsArray) {
+      output.push(call);
+      continue;
+    }
+    let args: Record<string, any> = {};
+    try {
+      args = call.arguments ? JSON.parse(call.arguments) : {};
+    } catch {
+      // Malformed args — fall back to passing the call through.
+      output.push(call);
+      continue;
+    }
+
+    // Per-call item(s): either the already-shaped paramName array, or
+    // a single object built from the schema-aware split of loose args
+    // (siblings stay outer, everything else folds into the item).
+    let items: any[];
+    let callSiblings: Record<string, any> = {};
+    if (Array.isArray(args[entry.paramName])) {
+      items = args[entry.paramName];
+      for (const [k, v] of Object.entries(args)) {
+        if (k !== entry.paramName && entry.siblingParamNames.has(k)) {
+          callSiblings[k] = v;
+        }
+      }
+    } else if (entry.paramName in args) {
+      items = [args[entry.paramName]];
+      for (const [k, v] of Object.entries(args)) {
+        if (k !== entry.paramName && entry.siblingParamNames.has(k)) {
+          callSiblings[k] = v;
+        }
+      }
+    } else {
+      const itemFields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (entry.siblingParamNames.has(k)) {
+          callSiblings[k] = v;
+        } else {
+          itemFields[k] = v;
+        }
+      }
+      items = Object.keys(itemFields).length > 0 ? [itemFields] : [];
+    }
+
+    const key = `${entry.toolName}::${entry.paramName}`;
+    let cluster = clusters.get(key);
+    if (!cluster) {
+      cluster = { firstIndex: i, entry, items: [], scalars: { ...callSiblings } };
+      clusters.set(key, cluster);
+      output.push({ __cluster: key });
+    } else {
+      // Merge sibling values from later calls only when absent — the
+      // first non-empty wins so we don't overwrite a meaningful value
+      // with a later one.
+      for (const [k, v] of Object.entries(callSiblings)) {
+        if (!(k in cluster.scalars)) cluster.scalars[k] = v;
+      }
+    }
+    cluster.items.push(...items);
+  }
+
+  // Materialize cluster markers into synthesized merged calls.
+  const result: T[] = [];
+  for (const slot of output) {
+    if ((slot as any).__cluster) {
+      const key = (slot as { __cluster: string }).__cluster;
+      const cluster = clusters.get(key)!;
+      const merged = {
+        ...cluster.scalars,
+        [cluster.entry.paramName]: cluster.items,
+      };
+      // Synthesize a call with the FUSED name preserved so downstream
+      // detection/feedback (which reads `call.name`) still recognises it
+      // as a fusion. applyFusionEntry will rewrite the name on its
+      // normal pass.
+      const synthesizedName =
+        snakeToPascal(cluster.entry.toolName) +
+        snakeToPascal(cluster.entry.paramName);
+      result.push({
+        name: synthesizedName,
+        arguments: JSON.stringify(merged),
+      } as T);
+    } else {
+      result.push(slot as T);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

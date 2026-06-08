@@ -28,7 +28,9 @@ import type {
 import {
   buildSpeakerToolDeclarations,
   type SpeakerToolConfig,
-} from "./tool-declarations-speaker";
+  buildOrphanReprompt,
+  SPEAKER_TOOL_ACK,
+} from "./prompts/speaker";
 import type { FunctionDeclaration } from "@google/genai";
 import { SentenceStreamer } from "./sentence-streamer";
 import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
@@ -45,6 +47,7 @@ import type {
   WebsiteOpenRequestedEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
+  RemainSilentEvent,
 } from "./agent-events";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +63,14 @@ const HISTORY_TURN_CAP = 60;
 /** Max tokens per HTTP completion. Speaker replies are short (one or
  *  two sentences) so this is plenty, with margin for tool calls. */
 const MAX_OUTPUT_TOKENS = 600;
+
+/** How many times within a single user turn the Speaker is allowed to
+ *  emit only private_note(s) (no text, no remain_silent) before the
+ *  loop bails out. Each orphan-note turn we re-fire with the notes
+ *  injected as system context and require the model to actually reply
+ *  or call remain_silent. Without a cap the model can spin forever
+ *  rationalizing about its own thoughts. */
+const MAX_NOTE_REPROMPTS = 3;
 
 // ---------------------------------------------------------------------------
 // Conversions
@@ -104,6 +115,24 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
   // Generation state
   private inFlight: AbortController | null = null;
   private currentTurnSentenceCount = 0;
+
+  // Per-turn private_note rollover state. Reset at the start of each
+  // sendUserTurn. Notes from orphan turns (no text / no remain_silent)
+  // accumulate here so they can be injected into the next re-prompt and
+  // the model can see what it was thinking — but they're NEVER persisted
+  // into `this.history` long-term (we don't want the model treating its
+  // own past notes as the canonical record of its reasoning).
+  private notesBufferThisTurn: string[] = [];
+  private noteRepromptCount = 0;
+  // Fake history items appended to the messages array during the orphan
+  // loop so the model sees a coherent self-record of its own notes +
+  // re-prompts WITHOUT those entries entering `this.history` long-term.
+  // Cleared at every sendUserTurn. Holds: fake assistant tool_call
+  // entries (one per note), their synthetic tool acks, and the user-role
+  // re-prompts the orphan loop generated. Without this, each re-fire
+  // saw the same input as the first pass and produced byte-identical
+  // private_note output, then hit the cap silently.
+  private orphanLoopMessages: ProviderChatMessage[] = [];
 
   // Debug context
   private debugSessionId: string | null = null;
@@ -170,6 +199,10 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     flowInput("SPEAKER", "user_turn", text);
     this.history.push({ role: "user", content: text });
     this.trimHistory();
+    // New turn → reset the orphan-note rollover state.
+    this.notesBufferThisTurn = [];
+    this.noteRepromptCount = 0;
+    this.orphanLoopMessages = [];
     // Fire a new completion. If an earlier one is still streaming, abort
     // it — newer turn supersedes older context.
     void this.fireCompletion();
@@ -226,6 +259,9 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     const messages: ProviderChatMessage[] = [
       { role: "system", content: this.systemPrompt },
       ...this.history,
+      // Fake assistant tool_calls + tool acks + re-prompt user messages
+      // accumulated during the orphan loop. Empty outside the loop.
+      ...this.orphanLoopMessages,
     ];
 
     const splitter = new SentenceStreamer();
@@ -308,9 +344,150 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
       if (tail) onSentenceReady(tail);
 
       const transcript = fullText.trim();
-      // SpeechTextFinalized — full transcript is ready. Coordinator uses
-      // this to kick BoardManager while TTS continues playing out.
-      if (transcript) {
+
+      // ----- Partition tool calls --------------------------------------
+      // private_note and remain_silent are handled specially here. Other
+      // tool calls (emote, open_app, ...) are emitted as events and
+      // persisted to history normally.
+      const noteCalls = toolCalls.filter(c => c.name === "private_note");
+      const silentCalls = toolCalls.filter(c => c.name === "remain_silent");
+      const otherCalls = toolCalls.filter(
+        c => c.name !== "private_note" && c.name !== "remain_silent",
+      );
+
+      // Buffer notes from THIS firing for potential re-prompt. Also emit
+      // PrivateNoteEvent so the log / monitor sees them.
+      for (const call of noteCalls) {
+        let args: any = {};
+        try { args = JSON.parse(call.arguments || "{}"); } catch {}
+        const note = typeof args.note === "string" ? args.note : "";
+        if (note) this.notesBufferThisTurn.push(note);
+        flowTool("SPEAKER", "private_note", JSON.stringify(args));
+        const ev: PrivateNoteEvent = {
+          type: "private_note",
+          source: "speaker",
+          timestamp: Date.now(),
+          note,
+        };
+        this.callbacks.onEvent(ev);
+      }
+
+      // Surface remain_silent for the log too.
+      for (const call of silentCalls) {
+        let args: any = {};
+        try { args = JSON.parse(call.arguments || "{}"); } catch {}
+        const reason = typeof args.reason === "string" ? args.reason : "(no reason)";
+        flowTool("SPEAKER", "remain_silent", JSON.stringify(args));
+        const ev: RemainSilentEvent = {
+          type: "remain_silent",
+          source: "speaker",
+          timestamp: Date.now(),
+          reason,
+        };
+        this.callbacks.onEvent(ev);
+      }
+
+      // ----- Other tool events ------------------------------------------
+      // Fire side-action tools (emote, open_app, etc.) immediately so
+      // their effects (avatar emote change, app opens) apply right away.
+      // We re-prompt for missing speech below, but the side actions are
+      // committed — the user has already SEEN the emote / app / etc.
+      for (const call of otherCalls) {
+        let args: any = {};
+        try { args = JSON.parse(call.arguments || "{}"); } catch {}
+        flowTool("SPEAKER", call.name, JSON.stringify(args));
+        for (const ev of this.parseToolCall({ name: call.name, args }, Date.now())) {
+          this.callbacks.onEvent(ev);
+        }
+      }
+
+      const hasReply = transcript.length > 0;
+      const hasRemainSilent = silentCalls.length > 0;
+      // An "orphan" turn is one that ended with NO spoken text AND NO
+      // explicit remain_silent — meaning the only output was side
+      // actions (notes, emotes, app opens, etc.). Every observed
+      // failure mode where the user gets no reply boils down to this:
+      // the model issued an emote / private_note / set_speech_target
+      // and treated that as the whole turn. Re-prompt to force either
+      // real speech or an explicit silence acknowledgment.
+      const hasSideActions = noteCalls.length > 0 || otherCalls.length > 0;
+      const isOrphanTurn =
+        !hasReply && !hasRemainSilent && hasSideActions;
+
+      // ----- Re-prompt path --------------------------------------------
+      // Orphan turn: persist side-action tool calls to REAL history (those
+      // actually fired), append FAKE history items for the model's own
+      // private_note calls + re-prompt onto `orphanLoopMessages` so the
+      // model sees a coherent self-record without those entries entering
+      // the long-term history.
+      if (isOrphanTurn && this.noteRepromptCount < MAX_NOTE_REPROMPTS) {
+        this.noteRepromptCount++;
+        if (otherCalls.length > 0) {
+          // Persist side-action calls to real history (they actually
+          // fired). Gemini needs the synthetic tool ack to keep the
+          // turn well-formed.
+          this.history.push({
+            role: "assistant",
+            content: null,
+            toolCalls: otherCalls.map((c, idx) => ({
+              id: `call_${Date.now()}_${idx}`,
+              name: c.name,
+              arguments: c.arguments,
+            })),
+          });
+          for (const c of otherCalls) {
+            this.history.push({
+              role: "tool",
+              toolCallId: c.name,
+              content: JSON.stringify(SPEAKER_TOOL_ACK),
+            });
+          }
+        }
+        if (noteCalls.length > 0) {
+          // Fake history for the model's note tool calls — appended only
+          // to orphanLoopMessages so it disappears at next sendUserTurn.
+          // Without this the model sees no record of having noted and
+          // re-derives the same note from the user turn deterministically.
+          const ids = noteCalls.map((_, idx) => `note_${Date.now()}_${idx}`);
+          this.orphanLoopMessages.push({
+            role: "assistant",
+            content: null,
+            toolCalls: noteCalls.map((c, idx) => ({
+              id: ids[idx],
+              name: c.name,
+              arguments: c.arguments,
+            })),
+          });
+          for (let i = 0; i < noteCalls.length; i++) {
+            this.orphanLoopMessages.push({
+              role: "tool",
+              toolCallId: ids[i],
+              content: JSON.stringify(SPEAKER_TOOL_ACK),
+            });
+          }
+        }
+        const repromptText = buildOrphanReprompt({
+          otherCalls,
+          noteCalls,
+          bufferedNotes: this.notesBufferThisTurn,
+        });
+        this.orphanLoopMessages.push({ role: "user", content: repromptText });
+        this.trimHistory();
+        flowNote(
+          "SPEAKER",
+          `orphan turn (#${this.noteRepromptCount}/${MAX_NOTE_REPROMPTS}); side-actions=[${otherCalls.map(c => c.name).join(",") || "none"}] notes=${this.notesBufferThisTurn.length}; re-prompting`,
+        );
+        // Defer recursive call until the current finally has cleared
+        // inFlight; otherwise abortInFlight in the next firing would
+        // cancel us mid-cleanup.
+        queueMicrotask(() => void this.fireCompletion());
+        return;
+      }
+
+      // ----- speech_text_finalized -------------------------------------
+      // BoardManager kicks on this so it sees the FULL transcript while
+      // TTS continues to stream.
+      if (hasReply) {
         flowOutput("SPEAKER", "text_finalized", transcript);
         const tf: SpeechTextFinalizedEvent = {
           type: "speech_text_finalized",
@@ -321,45 +498,39 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         this.callbacks.onEvent(tf);
       }
 
-      // Tool events.
-      for (const call of toolCalls) {
-        let args: any = {};
-        try { args = JSON.parse(call.arguments || "{}"); } catch {}
-        flowTool("SPEAKER", call.name, JSON.stringify(args));
-        for (const ev of this.parseToolCall({ name: call.name, args }, Date.now())) {
-          this.callbacks.onEvent(ev);
+      // ----- Persist to history ----------------------------------------
+      // Persist ONLY the reply text + non-note/non-silent tool calls.
+      // private_note and remain_silent are intentionally dropped from
+      // long-term history: the model should not see its own past notes
+      // or silence-decisions, which encourages "I am a thinking model"
+      // self-imitation and (in the note case) literal `[PRIVATE NOTE]`
+      // prefixes in replies. Notes from the orphan-loop are also
+      // discarded at this point — the only durable record is the event
+      // log + Monitor's view.
+      if (hasReply || otherCalls.length > 0) {
+        this.history.push({
+          role: "assistant",
+          content: hasReply ? transcript : null,
+          toolCalls: otherCalls.length > 0
+            ? otherCalls.map((c, idx) => ({
+                id: `call_${Date.now()}_${idx}`,
+                name: c.name,
+                arguments: c.arguments,
+              }))
+            : undefined,
+        });
+        for (const c of otherCalls) {
+          this.history.push({
+            role: "tool",
+            toolCallId: c.name,
+            content: JSON.stringify(SPEAKER_TOOL_ACK),
+          });
         }
       }
-
-      // Persist assistant turn to history so future turns see it.
-      this.history.push({
-        role: "assistant",
-        content: transcript || null,
-        toolCalls: toolCalls.length > 0
-          ? toolCalls.map((c, idx) => ({
-              id: `call_${Date.now()}_${idx}`,
-              name: c.name,
-              arguments: c.arguments,
-            }))
-          : undefined,
-      });
-
-      // For each tool call, append a synthetic "ok" tool response so
-      // Gemini's history stays well-formed for the next turn.
-      for (const c of toolCalls) {
-        this.history.push({
-          role: "tool",
-          toolCallId: c.name,
-          content: JSON.stringify({ output: "ok" }),
-        });
-      }
-
       this.trimHistory();
 
-      // SpeechEnd — model finished generating. Emit only when there was
-      // actual speech this turn; tool-only turns (e.g. silent open_app)
-      // don't fire SpeechEnd.
-      if (transcript) {
+      // ----- speech_end ------------------------------------------------
+      if (hasReply) {
         flowOutput("SPEAKER", "speech", transcript);
         const se: SpeechEndEvent = {
           type: "speech_end",
@@ -369,7 +540,19 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
           target: this.pendingSpeechTarget ?? "USER",
         };
         this.callbacks.onEvent(se);
+      } else if (!hasRemainSilent && noteCalls.length > 0) {
+        // Hit the re-prompt cap without producing speech or silence.
+        // Log it loudly — it's an indicator that the prompt is steering
+        // the model toward chronic note-only turns.
+        flowNote(
+          "SPEAKER",
+          `note-rollover cap hit (${MAX_NOTE_REPROMPTS}); dropping turn silently`,
+        );
       }
+
+      // Per-turn rollover state is reset on the NEXT sendUserTurn, not
+      // here — we want the counter to persist across re-fires within
+      // the same user turn but reset cleanly when a fresh turn lands.
     } catch (err) {
       if (controller.signal.aborted) return;
       const msg = (err as Error)?.message || String(err);
@@ -454,15 +637,13 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         return [ev];
       }
 
-      case "private_note": {
-        const ev: PrivateNoteEvent = {
-          type: "private_note",
-          source: "speaker",
-          timestamp: now,
-          note: asString(args.note) ?? "",
-        };
-        return [ev];
-      }
+      case "private_note":
+      case "remain_silent":
+        // Handled inline in fireCompletion (note buffering / orphan
+        // re-prompt loop / silence acknowledgment). parseToolCall is
+        // only called for "other" tools after partitioning, so reaching
+        // here is unexpected — return [] defensively.
+        return [];
 
       case "debug_message":
         return [];

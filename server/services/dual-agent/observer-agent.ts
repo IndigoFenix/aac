@@ -28,7 +28,8 @@ import type {
 import {
   buildObserverToolDeclarations,
   type ObserverToolConfig,
-} from "./tool-declarations-observer";
+  OBSERVER_SCENE_UPDATE_PROMPT,
+} from "./prompts/observer";
 import { flowInput, flowTool } from "./agent-flow-logger";
 import type {
   ObserverEvent,
@@ -362,7 +363,7 @@ export class ObserverAgent {
    * up malforming when audio finally lands.
    */
   sendFrame(jpegBase64: string, scenePrompt?: string): void {
-    const prompt = scenePrompt || "[scene update] React if something here calls for action.";
+    const prompt = scenePrompt || OBSERVER_SCENE_UPDATE_PROMPT;
     flowInput("OBSERVER", "image_frame", prompt);
     this.provider?.sendFrameWithPrompt(jpegBase64, prompt);
   }
@@ -421,7 +422,7 @@ export class ObserverAgent {
         calls.map(c => ({
           id: c.id,
           name: c.name || "unknown",
-          response: { output: "ok" },
+          response: { output: "ok" }, // Observer-specific ack; minimal payload
         })),
       );
     }
