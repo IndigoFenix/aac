@@ -22,6 +22,12 @@ export default defineConfig({
   server: {
     port: 5174,
     host: "0.0.0.0",
+    // The games under /games/ are independent Vite projects served as pre-built
+    // static assets; never let edits there trigger an HMR reload of the AAC
+    // client. (Edits to shared/ still reload, since both consume it via @shared.)
+    watch: {
+      ignored: ["**/games/**", "**/dist/**"],
+    },
     // Standalone vite dev mode for the AAC client (`npm run client-aac:dev`)
     // runs on its own port — proxy backend traffic to the Express server so
     // /ws/* upgrades and /api/* requests actually reach the running server.

@@ -1,559 +1,261 @@
-// Sandbox Game — Core engine (pure logic, no React dependency)
+// Sandbox Game — field-simulation engine (pure logic, no React/DOM).
+//
+// Keeps the original "tick + catch-up-on-load" philosophy, but as a fixed-step
+// FIELD simulation over a height grid rather than a per-cell timer/rule queue.
+// One `worldStep` advances the ecology; `catchUp` resolves missed steps after
+// an absence (capped — the sim settles to near-equilibrium long before the cap).
 
-import type { CellType, GameCell, GameState, TimerEvent, RuleEffect, Rule, ToolId } from './types';
-import ELEMENTS, { getElement } from './elements';
+import type { GameState, TerrainCell } from './types';
+import { SAVE_VERSION } from './types';
+import {
+  GRID_COLS, GRID_ROWS, BASELINE_HEIGHT,
+  WORLD_STEP_MS, MAX_CATCHUP_STEPS, ECO, POUR,
+} from './config';
+import { idx, inBounds, recomputeTotalSand } from './grid';
 
-const NEIGHBOR_OFFSETS: [number, number][] = [
-  [0, -1], [0, 1], [-1, 0], [1, 0], // cardinal only
-];
+// --- Factory ------------------------------------------------------------------
 
-/** Max cascade iterations to prevent runaway loops */
-const MAX_CASCADE_STEPS = 500;
-
-// --- Factory ---
-
-export function createNewGame(width = 16, height = 16): GameState {
-  const grid: GameCell[][] = [];
-  for (let y = 0; y < height; y++) {
-    const row: GameCell[] = [];
-    for (let x = 0; x < width; x++) {
-      row.push({ type: 'empty', energy: 0, state: 0 });
-    }
-    grid.push(row);
+export function createNewGame(cols = GRID_COLS, rows = GRID_ROWS): GameState {
+  const cells: TerrainCell[] = [];
+  for (let i = 0; i < cols * rows; i++) {
+    cells.push({ height: BASELINE_HEIGHT, moisture: 0, water: 0, plant: 0, wetTime: 0 });
   }
   return {
-    grid,
-    width,
-    height,
-    playerEnergy: 50,
-    maxPlayerEnergy: 50,
+    version: SAVE_VERSION,
+    cols,
+    rows,
+    cells,
     lastUpdateTime: Date.now(),
-    timers: [],
-    harvested: 0,
-    flowQueue: [],
+    totalSand: cols * rows * BASELINE_HEIGHT,
   };
 }
 
-// --- Helpers ---
+// --- Neighbour index helper (cardinal, in-bounds) -----------------------------
 
-function inBounds(state: GameState, x: number, y: number): boolean {
-  return x >= 0 && x < state.width && y >= 0 && y < state.height;
+function neighbourIdx(state: GameState, x: number, y: number): number[] {
+  const out: number[] = [];
+  if (x > 0) out.push(idx(state, x - 1, y));
+  if (x < state.cols - 1) out.push(idx(state, x + 1, y));
+  if (y > 0) out.push(idx(state, x, y - 1));
+  if (y < state.rows - 1) out.push(idx(state, x, y + 1));
+  return out;
 }
 
-function getCell(state: GameState, x: number, y: number): GameCell {
-  return state.grid[y][x];
+// --- World step (one ecology tick) --------------------------------------------
+
+export function worldStep(state: GameState): void {
+  accumulateMoisture(state);
+  for (let p = 0; p < ECO.moistDiffusePasses; p++) diffuseDownhill(state, 'moisture');
+  decayMoisture(state);
+  emitSprings(state);
+  for (let p = 0; p < ECO.waterFlowPasses; p++) flowWater(state);
+  evaporate(state);
+  growPlants(state);
 }
 
-function setCell(state: GameState, x: number, y: number, cell: GameCell): void {
-  state.grid[y][x] = cell;
-}
-
-function getNeighbors(state: GameState, x: number, y: number): { x: number; y: number; cell: GameCell }[] {
-  const result: { x: number; y: number; cell: GameCell }[] = [];
-  for (const [dx, dy] of NEIGHBOR_OFFSETS) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (inBounds(state, nx, ny)) {
-      result.push({ x: nx, y: ny, cell: getCell(state, nx, ny) });
-    }
-  }
-  return result;
-}
-
-/** Check if a cell already has a timer for a specific target */
-function hasTimerForTarget(state: GameState, x: number, y: number, targetState: number, targetType?: CellType): boolean {
-  return state.timers.some(t =>
-    t.x === x && t.y === y && t.targetState === targetState &&
-    (targetType === undefined ? t.targetType === undefined : t.targetType === targetType)
-  );
-}
-
-/** Remove all timers for a cell */
-function removeTimersFor(state: GameState, x: number, y: number): void {
-  state.timers = state.timers.filter(t => !(t.x === x && t.y === y));
-}
-
-/** Insert a timer, keeping the array sorted by fireAt */
-function addTimer(state: GameState, timer: TimerEvent): void {
-  // Don't duplicate timers for same cell + targetState + targetType
-  if (hasTimerForTarget(state, timer.x, timer.y, timer.targetState, timer.targetType)) return;
-
-  state.timers.push(timer);
-  state.timers.sort((a, b) => a.fireAt - b.fireAt);
-}
-
-// --- Rule evaluation ---
-
-function matchesNeighborRule(rule: Rule, myCell: GameCell, neighborCell: GameCell): boolean {
-  if (rule.myState !== null && myCell.state !== rule.myState) return false;
-  if (neighborCell.type !== rule.neighborType) return false;
-  if (rule.neighborState !== null && neighborCell.state !== rule.neighborState) return false;
-  if (rule.neighborStateMin !== undefined && neighborCell.state < rule.neighborStateMin) return false;
-  return true;
-}
-
-/**
- * Check if active irrigation makes this cell act like it has adjacent water.
- * Active irrigation (state=1) counts as water at DAMP level for neighbor checks.
- */
-function isEffectiveWater(cell: GameCell): boolean {
-  return cell.type === 'water' || (cell.type === 'irrigation' && cell.state === 1);
-}
-
-/** Extract the target state from a rule's effect (for once-check deduplication) */
-function getEffectTimerTarget(effect: RuleEffect): { targetState: number; targetType?: CellType } | null {
-  if (effect.type === 'startMyTimer') return { targetState: effect.targetState, targetType: effect.targetType };
-  if (effect.type === 'startNeighborTimer') return { targetState: effect.targetState, targetType: effect.targetType };
-  return null;
-}
-
-/** Evaluate all rules for a cell against its neighbors, returning effects to apply */
-function evaluateRules(
-  state: GameState,
-  x: number,
-  y: number,
-): { effect: RuleEffect; energyCost: number; nx: number; ny: number }[] {
-  const cell = getCell(state, x, y);
-  if (cell.type === 'empty') return [];
-
-  const element = getElement(cell.type);
-  const results: { effect: RuleEffect; energyCost: number; nx: number; ny: number }[] = [];
-
-  for (const rule of element.rules) {
-    if (rule.myState !== null && cell.state !== rule.myState) continue;
-    if (rule.energyCost > cell.energy) continue;
-
-    // For "once" rules: skip if there's already a timer for this specific target
-    if (rule.once) {
-      const target = getEffectTimerTarget(rule.effect);
-      if (target && hasTimerForTarget(state, x, y, target.targetState, target.targetType)) continue;
-    }
-
-    // Unconditional rule (neighborType === null): fires without neighbor check
-    if (rule.neighborType === null) {
-      results.push({ effect: rule.effect, energyCost: rule.energyCost, nx: x, ny: y });
-      continue;
-    }
-
-    // Neighbor-based rule: find first matching neighbor
-    const neighbors = getNeighbors(state, x, y);
-    for (const n of neighbors) {
-      let neighborForCheck = n.cell;
-
-      // Active irrigation acts as damp water for rule checking
-      if (rule.neighborType === 'water' && n.cell.type === 'irrigation' && isEffectiveWater(n.cell)) {
-        neighborForCheck = { type: 'water', state: 1, energy: n.cell.energy };
-      }
-
-      if (!matchesNeighborRule(rule, cell, neighborForCheck)) continue;
-
-      results.push({ effect: rule.effect, energyCost: rule.energyCost, nx: n.x, ny: n.y });
-      break; // Only one match per rule (first matching neighbor)
-    }
-  }
-
-  return results;
-}
-
-// --- Effect application ---
-
-function applyEffect(
-  state: GameState,
-  x: number,
-  y: number,
-  nx: number,
-  ny: number,
-  effect: RuleEffect,
-  energyCost: number,
-  now: number,
-): { changedCells: [number, number][] } {
-  const cell = getCell(state, x, y);
-
-  // Re-check energy before deducting (prevents going negative from batched effects)
-  if (energyCost > cell.energy) return { changedCells: [] };
-  cell.energy -= energyCost;
-
-  const changed: [number, number][] = [];
-
-  switch (effect.type) {
-    case 'changeMyState':
-      cell.state = effect.newState;
-      setCell(state, x, y, cell);
-      changed.push([x, y]);
-      break;
-
-    case 'changeNeighborState': {
-      const neighbor = getCell(state, nx, ny);
-      neighbor.state = effect.newState;
-      setCell(state, nx, ny, neighbor);
-      changed.push([nx, ny]);
-      break;
-    }
-
-    case 'startMyTimer':
-      addTimer(state, {
-        x, y,
-        fireAt: now + effect.duration,
-        targetState: effect.targetState,
-        targetType: effect.targetType,
-        targetEnergy: effect.targetEnergy,
-      });
-      break;
-
-    case 'startNeighborTimer':
-      addTimer(state, {
-        x: nx, y: ny,
-        fireAt: now + effect.duration,
-        targetState: effect.targetState,
-        targetType: effect.targetType,
-        targetEnergy: effect.targetEnergy,
-      });
-      break;
-
-    case 'spawnOnEmpty': {
-      // Find an adjacent empty tile and spawn there after duration
-      const emptyNeighbors = getNeighbors(state, x, y).filter(n2 => n2.cell.type === 'empty');
-      if (emptyNeighbors.length > 0) {
-        const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-        addTimer(state, {
-          x: target.x, y: target.y,
-          fireAt: now + effect.duration,
-          targetState: effect.spawnState,
-          targetType: effect.spawnType,
-          targetEnergy: effect.spawnEnergy,
-        });
-      }
-      break;
-    }
-
-    case 'convertNeighbor': {
-      const neighbor = getCell(state, nx, ny);
-      if (neighbor.type === 'empty') {
-        setCell(state, nx, ny, {
-          type: effect.newType,
-          state: effect.newState,
-          energy: effect.newEnergy,
-        });
-        changed.push([nx, ny]);
-      }
-      break;
-    }
-
-    case 'consumeSelf': {
-      // Boost neighbor's state by 1 first
-      const neighbor = getCell(state, nx, ny);
-      if (neighbor.state < getElement(neighbor.type).states.length - 1) {
-        neighbor.state += 1;
-        setCell(state, nx, ny, neighbor);
-        changed.push([nx, ny]);
-      }
-      // Replace self
-      setCell(state, x, y, {
-        type: effect.replacementType,
-        state: effect.replacementState,
-        energy: effect.replacementEnergy,
-      });
-      removeTimersFor(state, x, y);
-      changed.push([x, y]);
-      break;
-    }
-  }
-
-  return { changedCells: changed };
-}
-
-// --- Cascade resolution ---
-
-/**
- * Run cascading neighbor reactions starting from changed cells.
- * Energy-bounded: each reaction costs energy, preventing infinite loops.
- */
-function runCascade(state: GameState, initialChanged: [number, number][], now: number): void {
-  const queue = [...initialChanged];
-  const visited = new Set<string>();
-  let steps = 0;
-
-  while (queue.length > 0 && steps < MAX_CASCADE_STEPS) {
-    const [cx, cy] = queue.shift()!;
-    const key = `${cx},${cy}`;
-
-    // Prevent re-evaluating the same cell in the same cascade pass
-    // (it can be added back if a NEIGHBOR changes it)
-    if (visited.has(key)) continue;
-    visited.add(key);
-    steps++;
-
-    // Evaluate rules for this cell
-    const effects = evaluateRules(state, cx, cy);
-    for (const { effect, energyCost, nx, ny } of effects) {
-      const { changedCells } = applyEffect(state, cx, cy, nx, ny, effect, energyCost, now);
-      for (const [chx, chy] of changedCells) {
-        // Allow re-evaluation of changed cells
-        visited.delete(`${chx},${chy}`);
-        queue.push([chx, chy]);
-      }
-    }
-
-    // Also evaluate neighbors (they might react to this cell's presence)
-    const neighbors = getNeighbors(state, cx, cy);
-    for (const n of neighbors) {
-      const nKey = `${n.x},${n.y}`;
-      if (visited.has(nKey)) continue;
-      visited.add(nKey);
-
-      const nEffects = evaluateRules(state, n.x, n.y);
-      for (const { effect, energyCost, nx, ny } of nEffects) {
-        const { changedCells } = applyEffect(state, n.x, n.y, nx, ny, effect, energyCost, now);
-        for (const [chx, chy] of changedCells) {
-          visited.delete(`${chx},${chy}`);
-          queue.push([chx, chy]);
+/** Rule 1: prominent ground catches "rain". Prominence = height above the
+ *  local mean (relative, not absolute — a bump on a plain counts). */
+function accumulateMoisture(state: GameState): void {
+  const r = ECO.promRadius;
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      let sum = 0, n = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (!inBounds(state, nx, ny)) continue;
+          sum += state.cells[idx(state, nx, ny)].height;
+          n++;
         }
       }
-    }
-  }
-}
-
-// --- Water flow (tick-based, 250ms per ring) ---
-
-/**
- * Process one tick of water flow. Water spreads to ALL adjacent empty cells
- * simultaneously, one ring at a time.
- * Returns true if any flow happened (queue still active).
- */
-export function flowTick(state: GameState, now: number): boolean {
-  if (state.flowQueue.length === 0) return false;
-
-  const toProcess = state.flowQueue;
-  state.flowQueue = [];
-  const newCells: [number, number][] = [];
-
-  for (const [x, y] of toProcess) {
-    const cell = getCell(state, x, y);
-    if (cell.type !== 'water' || cell.energy <= 0) continue;
-
-    // Water level determines what it creates: FLOODED→WET, WET→DAMP
-    const nextLevel = cell.state - 1;
-    if (nextLevel < 1) continue; // DAMP (1) and below don't spread
-
-    const neighbors = getNeighbors(state, x, y);
-    for (const n of neighbors) {
-      if (cell.energy <= 0) break;
-      if (n.cell.type !== 'empty') continue;
-
-      // Create new water cell
-      const newEnergy = Math.max(1, Math.floor(cell.energy / 2));
-      setCell(state, n.x, n.y, {
-        type: 'water',
-        state: nextLevel,
-        energy: newEnergy,
-      });
-      cell.energy -= 1;
-      newCells.push([n.x, n.y]);
-
-      // WET (2) and above can continue flowing next tick
-      if (nextLevel >= 2) {
-        state.flowQueue.push([n.x, n.y]);
+      const mean = sum / n;
+      const cell = state.cells[idx(state, x, y)];
+      const prominence = cell.height - mean;
+      if (prominence > ECO.promThreshold) {
+        cell.moisture += ECO.moistGain * prominence;
       }
     }
   }
-
-  // Trigger cascading neighbor reactions on newly created water cells
-  // (e.g., soil starts fertility timer, seeds detect water, irrigation activates)
-  if (newCells.length > 0) {
-    runCascade(state, newCells, now);
-  }
-
-  return state.flowQueue.length > 0;
 }
 
-/**
- * Drain the flow queue completely (used during catch-up).
- * Energy-bounded so it always halts.
- */
-export function drainFlow(state: GameState, now: number): void {
-  let safety = 0;
-  while (state.flowQueue.length > 0 && safety < 100) {
-    flowTick(state, now);
-    safety++;
+/** Rule 2 (moisture) / Rule 4 (water): move a field downhill toward lower
+ *  GROUND (moisture) or lower SURFACE = height+water (water). Conserves the
+ *  field; uses a delta buffer so a pass is order-independent. */
+function diffuseDownhill(state: GameState, field: 'moisture'): void {
+  const deltas = new Float64Array(state.cells.length);
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      const i = idx(state, x, y);
+      const cell = state.cells[i];
+      const value = cell[field];
+      if (value <= 0) continue;
+      const ns = neighbourIdx(state, x, y);
+      let totalDrop = 0;
+      const drops: number[] = [];
+      for (const ni of ns) {
+        const drop = cell.height - state.cells[ni].height;
+        drops.push(drop > 0 ? drop : 0);
+        if (drop > 0) totalDrop += drop;
+      }
+      if (totalDrop <= 0) continue;
+      const move = value * ECO.moistDiffuseRate;
+      for (let k = 0; k < ns.length; k++) {
+        if (drops[k] <= 0) continue;
+        const share = move * (drops[k] / totalDrop);
+        deltas[i] -= share;
+        deltas[ns[k]] += share;
+      }
+    }
+  }
+  for (let i = 0; i < state.cells.length; i++) state.cells[i].moisture += deltas[i];
+}
+
+/** Rule 5: moisture bleeds away everywhere — flatten the hill and springs die.
+ *  Also clamps the field to its ceiling (see ECO.moistMax). */
+function decayMoisture(state: GameState): void {
+  for (const c of state.cells) {
+    c.moisture = Math.min(ECO.moistMax, Math.max(0, c.moisture - ECO.moistDecay));
   }
 }
 
-// --- Timer processing (catch-up) ---
+/** Rule 3: a spring surfaces where the water table breaches the ground. Output
+ *  is moved from the hidden moisture layer to surface water — so it can't form
+ *  on peaks (height too high) and sustains only while moisture is replenished. */
+function emitSprings(state: GameState): void {
+  for (const c of state.cells) {
+    const breach = c.height * ECO.springBreach;
+    if (c.moisture > breach) {
+      const emit = Math.min(ECO.springRate, c.moisture - breach);
+      if (emit <= 0) continue;
+      c.moisture -= emit;
+      c.water += emit;
+    }
+  }
+}
 
-/**
- * Process all pending timer events up to `now`.
- * This is the core catch-up algorithm.
- */
-export function processTimers(state: GameState, now: number): void {
-  let safety = 0;
-  const MAX_TIMER_ROUNDS = 5000;
+/** Surface water flows toward lower (height+water) neighbours → rivers + lakes
+ *  pooling in minima. Capped per-neighbour so flat lakes form instead of
+ *  oscillating. Delta-buffered for order independence. */
+function flowWater(state: GameState): void {
+  const deltas = new Float64Array(state.cells.length);
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      const i = idx(state, x, y);
+      const cell = state.cells[i];
+      if (cell.water <= 0) continue;
+      // Only the excess above the retained film can flow (shallow water sticks).
+      const movable = cell.water - ECO.waterFilm;
+      if (movable <= 0) continue;
+      const surface = cell.height + cell.water;
+      const ns = neighbourIdx(state, x, y);
+      let totalDrop = 0;
+      const drops: number[] = [];
+      for (const ni of ns) {
+        const nc = state.cells[ni];
+        const drop = surface - (nc.height + nc.water);
+        drops.push(drop > 0 ? drop : 0);
+        if (drop > 0) totalDrop += drop;
+      }
+      if (totalDrop <= 0) continue;
+      const move = movable * ECO.waterFlowRate;
+      for (let k = 0; k < ns.length; k++) {
+        if (drops[k] <= 0) continue;
+        const share = Math.min(move * (drops[k] / totalDrop), drops[k] / 2);
+        deltas[i] -= share;
+        deltas[ns[k]] += share;
+      }
+    }
+  }
+  for (let i = 0; i < state.cells.length; i++) {
+    state.cells[i].water = Math.max(0, state.cells[i].water + deltas[i]);
+  }
+}
 
-  while (state.timers.length > 0 && safety < MAX_TIMER_ROUNDS) {
-    // Find the next timer that has fired
-    const nextIndex = state.timers.findIndex(t => t.fireAt <= now);
-    if (nextIndex === -1) break;
+function evaporate(state: GameState): void {
+  for (const c of state.cells) {
+    c.water -= ECO.evap;
+    if (c.water < ECO.waterMin) c.water = 0;
+  }
+}
 
-    safety++;
-    const timer = state.timers.splice(nextIndex, 1)[0];
-    const cell = getCell(state, timer.x, timer.y);
-
-    // Apply the timer's state change
-    if (timer.targetType && timer.targetType !== cell.type) {
-      // Type change (e.g., stone → soil, fruit → compost, water → empty)
-      setCell(state, timer.x, timer.y, {
-        type: timer.targetType,
-        state: timer.targetState,
-        energy: timer.targetEnergy ?? getElement(timer.targetType).defaultEnergy,
-      });
+/** Plants grow on ground kept damp or under SHALLOW water; deep lakes and dry
+ *  sand grow nothing. Wetness must persist (wetTime) before green appears, and
+ *  decays faster than it builds so removing the water kills the plant. */
+function growPlants(state: GameState): void {
+  for (const c of state.cells) {
+    const shallowWater = c.water >= ECO.plantWaterMin && c.water <= ECO.plantWaterMax;
+    const dampGround = c.height > 0 && c.moisture >= c.height * ECO.plantMoistureRatio;
+    const wet = shallowWater || dampGround;
+    if (wet) {
+      c.wetTime += 1;
+      if (c.wetTime >= ECO.plantGrowAfter) {
+        c.plant = Math.min(1, c.plant + ECO.plantGrow);
+      }
     } else {
-      cell.state = timer.targetState;
-      if (timer.targetEnergy !== undefined) {
-        cell.energy = timer.targetEnergy;
-      }
-      setCell(state, timer.x, timer.y, cell);
+      c.wetTime = Math.max(0, c.wetTime - ECO.wetDryDecay);
+      c.plant = Math.max(0, c.plant - ECO.plantDecay);
     }
-
-    // Run cascade from this change
-    runCascade(state, [[timer.x, timer.y]], Math.min(timer.fireAt, now));
   }
 }
 
-// --- Player energy regeneration ---
+// --- Catch-up -----------------------------------------------------------------
 
-/** Regenerate player energy based on elapsed time. 1 energy per 10 minutes. */
-export function regenerateEnergy(state: GameState, now: number): void {
+/** Resolve world steps missed since `lastUpdateTime`. Capped: a very long
+ *  absence runs MAX_CATCHUP_STEPS (the field has long since settled) and snaps
+ *  the clock to `now`. */
+export function catchUp(state: GameState, now: number = Date.now()): void {
   const elapsed = now - state.lastUpdateTime;
-  if (elapsed <= 0) return;
-  const gained = Math.floor(elapsed / (10 * 60 * 1000)); // 1 per 10 min
-  state.playerEnergy = Math.min(state.maxPlayerEnergy, state.playerEnergy + gained);
+  if (elapsed < WORLD_STEP_MS) return;
+  const want = Math.floor(elapsed / WORLD_STEP_MS);
+  const steps = Math.min(want, MAX_CATCHUP_STEPS);
+  for (let i = 0; i < steps; i++) worldStep(state);
+  state.lastUpdateTime = want > MAX_CATCHUP_STEPS
+    ? now
+    : state.lastUpdateTime + steps * WORLD_STEP_MS;
 }
 
-// --- Main update (called on load or periodically) ---
+// --- Player actions -----------------------------------------------------------
 
-export function updateGame(state: GameState, now: number = Date.now()): void {
-  regenerateEnergy(state, now);
-  drainFlow(state, now); // resolve any pending water flow before timers
-  processTimers(state, now);
-  state.lastUpdateTime = now;
-}
-
-// --- Player actions ---
-
-export function canPlace(state: GameState, x: number, y: number, toolId: ToolId): boolean {
-  if (!inBounds(state, x, y)) return false;
-  const cell = getCell(state, x, y);
-
-  if (toolId === 'harvest') {
-    return (cell.type === 'seed' || cell.type === 'bloom') && cell.state === 4; // Fruiting
-  }
-  if (toolId === 'remove') {
-    return cell.type !== 'empty';
-  }
-
-  const element = getElement(toolId as CellType);
-  if (state.playerEnergy < element.placeCost) return false;
-
-  // Check placement targets
-  if (element.placeOn && element.placeOn.length > 0) {
-    return element.placeOn.includes(cell.type);
-  }
-
-  // Default: can only place on empty tiles
-  return cell.type === 'empty';
-}
-
-export function playerAction(state: GameState, x: number, y: number, toolId: ToolId): boolean {
-  if (!canPlace(state, x, y, toolId)) return false;
-
-  const now = Date.now();
-
-  if (toolId === 'harvest') {
-    // Harvest: replace with soil (fair fertility)
-    setCell(state, x, y, { type: 'soil', state: 2, energy: 10 });
-    removeTimersFor(state, x, y);
-    state.harvested += 1;
-    state.playerEnergy -= 1;
-    runCascade(state, [[x, y]], now);
-    return true;
-  }
-
-  if (toolId === 'remove') {
-    setCell(state, x, y, { type: 'empty', state: 0, energy: 0 });
-    removeTimersFor(state, x, y);
-    state.playerEnergy -= 1;
-    return true;
-  }
-
-  const element = getElement(toolId as CellType);
-  state.playerEnergy -= element.placeCost;
-
-  setCell(state, x, y, {
-    type: toolId as CellType,
-    state: element.defaultState ?? 0,
-    energy: element.defaultEnergy,
-  });
-  removeTimersFor(state, x, y);
-
-  // Water placement: add to flow queue for animated spreading
-  if (toolId === 'water') {
-    state.flowQueue.push([x, y]);
-  }
-
-  // Trigger cascading effects from this placement
-  runCascade(state, [[x, y]], now);
-
-  return true;
-}
-
-// --- Skip time (for testing) ---
-
-export function skipTime(state: GameState, ms: number): void {
-  const now = state.lastUpdateTime + ms;
-  updateGame(state, now);
-}
-
-// --- Weed spawning (called periodically on neglected soil) ---
-
-export function checkWeedSpawns(state: GameState, now: number): void {
-  for (let y = 0; y < state.height; y++) {
-    for (let x = 0; x < state.width; x++) {
-      const cell = getCell(state, x, y);
-      if (cell.type !== 'soil') continue;
-      if (cell.state > 1) continue; // Fair or Rich soil doesn't get weeds
-
-      // Check if any neighbor is a scarecrow (prevents weeds)
-      const neighbors = getNeighbors(state, x, y);
-      if (neighbors.some(n => n.cell.type === 'scarecrow')) continue;
-
-      // Check if any neighbor is already a plant (soil is "occupied")
-      if (neighbors.some(n => ['seed', 'bloom', 'weed'].includes(n.cell.type))) continue;
-
-      // Low chance of weed spawning — add a timer if none exists
-      if (!state.timers.some(t => t.x === x && t.y === y) && Math.random() < 0.02) {
-        addTimer(state, {
-          x, y,
-          fireAt: now + 12 * 60 * 60 * 1000, // 12 hours
-          targetState: 0,
-          targetType: 'weed',
-          targetEnergy: 8,
-        });
-      }
+/** Pour surface water at the focus (the water bucket). `intensity` (0..1) ramps
+ *  with dwell so a brief glance barely wets anything. */
+export function pourWater(state: GameState, gx: number, gy: number, intensity: number): void {
+  const r = POUR.radius;
+  const x0 = Math.max(0, Math.floor(gx - r));
+  const x1 = Math.min(state.cols - 1, Math.ceil(gx + r));
+  const y0 = Math.max(0, Math.floor(gy - r));
+  const y1 = Math.min(state.rows - 1, Math.ceil(gy + r));
+  for (let cy = y0; cy <= y1; cy++) {
+    for (let cx = x0; cx <= x1; cx++) {
+      const dist = Math.hypot(cx - gx, cy - gy);
+      if (dist > r) continue;
+      const w = 1 - dist / r;
+      state.cells[idx(state, cx, cy)].water += POUR.rate * intensity * w;
     }
   }
 }
 
-// --- Serialization ---
+// --- Serialization ------------------------------------------------------------
 
 export function serializeState(state: GameState): string {
   return JSON.stringify(state);
 }
 
+/** Returns null for missing/old/corrupt saves (caller starts a fresh desert). */
 export function deserializeState(json: string): GameState | null {
   try {
-    const parsed = JSON.parse(json);
-    if (parsed && parsed.grid && parsed.width && parsed.height) {
-      if (!parsed.flowQueue) parsed.flowQueue = [];
-      return parsed as GameState;
+    const parsed = JSON.parse(json) as Partial<GameState>;
+    if (
+      parsed &&
+      parsed.version === SAVE_VERSION &&
+      Array.isArray(parsed.cells) &&
+      typeof parsed.cols === 'number' &&
+      typeof parsed.rows === 'number' &&
+      parsed.cells.length === parsed.cols * parsed.rows
+    ) {
+      const state = parsed as GameState;
+      if (typeof state.lastUpdateTime !== 'number') state.lastUpdateTime = Date.now();
+      recomputeTotalSand(state);
+      return state;
     }
     return null;
   } catch {

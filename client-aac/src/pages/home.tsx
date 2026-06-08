@@ -301,6 +301,7 @@ function renderAppContent(
       <GameEmbed
         gameId="sandbox-game"
         src="/games/sandbox-game/"
+        forwardGaze
         onClose={dismissApp}
       />
     );

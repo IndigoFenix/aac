@@ -35,5 +35,13 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    watch: {
+      // The games under /games/ are independent Vite projects (own dev servers)
+      // and are served to this client as pre-built static assets from
+      // dist/public-games. Never let edits there trigger an HMR reload of this
+      // client, so both can be worked on simultaneously. (Edits to shared/ still
+      // reload, since both consume it via @shared.)
+      ignored: ["**/games/**", "**/dist/**"],
+    },
   },
 });

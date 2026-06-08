@@ -1,8 +1,8 @@
-[17:03:57.387] memoryValues.Student_Notes (0 items)
+[19:19:14.985] memoryValues.Student_Notes (0 items)
 []
-[17:03:57.388] memoryValues.Student_People (0 items)
+[19:19:14.990] memoryValues.Student_People (0 items)
 []
-[17:03:57.388] memoryValues.Student_Contacts
+[19:19:14.991] memoryValues.Student_Contacts
 {
   "33015fd1_indigo_fenix": {
     "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
@@ -28,17 +28,17 @@
     "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
   }
 }
-[17:03:57.389] memoryValues.Student_Incidents
+[19:19:14.993] memoryValues.Student_Incidents
 {}
-[17:03:57.392] memoryValues.Student_Interests (0 items)
+[19:19:14.994] memoryValues.Student_Interests (0 items)
 []
-[17:03:57.392] memoryValues.Student_CustomApps (0 items)
+[19:19:14.995] memoryValues.Student_CustomApps (0 items)
 []
-[17:03:57.393] memoryValues.Student_CommunicationStyle
+[19:19:14.996] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[17:03:57.395] memoryVisualization — data section (104 lines)
+[19:19:14.998] memoryVisualization — data section (104 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -147,1803 +147,7 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[17:03:58.803] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress"
-    },
-    {
-      "action": "view",
-      "path": "/Student_Interests"
-    }
-  ]
-}
-[17:03:58.804] BEFORE view /Student_Interests — Student_Interests array (0 items)
-[]
-[17:04:00.695] RESULTS
-[
-  {
-    "target": "/Context_Progress",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [
-      "/Context_Progress"
-    ],
-    "summary": "Path not found or not loaded"
-  },
-  {
-    "target": "/Student_Interests",
-    "action": "view",
-    "ok": true,
-    "message": "• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value.",
-    "mutatedPaths": [
-      "/Student_Interests"
-    ],
-    "summary": "Empty array (0 items)"
-  }
-]
-[17:04:00.696] AFTER view /Student_Interests — Student_Interests array (0 items)
-[]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:04:00.701] memoryValues.Student_Notes (0 items)
-[]
-[17:04:00.701] memoryValues.Student_People (0 items)
-[]
-[17:04:00.702] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:04:00.702] memoryValues.Student_Incidents
-{}
-[17:04:00.703] memoryValues.Student_Interests (0 items)
-[]
-[17:04:00.704] memoryValues.Student_CustomApps (0 items)
-[]
-[17:04:00.704] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:04:00.705] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:04:03.001] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress/*"
-    }
-  ]
-}
-[17:04:03.008] RESULTS
-[
-  {
-    "target": "/Context_Progress/*",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [],
-    "summary": "Path not found or not loaded"
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:04:03.014] memoryValues.Student_Notes (0 items)
-[]
-[17:04:03.014] memoryValues.Student_People (0 items)
-[]
-[17:04:03.015] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:04:03.016] memoryValues.Student_Incidents
-{}
-[17:04:03.017] memoryValues.Student_Interests (0 items)
-[]
-[17:04:03.017] memoryValues.Student_CustomApps (0 items)
-[]
-[17:04:03.018] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:04:03.019] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:15:41.076] memoryValues.Student_Notes (0 items)
-[]
-[17:15:41.084] memoryValues.Student_People (0 items)
-[]
-[17:15:41.092] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "role": "parent_guardian",
-    "eyeColor": "brown",
-    "hasPhoto": true,
-    "isActive": true,
-    "hairColor": "dark brown",
-    "customRole": null,
-    "lastSeenAt": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "organization": null,
-    "relationship": "parent/guardian",
-    "linkedStudentId": null,
-    "timesIdentified": 0,
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
-  }
-}
-[17:15:41.100] memoryValues.Student_Incidents
-{}
-[17:15:41.157] memoryValues.Student_Interests (0 items)
-[]
-[17:15:41.203] memoryValues.Student_CustomApps (0 items)
-[]
-[17:15:41.208] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:15:41.217] memoryVisualization — data section (104 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:15:44.190] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Student_Notes"
-    },
-    {
-      "action": "add",
-      "path": "/Student_Notes",
-      "value": "Session 2026-06-08 20:01: Daniel initiated conversation about food and dinner. Expressed interest in discussing dinner plans (ארוחת ערב). Communicated via AAC buttons; engaged with food-related topics naturally. Shows sustained interest in meal planning and cooking."
-    }
-  ]
-}
-[17:15:44.232] BEFORE view /Student_Notes — Student_Notes array (0 items)
-[]
-[17:15:44.235] BEFORE add /Student_Notes — Student_Notes array (0 items)
-[]
-[17:15:44.386] ADD to array /Student_Notes — array has 0 items, adding
-Session 2026-06-08 20:01: Daniel initiated conversation about food and dinner. Expressed interest in discussing dinner plans (ארוחת ערב). Communicated via AAC buttons; engaged with food-related topics naturally. Shows sustained interest in meal planning and cooking.
-[17:15:44.413] ADD OK /Student_Notes — array now has 1 items
-[17:15:46.759] RESULTS
-[
-  {
-    "target": "/Student_Notes",
-    "action": "view",
-    "ok": true,
-    "message": "• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value.",
-    "mutatedPaths": [
-      "/Student_Notes"
-    ],
-    "summary": "Empty array (0 items)"
-  },
-  {
-    "target": "/Student_Notes",
-    "action": "add",
-    "ok": true
-  }
-]
-[17:15:46.765] AFTER view /Student_Notes — Student_Notes array (0 items)
-[]
-[17:15:46.770] AFTER add /Student_Notes — Student_Notes array (0 items)
-[]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:15:46.827] memoryValues.Student_Notes (0 items)
-[]
-[17:15:46.835] memoryValues.Student_People (0 items)
-[]
-[17:15:46.838] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:15:46.841] memoryValues.Student_Incidents
-{}
-[17:15:46.846] memoryValues.Student_Interests (0 items)
-[]
-[17:15:46.849] memoryValues.Student_CustomApps (0 items)
-[]
-[17:15:46.852] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:15:46.858] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:19:44.307] memoryValues.Student_Notes (0 items)
-[]
-[17:19:44.308] memoryValues.Student_People (0 items)
-[]
-[17:19:44.309] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "role": "parent_guardian",
-    "eyeColor": "brown",
-    "hasPhoto": true,
-    "isActive": true,
-    "hairColor": "dark brown",
-    "customRole": null,
-    "lastSeenAt": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "organization": null,
-    "relationship": "parent/guardian",
-    "linkedStudentId": null,
-    "timesIdentified": 0,
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
-  }
-}
-[17:19:44.310] memoryValues.Student_Incidents
-{}
-[17:19:44.311] memoryValues.Student_Interests (0 items)
-[]
-[17:19:44.315] memoryValues.Student_CustomApps (0 items)
-[]
-[17:19:44.318] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:19:44.324] memoryVisualization — data section (104 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:19:45.827] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress"
-    }
-  ]
-}
-[17:19:47.946] RESULTS
-[
-  {
-    "target": "/Context_Progress",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [
-      "/Context_Progress"
-    ],
-    "summary": "Path not found or not loaded"
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:19:47.959] memoryValues.Student_Notes (0 items)
-[]
-[17:19:47.960] memoryValues.Student_People (0 items)
-[]
-[17:19:47.960] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:19:47.961] memoryValues.Student_Incidents
-{}
-[17:19:47.962] memoryValues.Student_Interests (0 items)
-[]
-[17:19:47.962] memoryValues.Student_CustomApps (0 items)
-[]
-[17:19:47.963] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:19:47.963] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:19:49.743] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress/*"
-    },
-    {
-      "action": "view",
-      "path": "/Student_Interests"
-    },
-    {
-      "action": "view",
-      "path": "/Student_Notes"
-    }
-  ]
-}
-[17:19:49.744] BEFORE view /Student_Interests — Student_Interests array (0 items)
-[]
-[17:19:49.745] BEFORE view /Student_Notes — Student_Notes array (0 items)
-[]
-[17:19:49.751] RESULTS
-[
-  {
-    "target": "/Context_Progress/*",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [],
-    "summary": "Path not found or not loaded"
-  },
-  {
-    "target": "/Student_Interests",
-    "action": "view",
-    "ok": true,
-    "message": "• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value.",
-    "mutatedPaths": [
-      "/Student_Interests"
-    ],
-    "summary": "Empty array (0 items)"
-  },
-  {
-    "target": "/Student_Notes",
-    "action": "view",
-    "ok": true,
-    "message": "• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value.",
-    "mutatedPaths": [
-      "/Student_Notes"
-    ],
-    "summary": "Empty array (0 items)"
-  }
-]
-[17:19:49.753] AFTER view /Student_Interests — Student_Interests array (0 items)
-[]
-[17:19:49.754] AFTER view /Student_Notes — Student_Notes array (0 items)
-[]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:19:49.761] memoryValues.Student_Notes (0 items)
-[]
-[17:19:49.762] memoryValues.Student_People (0 items)
-[]
-[17:19:49.763] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:19:49.763] memoryValues.Student_Incidents
-{}
-[17:19:49.764] memoryValues.Student_Interests (0 items)
-[]
-[17:19:49.767] memoryValues.Student_CustomApps (0 items)
-[]
-[17:19:49.768] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:19:49.770] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:19:52.411] INPUT
-{
-  "ops": [
-    {
-      "action": "add",
-      "path": "/Student_Notes",
-      "value": "Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."
-    }
-  ]
-}
-[17:19:52.412] BEFORE add /Student_Notes — Student_Notes array (0 items)
-[]
-[17:19:52.446] ADD to array /Student_Notes — array has 0 items, adding
-Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items.
-[17:19:52.453] ADD OK /Student_Notes — array now has 1 items
-[17:19:52.625] RESULTS
-[
-  {
-    "target": "/Student_Notes",
-    "action": "add",
-    "ok": true
-  }
-]
-[17:19:52.626] AFTER add /Student_Notes — Student_Notes array (1 items)
-[
-  "Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:19:52.636] memoryValues.Student_Notes (1 items)
-[
-  "Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."
-]
-[17:19:52.637] memoryValues.Student_People (0 items)
-[]
-[17:19:52.638] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:19:52.638] memoryValues.Student_Incidents
-{}
-[17:19:52.639] memoryValues.Student_Interests (0 items)
-[]
-[17:19:52.640] memoryValues.Student_CustomApps (0 items)
-[]
-[17:19:52.642] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:19:52.643] memoryVisualization — data section (106 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (empty - no items to display)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  - [0]: <untrusted-data>"Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."</untrusted-data>
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:19:54.133] INPUT
-{
-  "ops": [
-    {
-      "action": "add",
-      "path": "/Student_Interests",
-      "value": "red objects"
-    },
-    {
-      "action": "add",
-      "path": "/Student_Interests",
-      "value": "yellow/gold objects"
-    }
-  ]
-}
-[17:19:54.144] BEFORE add /Student_Interests — Student_Interests array (0 items)
-[]
-[17:19:54.155] BEFORE add /Student_Interests — Student_Interests array (0 items)
-[]
-[17:19:54.240] ADD to array /Student_Interests — array has 0 items, adding
-red objects
-[17:19:54.246] ADD OK /Student_Interests — array now has 1 items
-[17:19:54.252] ADD to array /Student_Interests — array has 1 items, adding
-yellow/gold objects
-[17:19:54.258] ADD OK /Student_Interests — array now has 2 items
-[17:19:54.541] RESULTS
-[
-  {
-    "target": "/Student_Interests",
-    "action": "add",
-    "ok": true
-  },
-  {
-    "target": "/Student_Interests",
-    "action": "add",
-    "ok": true
-  }
-]
-[17:19:54.546] AFTER add /Student_Interests — Student_Interests array (2 items)
-[
-  "red objects",
-  "yellow/gold objects"
-]
-[17:19:54.553] AFTER add /Student_Interests — Student_Interests array (2 items)
-[
-  "red objects",
-  "yellow/gold objects"
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:19:54.613] memoryValues.Student_Notes (1 items)
-[
-  "Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."
-]
-[17:19:54.622] memoryValues.Student_People (0 items)
-[]
-[17:19:54.625] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "relationship": "parent/guardian",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": "dark brown",
-    "eyeColor": "brown",
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah.",
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "hasPhoto": true
-  }
-}
-[17:19:54.629] memoryValues.Student_Incidents
-{}
-[17:19:54.637] memoryValues.Student_Interests (2 items)
-[
-  "red objects",
-  "yellow/gold objects"
-]
-[17:19:54.641] memoryValues.Student_CustomApps (0 items)
-[]
-[17:19:54.645] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:19:54.651] memoryVisualization — data section (107 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 2 items) — Things the student enjoys or is interested in 
-  - [0]: <untrusted-data>"red objects"</untrusted-data>
-  - [1]: <untrusted-data>"yellow/gold objects"</untrusted-data>
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  - [0]: <untrusted-data>"Session 06/08/2026 (20:16): Daniel engaged with objects during session — held up a small red object and a yellow/gold object, showing them to the device. Demonstrated interest in communicating and requested conversation ('דבר איתי' / 'Talk to me'). Showed attention to device by looking at screen, then away, then back multiple times. Repeated pattern of object presentation suggests possible interest in discussing or naming these items."</untrusted-data>
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[17:20:50.838] memoryValues.Student_Notes (0 items)
-[]
-[17:20:50.887] memoryValues.Student_People (0 items)
-[]
-[17:20:50.921] memoryValues.Student_Contacts
-{
-  "33015fd1_indigo_fenix": {
-    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
-    "name": "Indigo Fenix",
-    "role": "parent_guardian",
-    "eyeColor": "brown",
-    "hasPhoto": true,
-    "isActive": true,
-    "hairColor": "dark brown",
-    "customRole": null,
-    "lastSeenAt": null,
-    "contactEmail": "indigofenix00@gmail.com",
-    "contactPhone": null,
-    "contextNotes": null,
-    "estimatedAge": "30s",
-    "estimatedSex": "male",
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "organization": null,
-    "relationship": "parent/guardian",
-    "linkedStudentId": null,
-    "timesIdentified": 0,
-    "identifyingFeatures": "glasses, short beard, kippah",
-    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
-  }
-}
-[17:20:50.928] memoryValues.Student_Incidents
-{}
-[17:20:50.930] memoryValues.Student_Interests (0 items)
-[]
-[17:20:50.934] memoryValues.Student_CustomApps (0 items)
-[]
-[17:20:50.939] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[17:20:50.948] memoryVisualization — data section (104 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
-  - 33015fd1_indigo_fenix: {object}
-      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
-      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
-      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
-      - contactPhone: null
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
-      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
-      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
-      - eyeColor: <untrusted-data>"brown"</untrusted-data>
-      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
-      - estimatedSex: <untrusted-data>"male"</untrusted-data>
-      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
-      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
-  (may contain items - view "/Student_Incidents" to load from database)
-  ↪ Add: action "add" at "/Student_Incidents" with key + value.
-• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Student_Incidents — MAP<string, object>
-  value.required: [type, severity]
-  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[17:20:53.609] INPUT
+[19:19:16.661] INPUT
 {
   "ops": [
     {
@@ -1952,9 +156,9 @@ Notes:
     }
   ]
 }
-[17:20:53.610] BEFORE view /Student_Notes — Student_Notes array (0 items)
+[19:19:16.665] BEFORE view /Student_Notes — Student_Notes array (0 items)
 []
-[17:20:53.774] RESULTS
+[19:19:16.723] RESULTS
 [
   {
     "target": "/Student_Notes",
@@ -1967,17 +171,17 @@ Notes:
     "summary": "Empty array (0 items)"
   }
 ]
-[17:20:53.775] AFTER view /Student_Notes — Student_Notes array (0 items)
+[19:19:16.725] AFTER view /Student_Notes — Student_Notes array (0 items)
 []
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[17:20:54.120] memoryValues.Student_Notes (0 items)
+[19:19:16.750] memoryValues.Student_Notes (0 items)
 []
-[17:20:54.122] memoryValues.Student_People (0 items)
+[19:19:16.752] memoryValues.Student_People (0 items)
 []
-[17:20:54.124] memoryValues.Student_Contacts
+[19:19:16.753] memoryValues.Student_Contacts
 {
   "33015fd1_indigo_fenix": {
     "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
@@ -2003,17 +207,17 @@ Notes:
     "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
   }
 }
-[17:20:54.126] memoryValues.Student_Incidents
+[19:19:16.754] memoryValues.Student_Incidents
 {}
-[17:20:54.128] memoryValues.Student_Interests (0 items)
+[19:19:16.755] memoryValues.Student_Interests (0 items)
 []
-[17:20:54.130] memoryValues.Student_CustomApps (0 items)
+[19:19:16.757] memoryValues.Student_CustomApps (0 items)
 []
-[17:20:54.131] memoryValues.Student_CommunicationStyle
+[19:19:16.758] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[17:20:54.132] memoryVisualization — data section (104 lines)
+[19:19:16.759] memoryVisualization — data section (104 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -2120,46 +324,13 @@ Notes:
 - For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
 
 ============================================================
-  manageMemory called
-============================================================
-[17:20:59.353] INPUT
-{
-  "ops": [
-    {
-      "action": "add",
-      "path": "/Student_Notes",
-      "value": "Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversation. Demonstrated object recognition and interest — held up a small red object and a yellow/gold object, showing them to the device while alternating gaze. Later identified a bag of chips and expressed desire to eat it. Communication was clear and purposeful; used AAC board effectively to state preferences."
-    }
-  ]
-}
-[17:20:59.354] BEFORE add /Student_Notes — Student_Notes array (0 items)
-[]
-[17:20:59.356] ADD to array /Student_Notes — array has 0 items, adding
-Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversation. Demonstrated object recognition and interest — held up a small red object and a yellow/gold object, showing them to the device while alternating gaze. Later identified a bag of chips and expressed desire to eat it. Communication was clear and purposeful; used AAC board effectively to state preferences.
-[17:20:59.357] ADD OK /Student_Notes — array now has 1 items
-[17:20:59.534] RESULTS
-[
-  {
-    "target": "/Student_Notes",
-    "action": "add",
-    "ok": true
-  }
-]
-[17:20:59.535] AFTER add /Student_Notes — Student_Notes array (1 items)
-[
-  "Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversation. Demonstrated object recognition and interest — held up a small red object and a yellow/gold object, showing them to the device while alternating gaze. Later identified a bag of chips and expressed desire to eat it. Communication was clear and purposeful; used AAC board effectively to state preferences."
-]
-
-============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[17:20:59.627] memoryValues.Student_Notes (1 items)
-[
-  "Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversation. Demonstrated object recognition and interest — held up a small red object and a yellow/gold object, showing them to the device while alternating gaze. Later identified a bag of chips and expressed desire to eat it. Communication was clear and purposeful; used AAC board effectively to state preferences."
-]
-[17:20:59.627] memoryValues.Student_People (0 items)
+[19:20:41.075] memoryValues.Student_Notes (0 items)
 []
-[17:20:59.628] memoryValues.Student_Contacts
+[19:20:41.076] memoryValues.Student_People (0 items)
+[]
+[19:20:41.077] memoryValues.Student_Contacts
 {
   "33015fd1_indigo_fenix": {
     "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
@@ -2185,17 +356,17 @@ Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversat
     "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
   }
 }
-[17:20:59.629] memoryValues.Student_Incidents
+[19:20:41.078] memoryValues.Student_Incidents
 {}
-[17:20:59.629] memoryValues.Student_Interests (0 items)
+[19:20:41.080] memoryValues.Student_Interests (0 items)
 []
-[17:20:59.631] memoryValues.Student_CustomApps (0 items)
+[19:20:41.081] memoryValues.Student_CustomApps (0 items)
 []
-[17:20:59.632] memoryValues.Student_CommunicationStyle
+[19:20:41.082] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[17:20:59.633] memoryVisualization — data section (104 lines)
+[19:20:41.084] memoryVisualization — data section (104 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -2213,9 +384,188 @@ Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversat
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
-  - [0]: <untrusted-data>"Session (2026-06-08, ~20:16): Daniel engaged with device and requested conversation. Demonstrated object recognition and interest — held up a small red object and a yellow/gold object, showing them to the device while alternating gaze. Later identified a bag of chips and expressed desire to eat it. Communication was clear and purposeful; used AAC board effectively to state preferences."</untrusted-data>
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
+  (may contain items - view "/Student_Notes" to load from database)
+  ↪ To append: action "add" at "/Student_Notes" with value.
+• /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
+• /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
+  - 33015fd1_indigo_fenix: {object}
+      - id: <untrusted-data>"33015fd1-5393-4f07-9eae-338a038d92ae"</untrusted-data>
+      - name: <untrusted-data>"Indigo Fenix"</untrusted-data>
+      - relationship: <untrusted-data>"parent/guardian"</untrusted-data> — Free-form relationship label (e.g. mother, classmate, therapist)
+      - role: <untrusted-data>"parent_guardian"</untrusted-data> ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
+      - customRole: null
+      - organization: null
+      - contactEmail: <untrusted-data>"indigofenix00@gmail.com"</untrusted-data>
+      - contactPhone: null
+      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
+      - linkedUserId: <untrusted-data>"89c433f9-52c7-4b3c-90ed-8067439bbabc"</untrusted-data> — If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.
+      - linkedStudentId: null — If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.
+      - hairColor: <untrusted-data>"dark brown"</untrusted-data>
+      - eyeColor: <untrusted-data>"brown"</untrusted-data>
+      - estimatedAge: <untrusted-data>"30s"</untrusted-data>
+      - estimatedSex: <untrusted-data>"male"</untrusted-data>
+      - physicalDescription: <untrusted-data>"Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."</untrusted-data>
+      - identifyingFeatures: <untrusted-data>"glasses, short beard, kippah"</untrusted-data>
+      - hasPhoto: true
+      - lastSeenAt: null
+      - timesIdentified: 0
+      ↪ To expand: view "/Student_Contacts/33015fd1_indigo_fenix/*". To modify: action "set" on "/Student_Contacts/33015fd1_indigo_fenix" or "/Student_Contacts/33015fd1_indigo_fenix/<property>".
+  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
+• /Student_Incidents (map, 0 keys) — Student incidents — medical or functional events recorded for clinician review. Not tied to any program or goal. Each entry is keyed by incident UUID. 
+  (may contain items - view "/Student_Incidents" to load from database)
+  ↪ Add: action "add" at "/Student_Incidents" with key + value.
+• /Student_LinkableEntities (array, 0 items) — Read-only. Users and other students that share at least one institute with this student. When creating a Student_Contacts row for someone who already appears in this list, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so the system knows it's the same real person. If a matching name is found, auto-linking also happens on your behalf. — hidden; view to list items
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the user (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the user attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the user is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the user's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_CommunicationProfile{string}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Student_Incidents{map}, /Student_LinkableEntities{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Student_Contacts — MAP<string, object>
+  value.required: [name]
+  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
+• /Student_Incidents — MAP<string, object>
+  value.required: [type, severity]
+  value.props: id:string, type:string [enum: "medical", "functional"], severity:string [enum: "low", "moderate", "high", "critical"], recordedAt:string [format date-time], context:string, collectedBy:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Incidents","key":"<key>","value": {"type":"text","severity":"text"} }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[19:20:42.836] INPUT
+{
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Student_Notes"
+    }
+  ]
+}
+[19:20:42.838] BEFORE view /Student_Notes — Student_Notes array (0 items)
+[]
+[19:20:42.872] RESULTS
+[
+  {
+    "target": "/Student_Notes",
+    "action": "view",
+    "ok": true,
+    "message": "• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value.",
+    "mutatedPaths": [
+      "/Student_Notes"
+    ],
+    "summary": "Empty array (0 items)"
+  }
+]
+[19:20:42.874] AFTER view /Student_Notes — Student_Notes array (0 items)
+[]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[19:20:42.906] memoryValues.Student_Notes (0 items)
+[]
+[19:20:42.907] memoryValues.Student_People (0 items)
+[]
+[19:20:42.908] memoryValues.Student_Contacts
+{
+  "33015fd1_indigo_fenix": {
+    "id": "33015fd1-5393-4f07-9eae-338a038d92ae",
+    "name": "Indigo Fenix",
+    "role": "parent_guardian",
+    "eyeColor": "brown",
+    "hasPhoto": true,
+    "isActive": true,
+    "hairColor": "dark brown",
+    "customRole": null,
+    "lastSeenAt": null,
+    "contactEmail": "indigofenix00@gmail.com",
+    "contactPhone": null,
+    "contextNotes": null,
+    "estimatedAge": "30s",
+    "estimatedSex": "male",
+    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
+    "organization": null,
+    "relationship": "parent/guardian",
+    "linkedStudentId": null,
+    "timesIdentified": 0,
+    "identifyingFeatures": "glasses, short beard, kippah",
+    "physicalDescription": "Adult male in his 30s with dark brown hair, brown eyes, glasses, and a short beard. He is wearing a kippah."
+  }
+}
+[19:20:42.909] memoryValues.Student_Incidents
+{}
+[19:20:42.910] memoryValues.Student_Interests (0 items)
+[]
+[19:20:42.911] memoryValues.Student_CustomApps (0 items)
+[]
+[19:20:42.912] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[19:20:42.913] memoryVisualization — data section (104 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
+  (may contain items - view "/Student_Interests" to load from database)
+  ↪ To append: action "add" at "/Student_Interests" with value.
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: <untrusted-data>"AAC"</untrusted-data> — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_CommunicationProfile (string) — Free-text description of how the student communicates: speech ability (e.g. fluent sentences, single words, vocalizations only, none), AAC usage, voice characteristics, and any patterns that affect who could plausibly be speaking when an audible voice is heard. Edit this when a clinician asks you to update how the student communicates. The AAC system uses it to decide whether an audible voice could be the student. null
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (empty)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive). This is also where observations recorded during AAC sessions accumulate, so it doubles as the running record of how sessions have been going — read it when asked how the student has been or how interactions have gone. 
+  (empty - no items to display)
+  ↪ To append: action "add" at "/Student_Notes" with value.
 • /Student_CustomApps (array, 0 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
 • /Student_Contacts (map, 1 keys) — People in the student's life — parents, siblings, classmates, therapists, teachers, team members. THIS is the right place to record relationships and contacts. Do not use /Context_Students/<id>/users for this — that map is only for granting platform login access to a registered user account, not for recording who someone is to the student. Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. If the person already exists as a user or student in the system, set linkedUserId (for users) or linkedStudentId (for students) on the new contact so their records stay connected — shared biometric data, no duplicate identities. Linking is NOT automatic; you must set it explicitly when you recognize the person. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) after creating the contact. Photos and face embeddings are managed through the UI. 
   - 33015fd1_indigo_fenix: {object}

@@ -66,7 +66,7 @@ You should:
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { theme } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -503,7 +503,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   }
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-full">
       <div className={cn(
         "p-4 md:p-6",
         isDark ? "bg-background" : "bg-gray-50/50"

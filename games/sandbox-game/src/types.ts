@@ -1,115 +1,38 @@
 // Sandbox Game — Core type definitions
+//
+// A height-field terrain sandbox. Players push SAND around (conserved) to make
+// hills and valleys; left-alone terrain shape drives emergent moisture →
+// springs → rivers → plants. See config.ts for the tuning model.
 
-export type CellType =
-  | 'empty'
-  | 'stone'
-  | 'soil'
-  | 'water'
-  | 'seed'
-  | 'bloom'
-  | 'weed'
-  | 'fruit'
-  | 'compost'
-  | 'irrigation'
-  | 'scarecrow'
-  | 'harvester'
-  | 'storage';
+/** Bump when the serialized shape changes — older saves are discarded on load. */
+export const SAVE_VERSION = 2;
 
-/** What a player can do — place elements or use tools */
-export type ToolId = CellType | 'harvest' | 'remove';
-
-/** A single cell on the grid */
-export interface GameCell {
-  type: CellType;
-  /** Remaining capacity to cause changes. 0 = inert. */
-  energy: number;
-  /** Discrete state index — meaning depends on type (see ELEMENTS) */
-  state: number;
-}
-
-/** A scheduled future state change */
-export interface TimerEvent {
-  x: number;
-  y: number;
-  /** Timestamp (ms) when this fires */
-  fireAt: number;
-  /** State index to transition to */
-  targetState: number;
-  /** Optional: also change type (e.g. fruit → compost) */
-  targetType?: CellType;
-  /** Optional: energy to set on the new cell */
-  targetEnergy?: number;
-}
-
-/** Full game state — serializable */
-export interface GameState {
-  grid: GameCell[][];
-  width: number;
+/** One terrain cell. All values are floats. */
+export interface TerrainCell {
+  /** Sand units stacked here. Player-controlled, conserved across the grid. */
   height: number;
-  playerEnergy: number;
-  maxPlayerEnergy: number;
-  /** Timestamp of last engine update */
+  /** Hidden "water table" level. Accumulates on prominent ground, flows
+   *  downhill underground, surfaces as a spring where it exceeds the height. */
+  moisture: number;
+  /** Surface water depth. 0 = dry. */
+  water: number;
+  /** Vegetation density 0..1. */
+  plant: number;
+  /** Accumulated world steps this cell has been "wet" (drives plant growth). */
+  wetTime: number;
+}
+
+/** Full game state — JSON-serializable (flat row-major cell array). */
+export interface GameState {
+  version: number;
+  cols: number;
+  rows: number;
+  cells: TerrainCell[];
+  /** Timestamp (ms) of the last resolved world step. */
   lastUpdateTime: number;
-  /** Pending timer events, sorted by fireAt */
-  timers: TimerEvent[];
-  /** Total harvested resources (score) */
-  harvested: number;
-  /** Cells queued for water flow on next tick */
-  flowQueue: [number, number][];
+  /** Invariant: sum of all heights. Guards sand conservation during sculpting. */
+  totalSand: number;
 }
 
-// --- Rule system ---
-
-export type RuleEffect =
-  | { type: 'changeMyState'; newState: number }
-  | { type: 'changeNeighborState'; newState: number }
-  | { type: 'startMyTimer'; targetState: number; duration: number; targetType?: CellType; targetEnergy?: number }
-  | { type: 'startNeighborTimer'; targetState: number; duration: number; targetType?: CellType; targetEnergy?: number }
-  | { type: 'spawnOnEmpty'; spawnType: CellType; spawnState: number; spawnEnergy: number; duration: number }
-  | { type: 'convertNeighbor'; newType: CellType; newState: number; newEnergy: number }
-  | { type: 'consumeSelf'; replacementType: CellType; replacementState: number; replacementEnergy: number };
-
-/**
- * "When I am [myState], and my neighbor is [neighborType in neighborState],
- *  then [effect], costing [energyCost]."
- */
-export interface Rule {
-  /** My state to match, or null for any */
-  myState: number | null;
-  /** Neighbor type to match, or null for unconditional (no neighbor needed) */
-  neighborType: CellType | null;
-  /** Neighbor state to match, or null for any */
-  neighborState: number | null;
-  /** Minimum neighbor state (>=), used instead of exact match when set */
-  neighborStateMin?: number;
-  /** What happens */
-  effect: RuleEffect;
-  /** Energy cost from my cell */
-  energyCost: number;
-  /** If true, this rule only fires once (when first triggered, not re-triggered on same neighbor) */
-  once?: boolean;
-}
-
-/** Static definition of an element type */
-export interface ElementDef {
-  type: CellType;
-  label: string;
-  /** State names in order */
-  states: string[];
-  /** Default energy when placed */
-  defaultEnergy: number;
-  /** Default state when placed (0 if omitted) */
-  defaultState?: number;
-  /** Background color per state index (Tailwind or hex) */
-  colors: string[];
-  /** Emoji icon per state index */
-  icons: string[];
-  /** Interaction rules */
-  rules: Rule[];
-  /** Whether the player can place this element */
-  placeable: boolean;
-  /** Energy cost for the player to place this */
-  placeCost: number;
-  /** Valid placement targets — which cell types this can be placed on */
-  placeOn?: CellType[];
-}
+/** What the gaze brush does. */
+export type ToolId = 'sculpt' | 'water';

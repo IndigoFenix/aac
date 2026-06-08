@@ -16,10 +16,8 @@
 
 import type { IncomingMessage } from "http";
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
-import { eq } from "drizzle-orm";
 
-import { db } from "../../db";
-import { students, type User } from "@shared/schema";
+import { type User } from "@shared/schema";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
@@ -1348,8 +1346,21 @@ export class AgentCoordinator {
 
   private async resolveVoices(): Promise<void> {
     if (!this.studentId) return;
-    const [studentRow] = await db.select().from(students).where(eq(students.id, this.studentId)).limit(1);
-    if (!studentRow) return;
+    // `aacSettings` lives in a SEPARATE table (`aac_settings`) and is joined
+    // onto the student object by studentService as `{ ...student, aacSettings }`.
+    // A raw `db.select().from(students)` does NOT include that relation, so the
+    // old code read `studentRow.aacSettings === undefined` and EVERY voice field
+    // (ElevenLabs key/voiceId, gemini voice, etc.) came back empty — silently
+    // falling TTS back to Google. Read the cached student instead (same source
+    // dual-agent-service.resolveVoices and the speaker-mode check at init use),
+    // which carries the joined aacSettings.
+    const studentRow = dualAgentService
+      .getSessionCache(this.sessionId!)
+      ?.monitorAgent.getStudent?.();
+    if (!studentRow) {
+      logLiveSession("VOICE RESOLUTION", "ABORTED — no cached student available");
+      return;
+    }
     const aac = (studentRow as any).aacSettings;
     const gender = (studentRow as any).gender as string | undefined;
     const elEnabled = aac?.elevenlabsEnabled !== false;

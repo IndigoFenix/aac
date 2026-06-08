@@ -1096,7 +1096,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         </div>
 
         {/* Institute List */}
-        <ScrollArea className="flex-1">
+        <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
           <div className="p-4 space-y-3">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
@@ -1409,7 +1409,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
         <div className="p-4">
           {/* Overview Tab */}
           {activeTab === 'overview' && (

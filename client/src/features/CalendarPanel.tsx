@@ -724,7 +724,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                 <Plus className="w-3.5 h-3.5" />
               </Button>
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
               <div className="p-3 space-y-2">
                 {selectedDateEvents.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">

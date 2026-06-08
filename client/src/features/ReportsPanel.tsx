@@ -760,7 +760,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
         <div className="p-4 md:p-6">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReportType)}>
             <TabsList className="mb-4 flex-wrap h-auto gap-1">

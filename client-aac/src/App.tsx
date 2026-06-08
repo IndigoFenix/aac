@@ -62,7 +62,7 @@ function MainApp() {
         <GameEmbed
           gameId={gameRoute}
           src={`/games/${gameRoute}/`}
-          forwardGaze={gameRoute === 'bubbles-game' || gameRoute === 'musical-microbes'}
+          forwardGaze={gameRoute === 'bubbles-game' || gameRoute === 'musical-microbes' || gameRoute === 'sandbox-game'}
           onClose={() => { window.location.href = '/aac'; }}
         />
       </div>

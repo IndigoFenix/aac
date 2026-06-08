@@ -1,41 +1,51 @@
-// Sandbox Game — Main app component
-// A grid-based idle farming game designed for AAC interaction.
+// Sandbox Game — main app shell.
+// A literal sandbox: push sand with your gaze to dig valleys and pile hills;
+// pour water; then leave the terrain alone and watch springs, rivers and plants
+// emerge from its shape.
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, FastForward, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import { useGameEngine } from './useGameEngine';
-import GameGrid from './GameGrid';
+import TerrainCanvas, { type GazeState } from './TerrainCanvas';
 import GameToolbar from './GameToolbar';
 import type { ToolId } from './types';
 
 const GAME_ID = 'sandbox-game';
+const DEFAULT_DWELL_MS = 800;
 
 const SKIP_OPTIONS = [
+  { label: '30s', ms: 30 * 1000 },
+  { label: '2m', ms: 2 * 60 * 1000 },
+  { label: '10m', ms: 10 * 60 * 1000 },
   { label: '1h', ms: 60 * 60 * 1000 },
-  { label: '4h', ms: 4 * 60 * 60 * 1000 },
-  { label: '12h', ms: 12 * 60 * 60 * 1000 },
-  { label: '1d', ms: 24 * 60 * 60 * 1000 },
 ];
 
 export default function SandboxGameApp() {
-  // The engine persists per-student state to localStorage. When embedded the
-  // platform passes a studentDisplayName via init, but we don't currently
-  // identify the student in localStorage — keep using "default" until the
-  // platform decides to expose a stable identifier through the bridge.
-  const [studentKey, setStudentKey] = useState<string>('default');
-  const { gameState, doAction, canPlace, skipTime, resetGame } = useGameEngine(studentKey);
-  const [selectedTool, setSelectedTool] = useState<ToolId | null>(null);
+  const [studentKey, setStudentKey] = useState('default');
+  const { getState, skipTime, resetGame } = useGameEngine(studentKey);
+
+  const [selectedTool, setSelectedTool] = useState<ToolId | null>('sculpt');
+  const toolRef = useRef<ToolId | null>('sculpt');
+  useEffect(() => { toolRef.current = selectedTool; }, [selectedTool]);
+
+  const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
+  const [dwellMs, setDwellMs] = useState(DEFAULT_DWELL_MS);
+
   const [showDebug, setShowDebug] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
 
+  // ── Bridge: announce ready, take init config, receive gaze, handle close ────
   useEffect(() => {
     sendToParent({ type: 'ready', gameId: GAME_ID });
     const off = onPlatformMessage(msg => {
-      if (msg.type === 'init' && msg.studentDisplayName) {
-        // Use the platform-provided name as a localStorage namespace.
-        setStudentKey(msg.studentDisplayName);
+      if (msg.type === 'init') {
+        if (msg.studentDisplayName) setStudentKey(msg.studentDisplayName);
+        if (typeof msg.dwellMs === 'number' && msg.dwellMs > 0) setDwellMs(msg.dwellMs);
+      }
+      if (msg.type === 'gaze') {
+        gazeRef.current = { x: msg.x, y: msg.y, mode: msg.mode };
       }
       if (msg.type === 'request_close') {
         sendToParent({ type: 'session_end', reason: 'quit' });
@@ -44,10 +54,16 @@ export default function SandboxGameApp() {
     return () => off();
   }, []);
 
-  const handleCellClick = useCallback((x: number, y: number) => {
-    if (!selectedTool) return;
-    doAction(x, y, selectedTool);
-  }, [selectedTool, doAction]);
+  // ── Mouse fallback (standalone / no eye tracker): feed the same gaze ref ────
+  // Real eyegaze (mode 'eyegaze') always wins; mouse never overrides it.
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (gazeRef.current.mode === 'eyegaze') return;
+    gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
+  }, []);
+  const onMouseLeave = useCallback(() => {
+    if (gazeRef.current.mode === 'eyegaze') return;
+    gazeRef.current = { x: -1, y: -1, mode: 'off' };
+  }, []);
 
   const handleReset = useCallback(() => {
     if (showResetConfirm) {
@@ -59,29 +75,20 @@ export default function SandboxGameApp() {
     }
   }, [showResetConfirm, resetGame]);
 
-  const pendingTimers = gameState.timers.length;
-  const nextTimer = gameState.timers[0];
-  const nextTimerIn = nextTimer ? Math.max(0, nextTimer.fireAt - Date.now()) : 0;
-  const nextTimerLabel = nextTimer
-    ? formatDuration(nextTimerIn)
-    : 'none';
-
   return (
-    <div className="h-full w-full bg-gradient-to-br from-green-900 to-green-950 flex flex-col overflow-hidden">
+    <div className="h-full w-full flex flex-col overflow-hidden bg-gradient-to-br from-amber-200 to-orange-300">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-black/30 border-b border-green-800 shrink-0">
-        <h1 className="text-lg font-bold text-green-200">🌱 Sandbox Farm</h1>
+      <div className="flex items-center justify-between px-3 py-2 bg-amber-950/80 border-b border-amber-800 shrink-0">
+        <h1 className="text-lg font-bold text-amber-100">🏜️ Sandbox</h1>
         <div className="flex items-center gap-2">
-          {/* Debug toggle */}
           <button
             data-dwell
             onClick={() => setShowDebug(!showDebug)}
-            className="p-1.5 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 text-xs"
+            className="p-1.5 rounded-lg bg-amber-800 text-amber-100 hover:bg-amber-700 text-xs"
             aria-label="Toggle debug panel"
           >
             {showDebug ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-          {/* Close — only meaningful when embedded */}
           {isEmbedded && (
             <button
               data-dwell
@@ -95,18 +102,16 @@ export default function SandboxGameApp() {
         </div>
       </div>
 
-      {/* Debug panel (collapsible) */}
+      {/* Debug panel */}
       {showDebug && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 border-b border-green-800 text-xs text-green-300 shrink-0 flex-wrap">
-          <span>Timers: {pendingTimers}</span>
-          <span>Next: {nextTimerLabel}</span>
-          <span className="border-l border-green-700 pl-2">Skip:</span>
-          {SKIP_OPTIONS.map((opt) => (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-950/70 border-b border-amber-800 text-xs text-amber-200 shrink-0 flex-wrap">
+          <span className="border-r border-amber-700 pr-2">Fast-forward:</span>
+          {SKIP_OPTIONS.map(opt => (
             <button
               key={opt.label}
               data-dwell
               onClick={() => skipTime(opt.ms)}
-              className="px-2 py-0.5 rounded bg-green-800 hover:bg-green-700 active:scale-95 transition-transform"
+              className="px-2 py-0.5 rounded bg-amber-800 hover:bg-amber-700 active:scale-95 transition-transform"
             >
               <FastForward size={10} className="inline mr-1" />
               {opt.label}
@@ -116,7 +121,7 @@ export default function SandboxGameApp() {
             data-dwell
             onClick={handleReset}
             className={`px-2 py-0.5 rounded active:scale-95 transition-transform ${
-              showResetConfirm ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-700 hover:bg-gray-600'
+              showResetConfirm ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-amber-800 hover:bg-amber-700'
             }`}
           >
             <RotateCcw size={10} className="inline mr-1" />
@@ -125,44 +130,27 @@ export default function SandboxGameApp() {
         </div>
       )}
 
-      {/* Main area: toolbar + grid */}
+      {/* Main area: toolbar + terrain */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Toolbar */}
-        <div className="w-16 sm:w-20 bg-gray-800 border-r border-gray-700 shrink-0 overflow-y-auto">
+        <div className="w-16 sm:w-20 bg-amber-950/40 border-r border-amber-800 shrink-0 overflow-y-auto">
           <GameToolbar
             selectedTool={selectedTool}
             onSelectTool={setSelectedTool}
-            playerEnergy={gameState.playerEnergy}
-            maxPlayerEnergy={gameState.maxPlayerEnergy}
-            harvested={gameState.harvested}
+            gazeRef={gazeRef}
+            dwellMs={dwellMs}
           />
         </div>
 
-        {/* Grid container — maintains square aspect */}
-        <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0 min-w-0">
-          <div className="w-full h-full max-w-[min(100%,calc(100vh-8rem))] max-h-[min(100%,calc(100vw-5rem))] aspect-square">
-            <GameGrid
-              gameState={gameState}
-              selectedTool={selectedTool}
-              onCellClick={handleCellClick}
-              canPlace={canPlace}
-            />
+        <div
+          className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0 min-w-0"
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+        >
+          <div className="w-full h-full max-w-[min(100%,calc(100vh-8rem))] max-h-[min(100%,calc(100vw-5rem))] aspect-square rounded-lg overflow-hidden shadow-xl">
+            <TerrainCanvas getState={getState} gazeRef={gazeRef} toolRef={toolRef} />
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-function formatDuration(ms: number): string {
-  if (ms <= 0) return 'now';
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const remainMin = minutes % 60;
-  if (hours < 24) return `${hours}h${remainMin > 0 ? ` ${remainMin}m` : ''}`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
 }

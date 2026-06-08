@@ -23,10 +23,10 @@ export const GAMES: GameEntry[] = [
   },
   {
     id: "sandbox-game",
-    name: "Sandbox Farm",
-    description: "Plant seeds, harvest crops, and watch your idle farm grow over time. A relaxing game for eyegaze controls.",
-    emoji: "🌱",
-    gradient: "from-emerald-700 to-green-900",
+    name: "Sandbox",
+    description: "Push sand with your gaze to dig valleys and build hills, then watch springs, rivers and plants emerge from the shapes you make. A calm world-building toy for eyegaze, touch, or mouse.",
+    emoji: "🏜️",
+    gradient: "from-amber-500 to-orange-800",
   },
   {
     id: "bubbles-game",

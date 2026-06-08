@@ -213,7 +213,7 @@ function ClinicianTimePill({
 }
 
 export function InsuranceBridgePanel({ isOpen }: InsuranceBridgePanelProps) {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { currentInstitute, currentPermissions } = useInstitute();
   const [period, setPeriod] = useState(currentPeriod);
 
@@ -280,7 +280,7 @@ export function InsuranceBridgePanel({ isOpen }: InsuranceBridgePanelProps) {
   const timezone = data?.rollup.timezone ?? 'UTC';
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-full">
       <div className="p-6 space-y-6" data-testid="insurance-bridge-panel">
         <div className="flex items-center gap-3">
           <Receipt className="w-6 h-6 text-primary" />

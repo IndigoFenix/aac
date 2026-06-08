@@ -40,7 +40,7 @@ function formatTime(iso: string): string {
 
 export function UserChatPanel({ isOpen }: UserChatPanelProps) {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { institutes, currentInstitute } = useInstitute();
   const {
     rooms,
@@ -80,7 +80,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
             <Plus className="w-4 h-4 mr-1" /> {t("userChat.newChat")}
           </Button>
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
           {rooms.length === 0 && (
             <div className="p-4 text-sm text-muted-foreground">{t("userChat.noRooms")}</div>
           )}
@@ -280,7 +280,7 @@ function NewChatDialog(props: {
   onCreateDirect: (instituteId: string, otherUserId: string) => Promise<void>;
   onCreateGroup: (instituteId: string, participantIds: string[], name: string) => Promise<void>;
 }) {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { open, onClose, currentInstituteId, onCreateDirect, onCreateGroup } = props;
   const [contacts, setContacts] = useState<UserChatContact[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -357,7 +357,7 @@ function NewChatDialog(props: {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <ScrollArea className="h-64 border rounded-md">
+              <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-64 border rounded-md">
                 {filtered.length === 0 && (
                   <div className="p-3 text-sm text-muted-foreground">{t("userChat.noContacts")}</div>
                 )}

@@ -256,7 +256,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       </div>
 
       {/* Student List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
         <div className="p-4 space-y-3">
           {filteredStudents.map((student) => (
             <Card
