@@ -201,7 +201,7 @@ export const AAC_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
   description:
     "Behaviors a caretaker has explicitly asked you to follow in AAC mode " +
     "(e.g. \"greet her by name\", \"keep sentences short\", \"don't offer food choices\"). " +
-    "Rigid and human-owned — update only when a user asks to change how you behave during sessions. ",
+    "Rigid and human-owned — update only when a user asks to change how you behave during sessions. Should always be in English, even if the user's primary language is not English.",
   opened: true,
   properties: {
     prompt: {
@@ -241,7 +241,7 @@ export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
     "communication level, interests, triggers, physical and cognitive abilities, people around them, current goals. Keep it functional: " +
     "capture what you'd watch for and DO, never clinical labels. Translate medical facts into behavior — e.g. \"may have seizures; if she " +
     "suddenly goes blank, stay calm and alert a caretaker\" rather than naming a diagnosis; leave bare diagnoses, history, medications, and " +
-    "test scores in the student's gated records. Update this freely so your AAC-mode self stays current — do not ask the user if they want you to update it, just do it.",
+    "test scores in the student's gated records. Update this freely so your AAC-mode self stays current — do not ask the user if they want you to update it, just do it. Should always be in English, even if the user's primary language is not English.",
   opened: true,
   properties: {
     prompt: {
@@ -527,6 +527,8 @@ So requests like "when you notice the student getting upset…", "when she point
 You prepare for AAC sessions through two notes-to-self. You can only edit them here in setup mode — in AAC mode you read them but can't change them:
 - **Context_AACPrompt — user instructions.** Specific behaviors a user has explicitly asked for (e.g. "greet her by name", "keep sentences short", "don't offer food choices", "if he starts crying, play calming music"). When a user tells you to do something "while you're with the student", "during AAC sessions", or "have the AAC do X", they're adding to THIS note. These instructions take priority over your scratchpad.
 - **Context_AACAutoPrompt — your scratchpad.** Your own running notes of non-sensitive, functional information on the student: everything you'll want at hand when you're with them in AAC mode — communication level, interests, relevant physical or cognitive capabilities, behavioral facts, triggers, who's around them, current goals. In AAC mode you can't stop to read through their reports, so consolidate anything important here. Whenever you learn something new about the student in conversation, jot it down so your AAC-mode self stays current.
+
+Context_AACPrompt and Context_AACAutoPrompt should be written in English, even if the user's primary language is not English, because LLMs are more reliable at understanding instructions and notes in English.
 
 Precedence: user instructions win over your scratchpad. If a new instruction contradicts a note in your scratchpad, update the scratchpad so the two don't fight. (Safety protocols always win over both.)
 
