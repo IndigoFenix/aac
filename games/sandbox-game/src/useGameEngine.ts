@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GameState } from './types';
 import {
-  createNewGame, catchUp, serializeState, deserializeState,
+  createNewGame, catchUp, serializeState, deserializeState, setWrap, wakeAll,
 } from './engine';
 import { WORLD_STEP_MS } from './config';
 
@@ -30,8 +30,20 @@ export function useGameEngine(studentKey: string) {
   }
 
   const [, setHeartbeat] = useState(0);
+  // Mirror the world's geometry flag into React state so the toggle button can
+  // reflect it. Source of truth stays on the (serialized) GameState.
+  const [wrap, setWrapState] = useState(() => stateRef.current.wrap);
 
   const getState = useCallback(() => stateRef.current, []);
+
+  /** Flip bounded ↔ toroidal geometry (a per-world system setting). */
+  const toggleWrap = useCallback(() => {
+    const s = stateRef.current;
+    setWrap(s, !s.wrap);
+    setWrapState(s.wrap);
+    localStorage.setItem(storageKey, serializeState(s));
+    setHeartbeat(h => (h + 1) & 0xffff);
+  }, [storageKey]);
 
   // Ecology clock. catchUp() runs the right number of steps from real elapsed
   // time, so this self-corrects across throttled/backgrounded frames.
@@ -50,6 +62,17 @@ export function useGameEngine(studentKey: string) {
     return () => { clearInterval(interval); save(); };
   }, [storageKey]);
 
+  /** Re-settle the whole world under the current config (used after the debug
+   *  panel changes tuning values). Safe — it just re-wakes every cell; the
+   *  scheduler re-converges and settled cells sleep again. */
+  const rewake = useCallback(() => {
+    wakeAll(stateRef.current);
+    // Persist the pending re-settle immediately so a reload right after a tuning
+    // change still re-evaluates under the new values (the schedule is serialized).
+    localStorage.setItem(storageKey, serializeState(stateRef.current));
+    setHeartbeat(h => (h + 1) & 0xffff);
+  }, [storageKey]);
+
   /** Debug: fast-forward `ms` of simulated time. */
   const skipTime = useCallback((ms: number) => {
     stateRef.current.lastUpdateTime -= ms;
@@ -59,9 +82,10 @@ export function useGameEngine(studentKey: string) {
 
   const resetGame = useCallback(() => {
     stateRef.current = createNewGame();
+    setWrapState(stateRef.current.wrap);
     localStorage.removeItem(storageKey);
     setHeartbeat(h => (h + 1) & 0xffff);
   }, [storageKey]);
 
-  return { getState, skipTime, resetGame };
+  return { getState, skipTime, resetGame, wrap, toggleWrap, rewake };
 }

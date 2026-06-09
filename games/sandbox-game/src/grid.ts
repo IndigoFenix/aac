@@ -6,6 +6,12 @@ export function inBounds(state: GameState, x: number, y: number): boolean {
   return x >= 0 && x < state.cols && y >= 0 && y < state.rows;
 }
 
+/** Wrap a coordinate into [0,size) — used in toroidal mode so an off-edge index
+ *  re-enters from the opposite side. (Caller decides whether to wrap or clamp.) */
+export function wrapCoord(v: number, size: number): number {
+  return ((v % size) + size) % size;
+}
+
 export function idx(state: GameState, x: number, y: number): number {
   return y * state.cols + x;
 }

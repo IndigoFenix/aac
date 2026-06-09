@@ -15,6 +15,7 @@
 
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Bell, X } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { playAlertBeep, startEmergencyTone, type EmergencyToneHandle } from "@/lib/alarmSounds";
 
@@ -70,14 +71,6 @@ export default function AlarmOverlay({ alarm, onCancel }: AlarmOverlayProps) {
           transition={{ duration: 0.2 }}
         >
           <div className="flex flex-col items-center gap-6 px-8 text-center">
-            <motion.div
-              aria-hidden
-              style={{ fontSize: "clamp(4rem, 16vw, 10rem)", lineHeight: 1 }}
-              animate={{ scale: [1, 1.12, 1] }}
-              transition={{ repeat: Infinity, duration: 1 }}
-            >
-              🚨
-            </motion.div>
             <h2 className="font-bold text-white" style={{ fontSize: "clamp(1.8rem, 6vw, 3.5rem)" }}>
               {t("alarm.emergency")}
             </h2>
@@ -86,18 +79,36 @@ export default function AlarmOverlay({ alarm, onCancel }: AlarmOverlayProps) {
                 {alarm.reason}
               </p>
             )}
+            {/* Big central cancel target: a bell with an X over it, so a
+                caretaker can silence a mistaken alarm. data-dwell makes it
+                eye-gaze selectable (the overlay is a dwell-trap, so gaze
+                resolves to this button). */}
             <motion.button
               data-dwell="cancel-alarm"
-              className="mt-2 rounded-2xl bg-white text-red-700 font-bold select-none shadow-lg active:scale-95 transition-transform"
-              style={{ fontSize: "clamp(1.1rem, 3.5vw, 1.8rem)", padding: "0.75rem 2.5rem" }}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ delay: 0.15 }}
+              aria-label={t("alarm.cancel")}
+              className="relative flex items-center justify-center rounded-full bg-white shadow-2xl select-none active:scale-95 transition-transform"
+              style={{ width: "clamp(10rem, 38vw, 18rem)", height: "clamp(10rem, 38vw, 18rem)" }}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: [1, 1.06, 1] }}
+              transition={{ scale: { repeat: Infinity, duration: 1 }, opacity: { duration: 0.2 } }}
               onClick={() => onCancelRef.current()}
             >
-              {t("alarm.cancel")}
+              <Bell
+                aria-hidden
+                className="text-red-700"
+                strokeWidth={2.25}
+                style={{ width: "52%", height: "52%" }}
+              />
+              <X
+                aria-hidden
+                className="absolute text-red-600"
+                strokeWidth={1.5}
+                style={{ width: "82%", height: "82%" }}
+              />
             </motion.button>
+            <span className="text-white font-bold" style={{ fontSize: "clamp(1.1rem, 3.5vw, 1.8rem)" }}>
+              {t("alarm.cancel")}
+            </span>
           </div>
         </motion.div>
       )}

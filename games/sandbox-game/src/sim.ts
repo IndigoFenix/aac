@@ -19,7 +19,8 @@
 //     work is bounded by the active-cell count.
 
 import type { GameState } from './types';
-import { ECO } from './config';
+import { ECO, SLEEP_EPS } from './config';
+import { wrapCoord } from './grid';
 
 export interface Sim {
   /** fireStep → set of cell indices due then. Lazy-cancelled (see `due`). */
@@ -135,78 +136,111 @@ export function seedSchedule(sim: Sim, flat: number[] | undefined, clock: number
 }
 
 // --- Prominence cache ---------------------------------------------------------
-// Prominence = a cell's height above the mean height of its (2r+1)² box. It is
-// the only quantity in the sim that couples a cell to ground BEYOND its 4
-// neighbours, so it gets its own cache: recomputed in bulk on load (SAT) and
-// incrementally where height changes (direct box-sum), never every step.
+// Prominence = a cell's height above a DISTANCE-WEIGHTED mean of the heights
+// around it: nearby ground counts most and the weight fades smoothly to zero at
+// promRadius (a raised-cosine kernel). The smooth edge matters — a uniform box
+// with a hard cutoff made a terrain edit pop a sharp "ripple" of rain change in a
+// ring at exactly the box radius (cells whose box the moved sand suddenly entered/
+// left). With the soft kernel that contribution fades in gradually instead. It is
+// the only quantity that couples a cell beyond its 4 neighbours, so it's cached:
+// rebuilt in bulk on load / geometry change, recomputed where height changes.
 
-/** Fill the whole prominence cache via a summed-area table — O(N), used on build
- *  and load. Matches the per-cell box formula in `recomputeProm` exactly. */
-export function computeAllProm(state: GameState, sim: Sim): void {
-  const { cols, rows } = state;
-  const r = ECO.promRadius;
-  const W = cols + 1;
-  const sat = new Float64Array(W * (rows + 1));
-  for (let y = 0; y < rows; y++) {
-    let rowSum = 0;
-    for (let x = 0; x < cols; x++) {
-      rowSum += state.cells[y * cols + x].height;
-      sat[(y + 1) * W + (x + 1)] = sat[y * W + (x + 1)] + rowSum;
+/** Raised-cosine weight kernel for the prominence neighbourhood, cached by radius.
+ *  w(0)=1, w(promRadius)=0 with zero slope at the edge, so a cell crossing the
+ *  boundary contributes ≈0 (no discrete jump). Indexed [(dy+r)*n + (dx+r)]. */
+let kernelR = -1;
+let kernelW: Float64Array = new Float64Array(0);
+function promKernel(r: number): Float64Array {
+  if (kernelR === r) return kernelW;
+  const n = 2 * r + 1;
+  const k = new Float64Array(n * n);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const d = Math.hypot(dx, dy) / r;
+      k[(dy + r) * n + (dx + r)] = d >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * d));
     }
   }
-  for (let y = 0; y < rows; y++) {
-    const y0 = Math.max(0, y - r), y1 = Math.min(rows - 1, y + r);
-    for (let x = 0; x < cols; x++) {
-      const x0 = Math.max(0, x - r), x1 = Math.min(cols - 1, x + r);
-      const sum = sat[(y1 + 1) * W + (x1 + 1)] - sat[y0 * W + (x1 + 1)]
-        - sat[(y1 + 1) * W + x0] + sat[y0 * W + x0];
-      const mean = sum / ((x1 - x0 + 1) * (y1 - y0 + 1));
-      sim.prom[y * cols + x] = state.cells[y * cols + x].height - mean;
+  kernelR = r;
+  kernelW = k;
+  return k;
+}
+
+/** Prominence of one cell: height − distance-weighted mean of its neighbourhood.
+ *  The kernel wraps on a torus and clamps on a bounded map (the Σweight in the
+ *  denominator covers only the in-bounds cells, so edges stay correct). */
+function promAt(state: GameState, x: number, y: number): number {
+  const { cols, rows, wrap } = state;
+  const r = ECO.promRadius;
+  const k = promKernel(r);
+  const n = 2 * r + 1;
+  let ws = 0, wh = 0;
+  for (let dy = -r; dy <= r; dy++) {
+    let yy = y + dy;
+    if (wrap) yy = wrapCoord(yy, rows);
+    else if (yy < 0 || yy >= rows) continue;
+    const krow = (dy + r) * n;
+    const grow = yy * cols;
+    for (let dx = -r; dx <= r; dx++) {
+      const w = k[krow + dx + r];
+      if (w === 0) continue;
+      let xx = x + dx;
+      if (wrap) xx = wrapCoord(xx, cols);
+      else if (xx < 0 || xx >= cols) continue;
+      ws += w;
+      wh += w * state.cells[grow + xx].height;
     }
+  }
+  return state.cells[y * cols + x].height - wh / ws;
+}
+
+/** Fill the whole prominence cache (on load / geometry change). O(N·r²); runs
+ *  rarely. Uses the same `promAt` as the incremental path, so the cache is
+ *  bit-identical however it was built. */
+export function computeAllProm(state: GameState, sim: Sim): void {
+  const { cols, rows } = state;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) sim.prom[y * cols + x] = promAt(state, x, y);
   }
   sim.promDirty.clear();
 }
 
-/** Recompute prominence for one cell directly from its height box (O(r²)). */
-function promAt(state: GameState, x: number, y: number): number {
-  const { cols, rows } = state;
-  const r = ECO.promRadius;
-  const x0 = Math.max(0, x - r), x1 = Math.min(cols - 1, x + r);
-  const y0 = Math.max(0, y - r), y1 = Math.min(rows - 1, y + r);
-  let sum = 0;
-  for (let yy = y0; yy <= y1; yy++) {
-    const row = yy * cols;
-    for (let xx = x0; xx <= x1; xx++) sum += state.cells[row + xx].height;
-  }
-  const mean = sum / ((x1 - x0 + 1) * (y1 - y0 + 1));
-  return state.cells[y * cols + x].height - mean;
-}
-
-/** Recompute and clear every dirty prominence entry. Called once per world step,
- *  before accumulation reads the cache. */
+/** Recompute every dirty prominence entry (called once per world step, before
+ *  accumulation reads the cache) and WAKE only the cells whose prominence moved
+ *  enough to matter. A cell's rain = moistGain × prominence, so a prominence
+ *  change below SLEEP_EPS/moistGain shifts rain by < SLEEP_EPS/step — too little to
+ *  move the cell's equilibrium, so it's left asleep. This is what keeps a terrain
+ *  edit's ripple to the cells whose rainfall genuinely changed, instead of waking
+ *  the entire (wide) prominence box around the brush. Cells woken here are
+ *  scheduled for the CURRENT step so they're processed immediately. */
 export function flushPromDirty(state: GameState, sim: Sim): void {
   if (sim.promDirty.size === 0) return;
   const { cols } = state;
+  const wakeEps = SLEEP_EPS / Math.max(0.05, ECO.moistGain);
   for (const i of sim.promDirty) {
-    sim.prom[i] = promAt(state, i % cols, (i / cols) | 0);
+    const np = promAt(state, i % cols, (i / cols) | 0);
+    if (Math.abs(np - sim.prom[i]) > wakeEps) schedule(sim, i, state.clock);
+    sim.prom[i] = np;
   }
   sim.promDirty.clear();
 }
 
-/** Mark prominence dirty in the (2r+1)² box around a height-edited cell, and
- *  return those box cells so the caller can also WAKE them (their accumulation
- *  input just changed). Height is edited only by sculpting and erosion. */
-export function dirtyPromBox(state: GameState, sim: Sim, x: number, y: number, out: number[]): void {
+/** Mark prominence dirty in the (2r+1)² box around a height-edited cell (the
+ *  cells whose box-mean includes it). They're recomputed — and selectively woken
+ *  — by `flushPromDirty`. Height is edited only by sculpting and erosion. */
+export function dirtyPromBox(state: GameState, sim: Sim, x: number, y: number): void {
   const { cols, rows } = state;
   const r = ECO.promRadius;
+  if (state.wrap) {
+    for (let dy = -r; dy <= r; dy++) {
+      const row = wrapCoord(y + dy, rows) * cols;
+      for (let dx = -r; dx <= r; dx++) sim.promDirty.add(row + wrapCoord(x + dx, cols));
+    }
+    return;
+  }
   const x0 = Math.max(0, x - r), x1 = Math.min(cols - 1, x + r);
   const y0 = Math.max(0, y - r), y1 = Math.min(rows - 1, y + r);
   for (let yy = y0; yy <= y1; yy++) {
     const row = yy * cols;
-    for (let xx = x0; xx <= x1; xx++) {
-      const i = row + xx;
-      sim.promDirty.add(i);
-      out.push(i);
-    }
+    for (let xx = x0; xx <= x1; xx++) sim.promDirty.add(row + xx);
   }
 }

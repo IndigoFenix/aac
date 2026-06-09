@@ -7,12 +7,12 @@
 import assert from 'node:assert/strict';
 import {
   createNewGame, worldStep, catchUp, pourWater, wakeAll,
-  serializeState, deserializeState, stats,
+  serializeState, deserializeState, setWrap, stats,
 } from '../src/engine.ts';
 import { applyBrush, conservationError } from '../src/sculpt.ts';
 import { getSim, pendingCount } from '../src/sim.ts';
 import { recomputeTotalSand, idx, cellAt } from '../src/grid.ts';
-import { WORLD_STEP_MS, BASELINE_HEIGHT, ECO, FERT } from '../src/config.ts';
+import { WORLD_STEP_MS, BASELINE_HEIGHT, BRUSH, ECO, FERT } from '../src/config.ts';
 import type { GameState } from '../src/types.ts';
 
 let passed = 0;
@@ -83,7 +83,7 @@ check('brush (push + slump) conserves total sand', () => {
 // 2. A spring emerges off the peak; the peak itself stays dry.
 check('spring emerges below the peak, not on it', () => {
   const state = createNewGame();
-  buildHill(state, 16, 16, 22, 9);
+  buildHill(state, 16, 16, 34, 9); // a real hill at the baseline-16 scale (+18)
   wakeAll(state); // terrain built directly → wake the grid for the scheduler
   const peak = maxBy(state, c => c.height);
   for (let i = 0; i < 600; i++) worldStep(state);
@@ -454,6 +454,127 @@ check('a tall mountain springs at its foot at the new scale', () => {
   assert.ok(cellAt(state, wettest.x, wettest.y).height < peakH - 1, 'spring should sit below the peak');
   assert.ok(green > 20, `tall mountain should green an oasis (green=${green})`);
   assert.ok(wet < state.cols * state.rows * 0.45, `tall mountain drowned the map (${wet} wet)`);
+});
+
+// ─── Toroidal (wrap-around) geometry ─────────────────────────────────────────
+
+const colSum = (state: GameState, x0: number, x1: number) => {
+  let s = 0;
+  for (let y = 0; y < state.rows; y++) for (let x = x0; x <= x1; x++) s += cellAt(state, x, y).height;
+  return s;
+};
+
+// 18. On a torus, sand pushed off one edge re-enters the opposite edge — sculpt
+//     that runs off the edges must still conserve sand exactly.
+check('toroidal sculpting conserves sand across the seam', () => {
+  const state = createNewGame();
+  setWrap(state, true);
+  const rng = makeRng(11);
+  let gx = 1, gy = 1, vx = 0, vy = 0;
+  for (let i = 0; i < 3000; i++) {
+    vx = vx * 0.8 + (rng() - 0.5) * 1.6;
+    vy = vy * 0.8 + (rng() - 0.5) * 1.6;
+    gx = ((gx + vx) % state.cols + state.cols) % state.cols; // gaze itself wraps around
+    gy = ((gy + vy) % state.rows + state.rows) % state.rows;
+    applyBrush(state, gx, gy, vx, vy);
+  }
+  assert.ok(conservationError(state) < 1e-6, `wrap sculpt drift = ${conservationError(state)}`);
+});
+
+// 19. Edges genuinely connect: sand pushed off the LEFT edge arrives at the RIGHT
+//     edge (only reachable via wrap), which a bounded map would never do.
+check('toroidal edges connect (push off one edge arrives at the other)', () => {
+  const state = createNewGame();
+  setWrap(state, true);
+  const rightBefore = colSum(state, state.cols - 4, state.cols - 1);
+  for (let i = 0; i < 80; i++) applyBrush(state, 0.5, 16, -2, 0); // pile at x≈0 moving −x
+  const rightAfter = colSum(state, state.cols - 4, state.cols - 1);
+  assert.ok(rightAfter > rightBefore + 1,
+    `sand pushed off the left edge should build up at the right edge (${rightBefore.toFixed(1)}→${rightAfter.toFixed(1)})`);
+  assert.ok(conservationError(state) < 1e-6, `drift ${conservationError(state)}`);
+});
+
+// 20. The scheduler / termination guarantees still hold under toroidal topology:
+//     a sculpted wrap-world reaches rest (no edge drain ⇒ evaporation only).
+check('a toroidal world reaches rest', () => {
+  const state = createNewGame();
+  setWrap(state, true);
+  sculptRough(state, 23, 4000);
+  const restAt = stepUntilRest(state, 8000);
+  assert.ok(restAt > 0, `toroidal world never settled (pending=${pendingCount(getSim(state))})`);
+});
+
+// ─── Brush interactions with water / soil / plants ───────────────────────────
+
+// 21. Digging through water drags it along the gaze direction.
+check('the brush shoves surface water', () => {
+  const state = createNewGame();
+  for (let y = 12; y <= 20; y++) for (let x = 12; x <= 20; x++) cellAt(state, x, y).height = 0; // dug flat → no sand moves
+  cellAt(state, 16, 16).water = 3;
+  applyBrush(state, 16, 16, 1, 0); // push +x
+  assert.ok(cellAt(state, 17, 16).water > 0, 'water should be shoved toward the gaze direction');
+  assert.ok(cellAt(state, 16, 16).water < 3, 'source water should drop');
+});
+
+// 22. Sand pushed into deep water SINKS — the bed rises but the water keeps
+//     covering it (it is not destroyed; it recedes only through the ecology).
+check('sand pushed into deep water stays submerged', () => {
+  const state = createNewGame();
+  cellAt(state, 16, 16).height = 30;   // tall dry source
+  cellAt(state, 17, 16).water = 8;     // deep water target
+  const hBefore = cellAt(state, 17, 16).height;
+  applyBrush(state, 16, 16, 1, 0);
+  const t = cellAt(state, 17, 16);
+  assert.ok(t.height > hBefore, 'the dumped sand should raise the bed');
+  assert.ok(t.water >= ECO.waterMin, 'deep water should keep covering the sand, not vanish');
+});
+
+// 22a. Sand that FILLS shallow water absorbs it immediately (no waiting a step).
+check('sand filling shallow water absorbs it on contact', () => {
+  const state = createNewGame();
+  cellAt(state, 16, 16).height = 30;   // tall source → sand exceeds the water depth
+  cellAt(state, 17, 16).water = 1;     // shallow
+  applyBrush(state, 16, 16, 1, 0);
+  const t = cellAt(state, 17, 16);
+  assert.equal(t.water, 0, 'sand reaching the surface should absorb the water right away');
+  assert.ok(t.fertility > 0, 'the absorbed water should wet the sand (fertility up)');
+});
+
+// 22b. Burying plants bares the soil, so they don't instantly regrow.
+check('buried plants stay buried (no instant regrowth)', () => {
+  const state = createNewGame();
+  cellAt(state, 16, 16).fertility = 1;
+  cellAt(state, 16, 16).plant = 0.8;
+  cellAt(state, 15, 16).height = 40;        // a tall neighbour to shove sand over it
+  for (let i = 0; i < 3; i++) applyBrush(state, 15, 16, 1, 0); // push +x, burying (16,16)
+  assert.ok(cellAt(state, 16, 16).plant < 0.1, 'sand should bury the plants');
+  wakeAll(state);
+  for (let i = 0; i < 5; i++) worldStep(state);
+  assert.ok(cellAt(state, 16, 16).plant < 0.2, 'a buried plant must not instantly regrow');
+});
+
+// 23. Vegetation roots the soil: it can't be dug until the plants are cleared,
+//     and each pass strips them.
+check('plants root the soil against digging', () => {
+  const state = createNewGame();
+  for (let y = 12; y <= 20; y++) for (let x = 12; x <= 20; x++) cellAt(state, x, y).height = 0; // neighbours can't add sand
+  cellAt(state, 16, 16).height = 20;
+  cellAt(state, 16, 16).plant = 0.8;
+  applyBrush(state, 16, 16, 1, 0);
+  assert.equal(cellAt(state, 16, 16).height, 20, 'rooted soil should not be dug while vegetated');
+  assert.ok(cellAt(state, 16, 16).plant < 0.8, 'the pass should strip vegetation');
+  for (let i = 0; i < 80; i++) applyBrush(state, 16, 16, 1, 0);
+  assert.ok(cellAt(state, 16, 16).plant <= BRUSH.plantArmor, 'repeated passes clear the plants');
+  assert.ok(cellAt(state, 16, 16).height < 20, 'once cleared, the soil can be dug');
+});
+
+// 24. Sand dumped on top of plants buries them.
+check('sand dumped on plants buries them', () => {
+  const state = createNewGame();
+  cellAt(state, 16, 16).height = 30;   // source
+  cellAt(state, 17, 16).plant = 0.9;   // planted target
+  applyBrush(state, 16, 16, 1, 0);     // push sand 16→17 onto the plants
+  assert.ok(cellAt(state, 17, 16).plant < 0.9, 'burying plants in sand should destroy them');
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

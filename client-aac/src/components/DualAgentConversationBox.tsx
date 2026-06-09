@@ -25,6 +25,8 @@ import {
   Moon,
   Zap,
   ScanSearch,
+  Bell,
+  Siren,
 } from "lucide-react";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
@@ -60,6 +62,8 @@ interface DualAgentConversationBoxProps {
   debugMode?: boolean;
   showDebugPanel?: boolean;
   onDebugPanelToggle?: () => void;
+  /** Debug helper: fire a fake caretaker alarm so the overlay/sound can be tested locally. */
+  onTestAlarm?: (level: "alert" | "emergency") => void;
   rawFaces?: RawTrackedFace[];
   rawHands?: RawTrackedHand[];
 }
@@ -83,6 +87,7 @@ export function DualAgentConversationBox({
   debugMode,
   showDebugPanel,
   onDebugPanelToggle,
+  onTestAlarm,
   rawFaces,
   rawHands,
 }: DualAgentConversationBoxProps) {
@@ -467,6 +472,30 @@ export function DualAgentConversationBox({
                     >
                       <Bug className="w-4 h-4" />
                     </Button>
+                  )}
+
+                  {/* Debug: fire a fake caretaker alarm to test the overlay + sound */}
+                  {debugMode && onTestAlarm && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onTestAlarm("alert")}
+                        className="text-white hover:text-amber-300 hover:bg-white/10 h-7 w-7 p-0"
+                        title="Test alert chime"
+                      >
+                        <Bell className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onTestAlarm("emergency")}
+                        className="text-white hover:text-red-300 hover:bg-white/10 h-7 w-7 p-0"
+                        title="Test emergency alarm"
+                      >
+                        <Siren className="w-4 h-4" />
+                      </Button>
+                    </>
                   )}
 
                   {onFullScreen && (

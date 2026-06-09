@@ -90,6 +90,27 @@ class SessionHistoryController {
     }
   }
 
+  /**
+   * Bulk-delete all session debug logs recorded before a given date.
+   * Body: { before: string } — an ISO date/datetime (e.g. "2026-05-01").
+   * Admin maintenance to prune the debug trace table.
+   */
+  async deleteSessionDebugLogsBefore(req: Request, res: Response): Promise<void> {
+    try {
+      const before = typeof req.body?.before === "string" ? req.body.before.trim() : "";
+      const cutoff = new Date(before);
+      if (!before || Number.isNaN(cutoff.getTime())) {
+        res.status(400).json({ success: false, message: "A valid 'before' date is required" });
+        return;
+      }
+      const deleted = await chatRepository.deleteSessionDebugLogsBefore(cutoff);
+      res.json({ success: true, deleted, before: cutoff.toISOString() });
+    } catch (error: any) {
+      console.error("Error deleting session debug logs:", error);
+      res.status(500).json({ success: false, message: "Failed to delete session debug logs" });
+    }
+  }
+
   async getChatSessions(req: Request, res: Response): Promise<void> {
     try {
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 25, 1), 100);

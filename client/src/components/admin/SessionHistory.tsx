@@ -24,13 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Eye, ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2 } from "lucide-react";
 import {
   useAACSessionsAdmin,
   useChatSessionsAdmin,
   useAACSessionLog,
   useChatSessionLog,
   useSessionDebugLog,
+  useDeleteSessionDebugLogsBefore,
   type AACSessionSummary,
   type ChatSessionSummary,
   type DebugLogEntry,
@@ -559,12 +560,88 @@ function ChatTab() {
   );
 }
 
+// ---------- Debug-log maintenance ----------
+
+/** Admin control to bulk-delete session debug logs older than a chosen date.
+ *  Debug-only / admin-only, so strings stay in English (no i18n). */
+function DebugLogPurge() {
+  const [before, setBefore] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const mutation = useDeleteSessionDebugLogsBefore();
+
+  const handleConfirm = () => {
+    setResult(null);
+    mutation.mutate(before, {
+      onSuccess: (data) => {
+        setConfirmOpen(false);
+        if (data.success) {
+          const n = data.deleted ?? 0;
+          setResult(`Deleted ${n} debug log ${n === 1 ? "entry" : "entries"} before ${before}.`);
+        } else {
+          setResult(data.message || "Failed to delete debug logs.");
+        }
+      },
+      onError: (err) => {
+        setConfirmOpen(false);
+        setResult(err.message || "Failed to delete debug logs.");
+      },
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-sm text-muted-foreground">Delete debug logs before:</span>
+      <Input
+        type="date"
+        value={before}
+        onChange={(e) => { setBefore(e.target.value); setResult(null); }}
+        className="w-40 h-9"
+      />
+      <Button
+        variant="destructive"
+        size="sm"
+        disabled={!before || mutation.isPending}
+        onClick={() => setConfirmOpen(true)}
+      >
+        {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+        <span className="ms-2">Delete</span>
+      </Button>
+      {result && <span className="text-xs text-muted-foreground">{result}</span>}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete debug logs?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This permanently deletes ALL session debug logs recorded before{" "}
+            <span className="font-semibold">{before}</span>, across every session. This cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)} disabled={mutation.isPending}>
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" onClick={handleConfirm} disabled={mutation.isPending}>
+              {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : null}
+              Delete logs
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ---------- Main Component ----------
 
 export function SessionHistory() {
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Session History</h1>
+      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <h1 className="text-2xl font-bold">Session History</h1>
+        <DebugLogPurge />
+      </div>
       <Tabs defaultValue="aac">
         <TabsList>
           <TabsTrigger value="aac">AAC Sessions</TabsTrigger>

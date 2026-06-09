@@ -24,31 +24,56 @@ function createAudioContext(): AudioContext | null {
   }
 }
 
-/** One short attention chime (~280ms). Fire-and-forget; tears down its
- *  own AudioContext when the note finishes. */
+/** Two short attention pulses (~0.5s total). Fire-and-forget; tears down its
+ *  own AudioContext when the last note finishes.
+ *
+ *  Loudness notes (why the earlier version was too quiet):
+ *   - It used a SINE wave, which has the lowest perceived loudness of any
+ *     waveform at a given amplitude. A SQUARE wave carries far more energy in
+ *     audible harmonics and cuts through speech.
+ *   - It RAMPED UP to peak then immediately decayed, so full volume lasted
+ *     only ~20ms. We now HOLD near full scale for the body of each pulse.
+ */
 export function playAlertBeep(): void {
   const ctx = createAudioContext();
   if (!ctx) return;
   void ctx.resume?.();
 
-  const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = "sine";
-  // A quick two-step chime (G5 → C6) reads as "look here" without sounding
-  // like an emergency.
-  osc.frequency.setValueAtTime(784, now);
-  osc.frequency.setValueAtTime(1047, now + 0.12);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
-
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.3);
-  osc.onended = () => {
-    try { void ctx.close(); } catch { /* already closed */ }
+  // One pulse: a held square-wave note. Sustains at near-full scale so it is
+  // audibly loud, not a momentary spike. Pulses never overlap (so the summed
+  // signal can't exceed one oscillator), which keeps it loud without the
+  // mushy distortion of two square waves clipping together.
+  const pulse = (start: number, freq: number) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(0.9, start + 0.008);
+    gain.gain.setValueAtTime(0.9, start + 0.16);
+    gain.gain.linearRampToValueAtTime(0.0001, start + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.22);
+    return osc;
   };
+
+  const now = ctx.currentTime;
+  // A two-step chime (B5 → E6) reads as "look here" without the sustained
+  // rising sweep of the emergency tone.
+  pulse(now, 988);
+  const last = pulse(now + 0.25, 1319);
+  last.onended = () => {
+    closeContext(ctx);
+  };
+}
+
+/** Close an AudioContext at most once. Calling close() on an already-closed
+ *  (or closing) context throws InvalidStateError, and we have two teardown
+ *  paths (onended + a safety-net timer) that can both fire. */
+function closeContext(ctx: AudioContext): void {
+  if (ctx.state === "closed") return;
+  try { void ctx.close(); } catch { /* already closed/closing */ }
 }
 
 export interface EmergencyToneHandle {
@@ -110,11 +135,11 @@ export function startEmergencyTone(): EmergencyToneHandle {
         osc.stop(ctx.currentTime + 0.05);
       } catch { /* oscillator may already be stopping */ }
       osc.onended = () => {
-        try { void ctx.close(); } catch { /* already closed */ }
+        closeContext(ctx);
       };
       // Safety net in case onended never fires.
       setTimeout(() => {
-        try { void ctx.close(); } catch { /* already closed */ }
+        closeContext(ctx);
       }, 300);
     },
   };

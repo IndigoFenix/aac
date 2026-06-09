@@ -15,9 +15,10 @@ import type { GameState, TerrainCell } from './types';
 import { SAVE_VERSION } from './types';
 import {
   GRID_COLS, GRID_ROWS, BASELINE_HEIGHT,
-  WORLD_STEP_MS, MAX_CATCHUP_STEPS, SETTLE_EPS, SLEEP_EPS, STABLE_REDIST_RATE, ECO, FERT, POUR,
+  WORLD_STEP_MS, MAX_CATCHUP_STEPS, SETTLE_EPS, SLEEP_EPS, STABLE_REDIST_RATE,
+  WRAP_EDGES, ECO, FERT, POUR,
 } from './config';
-import { idx, recomputeTotalSand } from './grid';
+import { idx, recomputeTotalSand, wrapCoord } from './grid';
 import {
   getSim, schedule, drainDue, nextBucketStep, flushPromDirty, dirtyPromBox,
   computeAllProm, serializeSchedule, seedSchedule, type Sim,
@@ -36,19 +37,41 @@ export function createNewGame(cols = GRID_COLS, rows = GRID_ROWS): GameState {
     rows,
     cells,
     clock: 0,
+    wrap: WRAP_EDGES,
     lastUpdateTime: Date.now(),
     totalSand: cols * rows * BASELINE_HEIGHT,
   };
 }
 
+/** Flip a world between bounded and toroidal geometry. Changes neighbour and
+ *  prominence-box topology, so the prominence cache is rebuilt and the whole grid
+ *  re-woken to re-settle under the new geometry. */
+export function setWrap(state: GameState, wrap: boolean): void {
+  if (state.wrap === wrap) return;
+  state.wrap = wrap;
+  const sim = getSim(state);
+  computeAllProm(state, sim); // box wrapping changed → recompute every prominence
+  wakeAll(state);             // re-settle the ecology under the new topology
+}
+
 // --- Neighbour index helper (cardinal, in-bounds) -----------------------------
 
 function neighbourIdx(state: GameState, x: number, y: number): number[] {
+  const { cols, rows } = state;
+  if (state.wrap) {
+    // Toroidal: always 4 neighbours, edges re-enter from the opposite side.
+    return [
+      idx(state, wrapCoord(x - 1, cols), y),
+      idx(state, wrapCoord(x + 1, cols), y),
+      idx(state, x, wrapCoord(y - 1, rows)),
+      idx(state, x, wrapCoord(y + 1, rows)),
+    ];
+  }
   const out: number[] = [];
   if (x > 0) out.push(idx(state, x - 1, y));
-  if (x < state.cols - 1) out.push(idx(state, x + 1, y));
+  if (x < cols - 1) out.push(idx(state, x + 1, y));
   if (y > 0) out.push(idx(state, x, y - 1));
-  if (y < state.rows - 1) out.push(idx(state, x, y + 1));
+  if (y < rows - 1) out.push(idx(state, x, y + 1));
   return out;
 }
 
@@ -88,16 +111,21 @@ export function worldStepFull(state: GameState): void {
   state.clock++;
   computeAllProm(state, sim); // height may have shifted (erosion) → refresh all
   const cells = all(state);
-  const wake: number[] = [];
   accumulateMoisture(state, sim, cells);
   diffuseMoistureDownhill(state, cells);
   decayMoisture(state, cells);
   emitSprings(state, cells);
   flowWater(state, cells);
-  erodeChannels(state, sim, cells, wake);
+  erodeChannels(state, sim, cells);
   evaporate(state, cells);
   updateFertility(state, cells);
   growPlants(state, cells);
+}
+
+/** Debug view of the scheduler: a cell is awake/pending when its entry is ≥ 0.
+ *  Used by the active-cell render overlay. */
+export function activeMask(state: GameState): Int32Array {
+  return getSim(state).due;
 }
 
 /** Wake every cell (one step). Tests that build terrain by hand call this so the
@@ -119,23 +147,29 @@ export function markActive(state: GameState, cell: number): void {
 export function markSculptArea(state: GameState, cx: number, cy: number, radius: number): void {
   const sim = getSim(state);
   const T = state.clock + 1;
-  const x0 = Math.max(0, Math.floor(cx - radius));
-  const x1 = Math.min(state.cols - 1, Math.ceil(cx + radius));
-  const y0 = Math.max(0, Math.floor(cy - radius));
-  const y1 = Math.min(state.rows - 1, Math.ceil(cy + radius));
-  for (let cyy = y0; cyy <= y1; cyy++) {
-    for (let cxx = x0; cxx <= x1; cxx++) schedule(sim, idx(state, cxx, cyy), T);
-  }
-  // Prominence the new heights feed spans a promRadius box around the WHOLE brush
-  // footprint — dirty/wake that region once (not per brushed cell).
+  const { cols, rows, wrap } = state;
   const r = ECO.promRadius;
-  const px0 = Math.max(0, x0 - r), px1 = Math.min(state.cols - 1, x1 + r);
-  const py0 = Math.max(0, y0 - r), py1 = Math.min(state.rows - 1, y1 + r);
-  for (let cyy = py0; cyy <= py1; cyy++) {
-    for (let cxx = px0; cxx <= px1; cxx++) {
-      const i = idx(state, cxx, cyy);
-      sim.promDirty.add(i);
-      schedule(sim, i, T);
+  const fx0 = Math.floor(cx - radius), fx1 = Math.ceil(cx + radius);
+  const fy0 = Math.floor(cy - radius), fy1 = Math.ceil(cy + radius);
+  // Heights changed across the footprint, so the prominence they feed (footprint ±
+  // promRadius) is dirtied — but only the cells whose prominence actually MOVES are
+  // woken (in flushPromDirty), so a small edit doesn't disturb the whole wide box.
+  for (let cyy = fy0 - r; cyy <= fy1 + r; cyy++) {
+    for (let cxx = fx0 - r; cxx <= fx1 + r; cxx++) {
+      let gx = cxx, gy = cyy;
+      if (wrap) { gx = wrapCoord(cxx, cols); gy = wrapCoord(cyy, rows); }
+      else if (cxx < 0 || cxx >= cols || cyy < 0 || cyy >= rows) continue;
+      sim.promDirty.add(idx(state, gx, gy));
+    }
+  }
+  // Wake the footprint itself — its heights changed, so it must re-process (slump,
+  // erosion, spring readiness) regardless of any prominence shift.
+  for (let cyy = fy0; cyy <= fy1; cyy++) {
+    for (let cxx = fx0; cxx <= fx1; cxx++) {
+      let gx = cxx, gy = cyy;
+      if (wrap) { gx = wrapCoord(cxx, cols); gy = wrapCoord(cyy, rows); }
+      else if (cxx < 0 || cxx >= cols || cyy < 0 || cyy >= rows) continue;
+      schedule(sim, idx(state, gx, gy), T);
     }
   }
 }
@@ -161,13 +195,12 @@ function processActive(state: GameState, sim: Sim, active: number[], T: number):
   }
 
   stats.processed += active.length;
-  const wake: number[] = []; // distant cells whose prominence erosion disturbed
   accumulateMoisture(state, sim, active);
   diffuseMoistureDownhill(state, active);
   decayMoisture(state, active);
   emitSprings(state, active);
   flowWater(state, active);
-  erodeChannels(state, sim, active, wake);
+  erodeChannels(state, sim, active);
   evaporate(state, active);
   updateFertility(state, active);
   growPlants(state, active);
@@ -195,8 +228,9 @@ function processActive(state: GameState, sim: Sim, active: number[], T: number):
   if (changed.length > 0) {
     for (const i of active) schedule(sim, i, T + 1);  // keep the batch synchronized
     for (const i of changed) schedule(sim, i, T + 1); // and pull in transfer-reached neighbours
-    for (const i of wake) schedule(sim, i, T + 1);    // erosion-disturbed prominence cells
   }
+  // Erosion (above) changed heights → flushPromDirty next step recomputes the
+  // affected prominence and wakes only the cells whose rainfall actually shifts.
   // else: the batch is fully at rest this step → let every cell in it sleep.
 }
 
@@ -329,7 +363,7 @@ function flowWater(state: GameState, active: number[]): void {
  *  Because only wet, flowing cells erode (dry banks don't), channels cut down
  *  below their surroundings and pull water in — confining it to rivers instead
  *  of a flooded sheet. Conserves total sand (every grain moved, never deleted). */
-function erodeChannels(state: GameState, sim: Sim, active: number[], wake: number[]): void {
+function erodeChannels(state: GameState, sim: Sim, active: number[]): void {
   const { cols } = state;
   const dh = new Map<number, number>();
   for (const i of active) {
@@ -357,7 +391,7 @@ function erodeChannels(state: GameState, sim: Sim, active: number[], wake: numbe
   for (const [i, dv] of dh) {
     if (dv === 0) continue;
     state.cells[i].height += dv;
-    dirtyPromBox(state, sim, i % cols, (i / cols) | 0, wake);
+    dirtyPromBox(state, sim, i % cols, (i / cols) | 0);
   }
 }
 
@@ -501,6 +535,7 @@ export function deserializeState(json: string): GameState | null {
       const state = parsed as GameState;
       if (typeof state.lastUpdateTime !== 'number') state.lastUpdateTime = Date.now();
       if (typeof state.clock !== 'number') state.clock = 0;
+      if (typeof state.wrap !== 'boolean') state.wrap = WRAP_EDGES; // back-compat default
       recomputeTotalSand(state);
       // Rebuild the transient Sim (prominence cache from height) and re-seed its
       // schedule from the saved tasks; keep `schedule` off the live object.

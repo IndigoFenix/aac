@@ -16,7 +16,7 @@ import {
   type ChatMessage,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, ne, and, isNull, desc, asc, or, sql, gte, lte, count } from "drizzle-orm";
+import { eq, ne, and, isNull, desc, asc, or, sql, gte, lte, lt, count } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -579,6 +579,19 @@ export class ChatRepository {
       .offset(offset);
 
     return { entries, total: totalRow?.total ?? 0 };
+  }
+
+  /**
+   * Bulk-delete session debug log entries older than `before` (admin
+   * maintenance — keeps the session_debug_logs table from growing without
+   * bound). Matches on the row `timestamp`. Returns the number of rows
+   * removed. Does not touch the parent chat sessions.
+   */
+  async deleteSessionDebugLogsBefore(before: Date): Promise<number> {
+    const result = await db
+      .delete(sessionDebugLogs)
+      .where(lt(sessionDebugLogs.timestamp, before));
+    return result.rowCount ?? 0;
   }
 }
 

@@ -505,6 +505,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Caretaker alarm state (bridged from DualAgentContext). Set by the
   // Observer agent; the audible/visible effect lives in <AlarmOverlay>.
   const [alarmInfo, setAlarmInfo] = useState<{ level: "alert" | "emergency"; reason: string } | null>(null);
+  // Debug-only locally-injected alarm (test buttons). Kept separate from
+  // `alarmInfo` because the bridge effect continuously re-pushes the server's
+  // (null) alarm into `alarmInfo`, which would otherwise wipe a test alarm
+  // one render later.
+  const [testAlarm, setTestAlarm] = useState<{ level: "alert" | "emergency"; reason: string } | null>(null);
   const cancelAlarmRef = useRef<(() => void) | null>(null);
   const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
@@ -1619,10 +1624,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           />
 
           <AlarmOverlay
-            alarm={alarmInfo}
+            alarm={alarmInfo ?? testAlarm}
             onCancel={() => {
               cancelAlarmRef.current?.();
               setAlarmInfo(null);
+              setTestAlarm(null);
             }}
           />
 
@@ -2099,6 +2105,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             debugMode={debugMode}
             showDebugPanel={showDebugPanel}
             onDebugPanelToggle={() => setShowDebugPanel(!showDebugPanel)}
+            onTestAlarm={(level) =>
+              setTestAlarm({
+                level,
+                reason: level === "emergency" ? "Test emergency alarm" : "Test alert",
+              })
+            }
             rawFaces={rawFaces}
             rawHands={rawHands}
           />

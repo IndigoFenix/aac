@@ -128,6 +128,7 @@ import {
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import { smartMergeButtons, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
+import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -501,6 +502,46 @@ export class AgentCoordinator {
    *  two Live agents. Toggled by Observer's rest()/wake_up() events. */
   private sessionProfile: "awake" | "resting" = "awake";
 
+  /** Sleep state. `sleep()` tears down BOTH Live agents (unlike resting,
+   *  which keeps Observer alive) to save cost, leaving observer/speaker
+   *  null. The next real user action must REBUILD them before routing —
+   *  see wakeFromSleep(). Without this, presses hit a null Speaker and the
+   *  AI goes permanently silent until re-initialize. */
+  private asleep = false;
+  /** Single-flight guard for wakeFromSleep so concurrent user actions
+   *  (rapid presses, press + frame) don't trigger overlapping rebuilds. */
+  private wakePromise: Promise<void> | null = null;
+  /** Client message types that count as a real user action and therefore
+   *  wake the session from sleep. Ambient streaming (frame_grid/pcm_audio)
+   *  and control messages deliberately do NOT — only deliberate input. */
+  private static readonly SLEEP_WAKING_MSG_TYPES = new Set<ClientMessage["type"]>([
+    "button_press", "board_exit", "glyph_press", "construction_state",
+    "guessing_state", "guessing_enter", "guessing_press", "guessing_reject",
+    "guessing_narrow", "exit_guessing", "builder_open", "builder_close",
+    "set_mute_state", "user_message",
+  ]);
+
+  /** True while Speaker is actively producing speech (speech_start →
+   *  speech_end). Feeds the repeated-press guard's "model responding"
+   *  signal so a re-press DURING a long reply is coalesced, not just one
+   *  within the time window. */
+  private speakerSpeaking = false;
+
+  // ── Repeated-press guard ──────────────────────────────────────────────
+  // Some students perseverate on a button — tapping the same one many times.
+  // Each tap would otherwise interrupt Speaker (sendUserTurn) and fire a
+  // fresh BoardManager rebuild, thrashing turn scheduling. We coalesce
+  // identical presses (re-voicing the utterance for feedback, but NOT
+  // emitting a new button_pressed turn) and persist a single consolidated
+  // note so the Monitor still sees the behavior. Pure decision logic lives
+  // in press-repeat-guard.ts (shared with the legacy live-relay path).
+  private static readonly PRESS_REPEAT_WINDOW_MS = 4_000;
+  private static readonly PRESS_SIGNATURE_SEP = String.fromCharCode(1);
+  private lastPressSignature: string | null = null;
+  private lastPressAt = 0;
+  private pressRepeatCount = 0;
+  private pressBurstFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Deferred-rest mechanism. Observer's `rest()` is a REQUEST, not an
    *  immediate command — we only honor it when the user has been
    *  conversation-inactive for REST_DEBOUNCE_MS. A button press,
@@ -789,6 +830,9 @@ export class AgentCoordinator {
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
     if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
     if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
+    // Record any still-open repeat-press burst before the final Monitor pass
+    // (runFinalMonitorPass below) so end-of-session perseveration isn't lost.
+    this.flushRepeatBurst();
     // Cancel any in-flight student TTS so the synthesizeStream loop
     // exits promptly instead of pushing chunks at a dead WebSocket.
     if (this.studentTtsAbortController) {
@@ -909,6 +953,16 @@ export class AgentCoordinator {
     if (msg.type !== "frame_grid" && msg.type !== "pcm_audio") {
       const summary = clientMsgSummary(msg);
       flowInput("CLIENT", msg.type, summary);
+    }
+
+    // Sleep recovery: a real user action while asleep must REBUILD the
+    // torn-down Observer + Speaker before routing. Otherwise the action hits
+    // a null Speaker (silent no-op) and the AI never talks again until a
+    // re-initialize — see wakeFromSleep(). Ambient streaming (frames/audio)
+    // and control messages don't wake; only deliberate user input does.
+    if (this.asleep && AgentCoordinator.SLEEP_WAKING_MSG_TYPES.has(msg.type)) {
+      flowNote("COORDINATOR", `User action "${msg.type}" arrived while asleep — rebuilding agents before routing.`);
+      await this.wakeFromSleep();
     }
 
     switch (msg.type) {
@@ -1209,12 +1263,7 @@ export class AgentCoordinator {
     this.boardManagerToolConfig = bmToolConfig;
 
     // 6. Construct agent handles.
-    this.observer = new ObserverAgent("gemini", {
-      onEvent: (e) => this.onObserverEvent(e),
-      onError: (err) => console.error("[AgentCoordinator] Observer error:", err),
-      onClose: () => console.log("[AgentCoordinator] Observer closed"),
-      onUsage: (usage) => this.trackLiveUsage("observer", aacChat.provider, this.observerModel, usage),
-    });
+    this.observer = this.createObserverAgent();
     this.speaker = this.createSpeakerAgent();
     this.boardManager = new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER);
 
@@ -1278,9 +1327,17 @@ export class AgentCoordinator {
     //     user gets a fresh full 60s before the first rest is considered.
     this.noteEngagementActivity();
 
-    // 7b. Log session start. Wrap in runInSessionContext so the
-    //     SESSION START / SYSTEM PROMPT / TOOL DECLARATIONS entries get
-    //     DB-attributed when debugMode is on.
+    // 7b. Log session start + all three agent prompts. MUST run inside
+    //     runInSessionContext(this.sessionId, ...): the outer message-ingest
+    //     context was bound when the `initialize` message arrived, at which
+    //     point this.sessionId was still "?" and debugMode was false. The
+    //     admin session-debug view reads session_debug_logs rows written by
+    //     the flow logger (flowSessionStart/flowSystemPrompt → persistFlowToDb,
+    //     keyed on ctx.sessionId + ctx.debugMode); without this re-wrap those
+    //     rows — including the three SYSTEM_PROMPTs — get dropped or orphaned
+    //     under "?" and never show for the real session. (logLiveSession is
+    //     file-only, so its wrap only fixes the file tag.)
+    const studentRow = sessionCache?.monitorAgent.getStudent?.();
     runInSessionContext(this.sessionId, this.debugMode, () => {
       logLiveSession("SESSION START", [
         `Path: three-agent (AgentCoordinator)`,
@@ -1295,20 +1352,21 @@ export class AgentCoordinator {
       logLiveSession("OBSERVER PROMPT", observerPrompt);
       logLiveSession("SPEAKER PROMPT", speakerPrompt);
       logLiveSession("BOARD MANAGER PROMPT", boardManagerPrompt);
-    });
 
-    // High-signal flow log (separate from the verbose live-session log).
-    const studentRow = sessionCache?.monitorAgent.getStudent?.();
-    flowSessionStart(this.sessionId, {
-      studentName: studentRow?.firstName || studentRow?.name?.split(" ")[0],
-      observerModel: this.observerModel,
-      speakerModel: this.speakerModel,
-      boardMgrModel: BOARD_MANAGER_DEFAULT_MODEL,
-      useDirectAudio: this.useDirectAudio,
+      // High-signal flow log (separate from the verbose live-session log).
+      // These ALSO persist to session_debug_logs (the admin trace), so they
+      // belong inside this real-session context.
+      flowSessionStart(this.sessionId!, {
+        studentName: studentRow?.firstName || studentRow?.name?.split(" ")[0],
+        observerModel: this.observerModel,
+        speakerModel: this.speakerModel,
+        boardMgrModel: BOARD_MANAGER_DEFAULT_MODEL,
+        useDirectAudio: this.useDirectAudio,
+      });
+      flowSystemPrompt("OBSERVER", observerPrompt);
+      flowSystemPrompt("SPEAKER", speakerPrompt);
+      flowSystemPrompt("BOARD_MGR", boardManagerPrompt);
     });
-    flowSystemPrompt("OBSERVER", observerPrompt);
-    flowSystemPrompt("SPEAKER", speakerPrompt);
-    flowSystemPrompt("BOARD_MGR", boardManagerPrompt);
 
     // 8. Announce ready to client.
     this.state = "ready";
@@ -1557,6 +1615,41 @@ export class AgentCoordinator {
       return;
     }
 
+    // 0b. Repeated-press guard. A perseverating student taps the same button
+    //     many times; each tap would otherwise interrupt Speaker mid-reply
+    //     (sendUserTurn) and fire a fresh BoardManager rebuild, thrashing
+    //     turn scheduling. If this press is identical to the open burst AND
+    //     Speaker is still responding (or it landed within the window), we
+    //     coalesce: re-voice the utterance for feedback (the press
+    //     registered) but DON'T emit a button_pressed turn. The tally is
+    //     persisted once the burst settles (flushRepeatBurst).
+    const now = Date.now();
+    const signature = msg.buttons.join(AgentCoordinator.PRESS_SIGNATURE_SEP);
+    const repeat = isRepeatPress({
+      signature,
+      lastSignature: this.lastPressSignature,
+      modelResponding: this.speakerSpeaking || this.deferredBoardMgrTimer !== null,
+      now,
+      lastPressAt: this.lastPressAt,
+      windowMs: AgentCoordinator.PRESS_REPEAT_WINDOW_MS,
+    });
+    this.lastPressAt = now;
+    if (repeat) {
+      this.pressRepeatCount++;
+      flowNote("COORDINATOR", `Repeated press "${label}" (×${this.pressRepeatCount}) — re-voicing only; Speaker not interrupted.`);
+      if (sentence) {
+        flowOutput("COORDINATOR", "ws_send_utterance", sentence);
+        this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
+        try { await this.streamStudentTts(sentence, "button_press_repeat"); } catch { /* logged inside */ }
+      }
+      this.scheduleRepeatBurstFlush();
+      return;
+    }
+    // New/different press → record any prior burst's tally, then start fresh.
+    this.flushRepeatBurst();
+    this.lastPressSignature = signature;
+    this.pressRepeatCount = 1;
+
     // 1. Surface the utterance to the client UI immediately (clears
     //    previous text). noAudioClear=false matches the legacy contract.
     //    NOTE: this message is for UI display only — it carries text,
@@ -1588,6 +1681,40 @@ export class AgentCoordinator {
       label,
       sentence,
     });
+  }
+
+  /** (Re)arm the timer that flushes a repeated-press burst once it goes
+   *  quiet (no further repeats within the window). */
+  private scheduleRepeatBurstFlush(): void {
+    if (this.pressBurstFlushTimer) clearTimeout(this.pressBurstFlushTimer);
+    this.pressBurstFlushTimer = setTimeout(() => {
+      this.pressBurstFlushTimer = null;
+      this.withSessionContext(() => this.flushRepeatBurst());
+    }, AgentCoordinator.PRESS_REPEAT_WINDOW_MS);
+  }
+
+  /**
+   * Persist the repeat tally for the open press burst (if the same button
+   * was pressed more than once) as a single supervisor-only note, then reset
+   * the burst. Routed via writeSupervisorOnly so the Monitor sees the
+   * perseveration WITHOUT it polluting Speaker's replayed conversation log.
+   * Called when a new/different press arrives, when the burst goes quiet
+   * (timer), on sleep, and on cleanup.
+   */
+  private flushRepeatBurst(): void {
+    if (this.pressBurstFlushTimer) {
+      clearTimeout(this.pressBurstFlushTimer);
+      this.pressBurstFlushTimer = null;
+    }
+    const total = this.pressRepeatCount;
+    const signature = this.lastPressSignature;
+    this.pressRepeatCount = 0;
+    this.lastPressSignature = null;
+    if (total > 1 && signature) {
+      const label = signature.split(AgentCoordinator.PRESS_SIGNATURE_SEP).join(", ");
+      this.writeSupervisorOnly(formatRepeatNote(label, total));
+      flowNote("COORDINATOR", `Repeat burst settled: "${label}" pressed ${total} times in a row.`);
+    }
   }
 
   /**
@@ -2595,10 +2722,7 @@ export class AgentCoordinator {
         // open so the client can re-wake on activity. Coordinator stays
         // ready and can rebuild agents on the next client signal.
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
-        try { this.observer?.close(); } catch {}
-        try { this.speaker?.close(); } catch {}
-        this.observer = null;
-        this.speaker = null;
+        this.enterSleep();
         return;
       case "end_session":
         // Defensive only — the tool is no longer declared on Observer's
@@ -2607,12 +2731,25 @@ export class AgentCoordinator {
         // ever surfaces, downgrade to sleep instead of cleaning up.
         flowNote("COORDINATOR", "Ignored stale end_session call — downgrading to sleep");
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
-        try { this.observer?.close(); } catch {}
-        try { this.speaker?.close(); } catch {}
-        this.observer = null;
-        this.speaker = null;
+        this.enterSleep();
         return;
     }
+  }
+
+  /**
+   * Tear down both Live agents for a cost-saving sleep, keeping the WS open.
+   * Sets `asleep` so the next real user action rebuilds them (wakeFromSleep).
+   * Flushes any open repeat-press burst first so perseveration isn't lost.
+   */
+  private enterSleep(): void {
+    this.flushRepeatBurst();
+    this.clearDeferredBoardMgr("entering sleep");
+    this.speakerSpeaking = false;
+    try { this.observer?.close(); } catch {}
+    try { this.speaker?.close(); } catch {}
+    this.observer = null;
+    this.speaker = null;
+    this.asleep = true;
   }
 
   // -------------------------------------------------------------------------
@@ -2706,50 +2843,138 @@ export class AgentCoordinator {
         logLiveSession("PROFILE_TRANSITION_DONE", `now=${target}`);
       });
 
-      // After waking, prime the fresh Speaker with everything it needs
-      // to pick up the conversation: recent dialogue, rolling session
-      // summary (if any), interaction mode, active guessing context.
-      // Without history replay the fresh Speaker had ZERO context — a
-      // press of "something light" landed without the food discussion
-      // that preceded rest, and got reinterpreted as "you want to take
-      // it easy." Observer doesn't need this — its Live session was
+      // After waking, prime the fresh Speaker with everything it needs to
+      // pick up the conversation (recent dialogue, rolling summary, mode,
+      // active guessing). Observer doesn't need this — its Live session was
       // preserved via reconnectWithConfig.
-      if (target === "awake" && this.speaker) {
-        // 1. Replay rolling session summary (built every N user/assistant
-        //    messages by the Monitor) if it exists — gives the fresh
-        //    Speaker the long-tail context that's been compressed out of
-        //    the per-turn replay below.
-        if (this.currentSessionSummary) {
-          flowNote("COORDINATOR", `Replaying [SESSION SUMMARY] (${this.currentSessionSummary.length} chars) to fresh Speaker`);
-          this.speaker.sendContextInjection(`[SESSION SUMMARY]\n${this.currentSessionSummary}`);
-        }
-        // 2. Replay the last N conversation turns so the model sees what
-        //    just happened. Cap at 20 to avoid blowing the new session's
-        //    context window on history alone.
-        const replayCount = Math.min(20, this.conversationLog.length);
-        if (replayCount > 0) {
-          const recent = this.conversationLog.slice(-replayCount).map(t => ({
-            role: t.role === "assistant" ? ("model" as const) : ("user" as const),
-            text: t.content,
-          }));
-          flowNote("COORDINATOR", `Replaying ${recent.length} recent turns to fresh Speaker`);
-          this.speaker.sendConversationHistory(recent);
-        }
-        // 3. Persistent state the new Speaker doesn't otherwise know.
-        const rendered = `[MODE] ${this.currentInteractionMode} (restored on wake)`;
-        flowNote("COORDINATOR", `Re-broadcasting mode=${this.currentInteractionMode} to fresh Speaker`);
-        this.speaker.sendContextInjection(rendered);
-        if (this.guessingState) {
-          flowNote("COORDINATOR", "Re-broadcasting active guessing state to fresh Speaker");
-          this.broadcastGuessingStateToAgents();
-        }
-      }
+      if (target === "awake") this.primeFreshSpeaker();
     } catch (err) {
       console.error(`[AgentCoordinator] transitionToProfile(${target}) failed:`, err);
       runInSessionContext(this.sessionId!, this.debugMode, () => {
         logLiveSession("PROFILE_TRANSITION_ERROR", `target=${target} err=${(err as Error).message}`);
       });
     }
+  }
+
+  /**
+   * Prime a freshly-(re)started Speaker with conversation context so it can
+   * pick up where the torn-down one left off: rolling session summary, the
+   * last N dialogue turns, the persisted interaction mode, and any active
+   * guessing state. Without this the new Speaker starts with ZERO context
+   * and misinterprets the next press. Shared by transitionToProfile("awake")
+   * (wake from resting) and wakeFromSleep() (wake from sleep).
+   */
+  private primeFreshSpeaker(): void {
+    if (!this.speaker) return;
+    // 1. Rolling session summary (built every N turns by the Monitor) —
+    //    long-tail context compressed out of the per-turn replay below.
+    if (this.currentSessionSummary) {
+      flowNote("COORDINATOR", `Replaying [SESSION SUMMARY] (${this.currentSessionSummary.length} chars) to fresh Speaker`);
+      this.speaker.sendContextInjection(`[SESSION SUMMARY]\n${this.currentSessionSummary}`);
+    }
+    // 2. Last N conversation turns (capped at 20 so history doesn't blow
+    //    the new session's context window).
+    const replayCount = Math.min(20, this.conversationLog.length);
+    if (replayCount > 0) {
+      const recent = this.conversationLog.slice(-replayCount).map(t => ({
+        role: t.role === "assistant" ? ("model" as const) : ("user" as const),
+        text: t.content,
+      }));
+      flowNote("COORDINATOR", `Replaying ${recent.length} recent turns to fresh Speaker`);
+      this.speaker.sendConversationHistory(recent);
+    }
+    // 3. Persistent state the new Speaker doesn't otherwise know.
+    const rendered = `[MODE] ${this.currentInteractionMode} (restored on wake)`;
+    flowNote("COORDINATOR", `Re-broadcasting mode=${this.currentInteractionMode} to fresh Speaker`);
+    this.speaker.sendContextInjection(rendered);
+    if (this.guessingState) {
+      flowNote("COORDINATOR", "Re-broadcasting active guessing state to fresh Speaker");
+      this.broadcastGuessingStateToAgents();
+    }
+  }
+
+  /**
+   * Wake from a `sleep()` teardown: rebuild BOTH Live agents from cached
+   * config (sleep nulls Observer too, so transitionToProfile's reconnect
+   * path can't recover it) and re-prime the fresh Speaker. Single-flight via
+   * `wakePromise` so concurrent user actions don't trigger overlapping
+   * rebuilds. On failure, `asleep` stays true so the next action retries.
+   */
+  private async wakeFromSleep(): Promise<void> {
+    if (!this.asleep) return;
+    if (this.wakePromise) return this.wakePromise;
+    this.wakePromise = this.doWakeFromSleep().finally(() => { this.wakePromise = null; });
+    return this.wakePromise;
+  }
+
+  private async doWakeFromSleep(): Promise<void> {
+    if (!this.asleep) return;
+    if (!this.observerPrompt || !this.speakerPrompt) {
+      // Never finished initial start() — nothing cached to rebuild from.
+      flowNote("COORDINATOR", "wakeFromSleep skipped — agents were never initialized.");
+      return;
+    }
+    flowNote("COORDINATOR", "Waking from sleep — rebuilding Observer + Speaker.");
+    this.send({ type: "sleep_state_change", data: { state: "awake", source: "ai" } });
+
+    this.observer = this.createObserverAgent();
+    this.speaker = this.createSpeakerAgent();
+    try {
+      await Promise.all([
+        this.observer.start({
+          systemPrompt: this.observerPrompt,
+          model: this.observerModel,
+          toolConfig: this.observerToolConfigBase,
+          useVertex: this.useVertex,
+          voiceName: this.aiVoiceName,
+          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
+          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+        }),
+        this.speaker.start({
+          systemPrompt: this.speakerPrompt,
+          model: this.speakerModel,
+          toolConfig: this.speakerToolConfigBase,
+          useVertex: this.useVertex,
+          voiceName: this.aiVoiceName,
+          useDirectAudio: this.useDirectAudio,
+          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
+          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+        }),
+      ]);
+    } catch (err) {
+      console.error("[AgentCoordinator] wakeFromSleep agent connect failed:", err);
+      try { this.observer?.close(); } catch {}
+      try { this.speaker?.close(); } catch {}
+      this.observer = null;
+      this.speaker = null;
+      return; // asleep stays true — next user action retries
+    }
+    this.observer.setDebugSessionContext(this.sessionId!, this.debugMode);
+    this.speaker.setDebugSessionContext(this.sessionId!, this.debugMode);
+
+    this.sessionProfile = "awake";
+    this.asleep = false;
+    this.speakerSpeaking = false;
+    this.noteEngagementActivity();
+    runInSessionContext(this.sessionId!, this.debugMode, () => {
+      logLiveSession("WAKE_FROM_SLEEP_DONE", "Observer + Speaker rebuilt");
+    });
+
+    this.primeFreshSpeaker();
+  }
+
+  /** Build a fresh ObserverAgent with the standard callback bundle. Used by
+   *  initial start AND by wakeFromSleep() when recreating Observer after a
+   *  sleep teardown (resting keeps Observer alive, so transitionToProfile
+   *  doesn't need this — only the full sleep→awake rebuild does). */
+  private createObserverAgent(): ObserverAgent {
+    const provider = this.aacChatProvider;
+    return new ObserverAgent("gemini", {
+      onEvent: (e) => this.onObserverEvent(e),
+      onError: (err) => console.error("[AgentCoordinator] Observer error:", err),
+      onClose: () => console.log("[AgentCoordinator] Observer closed"),
+      onUsage: (usage) => this.trackLiveUsage("observer", provider, this.observerModel, usage),
+    });
   }
 
   /** Build a fresh SpeakerAgent with the standard callback bundle. Used
@@ -2886,6 +3111,7 @@ export class AgentCoordinator {
     // in native audio, contrary to an earlier assumption). Don't fire
     // BoardManager here; wait for speech_text_finalized which carries
     // the FULL transcript and arrives well before turnComplete.
+    this.speakerSpeaking = true;
     void event;
   }
 
@@ -2914,6 +3140,7 @@ export class AgentCoordinator {
   }
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
+    this.speakerSpeaking = false;
     // Flush any remaining buffered PCM chunks so the tail of the
     // utterance reaches the client even when the timer hasn't fired yet.
     this.flushSpeakerAudio();

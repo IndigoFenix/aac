@@ -3971,3 +3971,6 @@
 [2026-06-08T18:29:15.333Z] [resolveImageKeys] Resolving 1 keys: finished (format=internal, useUnapproved=true)
 [2026-06-08T18:29:15.579Z] [resolveImageKeys] Resolved "finished" → __SYMBOL__:8afbff17-5769-4d1c-847e-2f5321bea133
 [2026-06-08T18:29:15.581Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-06-09T14:49:14.557Z] [resolveImageKeys] Resolving 1 keys: they (format=internal, useUnapproved=true)
+[2026-06-09T14:49:14.904Z] [resolveImageKeys] Resolved "they" → __SYMBOL__:b2b165d7-fb65-4e1e-b85f-1cee17abaa95
+[2026-06-09T14:49:14.913Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

@@ -1818,6 +1818,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/sessions/:id/debug-log", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getSessionDebugLog(req, res)
   );
+  // Bulk-prune debug logs older than a given date. Body: { before: ISO date }.
+  app.delete("/api/admin/sessions/debug-logs", requireAuth, requireAdminSection("sessions"), (req, res) =>
+    sessionHistoryController.deleteSessionDebugLogsBefore(req, res)
+  );
 
   // Activity logs (admins with the "activity-log" section permission)
   app.get("/api/admin/activity-logs", requireAuth, requireAdminSection("activity-log"), (req, res) =>

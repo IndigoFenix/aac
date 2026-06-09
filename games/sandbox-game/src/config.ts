@@ -9,6 +9,13 @@
 export const GRID_COLS = 32;
 export const GRID_ROWS = 32;
 
+/** Default map geometry. `false` = bounded (open edges drain water off-map);
+ *  `true` = TOROIDAL — every edge wraps to the opposite side (no edges at all),
+ *  so the only way water leaves the world is evaporation. A per-world `wrap` flag
+ *  on GameState (toggleable in-game) overrides this; this is just the default for
+ *  a fresh world. */
+export const WRAP_EDGES = false;
+
 /** Starting sand height everywhere — and the master ELEVATION SCALE of the game.
  *  Bigger ⇒ deeper valleys to dig and more sand to gather, so a proper mountain
  *  takes several sweeps to raise (paired with a low BRUSH.pushRate). Moisture
@@ -75,7 +82,7 @@ export const BRUSH = {
    *     pass barely marks the sand (and a fast flick skips cells entirely).
    *  Kept LOW so a proper mountain takes SEVERAL sweeps to raise (stronger,
    *  more deliberate structural control) rather than appearing in one drag. */
-  pushRate: 0.15,
+  pushRate: 0.1,
   /** Angle of repose: the largest height difference two neighbours can sustain.
    *  Steeper slopes in the brushed area slump — this spreads pushed sand to the
    *  SIDES of a cut, smooths back-and-forth agitation, and turns circling into a
@@ -88,6 +95,25 @@ export const BRUSH = {
   reposeRate: 0.25,
   /** Heights never go below this (a dug-out basin floor). */
   minHeight: 0,
+
+  // --- What the brush does to the stuff ON the sand (water / soil / plants) ---
+  /** Fraction of a cell's SURFACE WATER shoved along the gaze direction per pass —
+   *  so digging through water drags it with the brush. */
+  waterPush: 0.1,
+  /** How much of dug sand's FERTILITY travels with it (1 = fully proportional), so
+   *  scooping damp/fertile topsoil carries the wetness, and digging bares the sand. */
+  fertMix: 1,
+  /** When dumped sand FILLS standing water (reaches the surface), the displaced
+   *  water is absorbed into the new sand as fertility, at this much per unit of
+   *  water. Water too deep for the sand to reach is left to recede on its own. */
+  wetGain: 0.4,
+  /** Plant density above which a cell's sand is "rooted" and can't be dug — you must
+   *  clear the vegetation first. */
+  plantArmor: 0.05,
+  /** Plant density stripped per brush pass over vegetation (clearing it to dig). */
+  plantDamage: 0.01,
+  /** Plant density destroyed per unit of sand dumped ON TOP of vegetation (burial). */
+  buryRate: 0.01,
 };
 
 // --- Water bucket -------------------------------------------------------------
@@ -110,14 +136,16 @@ export const ECO = {
    *  and rough terrain spawns springs everywhere. Wide enough that only a broad
    *  massif catches rain — a bump ON a massif isn't prominent vs the massif. */
   promRadius: 6,
-  /** Prominence (height above local mean) below which a cell catches no rain. */
-  promThreshold: 2.5,
+  /** Prominence (height above the distance-weighted local mean) below which a cell
+   *  catches no rain. Lowered for the weighted kernel — it concentrates near the
+   *  cell, so prominence values run smaller than the old uniform-box mean. */
+  promThreshold: 1,
   /** Prominence is CAPPED here before it drives accumulation, so a tall spike
    *  produces no more "rain" than a normal hill (rainfall is bounded per area,
    *  not proportional to how jagged the peak is). */
   promCap: 6,
   /** Hidden moisture gained per step per unit of (capped) prominence. */
-  moistGain: 0.6,
+  moistGain: 0.3,
   /** Moisture lost everywhere each step. Flatten the hill ⇒ moisture bleeds out
    *  ⇒ springs eventually dry up (Rule 5). */
   moistDecay: 0.005,
@@ -138,13 +166,13 @@ export const ECO = {
    *  same amount downhill and keep springs CONCENTRATED at the massif foot (a
    *  weaker rate leaves the table spread across the whole massif → springs
    *  everywhere → the map floods). */
-  moistDiffuseRate: 0.87,
+  moistDiffuseRate: 0.7,
 
   /** A spring forms where the water table genuinely breaches the surface:
    *  moisture > height * springBreach (>1 ⇒ the table must exceed the ground,
    *  so only well-fed lows spring — keeps springs rare). Output moves from the
    *  moisture layer to surface water at springRate (low ⇒ a trickle, not a flood). */
-  springBreach: 0.85,
+  springBreach: 0.9,
   springRate: 0.15,
 
   /** SINGLE-PASS surface-water relaxation: move toward lower (height+water)
@@ -220,10 +248,34 @@ export const FERT = {
    *  within the fertile halo). */
   plantMin: 0.18,
   /** Plant density gained per step in fertile soil (capped by fertility). */
-  plantGrow: 0.04,
+  plantGrow: 0.001,
   /** Plant density lost per step once the soil is no longer fertile (slow ⇒
    *  drought-tolerant: survives brief dry spells, recedes if water is removed). */
   plantDecay: 0.03,
+};
+
+// --- Elevation shading (render-only) -----------------------------------------
+// How terrain height is turned into brightness. SYMMETRIC (no light direction,
+// so orientation never changes how a feature reads) and tied to the FUNCTIONAL
+// elevation: a cell brightens by how far it stands ABOVE its surroundings — the
+// same "prominence / rain-shadow" measure that decides where rain falls — plus a
+// gentle tint by absolute height. Dial these in the debug panel:
+//   • promRadius 1 → crisp per-feature relief; ≈ECO.promRadius (6) → broad
+//     massif/basin "rain shadow" shading (uniform slopes flatten out).
+//   • promStrength 0, heightStrength up → a plain topographic height map.
+//   • promStrength up, heightStrength 0 → pure local relief.
+export const SHADE = {
+  /** Brightness per unit of prominence (height − mean of a promRadius box). */
+  promStrength: 0.05,
+  /** Radius of the box whose mean defines "the surroundings" for prominence.
+   *  (Floored to an integer by the renderer.) */
+  promRadius: 4,
+  /** Brightness per unit of absolute height above BASELINE_HEIGHT (valleys
+   *  darker, peaks lighter — a topographic gradient). 0 = off. */
+  heightStrength: 0.012,
+  /** Clamp on the final brightness multiplier. */
+  min: 0.5,
+  max: 1.5,
 };
 
 // --- Palette (colored boxes, no icons) ---------------------------------------

@@ -35,6 +35,10 @@ export interface GameState {
    *  is the only thing that releases them, which is what guarantees the scheduler
    *  can't livelock. */
   clock: number;
+  /** Map geometry: false = bounded (open edges drain off-map), true = TOROIDAL
+   *  (edges wrap, no off-map drain — evaporation is the only water sink). Every
+   *  neighbour/box lookup in the engine, sculpt brush and renderer respects this. */
+  wrap: boolean;
   /** Timestamp (ms) of the last resolved world step. */
   lastUpdateTime: number;
   /** Invariant: sum of all heights. Guards sand conservation during sculpting. */

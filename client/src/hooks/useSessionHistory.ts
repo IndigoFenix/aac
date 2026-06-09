@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 // ---------- Types ----------
@@ -147,5 +147,30 @@ export function useSessionDebugLog(sessionId: string | null, opts: { section?: s
       return res.json();
     },
     enabled: !!sessionId,
+  });
+}
+
+export interface DeleteDebugLogsResponse {
+  success: boolean;
+  deleted?: number;
+  before?: string;
+  message?: string;
+}
+
+/**
+ * Bulk-delete all session debug logs recorded before a given date (admin
+ * maintenance). `before` is a date/datetime string the server parses (e.g.
+ * "2026-05-01"). Invalidates the session-debug queries so open views refresh.
+ */
+export function useDeleteSessionDebugLogsBefore() {
+  const queryClient = useQueryClient();
+  return useMutation<DeleteDebugLogsResponse, Error, string>({
+    mutationFn: async (before: string) => {
+      const res = await apiRequest("DELETE", "/api/admin/sessions/debug-logs", { before });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/sessions"] });
+    },
   });
 }
