@@ -106,6 +106,38 @@ describe('generateSessionSummary', () => {
     expect(llm.structured.calls).toHaveLength(0);
   });
 
+  it('recovers messages from pending_messages when the log is empty, then summarizes', async () => {
+    // Mirrors the production failure: the Monitor never drained pending → log
+    // (short session / host recycle), so log is [] but the presses are still
+    // in pending_messages. generateSessionSummary should recover them rather
+    // than mislabel the session as "(empty session)".
+    llm.structured.enqueueContent(
+      JSON.stringify({
+        title: 'Recovered from pending',
+        summary: 'Maya pointed at the snack board.',
+        importance: 2,
+      }),
+    );
+
+    const id = await insertSession({
+      log: [],
+      pendingMessages: [
+        { role: 'user', content: 'Maya pointed at the snack board.', timestamp: 1 },
+        { role: 'assistant', content: 'Nice intentional communication.', timestamp: 2 },
+      ],
+    });
+    await generateSessionSummary(id);
+
+    const row = await readSession(id);
+    // Pending messages were moved into the log...
+    expect(Array.isArray(row.log) ? (row.log as ChatMessage[]).length : 0).toBe(2);
+    expect(row.pendingMessages).toEqual([]);
+    // ...and a real summary was generated (not the empty-session placeholder).
+    expect(row.title).toBe('Recovered from pending');
+    expect(row.importance).toBe(2);
+    expect(llm.structured.calls).toHaveLength(1);
+  });
+
   it('is idempotent — skips sessions already summarized', async () => {
     const id = await insertSession({ title: 'Existing', summary: 'Already done.', importance: 3 });
     await generateSessionSummary(id);

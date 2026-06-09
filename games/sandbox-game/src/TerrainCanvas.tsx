@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { GameState, ToolId } from './types';
-import { materialColor, POUR } from './config';
+import { materialColor, POUR, ECO } from './config';
 import { applyBrush } from './sculpt';
 import { pourWater } from './engine';
 
@@ -25,10 +25,25 @@ interface Props {
 
 const SHADE_STRENGTH = 0.07; // how strongly slope lightens/darkens relief
 
+// Animated flow: a sparse highlight that drifts downstream. Only cells that are
+// part of an actual stream (their downhill neighbour is also water) shimmer, and
+// only the CREST of the wave brightens (never darkens) — so a sloped river shows
+// a few glints travelling with the current rather than whole tiles strobing, and
+// a lone wet tile or a flat lake stays calm.
+const TAU = Math.PI * 2;
+const FLOW_MIN = 0.04;   // surface drop below this = still water (no shimmer)
+const FLOW_REF = 1.0;    // drop giving full-strength shimmer
+const FLOW_FREQ = 0.32;  // ripple bands per cell (~3-cell wavelength)
+const FLOW_AMP = 0.22;   // peak highlight depth (additive only, at the crest)
+const FLOW_SPEED = 0.7;  // base scroll speed (cycles/sec)
+
 export default function TerrainCanvas({ getState, gazeRef, toolRef }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Previous gaze in cell space, for velocity + dwell detection.
   const prevCell = useRef<{ x: number; y: number } | null>(null);
+  // Low-passed gaze velocity (cells/frame). Smooths eye-tracker jitter and the
+  // 30 Hz gaze / 60 fps render mismatch so the brush's speed-based feel is stable.
+  const vel = useRef({ x: 0, y: 0 });
   const dwellFrames = useRef(0);
 
   useEffect(() => {
@@ -43,10 +58,11 @@ export default function TerrainCanvas({ getState, gazeRef, toolRef }: Props) {
     const img = ctx.createImageData(init.cols, init.rows);
 
     let raf = 0;
-    const frame = () => {
+    const frame = (t: number) => {
       raf = requestAnimationFrame(frame);
       const state = getState();
       const { cols, rows, cells } = state;
+      const ts = t * 0.001; // seconds, for flow animation
 
       // ── Gaze → cell-space, then drive the active tool ──────────────────────
       const gaze = gazeRef.current;
@@ -63,8 +79,12 @@ export default function TerrainCanvas({ getState, gazeRef, toolRef }: Props) {
 
       if (onGrid && tool) {
         const prev = prevCell.current;
-        const vx = prev ? gx - prev.x : 0;
-        const vy = prev ? gy - prev.y : 0;
+        const rawX = prev ? gx - prev.x : 0;
+        const rawY = prev ? gy - prev.y : 0;
+        // Exponential moving average → steady velocity despite jitter / 30 Hz gaze.
+        vel.current.x = vel.current.x * 0.6 + rawX * 0.4;
+        vel.current.y = vel.current.y * 0.6 + rawY * 0.4;
+        const vx = vel.current.x, vy = vel.current.y;
         const moved = Math.hypot(vx, vy);
 
         if (tool === 'sculpt') {
@@ -78,6 +98,8 @@ export default function TerrainCanvas({ getState, gazeRef, toolRef }: Props) {
         }
       } else {
         dwellFrames.current = 0;
+        vel.current.x = 0;
+        vel.current.y = 0;
       }
       prevCell.current = onGrid ? { x: gx, y: gy } : null;
 
@@ -85,13 +107,46 @@ export default function TerrainCanvas({ getState, gazeRef, toolRef }: Props) {
       const data = img.data;
       const h = (x: number, y: number) =>
         cells[Math.max(0, Math.min(rows - 1, y)) * cols + Math.max(0, Math.min(cols - 1, x))].height;
+      // Water surface (height+water); off-grid reads as the sea level so rivers
+      // animate flowing off the map edge.
+      const surf = (x: number, y: number) => {
+        if (x < 0 || x >= cols || y < 0 || y >= rows) return ECO.edgeDrainLevel;
+        const cc = cells[y * cols + x];
+        return cc.height + cc.water;
+      };
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const c = cells[y * cols + x];
-          const [r, g, b] = materialColor(c.height, c.moisture, c.water, c.plant);
+          const [r, g, b] = materialColor(c.height, c.moisture, c.water, c.fertility, c.plant);
           // Slope-based relief shade (light from the top-left).
           const slope = (h(x + 1, y) - h(x - 1, y)) + (h(x, y + 1) - h(x, y - 1));
-          const factor = Math.max(0.55, Math.min(1.4, 1 - slope * SHADE_STRENGTH));
+          let factor = Math.max(0.55, Math.min(1.4, 1 - slope * SHADE_STRENGTH));
+          // Animated downhill flow on surface water.
+          if (c.water >= ECO.waterMin) {
+            const s = c.height + c.water;
+            let drop = 0, fdx = 0, fdy = 0;
+            const e = s - surf(x + 1, y); if (e > drop) { drop = e; fdx = 1; fdy = 0; }
+            const we = s - surf(x - 1, y); if (we > drop) { drop = we; fdx = -1; fdy = 0; }
+            const so = s - surf(x, y + 1); if (so > drop) { drop = so; fdx = 0; fdy = 1; }
+            const no = s - surf(x, y - 1); if (no > drop) { drop = no; fdx = 0; fdy = -1; }
+            // The downhill neighbour must itself be flowing water, or this is a
+            // lone tile / a stream's leading edge — which would just flash in
+            // place rather than carry a travelling ripple.
+            const dnx = x + fdx, dny = y + fdy;
+            const downstreamWet =
+              dnx >= 0 && dnx < cols && dny >= 0 && dny < rows &&
+              cells[dny * cols + dnx].water >= ECO.waterMin;
+            if (drop > FLOW_MIN && downstreamWet) {
+              const strength = Math.min(1, drop / FLOW_REF);
+              const proj = x * fdx + y * fdy;
+              const phase = proj * FLOW_FREQ - ts * FLOW_SPEED * (0.5 + strength);
+              // Sparse crest: take only the positive lobe and square it, so just
+              // a few cells along the stream glint at once and the tile only ever
+              // brightens (no darkening half-cycle that reads as a flash).
+              const crest = Math.max(0, Math.sin(phase * TAU));
+              factor *= 1 + FLOW_AMP * strength * crest * crest;
+            }
+          }
           const o = (y * cols + x) * 4;
           data[o] = Math.max(0, Math.min(255, r * factor));
           data[o + 1] = Math.max(0, Math.min(255, g * factor));

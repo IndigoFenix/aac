@@ -124,7 +124,11 @@ export class VoiceRecordController {
 
       if (!response.ok) {
         const status = response.status;
-        res.status(status === 401 ? 401 : 502).json({
+        // Note: an upstream 401 means the ElevenLabs *API key* is bad, NOT that
+        // the user's own session expired. Relaying a raw 401 here makes the
+        // client's global auth handler bounce the user to the login page. Map
+        // it to 400 (bad input) so it surfaces as an "invalid key" message.
+        res.status(status === 401 ? 400 : 502).json({
           success: false,
           message: status === 401 ? "Invalid ElevenLabs API key" : "Failed to fetch voices from ElevenLabs",
         });
@@ -168,7 +172,10 @@ export class VoiceRecordController {
       res.send(audioBuffer);
     } catch (error: any) {
       console.error("Error previewing voice:", error);
-      const status = error.message?.includes("401") ? 401 : 500;
+      // A 401 from ElevenLabs means the API key is bad — not a session-auth
+      // failure. Map it to 400 so the client's global 401 handler doesn't bounce
+      // the user to the login page (see listElevenlabsVoices for context).
+      const status = error.message?.includes("401") ? 400 : 500;
       res.status(status).json({ success: false, message: error.message || "Failed to preview voice" });
     }
   }

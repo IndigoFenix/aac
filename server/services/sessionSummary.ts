@@ -11,6 +11,7 @@
 
 import { db } from "../db";
 import { chatSessions, type ChatMessage } from "@shared/schema";
+import type { PendingMessage } from "./dual-agent/types";
 import { eq } from "drizzle-orm";
 import { getStructuredProvider } from "./providers/provider-factory";
 import type { JSONSchema, GPTInputItem } from "./chat/gpt";
@@ -87,7 +88,29 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     // for search but never overwrite their chosen title.
     const keepTitle = session.titleManual === true;
 
-    const messages: ChatMessage[] = Array.isArray(session.log) ? (session.log as ChatMessage[]) : [];
+    let messages: ChatMessage[] = Array.isArray(session.log) ? (session.log as ChatMessage[]) : [];
+
+    // Defense in depth: if the log is empty but messages are still sitting in
+    // pending_messages (the Monitor never drained them — e.g. a session that
+    // ended before any monitor pass ran), recover them here instead of
+    // mislabeling a session that actually had activity as "(empty session)".
+    // We also persist the recovered turns into the log so the presses aren't
+    // lost. The normal path now awaits the Monitor drain first, so this only
+    // fires when that drain genuinely failed.
+    if (messages.length === 0) {
+      const pending = Array.isArray(session.pendingMessages)
+        ? (session.pendingMessages as PendingMessage[])
+        : [];
+      if (pending.length > 0) {
+        messages = pending.map(p => ({ role: p.role, content: p.content, timestamp: p.timestamp } as ChatMessage));
+        log(`[${sessionId}] log was empty but ${pending.length} pending message(s) found — recovering into log`);
+        await db
+          .update(chatSessions)
+          .set({ log: messages, pendingMessages: [] })
+          .where(eq(chatSessions.id, sessionId));
+      }
+    }
+
     if (messages.length === 0) {
       await db
         .update(chatSessions)

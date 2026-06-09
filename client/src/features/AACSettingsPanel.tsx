@@ -719,7 +719,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   )}
                 </div>
 
-                <div className={elevenlabsEnabled ? '' : 'opacity-50 pointer-events-none'}>
+                <div className={elevenlabsEnabled ? 'space-y-4' : 'space-y-4 opacity-50 pointer-events-none'}>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-sm text-muted-foreground">
@@ -752,22 +752,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
                       ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
                         <div className="flex gap-2 items-center">
-                          <Select
-                            value={elevenlabsAiVoiceId || '_none'}
-                            onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
-                          >
-                            <SelectTrigger className="w-full md:w-[280px]">
-                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
-                              {elevenlabsVoices.map((v) => (
-                                <SelectItem key={v.voice_id} value={v.voice_id}>
-                                  {v.name} {v.category ? `(${v.category})` : ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                           {elevenlabsAiVoiceId && (
                             <Button
                               variant="ghost"
@@ -784,6 +768,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                               )}
                             </Button>
                           )}
+                          <Select
+                            value={elevenlabsAiVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-full md:w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
@@ -801,22 +801,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
                       ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
                         <div className="flex gap-2 items-center">
-                          <Select
-                            value={elevenlabsStudentVoiceId || '_none'}
-                            onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
-                          >
-                            <SelectTrigger className="w-full md:w-[280px]">
-                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
-                              {elevenlabsVoices.map((v) => (
-                                <SelectItem key={v.voice_id} value={v.voice_id}>
-                                  {v.name} {v.category ? `(${v.category})` : ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                           {elevenlabsStudentVoiceId && (
                             <Button
                               variant="ghost"
@@ -833,6 +817,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                               )}
                             </Button>
                           )}
+                          <Select
+                            value={elevenlabsStudentVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-full md:w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>

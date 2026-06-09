@@ -1739,7 +1739,7 @@ export const chatSessions = pgTable("chat_sessions", {
  */
 export const sessionDebugLogs = pgTable("session_debug_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade" }),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade", onUpdate: "cascade" }),
   seq: serial("seq").notNull(),
   timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
   section: text("section").notNull(),

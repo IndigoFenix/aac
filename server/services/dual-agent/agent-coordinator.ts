@@ -845,15 +845,24 @@ export class AgentCoordinator {
 2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.`,
       timestamp: Date.now(),
     });
-    await dualAgentService.triggerMonitor(this.sessionId, /* force */ true);
+    // AWAIT the drain to completion (awaitCompletion=true). Previously this
+    // was fire-and-forget: triggerMonitor returned before doMonitorProcessing
+    // moved pending_messages → log, so the summary below raced an empty log
+    // and many sessions ended up with an empty log + a "(empty session)"
+    // title (or no title at all when the host recycled before the detached
+    // work finished). Awaiting guarantees the log is persisted first.
+    await dualAgentService.triggerMonitor(this.sessionId, /* force */ true, undefined, /* awaitCompletion */ true);
 
     // Populate the generic session summary/title/importance used by
-    // deep-analysis search. Runs after the Monitor pass so any final
-    // Student_Notes updates are already persisted.
+    // deep-analysis search. AWAITED and ordered AFTER the drain so it reads
+    // the freshly-persisted log instead of racing it.
     const sessionId = this.sessionId;
-    import("../sessionSummary").then(({ generateSessionSummaryAsync }) => {
-      generateSessionSummaryAsync(sessionId);
-    }).catch(() => {});
+    try {
+      const { generateSessionSummary } = await import("../sessionSummary");
+      await generateSessionSummary(sessionId);
+    } catch (err) {
+      console.warn("[AgentCoordinator] session summary generation failed:", (err as Error).message);
+    }
   }
 
   // -------------------------------------------------------------------------

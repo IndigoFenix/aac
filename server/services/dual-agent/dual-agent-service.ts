@@ -1,6 +1,7 @@
 // server/services/dual-agent/dual-agent-service.ts
 // Main coordinator for the dual-agent AAC system
 
+import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -113,6 +114,10 @@ interface SessionCache {
   lastAccess: number;
   monitorMutex: SessionMutex;
   monitorRerunRequested?: boolean;
+  /** Promise for the currently-running doMonitorProcessing pass (if any).
+   *  Lets a caller (notably the session-close final pass) await the
+   *  pending→log drain to completion instead of firing-and-forgetting. */
+  monitorInFlight?: Promise<void>;
 }
 
 const sessionCache = new Map<string, SessionCache>();
@@ -457,11 +462,22 @@ export class DualAgentService {
     this.config.interactiveProvider = aacChatConfig.provider;
     const chatProvider = getChatProvider(aacChatConfig.provider);
 
+    // Mint a proper UUID for the new session up front and hand it to the
+    // Monitor, instead of letting the Monitor fall back to its
+    // `aac-${Date.now()}` placeholder. The timestamp fallback both looked
+    // inconsistent next to clinician sessions (which use gen_random_uuid)
+    // AND collided when two sessions initialized in the same millisecond —
+    // saveSessionToDB then UPDATEd the existing row, so one session silently
+    // clobbered the other's log. A UUID removes both problems; the Monitor's
+    // fallback remains only as a true last resort.
+    const newSessionId = randomUUID();
+
     // Create Monitor agent first to initialize
     const monitorAgent = createMonitorAgent(
       studentId,
       this.config,
-      userId
+      userId,
+      newSessionId,
     );
     // Apply timezone before initializeSession so event-window computation uses it.
     if (timezone) monitorAgent.setTimezone(timezone);
@@ -1012,11 +1028,33 @@ export class DualAgentService {
           })
           .where(eq(chatSessions.id, state.sessionId));
       } else {
+        // Resolve the user_students relationship record so AAC sessions link
+        // back to it the same way clinician sessions do (sessionService sets
+        // this; the AAC path historically left it null). Best-effort — a
+        // missing link just leaves the column null, exactly as before.
+        let userStudentId: string | null = null;
+        if (state.userId && state.studentId) {
+          try {
+            const [link] = await db
+              .select({ id: userStudents.id })
+              .from(userStudents)
+              .where(and(
+                eq(userStudents.userId, state.userId),
+                eq(userStudents.studentId, state.studentId),
+              ))
+              .limit(1);
+            userStudentId = link?.id ?? null;
+          } catch (err) {
+            console.warn("[DualAgentService] userStudent link lookup failed:", (err as Error).message);
+          }
+        }
+
         // Insert new session
         await db.insert(chatSessions).values({
           id: state.sessionId,
           studentId: state.studentId,
           userId: state.userId,
+          userStudentId,
           classroomId: state.classroomId,
           chatMode: "aac",
           state: chatState,
@@ -1124,7 +1162,11 @@ export class DualAgentService {
     monitorAgent: MonitorAgent,
     interactiveAgent: InteractiveAgent,
     board?: ParsedBoardData,
-    force: boolean = false
+    force: boolean = false,
+    /** When true, await the pending→log drain to completion before
+     *  returning. Used by the session-close final pass so the log is
+     *  populated (and the summary won't race against an empty log). */
+    awaitCompletion: boolean = false,
   ): Promise<void> {
     const { monitorMutex } = cached;
 
@@ -1142,7 +1184,15 @@ export class DualAgentService {
     if (state.monitorBusy) {
       console.log("[DualAgentService] Monitor already busy, setting rerun flag");
       cached.monitorRerunRequested = true;
+      const inFlight = cached.monitorInFlight;
       monitorMutex.release();
+      // A caller that needs the drain to finish (final pass) waits for the
+      // in-flight run rather than returning immediately. The rerun flag we
+      // just set causes that run to re-trigger any trailing pending after it
+      // completes (fire-and-forget), so we don't double-run here.
+      if (awaitCompletion && inFlight) {
+        await inFlight.catch(() => {});
+      }
       return;
     }
 
@@ -1156,14 +1206,25 @@ export class DualAgentService {
     // Update DB (fire-and-forget for the flag, main work below)
     this.updateMonitorBusy(state.sessionId, true, state.monitorBusySince).catch(console.error);
 
-    // Do the actual processing (fire-and-forget with error catch)
-    this.doMonitorProcessing(state, monitorAgent, interactiveAgent, board).catch(err => {
-      console.error("[DualAgentService] Uncaught doMonitorProcessing error:", (err as Error).message);
-      // Ensure state is cleaned up even if doMonitorProcessing throws before its own catch/finally
-      state.monitorBusy = false;
-      state.monitorBusySince = undefined;
-      state.pendingDbLocked = false;
-    });
+    // Do the actual processing. Track the promise so callers can await the
+    // drain when needed; always attach an error handler so an uncaught
+    // rejection can't crash the process even in fire-and-forget mode.
+    const tracked: Promise<void> = this.doMonitorProcessing(state, monitorAgent, interactiveAgent, board)
+      .catch(err => {
+        console.error("[DualAgentService] Uncaught doMonitorProcessing error:", (err as Error).message);
+        // Ensure state is cleaned up even if doMonitorProcessing throws before its own catch/finally
+        state.monitorBusy = false;
+        state.monitorBusySince = undefined;
+        state.pendingDbLocked = false;
+      })
+      .finally(() => {
+        if (cached.monitorInFlight === tracked) cached.monitorInFlight = undefined;
+      });
+    cached.monitorInFlight = tracked;
+
+    if (awaitCompletion) {
+      await tracked;
+    }
   }
 
   /**
@@ -1746,7 +1807,12 @@ export class DualAgentService {
    * Trigger monitor processing for a session (public wrapper).
    * Used by LiveRelay to trigger monitor after turn completion.
    */
-  async triggerMonitor(sessionId: string, force = false, board?: ParsedBoardData): Promise<void> {
+  async triggerMonitor(
+    sessionId: string,
+    force = false,
+    board?: ParsedBoardData,
+    awaitCompletion = false,
+  ): Promise<void> {
     const cached = sessionCache.get(sessionId);
     if (!cached) {
       console.warn("[DualAgentService] triggerMonitor: session not found:", sessionId);
@@ -1760,6 +1826,7 @@ export class DualAgentService {
       cached.interactiveAgent,
       board,
       force,
+      awaitCompletion,
     );
   }
 }

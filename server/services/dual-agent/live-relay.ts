@@ -31,6 +31,7 @@ import type {
 } from "./types";
 import { createEmptyAccumulator } from "./types";
 import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
+import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { T } from "../memory-schema/canonical-terms";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
@@ -881,6 +882,27 @@ export class LiveRelay {
   /** A rest() request is refused within this window of an AAC interaction (mirrors client AAC_REST_GUARD_MS). */
   private static readonly REST_GUARD_MS = 10_000;
 
+  // ── Repeated-press guard ──────────────────────────────────────────────────
+  // Some students perseverate on a button — tapping the same one many times in
+  // a row. Each tap would otherwise fire a fresh model turn flagged as an
+  // interrupt, cutting off the in-progress response and thrashing live
+  // scheduling. We coalesce identical presses that arrive while the model is
+  // still responding (state !== "idle") or within PRESS_REPEAT_WINDOW_MS of the
+  // previous press: the student still hears their utterance re-voiced, but the
+  // model is left untouched. The repeat tally is persisted as a single
+  // [BUTTON PRESS REPEATED] note so the Monitor still sees the behavior.
+  private static readonly PRESS_REPEAT_WINDOW_MS = 4_000;
+  /** Separator for joining button labels into a press signature (control char — never appears in a label). */
+  private static readonly PRESS_SIGNATURE_SEP = String.fromCharCode(1);
+  /** Signature (buttons joined) of the current press burst, or null when none is open. */
+  private lastPressSignature: string | null = null;
+  /** Epoch ms of the most recent button press (dispatched or coalesced). */
+  private lastPressAt = 0;
+  /** Total presses in the current burst, including the first (dispatched) one. */
+  private pressRepeatCount = 0;
+  /** Fires PRESS_REPEAT_WINDOW_MS after the last repeat to flush a quiet burst. */
+  private pressBurstFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Voice
   private aiVoice: ResolvedVoice | null = null;
   private studentVoice: ResolvedVoice | null = null;
@@ -1597,14 +1619,44 @@ export class LiveRelay {
             logLiveSession("BTN_DROPPED (not ready)", `state=${this.state} buttons=[${msg.buttons.join(", ")}]`);
             break;
           }
+          const now = Date.now();
+          const signature = msg.buttons.join(LiveRelay.PRESS_SIGNATURE_SEP);
+          // Repeated-press guard: identical button(s) re-pressed while the model
+          // is still responding (state !== "idle") or within the window after
+          // the previous press = perseveration, not a new request. Coalesce it
+          // so we never interrupt the in-progress response or thrash live
+          // scheduling. (See the field declarations near the top of the class.)
+          const isRepeat = isRepeatPress({
+            signature,
+            lastSignature: this.lastPressSignature,
+            modelResponding: this.state !== "idle",
+            now,
+            lastPressAt: this.lastPressAt,
+            windowMs: LiveRelay.PRESS_REPEAT_WINDOW_MS,
+          });
+          this.lastAacInteractionAt = now;
+          this.lastAacActivityAt = now;
+          this.lastPressAt = now;
+          if (isRepeat) {
+            this.pressRepeatCount++;
+            logLiveSession("BTN_REPEAT", `buttons=[${msg.buttons.join(", ")}] count=${this.pressRepeatCount} state=${this.state}`);
+            // Re-voice the student's own utterance for feedback (the press
+            // registered) but leave the model and its turn state untouched.
+            this.handleRepeatPress(msg.buttons, msg.sentences);
+            this.scheduleRepeatBurstFlush();
+            break;
+          }
+          // New/different press → record any prior burst's repeat tally, then
+          // start a fresh burst and dispatch normally.
+          this.flushRepeatBurst();
+          this.lastPressSignature = signature;
+          this.pressRepeatCount = 1;
           // Out-of-turn press → flag the dispatch as an interrupt. The
           // provider will route via sendClientContent (the documented
           // interrupt path) instead of sendRealtimeInput. Don't touch
           // server-side state — let Gemini's `interrupted` signal trigger
           // the existing onInterrupted → handleInterrupted cleanup.
           const isInterrupt = this.state !== "idle";
-          this.lastAacInteractionAt = Date.now();
-          this.lastAacActivityAt = Date.now();
           this.setState("awaiting_turn");
           // Note: handleButtonPress voices the student's own SENTENCE + shows
           // it immediately, then (if waking from resting) switches to the awake
@@ -2653,6 +2705,92 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
     return `\n\n[RESUME] This is the user's contribution to the conversation you were already having. Right before this detour, you said: "${topic}". Continue from there and weave in what the user just expressed — UNLESS it clearly changes the subject, in which case follow their new direction. Then rebuild a normal ${T.board} for the conversation.`;
   }
 
+  /**
+   * Stream the student's own utterance through their TTS voice on the
+   * `utterance_audio` channel. Aborts any in-flight student TTS first so
+   * overlapping streams don't interleave into a garbled mix (the tag-scoped
+   * clear preserves the AI's avatar_audio queue). No-op without a sentence or
+   * student voice. Used by both a fresh press and a coalesced repeat press.
+   */
+  private streamStudentUtteranceTts(sentence: string): void {
+    if (!sentence || !this.studentVoice) {
+      logLiveSession("STUDENT TTS SKIPPED", `sentence=${!!sentence} studentVoice=${!!this.studentVoice}`);
+      return;
+    }
+    if (this.studentTtsAbortController) {
+      this.studentTtsAbortController.abort();
+      this.send({ type: "audio_clear_tag", tag: "utterance" });
+    }
+    const controller = new AbortController();
+    this.studentTtsAbortController = controller;
+
+    logLiveSession("STUDENT TTS START", `text="${sentence}" voice=${JSON.stringify({ fallbackType: this.studentVoice.fallbackType, language: this.studentVoice.language, hasGemini: !!this.studentVoice.geminiVoiceName, hasCustom: !!this.studentVoice.customVoice })}`);
+    this.preGenTtsPromise = this.streamTtsWithTimeout(
+      sentence,
+      this.studentVoice,
+      "utterance_audio",
+      "Student",
+      15_000,
+      controller.signal,
+    ).then(() => {
+      if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
+      logLiveSession("STUDENT TTS DONE", `text="${sentence}"`);
+    }).catch(err => {
+      if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
+      logLiveSession("STUDENT TTS ERROR", (err as Error).message);
+      console.error("[LiveRelay] Student TTS error:", (err as Error).message);
+    });
+  }
+
+  /**
+   * Handle a coalesced repeat press: re-voice the student's utterance for
+   * feedback so the press feels registered, but never touch the model or the
+   * relay's turn state. The repeat tally is persisted separately by
+   * flushRepeatBurst() once the burst settles.
+   */
+  private handleRepeatPress(buttons: string[], sentences?: Record<string, string>): void {
+    const sentence = (buttons.length === 1 && sentences?.[buttons[0]]) || "";
+    if (!sentence) return;
+    this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
+    this.streamStudentUtteranceTts(sentence);
+  }
+
+  /** (Re)arm the timer that flushes a press burst once it goes quiet. */
+  private scheduleRepeatBurstFlush(): void {
+    if (this.pressBurstFlushTimer) clearTimeout(this.pressBurstFlushTimer);
+    this.pressBurstFlushTimer = setTimeout(() => {
+      this.pressBurstFlushTimer = null;
+      this.flushRepeatBurst();
+    }, LiveRelay.PRESS_REPEAT_WINDOW_MS);
+  }
+
+  /**
+   * Persist the repeat tally for the open press burst (if the student pressed
+   * the same button more than once) as a single consolidated note, then reset
+   * the burst. Called when a new/different press arrives, when the burst goes
+   * quiet (timer), and on cleanup — so the Monitor sees the perseveration
+   * without the model ever having been interrupted by the extra presses.
+   */
+  private flushRepeatBurst(): void {
+    if (this.pressBurstFlushTimer) {
+      clearTimeout(this.pressBurstFlushTimer);
+      this.pressBurstFlushTimer = null;
+    }
+    const total = this.pressRepeatCount;
+    const signature = this.lastPressSignature;
+    this.pressRepeatCount = 0;
+    this.lastPressSignature = null;
+    if (total > 1 && signature && this.sessionId) {
+      const label = signature.split(LiveRelay.PRESS_SIGNATURE_SEP).join(", ");
+      dualAgentService.addPendingMessage(this.sessionId, {
+        role: "user",
+        content: formatRepeatNote(label, total),
+        timestamp: Date.now(),
+      }).catch(err => console.error("[LiveRelay] Failed to persist repeated press:", err));
+      logLiveSession("BTN_REPEAT_FLUSH", `buttons=[${label}] total=${total}`);
+    }
+  }
+
   private async handleButtonPress(
     buttons: string[],
     sentences?: Record<string, string>,
@@ -2728,37 +2866,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
     // SENTENCE immediately even when we're about to reconnect to wake the
     // session. (Voicing it after the awake-profile reconnect would add a
     // ~1.5s gap before the press registers audibly.)
-    if (singleSentence && this.studentVoice) {
-      // Cancel any in-flight student TTS from a previous press — without this,
-      // overlapping streams interleave on the `utterance_audio` channel
-      // and the client plays a garbled mix. We send a tag-scoped clear so the
-      // AI's avatar_audio queue is preserved.
-      if (this.studentTtsAbortController) {
-        this.studentTtsAbortController.abort();
-        this.send({ type: "audio_clear_tag", tag: "utterance" });
-      }
-      const controller = new AbortController();
-      this.studentTtsAbortController = controller;
-
-      logLiveSession("STUDENT TTS START", `text="${singleSentence}" voice=${JSON.stringify({ fallbackType: this.studentVoice.fallbackType, language: this.studentVoice.language, hasGemini: !!this.studentVoice.geminiVoiceName, hasCustom: !!this.studentVoice.customVoice })}`);
-      this.preGenTtsPromise = this.streamTtsWithTimeout(
-        singleSentence,
-        this.studentVoice,
-        "utterance_audio",
-        "Student",
-        15_000,
-        controller.signal,
-      ).then(() => {
-        if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
-        logLiveSession("STUDENT TTS DONE", `text="${singleSentence}"`);
-      }).catch(err => {
-        if (this.studentTtsAbortController === controller) this.studentTtsAbortController = null;
-        logLiveSession("STUDENT TTS ERROR", (err as Error).message);
-        console.error("[LiveRelay] Student TTS error:", (err as Error).message);
-      });
-    } else {
-      logLiveSession("STUDENT TTS SKIPPED", `singleSentence=${!!singleSentence} studentVoice=${!!this.studentVoice}`);
-    }
+    this.streamStudentUtteranceTts(singleSentence);
 
     // Waking from resting: switch to the full awake profile (rebuild_board etc.)
     // BEFORE the press reaches the model, otherwise it responds on the resting
@@ -6149,6 +6257,12 @@ When creating or referencing calendar events, interpret and speak in this local 
     this.setState("closed");
     this.stopTimers();
     this.stopSilenceKeepalive();
+    // Record any still-open repeat-press burst before the final monitor run so
+    // perseveration at the very end of a session isn't lost. addPendingMessage
+    // pushes synchronously into state.pendingMessages, so the note is present
+    // for the handleSessionClose monitor pass below even though the DB write is
+    // fire-and-forget.
+    this.flushRepeatBurst();
     this.pendingClientMessages = [];
     if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
 
@@ -6193,15 +6307,22 @@ When creating or referencing calendar events, interpret and speak in this local 
       timestamp: Date.now(),
     });
 
-    await dualAgentService.triggerMonitor(this.sessionId, true);
+    // AWAIT the drain to completion (awaitCompletion=true) so pending_messages
+    // are moved into the log BEFORE the summary runs. Previously the
+    // fire-and-forget trigger let the summary race an empty log, producing
+    // spurious "(empty session)" titles and unpersisted logs.
+    await dualAgentService.triggerMonitor(this.sessionId, true, undefined, /* awaitCompletion */ true);
 
     // Populate the generic session summary/title/importance (used by deep-analysis
-    // session search). This runs after the monitor pass so any final Student_Notes
-    // updates are already persisted. Fire-and-forget — errors are logged internally.
+    // session search). AWAITED and ordered AFTER the drain so it reads the
+    // freshly-persisted log instead of racing it.
     const sessionId = this.sessionId;
-    import("../sessionSummary").then(({ generateSessionSummaryAsync }) => {
-      generateSessionSummaryAsync(sessionId);
-    }).catch(() => {});
+    try {
+      const { generateSessionSummary } = await import("../sessionSummary");
+      await generateSessionSummary(sessionId);
+    } catch (err) {
+      logDualAgent("LiveRelay.handleSessionClose.summaryFailed", { sessionId, error: (err as Error).message });
+    }
   }
 }
 

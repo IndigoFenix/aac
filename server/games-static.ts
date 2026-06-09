@@ -72,7 +72,7 @@ function renderLoginPage(returnTo: string, error?: string): string {
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              username: fd.get('username'),
+              email: fd.get('username'),
               password: fd.get('password'),
             }),
           });
