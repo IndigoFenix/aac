@@ -27,6 +27,12 @@ export type PlatformMessage = BridgeMessageBase & (
    * the platform). `mode === "off"` means no gaze data is being produced.
    */
   | { type: "gaze"; x: number; y: number; mode: "off" | "eyegaze" | "mouse" }
+  /**
+   * Hands the game its content payload (e.g. a goal-tree game definition).
+   * Games that accept payloads must validate them and keep running their
+   * built-in content when the payload is rejected.
+   */
+  | { type: "load_game"; game: unknown }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "request_close" }
@@ -56,24 +62,65 @@ function isBridgeMessage(value: unknown): value is BridgeMessageBase & { type: s
   );
 }
 
-/** Send a message from a game up to its embedding platform. No-op when running standalone. */
-export function sendToParent(msg: Omit<GameMessage, "__aivotaGameBridge">): void {
-  if (typeof window === "undefined" || window.parent === window) return;
-  const tagged = { ...msg, [TAG]: true } as GameMessage;
-  // Origin "*" is fine here — the receiver validates its own origin allowlist.
-  window.parent.postMessage(tagged, "*");
+/**
+ * Omit that distributes over unions. Plain `Omit` collapses a union to its
+ * common keys, which made every variant-specific field ("action", "gameId",
+ * …) a type error at sendToParent/sendToGame call sites.
+ */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+/** The embedding parent's origin, from the referrer the browser set when it
+ *  loaded this iframe. Used as the postMessage targetOrigin so game→platform
+ *  messages aren't broadcast to whatever document occupies the frame. Falls
+ *  back to "*" only when the referrer is unavailable (e.g. no-referrer policy). */
+function parentTargetOrigin(): string {
+  try {
+    if (typeof document !== "undefined" && document.referrer) {
+      return new URL(document.referrer).origin;
+    }
+  } catch { /* ignore */ }
+  return "*";
 }
 
-/** Send a message from the platform down to an embedded game iframe. */
+/** The iframe's own origin, used as the default targetOrigin / inbound origin
+ *  allowlist so platform↔game messages (incl. the license token) aren't sent to
+ *  or accepted from any other origin. Falls back to "*" if it can't be resolved. */
+function iframeTargetOrigin(iframe: HTMLIFrameElement): string {
+  try {
+    if (iframe.src) return new URL(iframe.src, typeof window !== "undefined" ? window.location.href : undefined).origin;
+  } catch { /* ignore */ }
+  return "*";
+}
+
+/** Origin allowlist (the iframe's own origin) for inbound game→platform
+ *  messages, or undefined when it can't be resolved (then the source check
+ *  alone applies — preserving prior behavior). */
+function originAllowlist(iframe: HTMLIFrameElement): string[] | undefined {
+  const origin = iframeTargetOrigin(iframe);
+  return origin === "*" ? undefined : [origin];
+}
+
+/** Send a message from a game up to its embedding platform. No-op when running standalone. */
+export function sendToParent(msg: DistributiveOmit<GameMessage, "__aivotaGameBridge">): void {
+  if (typeof window === "undefined" || window.parent === window) return;
+  const tagged = { ...msg, [TAG]: true } as GameMessage;
+  window.parent.postMessage(tagged, parentTargetOrigin());
+}
+
+/** Send a message from the platform down to an embedded game iframe. Defaults to
+ *  the iframe's own origin (never "*") so payloads like the license token aren't
+ *  leaked to a different document if the frame ever navigates cross-origin. */
 export function sendToGame(
   iframe: HTMLIFrameElement,
-  msg: Omit<PlatformMessage, "__aivotaGameBridge">,
-  targetOrigin = "*",
+  msg: DistributiveOmit<PlatformMessage, "__aivotaGameBridge">,
+  targetOrigin?: string,
 ): void {
   const win = iframe.contentWindow;
   if (!win) return;
   const tagged = { ...msg, [TAG]: true } as PlatformMessage;
-  win.postMessage(tagged, targetOrigin);
+  win.postMessage(tagged, targetOrigin ?? iframeTargetOrigin(iframe));
 }
 
 /** Subscribe (in a game) to messages from the platform. Returns an unsubscribe fn. */
@@ -98,7 +145,10 @@ export function onGameMessage(
 ): () => void {
   const handler = (event: MessageEvent) => {
     if (event.source !== iframe.contentWindow) return;
-    if (allowedOrigins && !allowedOrigins.includes(event.origin)) return;
+    // Default the origin allowlist to the iframe's own origin when the caller
+    // doesn't supply one, instead of accepting any origin.
+    const origins = allowedOrigins ?? originAllowlist(iframe);
+    if (origins && !origins.includes(event.origin)) return;
     if (!isBridgeMessage(event.data)) return;
     cb(event.data as GameMessage);
   };

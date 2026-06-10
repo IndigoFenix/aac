@@ -3,6 +3,7 @@
 
 import { calendarRepository } from "../repositories/calendarRepository";
 import { instituteRepository, programRepository } from "../repositories";
+import { validateEventDates } from "./calendar-validation";
 import type {
   CalendarEvent,
   InsertCalendarEvent,
@@ -27,6 +28,8 @@ class CalendarService {
     userId: string,
     additionalAttendees?: AttendeeInput[],
   ): Promise<CalendarEvent & { attendees: CalendarEventAttendee[] }> {
+    validateEventDates(data);
+
     const event = await calendarRepository.createEvent(data, userId);
 
     // Deduplicate as we go (type+id pair)
@@ -110,6 +113,15 @@ class CalendarService {
 
     const canEdit = await this.canUserEditEvent(event, userId);
     if (!canEdit) return undefined;
+
+    // Validate against the merged (post-update) event so a partial update
+    // can't produce an impossible date combination.
+    validateEventDates({
+      startTime: updates.startTime !== undefined ? updates.startTime : event.startTime,
+      endTime: updates.endTime !== undefined ? updates.endTime : event.endTime,
+      repeatType: updates.repeatType !== undefined ? updates.repeatType : event.repeatType,
+      repeatEndDate: updates.repeatEndDate !== undefined ? updates.repeatEndDate : event.repeatEndDate,
+    });
 
     return calendarRepository.updateEvent(eventId, updates);
   }

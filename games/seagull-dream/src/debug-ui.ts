@@ -209,7 +209,10 @@ function tuningSections(): Section[] {
         { label: "halo", target: G, field: "haloMult", min: 0, max: 5, step: 0.05, format: fmtX },
         { label: "fog density", target: G, field: "fogDensityMult", min: 0, max: 5, step: 0.05, format: fmtX },
         { label: "atm shell", target: G, field: "atmShellMult", min: 0, max: 5, step: 0.05, format: fmtX },
+        { label: "atm fuzz", target: G, field: "atmFuzz", min: 0.05, max: 1, step: 0.05, format: fmt2 },
+        { label: "sky fog km", target: G, field: "skyFogKm", min: 1, max: 100, step: 1, format: fmtInt },
         { label: "starfield", target: G, field: "starfieldMult", min: 0, max: 5, step: 0.05, format: fmtX },
+        { label: "ocean z bias", target: G, field: "oceanDepthBias", min: 0, max: 20, step: 0.5, format: fmt2 },
         // warpMaxBoost is purely a visual-shader normalizer for the warp
         // distortion pass — keep its slider with the render controls.
         { label: "warp shader", target: P, field: "warpMaxBoost", min: 1, max: 1e9, step: 1e6, format: fmtBoost },
@@ -223,6 +226,10 @@ function tuningSections(): Section[] {
         { label: "min density", target: G, field: "cloudMinDensity", min: 0, max: 0.3, step: 0.01, format: fmt3 },
         { label: "wind mult", target: G, field: "cloudWindMult", min: 0, max: 5, step: 0.1, format: fmtX },
         { label: "fog boost", target: G, field: "cloudFogBoost", min: 0, max: 2, step: 0.05, format: fmtX },
+        { label: "detail", target: G, field: "cloudDetailMult", min: 0, max: 2, step: 0.05, format: fmtX },
+        { label: "vigor", target: G, field: "cloudVigorMult", min: 0, max: 2, step: 0.05, format: fmtX },
+        { label: "bake ms", target: G, field: "cloudBakeMs", min: 0, max: 2, step: 0.05, format: fmt2 },
+        { label: "update every", target: G, field: "cloudUpdateEvery", min: 1, max: 4, step: 1, format: fmtInt },
       ],
     },
     {

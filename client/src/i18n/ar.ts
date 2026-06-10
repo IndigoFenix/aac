@@ -715,6 +715,8 @@ export const ar = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "لعبة مهمة مُولّدة — العبها كما يلعبها الطالب. تعمل الفأرة مثل النظر: انقر أو انتظر للتحرك.",
+    questMissingContent: "هذه اللعبة لا تحتوي على محتوى قابل للعب.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

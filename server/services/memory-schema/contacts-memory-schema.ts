@@ -342,7 +342,12 @@ const contactValueSchema: AgentMemoryFieldObjectWithDB = {
       id: "contextNotes",
       type: "string",
       description:
-        "What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.",
+        "What you know about THIS person's relationship with and interactions with the student — " +
+        "how they relate to the student, their attitudes toward the student, and patterns in how " +
+        "they interact with the student. Record ONLY information that is directly relevant to this " +
+        "person's role in the student's life. Do NOT record overheard background conversations, " +
+        "ambient remarks, or any third-party information that does not concern this person's " +
+        "relationship with the student.",
       opened: true,
     },
     linkedUserId: {

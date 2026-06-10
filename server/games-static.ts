@@ -108,6 +108,26 @@ export function mountGamesStatic(app: Express, distPathGames: string): void {
     return;
   }
 
+  // Games are built to be EMBEDDED by our clients (clinician preview, AAC
+  // player, Electron). The global frameguard sends X-Frame-Options:
+  // SAMEORIGIN, which blocks the standalone vite dev clients (different
+  // origin). Replace it on this namespace with an explicit CSP ancestor
+  // allowlist: same-origin + the Electron app:// origin, plus localhost dev
+  // servers outside production. frame-ancestors takes precedence over
+  // X-Frame-Options in browsers that support both.
+  const devAncestors =
+    process.env.NODE_ENV === "production"
+      ? ""
+      : " http://localhost:* http://127.0.0.1:*";
+  app.use("/games", (_req: Request, res: Response, next: NextFunction) => {
+    res.removeHeader("X-Frame-Options");
+    res.setHeader(
+      "Content-Security-Policy",
+      `frame-ancestors 'self' app:${devAncestors}`,
+    );
+    next();
+  });
+
   // Login page (always reachable, no auth required).
   app.get("/games/_login", (req: Request, res: Response) => {
     const returnTo = typeof req.query.returnTo === "string" ? req.query.returnTo : "/games/";

@@ -61,6 +61,7 @@ export interface NlpSchema {
     describeActions?: boolean;
     navigateEnabled?: boolean;
     selectStudentEnabled?: boolean;
+    questGameEnabled?: boolean;
     replyType?: 'text' | 'html' | 'md';
     /** IANA timezone of the requesting user; injected into the prompt so the AI reasons in local time. */
     timezone?: string;
@@ -537,8 +538,8 @@ export interface NlpSchema {
                     properties: {
                         feature: {
                             type: 'string',
-                            enum: ['boards', 'students', 'institute', 'progress', 'reports', 'interpret'],
-                            description: 'The panel to navigate to. boards = AAC board editor, students = student list, institute = institute management, progress = student treatment programs, reports = student reports, interpret = communication interpretation'
+                            enum: ['boards', 'students', 'institute', 'progress', 'reports', 'interpret', 'customApps'],
+                            description: 'The panel to navigate to. boards = AAC board editor, students = student list, institute = institute management, progress = student treatment programs, reports = student reports, interpret = communication interpretation, customApps = games & custom apps (play/assign generated quest games)'
                         }
                     },
                     required: ['feature'],
@@ -564,6 +565,56 @@ export interface NlpSchema {
                         }
                     },
                     required: ['studentId'],
+                    additionalProperties: false
+                }
+            }
+        });
+    }
+
+    if (ctx.questGameEnabled) {
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'createQuestGame',
+                description:
+                    'Start a new educational quest game for the selected student. ' +
+                    'This seeds a tiny VALID starter game and opens it in the customApps panel. ' +
+                    'Call it when the user asks for a new game, activity, or quest. ' +
+                    'AFTER it succeeds, BUILD THE GAME by editing /Context_QuestGame/contentPack via manageMemory ' +
+                    '(meta, entities, then the goal tree in root — using the student\'s interests/age/goals from memory), ' +
+                    'and call navigateToFeature("customApps") so the user can watch and play. ' +
+                    'When you think the game is done, call validateQuestGame; fix any errors it returns and validate again ' +
+                    'before telling the user it is ready. Then remind them to press Save.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        title: {
+                            type: 'string',
+                            description: 'A short working title for the new game (you can refine it later via meta.title).'
+                        },
+                        language: {
+                            type: 'string',
+                            description: 'BCP-47 locale for all player-facing text. Omit to use the student\'s primary language.'
+                        }
+                    },
+                    required: [],
+                    additionalProperties: false
+                }
+            }
+        });
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'validateQuestGame',
+                description:
+                    'Certify the quest game currently open in /Context_QuestGame (schema → solvability → layout). ' +
+                    'Call this BEFORE telling the user a game is finished. Returns { ok: true, ... } when the game is ' +
+                    'valid and completable, or { ok: false, stage, errors } listing what to fix. On errors, edit ' +
+                    '/Context_QuestGame/contentPack to address them and validate again.',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: [],
                     additionalProperties: false
                 }
             }

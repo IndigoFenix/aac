@@ -54,6 +54,7 @@ import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { resolveLocalizedText } from '@shared/localized-text';
 import { cn } from '@/lib/utils';
 import { marked } from 'marked';
+import { sanitizeHtml } from '@/lib/markdown';
 
 // Configure marked for synchronous rendering
 marked.setOptions({ async: false });
@@ -409,7 +410,7 @@ export function ChatFeature() {
       // Resumed sessions can carry content-less entries (tool turns); guard them.
       const content = message.content as ChatMessageContent | undefined;
       if (content?.md) {
-        return rewriteApiUrls(marked.parse(content.md) as string);
+        return sanitizeHtml(rewriteApiUrls(marked.parse(content.md) as string));
       }
       text = content?.html || content?.text || '';
     }

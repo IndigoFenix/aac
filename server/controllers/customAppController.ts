@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { customAppRepository } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
-import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import { validateCustomAppDefinitionForType } from "@shared/custom-app-validator";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 
 const saveAppSchema = z.object({
@@ -28,7 +28,10 @@ export class CustomAppController {
     try {
       const body = saveAppSchema.parse(req.body);
 
-      const validation = validateCustomAppDefinition(body.definition);
+      const validation = validateCustomAppDefinitionForType(
+        body.type ?? "game",
+        body.definition,
+      );
       if (!validation.ok) {
         res.status(400).json({ error: "INVALID_DEFINITION", details: validation.errors });
         return;
@@ -42,7 +45,7 @@ export class CustomAppController {
         language: body.language ?? "en",
         instituteId: body.instituteId ?? null,
         type: body.type ?? "game",
-        definition: validation.data,
+        definition: validation.data as object,
         isGenerated: body.isGenerated ?? false,
       });
 
@@ -127,7 +130,10 @@ export class CustomAppController {
 
       let validatedDefinition: unknown = undefined;
       if (body.definition !== undefined) {
-        const validation = validateCustomAppDefinition(body.definition);
+        const validation = validateCustomAppDefinitionForType(
+          body.type ?? existing.type ?? "game",
+          body.definition,
+        );
         if (!validation.ok) {
           res.status(400).json({ error: "INVALID_DEFINITION", details: validation.errors });
           return;

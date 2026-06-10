@@ -715,6 +715,8 @@ export const he = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "משחק הרפתקה שנוצר אוטומטית — שחקו בו כפי שהתלמיד היה משחק. העכבר פועל כמו מבט: לחצו או השהו כדי לזוז.",
+    questMissingContent: "למשחק הזה אין תוכן שניתן לשחק בו.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

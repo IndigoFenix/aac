@@ -366,7 +366,7 @@ function frame(now: number) {
     world.gravityAt(player.state.position, player.state.gravity);
     player.sync();
     rig.update(player.state, dt);
-    sky.update(player.state.gravity, rig.camera.position, world);
+    sky.update(player.state.gravity, rig.camera.position, world, dt);
   }
   if (player.state.mode !== lastMode) {
     stateLabel.textContent = player.state.mode;

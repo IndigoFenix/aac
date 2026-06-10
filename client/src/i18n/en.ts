@@ -715,6 +715,8 @@ export const en = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "Generated quest game — play it as the student would. The mouse acts like eyegaze: click or dwell to move.",
+    questMissingContent: "This game has no playable content.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

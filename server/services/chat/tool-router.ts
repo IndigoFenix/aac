@@ -25,6 +25,19 @@ const hideLogs = isProduction; // Set to true to hide logs in production
 export type ToolExecutor = (args: any) => Promise<any>;
 
 /**
+ * Arguments the assistant supplies to the createQuestGame tool. The host
+ * session enriches them (locale fallback, ownership, auto-assignment) and
+ * seeds a tiny valid starter game — see sessionService's onCreateQuestGame.
+ * The AI then builds the game out via manageMemory on Context_QuestGame.
+ */
+export interface CreateQuestGameToolArgs {
+  /** Optional working title for the new game. */
+  title?: string;
+  /** BCP-47; defaults to the student's primary language. */
+  language?: string;
+}
+
+/**
  * Custom memory processor function type.
  * Allows external systems to inject their own memory handling logic
  * (e.g., database-backed memory with sync).
@@ -60,6 +73,8 @@ export interface ToolRegistry {
   extractVideoFrame: (args: { fileId: string; timestampSeconds: number }) => Promise<any>;
   generateImage: (args: { instruction: string; referenceImageFileId?: string }) => Promise<any>;
   fdaOrangeBook: (args: OrangeBookQuery) => Promise<any>;
+  createQuestGame: (args: CreateQuestGameToolArgs) => Promise<any>;
+  validateQuestGame: (args: {}) => Promise<any>;
 }
 
 // ============================================================================
@@ -253,6 +268,16 @@ export interface ToolRegistryDeps {
    * Use this to inject database-backed memory systems.
    */
   memoryProcessor?: MemoryProcessor;
+
+  /**
+   * Optional goal-tree quest-game authoring capabilities. Injected by host
+   * sessions that have a user + customApps license (clinician chat); absent
+   * sessions (CRM, AAC moderator) neither declare nor execute the tools.
+   *  - onCreateQuestGame: seed a valid starter game and open it in the panel.
+   *  - onValidateQuestGame: certify the game currently open in Context_QuestGame.
+   */
+  onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>;
+  onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>;
 
   /**
    * Optional loop detection configuration.
@@ -615,6 +640,40 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       return lookupOrangeBook(args);
     },
 
+    createQuestGame: async (args: CreateQuestGameToolArgs) => {
+      if (!deps.onCreateQuestGame) {
+        return { error: "Quest games are not available in this session." };
+      }
+      const result: any = await deps.onCreateQuestGame(args ?? {});
+      // Seed the new game into the LIVE memory so the AI can start editing
+      // /Context_QuestGame this same turn (the panel only round-trips it back
+      // on the next request). Don't echo the whole pack to the model.
+      if (result?.success && result.questGame) {
+        deps.memoryValuesRef.current["Context_QuestGame"] = result.questGame;
+        delete result.questGame;
+      }
+      return result;
+    },
+
+    validateQuestGame: async () => {
+      if (!deps.onValidateQuestGame) {
+        return { error: "Quest games are not available in this session." };
+      }
+      // Certify the CURRENT (possibly just-edited) game from live memory, not
+      // the request-time snapshot the host session closed over. Pass the appId
+      // too so the host can auto-save the certified game to its row.
+      const open = deps.memoryValuesRef.current?.["Context_QuestGame"];
+      const result: any = await deps.onValidateQuestGame(open?.contentPack, open?.appId);
+      // On success the host returns the normalized/certified game — write it back
+      // into live memory so the client store + a later manual Save stay valid.
+      // Strip it from the model-facing result (don't echo the whole pack).
+      if (result?.ok && result.game && open) {
+        open.contentPack = result.game;
+        delete result.game;
+      }
+      return result;
+    },
+
     pruneMessages: async (args: { forget: number[]; summary: string; closePaths?: string[] }) => {
       if (deps.onPruneMessages) {
         return { success: true, ...(await deps.onPruneMessages(args.forget, args.summary, args.closePaths)) };
@@ -950,6 +1009,14 @@ export async function makeToolCalls(
                 break;
               case "fdaOrangeBook":
                 response = await registry.fdaOrangeBook(args as OrangeBookQuery);
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "createQuestGame":
+                response = await registry.createQuestGame(args as CreateQuestGameToolArgs);
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "validateQuestGame":
+                response = await registry.validateQuestGame(args as {});
                 insertToolCallResponse(toolCall, response);
                 break;
               default:

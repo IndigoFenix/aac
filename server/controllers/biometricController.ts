@@ -32,6 +32,7 @@ import {
   NoFaceDetectedError,
   getBiometricData,
   updateBiometricData,
+  getEntitiesForBiometricData,
   type FaceEmbedding,
   type VoiceEmbedding,
   type EntityType,
@@ -386,6 +387,19 @@ export class BiometricController {
         res.status(400).json({ success: false, message: "Embedding array is required" });
         return;
       }
+      if (!studentId || typeof studentId !== "string") {
+        res.status(400).json({ success: false, message: "studentId is required" });
+        return;
+      }
+
+      // Matching is scoped to this student's known people; the caller must be
+      // authorized for the student (prevents a cross-tenant identification oracle).
+      const currentUser = req.user as any;
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
+        return;
+      }
 
       const match = await findMatchingFace(embedding as FaceEmbedding, studentId);
 
@@ -419,6 +433,17 @@ export class BiometricController {
 
       if (!embedding || !Array.isArray(embedding)) {
         res.status(400).json({ success: false, message: "Embedding array is required" });
+        return;
+      }
+      if (!studentId || typeof studentId !== "string") {
+        res.status(400).json({ success: false, message: "studentId is required" });
+        return;
+      }
+
+      const currentUser = req.user as any;
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
 
@@ -887,15 +912,36 @@ export class BiometricController {
   // ============================================================================
 
   /**
+   * Authorize direct biometric-data-by-id access: the caller must be an admin,
+   * the user the record belongs to, or have access to a student that owns the
+   * record (directly or via one of the student's contacts). Prevents IDOR where
+   * any authenticated user could read/modify another tenant's biometric record
+   * by supplying its id.
+   */
+  private async canAccessBiometricData(id: string, currentUser: any): Promise<boolean> {
+    if (currentUser?.isAdmin || currentUser?.isSystemAdmin) return true;
+    if (!currentUser?.id) return false;
+    const { userIds, studentIds } = await getEntitiesForBiometricData(id);
+    if (userIds.includes(currentUser.id)) return true;
+    for (const studentId of studentIds) {
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (hasAccess) return true;
+    }
+    return false;
+  }
+
+  /**
    * GET /api/biometric-data/:id/photo
-   * Stream the stored JPEG from S3. Access control happens implicitly — the
-   * client must already have access to a user/student/contact that points at
-   * this biometric_data row for the URL to have been returned to them.
-   * (TODO: tighten with a signed-URL approach once Terraform settles.)
+   * Stream the stored JPEG from S3, after verifying the caller is authorized for
+   * an entity that owns this biometric_data row.
    */
   async getBiometricPhoto(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      if (!(await this.canAccessBiometricData(id, req.user as any))) {
+        res.status(403).json({ success: false, message: "Not authorized to access this record" });
+        return;
+      }
       const row = await getBiometricData(id);
       if (!row?.faceImageUrl) {
         res.status(404).json({ success: false, message: "No photo stored" });
@@ -919,6 +965,10 @@ export class BiometricController {
   async updateBiometricDataPhysical(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      if (!(await this.canAccessBiometricData(id, req.user as any))) {
+        res.status(403).json({ success: false, message: "Not authorized to modify this record" });
+        return;
+      }
       // Strip fields that must go through dedicated endpoints
       const data = updateBiometricDataSchema
         .omit({ faceEmbedding: true, voiceEmbedding: true, faceImageUrl: true, faceImageQuality: true })

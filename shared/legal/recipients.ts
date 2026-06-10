@@ -20,12 +20,20 @@ export const DEFAULT_RECIPIENTS: ReadonlyArray<ConsentRecipientCategory> = [
   {
     category: "llm_provider",
     name: "Google Gemini Live",
-    purpose: "Realtime AAC interaction and clinician chat (when configured).",
+    purpose:
+      "Realtime AAC interaction and clinician chat (when configured). During " +
+      "AAC sessions this includes transmitting live microphone audio and camera " +
+      "video — which may contain the student's and bystanders' facial imagery — " +
+      "for realtime processing.",
   },
   {
     category: "llm_provider",
     name: "OpenAI Realtime / Anthropic Claude",
-    purpose: "Realtime AAC interaction and clinician chat (when configured).",
+    purpose:
+      "Realtime AAC interaction and clinician chat (when configured). During " +
+      "AAC sessions this includes transmitting live microphone audio and camera " +
+      "video — which may contain the student's and bystanders' facial imagery — " +
+      "for realtime processing.",
   },
   {
     category: "tts_provider",

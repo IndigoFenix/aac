@@ -36,6 +36,7 @@ import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import GameEmbed from "@/components/games/GameEmbed";
+import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
 import BrowserApp from "@/components/apps/BrowserApp";
 import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
@@ -343,6 +344,15 @@ function renderAppContent(
         permittedWebsites={permittedWebsites || []}
         onClose={dismissApp}
         sendContextOnly={sendContextOnlyToAi}
+      />
+    );
+  }
+  if (activeApp.appId === "goal_tree_game" && activeApp.appData?.game) {
+    return (
+      <GoalTreeQuestPlayer
+        game={activeApp.appData.game}
+        onClose={dismissApp}
+        sendMessageToAi={sendMessageToAi}
       />
     );
   }

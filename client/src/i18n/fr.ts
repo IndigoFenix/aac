@@ -715,6 +715,8 @@ export const fr = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "Jeu de quête généré — jouez-y comme l'élève le ferait. La souris agit comme le regard : cliquez ou restez pour vous déplacer.",
+    questMissingContent: "Ce jeu n'a pas de contenu jouable.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

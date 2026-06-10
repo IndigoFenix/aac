@@ -715,6 +715,8 @@ export const zh = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "自动生成的任务游戏——请像学生一样试玩。鼠标相当于眼动:点击或停留即可移动。",
+    questMissingContent: "此游戏没有可玩内容。",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

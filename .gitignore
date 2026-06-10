@@ -14,3 +14,13 @@ claude.md
 generative-ai
 reference-files
 planning-docs
+
+# Debug logs — may contain PHI / transcripts / biometric identifiers. Never commit.
+*.log
+*-debug.json
+hila-session-debug.json
+
+# Private keys / credentials. Never commit.
+# (rds-ca-bundle.pem is the PUBLIC AWS RDS CA bundle and is intentionally kept.)
+*.pem
+!rds-ca-bundle.pem

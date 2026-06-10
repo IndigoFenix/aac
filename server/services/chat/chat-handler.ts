@@ -16,7 +16,7 @@ import {
   import { CreditsPerSearchByIntelligence, creditsForModelUsage } from "./cost-helpers";
   import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall, GPTContentPart } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
-  import { defaultToolRegistry, enrichToolCallMessage, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
+  import { defaultToolRegistry, enrichToolCallMessage, CreateQuestGameToolArgs, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
   import { getChatProvider } from "../providers/provider-factory";
   import type { ChatMessage as ProviderChatMessage, ChatTool, StreamChunk } from "../providers/streaming-provider";
@@ -126,6 +126,8 @@ import {
       onNavigate?: (feature: string) => void;
       onSelectStudent?: (studentId: string) => void;
       onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
+      onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>;
+      onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>;
       loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
@@ -164,6 +166,8 @@ import {
           onNavigate?: (feature: string) => void,
           onSelectStudent?: (studentId: string) => void,
           onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void,
+          onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>,
+          onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>,
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
@@ -197,6 +201,8 @@ import {
           this.onNavigate = settings.onNavigate;
           this.onSelectStudent = settings.onSelectStudent;
           this.onFilesNeeded = settings.onFilesNeeded;
+          this.onCreateQuestGame = settings.onCreateQuestGame;
+          this.onValidateQuestGame = settings.onValidateQuestGame;
           this.loopDetectionConfig = settings.loopDetectionConfig;
           this.requestTimezone = settings.timezone;
 
@@ -213,6 +219,8 @@ import {
               onNavigate: this.onNavigate,
               onSelectStudent: this.onSelectStudent,
               onFilesNeeded: this.onFilesNeeded,
+              onCreateQuestGame: this.onCreateQuestGame,
+              onValidateQuestGame: this.onValidateQuestGame,
               loopDetectionConfig: this.loopDetectionConfig,
               onPruneMessages: (forget, summary, closePaths) => this.compressHistory(forget, summary, closePaths),
           });
@@ -809,6 +817,7 @@ import {
               describeActions: this.onThinkingUpdate !== undefined,
               navigateEnabled: this.onNavigate !== undefined,
               selectStudentEnabled: this.onSelectStudent !== undefined,
+              questGameEnabled: this.onCreateQuestGame !== undefined,
               replyType: params?.replyType || 'text',
               timezone: this.requestTimezone,
           });

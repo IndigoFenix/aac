@@ -91,7 +91,7 @@ export class IdentityService {
     providerId: string,
     redirectUri: string,
     state: string,
-  ): Promise<string> {
+  ): Promise<{ url: string; nonce?: string; codeVerifier?: string }> {
     const provider = await identityProviderRepository.getById(providerId);
     if (!provider) throw new Error("Identity provider not found");
     if (!provider.isActive) throw new Error("Identity provider is not active");
@@ -106,6 +106,13 @@ export class IdentityService {
       throw new Error("OIDC/OAuth2 providers require clientId and clientSecret");
     }
 
+    // PKCE (S256) binds the authorization code to this client instance, and the
+    // OIDC nonce binds the id_token to this specific request. Both are carried
+    // back to the caller so they can be stashed in the session and verified on
+    // the callback.
+    const codeVerifier = client.randomPKCECodeVerifier();
+    const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);
+
     if (provider.protocol === "oidc" && provider.discoveryUrl) {
       const secret = await decrypt(provider.clientSecret);
       const config = await oidcConfigCache(
@@ -114,19 +121,23 @@ export class IdentityService {
         provider.clientId,
         secret,
       );
+      const nonce = client.randomNonce();
       const params = new URLSearchParams({
         client_id: provider.clientId,
         redirect_uri: redirectUri,
         response_type: "code",
         scope: scopes,
         state,
+        nonce,
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
       });
       const authEndpoint = config.serverMetadata().authorization_endpoint;
       if (!authEndpoint) throw new Error("No authorization endpoint found in OIDC config");
-      return `${authEndpoint}?${params.toString()}`;
+      return { url: `${authEndpoint}?${params.toString()}`, nonce, codeVerifier };
     }
 
-    // OAuth2 fallback (manual URLs)
+    // OAuth2 fallback (manual URLs) — PKCE only (no id_token, so no nonce).
     if (!provider.authorizationUrl) {
       throw new Error("No authorization URL configured for this provider");
     }
@@ -136,8 +147,10 @@ export class IdentityService {
       response_type: "code",
       scope: scopes,
       state,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
     });
-    return `${provider.authorizationUrl}?${params.toString()}`;
+    return { url: `${provider.authorizationUrl}?${params.toString()}`, codeVerifier };
   }
 
   /**
@@ -149,6 +162,8 @@ export class IdentityService {
     providerId: string,
     callbackUrl: URL,
     expectedState?: string,
+    expectedNonce?: string,
+    pkceCodeVerifier?: string,
   ): Promise<{ externalId: string; email?: string; claims: Record<string, unknown>; profile: CanonicalProfile }> {
     const provider = await identityProviderRepository.getById(providerId);
     if (!provider) throw new Error("Identity provider not found");
@@ -171,6 +186,8 @@ export class IdentityService {
       );
       const tokens = await client.authorizationCodeGrant(config, callbackUrl, {
         expectedState,
+        expectedNonce,
+        pkceCodeVerifier,
       });
       const claims = tokens.claims() as Record<string, unknown> | undefined;
       if (!claims) throw new Error("No claims returned from OIDC provider");
@@ -196,6 +213,7 @@ export class IdentityService {
         redirect_uri: redirectUri,
         client_id: provider.clientId,
         client_secret: secret,
+        ...(pkceCodeVerifier ? { code_verifier: pkceCodeVerifier } : {}),
       }),
     });
     if (!tokenResponse.ok) {

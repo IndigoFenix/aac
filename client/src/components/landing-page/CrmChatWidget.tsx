@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { MessageCircle, X, Send } from "lucide-react";
 import { marked } from "marked";
+import { renderMarkdownSafe } from "@/lib/markdown";
 import { apiRequest, apiUrl } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -37,7 +38,7 @@ function renderAssistantHtml(message: ChatMessage): string {
     (typeof message.content === "object" ? message.content?.md : undefined) ??
     messageText(message);
   if (!md) return "";
-  return marked.parse(md) as string;
+  return renderMarkdownSafe(md);
 }
 
 // Minimal SSE event parser. Mirrors the format the server emits:

@@ -62,6 +62,9 @@ import {
   standingShares,
   studentSymbolAssociations,
   inviteCodeRedemptions,
+  aacUtteranceEvents,
+  lettersOfMedicalNecessity,
+  clinicianActivityIntervals,
 } from "@shared/schema";
 import { eq, and, lte, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { activityLogService } from "./activityLogService";
@@ -401,6 +404,12 @@ export class StudentErasureService {
       await tx.delete(studentConsentRecords).where(eq(studentConsentRecords.studentId, studentId));
       await tx.delete(consentInvitations).where(eq(consentInvitations.studentId, studentId));
       await tx.delete(chatSessions).where(eq(chatSessions.studentId, studentId));
+      // Insurance-bridge + utterance-log PHI (added after the original cascade;
+      // these student_id columns have no FK cascade, so they must be deleted
+      // explicitly or they survive erasure as orphaned PHI — GDPR Art.17).
+      await tx.delete(aacUtteranceEvents).where(eq(aacUtteranceEvents.studentId, studentId));
+      await tx.delete(lettersOfMedicalNecessity).where(eq(lettersOfMedicalNecessity.studentId, studentId));
+      await tx.delete(clinicianActivityIntervals).where(eq(clinicianActivityIntervals.studentId, studentId));
       await tx.delete(boards).where(eq(boards.studentId, studentId));
       await tx.delete(customAppAssignments).where(eq(customAppAssignments.studentId, studentId));
       await tx.delete(studentShareInvites).where(eq(studentShareInvites.studentId, studentId));

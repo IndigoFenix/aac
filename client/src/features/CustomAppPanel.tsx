@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useCustomAppStore } from "@/store/custom-app-store";
+import { useFeaturePanel, useSharedState } from "@/contexts/FeaturePanelContext";
 import { useStudent } from "@/hooks/useStudent";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -29,7 +30,9 @@ import { LeftRail } from "./custom-app/LeftRail";
 import { RightRail } from "./custom-app/RightRail";
 import { RoomEditor } from "./custom-app/RoomEditor";
 import { ObjectEditor } from "./custom-app/ObjectEditor";
+import { GoalTreeGamePreview } from "./custom-app/GoalTreeGamePreview";
 import { editorReducer, initialEditorState } from "./custom-app/editor-state";
+import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
 
 interface CustomAppPanelProps {
   isOpen?: boolean;
@@ -42,6 +45,8 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
   const { currentInstitute } = useInstitute();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
+  const { sharedState, setSharedState } = useSharedState();
   const isDark = theme === "dark";
 
   const {
@@ -49,6 +54,8 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     dbId,
     isDirty,
     apps,
+    questGame,
+    questDirty,
     setDefinition,
     setDbId,
     markClean,
@@ -56,13 +63,16 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     upsertAppMeta,
     removeAppMeta,
     reset,
+    setQuestGame,
+    markQuestClean,
   } = useCustomAppStore();
 
   const [editor, dispatchEditor] = useReducer(editorReducer, initialEditorState);
   const [saving, setSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
-  // --- Fetch the user's apps
+  // --- Fetch the user's apps. Always refetch on mount so games created
+  // through the chat (createQuestGame tool) appear without a full reload.
   const { data: fetchedApps, isLoading: appsLoading } = useQuery({
     queryKey: ["customApps"],
     queryFn: async () => {
@@ -70,6 +80,7 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
       if (!res.ok) throw new Error("Failed to load custom apps");
       return (await res.json()) as Array<Omit<CustomApp, "definition">>;
     },
+    refetchOnMount: "always",
   });
 
   useEffect(() => {
@@ -84,6 +95,28 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
       })));
     }
   }, [fetchedApps, setApps]);
+
+  // --- Feed the open app/quest game to the chat AI each turn (featureContext
+  // → Context_CustomApp / Context_QuestGame), so it edits current state.
+  const buildCustomAppsMetadata = useCallback(() => {
+    const featureContext: Record<string, unknown> = {};
+    if (definition) featureContext.customapp = { data: definition };
+    if (questGame) {
+      featureContext.questgame = {
+        data: {
+          appId: questGame.appId,
+          name: questGame.name,
+          contentPack: questGame.contentPack,
+        },
+      };
+    }
+    return Object.keys(featureContext).length > 0 ? { featureContext } : {};
+  }, [definition, questGame]);
+
+  useEffect(() => {
+    registerMetadataBuilder("customApps", buildCustomAppsMetadata);
+    return () => unregisterMetadataBuilder("customApps");
+  }, [registerMetadataBuilder, unregisterMetadataBuilder, buildCustomAppsMetadata]);
 
   // --- Is the open app assigned to the currently-selected student?
   const assignmentsQueryKey = useMemo(
@@ -110,15 +143,32 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     return validateCustomAppDefinition(definition);
   }, [definition]);
 
-  const canSave = definition !== null && validation.ok && isDirty && !saving;
+  const canSave =
+    (questGame !== null ? questDirty : definition !== null && validation.ok && isDirty) &&
+    !saving;
 
-  // --- Load an existing app into the editor
+  // --- Load an existing app into the editor (or, for goal-tree quest games,
+  // into the embedded player preview — they are played here, not edited)
   const loadApp = useCallback(async (id: string) => {
-    if (isDirty && !confirm(t("customApps.discardUnsavedPrompt"))) return;
+    if ((isDirty || questDirty) && !confirm(t("customApps.discardUnsavedPrompt"))) return;
     try {
       const res = await apiRequest("GET", `/api/custom-apps/${id}`);
       if (!res.ok) throw new Error("Failed to load");
       const app = (await res.json()) as CustomApp;
+      if (app.type === GOAL_TREE_APP_TYPE) {
+        reset(); // clear any v1 definition + stale quest state
+        const contentPack = (app.definition as { contentPack?: unknown } | null)?.contentPack;
+        setQuestGame({
+          appId: app.id,
+          name: app.name,
+          language: app.language,
+          contentPack: contentPack ?? null,
+        });
+        setDbId(app.id); // assignment/delete controls key off dbId
+        dispatchEditor({ type: "selectNone" });
+        return;
+      }
+      setQuestGame(null);
       setDefinition(app.definition as never, { markDirty: false });
       setDbId(app.id);
       markClean();
@@ -126,10 +176,68 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     } catch (err) {
       toast({ title: t("customApps.loadError"), description: String(err), variant: "destructive" });
     }
-  }, [isDirty, markClean, setDbId, setDefinition, t, toast]);
+  }, [isDirty, questDirty, markClean, reset, setDbId, setDefinition, setQuestGame, t, toast]);
+
+  // --- When the chat creates a quest game, open it here immediately.
+  // We do NOT refetch the app: the chat response already delivered the game's
+  // contentPack via contextData.questgame → setQuestGame (and it may carry edits
+  // the AI made in the SAME turn that the server row doesn't have yet).
+  // Refetching would clobber those. We only need to key the assign/delete
+  // controls to the new dbId and clear any v1 editor selection.
+  useEffect(() => {
+    const generated = sharedState.generatedQuestApp as
+      | { appId: string }
+      | undefined;
+    if (!generated?.appId) return;
+    setSharedState({ generatedQuestApp: undefined });
+    setDbId(generated.appId);
+    dispatchEditor({ type: "selectNone" });
+  }, [sharedState.generatedQuestApp, setSharedState, setDbId, dispatchEditor]);
+
+  const handleQuestSave = useCallback(async () => {
+    if (!questGame || !questDirty) return;
+    setSaving(true);
+    try {
+      const name =
+        ((questGame.contentPack as { meta?: { title?: string } } | null)?.meta?.title) ??
+        questGame.name;
+      const res = await apiRequest("PATCH", `/api/custom-apps/${questGame.appId}`, {
+        name,
+        type: GOAL_TREE_APP_TYPE,
+        definition: {
+          engine: "goal-tree",
+          engineVersion: 1,
+          contentPack: questGame.contentPack,
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          Array.isArray(body?.details) ? body.details.slice(0, 3).join("; ") : body?.error ?? "Save failed",
+        );
+      }
+      const updated = (await res.json()) as CustomApp;
+      upsertAppMeta({
+        id: updated.id,
+        name: updated.name,
+        description: updated.description,
+        imageUrl: updated.imageUrl,
+      });
+      markQuestClean();
+      toast({ title: t("customApps.saved") });
+    } catch (err) {
+      toast({ title: t("customApps.saveError"), description: String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }, [questGame, questDirty, markQuestClean, t, toast, upsertAppMeta]);
 
   // --- Save (create or update)
   const handleSave = useCallback(async () => {
+    if (questGame) {
+      await handleQuestSave();
+      return;
+    }
     if (!definition) return;
     const v = validateCustomAppDefinition(definition);
     if (!v.ok) {
@@ -183,7 +291,7 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     } finally {
       setSaving(false);
     }
-  }, [definition, dbId, markClean, setDbId, t, toast, upsertAppMeta, currentInstitute?.id]);
+  }, [definition, dbId, markClean, setDbId, t, toast, upsertAppMeta, currentInstitute?.id, questGame, handleQuestSave]);
 
   const handleDelete = useCallback(async () => {
     if (!dbId) return;
@@ -240,10 +348,10 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
   ]);
 
   const handleNew = useCallback(() => {
-    if (isDirty && !confirm(t("customApps.discardUnsavedPrompt"))) return;
+    if ((isDirty || questDirty) && !confirm(t("customApps.discardUnsavedPrompt"))) return;
     reset();
     dispatchEditor({ type: "selectNone" });
-  }, [isDirty, reset, t]);
+  }, [isDirty, questDirty, reset, t]);
 
   // ---- Derived values for the body
   const selectedClass = useMemo(() => {
@@ -377,7 +485,13 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {!definition ? (
+        {questGame ? (
+          <GoalTreeGamePreview
+            contentPack={questGame.contentPack}
+            language={questGame.language}
+            isDark={isDark}
+          />
+        ) : !definition ? (
           <EmptyState isDark={isDark} />
         ) : inPlay ? (
           <div key={editor.playSession} className="h-full overflow-auto">

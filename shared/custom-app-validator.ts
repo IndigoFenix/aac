@@ -11,6 +11,8 @@ import type {
   CustomAppDefinition,
   GameDefinition,
 } from "./custom-app-types";
+import { certifyGoalTreeGame } from "./goal-tree/index";
+import { GOAL_TREE_APP_TYPE } from "./goal-tree/types";
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -533,4 +535,32 @@ export function validateCustomAppDefinition(
       return path + i.message;
     }),
   };
+}
+
+/**
+ * Validates a custom_apps.definition according to the row's `type`:
+ * goal-tree quest games run the full certification gauntlet on their
+ * contentPack; everything else uses the v1 GameDefinition schema.
+ */
+export function validateCustomAppDefinitionForType(
+  type: string | null | undefined,
+  input: unknown,
+):
+  | { ok: true; data: unknown }
+  | { ok: false; errors: string[] } {
+  if (type === GOAL_TREE_APP_TYPE) {
+    const definition = input as { contentPack?: unknown } | null;
+    const certified = certifyGoalTreeGame(definition?.contentPack);
+    if (!certified.ok) {
+      return {
+        ok: false,
+        errors: certified.errors.map((e) => `[${certified.stage}] ${e}`),
+      };
+    }
+    return {
+      ok: true,
+      data: { engine: "goal-tree", engineVersion: 1, contentPack: certified.game },
+    };
+  }
+  return validateCustomAppDefinition(input);
 }

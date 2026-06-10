@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { marked } from "marked";
+import { renderMarkdownSafe } from "@/lib/markdown";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Table,
@@ -229,7 +230,7 @@ function DetailDialog({ id, open, onClose }: { id: string | null; open: boolean;
                 <div className="text-muted-foreground mb-1">Report:</div>
                 <article
                   className="prose prose-sm dark:prose-invert max-w-none p-3 border rounded"
-                  dangerouslySetInnerHTML={{ __html: marked.parse(row.reportMarkdown) as string }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(row.reportMarkdown) }}
                 />
               </div>
             )}

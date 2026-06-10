@@ -33,6 +33,9 @@ import {
   activityLogs,
   aacSettings,
   biometricData,
+  aacUtteranceEvents,
+  lettersOfMedicalNecessity,
+  clinicianActivityIntervals,
 } from '@shared/schema';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -222,6 +225,26 @@ describe('student erasure', () => {
           state: {},
         } as any)
         .returning();
+      // Insurance-bridge + utterance-log PHI (no FK cascade — must be deleted
+      // explicitly by _hardDeleteStudent or they survive erasure as orphans).
+      const [utterance] = await db
+        .insert(aacUtteranceEvents)
+        .values({
+          studentId: student.id,
+          text: 'hello world',
+          wordCount: 2,
+          uniqueWordCount: 2,
+          source: 'live_speech',
+        } as any)
+        .returning();
+      const [lmn] = await db
+        .insert(lettersOfMedicalNecessity)
+        .values({ studentId: student.id } as any)
+        .returning();
+      const [interval] = await db
+        .insert(clinicianActivityIntervals)
+        .values({ userId: owner.id, studentId: student.id } as any)
+        .returning();
 
       // Soft delete + backdate window + sweep.
       await studentErasureService.softDeleteStudent(student.id, owner.id, null);
@@ -244,6 +267,15 @@ describe('student erasure', () => {
       ).toBe(0);
       expect(
         (await db.select().from(aacSettings).where(eq(aacSettings.studentId, student.id))).length,
+      ).toBe(0);
+      expect(
+        (await db.select().from(aacUtteranceEvents).where(eq(aacUtteranceEvents.id, utterance.id))).length,
+      ).toBe(0);
+      expect(
+        (await db.select().from(lettersOfMedicalNecessity).where(eq(lettersOfMedicalNecessity.id, lmn.id))).length,
+      ).toBe(0);
+      expect(
+        (await db.select().from(clinicianActivityIntervals).where(eq(clinicianActivityIntervals.id, interval.id))).length,
       ).toBe(0);
     });
 

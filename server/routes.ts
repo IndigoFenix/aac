@@ -75,6 +75,7 @@ import { activityLogController } from "./controllers/activityLogController";
 import { insuranceBridgeController } from "./controllers/insuranceBridgeController";
 import { identityController } from "./controllers/identityController";
 import { studentErasureController } from "./controllers/studentErasureController";
+import { cronController } from "./controllers/cronController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -136,6 +137,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.path === "/api/contact") return next();
     if (req.path.startsWith("/api/crm-chat/")) return next();
     if (req.path === "/health") return next();
+    // Machine-to-machine cron trigger — authenticated by a shared secret header,
+    // not a session cookie, so CSRF doesn't apply.
+    if (req.path === "/internal/run-crons") return next();
     return validateCSRF(req, res, next);
   });
 
@@ -143,6 +147,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // ============ SCHEDULED MAINTENANCE (EventBridge → secret header) =============
+  // Runs the erasure + retention sweeps on the Lambda deployment, where
+  // setInterval doesn't fire. Guarded by the X-Cron-Secret shared secret.
+  app.post("/internal/run-crons", (req, res) => cronController.runScheduledCrons(req, res));
 
   // ============= CONTACT FORM (public) =============
   app.post("/api/contact", (req, res) => contactController.submit(req, res));
@@ -1105,6 +1114,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= CUSTOM APPS (GAMES) ROUTES =============
+  // Goal-tree quest games are authored conversationally by the chat AI
+  // (createQuestGame + manageMemory + validateQuestGame tools), not by a
+  // server-side generation endpoint.
   const requireCustomApps = requireLicensePermission("customAppsEnabled");
   app.post("/api/custom-apps", requireAuth, requireCustomApps, (req, res) =>
     customAppController.saveApp(req, res)
@@ -1247,7 +1259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============= YOUTUBE CHANNEL RESOLVER =============
   // Resolve a YouTube channel URL / @handle / raw channel ID to a UC... channel ID
   // AND fetch its display title + description. No API key required (public HTML).
-  app.post("/api/aac/youtube/resolve-channel", optionalAuth, async (req, res) => {
+  app.post("/api/aac/youtube/resolve-channel", requireAuth, async (req, res) => {
     try {
       const { input } = req.body || {};
       if (typeof input !== "string" || !input.trim()) {
@@ -1319,7 +1331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // or video, resolve its canonical id, and fetch display title/description
   // (+ thumbnail for videos/playlists). Backs the single "add YouTube content"
   // input in the clinician settings UI. No API key required (public scrape).
-  app.post("/api/aac/youtube/resolve", optionalAuth, async (req, res) => {
+  app.post("/api/aac/youtube/resolve", requireAuth, async (req, res) => {
     try {
       const { input } = req.body || {};
       if (typeof input !== "string" || !input.trim()) {
@@ -1925,6 +1937,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Right-to-erasure (GDPR Art. 17 / IL Privacy Protection Law). Soft-delete
   // first; hard-delete cron sweeps after the cancellation window elapses.
+  // STOPGAP: manual sweep trigger because the scheduled sweep doesn't fire on
+  // Lambda (registered before :id routes so "erasure" isn't captured as :id).
+  app.post("/api/admin/students/erasure/run-sweep", requireAuth, requireSystemAdmin, (req, res) =>
+    studentErasureController.runSweep(req, res)
+  );
   app.post("/api/admin/students/:id/erase", requireAuth, requireSystemAdmin, (req, res) =>
     studentErasureController.requestErasure(req, res)
   );

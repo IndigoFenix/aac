@@ -34,9 +34,12 @@ export default defineConfig({
     // Without this, /ws/social-bot (and /ws/live) just hang in CONNECTING
     // because vite doesn't know what to do with them.
     proxy: {
-      "/ws":   { target: "ws://localhost:5000", ws: true, changeOrigin: true },
-      "/api":  { target: "http://localhost:5000", changeOrigin: true },
-      "/auth": { target: "http://localhost:5000", changeOrigin: true },
+      "/ws":    { target: "ws://localhost:5000", ws: true, changeOrigin: true },
+      "/api":   { target: "http://localhost:5000", changeOrigin: true },
+      "/auth":  { target: "http://localhost:5000", changeOrigin: true },
+      // Pre-built games are served by Express, not vite — without this every
+      // embedded game iframe (bubbles, quest player, …) 404s in standalone dev.
+      "/games": { target: "http://localhost:5000", changeOrigin: true },
     },
   },
 });

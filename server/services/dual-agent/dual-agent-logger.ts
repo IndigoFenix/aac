@@ -24,6 +24,17 @@ const __dirname = dirname(__filename);
 const LOG_FILE = join(__dirname, "..", "..", "live-session-debug.log");
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
+// This file log captures full system prompts and verbatim input/output
+// transcriptions — i.e. PHI (student speech) and biometric identifiers. It must
+// NEVER be written to disk in production. Lambda's filesystem is ephemeral, but
+// the planned ECS/HIPAA path is long-lived, so gate on more than just isLambda.
+// Opt back in explicitly with DEBUG_LIVE_SESSIONS=true for local debugging only.
+// Mirrors the isLambda guard in server/services/chat/memory-debug-log.ts.
+const isLambda = !!process.env.AWS_LAMBDA_EXEC_WRAPPER;
+const fileLoggingEnabled =
+  process.env.DEBUG_LIVE_SESSIONS === "true" ||
+  (!isLambda && process.env.NODE_ENV !== "production");
+
 // NOTE: live-session-debug.log is file-only as of 2026-06. The admin
 // session-debug view reads from agent-flow-logger persistence instead.
 // The flow log is one line per high-signal event and is far more useful
@@ -75,6 +86,7 @@ function ensureSize(): void {
 
 /** Log a structured event (JSON data). */
 export function logDualAgent(section: string, data: Record<string, any>): void {
+  if (!fileLoggingEnabled) return;
   const tag = currentAgentTag();
   const displaySection = tag ? `[${tag}] ${section}` : section;
   try {
@@ -109,6 +121,7 @@ function flushCoalesced(): void {
  * Identical consecutive entries are coalesced into a single line with a count.
  */
 export function logLiveSession(section: string, content: string, truncate = false): void {
+  if (!fileLoggingEnabled) return;
   const tag = currentAgentTag();
   const displaySection = tag ? `[${tag}] ${section}` : section;
   try {

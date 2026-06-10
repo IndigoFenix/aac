@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { marked } from "marked";
+import { renderMarkdownSafe } from "@/lib/markdown";
 import { apiRequest } from "@/lib/queryClient";
 import { useStudent } from "@/hooks/useStudent";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -268,7 +269,7 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
               {selected.reportMarkdown && (
                 <article
                   className="prose prose-sm dark:prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: marked.parse(selected.reportMarkdown) as string }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(selected.reportMarkdown) }}
                 />
               )}
             </div>

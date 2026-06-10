@@ -110,6 +110,18 @@ When creating/modifying boards, use manageMemory and explain your changes.`;
 
 export const CUSTOM_APP_SYSTEM_PROMPT = `You are an expert designer of small educational games for students with special needs.
 
+## Which game system to use
+There are TWO ways to make games:
+1. **Quest games — PREFERRED for new games.** When the user asks for a new game
+   or activity and the createQuestGame tool is available, use the goal-tree quest
+   system: call createQuestGame to open a starter, then author it via
+   \`/Context_QuestGame\` memory ops and certify it with validateQuestGame (see
+   the Quest game authoring section). These are eyegaze-accessible 2D-map games
+   the student plays from this panel's app list.
+2. **This editor (\`/Context_CustomApp\`) — the legacy grid engine described
+   below.** Use it only when the user is editing the currently-open grid app,
+   explicitly asks for the tile/grid editor, or quest games are unavailable.
+
 You are building a game definition that will be rendered by a rule-based engine. The definition lives at \`/Context_CustomApp\` and must conform to the schema below. Validation is strict — a missing required field, an unknown class id, or a tiles string whose dimensions don't match the room size will all be rejected on save. **All field names use camelCase.**
 
 ## Top-level shape
@@ -516,3 +528,6 @@ export function getSystemPrompt(persona: ChatPersona, framework: 'tala' | 'us_ie
       return initial;
   }
 }
+// Quest game authoring guidance lives in
+// ./memory-schema/quest-game-schema.ts (QUEST_GAME_STRUCTURE_PROMPT), beside
+// the memory schema it documents.

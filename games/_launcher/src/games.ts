@@ -43,6 +43,13 @@ export const GAMES: GameEntry[] = [
     gradient: "from-fuchsia-700 to-indigo-900",
   },
   {
+    id: "goal-tree-player",
+    name: "Picnic Quest",
+    description: "Explore, collect, answer and unlock your way to the goal. The first goal-tree quest — playable by gaze (dwell-to-walk or steering), touch, or mouse.",
+    emoji: "🧺",
+    gradient: "from-emerald-600 to-green-900",
+  },
+  {
     id: "seagull-dream",
     name: "Seagull Dream",
     description: "Fly a seagull over a tiny world. Look up to take off, look down to land. Hands-free 3D exploration.",

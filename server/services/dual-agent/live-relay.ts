@@ -50,6 +50,7 @@ import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, composeAacPersona
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import { isGoalTreeApp, prepareGoalTreeAppOpen } from "./goal-tree-app";
 import type { PermittedWebsite, PermittedYoutubeVideo } from "@shared/schema";
 import { isUrlPermitted, mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
@@ -4084,6 +4085,18 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           if (!app) {
             return { id: call.id, name, response: { output: `error: app ${appId} not found` } };
           }
+
+          // Goal-tree quest games carry their own engine payload — re-certify
+          // and ship to the dedicated player instead of the v1 runtime.
+          if (isGoalTreeApp(app)) {
+            const prepared = prepareGoalTreeAppOpen(app);
+            if (!prepared.ok) {
+              return { id: call.id, name, response: { output: `error: ${prepared.error}` } };
+            }
+            this.send({ type: "app_open", data: prepared.payload });
+            return { id: call.id, name, response: { output: prepared.aiNote } };
+          }
+
           const validation = validateCustomAppDefinition(app.definition);
           if (!validation.ok) {
             return {

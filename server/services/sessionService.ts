@@ -63,6 +63,17 @@ import {
   getSystemPrompt,
   framePersonaSection,
 } from "./system-prompts";
+import {
+  QUEST_GAME_MEMORY_FIELD,
+  QUEST_GAME_STRUCTURE_PROMPT,
+  createEmptyQuestGame,
+  normalizeContentPack,
+} from "./memory-schema/quest-game-schema";
+import {
+  questGameLog,
+  certifySummary,
+  wrapQuestGameLogging,
+} from "./memory-schema/quest-game-log";
 import { buildGlyphSyntax, buildCustomSymbolsBlock, buildKnownPeopleBlock } from "./memory-schema/glyph-syntax";
 import { getBundledIconsBlock } from "./memory-schema/aac-memory-schema";
 import { getContactsByStudent } from "./biometric/recognition-service";
@@ -152,10 +163,15 @@ import {
   populateMemoryFromDB,
 } from "./chat/memory-db-bridge";
 import { AgentMemoryFieldWithDB } from "./chat/memory-types";
-import { 
-  createDBMemoryProcessor, 
+import {
+  createDBMemoryProcessor,
   LoopDetectionConfig,
+  type CreateQuestGameToolArgs,
 } from "./chat/tool-router";
+import { certifyGoalTreeGame } from "@shared/goal-tree/index";
+import { walkGoalTree } from "@shared/goal-tree/walk";
+import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
+import { customAppRepository } from "../repositories/customAppRepository";
 import {
   composeAacPersona,
   getAACMemoryFields,
@@ -604,6 +620,11 @@ const CUSTOM_APP_MEMORY_FIELD: AgentMemoryField = {
   required: ["type", "label", "classes", "buttons", "rooms", "startRoom"],
 } as unknown as AgentMemoryField;
 
+// QUEST_GAME_MEMORY_FIELD is defined in ./memory-schema/quest-game-schema (a
+// proper, fully-declared recursive schema so the chat AI can SEE and edit the
+// game like a board). Correctness is enforced by certifyGoalTreeGame via the
+// validateQuestGame tool, plus Save-time + AAC-open re-certification.
+
 // ============================================================================
 // AGENT TEMPLATES
 // ============================================================================
@@ -751,7 +772,17 @@ export interface FeatureContext {
   progress?: {
     programId?: string;  // Optional specific program ID
   };
-  
+
+  /** v1 custom app (grid game) open in the customApps panel */
+  customapp?: {
+    data: any; // GameDefinition (shared/custom-app-types)
+  };
+
+  /** Goal-tree quest game open in the customApps panel */
+  questgame?: {
+    data: { appId: string; name: string; contentPack: unknown };
+  };
+
   // Future mode contexts can be added here
 }
 
@@ -1442,8 +1473,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
     // === Custom Apps (Games) Mode Setup ===
     if (feature === 'customApps') {
-      template.corePrompt = `${template.corePrompt}\n${CUSTOM_APP_SYSTEM_PROMPT}`;
+      template.corePrompt = `${template.corePrompt}\n${CUSTOM_APP_SYSTEM_PROMPT}\n${QUEST_GAME_STRUCTURE_PROMPT}`;
       contextMemoryFields.push(CUSTOM_APP_MEMORY_FIELD as AgentMemoryFieldWithDB);
+      contextMemoryFields.push(QUEST_GAME_MEMORY_FIELD as AgentMemoryFieldWithDB);
     }
   }
   template.memoryFields = contextMemoryFields as AgentMemoryField[];
@@ -1756,10 +1788,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
     if (feature === 'customApps') {
       fieldsForProcessor = [...fieldsForProcessor, CUSTOM_APP_MEMORY_FIELD as AgentMemoryFieldWithDB];
+      fieldsForProcessor = [...fieldsForProcessor, QUEST_GAME_MEMORY_FIELD as AgentMemoryFieldWithDB];
     }
   }
 
-  const memoryProcessor = createDBMemoryProcessor(
+  // Quest-game edits are NOT certify-on-write reverted — the AI builds the
+  // game incrementally (intermediate states may be invalid) and checks it with
+  // the validateQuestGame tool before finishing. Student safety is preserved by
+  // Save-time certification (validateCustomAppDefinitionForType) and AAC-open
+  // re-certification (prepareGoalTreeAppOpen).
+  let memoryProcessor = createDBMemoryProcessor(
     processMemoryToolWithDB,
     fieldsForProcessor,
     { current: memoryValues },
@@ -1767,6 +1805,12 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     loadStateRef,
     chatContextManager.getBaseContext()
   );
+  // In the game-authoring panel, log every quest-game memory op + its certify
+  // status to server/quest-game-debug.log (the console overwrites during long
+  // turns). Observational only.
+  if (feature === "customApps") {
+    memoryProcessor = wrapQuestGameLogging(memoryProcessor);
+  }
 
   // Fetch LLM provider config from DB for this use case
   const llmUseCase: UseCaseKey = isAACFeature ? 'aac_moderator' : 'clinician';
@@ -1778,6 +1822,179 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       provider: personaResult.persona.llmProvider as any,
       model: personaResult.persona.llmModel,
     };
+  }
+
+  // Quest-game authoring capabilities. Gated on the customApps feature (NOT
+  // just the license) so the tools only exist where their schema field +
+  // structural prompt + logging are also present — otherwise the AI authors
+  // blind, which is the bug these replaced. Both callbacks close over the
+  // session's user/student/memoryValues so the chat AI can create a game and
+  // validate the one it is editing without the tool args carrying ownership or
+  // the current game state.
+  //  - createQuestGame: seeds a tiny VALID starter game, assigns it to the
+  //    student, and signals the panel to open it. The AI then builds it out via
+  //    manageMemory ops on Context_QuestGame (a fully-declared, viewable schema).
+  //  - validateQuestGame: certifies the CURRENT in-memory contentPack, SAVES it
+  //    when valid, and returns the gauntlet's errors so the AI can self-correct.
+  let onCreateQuestGame: ((args: CreateQuestGameToolArgs) => Promise<unknown>) | undefined;
+  let onValidateQuestGame: ((contentPack: unknown, appId?: string) => Promise<unknown>) | undefined;
+  if (feature === "customApps" && !isAACFeature && userId) {
+    try {
+      // Same rule as the custom-apps routes: system admins bypass the
+      // license check (context.user is the full row, loaded above).
+      const allowed = await licenseService.userHasPermission(
+        userId,
+        "customAppsEnabled",
+        !!context.user?.isSystemAdmin,
+      );
+      console.log(
+        `[getMessageManager] quest-game tools ${allowed ? "ENABLED" : "disabled"} ` +
+          `(user ${userId}, admin=${!!context.user?.isSystemAdmin})`,
+      );
+      if (allowed) {
+        const student = context.student;
+
+        // Per-turn marker so the log shows which game (if any) is open and
+        // whether it currently certifies, before any edits this turn.
+        const openGame = (memoryValues["Context_QuestGame"] as { name?: string; contentPack?: unknown } | undefined);
+        questGameLog("turn_start", {
+          user: userId,
+          student: student?.name,
+          openGame: openGame ? { name: openGame.name, certify: certifySummary(openGame.contentPack) } : null,
+        });
+
+        onCreateQuestGame = async (args: CreateQuestGameToolArgs) => {
+          questGameLog("createQuestGame:call", { args });
+          const locale = args.language ?? student?.primaryLanguage ?? "en";
+          const game = createEmptyQuestGame({ title: args.title, locale });
+          // The starter is hand-built to certify; double-check before persisting.
+          const certified = certifyGoalTreeGame(game);
+          if (!certified.ok) {
+            return {
+              success: false,
+              stage: certified.stage,
+              errors: certified.errors.slice(0, 8),
+              note: "Internal: the starter template failed certification. Report this.",
+            };
+          }
+          const app = await customAppRepository.createApp({
+            userId,
+            instituteId: instituteId ?? null,
+            type: GOAL_TREE_APP_TYPE,
+            name: certified.game.meta.title,
+            description: certified.game.meta.description ?? null,
+            language: locale,
+            isGenerated: true,
+            definition: {
+              engine: "goal-tree",
+              engineVersion: 1,
+              contentPack: certified.game,
+            },
+          });
+          questGameLog("createQuestGame:created", { appId: app.id, title: certified.game.meta.title, locale });
+          let assignedToStudent: string | null = null;
+          if (student) {
+            await customAppRepository.assignToStudent({
+              appId: app.id,
+              studentId: student.id,
+              assignedByUserId: userId,
+            });
+            assignedToStudent = student.name;
+          }
+          // Transient client signal: lands in contextData as `generatedapp`,
+          // so the panel opens the new game (and keys its assign/delete controls
+          // off the new dbId). memoryValues is rebuilt per request, so this
+          // never persists.
+          memoryValues["Context_GeneratedApp"] = {
+            appId: app.id,
+            name: certified.game.meta.title,
+            type: app.type,
+          };
+          return {
+            success: true,
+            appId: app.id,
+            title: certified.game.meta.title,
+            assignedToStudent,
+            // The tool router seeds this into live memory as Context_QuestGame
+            // so the AI can edit the new game this same turn (then strips it
+            // from the response so the whole pack isn't echoed to the model).
+            questGame: {
+              appId: app.id,
+              name: certified.game.meta.title,
+              contentPack: certified.game,
+            },
+            note:
+              "A blank starter game is now open in the panel. Build it out by editing " +
+              "/Context_QuestGame/contentPack via manageMemory, then call validateQuestGame.",
+          };
+        };
+
+        onValidateQuestGame = async (contentPack: unknown, appId?: string) => {
+          if (contentPack === undefined || contentPack === null) {
+            questGameLog("validateQuestGame:no_game");
+            return {
+              ok: false,
+              errors: ["No quest game is open. Call createQuestGame first, or open one in the panel."],
+            };
+          }
+          // Force the managed engine fields the AI keeps dropping, then certify.
+          const normalized = normalizeContentPack(contentPack);
+          const certified = certifyGoalTreeGame(normalized);
+          if (!certified.ok) {
+            questGameLog("validateQuestGame:invalid", {
+              stage: certified.stage,
+              errors: certified.errors,
+              contentPack: normalized,
+            });
+            return { ok: false, stage: certified.stage, errors: certified.errors.slice(0, 12) };
+          }
+          const nodeCount = [...walkGoalTree(certified.game.root)].length;
+
+          // AUTO-SAVE: persist the certified game to its row so a working game
+          // survives reload / a blocked turn / the AI moving on (the old "edits
+          // live until manual Save" model silently lost work). Also refresh the
+          // live + client copy with the normalized, certified pack.
+          let saved = false;
+          const openMem = memoryValues["Context_QuestGame"] as { appId?: string; contentPack?: unknown } | undefined;
+          const targetAppId = appId ?? openMem?.appId;
+          if (targetAppId) {
+            try {
+              await customAppRepository.updateApp(targetAppId, {
+                name: certified.game.meta.title,
+                language: certified.game.meta.locale,
+                definition: { engine: "goal-tree", engineVersion: 1, contentPack: certified.game },
+              });
+              saved = true;
+              if (openMem) openMem.contentPack = certified.game;
+            } catch (e) {
+              questGameLog("validateQuestGame:save_failed", { appId: targetAppId, error: e instanceof Error ? e.message : String(e) });
+            }
+          }
+          questGameLog("validateQuestGame:ok", {
+            title: certified.game.meta.title,
+            nodeCount,
+            planLength: certified.solution.plan.length,
+            appId: targetAppId,
+            saved,
+          });
+          return {
+            ok: true,
+            nodeCount,
+            planLength: certified.solution.plan.length,
+            saved,
+            // Tool router writes this back into live memory (then strips it from
+            // the model echo) so the client store holds the normalized, certified
+            // pack — keeping a later manual Save valid.
+            game: certified.game,
+            note: saved
+              ? "The game certifies (solvable + valid layout) and has been SAVED. It is ready to play."
+              : "The game certifies but could not be auto-saved (no app id) — remind the user to press Save.",
+          };
+        };
+      }
+    } catch (e) {
+      console.warn("[getMessageManager] quest-game capability check failed:", e);
+    }
   }
 
   const messageManager = new ChatMessageManager({
@@ -1793,6 +2010,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onThinkingUpdate,
     onNavigate: !isAACFeature ? onNavigate : undefined,
     onSelectStudent: !isAACFeature ? onSelectStudent : undefined,
+    onCreateQuestGame,
+    onValidateQuestGame,
     onFilesNeeded,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
@@ -1879,6 +2098,22 @@ function injectModeContext(
   // Document context for future modes
   if (featureContext.document) {
     memoryValues["Context_Document"] = featureContext.document.data;
+  }
+
+  // Custom-apps panel context: the open v1 grid app and/or goal-tree quest
+  // game. Sent by the panel's metadata builder each turn so the AI edits the
+  // CURRENT state, not a stale or empty one.
+  if (feature === "customApps") {
+    if (featureContext.customapp?.data) {
+      memoryValues["Context_CustomApp"] = featureContext.customapp.data;
+    }
+    if (featureContext.questgame?.data) {
+      memoryValues["Context_QuestGame"] = featureContext.questgame.data;
+      console.log(
+        "[injectModeContext] Set Context_QuestGame:",
+        featureContext.questgame.data.name,
+      );
+    }
   }
 }
 

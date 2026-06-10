@@ -31,7 +31,22 @@ const OLD_BUCKET = "cliniaacian-prod-uploads-748560966885";
 const NEW_BUCKET = "aivota-prod-uploads-748560966885";
 const TUNNEL_PORT = 15432; // non-standard port to avoid conflicts
 
+// DB admin passwords are read from the environment — never hardcode credentials
+// in source (they end up in git history). Provide them at invocation time, e.g.
+//   OLD_DB_PASSWORD=... NEW_DB_PASSWORD=... npx tsx scripts/migrate-db.ts
+// Pull the values from AWS Secrets Manager (aivota-prod/database) rather than
+// pasting them on the command line where possible.
+const OLD_DB_PASSWORD = process.env.OLD_DB_PASSWORD || "";
+const NEW_DB_PASSWORD = process.env.NEW_DB_PASSWORD || "";
+
 process.env.AWS_PROFILE = process.env.AWS_PROFILE || "aac";
+
+if (!OLD_DB_PASSWORD || !NEW_DB_PASSWORD) {
+  throw new Error(
+    "OLD_DB_PASSWORD and NEW_DB_PASSWORD must be set in the environment " +
+      "(read them from AWS Secrets Manager — do not hardcode).",
+  );
+}
 
 // ============================================================================
 // AWS CLI helpers
@@ -176,7 +191,7 @@ async function dumpDatabase(): Promise<{ schemaDDL: string[]; tables: Record<str
     port: 5432,
     database: "cliniaacian",
     user: "cliniaacian_admin",
-    password: "k6Ri1sUWQzrthhLZwfXYYf1JEpWBYLDe",
+    password: OLD_DB_PASSWORD,
     ssl: { rejectUnauthorized: false },
   });
 
@@ -363,7 +378,7 @@ async function waitForTunnel(port: number, timeoutMs = 30000): Promise<void> {
       const client = new Client({
         host: "localhost", port,
         database: "aivota", user: "aivota_admin",
-        password: "e0KJRZQv_xglmyeKCkX89fAQEvnV2lDe",
+        password: NEW_DB_PASSWORD,
         ssl: { rejectUnauthorized: false },
         connectionTimeoutMillis: 3000,
       });
@@ -387,7 +402,7 @@ async function restoreDatabase(data: { schemaDDL: string[]; tables: Record<strin
     port: TUNNEL_PORT,
     database: "aivota",
     user: "aivota_admin",
-    password: "e0KJRZQv_xglmyeKCkX89fAQEvnV2lDe",
+    password: NEW_DB_PASSWORD,
     ssl: { rejectUnauthorized: false },
   });
 

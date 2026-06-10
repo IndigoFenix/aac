@@ -549,6 +549,36 @@ export const ChatProvider = ({
       setSharedState({ customAppGeneratorData: { app: contextData.customapp } });
     }
 
+    // A game was created this turn (createQuestGame tool) — refresh the apps
+    // list and hand the new app to the panel so it opens immediately.
+    if (contextData.generatedapp?.appId) {
+      console.log('[ChatProvider] Game created:', contextData.generatedapp.name);
+      void queryClient.invalidateQueries({ queryKey: ['customApps'] });
+      setSharedState({ generatedQuestApp: contextData.generatedapp });
+    }
+
+    // AI-edited quest game (Context_QuestGame) — already certified server-side.
+    // The field round-trips every turn, so only apply when it actually changed.
+    if (contextData.questgame?.contentPack) {
+      const store = useCustomAppStore.getState();
+      const current = store.questGame;
+      const changed =
+        JSON.stringify(contextData.questgame.contentPack) !==
+        JSON.stringify(current?.contentPack);
+      if (changed) {
+        console.log('[ChatProvider] Received edited quest game from response');
+        store.setQuestGame(
+          {
+            appId: current?.appId ?? contextData.questgame.appId,
+            name: contextData.questgame.name ?? current?.name ?? 'Quest',
+            language: current?.language ?? null,
+            contentPack: contextData.questgame.contentPack,
+          },
+          { markDirty: true },
+        );
+      }
+    }
+
     // Handle interpret data (future)
     if (contextData.interpret) {
       setSharedState({ interpretData: contextData.interpret });
@@ -788,8 +818,9 @@ export const ChatProvider = ({
       requestBody.vectorStoreId = vectorStoreId;
     }
 
-    // Add featureContext for boards mode
-    if (activeFeature === 'boards' && featureMetadata?.featureContext) {
+    // Add featureContext for modes whose panel registers one (boards = the
+    // open board; customApps = the open v1 app and/or quest game)
+    if ((activeFeature === 'boards' || activeFeature === 'customApps') && featureMetadata?.featureContext) {
       requestBody.featureContext = featureMetadata.featureContext;
       console.log('[useChat] Sending featureContext for boards mode:', {
         hasData: !!featureMetadata.featureContext.board?.data,

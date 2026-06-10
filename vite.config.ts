@@ -35,6 +35,12 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // Standalone vite dev (`npm run client:dev`): the pre-built games under
+    // /games/* are served by the Express server, not vite — proxy them so
+    // embedded game iframes (quest-game preview) work in this mode too.
+    proxy: {
+      "/games": { target: "http://localhost:5000", changeOrigin: true },
+    },
     watch: {
       // The games under /games/ are independent Vite projects (own dev servers)
       // and are served to this client as pre-built static assets from

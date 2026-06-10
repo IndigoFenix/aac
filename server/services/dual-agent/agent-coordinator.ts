@@ -1504,7 +1504,11 @@ export class AgentCoordinator {
         // Same {key, name, hint} shape as the Speaker's availableBoards.
         // Observer doesn't load boards — it flags matching situations via
         // update_context so BoardManager can bring up the right surface.
-        availableBoards: state.availableBoards?.map(b => ({ key: b.key, name: b.name, hint: b.hint })),
+        // Exclude the Home board — it's not a situation-specific surface to
+        // flag, and listing it here confused the Observer.
+        availableBoards: state.availableBoards
+          ?.filter(b => b.key !== HOME_BOARD_KEY)
+          .map(b => ({ key: b.key, name: b.name, hint: b.hint })),
       },
       speaker: {
         ...base,

@@ -715,6 +715,8 @@ export const ko = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "자동 생성된 퀘스트 게임 — 학생이 하는 것처럼 플레이해 보세요. 마우스가 시선 역할을 합니다: 클릭하거나 머무르면 이동합니다.",
+    questMissingContent: "이 게임에는 플레이할 수 있는 콘텐츠가 없습니다.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

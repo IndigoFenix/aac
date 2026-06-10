@@ -3,9 +3,27 @@ import crypto from "crypto";
 import { identityService } from "../services/identityService";
 import { activityLogService } from "../services/activityLogService";
 import { userRepository } from "../repositories";
+import { adminUserRepository } from "../repositories/adminUserRepository";
+import { resolveLoginIdentity, isAdminIdentity } from "../services/adminAuthService";
+import type { User } from "@shared/schema";
 import { insertIdentityProviderSchema, updateIdentityProviderSchema } from "@shared/schema";
 
 const CALLBACK_BASE_URL = process.env.IDENTITY_CALLBACK_URL || process.env.APP_URL || "";
+
+/**
+ * Only accept a same-origin relative path for post-flow redirects. Rejects
+ * absolute URLs (scheme://host) and protocol-relative (//host) to prevent an
+ * open redirect after the SSO/SAML round-trip. Defaults to "/".
+ */
+function safeReturnUrl(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) return "/";
+  // Must be a path beginning with a single "/", not "//" (protocol-relative),
+  // and free of backslashes (which browsers normalize to "/") or a scheme.
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || value.includes("://")) {
+    return "/";
+  }
+  return value;
+}
 
 /**
  * After a successful SSO callback, when there's no current session, look up
@@ -49,6 +67,13 @@ async function loginViaExternalIdentity(
       // Auto-provision needs an email; the IdP didn't supply one.
       return `${returnUrl}?ssoError=no_email_in_assertion`;
     }
+    // SECURITY: platform admins authenticate only through the dedicated admin
+    // flow (password + mandatory MFA). Never auto-provision or link an SSO
+    // identity onto an admin's email — that would mint an admin session via SSO,
+    // bypassing MFA. Refuse before creating any external-identity link.
+    if (await adminUserRepository.getByEmail(result.profile.email.toLowerCase())) {
+      return `${returnUrl}?ssoError=admin_sso_not_allowed`;
+    }
     try {
       const out = await identityService.autoProvisionFromProfile(provider, result.profile);
       user = out.user;
@@ -71,6 +96,15 @@ async function loginViaExternalIdentity(
       console.error("SSO auto-provisioning failed:", err);
       return `${returnUrl}?ssoError=auto_provision_failed`;
     }
+  }
+
+  // SECURITY: belt-and-suspenders for the pre-linked path — if this user
+  // resolves to an admin identity (an existing external-identity link points at
+  // an admin's shell `users` row), refuse the SSO session. Admin sessions must
+  // only ever come from the MFA-gated admin auth flow.
+  const resolvedIdentity = await resolveLoginIdentity(user as User);
+  if (isAdminIdentity(resolvedIdentity)) {
+    return `${returnUrl}?ssoError=admin_sso_not_allowed`;
   }
 
   return new Promise<string>((resolve) => {
@@ -203,25 +237,33 @@ export class IdentityController {
 
       const state = crypto.randomBytes(32).toString("hex");
 
-      // Store state in session for CSRF verification on callback
-      (req.session as any).identityLinkState = {
-        state,
-        providerId,
-        returnUrl: typeof returnUrl === "string" ? returnUrl : "/",
-      };
-
       let redirectTo: string;
+      let nonce: string | undefined;
+      let codeVerifier: string | undefined;
       if (provider.protocol === "saml") {
         // RelayState carries our state token; IdP echoes it back on the ACS POST.
         redirectTo = await identityService.buildSamlLoginUrl(providerId, state);
       } else {
         const redirectUri = `${CALLBACK_BASE_URL}/api/identity/callback/${providerId}`;
-        redirectTo = await identityService.getAuthorizationUrl(
+        const authz = await identityService.getAuthorizationUrl(
           providerId,
           redirectUri,
           state,
         );
+        redirectTo = authz.url;
+        nonce = authz.nonce;
+        codeVerifier = authz.codeVerifier;
       }
+
+      // Store state (+ OIDC nonce / PKCE verifier) in session for verification
+      // on the callback.
+      (req.session as any).identityLinkState = {
+        state,
+        providerId,
+        returnUrl: safeReturnUrl(returnUrl),
+        nonce,
+        codeVerifier,
+      };
 
       res.redirect(redirectTo);
     } catch (error: any) {
@@ -320,7 +362,7 @@ export class IdentityController {
       (req.session as any).samlLogoutState = {
         state,
         providerId,
-        returnUrl: typeof returnUrl === "string" ? returnUrl : "/",
+        returnUrl: safeReturnUrl(returnUrl),
       };
 
       const url = await identityService.buildSamlLogoutUrl(providerId, user.id, state);
@@ -421,6 +463,8 @@ export class IdentityController {
         providerId,
         callbackUrl,
         sessionState.state,
+        sessionState.nonce,
+        sessionState.codeVerifier,
       );
 
       if (user) {

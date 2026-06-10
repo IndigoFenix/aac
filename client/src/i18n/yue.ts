@@ -715,6 +715,8 @@ export const yue = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "自動生成嘅任務遊戲——請好似學生咁試玩。滑鼠等同眼動:撳一下或者停留就可以移動。",
+    questMissingContent: "呢個遊戲冇可以玩嘅內容。",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

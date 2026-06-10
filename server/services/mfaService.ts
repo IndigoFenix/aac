@@ -8,6 +8,7 @@ import path from "path";
 import sharp from "sharp";
 import { mfaRepository } from "../repositories/mfaRepository";
 import { emailService } from "./emailService";
+import { deleteUserSessions } from "./sessionInvalidation";
 import type { User } from "@shared/schema";
 
 // Configuration
@@ -48,27 +49,44 @@ export class MfaService {
    * Encrypt a TOTP secret for storage
    */
   private encryptSecret(secret: string): string {
+    // AES-256-GCM (authenticated). Output: iv:authTag:ciphertext.
     const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
     const cipher = crypto.createCipheriv(
-      "aes-256-cbc",
+      "aes-256-gcm",
       Buffer.from(ENCRYPTION_KEY),
       iv
     );
     let encrypted = cipher.update(secret, "utf8", "hex");
     encrypted += cipher.final("hex");
-    return iv.toString("hex") + ":" + encrypted;
+    const authTag = cipher.getAuthTag().toString("hex");
+    return iv.toString("hex") + ":" + authTag + ":" + encrypted;
   }
 
   /**
-   * Decrypt a stored TOTP secret
+   * Decrypt a stored TOTP secret. Accepts the current GCM format
+   * (iv:authTag:ciphertext) and the legacy unauthenticated CBC format
+   * (iv:ciphertext) so existing enrollments keep working.
    */
   private decryptSecret(encryptedSecret: string): string {
-    const [ivHex, encrypted] = encryptedSecret.split(":");
-    const iv = Buffer.from(ivHex, "hex");
+    const parts = encryptedSecret.split(":");
+    if (parts.length === 3) {
+      const [ivHex, authTagHex, encrypted] = parts;
+      const decipher = crypto.createDecipheriv(
+        "aes-256-gcm",
+        Buffer.from(ENCRYPTION_KEY),
+        Buffer.from(ivHex, "hex")
+      );
+      decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
+      let decrypted = decipher.update(encrypted, "hex", "utf8");
+      decrypted += decipher.final("utf8");
+      return decrypted;
+    }
+    // Legacy AES-256-CBC (iv:ciphertext).
+    const [ivHex, encrypted] = parts;
     const decipher = crypto.createDecipheriv(
       "aes-256-cbc",
       Buffer.from(ENCRYPTION_KEY),
-      iv
+      Buffer.from(ivHex, "hex")
     );
     let decrypted = decipher.update(encrypted, "hex", "utf8");
     decrypted += decipher.final("utf8");
@@ -219,14 +237,20 @@ export class MfaService {
   ): { valid: boolean; userId?: string; error?: string } {
     try {
       const [data, signature] = token.split(".");
+      if (!data || !signature) {
+        return { valid: false, error: "Invalid token format" };
+      }
 
-      // Verify signature
+      // Verify signature with a constant-time comparison (the token bridges
+      // password verification and TOTP, so a forged signature bypasses MFA).
       const expectedSignature = crypto
         .createHmac("sha256", MFA_TOKEN_SECRET)
         .update(data)
         .digest("base64url");
 
-      if (signature !== expectedSignature) {
+      const sigBuf = Buffer.from(signature, "base64url");
+      const expBuf = Buffer.from(expectedSignature, "base64url");
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
         return { valid: false, error: "Invalid token signature" };
       }
 
@@ -327,6 +351,9 @@ export class MfaService {
 
       // Invalidate all other tokens
       await mfaRepository.invalidateUserTokens(result.user.id);
+
+      // Evict existing sessions — recovering MFA is a security-sensitive change.
+      await deleteUserSessions(result.user.id);
 
       console.log(`MFA disabled via recovery for user ${result.user.id}`);
       return { success: true };

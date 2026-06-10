@@ -46,6 +46,7 @@ import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIc
 import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { resolveLocalizedText } from '@shared/localized-text';
 import { marked } from 'marked';
+import { renderMarkdownSafe } from '@/lib/markdown';
 
 // Configure marked for synchronous rendering
 marked.setOptions({ async: false });
@@ -295,7 +296,7 @@ export function ChatPopup() {
     } else {
       const content = message.content as ChatMessageContent;
       if (content.md) {
-        return marked.parse(content.md) as string;
+        return renderMarkdownSafe(content.md);
       }
       text = content.html || content.text || '';
     }

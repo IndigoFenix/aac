@@ -715,6 +715,8 @@ export const pt = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "Jogo de missão gerado — jogue como o aluno jogaria. O mouse funciona como o olhar: clique ou permaneça para se mover.",
+    questMissingContent: "Este jogo não tem conteúdo jogável.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

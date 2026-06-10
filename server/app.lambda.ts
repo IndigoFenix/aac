@@ -9,6 +9,7 @@ import {
   applySecurityHeaders,
   applyCorsPolicy,
 } from "./middleware/security";
+import { assertRequiredSecrets, warnOnInsecureProductionConfig } from "./config/env-guards";
 
 const app = express();
 
@@ -16,6 +17,15 @@ const app = express();
 let isReady = false;
 let initPromise: Promise<void> | null = null;
 let startupError: Error | null = null;
+
+// Fail closed if security-critical secrets are missing/insecure in production.
+try {
+  assertRequiredSecrets();
+  warnOnInsecureProductionConfig();
+} catch (err) {
+  startupError = err as Error;
+  console.error((err as Error).message);
+}
 
 applySecurityHeaders(app);
 applyCorsPolicy(app);

@@ -11,6 +11,27 @@
 import type { PermittedYoutubeChannel, PermittedYoutubeItem } from "@shared/schema";
 import type { YouTubeSearchResult } from "./youtube-search";
 
+/** Hosts the URL resolver is permitted to fetch (SSRF allowlist). */
+const ALLOWED_YOUTUBE_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtu.be",
+]);
+
+/** True only for a well-formed http(s) URL whose host is a YouTube property. */
+function isAllowedYoutubeUrl(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  return ALLOWED_YOUTUBE_HOSTS.has(parsed.hostname.toLowerCase());
+}
+
 /** Cached RSS entries per channel. */
 interface ChannelFeedCache {
   videos: RssVideo[];
@@ -361,6 +382,13 @@ export async function resolveChannelIdFromUrl(input: string): Promise<string | n
   } else {
     // Treat anything else as a handle.
     url = `https://www.youtube.com/@${trimmed.replace(/^\/+/, "")}`;
+  }
+
+  // SSRF guard: `input` may be an arbitrary http(s) URL. Only ever fetch YouTube
+  // hosts — otherwise this resolver lets a caller make the server issue requests
+  // to internal hosts / the cloud metadata endpoint.
+  if (!isAllowedYoutubeUrl(url)) {
+    return null;
   }
 
   try {

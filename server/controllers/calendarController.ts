@@ -3,6 +3,7 @@
 
 import type { Request, Response } from "express";
 import { calendarService } from "../services/calendarService";
+import { CalendarValidationError } from "../services/calendar-validation";
 import { z } from "zod";
 
 const createEventSchema = z.object({
@@ -140,6 +141,10 @@ class CalendarController {
 
       res.status(201).json({ success: true, event: created });
     } catch (error: any) {
+      if (error instanceof CalendarValidationError) {
+        res.status(400).json({ success: false, message: error.message });
+        return;
+      }
       console.error("Error creating calendar event:", error);
       res.status(500).json({ success: false, message: "Failed to create event" });
     }
@@ -172,6 +177,10 @@ class CalendarController {
       const full = await calendarService.getEvent(req.params.id, user.id);
       res.json({ success: true, event: full });
     } catch (error: any) {
+      if (error instanceof CalendarValidationError) {
+        res.status(400).json({ success: false, message: error.message });
+        return;
+      }
       res.status(500).json({ success: false, message: "Failed to update event" });
     }
   }

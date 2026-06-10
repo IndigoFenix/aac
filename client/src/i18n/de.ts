@@ -715,6 +715,8 @@ export const de = {
   // BOARD (SyntAACx)
   // ============================================================================
   customApps: {
+    questPreviewHint: "Generiertes Quest-Spiel — spielen Sie es wie der Schüler. Die Maus wirkt wie der Blick: Klicken oder verweilen, um sich zu bewegen.",
+    questMissingContent: "Dieses Spiel hat keinen spielbaren Inhalt.",
     title: "Games & Custom Apps",
     newBlank: "— New —",
     save: "Save",

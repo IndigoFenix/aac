@@ -76,11 +76,16 @@ export default function BrowserApp({
     [clearLoadTimer, notifyContext],
   );
 
-  // First load
+  // First load — validate the initial URL against the allowlist before loading.
   useEffect(() => {
+    if (!isUrlPermitted(url, permittedWebsites)) {
+      setBlocked(true);
+      notifyContext(`[BROWSER] Blocked opening a non-permitted URL (${url}).`);
+      return;
+    }
     armLoadTimer(url);
     return clearLoadTimer;
-     
+
   }, []);
 
   // Handle iframe load: read URL + title where same-origin allows, notify AI.
@@ -101,6 +106,20 @@ export default function BrowserApp({
       // Cross-origin — we can't read location / title. Keep what we had.
     }
 
+    // Enforce the allowlist on EVERY load, not just programmatic go(): a child
+    // clicking an in-page link navigates the iframe directly. When we can read
+    // the destination and it's off-allowlist, block and return to the last
+    // permitted page. (Cross-origin destinations we can't read are mitigated by
+    // the sandbox: no allow-popups / allow-top-navigation, plus the Electron
+    // will-navigate guard in the packaged kiosk.)
+    if (observedUrl !== currentUrl && !isUrlPermitted(observedUrl, permittedWebsites)) {
+      notifyContext(`[BROWSER] Blocked navigation to a non-permitted URL (${observedUrl}).`);
+      setBlocked(true);
+      const f = iframeRef.current;
+      if (f) f.src = currentUrl; // back to the last permitted page
+      return;
+    }
+
     if (observedUrl !== currentUrl) {
       setCurrentUrl(observedUrl);
       setHistory((prev) => {
@@ -118,7 +137,7 @@ export default function BrowserApp({
       notifyContext(`[BROWSER] The student is viewing ${observedUrl}${titleSuffix}${sitelabel}. Adapt the board to the current page.`);
       initialNotifyDoneRef.current = true;
     }
-  }, [clearLoadTimer, currentUrl, history, historyIndex, label, notifyContext, url]);
+  }, [clearLoadTimer, currentUrl, history, historyIndex, label, notifyContext, url, permittedWebsites]);
 
   const go = useCallback(
     (nextUrl: string) => {
@@ -215,7 +234,7 @@ export default function BrowserApp({
           ref={iframeRef}
           src={iframeSrc}
           onLoad={handleIframeLoad}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox="allow-scripts allow-same-origin allow-forms"
           referrerPolicy="no-referrer"
           className="w-full h-full border-0 bg-white"
           title={label || "Browser"}

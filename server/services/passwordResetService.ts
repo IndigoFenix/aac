@@ -5,6 +5,8 @@ import { passwordResetRepository } from "../repositories/passwordResetRepository
 import { userRepository } from "../repositories";
 import { adminUserRepository } from "../repositories/adminUserRepository";
 import { emailService } from "./emailService";
+import { validatePassword } from "@shared/schema";
+import { deleteUserSessions } from "./sessionInvalidation";
 import bcrypt from "bcryptjs";
 
 interface PasswordResetResult {
@@ -127,9 +129,11 @@ export class PasswordResetService {
     newPassword: string
   ): Promise<PasswordResetResult> {
     try {
-      // Validate password strength
-      if (newPassword.length < 6) {
-        return { success: false, error: "Password must be at least 6 characters" };
+      // Validate password strength against the single shared policy (min 8 +
+      // complexity) — must match the controller / registration policy.
+      const policy = validatePassword(newPassword);
+      if (!policy.valid) {
+        return { success: false, error: policy.errors[0] };
       }
 
       // Validate token
@@ -158,6 +162,10 @@ export class PasswordResetService {
 
       // Invalidate any other tokens for this user
       await passwordResetRepository.invalidateUserTokens(user.id);
+
+      // Evict any existing login sessions so a stolen cookie can't outlive the
+      // password change (the user re-authenticates everywhere).
+      await deleteUserSessions(user.id);
 
       console.log(`Password reset successful for user ${user.id}`);
 

@@ -392,32 +392,43 @@ export function createWorld(
     const visible = opacity >= MESH_VISIBLE_THRESHOLD;
     if (body.group.visible !== visible) body.group.visible = visible;
     if (!visible) return;
-    // When visible, snap every material to fully opaque + depth-writing
-    // so we're never in the dark-overlay state for a single frame.
-    // EXCEPT: atmosphere_halo is a translucent shell whose opacity
-    // drives the alpha of its full-screen contribution; GFX.atmShellMult
-    // lets the player dial it down to isolate visual issues. Detect
-    // by mesh.name. Clouds are Points (not Mesh) so they bypass this
-    // entirely; their opacity is handled by setRuntimeOpts in
-    // updateHalos.
+    // When visible, snap every SOLID material to fully opaque +
+    // depth-writing so we're never in the dark-overlay state for a
+    // single frame. `transparent` is also cleared so terrain/ocean/gas
+    // spheres leave the transparent render pass entirely once faded in
+    // — they were created transparent only for the fade ramp, and
+    // permanently-transparent planet geometry both costs sorting and
+    // composites unpredictably against the real translucent overlays.
+    //
+    // EXCEPTIONS (must stay transparent + depthWrite:false — forcing
+    // depthWrite on these wrote bogus shell depth at cloud/atmosphere
+    // altitude and punched flickering holes in the terrain behind them):
+    //   • atmosphere_halo / atmosphere_veil — translucent atmosphere
+    //     shells; their shaders' uOpacity (aliased to material.opacity)
+    //     is driven by GFX.atmShellMult so the player can dial it down.
+    //   • cloud_shell_* — translucent planet-wide cloud decks.
+    // Cloud sprites are Points (not Mesh) so they bypass this traverse;
+    // their opacity is handled by setRuntimeOpts in updateHalos.
     body.group.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
+      if (mesh.name === "atmosphere_halo" || mesh.name === "atmosphere_veil") {
+        const mat = mesh.material as THREE.Material;
+        mat.opacity = GFX.atmShellMult;
+        return;
+      }
+      if (mesh.name.startsWith("cloud_shell")) return;
       const mat = mesh.material;
-      let opacityValue = 1;
-      // atmosphere_halo is the only special-cased Mesh — its shader's
-      // uOpacity drives the limb-glow visibility. The cloud system uses
-      // Points (not isMesh), so it never enters this traverse; its
-      // opacity is set via setRuntimeOpts in updateHalos.
-      if (mesh.name === "atmosphere_halo") opacityValue = GFX.atmShellMult;
       if (Array.isArray(mat)) {
         for (const m of mat) {
-          m.opacity = opacityValue;
+          m.opacity = 1;
           m.depthWrite = true;
+          m.transparent = false;
         }
       } else if (mat) {
-        mat.opacity = opacityValue;
+        mat.opacity = 1;
         mat.depthWrite = true;
+        mat.transparent = false;
       }
     });
   }
@@ -456,10 +467,15 @@ export function createWorld(
           spriteOversize: GFX.cloudSpriteOversize,
           minDensity: GFX.cloudMinDensity,
           windMult: GFX.cloudWindMult,
+          detailMult: GFX.cloudDetailMult,
+          vigorMult: GFX.cloudVigorMult,
+          bakeBudgetMs: GFX.cloudBakeMs,
+          updateInterval: GFX.cloudUpdateEvery,
         });
-        const pts = b.cloudSystem.group.children[0] as THREE.Points;
-        const mat = pts.material as THREE.ShaderMaterial;
-        mat.uniforms.uPixelsPerUnit.value = cloudPixelsPerUnit;
+        b.cloudSystem.setProjection(cloudPixelsPerUnit, screenHeightPx);
+        // Sun shading — clouds darken through the terminator and light
+        // up on the day side. No active star (deep space) = unlit.
+        b.cloudSystem.setSunWorldPos(sysStar ? sysStar.worldPosition : null);
       }
 
       // Trigger heavy construction (sphere meshes, materials, ocean,
@@ -1092,6 +1108,7 @@ export interface Sky {
     ctx: GravityContext,
     cameraPos: THREE.Vector3,
     world: World,
+    dt: number,
   ): void;
 }
 
@@ -1193,9 +1210,26 @@ export function createSky(scene: THREE.Scene): Sky {
   const _cloudCamLocal = new THREE.Vector3();
   const _cloudFog = { density: 0, color: new THREE.Color() };
 
+  // ── Strobe watchdog (diagnostic) ────────────────────────────────────────
+  // A full-screen flash means something in THIS pass jumped between two
+  // frames — background color, fog color, or fog density. Catch the jump
+  // at its source and log every input that feeds it, so a transient
+  // strobe observed in play can be attributed (e.g. "dominant flipped",
+  // "skyDay missing → DEFAULT_DAY", "cloud fog spike") without needing
+  // to reproduce it under a debugger. Throttled; remove once the
+  // atmosphere-boundary strobe is solved.
+  const _prevBg = new THREE.Color();
+  let prevFogDensity = -1;
+  let watchdogPrimed = false;
+  let lastWatchdogLog = 0;
+
+  // Cloud-fog temporal smoothing state (see the cloud fog block below).
+  let smoothedCloudFog = 0;
+  const smoothedCloudFogColor = new THREE.Color(1, 1, 1);
+
   return {
     scene,
-    update(ctx: GravityContext, cameraPos: THREE.Vector3, world: World) {
+    update(ctx: GravityContext, cameraPos: THREE.Vector3, world: World, dt: number) {
       const star = world.star;
       stars.position.copy(cameraPos);
 
@@ -1285,8 +1319,12 @@ export function createSky(scene: THREE.Scene): Sky {
 
       _atmosphereColor.copy(dayColor).lerp(nightColor, nightT);
       _bg.copy(_atmosphereColor).lerp(spaceColor, atmosphereT);
-      (scene.background as THREE.Color).copy(_bg);
+      // scene.background is assigned AFTER the fog block below, which
+      // blends _bg toward the fog color — fog has to cover the sky, not
+      // just repaint terrain pixels, or dense fog reads as ground paint
+      // under a crisp blue sky.
 
+      let skyFogT = 0;
       if (scene.fog instanceof THREE.FogExp2) {
         // Fog tint uses the horizon color, not the zenith — that's
         // what objects in the distance fade toward (long light path
@@ -1307,7 +1345,18 @@ export function createSky(scene: THREE.Scene): Sky {
         const hasAtmosphere = rawVis !== undefined && rawVis > 100;
         if (hasAtmosphere) {
           const baseDensity = 0.833 / rawVis;
-          scene.fog.density = baseDensity * (1 - atmosphereT) * GFX.fogDensityMult;
+          // Altitude profile: linear ramp inside the atmosphere as
+          // before, but with an exponential TAIL above the atmosphere
+          // top instead of a hard zero. The tail is what hands off
+          // from the atmosphere-veil mesh (which fades out at 1–1.5
+          // atmosphere heights) — without it, thick-atmosphere planets
+          // (Venus) showed a clear window of bare terrain between
+          // "veil gone" and "fog started".
+          const linearT = 1 - atmosphereT;
+          const tail = 0.5 * Math.exp(
+            -Math.max(0, ctx.altitude - atmEnd) / (0.3 * Math.max(1, atmEnd)),
+          );
+          scene.fog.density = baseDensity * Math.max(linearT, tail) * GFX.fogDensityMult;
         } else {
           scene.fog.density = 0;
         }
@@ -1318,6 +1367,14 @@ export function createSky(scene: THREE.Scene): Sky {
         // (Points don't accept fragments from inside the sprite as fog);
         // shifting the scene's FogExp2 makes "flying through a cumulus"
         // feel right by collapsing visibility while you're inside.
+        // The raw contribution is a single noise sample at the camera —
+        // it flips between ~0 and dense from one frame to the next as
+        // the camera crosses cell boundaries, and an unsmoothed flip
+        // re-tints the WHOLE screen's fog in one frame (reads as a
+        // strobe). Smooth both density and tint with a ~0.3 s time
+        // constant: entering a cumulus still collapses visibility
+        // quickly, but as a swell rather than a flash.
+        let rawCloudFog = 0;
         if (ctx.dominant?.cloudSystem && GFX.cloudFogBoost > 0) {
           _cloudCamLocal.copy(cameraPos)
             .sub(ctx.dominant.worldPosition)
@@ -1326,23 +1383,80 @@ export function createSky(scene: THREE.Scene): Sky {
           if (_cloudFog.density > 0.01) {
             // Density boost is per-meter; pick so a fully dense cell
             // (density=1) gives visibility ~100 m at full boost.
-            const cloudFogDensity = _cloudFog.density * GFX.cloudFogBoost * 0.01;
-            scene.fog.density += cloudFogDensity;
-            // Tint the fog color toward the cloud color in proportion
-            // to how much of the total density the cloud contributes.
-            const totalDensity = scene.fog.density;
-            const t = THREE.MathUtils.clamp(cloudFogDensity / Math.max(1e-6, totalDensity), 0, 1);
-            scene.fog.color.lerp(_cloudFog.color, t);
+            rawCloudFog = _cloudFog.density * GFX.cloudFogBoost * 0.01;
+            // Only adopt the sample's color while actually in cloud —
+            // empty samples report black.
+            smoothedCloudFogColor.lerp(_cloudFog.color, Math.min(1, dt * 3.5));
           }
         }
+        smoothedCloudFog += (rawCloudFog - smoothedCloudFog) * Math.min(1, dt * 3.5);
+        if (smoothedCloudFog > 1e-7) {
+          scene.fog.density += smoothedCloudFog;
+          // Tint the fog color toward the cloud color in proportion
+          // to how much of the total density the cloud contributes.
+          const t = THREE.MathUtils.clamp(
+            smoothedCloudFog / Math.max(1e-6, scene.fog.density), 0, 1);
+          scene.fog.color.lerp(smoothedCloudFogColor, t);
+        }
+
+        // Sky fogging — FogExp2 only shades GEOMETRY pixels, so without
+        // this the background stays a crisp sky color while terrain
+        // whites out ("fog paints the ground, not the screen"). Blend
+        // the background toward the fog color by the fog factor at an
+        // effective sky distance: clear-air haze leaves the sky alone
+        // (the sky color already IS the clear atmosphere), while dense
+        // fog (inside a cloud, Venus soup) takes the whole sky.
+        // Nearby geometry — including the bird, ~6 m from the camera —
+        // is naturally exempt because the per-pixel factor is
+        // distance-based.
+        const skyDist = scene.fog.density * GFX.skyFogKm * 1000;
+        skyFogT = 1 - Math.exp(-skyDist * skyDist);
       }
 
+      if (scene.fog && skyFogT > 0) _bg.lerp(scene.fog.color, skyFogT);
+      (scene.background as THREE.Color).copy(_bg);
+
+      // Stars must fog out with the rest of the sky — additive pinpricks
+      // punching through a cloud you're inside read as a glitch.
       galaxyMat.uniforms.uOpacity.value =
-        Math.max(atmosphereT, nightT * 0.85) * GFX.starfieldMult;
+        Math.max(atmosphereT, nightT * 0.85) * (1 - skyFogT) * GFX.starfieldMult;
 
       ambient.intensity = THREE.MathUtils.lerp(AMBIENT_NIGHT, AMBIENT_DAY, dayT) * GFX.ambientMult;
       _ambientColor.copy(ambientNightColor).lerp(ambientDayColor, dayT);
       ambient.color.copy(_ambientColor);
+
+      // Strobe watchdog — see declaration block above.
+      const fogDensity = scene.fog instanceof THREE.FogExp2 ? scene.fog.density : 0;
+      if (watchdogPrimed) {
+        const bgJump =
+          Math.abs(_bg.r - _prevBg.r) +
+          Math.abs(_bg.g - _prevBg.g) +
+          Math.abs(_bg.b - _prevBg.b);
+        // Fog factor at 2 km — what a mid-distance pixel actually sees —
+        // so tiny absolute density changes don't false-positive.
+        const fogAt2km = (d: number) => 1 - Math.exp(-(d * 2000) * (d * 2000));
+        const fogJump = Math.abs(fogAt2km(fogDensity) - fogAt2km(prevFogDensity));
+        const now = performance.now();
+        if ((bgJump > 0.15 || fogJump > 0.2) && now - lastWatchdogLog > 1000) {
+          lastWatchdogLog = now;
+          // eslint-disable-next-line no-console
+          console.warn("[seagull][sky] one-frame jump in sky pass", {
+            bgJump: bgJump.toFixed(3),
+            bg: `#${_bg.getHexString()}`,
+            prevBg: `#${_prevBg.getHexString()}`,
+            fogJump: fogJump.toFixed(3),
+            fogDensity,
+            dominant: ctx.dominant?.id ?? null,
+            dominantHasSkyDay: !!ctx.dominant?.skyDay,
+            altitude: ctx.altitude,
+            atmosphereT: atmosphereT.toFixed(3),
+            dayT: dayT.toFixed(3),
+          });
+        }
+      }
+      _prevBg.copy(_bg);
+      prevFogDensity = fogDensity;
+      watchdogPrimed = true;
     },
   };
 }

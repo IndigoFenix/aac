@@ -63,10 +63,16 @@ export interface GameEmbedProps {
    * need gaze; bubbles is the exception).
    */
   forwardGaze?: boolean;
+  /**
+   * Content payload sent to the game as a `load_game` message right after
+   * `init` (e.g. a goal-tree game definition). The game validates it and
+   * answers with `player_action: game_loaded` or `load_game_rejected`.
+   */
+  gamePayload?: unknown;
 }
 
 const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed(
-  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false },
+  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false, gamePayload },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -151,7 +157,10 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
       dwellMs: dwell?.dwellTimeMs,
     };
     sendToGame(iframe, init);
-  }, [iframeReady, dwell?.dwellTimeMs]);
+    if (gamePayload !== undefined) {
+      sendToGame(iframe, { type: "load_game", game: gamePayload });
+    }
+  }, [iframeReady, dwell?.dwellTimeMs, gamePayload]);
 
   // Forward gaze position into the iframe's local coordinate space at ~30 Hz.
   // Coordinates produced by the dwell context are page-space; we subtract the

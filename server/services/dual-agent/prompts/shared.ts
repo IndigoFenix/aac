@@ -83,12 +83,22 @@ export function studentDescriptor(ctx: BaseStudentContext): string {
   return `${ageStr}${diag}`;
 }
 
+/** Wrap a single caretaker-authored value (contact name, relationship, free-text
+ *  note, student name) for inclusion in a system prompt. These fields are
+ *  editable by semi-trusted caretakers; wrapping marks them as data, not
+ *  instructions, and tag-escapes any attempt to forge the delimiter. */
+export function wrapUntrusted(value: string | null | undefined): string {
+  if (value == null || value === "") return "";
+  const safe = String(value).replace(/<\/?untrusted-data>/gi, (m) => m.replace("-", "_"));
+  return `<untrusted-data>${safe}</untrusted-data>`;
+}
+
 /** Known-contacts list. Each contact is keyed by face:ID so the renderer
  *  can show the photo. */
 export function knownPeopleLine(contacts: KnownContact[] | undefined): string {
   if (!contacts || contacts.length === 0) return "";
   return `Known people: ${contacts.map(c =>
-    `${c.name}${c.relationship ? ` (${c.relationship})` : ""} [face:${c.id}]`
+    `${wrapUntrusted(c.name)}${c.relationship ? ` (${wrapUntrusted(c.relationship)})` : ""} [face:${c.id}]`
   ).join(", ")}`;
 }
 
@@ -102,7 +112,7 @@ export function classroomBlock(
   return `
 
 <classroom>
-This AAC device is shared by the [${classroom.name}] classroom${classroom.grade ? ` (grade ${classroom.grade})` : ""}. Multiple students may approach throughout the day. The student currently active is [${studentName}].${classroom.description ? `\n\nClassroom-wide focus: ${classroom.description}` : ""}
+This AAC device is shared by the [${wrapUntrusted(classroom.name)}] classroom${classroom.grade ? ` (grade ${classroom.grade})` : ""}. Multiple students may approach throughout the day. The student currently active is [${wrapUntrusted(studentName)}].${classroom.description ? `\n\nClassroom-wide focus: ${wrapUntrusted(classroom.description)}` : ""}
 
 The active user can change — a different face matches in [PEOPLE PRESENT], a different voice introduces themself, or someone explicitly switches. When that happens:
   - Shift your interaction to fit that student's entry below.
@@ -112,10 +122,10 @@ The active user can change — a different face matches in [PEOPLE PRESENT], a d
 ${classroom.roster.map(r => {
   const g = genderWord(r.gender, r.age);
   const rAge = r.age ? (g ? `${r.age} year old ${g}` : `${r.age} year old`) : (g || "");
-  const rDiag = r.diagnosis ? ` with ${r.diagnosis}` : "";
-  const rNotes = r.notes ? `. Notes: ${r.notes}` : "";
+  const rDiag = r.diagnosis ? ` with ${wrapUntrusted(r.diagnosis)}` : "";
+  const rNotes = r.notes ? `. Notes: ${wrapUntrusted(r.notes)}` : "";
   const active = r.isActive ? "  ← currently active" : "";
-  return `- [${r.name}]${rAge ? `, ${rAge}` : ""}${rDiag}${rNotes}${active}`;
+  return `- [${wrapUntrusted(r.name)}]${rAge ? `, ${rAge}` : ""}${rDiag}${rNotes}${active}`;
 }).join("\n")}
 </classroom_roster>
 </classroom>`;
@@ -494,7 +504,7 @@ export function buildKnownPeopleBlock(contacts: GlyphKnownPerson[] | undefined):
   if (!contacts || contacts.length === 0) return "";
   return `<known_people>
 Reference a known person's face as \`face:ID\`. Prefer a face over a plain name when the person is known.
-${contacts.map(c => `- ${c.name}${c.relationship ? ` (${c.relationship})` : ""} [face:${c.id}]`).join("\n")}
+${contacts.map(c => `- ${wrapUntrusted(c.name)}${c.relationship ? ` (${wrapUntrusted(c.relationship)})` : ""} [face:${c.id}]`).join("\n")}
 </known_people>`;
 }
 

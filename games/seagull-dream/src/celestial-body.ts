@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { makePlanetNoise } from "./noise";
 import { buildChunkGeometry } from "./chunk";
-import { CHUNKS, PLANET } from "./config";
+import { CHUNKS, PLANET, GFX } from "./config";
 import type {
   CelestialBody,
   BodyOrbit,
@@ -474,9 +474,9 @@ function buildGasBody(
       sphere.name = "gas_sphere";
       group.add(sphere);
 
-      // Atmosphere halo shell — same fresnel-glow technique as rocky
-      // bodies. Gas giants always have a visible atmosphere, so no
-      // pressure gate here.
+      // Atmosphere halo shell — same fuzzy limb glow as rocky bodies.
+      // Gas giants always have a visible atmosphere, so no pressure
+      // gate here.
       if (body.atmosphereTopAltitude) {
         const haloShell = buildAtmosphereShell({
           radiusM,
@@ -485,6 +485,16 @@ function buildGasBody(
           horizonColor: body.skyHorizon ?? atm.skyHorizonColor,
         });
         group.add(haloShell);
+        // Modest haze veil — the banded sphere IS the cloud deck, so the
+        // veil only adds a thin high-altitude tint from orbit that fades
+        // out on approach (with the fog taking over), softening the
+        // previously bare crossing of the upper-atmosphere band.
+        group.add(buildAtmosphereVeil({
+          radiusM,
+          atmosphereTopM: body.atmosphereTopAltitude,
+          color: body.skyDay ?? atm.skyZenithColor,
+          hazeTau: 0.4,
+        }));
       }
 
       body.materialize = undefined;
@@ -961,15 +971,46 @@ function buildRockyBody(
       // small compared to the chunk grid).
       if (palette.oceanSurface) {
         const OCEAN_OFFSET = 3;
+        const oceanMaterial = new THREE.MeshStandardMaterial({
+          color: palette.oceanSurface.clone(),
+          roughness: 0.3,
+          metalness: 0.1,
+          transparent: true,
+          opacity: 0,
+        });
+        // Log-depth bias: the ocean sits only OCEAN_OFFSET (3 m) below the
+        // shore terrain, but logarithmic depth resolution is proportional
+        // to view distance (~2 m per LSB at 1,000 km, ~20 m at 10,000 km)
+        // — so from planetary approach distances the ocean and the
+        // continental-shelf terrain land on the same depth values and
+        // z-fight across the whole disc ("flickering waves"). Subtracting
+        // a constant from the LOG depth pulls the ocean toward the camera
+        // by a constant FRACTION of view distance (ratio ≈ 1.0001 per
+        // 3 µdepth at far=1e15): centimeters up close (invisible), enough
+        // LSBs at distance to always win the tie against the seabed.
+        oceanMaterial.onBeforeCompile = (shader) => {
+          shader.uniforms.uOceanDepthBias = {
+            // Live getter so the GFX debug slider tunes it per frame
+            // without per-material plumbing. Slider unit = µdepth.
+            get value() { return GFX.oceanDepthBias * 1e-6; },
+            set value(_v: number) { /* derived from GFX; ignore writes */ },
+          };
+          shader.fragmentShader = shader.fragmentShader
+            .replace(
+              "#include <logdepthbuf_pars_fragment>",
+              `#include <logdepthbuf_pars_fragment>
+uniform float uOceanDepthBias;`,
+            )
+            .replace(
+              "#include <logdepthbuf_fragment>",
+              `#if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
+	gl_FragDepth = ( vIsPerspective == 0.0 ? gl_FragCoord.z : log2( vFragDepth ) * logDepthBufFC * 0.5 ) - uOceanDepthBias;
+#endif`,
+            );
+        };
         const ocean = new THREE.Mesh(
           new THREE.SphereGeometry(radiusM + seaLevel - OCEAN_OFFSET, 128, 96),
-          new THREE.MeshStandardMaterial({
-            color: palette.oceanSurface.clone(),
-            roughness: 0.3,
-            metalness: 0.1,
-            transparent: true,
-            opacity: 0,
-          }),
+          oceanMaterial,
         );
         ocean.name = "ocean";
         group.add(ocean);
@@ -981,15 +1022,18 @@ function buildRockyBody(
       // the planet; the body.update closure feeds it the camera-local
       // position every frame.
       if (cloudField.layers.length > 0) {
-        cloudSystem = createCloudSystem({ field: cloudField });
+        cloudSystem = createCloudSystem({
+          field: cloudField,
+          // Same clock body.update feeds cloudSystem.update — keeps the
+          // weather map's bake epoch and the residual drift consistent.
+          timeSeconds: performance.now() * 0.001,
+        });
         group.add(cloudSystem.group);
         body.cloudSystem = cloudSystem;
       }
 
-      // Atmosphere halo shell — backface-rendered sphere at the visible
-      // top of the atmosphere with a fresnel-driven scattering tint.
-      // Gives the iconic "thin blue line" silhouette from orbit. Skip
-      // for airless bodies.
+      // Atmosphere halo shell — fuzzy limb glow around the silhouette.
+      // Skip for airless bodies.
       if (atm.surfacePressureBar > 0.001 && body.atmosphereTopAltitude) {
         const haloShell = buildAtmosphereShell({
           radiusM,
@@ -998,6 +1042,18 @@ function buildRockyBody(
           horizonColor: body.skyHorizon ?? atm.skyHorizonColor,
         });
         group.add(haloShell);
+      }
+      // Atmosphere veil — haze over the planet DISC from orbit, scaled
+      // by surface pressure (Venus opaque, Earth subtle), fading out on
+      // descent as the scene fog ramps in. Skip where it would be
+      // invisible anyway.
+      if (atm.surfacePressureBar > 0.05 && body.atmosphereTopAltitude) {
+        group.add(buildAtmosphereVeil({
+          radiusM,
+          atmosphereTopM: body.atmosphereTopAltitude,
+          color: body.skyDay ?? atm.skyZenithColor,
+          hazeTau: hazeTauFromPressure(atm.surfacePressureBar),
+        }));
       }
 
       body.materialize = undefined;
@@ -1058,18 +1114,28 @@ function cloudColorFor(cloudType: BodyFeatures["atmosphere"]["cloudType"]): THRE
 
 // ── Atmosphere halo shell ───────────────────────────────────────────────────
 //
-// A sphere larger than the body, rendered with backface culling so its
-// FAR side faces the camera when outside the body. The fresnel-shaped
-// alpha concentrates opacity at the limb, producing the "thin blue
-// line" seen from orbit.
+// A BackSide sphere WELL above the atmosphere top; the far side faces
+// the camera, so each fragment defines a view RAY through the planet's
+// neighborhood. The fragment shader computes the ray's closest-approach
+// altitude to the planet and shades it with an exponential density
+// profile:
 //
-// Inside-shell handling: BackSide rendering does NOT cull the shell
-// when the camera is INSIDE the sphere — every face has its outward
-// normal pointing away from the interior camera, so all faces qualify
-// as back-faces and render. Sky color while standing on the surface
-// is already painted by the createSky background pass, so the shader
-// explicitly discards inside-shell fragments to avoid a screen-covering
-// blue overlay.
+//   alpha ∝ exp(−closestApproachAltitude / H)
+//
+// which is what an exponentially-thinning atmosphere actually integrates
+// to (the line-of-sight optical depth is dominated by the densest point
+// of the ray). The result is a FUZZY limb that decays smoothly outward
+// — no fresnel line pinned to a fixed shell radius, no hard outer edge.
+// Fragments whose ray hits the planet are simply occluded by the
+// terrain's depth, so only above-horizon rays glow.
+//
+// Camera-altitude handling: inside the atmosphere the sky-background
+// pass owns the look, so the glow fades in across a WIDE altitude band
+// (~0.3 → 1.6 atmosphere heights) rather than snapping on at a shell
+// crossing. The mesh radius sits at 4 atmosphere-heights — by the time
+// the camera crosses the GEOMETRY, rays pointing away from the planet
+// have closest-approach altitudes far above the glow falloff, so the
+// BackSide visibility flip at the crossing contributes nothing visible.
 
 interface AtmosphereShellOpts {
   radiusM: number;
@@ -1080,22 +1146,36 @@ interface AtmosphereShellOpts {
 
 function buildAtmosphereShell(opts: AtmosphereShellOpts): THREE.Mesh {
   const { radiusM, atmosphereTopM, zenithColor, horizonColor } = opts;
-  const shellRadius = radiusM + atmosphereTopM;
+  // Geometry radius — far above the visible glow so crossing the mesh is
+  // invisible (see block comment above).
+  const shellRadius = radiusM + atmosphereTopM * 4;
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uPlanetRadius: { value: radiusM },
-      uShellRadius: { value: shellRadius },
+      uAtmThickness: { value: atmosphereTopM },
       uZenith: { value: zenithColor.clone() },
       uHorizon: { value: horizonColor.clone() },
       uOpacity: { value: 0 },  // updated by world.setBodyMeshOpacity ramp
+      // Glow scale height as a fraction of atmosphere thickness — live
+      // getter so the "atm fuzz" debug slider tunes every shell at once.
+      uFuzz: {
+        get value() { return GFX.atmFuzz; },
+        set value(_v: number) { /* derived from GFX; ignore writes */ },
+      },
     },
     // Derive the planet center from `modelMatrix` (the body group's
     // world transform) so this works correctly regardless of the
     // body's translation — floating-origin rebases and orbital motion
     // both move the planet in world space; a baked uPlanetCenter would
     // go stale immediately.
+    // logdepthbuf chunks: the renderer uses a logarithmic depth buffer,
+    // so a custom shader without them rasterizes conventional depth and
+    // its depth TEST against log-encoded terrain depth is garbage — the
+    // limb glow then flickers over/behind the planet surface at random.
     vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec3 vWorldPos;
       varying vec3 vPlanetCenter;
       void main() {
@@ -1103,58 +1183,61 @@ function buildAtmosphereShell(opts: AtmosphereShellOpts): THREE.Mesh {
         vWorldPos = wp.xyz;
         vPlanetCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         gl_Position = projectionMatrix * viewMatrix * wp;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
       uniform float uPlanetRadius;
-      uniform float uShellRadius;
+      uniform float uAtmThickness;
       uniform vec3 uZenith;
       uniform vec3 uHorizon;
       uniform float uOpacity;
+      uniform float uFuzz;
       varying vec3 vWorldPos;
       varying vec3 vPlanetCenter;
 
       void main() {
-        // DIAGNOSTIC: re-enabled full fade (atmThickness-scaled).
-        // Final fragment color is forced RED below so we can SEE
-        // exactly which pixels are the atmosphere shell. If the white
-        // wash is the shell, the white will turn red. If something
-        // else, the sky stays white-ish and red only appears in the
-        // shell's actual location (the limb glow).
-        float cameraAlt = length(cameraPosition - vPlanetCenter);
-        float atmThickness = uShellRadius - uPlanetRadius;
-        float fadeBand = atmThickness * 0.2;
+        #include <logdepthbuf_fragment>
+
+        // Camera-altitude fade — the glow is the EXTERIOR view of the
+        // atmosphere; inside it the sky-background pass owns the look.
+        // Wide band so ascending reads as a slow dissolve, not a snap.
+        vec3 ro = cameraPosition - vPlanetCenter;
+        float camAlt = length(ro) - uPlanetRadius;
         float exteriorT = smoothstep(
-          uShellRadius - fadeBand,
-          uShellRadius + fadeBand,
-          cameraAlt
+          uAtmThickness * 0.3,
+          uAtmThickness * 1.6,
+          camAlt
         );
-        if (exteriorT < 0.001) discard;
+        if (exteriorT < 0.002) discard;
 
-        // Outward normal at this shell point, in world frame.
-        vec3 toCenter = vWorldPos - vPlanetCenter;
-        vec3 outwardN = normalize(toCenter);
-        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        // Closest approach of the view ray to the planet center. The
+        // ray starts at the camera; closest point clamps to the camera
+        // itself when the approach lies behind it. Degenerate fragments
+        // sitting AT the camera (mesh-crossing frame) are discarded
+        // rather than normalized into NaN.
+        vec3 dv = vWorldPos - cameraPosition;
+        float dvLen = length(dv);
+        if (dvLen < 1.0) discard;
+        vec3 rd = dv / dvLen;
+        float tca = -dot(ro, rd);
+        vec3 closest = ro + rd * max(tca, 0.0);
+        float closestAlt = length(closest) - uPlanetRadius;
 
-        // Fresnel-like: alpha is highest where the view skims the
-        // shell tangentially (limb), lowest where the view looks
-        // straight through. Power 1.5 (was 2.5) widens the limb band
-        // so the horizon glow reads as a soft halo rather than a
-        // hard line at the planet edge.
-        float vd = abs(dot(viewDir, outwardN));
-        float limb = pow(1.0 - vd, 1.5);
+        // Exponential atmosphere: line-of-sight glow dominated by the
+        // densest (lowest) point of the ray. uFuzz widens/narrows the
+        // falloff — the whole "thin line vs soft halo" character.
+        float H = max(1.0, uAtmThickness * uFuzz);
+        float glow = exp(-max(closestAlt, 0.0) / H);
 
-        // Vertical blend: more horizon tint near the planet's surface
-        // (low local y in the planet-frame), more zenith tint at the top
-        // of the shell. We approximate the "vertical" direction along
-        // the view ray as the planet's outward normal, so this gradient
-        // is correct from any vantage.
-        float alt = length(toCenter);
-        float vT = clamp((alt - uPlanetRadius) / max(1.0, uShellRadius - uPlanetRadius), 0.0, 1.0);
+        // Color: rays skimming the surface carry the long-path horizon
+        // tint; the outer fuzz carries the zenith tint.
+        float vT = clamp(closestAlt / max(1.0, uAtmThickness), 0.0, 1.0);
         vec3 atmColor = mix(uHorizon, uZenith, vT);
 
-        float a = limb * uOpacity * 0.85 * exteriorT;
-        if (a < 0.005) discard;
+        float a = glow * uOpacity * 0.85 * exteriorT;
+        if (a < 0.004) discard;
         gl_FragColor = vec4(atmColor, a);
       }
     `,
@@ -1183,6 +1266,127 @@ function buildAtmosphereShell(opts: AtmosphereShellOpts): THREE.Mesh {
   // the planet silhouette edge.
   mesh.renderOrder = 1;
   return mesh;
+}
+
+// ── Atmosphere veil ─────────────────────────────────────────────────────────
+//
+// Companion to the halo shell: a FRONT-side sphere at the atmosphere top
+// whose near hemisphere sits between the camera and the planet, so it can
+// paint haze OVER the disc (the BackSide halo can't — its fragments
+// behind the planet are depth-occluded by terrain). Alpha follows the
+// slant-path optical depth 1 − exp(−τ/μ): a thin tint looking straight
+// down, thickening toward the limb, and fully opaque for Venus-class τ.
+//
+// Descent handling: the veil fades out across 1.0 → 1.5 atmosphere
+// heights of camera altitude, so by the time the camera reaches the
+// geometry (at exactly 1.0) the shader contributes nothing — and the
+// scene fog, which ramps up over the same band (including its
+// above-atmosphere exponential tail in createSky), owns the look from
+// inside. FrontSide geometry is invisible from within, so there is no
+// interior state to handle at all.
+
+interface AtmosphereVeilOpts {
+  radiusM: number;
+  atmosphereTopM: number;
+  /** Haze color — the body's zenith sky color. */
+  color: THREE.Color;
+  /** Vertical optical depth of the haze. ~0.25 for Earth (subtle tint),
+   *  ≫1 for Venus (opaque shroud). */
+  hazeTau: number;
+}
+
+function buildAtmosphereVeil(opts: AtmosphereVeilOpts): THREE.Mesh {
+  const { radiusM, atmosphereTopM, color, hazeTau } = opts;
+  const veilRadius = radiusM + atmosphereTopM;
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uPlanetRadius: { value: radiusM },
+      uAtmThickness: { value: atmosphereTopM },
+      uColor: { value: color.clone() },
+      uHazeTau: { value: hazeTau },
+      uOpacity: { value: 0 },  // driven by world.setBodyMeshOpacity (atmShellMult)
+    },
+    vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      varying vec3 vWorldPos;
+      varying vec3 vPlanetCenter;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        vPlanetCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+        #include <logdepthbuf_vertex>
+      }
+    `,
+    fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
+      uniform float uPlanetRadius;
+      uniform float uAtmThickness;
+      uniform vec3 uColor;
+      uniform float uHazeTau;
+      uniform float uOpacity;
+      varying vec3 vWorldPos;
+      varying vec3 vPlanetCenter;
+
+      void main() {
+        #include <logdepthbuf_fragment>
+
+        vec3 ro = cameraPosition - vPlanetCenter;
+        float camAlt = length(ro) - uPlanetRadius;
+        // Fade out on approach — gone exactly when the camera reaches
+        // the veil geometry (1.0 × atmosphere height).
+        float fade = smoothstep(uAtmThickness, uAtmThickness * 1.5, camAlt);
+        if (fade < 0.002) discard;
+
+        vec3 dv = vWorldPos - cameraPosition;
+        float dvLen = length(dv);
+        if (dvLen < 1.0) discard;
+        vec3 rd = dv / dvLen;
+        float tca = -dot(ro, rd);
+        vec3 closest = ro + rd * max(tca, 0.0);
+
+        // Slant cosine of the ray against the local vertical at the
+        // veil: μ = 1 looking straight down, → 0 at the limb. Optical
+        // depth scales 1/μ, so the haze thickens toward the edge and
+        // merges into the halo shell's limb glow.
+        float veilR = uPlanetRadius + uAtmThickness;
+        float sinI = clamp(length(closest) / veilR, 0.0, 1.0);
+        float mu = sqrt(max(1.0 - sinI * sinI, 0.0));
+        float a = (1.0 - exp(-uHazeTau / max(mu, 0.08))) * fade * uOpacity;
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(uColor, a);
+      }
+    `,
+    side: THREE.FrontSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  // Same opacity-alias trick as the halo: world.setBodyMeshOpacity drives
+  // material.opacity with GFX.atmShellMult; mirror it into the uniform.
+  Object.defineProperty(material, "opacity", {
+    get() { return (material.uniforms.uOpacity.value as number); },
+    set(v: number) { material.uniforms.uOpacity.value = v; },
+    configurable: true,
+  });
+
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(veilRadius, 96, 64),
+    material,
+  );
+  mesh.name = "atmosphere_veil";
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
+/** Vertical haze optical depth from surface pressure. Earth (1 bar) →
+ *  ~0.25 (a subtle blue veil over the continents from orbit); Venus
+ *  (92 bar) → ~23 (opaque shroud); Mars (0.006) → invisible. */
+function hazeTauFromPressure(surfacePressureBar: number): number {
+  return surfacePressureBar / 4;
 }
 
 // ── Palette selection (rocky) ───────────────────────────────────────────────

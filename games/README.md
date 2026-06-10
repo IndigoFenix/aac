@@ -39,3 +39,9 @@ npm run build:games
 
 Output lands in `dist/public-games/<name>/`. The platform's express static
 handler should mount that directory at `/games/`.
+
+## After editing a game
+
+Build the game so it is runs in the browser.
+
+npm run build:games -- {game name}

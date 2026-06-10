@@ -1,0 +1,147 @@
+// client-aac/src/components/games/GoalTreeQuestPlayer.tsx
+//
+// Plays a goal-tree quest game in the AAC client. Thin wrapper over
+// GameEmbed: hands the certified game to the player via `load_game`,
+// forwards eyegaze, and narrates play events to the live AI session as
+// [GAME] text (same channel CustomAppPlayer uses), with entity/goal ids
+// resolved to their player-facing labels so the AI can talk about them.
+
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { GameMessage } from "@shared/games-bridge";
+import type { GoalTreeGame } from "@shared/goal-tree/types";
+import { walkGoalTree } from "@shared/goal-tree/walk";
+import GameEmbed from "./GameEmbed";
+
+interface GoalTreeQuestPlayerProps {
+  game: GoalTreeGame;
+  onClose: () => void;
+  sendMessageToAi?: (msg: string) => void;
+}
+
+/** Suppress identical [GAME] lines repeated within this window. */
+const DEDUPE_MS = 5000;
+
+export default function GoalTreeQuestPlayer({
+  game,
+  onClose,
+  sendMessageToAi,
+}: GoalTreeQuestPlayerProps) {
+  const lastSentRef = useRef<{ text: string; at: number } | null>(null);
+
+  const labels = useMemo(() => {
+    const entity = new Map(game.entities.map((e) => [e.id, e.label]));
+    const entityLabel = (id: unknown) =>
+      (typeof id === "string" && entity.get(id)) || String(id ?? "?");
+    const node = new Map<string, string>();
+    for (const { node: n } of walkGoalTree(game.root)) {
+      switch (n.type) {
+        case "reach":
+          node.set(n.id, entityLabel(n.markerEntityId));
+          break;
+        case "collect":
+          node.set(n.id, entityLabel(n.itemEntityIds[0]));
+          break;
+        case "choose":
+          node.set(n.id, n.prompt);
+          break;
+        case "overcome":
+          node.set(n.id, entityLabel(n.obstacleEntityId));
+          break;
+      }
+    }
+    const nodeLabel = (id: unknown) =>
+      (typeof id === "string" && node.get(id)) || String(id ?? "?");
+    return { entityLabel, nodeLabel };
+  }, [game]);
+
+  const sendGameUpdate = useCallback(
+    (text: string) => {
+      if (!sendMessageToAi) return;
+      const now = Date.now();
+      const last = lastSentRef.current;
+      if (last && last.text === text && now - last.at < DEDUPE_MS) return;
+      lastSentRef.current = { text, at: now };
+      sendMessageToAi(`[GAME] ${text}`);
+    },
+    [sendMessageToAi],
+  );
+
+  // Intro on mount, hand-back on unmount — mirrors CustomAppPlayer.
+  useEffect(() => {
+    if (!sendMessageToAi) return;
+    const companion = game.meta.aiCompanion;
+    const intro = [
+      `[GAME STARTED] The student opened the quest game "${game.meta.title}".`,
+      game.meta.description ?? "",
+      companion
+        ? `For this game, speak as the companion "${companion.name}": ${companion.persona}`
+        : "",
+      "You will receive [GAME] updates as they play. Narrate warmly in the student's language, hint when they are stuck, celebrate wins. Keep it short.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    sendMessageToAi(intro);
+    return () => {
+      sendMessageToAi("[GAME] The student has closed the game. Return to normal conversation.");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game]);
+
+  const handleMessage = useCallback(
+    (msg: GameMessage) => {
+      if (msg.type !== "player_action") return;
+      const meta = (msg.meta ?? {}) as Record<string, unknown>;
+      const { entityLabel, nodeLabel } = labels;
+      switch (msg.action) {
+        case "item_collected":
+          sendGameUpdate(
+            `Collected "${entityLabel(meta.entityId)}" (${meta.have}/${meta.need}).`,
+          );
+          break;
+        case "distractor_picked":
+          sendGameUpdate(
+            `Picked up "${entityLabel(meta.entityId)}" — a distractor, not what's needed. Gently redirect.`,
+          );
+          break;
+        case "wrong_choice":
+          sendGameUpdate(
+            `Answered "${entityLabel(meta.entityId)}" — not the right one. Encourage another try, maybe a small hint.`,
+          );
+          break;
+        case "obstacle_locked":
+          sendGameUpdate(
+            `Bumped into the locked "${nodeLabel(meta.nodeId)}". Hint at what could open it.`,
+          );
+          break;
+        case "guard_cleared":
+          sendGameUpdate(`Cleared the "${nodeLabel(meta.nodeId)}"!`);
+          break;
+        case "goal_completed":
+          sendGameUpdate(`Goal done: "${nodeLabel(meta.nodeId)}". Praise briefly.`);
+          break;
+        case "game_won":
+          sendGameUpdate("The student WON the quest! Celebrate enthusiastically!");
+          break;
+        case "load_game_rejected":
+          sendGameUpdate(
+            "The game failed to load. Apologize briefly and call close_app().",
+          );
+          break;
+        default:
+          break;
+      }
+    },
+    [labels, sendGameUpdate],
+  );
+
+  return (
+    <GameEmbed
+      gameId="goal-tree-player"
+      src="/games/goal-tree-player/"
+      forwardGaze
+      gamePayload={game}
+      onMessage={handleMessage}
+      onClose={onClose}
+    />
+  );
+}

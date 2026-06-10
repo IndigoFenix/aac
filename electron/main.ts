@@ -87,9 +87,28 @@ function createWindow() {
     }
   });
 
+  // Lock the top-level window to the app's own origin: block navigation away
+  // from app://aac (prod) / the dev server and deny popups / new windows.
+  // Defense-in-depth against a renderer XSS pivoting the BrowserWindow.
+  mainWindow.webContents.on("will-navigate", (event, navUrl) => {
+    if (!isAppOrigin(navUrl)) {
+      event.preventDefault();
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+}
+
+/** True for the app's own renderer origin (app:// in prod, the Vite dev server
+ *  in dev). Used to gate navigation and device-permission grants so embedded
+ *  third-party sites (the in-app browser) can't navigate the shell or grab the
+ *  camera/mic/HID. */
+function isAppOrigin(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return url.startsWith("app://aac") || url.startsWith("http://localhost:5174");
 }
 
 app.on("ready", async () => {
@@ -127,18 +146,18 @@ app.on("ready", async () => {
     });
   });
 
-  // Auto-grant permissions for camera, mic, HID
+  // Auto-grant camera, mic, HID — but ONLY to the app's own origin. Embedded
+  // third-party sites (the in-app browser) must not auto-acquire these.
+  const allowedPermissions = ["media", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
   session.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback) => {
-      const allowed = ["media", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
-      callback(allowed.includes(permission));
+    (_webContents, permission, callback, details) => {
+      callback(allowedPermissions.includes(permission) && isAppOrigin(details?.requestingUrl));
     },
   );
 
   session.defaultSession.setPermissionCheckHandler(
-    (_webContents, permission) => {
-      const allowed = ["media", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
-      return allowed.includes(permission);
+    (_webContents, permission, requestingOrigin) => {
+      return allowedPermissions.includes(permission) && isAppOrigin(requestingOrigin);
     },
   );
 

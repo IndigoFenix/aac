@@ -139,6 +139,31 @@ export async function deleteBiometricData(id: string): Promise<void> {
 }
 
 /**
+ * The entities (users and students) that reference a given biometric_data row,
+ * for authorizing direct biometric-data access by id. A contact resolves to the
+ * student it belongs to (access is granted through that student). Returns the
+ * distinct user ids and student ids that "own" this record.
+ */
+export async function getEntitiesForBiometricData(
+  id: string,
+): Promise<{ userIds: string[]; studentIds: string[] }> {
+  const [userRows, studentRows, contactRows] = await Promise.all([
+    db.select({ id: users.id }).from(users).where(eq(users.biometricDataId, id)),
+    db.select({ id: students.id }).from(students).where(eq(students.biometricDataId, id)),
+    db
+      .select({ studentId: studentContacts.studentId })
+      .from(studentContacts)
+      .where(eq(studentContacts.biometricDataId, id)),
+  ]);
+  const studentIds = new Set<string>(studentRows.map((r) => r.id));
+  for (const c of contactRows) if (c.studentId) studentIds.add(c.studentId);
+  return {
+    userIds: userRows.map((r) => r.id),
+    studentIds: Array.from(studentIds),
+  };
+}
+
+/**
  * Ensure a target entity (user/student/contact) has a biometric_data row and
  * return its id. If none exists, creates an empty one and sets the FK.
  *
@@ -309,117 +334,38 @@ export async function removeVoiceEmbeddingForStudent(studentId: string): Promise
 
 export async function findMatchingFace(
   embedding: FaceEmbedding,
-  studentId?: string,
+  studentId: string,
 ): Promise<FaceMatchResult | null> {
+  // SECURITY: matching is scoped strictly to THIS student's known people
+  // (the student, users linked via userStudents, and the student's active
+  // contacts) — never the entire enrolled population. A global 1:N scan across
+  // every institute would be a cross-tenant biometric identification leak.
+  if (!studentId) return null;
+
   let bestMatch: FaceMatchResult | null = null;
   let bestDistance = FACE_MATCH_THRESHOLD;
-  const seenBdIds = new Set<string>();
 
-  const tryMatch = (
-    bdId: string | null,
-    faceEmbedding: unknown,
-    result: Omit<FaceMatchResult, "matched" | "distance" | "confidence">,
-  ) => {
-    if (!faceEmbedding) return;
-    if (bdId && seenBdIds.has(bdId)) return; // already evaluated via canonical record
-    if (bdId) seenBdIds.add(bdId);
-    const distance = euclideanDistance(embedding, faceEmbedding as FaceEmbedding);
+  // getKnownPeopleForStudent already dedupes by biometricDataId, so a person
+  // linked through multiple records is only evaluated once.
+  const people = await getKnownPeopleForStudent(studentId);
+
+  for (const p of people) {
+    if (!p.faceEmbedding) continue;
+    const distance = euclideanDistance(embedding, p.faceEmbedding as FaceEmbedding);
     if (distance < bestDistance) {
       bestDistance = distance;
       bestMatch = {
         matched: true,
+        entityType: p.type,
+        entityId: p.id,
+        name: p.name,
         distance,
         confidence: Math.max(0, 1 - distance / FACE_MATCH_THRESHOLD),
-        ...result,
+        description: p.description,
+        contextNotes: p.contextNotes,
+        relationship: p.relationship,
       };
     }
-  };
-
-  // 1. The specific student + their contacts (most-likely matches first)
-  if (studentId) {
-    const [s] = await db
-      .select({
-        id: students.id,
-        name: students.name,
-        bdId: students.biometricDataId,
-        faceEmbedding: biometricData.faceEmbedding,
-      })
-      .from(students)
-      .leftJoin(biometricData, eq(biometricData.id, students.biometricDataId))
-      .where(eq(students.id, studentId));
-    if (s) {
-      tryMatch(s.bdId, s.faceEmbedding, {
-        entityType: "student",
-        entityId: s.id,
-        name: s.name,
-      });
-    }
-
-    const contacts = await db
-      .select({
-        id: studentContacts.id,
-        name: studentContacts.name,
-        relationship: studentContacts.relationship,
-        contextNotes: studentContacts.contextNotes,
-        bdId: studentContacts.biometricDataId,
-        faceEmbedding: biometricData.faceEmbedding,
-        physicalDescription: biometricData.physicalDescription,
-      })
-      .from(studentContacts)
-      .leftJoin(biometricData, eq(biometricData.id, studentContacts.biometricDataId))
-      .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
-
-    for (const c of contacts) {
-      tryMatch(c.bdId, c.faceEmbedding, {
-        entityType: "contact",
-        entityId: c.id,
-        name: c.name,
-        relationship: c.relationship || undefined,
-        description: c.physicalDescription || undefined,
-        contextNotes: c.contextNotes || undefined,
-      });
-    }
-  }
-
-  // 2. All users with face embeddings
-  const usersWithFaces = await db
-    .select({
-      id: users.id,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      fullName: users.fullName,
-      bdId: users.biometricDataId,
-      faceEmbedding: biometricData.faceEmbedding,
-    })
-    .from(users)
-    .innerJoin(biometricData, eq(biometricData.id, users.biometricDataId))
-    .where(isNotNull(biometricData.faceEmbedding));
-
-  for (const u of usersWithFaces) {
-    const name =
-      u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Unknown User";
-    tryMatch(u.bdId, u.faceEmbedding, { entityType: "user", entityId: u.id, name });
-  }
-
-  // 3. All other students with face embeddings
-  const studentsWithFaces = await db
-    .select({
-      id: students.id,
-      name: students.name,
-      bdId: students.biometricDataId,
-      faceEmbedding: biometricData.faceEmbedding,
-    })
-    .from(students)
-    .innerJoin(biometricData, eq(biometricData.id, students.biometricDataId))
-    .where(isNotNull(biometricData.faceEmbedding));
-
-  for (const s of studentsWithFaces) {
-    if (s.id === studentId) continue;
-    tryMatch(s.bdId, s.faceEmbedding, {
-      entityType: "student",
-      entityId: s.id,
-      name: s.name,
-    });
   }
 
   return bestMatch;
@@ -431,89 +377,33 @@ export async function findMatchingFace(
 
 export async function findMatchingVoice(
   embedding: VoiceEmbedding,
-  studentId?: string,
+  studentId: string,
 ): Promise<VoiceMatchResult | null> {
+  // SECURITY: scoped to this student's known people only (see findMatchingFace).
+  if (!studentId) return null;
+
   let bestMatch: VoiceMatchResult | null = null;
   let bestSimilarity = VOICE_MATCH_THRESHOLD;
-  const seenBdIds = new Set<string>();
 
-  const tryMatch = (
-    bdId: string | null,
-    voiceEmbedding: unknown,
-    result: Omit<VoiceMatchResult, "matched" | "similarity" | "confidence">,
-  ) => {
-    if (!voiceEmbedding) return;
-    if (bdId && seenBdIds.has(bdId)) return;
-    if (bdId) seenBdIds.add(bdId);
-    const similarity = cosineSimilarity(embedding, voiceEmbedding as VoiceEmbedding);
+  const people = await getKnownPeopleForStudent(studentId);
+
+  for (const p of people) {
+    if (!p.voiceEmbedding) continue;
+    const similarity = cosineSimilarity(embedding, p.voiceEmbedding as VoiceEmbedding);
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;
       bestMatch = {
         matched: true,
+        entityType: p.type,
+        entityId: p.id,
+        name: p.name,
         similarity,
         confidence: (similarity - VOICE_MATCH_THRESHOLD) / (1 - VOICE_MATCH_THRESHOLD),
-        ...result,
+        description: p.description,
+        contextNotes: p.contextNotes,
+        relationship: p.relationship,
       };
     }
-  };
-
-  if (studentId) {
-    const [s] = await db
-      .select({
-        id: students.id,
-        name: students.name,
-        bdId: students.biometricDataId,
-        voiceEmbedding: biometricData.voiceEmbedding,
-      })
-      .from(students)
-      .leftJoin(biometricData, eq(biometricData.id, students.biometricDataId))
-      .where(eq(students.id, studentId));
-    if (s) {
-      tryMatch(s.bdId, s.voiceEmbedding, {
-        entityType: "student",
-        entityId: s.id,
-        name: s.name,
-      });
-    }
-  }
-
-  const usersWithVoices = await db
-    .select({
-      id: users.id,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      fullName: users.fullName,
-      bdId: users.biometricDataId,
-      voiceEmbedding: biometricData.voiceEmbedding,
-    })
-    .from(users)
-    .innerJoin(biometricData, eq(biometricData.id, users.biometricDataId))
-    .where(isNotNull(biometricData.voiceEmbedding));
-
-  for (const u of usersWithVoices) {
-    const name =
-      u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Unknown User";
-    tryMatch(u.bdId, u.voiceEmbedding, { entityType: "user", entityId: u.id, name });
-  }
-
-  const studentsWithVoices = await db
-    .select({
-      id: students.id,
-      name: students.name,
-      bdId: students.biometricDataId,
-      voiceEmbedding: biometricData.voiceEmbedding,
-    })
-    .from(students)
-    .innerJoin(biometricData, eq(biometricData.id, students.biometricDataId))
-    .where(isNotNull(biometricData.voiceEmbedding));
-
-  for (const s of studentsWithVoices) {
-    if (s.id === studentId) continue;
-    tryMatch(s.bdId, s.voiceEmbedding, {
-      entityType: "student",
-      entityId: s.id,
-      name: s.name,
-    });
   }
 
   return bestMatch;

@@ -113,7 +113,16 @@ import {
   // ============================================================================
   // DATABASE OPERATIONS - INSTITUTES
   // ============================================================================
-  
+
+  /**
+   * Surfaced verbatim to the AI when it attempts to create/edit/delete an
+   * institute record. Must stay single-line (sanitizeDbError keeps only the
+   * first line) and tell the AI what to do instead.
+   */
+  const INSTITUTE_READONLY_ERROR =
+    "Institute records are read-only for the AI: they are provisioned together with licenses. " +
+    "Ask the user to edit institute details in the app's institute settings instead.";
+
   /**
    * Institutes operations (MAP) - institutes the user is a member of
    */
@@ -157,78 +166,24 @@ import {
       };
     },
   
-    add: async (ctx, value) => {
-      const userId = getUserId(ctx);
-      
-      const { institute, membership } = await instituteService.createInstitute(
-        {
-          name: value.name,
-          type: value.type,
-          description: value.description,
-          address: value.address,
-          phone: value.phone,
-          email: value.email,
-          website: value.website,
-        },
-        userId
-      );
-
-      activityLogService.log({
-        instituteId: institute.id,
-        userId: getUserId(ctx),
-        eventType: "create",
-        subjectType1: "institute",
-        subjectId1: institute.id,
-        isAiInitiated: true,
-      });
-
-      return {
-        ...toMemoryValue(institute),
-        membership: toMemoryValue(membership),
-      };
-    },
-  
-    update: async (ctx, key, value) => {
-      const userId = getUserId(ctx);
-
-      const result = await instituteService.updateInstitute(
-        String(key),
-        value,
-        userId
-      );
-
-      if (!result.success || !result.institute) {
-        throw new Error(result.error || "Failed to update institute");
-      }
-
-      activityLogService.log({
-        instituteId: String(key),
-        userId: getUserId(ctx),
-        eventType: "update",
-        subjectType1: "institute",
-        subjectId1: String(key),
-        isAiInitiated: true,
-      });
-
-      return toMemoryValue(result.institute);
+    // Institute records are tied to licensing and are provisioned/edited by
+    // administrators in the app — the AI must never create, modify, or delete
+    // them (members/students/classrooms below remain writable). The ops throw
+    // instead of being omitted so the refusal reaches the AI as an explicit
+    // tool error rather than a silent in-memory-only write.
+    // Note: the schema-level `readOnly` flag can't express this — tool-router
+    // enforces it per ROOT field only, which would also lock the writable
+    // sub-collections under Context_Institutes.
+    add: async () => {
+      throw new Error(INSTITUTE_READONLY_ERROR);
     },
 
-    delete: async (ctx, key) => {
-      const userId = getUserId(ctx);
+    update: async () => {
+      throw new Error(INSTITUTE_READONLY_ERROR);
+    },
 
-      const result = await instituteService.deleteInstitute(String(key), userId);
-      if (!result.success) {
-        throw new Error(result.error || "Failed to delete institute");
-      }
-
-      activityLogService.log({
-        instituteId: String(key),
-        userId: getUserId(ctx),
-        eventType: "delete",
-        subjectType1: "institute",
-        subjectId1: String(key),
-        isAiInitiated: true,
-      });
+    delete: async () => {
+      throw new Error(INSTITUTE_READONLY_ERROR);
     },
 
     fromDB: (record) => ({
@@ -2104,7 +2059,9 @@ import {
     id: "Context_Institutes",
     type: "map",
     title: "Institutes",
-    description: "Organizations (schools or clinics) that the user is a member of. Target entries by name.",
+    description: "Organizations (schools or clinics) that the user is a member of. Target entries by name. " +
+      "Institute records themselves are READ-ONLY (provisioned with licenses by administrators) — " +
+      "you can manage their members, students, and classrooms, but never create, edit, or delete the institute itself.",
     opened: true,
     displayKey: "name",
     values: instituteSchema,
@@ -2289,7 +2246,7 @@ import {
       repeatInterval: { id: "repeatInterval", type: "number", description: "For weekly: repeat every N weeks (1=every week, 2=every 2 weeks, etc). Default 1." },
       repeatDays: { id: "repeatDays", type: "array", items: { id: "day", type: "number" }, description: "For weekly: which days. 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat. Example: [1,3,5] for Mon/Wed/Fri." },
       repeatMonthWeek: { id: "repeatMonthWeek", type: "number", description: "For monthly_weekday: which occurrence. 1=first, 2=second, 3=third, -1=last. The weekday is taken from the event's start date." },
-      repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime", description: "When the recurring event stops repeating." },
+      repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime", description: "When the recurring event stops repeating. Must be AFTER startTime — a series ending before it starts never occurs and is rejected." },
       instituteId: { id: "instituteId", type: "string", description: "If set, this is an institute-wide event. Only institute admins can create or edit events with this set." },
       classroomId: { id: "classroomId", type: "string", description: "If set, this is a classroom event. Only classroom members can create events with this set." },
       serviceId: { id: "serviceId", type: "string", description: "If set, links the event to a service in a student's program (therapy session, tutoring, etc.)." },
@@ -2302,7 +2259,9 @@ import {
     id: "Context_Calendar",
     type: "map",
     title: "Calendar Events",
-    description: "Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events.",
+    description: "Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. " +
+      "For recurring schedules: set startTime to the FIRST real occurrence — if the schedule is active now, start it today, not at a future term. " +
+      "If a schedule spans two terms or school years, create a separate series per term.",
     opened: true,
     displayKey: "title",
     values: calendarEventSchema,
@@ -2317,7 +2276,8 @@ import {
   You can manage educational organizations and students:
   
   **Organizations (Schools & Clinics)**
-  - Create, update, and delete institutes
+  - Institute records are READ-ONLY: they are provisioned with licenses by administrators
+  - To change institute details (name, type, contact info), direct the user to institute settings
   - Manage institute members and their roles
   - Send invitations to new users via email
   - Enroll and manage students in institutes

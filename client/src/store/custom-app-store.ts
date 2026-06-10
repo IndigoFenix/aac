@@ -28,6 +28,15 @@ interface CustomAppMeta {
   loadedAt?: string;
 }
 
+/** A goal-tree quest game open in the panel (played + AI-edited, not v1-edited). */
+export interface QuestGameState {
+  appId: string;
+  name: string;
+  language?: string | null;
+  /** GoalTreeGame JSON (kept opaque here; certified server-side). */
+  contentPack: unknown;
+}
+
 interface CustomAppState {
   /** The definition currently open in the editor (may be unsaved). */
   definition: GameDefinition | null;
@@ -37,6 +46,10 @@ interface CustomAppState {
   isDirty: boolean;
   /** Cached list of the user's apps (metadata only). */
   apps: CustomAppMeta[];
+  /** The goal-tree quest game open in the panel, if any. */
+  questGame: QuestGameState | null;
+  /** True when the quest game has AI edits not yet saved to the server. */
+  questDirty: boolean;
 
   setDefinition: (def: GameDefinition | null, opts?: { markDirty?: boolean }) => void;
   setDbId: (id: string | null) => void;
@@ -45,6 +58,8 @@ interface CustomAppState {
   upsertAppMeta: (meta: CustomAppMeta) => void;
   removeAppMeta: (id: string) => void;
   reset: () => void;
+  setQuestGame: (game: QuestGameState | null, opts?: { markDirty?: boolean }) => void;
+  markQuestClean: () => void;
 
   // -- Granular editor mutators (all mark dirty)
   mutateDefinition: (updater: (def: GameDefinition) => GameDefinition) => void;
@@ -78,6 +93,8 @@ export const useCustomAppStore = create<CustomAppState>((set) => ({
   dbId: null,
   isDirty: false,
   apps: [],
+  questGame: null,
+  questDirty: false,
 
   setDefinition: (def, opts) =>
     set((s) => ({
@@ -88,6 +105,11 @@ export const useCustomAppStore = create<CustomAppState>((set) => ({
   setDbId: (id) => set({ dbId: id }),
 
   markClean: () => set({ isDirty: false }),
+
+  setQuestGame: (game, opts) =>
+    set({ questGame: game, questDirty: game !== null && (opts?.markDirty ?? false) }),
+
+  markQuestClean: () => set({ questDirty: false }),
 
   setApps: (apps) => set({ apps }),
 
@@ -102,7 +124,8 @@ export const useCustomAppStore = create<CustomAppState>((set) => ({
 
   removeAppMeta: (id) => set((s) => ({ apps: s.apps.filter((a) => a.id !== id) })),
 
-  reset: () => set({ definition: null, dbId: null, isDirty: false }),
+  reset: () =>
+    set({ definition: null, dbId: null, isDirty: false, questGame: null, questDirty: false }),
 
   // -------------------------------------------------------------- mutators
 

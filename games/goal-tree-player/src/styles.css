@@ -1,0 +1,240 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #16222e;
+  color: #e5e7eb;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  touch-action: none;
+}
+
+.player-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.world-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Dwell buttons ─────────────────────────────────────────────────── */
+
+.dwell-btn {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  background: rgba(15, 30, 42, 0.88);
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dwell-btn:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.dwell-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 7px;
+  width: calc(var(--dwell, 0) * 100%);
+  background: #38bdf8;
+  border-radius: 4px;
+  pointer-events: none;
+  transition: width 40ms linear;
+}
+
+/* ── HUD ───────────────────────────────────────────────────────────── */
+
+.objectives-bar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+.objective-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 28px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 30, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.objective-chip.locked {
+  opacity: 0.65;
+}
+.objective-chip small {
+  font-size: 15px;
+  opacity: 0.9;
+}
+
+.controls {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 10px;
+}
+.mode-btn {
+  font-size: 30px;
+  width: 64px;
+  height: 64px;
+  opacity: 0.6;
+}
+.mode-btn.active {
+  opacity: 1;
+  border-color: #38bdf8;
+}
+
+.toast {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(80vw, 640px);
+  padding: 14px 22px;
+  border-radius: 16px;
+  background: rgba(15, 30, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 22px;
+  text-align: center;
+  pointer-events: none;
+  animation: toast-in 200ms ease-out;
+}
+.toast-outro {
+  border-color: rgba(134, 239, 172, 0.6);
+}
+.toast-feedback {
+  border-color: rgba(253, 224, 71, 0.6);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ── Choice panel ──────────────────────────────────────────────────── */
+
+.choice-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 14, 20, 0.55);
+}
+.choice-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  align-items: center;
+  padding: 30px 36px;
+  border-radius: 24px;
+  background: rgba(15, 30, 42, 0.96);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  max-width: 88vw;
+}
+.choice-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.choice-prompt {
+  font-size: 26px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.choice-poser {
+  font-size: 40px;
+}
+.choice-options {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.choice-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: clamp(120px, 22vw, 200px);
+  height: clamp(120px, 22vw, 200px);
+  justify-content: center;
+}
+.choice-emoji {
+  font-size: clamp(44px, 9vw, 84px);
+}
+.choice-label {
+  font-size: 19px;
+}
+
+/* ── Win overlay ───────────────────────────────────────────────────── */
+
+.win-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(8, 14, 20, 0.6);
+}
+.win-burst {
+  font-size: 110px;
+  animation: win-pop 700ms ease-out;
+}
+.win-title {
+  font-size: 32px;
+  text-align: center;
+  max-width: 80vw;
+}
+.win-replay {
+  font-size: 44px;
+  width: 96px;
+  height: 96px;
+}
+@keyframes win-pop {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

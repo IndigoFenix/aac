@@ -587,6 +587,21 @@ export const GFX = {
   fogDensityMult: 1.0,
   atmShellMult: 1.0,
   starfieldMult: 1.0,
+  /** Ocean log-depth bias in µdepth (×1e-6 depth units). Pulls the ocean
+   *  sphere toward the camera by a constant fraction of view distance so
+   *  it never z-fights the near-coplanar shelf terrain at planetary
+   *  approach distances. ~67 depth-buffer LSBs at the default; raise if
+   *  coastline shimmer persists, lower if shallow water swallows beaches
+   *  up close. 0 disables. */
+  oceanDepthBias: 4.0,
+  /** Atmosphere-glow scale height as a fraction of the atmosphere
+   *  thickness. Controls how fuzzy the limb glow is: small → tight
+   *  "thin blue line", large → soft halo bleeding outward. */
+  atmFuzz: 0.35,
+  /** Effective "sky distance" (km) for fogging the background. The sky
+   *  blends toward the fog color by the fog factor at this distance —
+   *  small: only thick fog paints the sky; large: even light haze does. */
+  skyFogKm: 16,
   // ── Cloud system (cloud-field.ts + cloud-system.ts) ───────────────────
   // The post-process VolumetricCloudPass has been replaced by a per-body
   // hierarchical billboard system. These sliders tune the runtime; the
@@ -597,10 +612,10 @@ export const GFX = {
    *  invisible; 1 = full opacity. Useful for isolating other visual
    *  issues without removing the cloud system entirely. */
   cloudMult: 1.0,
-  /** Sprite oversize multiplier — scales each billboard's render size
-   *  relative to its cell extent. 1.0 = exact cell size (visible grid);
-   *  ~1.4 = adjacent cells overlap into a continuous mass. */
-  cloudSpriteOversize: 1.4,
+  /** Sprite size multiplier on top of the built-in disc/puff factors.
+   *  Overlap comes from cluster emission (each cell emits 3–6 puffs),
+   *  so 1.0 is the tuned default; raise only to fuse decks further. */
+  cloudSpriteOversize: 1.0,
   /** Minimum sample density below which a cell emits no sprite. Lower
    *  values render more wispy clouds but cost more sort/fill work. */
   cloudMinDensity: 0.04,
@@ -612,4 +627,19 @@ export const GFX = {
    *  cell, the sky pass adds this × density × tier-scale to the
    *  FogExp2 density so visibility drops naturally. 0 disables. */
   cloudFogBoost: 0.6,
+  /** Detail-noise contrast multiplier — how strongly local 3D noise
+   *  carves the synoptic cover into individual puffs. 0 = smooth decks
+   *  only; >1 = exaggerated cellularity. */
+  cloudDetailMult: 1.0,
+  /** Vigor multiplier — scales the weather map's convective channel
+   *  (cloud-top development, tower cumuliformity, storminess). */
+  cloudVigorMult: 1.0,
+  /** Per-frame weather-map bake budget (ms). The synoptic map re-bakes
+   *  continuously — this is how weather evolves. 0 freezes evolution
+   *  (drift continues via the residual scroll). */
+  cloudBakeMs: 0.5,
+  /** Rebuild the billboard sprite set every N frames. Sprites are
+   *  planet-anchored so off-frames stay coherent; raising this trades
+   *  LOD-fade latency for CPU. */
+  cloudUpdateEvery: 2,
 };

@@ -12,6 +12,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { studentErasureService } from "../services/studentErasureService";
+import { runStudentErasureSweep } from "../services/studentErasureCron";
 
 const eraseBodySchema = z.object({
   reason: z.string().max(2000).optional(),
@@ -68,6 +69,25 @@ export class StudentErasureController {
       const message = err?.message?.includes("Erasure window") ? err.message : "Failed to cancel erasure";
       const status = err?.message?.includes("Erasure window") ? 409 : 500;
       res.status(status).json({ success: false, message });
+    }
+  }
+
+  /**
+   * POST /api/admin/students/erasure/run-sweep
+   * Manually run the expired-erasure hard-delete sweep. STOPGAP: the scheduled
+   * sweep (setInterval) does not fire on the Lambda production deployment
+   * (containers freeze between invocations), so without this, requested
+   * erasures past their cancellation window are never physically carried out.
+   * Until an EventBridge-scheduled cron Lambda is wired, an admin can drive the
+   * sweep here. Gated by requireSystemAdmin.
+   */
+  async runSweep(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await runStudentErasureSweep();
+      res.json({ success: true, result });
+    } catch (err: any) {
+      console.error("Erasure sweep failed:", err);
+      res.status(500).json({ success: false, message: "Failed to run erasure sweep" });
     }
   }
 
