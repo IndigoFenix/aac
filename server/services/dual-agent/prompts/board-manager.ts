@@ -447,9 +447,12 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       // A press is functionally a USER statement; render the same shape
       // as a transcript so BoardManager has one consistent mental model
       // for "who said what to whom". Default target is the device.
+      // Gesture-triggered presses are marked — the user communicated
+      // without touching the board.
       const tgt = event.target ?? "AI";
       const label = tgt === "DEVICE" ? "AI" : tgt;
-      return `[USER to ${label}] "${event.sentence}"`;
+      const viaGesture = event.via === "gesture" ? " via gesture" : "";
+      return `[USER to ${label}${viaGesture}] "${event.sentence}"`;
     }
     case "sentence_composed":
       return `[USER (composed) to AI] "${event.sentence}"`;
@@ -518,12 +521,16 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       return `[YOU] suggest_construction_buttons(slot ${event.slotIndex}, ${heads} heads, ${mods} modifiers)`;
     }
     // The following don't help Board Manager decide:
+    // (gesture_recognized never arrives raw — the Coordinator converts a
+    // resolved gesture into a button_pressed event before fan-out.)
     case "emote_change":
     case "focus_request":
     case "alarm_raised":
     case "monitor_call_requested":
     case "private_note":
     case "remain_silent":
+    case "thought_leak":
+    case "gesture_recognized":
       return "";
     // App / website opens — context that buttons may need to reflect
     // (an open app may want app-specific response buttons).

@@ -78,7 +78,11 @@ function pickTrait(value: number, lo: string, hi: string): string | null {
   return null; // mid-band → omit
 }
 
-function renderIdentity(
+/** Render the `# CHARACTER IDENTITY` block for a generated persona.
+ *  Exported for reuse by the AAC-integrated peer Speaker prompt
+ *  (peer-speaker-prompt.ts) so both paths describe characters in
+ *  exactly the same vocabulary. */
+export function renderIdentity(
   name: string,
   gender: "male" | "female",
   g: PersonalityGenome,

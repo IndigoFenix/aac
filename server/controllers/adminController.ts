@@ -601,6 +601,7 @@ export class AdminController {
           started: s.started,
           lastUpdate: s.lastUpdate,
           creditsUsed: s.creditsUsed,
+          costBreakdown: s.costBreakdown,
         })),
       });
     } catch (error: any) {

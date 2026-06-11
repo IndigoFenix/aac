@@ -15,6 +15,9 @@ import { AppInitializationProvider } from "@/contexts/AppInitializationContext";
 import { BoardsProvider } from "@/contexts/BoardsContext";
 import { ConversationProvider } from "@/contexts/ConversationContext";
 import { ServerStatusGuard } from "@/components/ServerStatusGuard";
+import { DeviceLimitOverlay } from "@/components/DeviceManager";
+import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
+import { deregisterCurrentDevice } from "@/lib/device-id";
 import { useState } from "react";
 
 interface AuthUser {
@@ -77,11 +80,22 @@ function MainApp() {
     gcTime: 0, // Don't cache auth data (formerly cacheTime)
   });
 
+  // The aac_signed_out flag allows AAC logout without destroying the shared server session
+  const aacSignedOut = localStorage.getItem('aac_signed_out') === 'true';
+  const authedUser = !error && !aacSignedOut ? authData?.user ?? null : null;
+
+  // Register this device to the selected student (and re-check the license
+  // device limit) on every selection AND on startup with a restored student.
+  const deviceReg = useDeviceRegistration(authedUser ? selectedStudentId : null);
+
   const handleLoginSuccess = () => {
     refetch();
   };
 
   const handleLogout = () => {
+    // Best-effort: free this device's slot before dropping the student locally.
+    // If it fails (offline), the server-side recheck on next login reconciles.
+    if (selectedStudentId) void deregisterCurrentDevice(selectedStudentId);
     setSelectedStudentId(null);
     setSelectedClassroomId(null);
     localStorage.removeItem('synapse_student_id');
@@ -106,6 +120,7 @@ function MainApp() {
   };
 
   const handleExitStudent = () => {
+    if (selectedStudentId) void deregisterCurrentDevice(selectedStudentId);
     localStorage.removeItem('synapse_student_id');
     localStorage.removeItem('synapse_classroom_id');
     setSelectedStudentId(null);
@@ -125,9 +140,7 @@ function MainApp() {
   }
 
   // Step 1: Not authenticated or signed out locally - show login
-  // The aac_signed_out flag allows AAC logout without destroying the shared server session
-  const aacSignedOut = localStorage.getItem('aac_signed_out') === 'true';
-  if (error || !authData?.user || aacSignedOut) {
+  if (!authedUser) {
     return (
       <LoginModal
         isOpen={true}
@@ -140,9 +153,37 @@ function MainApp() {
   if (!selectedStudentId) {
     return (
       <StudentSelector
-        user={authData.user}
+        user={authedUser}
         onStudentSelect={handleStudentSelect}
         onLogout={handleLogout}
+      />
+    );
+  }
+
+  // Step 2.5: device gate — don't start the (expensive) AAC session until this
+  // device is confirmed against the student's license device limit. The check
+  // fails open on network errors, so offline devices are never locked out.
+  if (deviceReg.status === "checking") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center" dir={direction}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-300">{t("app.loading")}</p>
+        </div>
+      </div>
+    );
+  }
+  if (deviceReg.status === "blocked") {
+    return (
+      <DeviceLimitOverlay
+        devices={deviceReg.devices}
+        limit={deviceReg.limit}
+        isRegistered={deviceReg.isRegistered}
+        busy={deviceReg.busy}
+        checking={false}
+        onDeregister={(recordId) => void deviceReg.deregister(recordId)}
+        onRetry={deviceReg.retry}
+        onExitStudent={handleExitStudent}
       />
     );
   }

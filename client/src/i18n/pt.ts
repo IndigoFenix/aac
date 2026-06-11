@@ -287,6 +287,20 @@ export const pt = {
     unlink: "Remover",
     linkFailed: "Falha ao vincular usuário",
     unlinkFailed: "Falha ao desvincular usuário",
+    devices: {
+      title: "Dispositivos AAC",
+      description: "Dispositivos registrados no AAC deste {{STUDENT}}",
+      loadFailed: "Falha ao carregar os dispositivos",
+      empty: "Nenhum dispositivo registrado.",
+      unknownDevice: "Dispositivo desconhecido",
+      lastSeen: "Visto pela última vez {date}",
+      countLimited: "{count} de {limit} vagas de dispositivos em uso",
+      countUnlimited: "{count} dispositivos registrados (sem limite)",
+      deregister: "Cancelar registro",
+      deregistered: "Registro do dispositivo cancelado",
+      confirmDeregisterTitle: "Cancelar o registro do dispositivo?",
+      confirmDeregisterDesc: "{device} não poderá mais usar o AAC deste {{STUDENT}} até ser registrado novamente.",
+    },
     gradeLevel: "Nível escolar",
     selectGrade: "Selecionar série...",
     assignToClassroom: "Atribuir a sala",
@@ -2474,6 +2488,19 @@ export const pt = {
     permittedWebsitesUrl: "URL",
     permittedWebsitesDescriptionField: "Descrição (mostrada à IA)",
     permittedWebsitesDescriptionPlaceholder: "ex.: enciclopédia infantil com artigos simples",
+    // Defined Gestures
+    definedGesturesTitle: "Gestos definidos",
+    definedGesturesDescription: "Gestos físicos que a IA observa durante as sessões de AAC. Fazer um em direção ao dispositivo é tratado como pressionar um botão que diz o significado do gesto.",
+    definedGesturesEmpty: "Nenhum gesto definido ainda. Adicione um abaixo.",
+    definedGesturesName: "Gesto",
+    definedGesturesNamePlaceholder: "ex.: polegar para cima",
+    definedGesturesMeaning: "Significado (falado com a voz do usuário)",
+    definedGesturesMeaningPlaceholder: "ex.: Sim, eu quero isso",
+    definedGesturesDescriptionField: "Como ele parece (mostrado à IA)",
+    definedGesturesDescriptionPlaceholder: "ex.: Levanta o punho fechado com o polegar para cima",
+    definedGesturesAdd: "Adicionar gesto",
+    definedGesturesRemove: "Remover",
+    definedGesturesHint: "A IA observa pela câmera e responde quando reconhece um gesto definido direcionado ao dispositivo.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "Canais do YouTube permitidos",
     permittedYoutubeChannelsDescription: "Quando configurado, o aplicativo do YouTube só reproduzirá vídeos destes canais. Sem chave de API, a busca se limita aos ~15 vídeos mais recentes de cada canal.",
@@ -2791,6 +2818,7 @@ export const pt = {
       showFull: "Ler o aviso completo",
       hideFull: "Ocultar o aviso completo",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const pt = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const pt = {
       // Permissions
       grantAll: "Conceder todas as permissões",
       maxStudents: "Máximo de {{STUDENTS}}",
+      maxDevicesPerStudent: "Máx. de dispositivos AAC por {{STUDENT}}",
       unlimited: "Ilimitado",
       aacEnabled: "AAC ativado",
       boardMakerEnabled: "Criador de pranchas",

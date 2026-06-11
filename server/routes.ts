@@ -67,6 +67,7 @@ import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
 import { contactController } from "./controllers/contactController";
 import { licenseController } from "./controllers/licenseController";
+import { studentDeviceController } from "./controllers/studentDeviceController";
 import { calendarController } from "./controllers/calendarController";
 import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
@@ -810,6 +811,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Users sharing an institute with this student — pool for service assignees
   app.get("/api/students/:id/institute-members", requireAuth, (req, res) =>
     studentController.getInstituteMembers(req, res)
+  );
+
+  // AAC device registration (limit set per license, summed across institutes)
+  app.get("/api/students/:id/devices", requireAuth, (req, res) =>
+    studentDeviceController.listDevices(req, res)
+  );
+  app.post("/api/students/:id/devices/register", requireAuth, (req, res) =>
+    studentDeviceController.registerDevice(req, res)
+  );
+  app.post("/api/students/:id/devices/deregister", requireAuth, (req, res) =>
+    studentDeviceController.deregisterSelf(req, res)
+  );
+  app.delete("/api/students/:id/devices/:recordId", requireAuth, (req, res) =>
+    studentDeviceController.deregisterDevice(req, res)
   );
 
   // ==========================================================================

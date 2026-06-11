@@ -287,6 +287,20 @@ export const de = {
     unlink: "Entfernen",
     linkFailed: "Benutzerverknüpfung fehlgeschlagen",
     unlinkFailed: "Benutzerverknüpfung konnte nicht entfernt werden",
+    devices: {
+      title: "AAC-Geräte",
+      description: "Für das AAC dieses {{STUDENT}} registrierte Geräte",
+      loadFailed: "Geräte konnten nicht geladen werden",
+      empty: "Keine Geräte registriert.",
+      unknownDevice: "Unbekanntes Gerät",
+      lastSeen: "Zuletzt gesehen {date}",
+      countLimited: "{count} von {limit} Geräteplätzen belegt",
+      countUnlimited: "{count} Geräte registriert (ohne Limit)",
+      deregister: "Abmelden",
+      deregistered: "Gerät abgemeldet",
+      confirmDeregisterTitle: "Gerät abmelden?",
+      confirmDeregisterDesc: "{device} kann das AAC dieses {{STUDENT}} erst wieder verwenden, wenn es erneut registriert wird.",
+    },
     gradeLevel: "Klassenstufe",
     selectGrade: "Klasse auswählen...",
     assignToClassroom: "Klasse zuweisen",
@@ -2474,6 +2488,19 @@ export const de = {
     permittedWebsitesUrl: "URL",
     permittedWebsitesDescriptionField: "Beschreibung (für die KI)",
     permittedWebsitesDescriptionPlaceholder: "z. B. Kinderlexikon mit einfachen Artikeln",
+    // Defined Gestures
+    definedGesturesTitle: "Definierte Gesten",
+    definedGesturesDescription: "Körpergesten, auf die die KI während AAC-Sitzungen achtet. Eine Geste in Richtung des Geräts wird wie ein Tastendruck behandelt, der die Bedeutung der Geste ausspricht.",
+    definedGesturesEmpty: "Noch keine Gesten definiert. Unten eine hinzufügen.",
+    definedGesturesName: "Geste",
+    definedGesturesNamePlaceholder: "z. B. Daumen hoch",
+    definedGesturesMeaning: "Bedeutung (mit der Stimme des Nutzers gesprochen)",
+    definedGesturesMeaningPlaceholder: "z. B. Ja, das möchte ich",
+    definedGesturesDescriptionField: "Wie sie aussieht (für die KI sichtbar)",
+    definedGesturesDescriptionPlaceholder: "z. B. Hebt eine geschlossene Faust mit nach oben zeigendem Daumen",
+    definedGesturesAdd: "Geste hinzufügen",
+    definedGesturesRemove: "Entfernen",
+    definedGesturesHint: "Die KI beobachtet über die Kamera und reagiert, wenn sie eine definierte, auf das Gerät gerichtete Geste erkennt.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "Erlaubte YouTube-Kanäle",
     permittedYoutubeChannelsDescription: "Wenn festgelegt, spielt die YouTube-App nur Videos dieser Kanäle ab. Ohne API-Schlüssel ist die Suche auf die ~15 neuesten Uploads pro Kanal beschränkt.",
@@ -2791,6 +2818,7 @@ export const de = {
       showFull: "Vollständigen Hinweis lesen",
       hideFull: "Vollständigen Hinweis ausblenden",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const de = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const de = {
       // Permissions
       grantAll: "Alle Berechtigungen gewähren",
       maxStudents: "Max. {{STUDENTS}}",
+      maxDevicesPerStudent: "Max. AAC-Geräte pro {{STUDENT}}",
       unlimited: "Unbegrenzt",
       aacEnabled: "AAC aktiviert",
       boardMakerEnabled: "Board Maker",

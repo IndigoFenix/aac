@@ -3,6 +3,9 @@ import { apiRequest } from "@/lib/queryClient";
 
 // ---------- Types ----------
 
+import type { SessionCostBreakdown } from "@/components/admin/CostBreakdownCell";
+export type { SessionCostBreakdown };
+
 export interface AACSessionSummary {
   id: string;
   studentId: string;
@@ -10,6 +13,7 @@ export interface AACSessionSummary {
   userId: string | null;
   userName: string | null;
   creditsUsed: number;
+  costBreakdown?: SessionCostBreakdown | null;
   status: string;
   started: string;
   lastActivity: string;
@@ -25,6 +29,7 @@ export interface ChatSessionSummary {
   studentName: string | null;
   chatMode: string;
   creditsUsed: number;
+  costBreakdown?: SessionCostBreakdown | null;
   status: "open" | "paused" | "closed";
   started: string;
   lastUpdate: string;

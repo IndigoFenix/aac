@@ -9,7 +9,7 @@
 //   - Produces audio output (native audio path) OR text → server TTS
 //     (fallback path, gated by `useDirectAudio`).
 //   - Emits SpeechStart / SpeechEnd / EmoteChange / ModeChange /
-//     InterpretIntent / AppOpen/Close/WebsiteOpen / call_monitor / private_note.
+//     InterpretIntent / AppOpen/Close/WebsiteOpen / call_monitor / private_thought.
 //
 // Speaker does NOT receive mic audio or video frames — Observer holds
 // the perception channel. Speaker doesn't touch the button board —
@@ -43,6 +43,7 @@ import type {
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
   RemainSilentEvent,
+  ThoughtLeakEvent,
 } from "./agent-events";
 import type { ISpeakerAgent } from "./speaker-interface";
 
@@ -54,7 +55,35 @@ export type SpeakerOutputEvent =
   | SpeakerEvent
   | MonitorCallRequestedEvent
   | PrivateNoteEvent
-  | RemainSilentEvent;
+  | RemainSilentEvent
+  | ThoughtLeakEvent;
+
+/** Marker the native-audio model leaks when it VOICES its private-thought
+ *  tool instead of calling it. An underscore-joined token like
+ *  `private_thought` never occurs in natural speech, so matching it (and
+ *  the legacy `private_note`) case-insensitively is false-positive-safe.
+ *  The transcript preserves the underscore (confirmed in production logs). */
+const THOUGHT_LEAK_TOKEN_RE = /private_(?:thought|note)/i;
+/** Self-invented bare label the model drifts into once a leak goes
+ *  uncaught (observed in production). Case-SENSITIVE all-caps + must LEAD
+ *  the utterance, so ordinary "Thought you'd…" / "thought…" speech is safe. */
+const THOUGHT_LEAK_LABEL_RE = /^\s*THOUGHT\b/;
+
+/** True when `transcript` (the accumulated streaming transcript so far)
+ *  shows a leaked private-thought prefix. */
+export function isLeakedThought(transcript: string): boolean {
+  return THOUGHT_LEAK_TOKEN_RE.test(transcript) || THOUGHT_LEAK_LABEL_RE.test(transcript);
+}
+
+/** Strip the leaked marker and everything before it, returning the
+ *  reasoning text that followed (to record as a private thought). Falls
+ *  back to the trimmed original if nothing follows the marker. */
+export function stripThoughtLeakMarker(transcript: string): string {
+  const m = transcript.match(/private_(?:thought|note)\b[:\-\s]*/i)
+    ?? transcript.match(/^\s*THOUGHT\b[:\-\s]*/);
+  const stripped = m ? transcript.slice((m.index ?? 0) + m[0].length).trim() : "";
+  return stripped || transcript.trim();
+}
 
 export interface SpeakerCallbacks {
   /** Called for every parsed event the Coordinator should dispatch. */
@@ -72,6 +101,12 @@ export interface SpeakerCallbacks {
   /** Fallback path: text Speaker wants the server TTS to voice. The
    *  Coordinator routes through the existing ttsFacade. */
   onSpeakText?: (text: string) => void;
+  /** Native-audio path: the streaming transcript shows the model is
+   *  voicing its reasoning ("private_thought …"). Fired ONCE per turn the
+   *  instant a leak is detected so the Coordinator can drop the buffered
+   *  PCM and interrupt client playback before the child hears more. The
+   *  turn's captured reasoning still arrives later as a ThoughtLeakEvent. */
+  onSuppressAudio?: () => void;
   /** Connection / provider error. */
   onError: (error: Error) => void;
   /** Per-turn usage stats for cost tracking. */
@@ -113,6 +148,11 @@ export class SpeakerAgent implements ISpeakerAgent {
   private currentTurnTranscript = "";
   private currentTurnHadAudio = false;
   private speechStartEmittedThisTurn = false;
+  /** Set once per turn when the streaming transcript reveals the model is
+   *  voicing its private reasoning. While true, transcription deltas and
+   *  audio are suppressed and the turn resolves to a ThoughtLeakEvent
+   *  instead of speech_text_finalized / speech_end. */
+  private leakedThoughtThisTurn = false;
   /** One-shot target the model can set via set_speech_target() before
    *  speaking. Defaults to "USER" — applied to the next SpeechEnd event
    *  and reset by resetTurnAccumulators(). */
@@ -248,6 +288,7 @@ export class SpeakerAgent implements ISpeakerAgent {
     this.currentTurnHadAudio = false;
     this.speechStartEmittedThisTurn = false;
     this.pendingSpeechTarget = undefined;
+    this.leakedThoughtThisTurn = false;
   }
 
   private maybeEmitSpeechStart(): void {
@@ -282,6 +323,23 @@ export class SpeakerAgent implements ISpeakerAgent {
     // stream subtitle text + animate the avatar mouth alongside the audio.
     if (!this.useDirectAudio) return;
     this.currentTurnTranscript += text;
+
+    // Already suppressing this turn — swallow the rest of the leaked
+    // reasoning so it neither reaches the client subtitle nor the avatar.
+    if (this.leakedThoughtThisTurn) return;
+
+    // Detect the model voicing its private reasoning. The leak marker
+    // ("private_thought …") leads the utterance, so this fires on the
+    // first delta — before meaningful audio has played out. Tell the
+    // Coordinator to kill the audio immediately; the captured reasoning
+    // is emitted as a ThoughtLeakEvent at turn end.
+    if (isLeakedThought(this.currentTurnTranscript)) {
+      this.leakedThoughtThisTurn = true;
+      flowOutput("SPEAKER", "thought_leak_detected", this.currentTurnTranscript.trim());
+      this.callbacks.onSuppressAudio?.();
+      return;
+    }
+
     if (text.trim()) this.callbacks.onTranscriptionDelta?.(text);
   }
 
@@ -291,6 +349,10 @@ export class SpeakerAgent implements ISpeakerAgent {
    *  while audio is still playing out. */
   private handleOutputTranscriptionFinished(): void {
     if (!this.useDirectAudio) return;
+    // Suppressed turn — don't surface the leaked text as a real reply.
+    // The ThoughtLeakEvent is emitted from handleTurnComplete instead, so
+    // BoardManager never rebuilds from it and it's never echoed back.
+    if (this.leakedThoughtThisTurn) return;
     const transcript = this.currentTurnTranscript.trim();
     if (!transcript) return;
     flowOutput("SPEAKER", "text_finalized", transcript);
@@ -315,6 +377,25 @@ export class SpeakerAgent implements ISpeakerAgent {
   private handleTurnComplete(reason?: string): void {
     if (reason && reason !== "STOP") {
       console.warn(`[SpeakerAgent] Turn ended abnormally: ${reason}`);
+    }
+
+    // Suppressed turn: the model voiced its reasoning. Emit a ThoughtLeakEvent
+    // carrying the captured note (marker stripped) INSTEAD of SpeechEnd. The
+    // Coordinator records it to supervisor channels, lifts audio suppression,
+    // and injects a corrective — but never echoes it back to the model or
+    // rebuilds the board from it (that's the self-reinforcing loop we're killing).
+    if (this.useDirectAudio && this.leakedThoughtThisTurn) {
+      const note = stripThoughtLeakMarker(this.currentTurnTranscript);
+      flowOutput("SPEAKER", "thought_leak", note);
+      const event: ThoughtLeakEvent = {
+        type: "thought_leak",
+        source: "speaker",
+        timestamp: Date.now(),
+        note,
+      };
+      this.callbacks.onEvent(event);
+      this.resetTurnAccumulators();
+      return;
     }
 
     // Native-audio path: emit SpeechEnd if any audio was produced this turn.
@@ -496,7 +577,10 @@ export class SpeakerAgent implements ISpeakerAgent {
         return [event];
       }
 
+      case "private_thought":
       case "private_note": {
+        // Tool renamed to `private_thought`; `private_note` kept as an alias
+        // for stale model calls. Internal event type stays `private_note`.
         const event: PrivateNoteEvent = {
           type: "private_note",
           source: "speaker",

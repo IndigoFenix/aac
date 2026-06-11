@@ -720,6 +720,7 @@ function parseToolCall(
       return event;
     }
 
+    case "private_thought":
     case "private_note": {
       const event: PrivateNoteEvent = {
         type: "private_note",

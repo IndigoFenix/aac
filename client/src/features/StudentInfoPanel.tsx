@@ -21,6 +21,7 @@ import { SendConsentRequestDialog } from '@/features/consent/SendConsentRequestD
 import { PendingInvitationsList } from '@/features/consent/PendingInvitationsList';
 import { ConsentHistoryPanel } from '@/features/consent/ConsentHistoryPanel';
 import { ConsentAuthorityPanel } from '@/features/consent/ConsentAuthorityPanel';
+import { StudentDevicesCard } from '@/features/StudentDevicesCard';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -846,6 +847,9 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
               </CardContent>
             </Card>
           )}
+
+          {/* Registered AAC devices */}
+          {student?.id && <StudentDevicesCard studentId={student.id} />}
         </div>
       </div>
     </ScrollArea>

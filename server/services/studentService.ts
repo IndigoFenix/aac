@@ -61,7 +61,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
-  "accessibility",
+  "accessibility", "definedGestures",
 ]);
 
 /**

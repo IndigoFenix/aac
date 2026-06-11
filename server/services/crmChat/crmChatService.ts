@@ -17,6 +17,7 @@ import { createDBMemoryProcessor } from "../chat/tool-router";
 import { createMemoryLoadState } from "../chat/memory-db-bridge";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { crmRepository } from "../../repositories/crmRepository";
+import { chargeCreditsToLedger } from "../credit-ledger";
 import { CRM_MEMORY_FIELDS } from "../memory-schema/crm-memory-schema";
 import { LIBRARY_TOPICS_FIELD } from "../memory-schema/topic-memory-schema";
 import type { AgentMemoryFieldWithDB } from "../chat/memory-types";
@@ -215,8 +216,16 @@ async function prepareCrmTurn(input: CrmOnMessageInput): Promise<PreparedTurn> {
         log: nextLog,
       });
     },
-    onCreditsUsed: async (credits) => {
-      await crmRepository.addCredits(sessionId, credits);
+    onCreditsUsed: async (credits, breakdown) => {
+      // CRM sessions are chat_sessions rows (no user/student), so the shared
+      // ledger handles both creditsUsed and the per-function cost_breakdown.
+      await chargeCreditsToLedger({
+        sessionId,
+        credits,
+        breakdown,
+        category: "chat",
+        label: "crm-chat",
+      });
     },
     providerConfig: llmConfig,
     memoryProcessor,

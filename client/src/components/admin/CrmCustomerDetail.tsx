@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CostBreakdownCell } from "./CostBreakdownCell";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -404,7 +405,7 @@ export function CrmCustomerDetail({ customerId }: CrmCustomerDetailProps) {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
-                      ${s.creditsUsed.toFixed(4)}
+                      <CostBreakdownCell credits={s.creditsUsed} breakdown={s.costBreakdown} digits={4} />
                     </TableCell>
                     <TableCell>
                       <Button

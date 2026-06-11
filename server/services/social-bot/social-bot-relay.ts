@@ -25,7 +25,6 @@ import { GoogleGenAI } from "@google/genai";
 import { authenticateUpgrade } from "../realtime/ws-auth";
 import { studentService } from "../studentService";
 import { logLiveSession } from "../dual-agent/dual-agent-logger";
-import { GEMINI_VOICES } from "../voice/gemini-tts-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import type { User } from "@shared/schema";
 import { randomAppearance } from "@shared/social-bot/ProceduralFace";
@@ -37,7 +36,8 @@ import type {
   SessionReport,
   SharedMomentSummary,
 } from "@shared/social-bot/state";
-import { DirectedSession } from "./directed-session";
+import { DirectedSession, DIRECTED_SESSION_DEFAULT_MODEL } from "./directed-session";
+import { dualAgentService } from "../dual-agent/dual-agent-service";
 import {
   describePersona,
   generatePersona,
@@ -45,30 +45,12 @@ import {
   DEFAULT_SLP_CONFIG,
 } from "./persona-generator";
 
+import { pickVoice } from "./voice-pick";
+import { buildSocialBotGenAIClient } from "./genai-client";
+
 const FLUSH_INTERVAL_MS = 250;
 /** Hard cap on TTS time before we give up on the turn. */
 const TTS_TIMEOUT_MS = 10_000;
-
-// Gender-classified groups derived from the Gemini voice descriptions.
-// "Zephyr" is neutral — included in both pools so it's always available
-// as a fallback.
-const MALE_VOICES = ["Puck", "Charon", "Fenrir", "Orus", "Zephyr"];
-const FEMALE_VOICES = ["Kore", "Aoede", "Leda", "Zephyr"];
-
-function pickVoice(
-  gender: "male" | "female" | null,
-  exclude: ReadonlyArray<string | undefined | null>,
-): string {
-  const excluded = new Set(exclude.filter((v): v is string => !!v));
-  const allIds = GEMINI_VOICES.map((v) => v.id);
-  const genderPool = gender === "male" ? MALE_VOICES : gender === "female" ? FEMALE_VOICES : allIds;
-  const candidates = genderPool.filter((id) => !excluded.has(id));
-  // Fall back, in order: gender pool unfiltered, full pool unfiltered.
-  const pool = candidates.length > 0 ? candidates
-    : genderPool.length > 0 ? genderPool
-    : allIds;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
 
 const COMPETENCIES: Competency[] = [
   "responsiveness",
@@ -143,15 +125,7 @@ export class SocialBotRelay {
   }
 
   private buildClient(): GoogleGenAI {
-    const useVertex = !!(process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT);
-    if (useVertex) {
-      const project = process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
-      const location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
-      const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-      const googleAuthOptions = credentialsJson ? { credentials: JSON.parse(credentialsJson) } : undefined;
-      return new GoogleGenAI({ vertexai: true, project, location, ...(googleAuthOptions ? { googleAuthOptions } : {}) });
-    }
-    return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    return buildSocialBotGenAIClient();
   }
 
   private send(msg: any): void {
@@ -326,6 +300,23 @@ export class SocialBotRelay {
       return;
     }
 
+    // Bill the turn's tokens to the USER alone — the standalone trainer
+    // has no chat_sessions row, and even when a studentId was passed for
+    // voice/language resolution the practice run isn't a student session.
+    if (result.usage) {
+      dualAgentService.trackHttpUsage(
+        "",
+        "",
+        this.authedUser.id,
+        "gemini",
+        DIRECTED_SESSION_DEFAULT_MODEL,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+        result.usage.cachedTokens ?? 0,
+        "social-bot-standalone",
+      ).catch((err) => logLiveSession("SOCIAL BOT: usage tracking failed", err?.message || String(err)));
+    }
+
     // Push the new state to the client immediately so the face starts
     // moving toward the new target while TTS spins up.
     this.send({
@@ -374,7 +365,12 @@ export class SocialBotRelay {
     let firstChunkAt = 0;
     let chunkCount = 0;
     try {
-      const stream = ttsFacade.synthesizeStream(text, voice, aborter.signal);
+      // Per-synthesis billing — user-only, same attribution as the LLM
+      // turns (no session/student rows for the standalone trainer).
+      const stream = ttsFacade.synthesizeStream(text, voice, aborter.signal, (usage) => {
+        dualAgentService.trackTtsUsage("", "", this.authedUser.id, usage.provider, usage.characters)
+          .catch((err) => logLiveSession("SOCIAL BOT: TTS usage tracking failed", err?.message || String(err)));
+      });
       for await (const wav of stream) {
         if (aborter.signal.aborted) {
           logLiveSession("SOCIAL BOT: TTS aborted mid-stream", `chunks=${chunkCount}`);

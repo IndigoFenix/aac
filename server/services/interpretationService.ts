@@ -2,6 +2,31 @@ import * as fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
 import { apiTracker } from "./apiTracker";
+import { chargeModelUsage } from "./credit-ledger";
+
+const INTERPRETATION_MODEL = "gemini-2.5-pro";
+
+/**
+ * Record the call's real token cost in the credit ledger. apiTracker only
+ * logs timing (the api_calls table is gone), so billing happens here.
+ * Note: `sessionId` params on the interpret functions are Express session
+ * ids, NOT chat_sessions ids — so the charge is attributed to the user only.
+ * Thinking tokens (`thoughtsTokenCount`) bill as output on Gemini 2.5.
+ */
+function chargeInterpretationUsage(response: any, userId: string | undefined, label: string): void {
+  const usage = response?.usageMetadata;
+  if (!usage) return;
+  chargeModelUsage({
+    provider: "gemini",
+    model: INTERPRETATION_MODEL,
+    promptTokens: usage.promptTokenCount ?? 0,
+    completionTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
+    cachedTokens: usage.cachedContentTokenCount ?? 0,
+    userId,
+    category: "interpretation",
+    label,
+  }).catch(err => console.error("[InterpretationService] cost ledger charge failed:", err));
+}
 
 // DON'T DELETE THIS COMMENT
 // Follow these instructions when using this blueprint:
@@ -36,7 +61,7 @@ export async function interpretAACText(input: string, language: 'en' | 'he' = 'h
       .replace('{studentInfo}', userInfo);
 
     const requestData = {
-      model: "gemini-2.5-pro",
+      model: INTERPRETATION_MODEL,
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -69,8 +94,10 @@ export async function interpretAACText(input: string, language: 'en' | 'he' = 'h
       sessionId
     );
 
+    chargeInterpretationUsage(response, userId, "aac-interpretation-text");
+
     const rawJson = response.text;
-    
+
     if (rawJson) {
       const result: InterpretationResult = JSON.parse(rawJson);
       return {
@@ -150,7 +177,7 @@ Respond in JSON format with the following structure:
     ];
 
     const requestData = {
-      model: "gemini-2.5-pro",
+      model: INTERPRETATION_MODEL,
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -184,8 +211,10 @@ Respond in JSON format with the following structure:
       sessionId
     );
 
+    chargeInterpretationUsage(response, userId, "aac-interpretation-image");
+
     const rawJson = response.text;
-    
+
     if (rawJson) {
       const result: InterpretationResult = JSON.parse(rawJson);
       return {

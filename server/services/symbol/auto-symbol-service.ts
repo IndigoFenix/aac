@@ -18,6 +18,7 @@ import { fileURLToPath } from "url";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 import { customSymbolService } from "./custom-symbol-service";
 import { generateSymbolImage, type SymbolGenerationCost } from "./symbol-generator";
+import { chargeModelUsage } from "../credit-ledger";
 import type { CustomSymbol } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
@@ -161,10 +162,20 @@ export async function resolveImageKeys(
 // Background generation queue
 // ---------------------------------------------------------------------------
 
+/** Who to bill for a queued generation's LLM cost (the Gemini prompt-
+ *  refinement step). The OpenAI image-generation step is intentionally
+ *  NOT billed to the ledger. */
+export interface GenerationAttribution {
+  sessionId?: string | null;
+  studentId?: string | null;
+  userId?: string | null;
+}
+
 interface GenerationJob {
   imageKey: string;
   /** Called when a symbol is generated or found */
   onReady?: (imageKey: string, symbol: CustomSymbol) => void;
+  attribution?: GenerationAttribution;
 }
 
 let queue: GenerationJob[] = [];
@@ -177,10 +188,11 @@ let busy = false;
 export function queueSymbolGeneration(
   imageKeys: string[],
   onReady?: (imageKey: string, symbol: CustomSymbol) => void,
+  attribution?: GenerationAttribution,
 ): void {
   debugLog("queueGeneration", `Queuing ${imageKeys.length} keys: ${imageKeys.join(", ")} (hasCallback=${!!onReady})`);
   for (const imageKey of imageKeys) {
-    queue.push({ imageKey, onReady });
+    queue.push({ imageKey, onReady, attribution });
   }
   if (!busy) {
     processQueue().catch(err =>
@@ -225,6 +237,19 @@ async function processQueue(): Promise<void> {
       });
       generated++;
       logCost(job.imageKey, result.cost);
+      // Record the Gemini prompt-refinement leg in the cost ledger. The
+      // OpenAI image-generation leg is deliberately excluded from billing.
+      const refine = result.cost.promptRefinement;
+      chargeModelUsage({
+        provider: "gemini",
+        model: refine.model,
+        promptTokens: refine.inputTokens,
+        completionTokens: refine.outputTokens,
+        cachedTokens: refine.cachedTokens,
+        ...job.attribution,
+        category: "symbol-refinement",
+        label: `symbol-refinement key=${job.imageKey}`,
+      }).catch(err => console.error("[AutoSymbolService] cost ledger charge failed:", err));
       debugLog("processQueue", `Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       debugLog("processQueue", `FULL REFINED PROMPT for "${job.imageKey}": ${result.refinedPrompt}`);
       console.log(`[AutoSymbolService] Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);

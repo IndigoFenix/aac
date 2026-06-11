@@ -33,7 +33,7 @@ import { createEmptyAccumulator } from "./types";
 import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { T } from "../memory-schema/canonical-terms";
-import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
+import { ttsFacade, type ResolvedVoice, type TtsUsageReport } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
 import { searchSpotify } from "../spotify/spotify-search";
@@ -734,7 +734,24 @@ export type ServerMessage =
   | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip
   | { type: "construction_symbol_ready"; data: ConstructionSymbolReadyWire }  // a queued construction-key symbol finished generating — client patches the AI strip by key
   | { type: "construction_memory_chips"; data: ConstructionMemoryChipsWire }  // AI-curated dynamic chips for one tab on the construction board
+  | { type: "social_session"; data: SocialSessionWire }  // three-agent path: server-owned social-training session started/ended (peer face data rides along)
+  | { type: "social_peer_state"; data: import("@shared/social-bot/state").BotStatePayload }  // three-agent path: per-turn director state (face target + mode + rapport) while a social session is active
   | { type: "complete"; data?: any };
+
+/** Server-owned social-training session lifecycle (three-agent path).
+ *  "started" carries everything the client needs to render the peer's
+ *  procedural face in the header; speech/text/board all flow through the
+ *  normal Speaker channels while the session is active. */
+export type SocialSessionWire =
+  | {
+      state: "started";
+      characterName: string;
+      voiceName: string;
+      appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance;
+      expressiveness: number;
+      legibility: number;
+    }
+  | { state: "ended"; reason?: string };
 
 /** Construction-board state forwarded to the AI as context, on every relevant change. */
 export interface ConstructionStateWire {
@@ -3511,7 +3528,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
                   symbolPath: `/api/custom-symbols/${symbol.id}/image`,
                 },
               });
-            });
+            }, { sessionId: this.sessionId, studentId: this.studentId, userId: this.userId });
           }
         }
 
@@ -5187,7 +5204,12 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
 
     try {
       const streamPromise = (async () => {
-        for await (const chunk of ttsFacade.synthesizeStream(text, voice, signal)) {
+        const onUsage = (usage: TtsUsageReport) => {
+          if (!this.sessionId || !this.studentId) return;
+          dualAgentService.trackTtsUsage(this.sessionId, this.studentId, this.userId, usage.provider, usage.characters)
+            .catch(err => console.error("[LiveRelay] trackTtsUsage failed:", err));
+        };
+        for await (const chunk of ttsFacade.synthesizeStream(text, voice, signal, onUsage)) {
           if (signal?.aborted) return;
           this.send({ type: msgType, data: chunk.toString("base64") } as any);
         }
@@ -5261,7 +5283,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       const label = keyToLabel.get(imageKey) || imageKey;
       logLiveSession("SYMBOL_READY", `imageKey=${imageKey} label=${label} symbolId=${symbol.id} wsOpen=${this.ws.readyState === 1}`);
       this.send({ type: "symbol_update", data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` } });
-    });
+    }, { sessionId: this.sessionId, studentId: this.studentId, userId: this.userId });
   }
 
   /**
@@ -5325,7 +5347,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           type: "construction_symbol_ready",
           data: { imageKey, symbolPath: `/api/custom-symbols/${symbol.id}/image` },
         });
-      });
+      }, { sessionId: this.sessionId, studentId: this.studentId, userId: this.userId });
     }
   }
 

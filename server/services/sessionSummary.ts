@@ -16,6 +16,7 @@ import { eq } from "drizzle-orm";
 import { getStructuredProvider } from "./providers/provider-factory";
 import type { JSONSchema, GPTInputItem } from "./chat/gpt";
 import { settingsRepository } from "../repositories/settingsRepository";
+import { chargeModelUsage } from "./credit-ledger";
 import fs from "fs";
 import path from "path";
 
@@ -139,6 +140,20 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
       schemaName: "SessionSummary",
       schema: SUMMARY_SCHEMA,
       maxTokens: 400,
+    });
+
+    await chargeModelUsage({
+      provider: cfg.provider,
+      model: cfg.model,
+      promptTokens: response.promptTokens || 0,
+      completionTokens: response.completionTokens || 0,
+      cachedTokens: response.cachedTokens || 0,
+      cacheCreationTokens: response.cacheCreationTokens || 0,
+      sessionId,
+      studentId: session.studentId,
+      userId: session.userId,
+      category: "session-summary",
+      label: "session-summary",
     });
 
     // Structured providers return `content` as a JSON *string* (Claude

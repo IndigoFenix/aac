@@ -184,6 +184,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Active app state
   const [activeApp, setActiveApp] = useState<ActiveAppData | null>(null);
 
+  // Server-owned social-training session (peer persona replaces the
+  // Speaker server-side). Set by the `social_session` message; the peer's
+  // speech/text flow through the normal Speaker channels.
+  const [socialSession, setSocialSession] = useState<import("./dual-agent-types").SocialSessionInfo | null>(null);
+  // Per-turn director state (face target + mode + rapport) while a social
+  // session is active — drives the ProceduralFace.
+  const [socialPeerState, setSocialPeerState] = useState<import("@shared/social-bot/state").BotStatePayload | null>(null);
+
   // Enabled built-in apps + custom apps assigned to this student.
   // Populated from session_snapshot and consumed by the Apps board overlay.
   const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string }>>([]);
@@ -740,6 +748,29 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setActiveApp(null);
           break;
 
+        case "social_session":
+          // Server-owned social-training session lifecycle. "started"
+          // carries the peer's face data; "ended" tears the face down
+          // (the paired app_close clears activeApp).
+          if (msg.data?.state === "started") {
+            setSocialSession({
+              characterName: msg.data.characterName,
+              voiceName: msg.data.voiceName,
+              appearance: msg.data.appearance,
+              expressiveness: msg.data.expressiveness,
+              legibility: msg.data.legibility,
+            });
+          } else {
+            setSocialSession(null);
+            setSocialPeerState(null);
+          }
+          break;
+
+        case "social_peer_state":
+          // Director state after each peer turn — the face lerps toward it.
+          setSocialPeerState(msg.data ?? null);
+          break;
+
         case "debug":
           setDebugData(prev => ({ ...prev, ...msg.data }));
           break;
@@ -1172,28 +1203,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: open ? "builder_open" : "builder_close" });
   }, [wsSend]);
 
-  // ── Social trainer bridge ────────────────────────────────────────────────
+  // ── Social trainer ───────────────────────────────────────────────────────
   //
-  // The social-bot lives in its own WS (`/ws/social-bot`) and has no
-  // direct line to the AAC AI. Three thin notifiers funnel semantic
-  // events to the AAC server, which composes the actual prompts (the
-  // wording lives in server/services/social-bot/aac-bridge-prompts.ts).
+  // The session is server-owned (the peer persona replaces the Speaker
+  // agent in the coordinator). This notifier asks the server to start a
+  // session for client-initiated launches; AI-initiated launches arrive
+  // as app_open("social_trainer") and need no client action.
 
   const notifySocialTrainerStarted = useCallback(() => {
     wsSend({ type: "social_trainer_started" });
   }, [wsSend]);
-
-  const notifySocialTrainerPeerSaid = useCallback((text: string) => {
-    if (!text) return;
-    wsSend({ type: "social_trainer_peer_said", text });
-  }, [wsSend]);
-
-  const notifySocialTrainerEnded = useCallback(
-    (report?: unknown, feedbackSummary?: string) => {
-      wsSend({ type: "social_trainer_ended", report, feedbackSummary });
-    },
-    [wsSend],
-  );
 
   /**
    * Handle a guessing-mode SUGGESTION button press. Server-side engine —
@@ -1348,6 +1367,42 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "pcm_audio", data: int16Base64 });
   }, [wsSend]);
 
+  /**
+   * Send already-computed unknown face descriptors to the server out-of-band
+   * (i.e. not riding along a frame_grid). Used at session start: identification
+   * runs during the slow init window, so the moment the session connects we
+   * push the descriptors and the server can match them BEFORE the first frame
+   * arrives — the startup scene description then already has [PEOPLE PRESENT].
+   */
+  const sendFaceDescriptors = useCallback((descriptors: UnknownFaceDescriptor[]) => {
+    if (!descriptors?.length) return;
+    wsSend({ type: "unknown_face_descriptors", data: descriptors });
+  }, [wsSend]);
+
+  /**
+   * Capture a FRESH single frame right now and send it as the first frame_grid.
+   * Called the moment the session is ready so the Observer's startup scene
+   * description uses a current snapshot — not the ~10s-stale frame captured at
+   * connect time. Best-effort: silently no-ops if the camera isn't available.
+   */
+  const sendFreshStartupFrame = useCallback(async () => {
+    const capture = captureFrameRef.current;
+    if (!capture) return;
+    try {
+      const blob = await capture();
+      if (!blob || blob.size === 0) return;
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+        reader.readAsDataURL(blob);
+      });
+      console.log("[useLiveSession] Sending fresh startup frame,", blob.size, "bytes");
+      wsSend({ type: "frame_grid", data: base64 });
+    } catch (err) {
+      console.warn("[useLiveSession] Fresh startup frame capture failed:", err);
+    }
+  }, [wsSend]);
+
   // Mute setter — user-only toggle (cave click). Notify server so the live
   // session can rebuild its system prompt for the new mode.
   const setMuteState = useCallback((state: "unmuted" | "muted") => {
@@ -1412,6 +1467,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     setDebugText(null);
     setError(null);
     setActiveApp(null);
+    setSocialSession(null);
+    setSocialPeerState(null);
   }, []);
 
   const stopAudio = useCallback(() => {
@@ -1531,6 +1588,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     // Live API only
     sendPcmAudio,
+    sendFaceDescriptors,
+    sendFreshStartupFrame,
     isBusyRef: audioPlayer.isBusyRef,
 
     // Pause state
@@ -1549,10 +1608,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     exitGuessing,
     setBuilderVisible,
 
-    // Social trainer bridge
+    // Social trainer (server-owned session)
+    socialSession,
+    socialPeerState,
     notifySocialTrainerStarted,
-    notifySocialTrainerPeerSaid,
-    notifySocialTrainerEnded,
 
     // Construction board (sentence builder)
     sendConstructionState,

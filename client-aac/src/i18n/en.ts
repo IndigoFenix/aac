@@ -43,6 +43,23 @@ export const en = {
     cancel: "Cancel alarm",
   },
 
+  devices: {
+    title: "Registered Devices",
+    thisDevice: "This device",
+    lastSeen: "Last seen: {date}",
+    deregister: "Remove device",
+    unknownDevice: "Unknown device",
+    empty: "No devices registered.",
+    countLimited: "{count} of {limit} devices in use",
+    countUnlimited: "{count} devices (no limit)",
+    limitReachedTitle: "Device limit reached",
+    limitFullDesc: "All of this student's device slots ({limit}) are taken by other devices. Remove a device below to free a slot, or contact your clinician.",
+    overLimitDesc: "This student has {count} registered devices, but only {limit} are allowed now. Remove devices below until the limit is met.",
+    retry: "Try again",
+    switchStudent: "Switch student",
+    loadFailed: "Failed to load devices.",
+  },
+
   auth: {
     selectStudent: "Select Student",
     loggedInAs: "Logged in as",

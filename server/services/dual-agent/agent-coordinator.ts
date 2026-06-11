@@ -83,11 +83,35 @@ import type {
   MonitorBroadcastEvent,
   FocusRequestEvent,
   AlarmRaisedEvent,
+  GestureRecognizedEvent,
+  ThoughtLeakEvent,
 } from "./agent-events";
+import {
+  parseDefinedGestures,
+  resolveDefinedGesture,
+  GESTURE_PRESS_COOLDOWN_MS,
+  type DefinedGesture,
+} from "./defined-gestures";
 
-import type { ClientMessage, ServerMessage } from "./live-relay";
+import type { ClientMessage, ServerMessage, IdentifiedFaceWire } from "./live-relay";
+import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
+import { findMatchingFace, recordContactSighting, type FaceMatchResult } from "../biometric/recognition-service";
+import {
+  resolveStartupMode,
+  resolveStudentIsActiveUser,
+  buildStartupGreetingTurn,
+  type StartupBehavior,
+} from "./startup-mode";
 import type { AACMuteState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
+import { getLanguageName } from "@shared/language-names";
+import { generatePersona, describePersona, type GeneratedPersona } from "../social-bot/persona-generator";
+import { pickVoice as pickSocialPeerVoice } from "../social-bot/voice-pick";
+import {
+  buildSocialDebriefDirective,
+  runSocialSkillAnalysis,
+} from "../social-bot/peer-speaker-prompt";
+import { SocialPeerSpeakerAgent } from "../social-bot/peer-speaker-agent";
 import { authenticateUpgrade } from "../realtime/ws-auth";
 import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
@@ -229,6 +253,24 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
 
 const DEBOUNCE_CONTEXT_UPDATE_MS = 400;
 const DEBOUNCE_MONITOR_CALL_MS = 30_000;
+
+/** How long the first frame waits for in-flight face recognition before
+ *  building its [PEOPLE PRESENT] block. Short so a slow / absent match never
+ *  stalls the startup scene description. */
+const FACE_RECOGNITION_STARTUP_WAIT_MS = 500;
+/** Backstop for the startup greeting: if no user identification arrives after
+ *  the first frame, resolve startup anyway (greeting on a personal device with
+ *  no contradicting visitor; otherwise just stop waiting). Generous so a slow
+ *  / low-confidence face match still wins the race. */
+const STARTUP_FALLBACK_MS = 6_000;
+/** Once the user is identified AND scene context has arrived, wait this long
+ *  before greeting — batches a burst of update_context calls so the greeting
+ *  follows the LAST one. */
+const STARTUP_GREET_AFTER_CONTEXT_MS = 400;
+/** Once the user is identified but no scene context has arrived yet, wait this
+ *  long for the Observer's description before greeting anyway. */
+const STARTUP_GREET_WAIT_CONTEXT_MS = 1_500;
+
 const RECENT_EVENTS_WINDOW = 20;
 /** How many conversational events accumulate before a rolling session
  *  summary refresh is triggered. Mirrors LiveRelay's threshold. */
@@ -249,6 +291,21 @@ const RESTING_COMPRESSION_TARGET = 6_000;
 /** How often to batch buffered Speaker PCM chunks into a single WAV
  *  and send to the client. Mirrors LiveRelay.AUDIO_FLUSH_INTERVAL_MS. */
 const AUDIO_FLUSH_INTERVAL_MS = 250;
+
+/** Corrective injected into the native-audio Speaker after it leaks its
+ *  reasoning into spoken output. Framed as a system correction: reassure
+ *  the model the child did NOT hear it (so it doesn't try to "take it back"
+ *  aloud), name the exact failure, and point it back to the silent tool.
+ *  Also forbids the bare-"THOUGHT" label the model drifts into. English,
+ *  matching every other meta-injection ([MODE], [CONTEXT], …). */
+const THOUGHT_LEAK_CORRECTION =
+  `[SYSTEM CORRECTION] Your last turn began by voicing your private reasoning ` +
+  `(it started with "private_thought" or a similar label). That audio was caught and ` +
+  `suppressed — the child did NOT hear it, so do NOT apologize for it or refer to it. ` +
+  `Reminder: a private thought is SILENT. To record reasoning, call the private_thought ` +
+  `function — never speak or write it. Never prefix what you say with "private_thought", ` +
+  `"THOUGHT", or any similar marker; everything you voice reaches the child. ` +
+  `Continue the conversation naturally on your next turn.`;
 
 /** Convert a raw 16-bit-LE mono PCM buffer to a WAV buffer by prepending
  *  a 44-byte header. Mirrors LiveRelay.pcmToWav so the new path produces
@@ -521,11 +578,43 @@ export class AgentCoordinator {
     "set_mute_state", "user_message",
   ]);
 
+  /** Deliberate user inputs that cancel the pending startup greeting — the
+   *  user started the interaction themselves, so we don't auto-greet over it. */
+  private static readonly STARTUP_CANCELING_MSG_TYPES = new Set<ClientMessage["type"]>([
+    "button_press", "board_exit", "glyph_press", "user_message",
+  ]);
+
   /** True while Speaker is actively producing speech (speech_start →
    *  speech_end). Feeds the repeated-press guard's "model responding"
    *  signal so a re-press DURING a long reply is coalesced, not just one
    *  within the time window. */
   private speakerSpeaking = false;
+
+  // ── Social-training session (peer persona replaces Speaker) ──────────
+  /** Active server-owned social-training session. While set, `this.speaker`
+   *  holds the director-driven PEER (SocialPeerSpeakerAgent — procedural
+   *  personality, deterministic affect engine, no student memory) instead
+   *  of the companion. ALWAYS the HTTP forced-tool path, regardless of the
+   *  session's general speaker mode. Observer + BoardManager are untouched —
+   *  they interact with the peer exactly as with the companion Speaker.
+   *  Memory-bearing injections (Monitor context, session summaries, mode
+   *  changes) are withheld from the peer while active, and only USER →
+   *  DEVICE turns reach the director. */
+  private socialPeer: {
+    persona: GeneratedPersona;
+    /** Concrete handle (this.speaker holds it as ISpeakerAgent) — used to
+     *  pull the director's SessionReport at session end. */
+    agent: SocialPeerSpeakerAgent;
+    voiceName: string;
+    /** TTS voice for the peer's replies (onSpeakerSpeakText). */
+    voice: ResolvedVoice;
+    /** conversationLog index at session start — the slice from here to
+     *  session end is the transcript fed to the social-skill analysis. */
+    logStartIndex: number;
+    startedAt: number;
+  } | null = null;
+  /** Single-flight guard for the social start/end Speaker swaps. */
+  private socialPeerTransition = false;
 
   // ── Repeated-press guard ──────────────────────────────────────────────
   // Some students perseverate on a button — tapping the same one many times.
@@ -584,9 +673,55 @@ export class AgentCoordinator {
    *  ButtonPressedEvent.target on the next press). */
   private currentBoardTarget: string = "DEVICE";
 
+  /** Clinician-defined gestures (aac_settings.defined_gestures), parsed at
+   *  prompt build. Observer reports matches via report_gesture; the
+   *  Coordinator resolves against this registry and replays the
+   *  button-press flow with the gesture's meaning. */
+  private definedGestures: DefinedGesture[] = [];
+  /** Per-gesture timestamp of the last synthetic press — Observer sees a
+   *  held gesture across many frames; the cooldown collapses re-reports. */
+  private lastGesturePressAt = new Map<string, number>();
+
   /** Counters for periodic flow-confirmation logging. */
   private frameCount = 0;
   private pcmCount = 0;
+
+  // -------------------------------------------------------------------------
+  // Face recognition (ported from the legacy LiveRelay path). Populated when
+  // the client sends `unknown_face_descriptors`; feeds the `[PEOPLE PRESENT]`
+  // block appended to frame prompts and the `people_identified` debug echo.
+  // -------------------------------------------------------------------------
+  private currentIdentifiedFaces: IdentifiedFaceWire[] = [];
+  private currentIdentifiedFacesAt = 0;
+  /** Per-contact rate limit for `recordContactSighting()` — keyed by contact id. */
+  private lastSightingBumpAt: Map<string, number> = new Map();
+  /** In-flight face-recognition promise. The first-frame startup path awaits
+   *  this (briefly) so the startup scene description has face results. */
+  private faceRecognitionInFlight: Promise<void> | null = null;
+  /** TTL after which the identified-faces list is considered stale and dropped. */
+  private static readonly IDENTIFIED_FACES_TTL_MS = 30_000;
+  /** Minimum gap between sighting bumps for the same contact. */
+  private static readonly SIGHTING_BUMP_INTERVAL_MS = 60_000;
+
+  // -------------------------------------------------------------------------
+  // Startup mode (CONTEXTUAL / MENU). Resolved from context at init; consumed
+  // once on the first frame's scene description (see flushContextUpdates).
+  // -------------------------------------------------------------------------
+  private startupBehavior: StartupBehavior = "contextual";
+  /** One-shot: true until the startup greeting fires, the user presses a
+   *  button first, or the fallback timer resolves it. */
+  private startupPending = true;
+  /** Set once the Observer explicitly confirms who the active user is via
+   *  set_person_as_user — a strong "the user is identified" signal. */
+  private startupUserConfirmed = false;
+  /** Set once the active user has been identified (arms the greeting). */
+  private startupUserIdentified = false;
+  /** Set once the first scene context (update_context) has been injected. */
+  private startupContextReceived = false;
+  /** Settle timer — fires the greeting AFTER context has landed. */
+  private startupGreetTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Fallback timer so startup still resolves if no identification arrives. */
+  private startupFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Echo suppression is prompt-side only — Observer's <transcription>
   // section tells it to ignore device-speaker playback (button-press TTS
@@ -600,6 +735,11 @@ export class AgentCoordinator {
    *  LiveRelay's directAudioChunks/flushDirectAudio pattern. */
   private speakerAudioChunks: string[] = [];
   private speakerAudioFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while the current Speaker turn is being suppressed because it
+   *  leaked private reasoning into spoken output ("private_thought …").
+   *  Set by onSpeakerSuppressAudio(), cleared when the turn resolves to a
+   *  thought_leak event. While set, Speaker PCM chunks are dropped. */
+  private suppressSpeakerAudio = false;
 
   /** Cancellation handle for the in-flight student-voice TTS stream.
    *  A new press / interpret aborts the previous and tells the client
@@ -830,6 +970,7 @@ export class AgentCoordinator {
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
     if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
     if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
+    this.clearStartupTimers();
     // Record any still-open repeat-press burst before the final Monitor pass
     // (runFinalMonitorPass below) so end-of-session perseveration isn't lost.
     this.flushRepeatBurst();
@@ -856,6 +997,10 @@ export class AgentCoordinator {
     this.observer = null;
     this.speaker = null;
     this.boardManager = null;
+    // If a social session was active, the peer Speaker was just closed
+    // with the rest — drop the state without analysis (no one left to
+    // debrief; the conversation is already in the Monitor's queue).
+    this.socialPeer = null;
 
     // Close WS if still open
     try {
@@ -965,20 +1110,19 @@ export class AgentCoordinator {
       await this.wakeFromSleep();
     }
 
+    // The user pressed something before the startup greeting fired — they
+    // started the interaction themselves, so cancel the auto-greeting.
+    if (this.startupPending && AgentCoordinator.STARTUP_CANCELING_MSG_TYPES.has(msg.type)) {
+      this.cancelStartupGreeting(`user input "${msg.type}"`);
+    }
+
     switch (msg.type) {
       case "initialize":
         await this.handleInitialize(msg);
         return;
       case "frame_grid":
         if (this.paused) return;
-        this.observer?.sendFrame(msg.data);
-        this.frameCount += 1;
-        // Periodic log so we can confirm frames are flowing.
-        if (this.frameCount === 1 || this.frameCount % 50 === 0) {
-          runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-            logLiveSession("CLIENT → frame_grid", `count=${this.frameCount} observerConnected=${this.observer?.isConnected ?? false}`);
-          });
-        }
+        await this.forwardFrameToObserver(msg.data);
         return;
       case "pcm_audio":
         if (this.paused) return;
@@ -1002,6 +1146,17 @@ export class AgentCoordinator {
         this.paused = msg.paused;
         runInSessionContext(this.sessionId || "?", this.debugMode, () => {
           logLiveSession("CLIENT → set_paused", `paused=${msg.paused}`);
+        });
+        return;
+      case "unknown_face_descriptors":
+        // Server-side biometric matching, scoped to this student's known
+        // people. Fire-and-forget, but keep the promise so the first-frame
+        // startup path can await it briefly.
+        if (!this.studentId) return;
+        this.faceRecognitionInFlight = this.recognizeFaces(msg.data).catch(err => {
+          runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+            logLiveSession("FACE_RECOGNITION_ERROR", (err as Error).message);
+          });
         });
         return;
       case "audio_clip":
@@ -1090,6 +1245,24 @@ export class AgentCoordinator {
         // Treat as a transcribed user statement directed at the device.
         this.speaker?.sendUserTurn(`[TRANSCRIPT] user → device: "${msg.text}"`);
         return;
+      case "app_dismissed":
+        // User closed the active app surface. For a social-training
+        // session this is the user-initiated exit (cave click / back);
+        // end the session and restore the companion Speaker. Other apps
+        // just get a context note so Speaker knows the surface is gone.
+        if (this.socialPeer && msg.appId === "social_trainer") {
+          void this.endSocialPeerSession("user_exit");
+          return;
+        }
+        this.speaker?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
+        this.observer?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
+        return;
+      case "social_trainer_started":
+        // Client-initiated launch (apps surface / debug helper). The
+        // AI-initiated path arrives via routeAppOpen("social_trainer").
+        // startSocialPeerSession self-guards against double starts.
+        void this.startSocialPeerSession("client_launch");
+        return;
       default:
         // Many client message types (focus_frame, page_navigate, etc.) are
         // handled by the legacy path but aren't part of the MVP routing
@@ -1129,6 +1302,12 @@ export class AgentCoordinator {
     this.classroomId = state.classroomId ?? null;
     this.muteState = state.muteState;
     this.debugMode = !!msg.debugMode;
+
+    // Startup behavior is decided from context (no clinician toggle):
+    // shared / classroom devices get MENU (board-first, AI waits); a personal
+    // device gets CONTEXTUAL (the AI may greet a recognized student on the
+    // first frame). Consumed once in flushContextUpdates / the fallback timer.
+    this.startupBehavior = resolveStartupMode({ classroomId: this.classroomId });
 
     // Wire context-injection broadcast: when Monitor produces context,
     // route through our broadcast helper so all three agents see it.
@@ -1235,7 +1414,9 @@ export class AgentCoordinator {
 
     // 5. Build tool configs. Cache the bases so profile transitions can
     //    re-derive them with restingMode flipped.
-    const observerToolConfig: ObserverToolConfig = {};
+    const observerToolConfig: ObserverToolConfig = {
+      definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
+    };
     this.observerToolConfigBase = observerToolConfig;
     // Speaker's tool config wants full AACAppDefinition objects (with
     // icon / enabledByDefault). The prompt config only carries the
@@ -1405,6 +1586,11 @@ export class AgentCoordinator {
     });
 
     // (Home board is ensured in availableBoards earlier, before prompt build.)
+    //
+    // The first Observer frame is NOT the ~10s-stale `initialFrame` from the
+    // initialize message — the client captures and sends a FRESH frame the
+    // instant it sees `initialized` (sendFreshStartupFrame), which arrives as
+    // the first frame_grid and gets the startup prompt via forwardFrameToObserver.
   }
 
   // -------------------------------------------------------------------------
@@ -1481,6 +1667,8 @@ export class AgentCoordinator {
     // Cache for downstream speech-party comparisons (routeTranscribed, etc.)
     this.currentStudentName = studentName;
     this.aiName = aiName;
+    // Cache the defined-gesture registry for report_gesture resolution.
+    this.definedGestures = parseDefinedGestures(student?.aacSettings?.definedGestures);
 
     const base = {
       studentName,
@@ -1509,6 +1697,7 @@ export class AgentCoordinator {
         availableBoards: state.availableBoards
           ?.filter(b => b.key !== HOME_BOARD_KEY)
           .map(b => ({ key: b.key, name: b.name, hint: b.hint })),
+        definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
       },
       speaker: {
         ...base,
@@ -1684,6 +1873,56 @@ export class AgentCoordinator {
       timestamp: Date.now(),
       label,
       sentence,
+    });
+  }
+
+  /**
+   * Observer reported a defined gesture (report_gesture tool). Resolve it
+   * against the server-side registry — the configured meaning wins over
+   * anything the model said — and replay the button-press flow: voice the
+   * meaning in the student's voice, then route a `button_pressed` event so
+   * Speaker replies and Board Manager rebuilds exactly as for a tapped
+   * button. A per-gesture cooldown collapses the multi-frame re-reports a
+   * held gesture produces.
+   */
+  private async handleGestureRecognized(event: GestureRecognizedEvent): Promise<void> {
+    const match = resolveDefinedGesture(this.definedGestures, event.gesture);
+    if (!match) {
+      flowNote("COORDINATOR", `report_gesture "${event.gesture}" matched no defined gesture — ignored.`);
+      this.observer?.sendContextInjection(
+        `[GESTURE IGNORED] "${event.gesture}" is not in <defined_gestures> — only report the listed gestures.`,
+      );
+      return;
+    }
+
+    const now = Date.now();
+    const last = this.lastGesturePressAt.get(match.name) ?? 0;
+    if (now - last < GESTURE_PRESS_COOLDOWN_MS) {
+      flowNote("COORDINATOR", `Gesture "${match.name}" re-reported within cooldown — ignored.`);
+      return;
+    }
+    this.lastGesturePressAt.set(match.name, now);
+
+    // Same sequence as handleButtonPress: stamp activity, surface the
+    // utterance, voice it through the student TTS, then fan out. The
+    // emitClientEvent wake gate handles a gesture arriving while resting.
+    this.noteEngagementActivity();
+    flowNote("COORDINATOR", `Gesture "${match.name}" recognized → voicing "${match.meaning}" as a button press.`);
+    flowOutput("COORDINATOR", "ws_send_utterance", match.meaning);
+    this.send({ type: "utterance", text: match.meaning, confidence: "high", noAudioClear: false });
+    try { await this.streamStudentTts(match.meaning, "gesture_press"); } catch { /* logged inside */ }
+
+    this.emitClientEvent({
+      type: "button_pressed",
+      source: "client",
+      timestamp: Date.now(),
+      label: match.name,
+      sentence: match.meaning,
+      via: "gesture",
+      gestureName: match.name,
+      // A defined gesture is by definition directed at the device — don't
+      // inherit a third-party board target from the last rebuild.
+      target: PARTY_DEVICE,
     });
   }
 
@@ -2082,7 +2321,23 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", "guessing seeder skipped — no recent AI question to seed from.");
       return;
     }
-    const seed = await seedGuessingFromConversation({ lastAIQuestion }).catch((err) => {
+    const seed = await seedGuessingFromConversation({
+      lastAIQuestion,
+      onUsage: (usage) => {
+        if (!this.sessionId || !this.studentId) return;
+        dualAgentService.trackHttpUsage(
+          this.sessionId,
+          this.studentId,
+          this.userId,
+          usage.provider,
+          usage.model,
+          usage.promptTokens,
+          usage.completionTokens,
+          usage.cachedTokens,
+          "guessing-seeder",
+        ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(guessing seeder) failed:", err));
+      },
+    }).catch((err) => {
       flowNote("COORDINATOR", `guessing seeder errored: ${err?.message ?? err}`);
       return null;
     });
@@ -2422,8 +2677,15 @@ export class AgentCoordinator {
         // marker because it's the agent that records HOW statements
         // were made.
         const pressInner = T.tagPress.replace(/^\[|\]$/g, "");
-        const observerRendered = `[${pressInner} to ${targetLabel}] "${event.sentence}"`;
-        const speakerRendered = `[USER to ${targetLabel}] "${event.sentence}"`;
+        // A gesture-triggered press keeps the same statement shape but is
+        // marked so agents know HOW it was made (and Observer can tie it
+        // back to its own report_gesture call).
+        const observerRendered = event.via === "gesture"
+          ? `[GESTURE "${event.gestureName}" voiced to ${targetLabel}] "${event.sentence}"`
+          : `[${pressInner} to ${targetLabel}] "${event.sentence}"`;
+        const speakerRendered = event.via === "gesture"
+          ? `[USER to ${targetLabel} via gesture] "${event.sentence}"`
+          : `[USER to ${targetLabel}] "${event.sentence}"`;
 
         this.observer?.sendContextInjection(observerRendered);
         // A guessing-mode narrowing press (suggestion: / [NARROW:] /
@@ -2491,7 +2753,8 @@ export class AgentCoordinator {
       case "mute_toggled": {
         const rendered = `[MUTE TOGGLED] now ${event.state}`;
         this.observer?.sendContextInjection(rendered);
-        this.speaker?.sendContextInjection(rendered);
+        // The peer persona has no mute concept — don't leak device state.
+        if (!this.socialPeer) this.speaker?.sendContextInjection(rendered);
         this.invokeBoardManager([event]);
         return;
       }
@@ -2542,6 +2805,9 @@ export class AgentCoordinator {
         return;
       case "focus_request":
         this.routeFocusRequest(event);
+        return;
+      case "gesture_recognized":
+        void this.handleGestureRecognized(event);
         return;
       case "mode_change":
         // Observer owns the interact/assist switch in the three-agent
@@ -2610,11 +2876,25 @@ export class AgentCoordinator {
     this.observer?.sendContextInjection(rendered);
 
     if (toDevice) {
+      // During a social session the director peer models a strict
+      // one-on-one conversation with the student: only USER → DEVICE
+      // speech reaches it. Other speakers (named third parties, UNKNOWN)
+      // are logged for the Monitor but not delivered as turns.
+      if (this.socialPeer && !isUserTarget(event.speaker, this.currentStudentName)) {
+        flowNote("COORDINATOR", `Social session: dropped device-targeted transcript from non-user speaker "${event.speaker}".`);
+        this.appendToConversationLog("system", rendered);
+        return;
+      }
       // Someone addressed the AI directly — deliver as a user_turn from
       // Speaker's perspective (Speaker prompt treats DEVICE-targeted
       // speech as "addressed to YOU").
       this.lastUserInputType = "transcribed";
-      this.speaker?.sendUserTurn(rendered);
+      // Peer path: normalize the speaker label to USER — the student's
+      // NAME must not reach the peer (no student knowledge), and the
+      // director's turn matcher keys on the canonical [USER to YOU] shape.
+      this.speaker?.sendUserTurn(
+        this.socialPeer ? `[USER to YOU] "${event.text}"` : rendered,
+      );
       this.appendToConversationLog("user", rendered);
     } else {
       // Either USER-targeted or 3rd-party / UNKNOWN. Speaker sees it as
@@ -2662,7 +2942,184 @@ export class AgentCoordinator {
     // People updates and the admin log shows the perceived context, not
     // just the spoken turns.
     this.appendToConversationLog("system", joined);
+
+    // While startup is pending, the startup path owns the board: the greeting
+    // settle timer waits for BOTH identification AND scene context, then fires
+    // (and rebuilds the board with openers) — so the [SESSION START] command
+    // lands AFTER the Observer's update_context. We record that context arrived
+    // and (re)arm the settle timer; re-arming batches a burst of updates so the
+    // greeting follows the LAST one. MENU keeps the home menu (greeting never
+    // fires; the fallback clears startup). Either way, no board rebuild here —
+    // it would either be redundant with the greeting's rebuild or clobber the
+    // home menu.
+    if (this.startupPending) {
+      this.startupContextReceived = true;
+      if (batch.some(e => e.updateType === "set_person_as_user")) this.startupUserConfirmed = true;
+      this.maybeArmStartupGreet();
+      return;
+    }
+
     this.invokeBoardManager(batch);
+  }
+
+  /**
+   * (Re)arm the startup-greeting settle timer once the active user is
+   * identified (face match of student/linked-user, or set_person_as_user). The
+   * greeting fires from the timer — never inline — so the [SESSION START]
+   * command always lands AFTER the Observer's update_context was injected to
+   * Speaker:
+   *   - context already received → short settle (batches trailing updates);
+   *   - identified but no context yet → wait a window for the scene description.
+   * We never consume startup on a non-identifying observation, and the hard
+   * fallback timer still caps the total wait.
+   */
+  private maybeArmStartupGreet(): void {
+    if (!this.startupPending || this.state !== "ready") return;
+    if (!this.activeUserIdentified()) return;
+    const firstTime = !this.startupUserIdentified;
+    this.startupUserIdentified = true;
+    if (this.startupContextReceived) {
+      this.armStartupGreetTimer(STARTUP_GREET_AFTER_CONTEXT_MS);
+    } else if (firstTime) {
+      // Identified but no scene context yet — wait a window for it. Don't
+      // re-arm on later identifications (that would keep pushing it out).
+      this.armStartupGreetTimer(STARTUP_GREET_WAIT_CONTEXT_MS);
+    }
+  }
+
+  private armStartupGreetTimer(ms: number): void {
+    if (this.startupGreetTimer) clearTimeout(this.startupGreetTimer);
+    this.startupGreetTimer = setTimeout(() => {
+      this.startupGreetTimer = null;
+      this.fireStartupGreeting({});
+    }, ms);
+  }
+
+  /**
+   * Fire (or resolve) the one-shot startup greeting. CONTEXTUAL + active user
+   * identified → Speaker greets and the board follows with openers. `force`
+   * (the fallback timer) resolves startup regardless: greet on a personal
+   * device with no contradicting visitor, otherwise just stop waiting. MENU /
+   * social-peer sessions never greet.
+   */
+  private fireStartupGreeting(opts: { force?: boolean } = {}): void {
+    if (!this.startupPending || this.state !== "ready") return;
+    const identified = this.activeUserIdentified();
+    if (!identified && !opts.force) return; // nothing to fire yet
+    this.startupPending = false;
+    this.clearStartupTimers();
+
+    const canGreet = this.startupBehavior === "contextual" && !this.socialPeer;
+    const greet = canGreet && (identified || this.studentIsActiveUser());
+    if (greet) {
+      flowNote("COORDINATOR", `Startup greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);
+      // sendUserTurn (not a context injection) so the Speaker actually voices
+      // a reply; the scene context was already injected before this. Board
+      // follows with openers.
+      this.speaker?.sendUserTurn(buildStartupGreetingTurn(this.currentStudentName || "the user"));
+      this.invokeBoardManager([]);
+    } else {
+      flowNote("COORDINATOR", `Startup resolved without greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);
+    }
+  }
+
+  /** Cancel the pending startup greeting because the user acted first (pressed
+   *  a button) — the interaction has already begun, so no auto-greeting. */
+  private cancelStartupGreeting(reason: string): void {
+    if (!this.startupPending) return;
+    this.startupPending = false;
+    this.clearStartupTimers();
+    flowNote("COORDINATOR", `Startup greeting canceled — ${reason}`);
+  }
+
+  private clearStartupTimers(): void {
+    if (this.startupGreetTimer) { clearTimeout(this.startupGreetTimer); this.startupGreetTimer = null; }
+    if (this.startupFallbackTimer) { clearTimeout(this.startupFallbackTimer); this.startupFallbackTimer = null; }
+  }
+
+  /**
+   * Whether the person at the device has been positively identified as a
+   * primary user — a fresh face match of entityType "student" or "user", or
+   * the Observer's set_person_as_user. Visitors (entityType "contact") do NOT
+   * count: we don't greet a caregiver as the student.
+   */
+  private activeUserIdentified(): boolean {
+    if (this.startupUserConfirmed) return true;
+    if (!this.currentIdentifiedFaces.length) return false;
+    if (Date.now() - this.currentIdentifiedFacesAt > AgentCoordinator.IDENTIFIED_FACES_TTL_MS) return false;
+    return this.currentIdentifiedFaces.some(f => f.matched && (f.entityType === "student" || f.entityType === "user"));
+  }
+
+  /**
+   * Whether the bound student is the person actually at the device. Prefers a
+   * positive biometric match; if faces are seen but none is the student, a
+   * visitor is at the device (don't greet as the student); if no recognition
+   * is available, assume the student on a personal device but never on a
+   * shared / classroom one.
+   */
+  private studentIsActiveUser(): boolean {
+    const haveFreshFaces = this.currentIdentifiedFaces.length > 0
+      && Date.now() - this.currentIdentifiedFacesAt <= AgentCoordinator.IDENTIFIED_FACES_TTL_MS;
+    return resolveStudentIsActiveUser({
+      sawStudentFace: this.sawStudentFace(),
+      haveFreshFaces,
+      isSharedDevice: !!this.classroomId,
+    });
+  }
+
+  /**
+   * Send one frame to the Observer with the right scene prompt. The first
+   * frame of the session gets the stronger startup prompt and arms the startup
+   * fallback; every frame carries the live [PEOPLE PRESENT] block. Used by both
+   * the streaming frame_grid path and the immediate initialFrame at connect.
+   */
+  private async forwardFrameToObserver(data: string): Promise<void> {
+    // Bump first (before any await) so a concurrently-processed second frame
+    // can't also be treated as the first.
+    this.frameCount += 1;
+    const isFirstFrame = this.frameCount === 1;
+    if (isFirstFrame) {
+      // Give just-sent face descriptors a moment to resolve so the first-frame
+      // scene description can read [PEOPLE PRESENT].
+      await this.awaitFaceRecognition(FACE_RECOGNITION_STARTUP_WAIT_MS);
+      // Backstop in case no user identification ever arrives.
+      this.armStartupFallback();
+    }
+    // The Observer scene prompt is built here (not defaulted inside
+    // ObserverAgent) so we can append the live [PEOPLE PRESENT] block and use
+    // the stronger startup prompt on the very first frame.
+    const peopleCtx = this.buildPeoplePresentContext();
+    const peopleNote = peopleCtx ? `\n${peopleCtx}` : "";
+    const base = isFirstFrame ? OBSERVER_STARTUP_PROMPT : OBSERVER_SCENE_UPDATE_PROMPT;
+    this.observer?.sendFrame(data, `${base}${peopleNote}`);
+    if (this.frameCount === 1 || this.frameCount % 50 === 0) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("FRAME → observer", `count=${this.frameCount} observerConnected=${this.observer?.isConnected ?? false} startup=${this.startupBehavior}`);
+      });
+    }
+  }
+
+  /** Await in-flight face recognition, capped at `timeoutMs`. */
+  private async awaitFaceRecognition(timeoutMs: number): Promise<void> {
+    const inFlight = this.faceRecognitionInFlight;
+    if (!inFlight) return;
+    await Promise.race([
+      inFlight,
+      new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
+  /** Arm the one-shot backstop that resolves startup if no user identification
+   *  arrives after the first frame. */
+  private armStartupFallback(): void {
+    if (this.startupFallbackTimer || !this.startupPending) return;
+    this.startupFallbackTimer = setTimeout(() => {
+      this.startupFallbackTimer = null;
+      if (this.startupPending) {
+        flowNote("COORDINATOR", "Startup fallback timer fired — no user identification arrived.");
+        this.fireStartupGreeting({ force: true });
+      }
+    }, STARTUP_FALLBACK_MS);
   }
 
   /** A user-or-device-directed action just happened — reset the rest
@@ -2685,6 +3142,12 @@ export class AgentCoordinator {
    *  by noteEngagementActivity if activity resumes meanwhile. */
   private requestRest(reason?: string): void {
     if (this.sessionProfile === "resting") return;
+    // Resting closes the Speaker — which during a social session is the
+    // peer mid-conversation. The session itself counts as engagement.
+    if (this.socialPeer || this.socialPeerTransition) {
+      flowNote("COORDINATOR", "Rest request ignored — social-training session active.");
+      return;
+    }
     const elapsed = Date.now() - this.lastEngagementActivityAt;
     if (elapsed >= AgentCoordinator.REST_DEBOUNCE_MS) {
       flowNote("COORDINATOR", `Rest request: ${elapsed}ms since last activity — resting now.${reason ? ` (${reason})` : ""}`);
@@ -2746,6 +3209,18 @@ export class AgentCoordinator {
    * Flushes any open repeat-press burst first so perseveration isn't lost.
    */
   private enterSleep(): void {
+    // A sleep mid-social-session means the user disengaged entirely —
+    // drop the session without analysis/debrief. The wake path rebuilds
+    // the COMPANION Speaker from cached prompts, so just clearing the
+    // state here is enough; the conversation stays in conversationLog.
+    if (this.socialPeer) {
+      const peerName = this.socialPeer.persona.name;
+      this.socialPeer = null;
+      this.send({ type: "social_session", data: { state: "ended", reason: "sleep" } });
+      this.send({ type: "app_close", data: {} });
+      this.appendToConversationLog("system", `[SOCIAL TRAINING ENDED] peer=${peerName} reason=sleep (user disengaged)`);
+      flowNote("COORDINATOR", `Social-training session dropped on sleep (peer "${peerName}").`);
+    }
     this.flushRepeatBurst();
     this.clearDeferredBoardMgr("entering sleep");
     this.speakerSpeaking = false;
@@ -2782,6 +3257,14 @@ export class AgentCoordinator {
     if (this.sessionProfile === target) return;
     if (!this.observer) {
       console.warn(`[AgentCoordinator] transitionToProfile(${target}): observer missing`);
+      return;
+    }
+    // Defensive: never rest over an active social session — the Speaker
+    // slot holds the peer and tearing it down here would strand the
+    // session state. requestRest already gates this; this catches any
+    // pre-scheduled timer that slipped through.
+    if (target === "resting" && (this.socialPeer || this.socialPeerTransition)) {
+      flowNote("COORDINATOR", "transitionToProfile(resting) skipped — social-training session active.");
       return;
     }
 
@@ -3007,6 +3490,7 @@ export class AgentCoordinator {
       onEvent: (e) => this.onSpeakerEvent(e),
       onAudioChunk: (data) => this.onSpeakerAudioChunk(data),
       onTranscriptionDelta: (text) => this.onSpeakerTranscriptionDelta(text),
+      onSuppressAudio: () => this.onSpeakerSuppressAudio(),
       onSpeakText: (text) => this.onSpeakerSpeakText(text),
       onError: (err) => console.error("[AgentCoordinator] Speaker error:", err),
       onClose: () => console.log("[AgentCoordinator] Speaker closed"),
@@ -3090,7 +3574,7 @@ export class AgentCoordinator {
         // notes in either of those would leak back into the agents'
         // visible context. flow log already captured the call via
         // HttpSpeakerAgent's flowTool("private_note", ...).
-        this.writeSupervisorOnly(`[SPEAKER private_note] ${event.note}`);
+        this.writeSupervisorOnly(`[SPEAKER private_thought] ${event.note}`);
         // Visual "thinking" cue to the client so the user sees that
         // Speaker paused to think rather than wondering why it went
         // quiet. The client treats this as a one-shot pulse and
@@ -3102,7 +3586,48 @@ export class AgentCoordinator {
         // Acknowledged. The event is bus-logged for visibility;
         // Coordinator takes no further action — silence is the action.
         return;
+      case "thought_leak":
+        this.onSpeakerThoughtLeak(event);
+        return;
     }
+  }
+
+  /** The Speaker voiced its private reasoning this turn ("private_thought …").
+   *  Audio was already suppressed mid-stream by onSpeakerSuppressAudio(). Here
+   *  we close out the turn WITHOUT the normal speech_end side effects — no echo
+   *  back into Speaker context, no conversationLog append, no BoardManager
+   *  rebuild — because feeding the leaked text back is exactly the self-
+   *  reinforcing loop that makes the behavior persist. The captured reasoning
+   *  is preserved on supervisor channels (same as a real private_thought), and
+   *  a corrective is injected so the model stops voicing thoughts. */
+  private onSpeakerThoughtLeak(event: ThoughtLeakEvent): void {
+    // Lift suppression so the next turn's audio flows normally.
+    this.suppressSpeakerAudio = false;
+    this.speakerSpeaking = false;
+
+    // Preserve the reasoning for SUPERVISOR channels only (admin log +
+    // Monitor queue) — never into agent-visible context. Mirrors the real
+    // private_note handler above.
+    this.writeSupervisorOnly(`[SPEAKER private_thought — leaked into speech, suppressed] ${event.note}`);
+
+    // One-shot "thinking" pulse so the client shows the avatar paused to
+    // think rather than wondering why the audio cut out.
+    this.send({ type: "thinking", active: true });
+    // Reset the client's text accumulator (it may hold a leaked fragment
+    // sent before detection fired).
+    this.send({ type: "complete", data: {} });
+
+    // Corrective nudge. Delivered as a context injection (no response
+    // provoked) — the next real user turn drives the actual reply. This is
+    // the live-audio counterpart to the HTTP orphan-note re-prompt.
+    this.speaker?.sendContextInjection(THOUGHT_LEAK_CORRECTION);
+
+    flowNote("SPEAKER", `thought_leak suppressed + corrective injected: "${event.note.slice(0, 80)}"`);
+
+    // Deliberately NOT done here (unlike speech_end): no [YOU to USER] echo,
+    // no [AI to USER] Observer injection, no appendToConversationLog, no
+    // invokeBoardManager. The board keeps whatever the press-time rebuild
+    // produced; the model gets a clean slate on its next turn.
   }
 
   private onSpeakerSpeechStart(event: SpeechStartEvent): void {
@@ -3161,12 +3686,23 @@ export class AgentCoordinator {
       ? "USER"
       : target;
     if (event.transcript) {
+      // During a social session, the device voice belongs to the peer
+      // persona — tag the speech with its name so the Observer, the log,
+      // and the restored companion Speaker (history replay) all see WHO
+      // said it. The "(virtual peer)" marker keeps the replay
+      // unambiguous: those model-role turns weren't the companion's.
+      const speakerLabel = this.socialPeer
+        ? `${this.socialPeer.persona.name} (virtual peer)`
+        : "AI";
       // Observer hears the speakers playback through the mic — tag it
-      // as the AI's voice so it doesn't transcribe the room playback.
-      this.observer?.sendContextInjection(`[AI to ${targetForLog}] "${event.transcript}"`);
+      // as the device's voice so it doesn't transcribe the room playback.
+      this.observer?.sendContextInjection(`[${speakerLabel} to ${targetForLog}] "${event.transcript}"`);
       // Echo back to Speaker so it remembers what it said.
       this.speaker?.sendContextInjection(`[YOU to ${targetForLog}] "${event.transcript}" (you just said this)`);
-      this.appendToConversationLog("assistant", event.transcript);
+      this.appendToConversationLog(
+        "assistant",
+        this.socialPeer ? `[${speakerLabel}] "${event.transcript}"` : event.transcript,
+      );
     }
 
     // BoardManager rebuild already fired on speech_start (where the
@@ -3210,7 +3746,10 @@ export class AgentCoordinator {
       data: { mode: event.mode, reason: event.reason, source: "ai" },
     });
     const rendered = `[MODE] ${event.mode}${event.reason ? ` — ${event.reason}` : ""}`;
-    this.speaker?.sendContextInjection(rendered);
+    // The peer persona has no interaction-mode concept; the persisted
+    // mode is re-broadcast to the restored companion Speaker on session
+    // end (via primeFreshSpeaker).
+    if (!this.socialPeer) this.speaker?.sendContextInjection(rendered);
     this.observer?.sendContextInjection(rendered);
   }
 
@@ -3251,6 +3790,14 @@ export class AgentCoordinator {
   }
 
   private routeAppOpen(event: AppOpenRequestedEvent): void {
+    if (event.appId === "social_trainer") {
+      // Not a client-rendered app: the social trainer replaces the
+      // Speaker with a peer persona server-side. The client only renders
+      // the peer's face in the header (driven by the social_session
+      // message sent from startSocialPeerSession).
+      void this.startSocialPeerSession("speaker_open_app");
+      return;
+    }
     this.send({ type: "app_open", data: { appId: event.appId, data: event.data } });
     this.speaker?.sendContextInjection(`[APP OPEN] ${event.appId}${event.data ? ` (${event.data})` : ""}`);
     // Board Manager may want to surface app-specific buttons.
@@ -3258,9 +3805,291 @@ export class AgentCoordinator {
   }
 
   private routeAppClose(event: AppCloseRequestedEvent): void {
+    if (this.socialPeer) {
+      // The peer said its goodbye and called close_app() — end the
+      // session, restore the companion Speaker, and debrief.
+      void this.endSocialPeerSession("peer_close_app");
+      return;
+    }
     this.send({ type: "app_close", data: {} });
     this.speaker?.sendContextInjection(`[APP CLOSE]`);
     this.invokeBoardManager([event]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Social-training session (peer persona replaces Speaker)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Start a social-training session: park the companion Speaker and put a
+   * procedurally-generated PEER persona in the Speaker slot. Observer and
+   * BoardManager keep running unchanged — presses route to the peer, its
+   * speech drives board rebuilds, exactly like the companion.
+   *
+   * Entry points: Speaker's open_app("social_trainer") tool call, or the
+   * client's social_trainer_started message (apps surface / debug).
+   */
+  private async startSocialPeerSession(origin: string): Promise<void> {
+    if (this.state !== "ready" || !this.sessionId) return;
+    if (this.socialPeer || this.socialPeerTransition) {
+      flowNote("COORDINATOR", `Social session start ignored (${origin}) — already ${this.socialPeer ? "active" : "transitioning"}.`);
+      return;
+    }
+    this.socialPeerTransition = true;
+    try {
+      // Social practice is engagement — make sure both Live agents exist.
+      if (this.asleep) await this.wakeFromSleep();
+      if (this.sessionProfile === "resting") await this.transitionToProfile("awake");
+      this.noteEngagementActivity();
+
+      const sessionCache = dualAgentService.getSessionCache(this.sessionId);
+      const student = sessionCache?.monitorAgent.getStudent?.();
+      const language = student?.primaryLanguage || "en";
+      const aac = student?.aacSettings as any;
+
+      const persona = generatePersona();
+      const voiceName = pickSocialPeerVoice(persona.gender, [
+        this.aiVoice?.geminiVoiceName,
+        this.studentVoice?.geminiVoiceName,
+        aac?.geminiAiVoice,
+        aac?.geminiStudentVoice,
+      ]);
+      const voice: ResolvedVoice = {
+        fallbackType: persona.gender === "female" ? "woman" : "man",
+        customVoice: null,
+        language,
+        geminiVoiceName: voiceName,
+      };
+
+      // Park the companion Speaker. Its context is rebuilt from
+      // conversationLog + session summary on restore (primeFreshSpeaker),
+      // the same way the resting→awake transition recovers it.
+      try { this.speaker?.close(); } catch {}
+      this.speaker = null;
+      this.speakerSpeaking = false;
+
+      // Director-driven peer — ALWAYS the HTTP forced-tool path (the
+      // deterministic engine needs the chat-completion API), regardless
+      // of the session's general speaker mode. The DirectedSession
+      // builds its own prompt; SpeakerStartConfig is not involved.
+      const peerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+      // Captured for the usage closure — billing must survive session
+      // teardown races (the tokens were spent even if the peer closed
+      // while its last turn was in flight).
+      const usageSessionId = this.sessionId;
+      const usageStudentId = this.studentId ?? "";
+      const usageUserId = this.userId;
+      const peer = new SocialPeerSpeakerAgent({
+        persona,
+        languageName: getLanguageName(language),
+        model: peerModel,
+        callbacks: {
+          onEvent: (e) => this.onSpeakerEvent(e),
+          onSpeakText: (text) => this.onSpeakerSpeakText(text),
+          onState: (state) => this.send({ type: "social_peer_state", data: state }),
+          onUsage: (usage) => {
+            dualAgentService.trackHttpUsage(
+              usageSessionId,
+              usageStudentId,
+              usageUserId,
+              "gemini",
+              peerModel,
+              usage.promptTokens,
+              usage.completionTokens,
+              usage.cachedTokens ?? 0,
+              "social-peer",
+            ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(social peer) failed:", err));
+          },
+          onError: (err) => console.error("[AgentCoordinator] Social peer error:", err),
+        },
+      });
+      await peer.start();
+      this.speaker = peer;
+      this.socialPeer = {
+        persona,
+        agent: peer,
+        voiceName,
+        voice,
+        logStartIndex: this.conversationLog.length,
+        startedAt: Date.now(),
+      };
+
+      runInSessionContext(this.sessionId, this.debugMode, () => {
+        logLiveSession("SOCIAL PEER START", `${origin}: model=${peerModel} voice=${voiceName} ${describePersona(persona)}`);
+      });
+      flowNote("COORDINATOR", `Social-training session started (${origin}) — director peer "${persona.name}" replaces Speaker (HTTP).`);
+
+      // Client: open the (header-only) app surface and ship the face data.
+      this.send({ type: "app_open", data: { appId: "social_trainer" } });
+      this.send({
+        type: "social_session",
+        data: {
+          state: "started",
+          characterName: persona.name,
+          voiceName,
+          appearance: persona.appearance,
+          expressiveness: persona.genome.expressiveness,
+          legibility: 1,
+        },
+      });
+
+      // Observer must re-attribute the device voice while the peer talks.
+      this.observer?.sendContextInjection(
+        `[SOCIAL TRAINING STARTED] The user is practicing conversation with a virtual peer named ${persona.name}. The device voice is now ${persona.name} (a practice character), not the companion AI.`,
+      );
+      this.appendToConversationLog("system", `[SOCIAL TRAINING STARTED] peer=${persona.name}`);
+
+      // The STUDENT opens the conversation (the director's initiation
+      // competency depends on it — the engine deliberately doesn't greet
+      // first). Trigger BoardManager to build a greeting board so the
+      // user has openers to press. monitor_broadcast renders as
+      // [MONITOR CONTEXT] in BM's event view.
+      const greetingTrigger: MonitorBroadcastEvent = {
+        type: "monitor_broadcast",
+        source: "monitor",
+        timestamp: Date.now(),
+        contextInjection: `A social-practice session just started: a virtual peer named ${persona.name} is on screen, waiting for the user to start the conversation. Rebuild the board with generic openers the user can press: greetings ("Hi", "Hello"), simple ice-breakers ("What's your name?", "How are you?"), and a way to introduce themselves. Do not include any specific person's name.`,
+      };
+      this.recordEvent(greetingTrigger);
+      void this.invokeBoardManager([greetingTrigger]);
+    } catch (err) {
+      console.error("[AgentCoordinator] startSocialPeerSession failed:", err);
+      this.socialPeer = null;
+      this.send({ type: "social_session", data: { state: "ended", reason: "start_failed" } });
+      this.send({ type: "app_close", data: {} });
+      // Restore the companion Speaker so the session isn't left mute —
+      // closing any half-installed peer first.
+      try { this.speaker?.close(); } catch {}
+      this.speaker = null;
+      try {
+        await this.restoreCompanionSpeaker();
+      } catch (restoreErr) {
+        console.error("[AgentCoordinator] companion restore after failed social start also failed:", restoreErr);
+      }
+    } finally {
+      this.socialPeerTransition = false;
+    }
+  }
+
+  /**
+   * End the active social-training session: tear down the peer, run the
+   * social-skill analysis over the session transcript, restore the
+   * companion Speaker (with full conversation context via the log
+   * replay), and hand it a debrief directive so it discusses the
+   * conversation with the user.
+   */
+  private async endSocialPeerSession(reason: string): Promise<void> {
+    const social = this.socialPeer;
+    if (!social || this.socialPeerTransition) return;
+    this.socialPeerTransition = true;
+    this.socialPeer = null;
+    const peerName = social.persona.name;
+    try {
+      flowNote("COORDINATOR", `Social-training session ending (${reason}) — peer "${peerName}".`);
+
+      // Pull the director's structured report (competencies, moments,
+      // final mode/rapport) before tearing the agent down.
+      const report = social.agent.getReport();
+
+      // Tear down the peer Speaker.
+      this.flushSpeakerAudio();
+      try { this.speaker?.close(); } catch {}
+      this.speaker = null;
+      this.speakerSpeaking = false;
+
+      // Client: face comes down, app surface closes.
+      this.send({ type: "social_session", data: { state: "ended", reason } });
+      this.send({ type: "app_close", data: {} });
+
+      this.appendToConversationLog("system", `[SOCIAL TRAINING ENDED] peer=${peerName} reason=${reason}`);
+      this.observer?.sendContextInjection(
+        `[SOCIAL TRAINING ENDED] The practice conversation with ${peerName} is over. The device voice is the companion AI again.`,
+      );
+
+      // Social-skill analysis over the session slice of the conversation
+      // log. Run BEFORE restoring the Speaker so the debrief directive
+      // can carry it; analysis failure degrades to a plain debrief.
+      const transcriptLines = this.conversationLog
+        .slice(social.logStartIndex)
+        .filter(t => t.role !== "system")
+        .map(t => t.content);
+      let analysis: string | null = null;
+      if (transcriptLines.length > 0) {
+        const analysisModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+        try {
+          const result = await runSocialSkillAnalysis({
+            providerKey: "gemini",
+            model: analysisModel,
+            characterName: peerName,
+            transcript: transcriptLines,
+          });
+          analysis = result.analysis;
+          if (result.usage && this.sessionId && this.studentId) {
+            dualAgentService.trackHttpUsage(
+              this.sessionId,
+              this.studentId,
+              this.userId,
+              "gemini",
+              analysisModel,
+              result.usage.promptTokens,
+              result.usage.completionTokens,
+              result.usage.cachedTokens ?? 0,
+              "social-skill-analysis",
+              result.usage.cacheCreationTokens ?? 0,
+            ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(social analysis) failed:", err));
+          }
+        } catch (err) {
+          console.warn("[AgentCoordinator] social-skill analysis failed:", (err as Error).message);
+        }
+      }
+      // Persist the skill picture into session context: the restored
+      // Speaker sees it via the history replay below, and Monitor folds
+      // it into its notes. Director report (quantitative) + LLM read
+      // (qualitative) together form "the social skill analysis".
+      const reportSummary = report.turnIndex > 0
+        ? `Director report: ${report.turnIndex} turns, final rapport ${report.finalRapport.toFixed(2)} (${report.finalMode}); ` +
+          report.competencies
+            .filter(c => c.samples >= 3)
+            .map(c => `${c.competency}=${Math.round(c.value * 100)}%`)
+            .join(", ")
+        : null;
+      if (analysis || reportSummary) {
+        this.appendToConversationLog(
+          "system",
+          `[SOCIAL TRAINING ANALYSIS]\n${[reportSummary, analysis].filter(Boolean).join("\n")}`,
+        );
+      }
+
+      // Restore the companion Speaker with the conversation (including
+      // the peer session, name-tagged) replayed into its context, then
+      // hand it the debrief directive.
+      await this.restoreCompanionSpeaker();
+      this.speaker!.sendUserTurn(buildSocialDebriefDirective(peerName, analysis, report));
+    } catch (err) {
+      console.error("[AgentCoordinator] endSocialPeerSession failed:", err);
+    } finally {
+      this.socialPeerTransition = false;
+    }
+  }
+
+  /** Rebuild the companion Speaker from the cached prompt + tool config
+   *  and prime it with conversation context. Shared by the social-session
+   *  end path and the failed-start recovery path. */
+  private async restoreCompanionSpeaker(): Promise<void> {
+    const speaker = this.createSpeakerAgent();
+    await speaker.start({
+      systemPrompt: this.speakerPrompt,
+      model: this.speakerModel,
+      toolConfig: this.speakerToolConfigBase,
+      useVertex: this.useVertex,
+      voiceName: this.aiVoiceName,
+      useDirectAudio: this.useDirectAudio,
+      compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
+      compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+    });
+    speaker.setDebugSessionContext(this.sessionId!, this.debugMode);
+    this.speaker = speaker;
+    this.primeFreshSpeaker();
   }
 
   private routeWebsiteOpen(event: WebsiteOpenRequestedEvent): void {
@@ -3274,6 +4103,9 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
 
   private onSpeakerAudioChunk(data: { mimeType: string; data: string }): void {
+    // Turn is being suppressed (leaked private reasoning) — drop the PCM
+    // so the leaked speech never reaches the child.
+    if (this.suppressSpeakerAudio) return;
     // Speaker emits raw PCM chunks. The client expects WAV (with a 44-byte
     // header). Buffer chunks for ~250ms, then flush as a single WAV — the
     // same pattern legacy LiveRelay uses for smoother playback.
@@ -3290,6 +4122,22 @@ export class AgentCoordinator {
    *  `text` so the subtitle line + avatar mouth animate alongside audio. */
   private onSpeakerTranscriptionDelta(text: string): void {
     this.send({ type: "text", data: text, noAudioClear: true });
+  }
+
+  /** The Speaker detected it is voicing its private reasoning. Kill the
+   *  audio for the rest of the turn: drop any PCM buffered but not yet
+   *  flushed, and tell the client to stop playing whatever already went
+   *  out. The captured reasoning arrives next as a thought_leak event,
+   *  which clears `suppressSpeakerAudio`. */
+  private onSpeakerSuppressAudio(): void {
+    this.suppressSpeakerAudio = true;
+    this.speakerAudioChunks = [];
+    if (this.speakerAudioFlushTimer) {
+      clearTimeout(this.speakerAudioFlushTimer);
+      this.speakerAudioFlushTimer = null;
+    }
+    this.send({ type: "audio_interrupt" });
+    flowNote("SPEAKER", "Audio suppressed — model voiced its private reasoning ('private_thought').");
   }
 
   /** Join buffered Speaker PCM chunks into a single WAV and send as one
@@ -3364,8 +4212,11 @@ export class AgentCoordinator {
   private aiTtsChain: Promise<void> = Promise.resolve();
 
   private onSpeakerSpeakText(text: string): void {
-    if (!this.aiVoice || !text.trim()) return;
-    const iter = ttsFacade.synthesizeStream(text, this.aiVoice, undefined, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    // During a social session the Speaker slot holds the peer persona,
+    // which speaks with its own (session-random) voice.
+    const voice = this.socialPeer?.voice ?? this.aiVoice;
+    if (!voice || !text.trim()) return;
+    const iter = ttsFacade.synthesizeStream(text, voice, undefined, this.ttsUsageCallback())[Symbol.asyncIterator]();
     const firstChunk = iter.next();
     const prior = this.aiTtsChain;
     this.aiTtsChain = (async () => {
@@ -4223,7 +5074,9 @@ export class AgentCoordinator {
     flowOutput("MONITOR", "broadcast", text);
     const rendered = `[MONITOR CONTEXT] ${text}`;
     this.observer?.sendContextInjection(rendered);
-    this.speaker?.sendContextInjection(rendered);
+    // The peer persona must not receive Monitor context — it carries
+    // student memory, and the peer knows nothing about the student.
+    if (!this.socialPeer) this.speaker?.sendContextInjection(rendered);
     // Board Manager picks it up on its next invocation via recentEvents.
   }
 
@@ -4319,9 +5172,11 @@ export class AgentCoordinator {
         // the latest summary in their prompt rebuild.
         if (cache?.state) cache.state.sessionSummary = summary;
         // Inject so the live agents see it before their next reconnect.
+        // Withheld from the peer persona — the summary is student memory;
+        // the restored companion Speaker gets it via primeFreshSpeaker.
         const injection = `[SESSION SUMMARY]\n${summary}`;
         this.observer?.sendContextInjection(injection);
-        this.speaker?.sendContextInjection(injection);
+        if (!this.socialPeer) this.speaker?.sendContextInjection(injection);
         runInSessionContext(this.sessionId!, this.debugMode, () => {
           logLiveSession("SESSION_SUMMARY_INJECTED", `${summary.length} chars, summarized ${markCount} msgs`);
         });
@@ -4384,7 +5239,7 @@ export class AgentCoordinator {
               type: "symbol_update",
               data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` },
             });
-          });
+          }, { sessionId: this.sessionId, studentId: this.studentId, userId: this.userId });
         }
       } catch (err) {
         console.warn("[AgentCoordinator] top-level symbol resolution failed:", (err as Error).message);
@@ -4432,7 +5287,7 @@ export class AgentCoordinator {
           type: "construction_symbol_ready",
           data: { imageKey, symbolPath: `/api/custom-symbols/${symbol.id}/image` },
         });
-      });
+      }, { sessionId: this.sessionId, studentId: this.studentId, userId: this.userId });
     }
   }
 
@@ -4485,6 +5340,128 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
   // Send-to-client helpers
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // Face recognition (ported from LiveRelay). Matching itself lives in
+  // server/services/biometric/recognition-service.ts and is scoped strictly
+  // to this student's known people.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Match each incoming face descriptor against the user's known people
+   * (self + linked users + contacts). Populates `currentIdentifiedFaces`,
+   * echoes the list to the client for the debug display, and rate-limit-bumps
+   * `recordContactSighting()` for confident contact matches.
+   */
+  private async recognizeFaces(
+    descriptors: Array<{
+      descriptor: number[];
+      boundingBox?: { x: number; y: number; w: number; h: number };
+      cameraRole?: "user" | "environment" | "unknown";
+      cameraLabel?: string;
+    }>,
+  ): Promise<void> {
+    if (!this.studentId) return;
+
+    if (!descriptors.length) {
+      if (this.currentIdentifiedFaces.length) {
+        this.currentIdentifiedFaces = [];
+        this.currentIdentifiedFacesAt = Date.now();
+        this.send({ type: "people_identified", data: [] });
+      }
+      return;
+    }
+
+    const matches = await Promise.all(
+      descriptors.map(d => findMatchingFace(d.descriptor, this.studentId!).catch(() => null as FaceMatchResult | null)),
+    );
+
+    let unknownCounter = 0;
+    const wire: IdentifiedFaceWire[] = descriptors.map((d, i) => {
+      const m = matches[i];
+      if (m && m.matched) {
+        return {
+          faceIndex: i,
+          matched: true,
+          name: m.name,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          relationship: m.relationship,
+          confidence: m.confidence,
+          boundingBox: d.boundingBox,
+          cameraRole: d.cameraRole,
+          cameraLabel: d.cameraLabel,
+        };
+      }
+      unknownCounter += 1;
+      return {
+        faceIndex: i,
+        matched: false,
+        name: `Unknown #${unknownCounter}`,
+        confidence: 0,
+        boundingBox: d.boundingBox,
+        cameraRole: d.cameraRole,
+        cameraLabel: d.cameraLabel,
+      };
+    });
+
+    this.currentIdentifiedFaces = wire;
+    this.currentIdentifiedFacesAt = Date.now();
+    this.send({ type: "people_identified", data: wire });
+
+    // Rate-limited sighting bumps for confidently-matched contacts only.
+    const now = Date.now();
+    for (const f of wire) {
+      if (!f.matched || f.entityType !== "contact" || !f.entityId) continue;
+      if (f.confidence < 0.4) continue;
+      const last = this.lastSightingBumpAt.get(f.entityId) ?? 0;
+      if (now - last < AgentCoordinator.SIGHTING_BUMP_INTERVAL_MS) continue;
+      this.lastSightingBumpAt.set(f.entityId, now);
+      recordContactSighting(f.entityId).catch(err => {
+        logLiveSession("SIGHTING_BUMP_ERROR", `${f.entityId}: ${(err as Error).message}`);
+      });
+    }
+
+    // First identification of the active user arms the startup greeting (which
+    // then waits for scene context before firing). set_person_as_user is
+    // finicky, so we don't wait for it.
+    this.maybeArmStartupGreet();
+  }
+
+  /**
+   * Render the currently-identified faces as a compact `[PEOPLE PRESENT]`
+   * block for the Observer. Returns "" when nothing recent is on file. The
+   * `[THE STUDENT]` tag lets the prompt require positive identification rather
+   * than mistaking a visible caregiver/sibling for the primary user.
+   */
+  private buildPeoplePresentContext(): string {
+    if (!this.currentIdentifiedFaces.length) return "";
+    if (Date.now() - this.currentIdentifiedFacesAt > AgentCoordinator.IDENTIFIED_FACES_TTL_MS) return "";
+    const cameraSuffix = (role?: string): string => {
+      if (role === "user") return " — in front of student";
+      if (role === "environment") return " — environment camera";
+      return "";
+    };
+    const lines = this.currentIdentifiedFaces.map(f => {
+      const where = cameraSuffix(f.cameraRole);
+      if (!f.matched) return `- ${f.name} (no database match)${where}`;
+      const conf = (f.confidence * 100).toFixed(0);
+      const rel = f.relationship ? `, ${f.relationship}` : "";
+      const tag = f.entityType === "student" ? " [THE STUDENT]" : "";
+      return `- ${f.name}${rel} — ${conf}% confidence${where}${tag}`;
+    });
+    const presenceLine = this.sawStudentFace()
+      ? ""
+      : `\n(NOTE: the user is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
+    return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}`;
+  }
+
+  /** True when a fresh, positively-matched student face is on file. */
+  private sawStudentFace(): boolean {
+    if (!this.currentIdentifiedFaces.length) return false;
+    if (Date.now() - this.currentIdentifiedFacesAt > AgentCoordinator.IDENTIFIED_FACES_TTL_MS) return false;
+    return this.currentIdentifiedFaces.some(f => f.matched && f.entityType === "student");
+  }
 
   private send(msg: ServerMessage): void {
     if (this.ws.readyState !== this.ws.OPEN) return;

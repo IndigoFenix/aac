@@ -287,6 +287,20 @@ export const zh = {
     unlink: "移除",
     linkFailed: "关联用户失败",
     unlinkFailed: "取消关联用户失败",
+    devices: {
+      title: "AAC 设备",
+      description: "已为该{{STUDENT}}注册的 AAC 设备",
+      loadFailed: "设备加载失败",
+      empty: "没有已注册的设备。",
+      unknownDevice: "未知设备",
+      lastSeen: "上次使用 {date}",
+      countLimited: "已使用 {count}/{limit} 个设备名额",
+      countUnlimited: "已注册 {count} 台设备(无限制)",
+      deregister: "注销",
+      deregistered: "设备已注销",
+      confirmDeregisterTitle: "注销设备?",
+      confirmDeregisterDesc: "{device} 将无法再为该{{STUDENT}}使用 AAC,除非重新注册。",
+    },
     gradeLevel: "年级",
     selectGrade: "选择年级...",
     assignToClassroom: "分配到班级",
@@ -2474,6 +2488,19 @@ export const zh = {
     permittedWebsitesUrl: "网址",
     permittedWebsitesDescriptionField: "描述（显示给 AI）",
     permittedWebsitesDescriptionPlaceholder: "例如：面向儿童的百科全书，文章简单易读",
+    // Defined Gestures
+    definedGesturesTitle: "已定义手势",
+    definedGesturesDescription: "AI 在 AAC 会话中关注的身体手势。朝设备做出手势会被视为按下按钮，说出该手势的含义。",
+    definedGesturesEmpty: "尚未定义任何手势。请在下方添加。",
+    definedGesturesName: "手势",
+    definedGesturesNamePlaceholder: "例如：竖起大拇指",
+    definedGesturesMeaning: "含义（以用户的声音说出）",
+    definedGesturesMeaningPlaceholder: "例如：是的，我想要那个",
+    definedGesturesDescriptionField: "外观描述（显示给 AI）",
+    definedGesturesDescriptionPlaceholder: "例如：握拳并竖起大拇指",
+    definedGesturesAdd: "添加手势",
+    definedGesturesRemove: "移除",
+    definedGesturesHint: "AI 通过摄像头观察，识别到朝向设备的已定义手势时会做出回应。",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "允许的 YouTube 频道",
     permittedYoutubeChannelsDescription: "设置后，YouTube 应用仅会播放这些频道的视频。没有 API 密钥时，搜索仅限于每个频道最近约 15 个上传视频。",
@@ -2791,6 +2818,7 @@ export const zh = {
       showFull: "阅读完整通知",
       hideFull: "隐藏完整通知",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const zh = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const zh = {
       // Permissions
       grantAll: "授予所有权限",
       maxStudents: "最大{{STUDENTS}}数",
+      maxDevicesPerStudent: "每位{{STUDENT}}的 AAC 设备上限",
       unlimited: "无限制",
       aacEnabled: "AAC 已启用",
       boardMakerEnabled: "看板制作器",

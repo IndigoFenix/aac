@@ -45,6 +45,23 @@ export const yue: Translations = {
     cancel: "取消警報",
   },
 
+  devices: {
+    title: "已登記裝置",
+    thisDevice: "呢部裝置",
+    lastSeen: "上次使用:{date}",
+    deregister: "移除裝置",
+    unknownDevice: "未知裝置",
+    empty: "冇已登記嘅裝置。",
+    countLimited: "已使用 {count}/{limit} 部裝置",
+    countUnlimited: "{count} 部裝置(無限制)",
+    limitReachedTitle: "已達到裝置數量上限",
+    limitFullDesc: "呢位學生嘅裝置名額({limit})已經畀其他裝置佔滿。請喺下面移除一部裝置嚟騰出名額,或者聯絡你嘅治療師。",
+    overLimitDesc: "呢位學生已登記 {count} 部裝置,但而家只可以有 {limit} 部。請移除裝置直至符合上限。",
+    retry: "再試一次",
+    switchStudent: "轉換學生",
+    loadFailed: "載入裝置失敗。",
+  },
+
   auth: {
     selectStudent: "揀學生",
     loggedInAs: "已登入為",

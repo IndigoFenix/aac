@@ -33,6 +33,8 @@ import {
 import type { AgentMemoryFieldWithDB } from "./chat/memory-types";
 import { settingsRepository } from "../repositories/settingsRepository";
 import { resolveModelId, getModelOption } from "@shared/llm-options";
+import { creditsForModelUsage } from "./chat/cost-helpers";
+import { chargeCreditsToLedger } from "./credit-ledger";
 import { getAnthropicClient } from "./providers/anthropic-client";
 import { buildMemoryTool } from "./chat/memory-system";
 import { processMemoryToolWithDB, createDBContext, createMemoryLoadState } from "./chat/memory-db-bridge";
@@ -168,15 +170,21 @@ type Scratch = {
  * Compute USD cost for a single turn's token usage, based on the model's
  * published rates in MODEL_OPTIONS. Anthropic bills extended-thinking tokens
  * as output tokens, so they're already reflected in the output count — we
- * don't add a separate line for them. Returns 0 if the model isn't found
- * in the catalog (e.g., a newly added model that hasn't been priced).
+ * don't add a separate line for them. Cache reads/writes bill at 0.1x/1.25x
+ * the input rate (handled by creditsForModelUsage). Returns 0 if the model
+ * isn't found in the catalog (e.g., a newly added model that hasn't been
+ * priced).
  */
-function computeTurnCost(modelId: string, inputTokens: number, outputTokens: number): number {
+function computeTurnCost(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number = 0,
+  cacheWriteTokens: number = 0,
+): number {
   const opt = getModelOption("claude", modelId);
   if (!opt) return 0;
-  const inCost  = (inputTokens  / 1_000_000) * opt.inputCostPer1M;
-  const outCost = (outputTokens / 1_000_000) * opt.outputCostPer1M;
-  return inCost + outCost;
+  return creditsForModelUsage("claude", modelId, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
 }
 
 async function persistTurn(
@@ -392,7 +400,9 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
       const thinkingBudget = (usage as any)?.thinking_tokens ?? 0;
       const turnIn  = usage?.input_tokens  ?? 0;
       const turnOut = usage?.output_tokens ?? 0;
-      const turnCost = computeTurnCost(row.model, turnIn, turnOut);
+      const cacheRead  = (usage as any)?.cache_read_input_tokens ?? 0;
+      const cacheWrite = (usage as any)?.cache_creation_input_tokens ?? 0;
+      const turnCost = computeTurnCost(row.model, turnIn, turnOut, cacheRead, cacheWrite);
       await persistTurn(analysisId, {
         messages,
         scratch: { memoryState, memoryValues },
@@ -402,6 +412,16 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
         thinkingTokensDelta: thinkingBudget,
         costUsdDelta: turnCost,
       });
+      // Mirror into the shared usage ledger so deep-analysis spend shows up
+      // in per-user/per-student cost rollups (deep_analyses.cost_usd alone
+      // is invisible there). No sessionId — analyses aren't chat sessions.
+      chargeCreditsToLedger({
+        studentId: row.studentId,
+        userId: row.createdByUserId,
+        credits: turnCost,
+        category: "deep-analysis",
+        label: `deep-analysis ${analysisId} step ${stepCount}`,
+      }).catch(err => log(analysisId, "ledger charge failed", { error: (err as Error).message }));
 
       const toolUseBlocks = assistantBlocks.filter((b: any) => b.type === "tool_use");
       if (toolUseBlocks.length === 0) {

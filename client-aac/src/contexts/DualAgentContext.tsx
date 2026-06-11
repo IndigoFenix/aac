@@ -13,6 +13,14 @@ import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData } from "@shared/schema";
 
+/** Delay before firing the one-shot startup detection trigger. This is now a
+ *  BACKUP first frame — the server already forwards the client's initialFrame
+ *  (sent with the initialize message) to the Observer immediately. We still
+ *  fire a fresh detection shortly after so frames flow even if initialFrame was
+ *  unavailable; short enough that startup stays responsive, long enough for the
+ *  frame ring buffer to fill and the eager identification pass to run. */
+const STARTUP_DETECTION_DELAY_MS = 600;
+
 interface DualAgentContextType {
   // Session state
   studentId: string;
@@ -175,10 +183,10 @@ interface DualAgentContextType {
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible: (open: boolean) => void;
 
-  // Social trainer bridge — see dual-agent-types.ts.
+  // Social trainer (server-owned session) — see dual-agent-types.ts.
+  socialSession: import("@/hooks/dual-agent-types").SocialSessionInfo | null;
+  socialPeerState: import("@shared/social-bot/state").BotStatePayload | null;
   notifySocialTrainerStarted: () => void;
-  notifySocialTrainerPeerSaid: (text: string) => void;
-  notifySocialTrainerEnded: (report?: unknown, feedbackSummary?: string) => void;
 
   // Construction board (sentence builder)
   sendConstructionState: (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void;
@@ -594,6 +602,40 @@ function DualAgentProviderInner({
     notifySleepStateChangeRef.current?.(next, "system");
   }, [attentiveness, attentiveness?.sleepState, activityMonitor]);
 
+  // One-shot startup: the instant the session is live, (1) push whatever the
+  // eager identification pass found so the server can match it, and (2) capture
+  // and send a FRESH frame so the Observer's startup scene description uses a
+  // current snapshot (not the ~10s-stale connect-time frame). A short backup
+  // timer fires the activity-monitor trigger too, so frames still flow if the
+  // fresh capture failed. Stored in a ref so the pending timer survives
+  // activityMonitor identity churn; reset per session.
+  const triggerNowRef = useRef(activityMonitor.triggerNow);
+  triggerNowRef.current = activityMonitor.triggerNow;
+  const startupTriggerFiredRef = useRef(false);
+  useEffect(() => {
+    if (!liveAgent.sessionId) { startupTriggerFiredRef.current = false; return; }
+    const ready = liveAgent.isInitialized && !liveAgent.paused
+      && (liveAgent.videoCaptureEnabled || liveAgent.voiceEnabled);
+    if (!ready || startupTriggerFiredRef.current) return;
+    startupTriggerFiredRef.current = true;
+    // Identification has been running against the live camera throughout the
+    // (slow) init window — push whatever it found the instant we connect so the
+    // server matches it BEFORE the first frame's scene description. Harmless if
+    // empty (face-api still loading): the server falls back to its default.
+    const descriptors = getUnmatchedFaceDescriptorsRef.current?.();
+    if (descriptors?.length) {
+      console.log(`[DualAgentContext] Sending ${descriptors.length} startup face descriptor(s)`);
+      liveAgent.sendFaceDescriptors?.(descriptors);
+    }
+    // Fresh first frame, immediately.
+    if (liveAgent.videoCaptureEnabled) void liveAgent.sendFreshStartupFrame?.();
+    const t = setTimeout(() => {
+      console.log("[DualAgentContext] Firing backup startup detection trigger");
+      triggerNowRef.current?.("startup");
+    }, STARTUP_DETECTION_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [liveAgent.isInitialized, liveAgent.sessionId, liveAgent.paused, liveAgent.videoCaptureEnabled, liveAgent.voiceEnabled]);
+
   // Stabilize sendMessage identity — use refs so the callback doesn't change on every render
   const liveAgentSendRef = useRef(liveAgent.sendMessage);
   liveAgentSendRef.current = liveAgent.sendMessage;
@@ -862,9 +904,9 @@ function ProviderShell({
     enterGuessingFromBuilder: agent.enterGuessingFromBuilder ?? (() => { /* live API not available */ }),
     exitGuessing: agent.exitGuessing ?? (() => { /* live API not available */ }),
     setBuilderVisible: agent.setBuilderVisible ?? (() => { /* live API not available */ }),
+    socialSession: agent.socialSession ?? null,
+    socialPeerState: agent.socialPeerState ?? null,
     notifySocialTrainerStarted: agent.notifySocialTrainerStarted ?? (() => { /* live API not available */ }),
-    notifySocialTrainerPeerSaid: agent.notifySocialTrainerPeerSaid ?? (() => { /* live API not available */ }),
-    notifySocialTrainerEnded: agent.notifySocialTrainerEnded ?? (() => { /* live API not available */ }),
 
     sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
     constructionSuggestions: agent.constructionSuggestions ?? null,

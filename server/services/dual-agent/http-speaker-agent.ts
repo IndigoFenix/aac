@@ -346,13 +346,16 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
       const transcript = fullText.trim();
 
       // ----- Partition tool calls --------------------------------------
-      // private_note and remain_silent are handled specially here. Other
+      // private_thought and remain_silent are handled specially here. Other
       // tool calls (emote, open_app, ...) are emitted as events and
-      // persisted to history normally.
-      const noteCalls = toolCalls.filter(c => c.name === "private_note");
+      // persisted to history normally. (`private_note` kept as an alias for
+      // stale model calls — the tool was renamed to `private_thought`.)
+      const isThoughtCall = (name?: string) =>
+        name === "private_thought" || name === "private_note";
+      const noteCalls = toolCalls.filter(c => isThoughtCall(c.name));
       const silentCalls = toolCalls.filter(c => c.name === "remain_silent");
       const otherCalls = toolCalls.filter(
-        c => c.name !== "private_note" && c.name !== "remain_silent",
+        c => !isThoughtCall(c.name) && c.name !== "remain_silent",
       );
 
       // Buffer notes from THIS firing for potential re-prompt. Also emit
@@ -362,7 +365,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         try { args = JSON.parse(call.arguments || "{}"); } catch {}
         const note = typeof args.note === "string" ? args.note : "";
         if (note) this.notesBufferThisTurn.push(note);
-        flowTool("SPEAKER", "private_note", JSON.stringify(args));
+        flowTool("SPEAKER", "private_thought", JSON.stringify(args));
         const ev: PrivateNoteEvent = {
           type: "private_note",
           source: "speaker",
@@ -637,6 +640,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         return [ev];
       }
 
+      case "private_thought":
       case "private_note":
       case "remain_silent":
         // Handled inline in fireCompletion (note buffering / orphan

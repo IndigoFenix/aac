@@ -287,6 +287,20 @@ export const ru = {
     unlink: "Удалить",
     linkFailed: "Не удалось связать пользователя",
     unlinkFailed: "Не удалось отвязать пользователя",
+    devices: {
+      title: "Устройства AAC",
+      description: "Устройства, зарегистрированные для AAC этого {{STUDENT}}",
+      loadFailed: "Не удалось загрузить устройства",
+      empty: "Нет зарегистрированных устройств.",
+      unknownDevice: "Неизвестное устройство",
+      lastSeen: "Последняя активность {date}",
+      countLimited: "Занято {count} из {limit} мест для устройств",
+      countUnlimited: "Зарегистрировано {count} устройств (без ограничения)",
+      deregister: "Отменить регистрацию",
+      deregistered: "Регистрация устройства отменена",
+      confirmDeregisterTitle: "Отменить регистрацию устройства?",
+      confirmDeregisterDesc: "{device} больше не сможет использовать AAC этого {{STUDENT}}, пока не будет зарегистрировано снова.",
+    },
     gradeLevel: "Уровень класса",
     selectGrade: "Выберите класс...",
     assignToClassroom: "Назначить в класс",
@@ -2474,6 +2488,19 @@ export const ru = {
     permittedWebsitesUrl: "URL",
     permittedWebsitesDescriptionField: "Описание (видно ИИ)",
     permittedWebsitesDescriptionPlaceholder: "напр., детская энциклопедия с простыми статьями",
+    // Defined Gestures
+    definedGesturesTitle: "Определённые жесты",
+    definedGesturesDescription: "Физические жесты, за которыми ИИ следит во время сессий AAC. Жест в сторону устройства обрабатывается как нажатие кнопки, озвучивающей значение жеста.",
+    definedGesturesEmpty: "Жесты ещё не определены. Добавьте один ниже.",
+    definedGesturesName: "Жест",
+    definedGesturesNamePlaceholder: "напр., большой палец вверх",
+    definedGesturesMeaning: "Значение (произносится голосом пользователя)",
+    definedGesturesMeaningPlaceholder: "напр., Да, я хочу это",
+    definedGesturesDescriptionField: "Как он выглядит (видно ИИ)",
+    definedGesturesDescriptionPlaceholder: "напр., поднимает сжатый кулак с большим пальцем вверх",
+    definedGesturesAdd: "Добавить жест",
+    definedGesturesRemove: "Удалить",
+    definedGesturesHint: "ИИ наблюдает через камеру и отвечает, когда распознаёт определённый жест, направленный на устройство.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "Разрешённые каналы YouTube",
     permittedYoutubeChannelsDescription: "Если задано, приложение YouTube будет воспроизводить только видео с этих каналов. Без ключа API поиск ограничен ~15 последними загрузками каждого канала.",
@@ -2791,6 +2818,7 @@ export const ru = {
       showFull: "Читать полное уведомление",
       hideFull: "Скрыть полное уведомление",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const ru = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const ru = {
       // Permissions
       grantAll: "Предоставить все разрешения",
       maxStudents: "Максимум {{STUDENTS}}",
+      maxDevicesPerStudent: "Макс. устройств AAC на {{STUDENT}}",
       unlimited: "Без ограничений",
       aacEnabled: "AAC включён",
       boardMakerEnabled: "Конструктор досок",

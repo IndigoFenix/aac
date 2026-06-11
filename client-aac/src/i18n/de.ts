@@ -45,6 +45,23 @@ export const de: Translations = {
     cancel: "Alarm abbrechen",
   },
 
+  devices: {
+    title: "Registrierte Geräte",
+    thisDevice: "Dieses Gerät",
+    lastSeen: "Zuletzt gesehen: {date}",
+    deregister: "Gerät entfernen",
+    unknownDevice: "Unbekanntes Gerät",
+    empty: "Keine Geräte registriert.",
+    countLimited: "{count} von {limit} Geräten in Benutzung",
+    countUnlimited: "{count} Geräte (ohne Limit)",
+    limitReachedTitle: "Gerätelimit erreicht",
+    limitFullDesc: "Alle Geräteplätze dieses Schülers ({limit}) sind durch andere Geräte belegt. Entfernen Sie unten ein Gerät, um einen Platz freizugeben, oder wenden Sie sich an Ihre Fachkraft.",
+    overLimitDesc: "Dieser Schüler hat {count} registrierte Geräte, aber es sind jetzt nur {limit} erlaubt. Entfernen Sie Geräte, bis das Limit eingehalten wird.",
+    retry: "Erneut versuchen",
+    switchStudent: "Schüler wechseln",
+    loadFailed: "Geräte konnten nicht geladen werden.",
+  },
+
   auth: {
     selectStudent: "Sch\u00fcler ausw\u00e4hlen",
     loggedInAs: "Angemeldet als",

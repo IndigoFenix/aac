@@ -53,10 +53,13 @@ function extractModalityBreakdown(usage: any): LiveUsage["details"] | null {
   }
 
   const cached = usage.cachedContentTokenCount || 0;
+  // Thinking tokens bill as output but are reported separately from the
+  // response modality buckets — fold them into the text-output bucket.
+  const thoughts = usage.thoughtsTokenCount || 0;
   return {
     textInputTokens: p.text,
     nonTextInputTokens: p.other,
-    textOutputTokens: textOut,
+    textOutputTokens: textOut + thoughts,
     audioOutputTokens: audioOut,
     ...(cached > 0 ? { cachedInputTokens: cached } : {}),
   };
@@ -754,7 +757,9 @@ export class GeminiLiveProvider implements LiveProvider {
       const completionTokens =
         // Gemini Live reports response tokens as `responseTokenCount`; the
         // historical field name on non-Live Gemini is `candidatesTokenCount`.
-        usage.responseTokenCount ?? usage.candidatesTokenCount ?? 0;
+        // Thinking tokens bill as output and are reported separately.
+        (usage.responseTokenCount ?? usage.candidatesTokenCount ?? 0)
+        + (usage.thoughtsTokenCount ?? 0);
 
       // Modality breakdown is optional — older sessions may not include it.
       const details = extractModalityBreakdown(usage);

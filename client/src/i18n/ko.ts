@@ -287,6 +287,20 @@ export const ko = {
     unlink: "제거",
     linkFailed: "사용자 연결 실패",
     unlinkFailed: "사용자 연결 해제 실패",
+    devices: {
+      title: "AAC 기기",
+      description: "이 {{STUDENT}}의 AAC에 등록된 기기",
+      loadFailed: "기기를 불러오지 못했습니다",
+      empty: "등록된 기기가 없습니다.",
+      unknownDevice: "알 수 없는 기기",
+      lastSeen: "마지막 사용 {date}",
+      countLimited: "{limit}개 중 {count}개의 기기 슬롯 사용 중",
+      countUnlimited: "{count}대 등록됨 (제한 없음)",
+      deregister: "등록 해제",
+      deregistered: "기기 등록이 해제되었습니다",
+      confirmDeregisterTitle: "기기 등록을 해제할까요?",
+      confirmDeregisterDesc: "{device}은(는) 다시 등록될 때까지 이 {{STUDENT}}의 AAC를 사용할 수 없습니다.",
+    },
     gradeLevel: "학년",
     selectGrade: "학년 선택...",
     assignToClassroom: "교실에 배정",
@@ -2474,6 +2488,19 @@ export const ko = {
     permittedWebsitesUrl: "URL",
     permittedWebsitesDescriptionField: "설명(AI에 표시)",
     permittedWebsitesDescriptionPlaceholder: "예: 쉬운 기사로 된 어린이 백과사전",
+    // Defined Gestures
+    definedGesturesTitle: "정의된 제스처",
+    definedGesturesDescription: "AAC 세션 중 AI가 주시하는 신체 제스처입니다. 기기를 향해 제스처를 하면 그 의미를 말하는 버튼 누름으로 처리됩니다.",
+    definedGesturesEmpty: "아직 정의된 제스처가 없습니다. 아래에서 추가하세요.",
+    definedGesturesName: "제스처",
+    definedGesturesNamePlaceholder: "예: 엄지 올리기",
+    definedGesturesMeaning: "의미 (사용자 음성으로 말함)",
+    definedGesturesMeaningPlaceholder: "예: 네, 그거 원해요",
+    definedGesturesDescriptionField: "모습 설명 (AI에게 표시됨)",
+    definedGesturesDescriptionPlaceholder: "예: 주먹을 쥐고 엄지를 위로 올림",
+    definedGesturesAdd: "제스처 추가",
+    definedGesturesRemove: "제거",
+    definedGesturesHint: "AI가 카메라로 지켜보다가 기기를 향한 정의된 제스처를 인식하면 응답합니다.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "허용된 YouTube 채널",
     permittedYoutubeChannelsDescription: "설정하면 YouTube 앱은 이 채널의 영상만 재생합니다. API 키가 없으면 검색은 각 채널의 최근 약 15개 업로드로 제한됩니다.",
@@ -2791,6 +2818,7 @@ export const ko = {
       showFull: "전체 고지 읽기",
       hideFull: "전체 고지 숨기기",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const ko = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const ko = {
       // Permissions
       grantAll: "모든 권한 부여",
       maxStudents: "최대 {{STUDENTS}}",
+      maxDevicesPerStudent: "{{STUDENT}}당 최대 AAC 기기 수",
       unlimited: "무제한",
       aacEnabled: "AAC 활성화됨",
       boardMakerEnabled: "보드 메이커",

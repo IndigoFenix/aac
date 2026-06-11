@@ -45,6 +45,23 @@ export const ar: Translations = {
     cancel: "إلغاء الإنذار",
   },
 
+  devices: {
+    title: "الأجهزة المسجلة",
+    thisDevice: "هذا الجهاز",
+    lastSeen: "آخر ظهور: {date}",
+    deregister: "إزالة الجهاز",
+    unknownDevice: "جهاز غير معروف",
+    empty: "لا توجد أجهزة مسجلة.",
+    countLimited: "{count} من {limit} أجهزة قيد الاستخدام",
+    countUnlimited: "{count} أجهزة (بدون حد)",
+    limitReachedTitle: "تم بلوغ حد الأجهزة",
+    limitFullDesc: "جميع أماكن أجهزة هذا الطالب ({limit}) مشغولة بأجهزة أخرى. أزل جهازًا من القائمة أدناه لإخلاء مكان، أو تواصل مع الأخصائي.",
+    overLimitDesc: "لدى هذا الطالب {count} أجهزة مسجلة، لكن المسموح به الآن {limit} فقط. أزل أجهزة من القائمة حتى يتحقق الحد.",
+    retry: "إعادة المحاولة",
+    switchStudent: "تبديل الطالب",
+    loadFailed: "فشل تحميل الأجهزة.",
+  },
+
   auth: {
     selectStudent: "\u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u0637\u0627\u0644\u0628",
     loggedInAs: "\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0628\u0627\u0633\u0645",

@@ -3,7 +3,7 @@
 // Cross-agent shared building blocks for the three-agent AAC architecture.
 // Houses the helpers Observer/Speaker/BoardManager all pull from when
 // assembling their system prompts, plus the small shared tool primitives
-// (`call_monitor`, `private_note`, `remain_silent`, `debug_message`), the
+// (`call_monitor`, `private_thought`, `remain_silent`, `debug_message`), the
 // glyph-syntax helpers, and the localized example table.
 //
 // Self-contained — does NOT import from any other prompts/ file. Sibling
@@ -250,6 +250,7 @@ export function observationRulesText(buttonTerm: string, buttonPressTag: string)
   - People arriving / leaving.
   - Ambient sound starting / stopping.
   - Notable objects.
+  - The current activity / setting (a lesson, therapy session, meal, play, free time) and any change to it — so the rest of the system can keep its contributions on-topic.
   - User's emotional state (smile, brow furrow, averted gaze, long pause).
   - Physical body gestures.
 
@@ -297,18 +298,23 @@ export const CALL_MONITOR: FunctionDeclaration = {
 };
 
 /**
- * `private_note` — silent breadcrumb visible to the developer / Monitor
+ * `private_thought` — silent breadcrumb visible to the developer / Monitor
  * but never voiced or shown to the user. Cheap scratch space; shared by
- * all three agents so each can log per-agent reasoning.
+ * all three agents so each can log per-agent reasoning. Named "thought"
+ * (not "note") because the model conceives of these as thoughts, and the
+ * mismatch made it leak the literal word "note" into spoken text. The
+ * internal event type is still `private_note` — only the model-facing
+ * tool name changed.
  */
-export const PRIVATE_NOTE: FunctionDeclaration = {
-  name: "private_note",
+export const PRIVATE_THOUGHT: FunctionDeclaration = {
+  name: "private_thought",
   description: `Record one short private thought — visible to the developer / monitor, never to the user.
 
+  - This is a SILENT, internal action. The words NEVER reach the user — not as audio, not as text.
   - NOT a substitute for replying. Every turn addressed to you still owes a spoken response OR an explicit remain_silent call.
-  - If you only call this and produce no text, the system re-prompts you with your accumulated notes and requires a real response.
-  - NEVER produce text starting with "[note]", "[thinking]", "[private note]", or any similar bracketed marker — anything you emit as text reaches the user. Use this tool instead.
-  - Keep notes short and specific.`,
+  - If you only call this and produce no text, the system re-prompts you with your accumulated thoughts and requires a real response.
+  - NEVER speak or write your reasoning as part of a reply. Do NOT prefix speech with "private_thought", "THOUGHT", "[note]", "[thinking]", or any similar marker — anything you emit as speech or text reaches the user. Put reasoning in THIS tool instead.
+  - Keep thoughts short and specific.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
@@ -322,7 +328,7 @@ export const PRIVATE_NOTE: FunctionDeclaration = {
 /**
  * `remain_silent` — terminal "no reply this turn" action. Without this,
  * the model conflates "I should not respond" with "I should leave a
- * private_note", which both produces orphan turns and (in the HTTP
+ * private_thought", which both produces orphan turns and (in the HTTP
  * Speaker loop) gets re-prompted indefinitely. Calling this signals the
  * silence is intentional so the loop stops cleanly.
  */

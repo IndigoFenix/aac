@@ -6,7 +6,7 @@
 //
 // Pulled from shared.ts: BaseStudentContext, studentDescriptor, classroomBlock,
 // gestureOverrideBlock, securityBlock, environmentBlock, memoryBlock, ex,
-// CALL_MONITOR, PRIVATE_NOTE, REMAIN_SILENT, DEBUG_MESSAGE,
+// CALL_MONITOR, PRIVATE_THOUGHT, REMAIN_SILENT, DEBUG_MESSAGE,
 // debugIntrospectionEnabled.
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
@@ -25,7 +25,7 @@ import {
   securityBlock,
   studentDescriptor,
   CALL_MONITOR,
-  PRIVATE_NOTE,
+  PRIVATE_THOUGHT,
   REMAIN_SILENT,
   DEBUG_MESSAGE,
   debugIntrospectionEnabled,
@@ -91,7 +91,7 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
   // returns an empty tool surface to dodge MALFORMED bursts. The prompt
   // must NOT mention tools the model can't actually call — otherwise it
   // tries to invoke them by speaking the call out loud (the spoken
-  // "private_note ..." then voices to the room AND lands in Observer
+  // "private_thought ..." then voices to the room AND lands in Observer
   // and BoardManager as transcript context). Keep this condition in
   // lock-step with buildSpeakerToolDeclarations's early-return guard.
   const toolsSuppressed = liveAudio && !isMuted;
@@ -157,8 +157,17 @@ You MAY speak proactively when:
 When you do speak proactively:
   - ONE short, warm sentence. You're noting, not narrating.
   - Never re-narrate a context update back literally — the user already saw it happen.
-  - Stay quiet when the user is engaged with someone else.
+  - Stay quiet when the user is engaged with someone else — let the human-to-human exchange breathe; never talk over it.
 </proactive_speech>
+
+<stay_on_context>
+Stay anchored to what is actually happening right now. The Observer feeds you the setting and current activity through \`[MODE]\`, \`[PEOPLE PRESENT]\`, and \`[CONTEXT]\` notes (e.g. a therapy session, a class, a meal, a game, free time).
+
+  - Keep your contributions relevant to the current activity. Read the room before you steer it.
+  - NEVER suggest leaving, going somewhere else, or switching to an unrelated activity (e.g. "want to go outside?" during a therapy session or class) unless [${studentName}] raises it first.
+  - If you don't yet know what the activity is, stay general and let them lead rather than proposing something that might cut across what they're doing.
+  - A structured activity (therapy, lesson, mealtime) is the priority — support it; don't compete with it.
+</stay_on_context>
 
 <interaction_mode>
 You're in one of two modes, set by a separate observer agent:
@@ -176,9 +185,9 @@ ${toolsSuppressed ? `<private_thinking>
   - Never narrate your reasoning. Everything you emit as audio is heard by the room.
   - If you would otherwise think aloud, just stay silent for the turn instead.
 </private_thinking>` : `<private_thinking>
-  - Never emit private thoughts as text — text gets voiced.
-  - For reasoning, use private_note. Then *immediately* follow with a spoken reply or remain_silent.
-  - Use private_note sparingly. You're a real-time companion, not a problem-solver — overthinking slows the conversation.
+  - Never emit private thoughts as text or speech — both reach the user. Never prefix a reply with "private_thought", "THOUGHT", or any similar label.
+  - For reasoning, call the private_thought tool. Then *immediately* follow with a spoken reply or remain_silent.
+  - Use private_thought sparingly. You're a real-time companion, not a problem-solver — overthinking slows the conversation.
 </private_thinking>`}
 
 EXAMPLE conversation${interactModeExamples ? " — themed on this user's interests / upcoming events" : ""}:
@@ -303,8 +312,8 @@ export function buildOrphanReprompt(args: {
 }): string {
   const { otherCalls, noteCalls, bufferedNotes } = args;
   const summary = otherCalls.length > 0
-    ? `You issued ${otherCalls.map(c => c.name).join(" + ")}${noteCalls.length > 0 ? ` and private_note(s)` : ""} but produced no spoken reply.`
-    : `You issued private_note(s) but produced no spoken reply.`;
+    ? `You issued ${otherCalls.map(c => c.name).join(" + ")}${noteCalls.length > 0 ? ` and private_thought(s)` : ""} but produced no spoken reply.`
+    : `You issued private_thought(s) but produced no spoken reply.`;
   const lines: string[] = [`[SYSTEM] ${summary}`];
   if (bufferedNotes.length > 0) {
     lines.push(`Your accumulated notes this turn:`);
@@ -317,7 +326,7 @@ export function buildOrphanReprompt(args: {
     `  - Produce a spoken reply (regular assistant text), OR`,
     `  - Call remain_silent(reason) if responding would truly be wrong.`,
     ``,
-    `Do NOT call private_note again this turn, and don't repeat the same side-action you already issued above.`,
+    `Do NOT call private_thought again this turn, and don't repeat the same side-action you already issued above.`,
   );
   return lines.join("\n");
 }
@@ -339,7 +348,7 @@ export const SPEAKER_TOOL_ACK = { output: "ok" } as const;
 //   - speak                       (fallback path only — omitted when native audio is in use)
 //   - emote
 //   - open_app / close_app / open_website
-//   - private_note / remain_silent / call_monitor / debug_message  (shared)
+//   - private_thought / remain_silent / call_monitor / debug_message  (shared)
 // NOTE: set_interaction_mode moved to Observer (camera/mic context to judge).
 // NOTE: interpret() moved to Board Manager — see prompts/board-manager.ts.
 
@@ -351,7 +360,7 @@ export interface SpeakerToolConfig {
   /** When true, the caller is the HTTP Speaker (not Gemini Live). The
    *  Live native-audio MALFORMED diagnostic that suppresses the entire
    *  tool surface doesn't apply — HTTP completion handles tools
-   *  reliably and NEEDS them (private_note, emote, open_app, etc.). */
+   *  reliably and NEEDS them (private_thought, emote, open_app, etc.). */
   httpMode?: boolean;
   /** Legacy flag — kept for type compatibility. Speaker no longer runs in
    *  the resting profile (Coordinator closes the Speaker entirely on
@@ -537,10 +546,10 @@ export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] 
     declarations.push(CLOSE_APP);
   }
 
-  // private_note prevents <thinking> leakage into voiced text.
+  // private_thought prevents <thinking> leakage into voiced text.
   // remain_silent gives a terminal "no reply this turn" action so the
-  // model doesn't substitute private_note for silence.
-  declarations.push(PRIVATE_NOTE);
+  // model doesn't substitute private_thought for silence.
+  declarations.push(PRIVATE_THOUGHT);
   declarations.push(REMAIN_SILENT);
   declarations.push(CALL_MONITOR);
   if (debugIntrospectionEnabled()) declarations.push(DEBUG_MESSAGE);

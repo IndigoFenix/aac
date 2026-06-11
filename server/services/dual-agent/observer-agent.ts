@@ -38,6 +38,7 @@ import type {
   EngagementChangeEvent,
   FocusRequestEvent,
   AlarmRaisedEvent,
+  GestureRecognizedEvent,
   ModeChangeEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
@@ -101,8 +102,50 @@ function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null {
+/** Valid `update_context` subtypes (the event union). */
+const CONTEXT_UPDATE_TYPES = new Set<string>([
+  "new_person", "new_voice", "set_person_as_user", "person_identified",
+  "voice_identified", "person_leaves", "new_location", "new_object",
+  "object_leaves", "person_gesture", "person_indicates_object",
+  "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "other",
+]);
+
+/** Extra subtype names the `update_context` TOOL declares (observer.ts) that
+ *  aren't distinct members of the event union — we accept them as function
+ *  names (Gemini calls them) but fold them into "other". */
+const CONTEXT_UPDATE_TOOLNAMES = new Set<string>([
+  ...CONTEXT_UPDATE_TYPES, "object_identified", "update_details",
+]);
+
+export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null {
   const args = call.args || {};
+
+  // Normalize update_context BOTH ways it arrives on the wire:
+  //   1. update_context({ type: "new_person", ... })  — declared shape
+  //   2. new_person({ ... })                           — subtype-as-toolname
+  // Without this, Gemini's frequent shape (2) hits the `default` case below
+  // and the observation is silently dropped — the Coordinator never sees it.
+  if (call.name === "update_context" || CONTEXT_UPDATE_TOOLNAMES.has(call.name)) {
+    const raw = call.name === "update_context" ? asString(args.type) : call.name;
+    const updateType: ContextUpdateType =
+      raw && CONTEXT_UPDATE_TYPES.has(raw) ? (raw as ContextUpdateType) : "other";
+    const key = asString(args.key) ?? "";
+    const description = asString(args.description) ?? "";
+    // Require at least something to record — but no longer hard-require `type`
+    // (a typeless update_context used to be dropped entirely).
+    if (!key && !description) return null;
+    const relevance = asString(args.relevance) === "builder-candidate" ? "builder-candidate" as const : undefined;
+    const event: ContextUpdateEvent = {
+      type: "context_update",
+      source: "observer",
+      timestamp: now,
+      updateType,
+      key,
+      description,
+      relevance,
+    };
+    return event;
+  }
 
   switch (call.name) {
     case "transcript": {
@@ -131,24 +174,6 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
       return event;
     }
 
-    case "update_context": {
-      const updateType = asString(args.type) as ContextUpdateType | undefined;
-      const key = asString(args.key);
-      const description = asString(args.description);
-      if (!updateType || !key || !description) return null;
-      const relevance = asString(args.relevance) === "builder-candidate" ? "builder-candidate" as const : undefined;
-      const event: ContextUpdateEvent = {
-        type: "context_update",
-        source: "observer",
-        timestamp: now,
-        updateType,
-        key,
-        description,
-        relevance,
-      };
-      return event;
-    }
-
     case "request_focus": {
       const reason = asString(args.reason);
       if (!reason) return null;
@@ -157,6 +182,18 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
         source: "observer",
         timestamp: now,
         reason,
+      };
+      return event;
+    }
+
+    case "report_gesture": {
+      const gesture = asString(args.gesture);
+      if (!gesture) return null;
+      const event: GestureRecognizedEvent = {
+        type: "gesture_recognized",
+        source: "observer",
+        timestamp: now,
+        gesture,
       };
       return event;
     }
@@ -218,6 +255,7 @@ function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent | null 
       return event;
     }
 
+    case "private_thought":
     case "private_note": {
       const event: PrivateNoteEvent = {
         type: "private_note",

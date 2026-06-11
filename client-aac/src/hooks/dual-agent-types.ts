@@ -176,6 +176,17 @@ export interface ActiveAppData {
   appData?: any;
 }
 
+/** Server-owned social-training session (three-agent path). Mirrors the
+ *  `social_session` "started" payload from the server — everything the
+ *  client needs to render the peer's procedural face in the header. */
+export interface SocialSessionInfo {
+  characterName: string;
+  voiceName: string;
+  appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance;
+  expressiveness: number;
+  legibility: number;
+}
+
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string; symbolPath?: string }>;
   remove: string[];
@@ -309,6 +320,12 @@ export interface UseDualAgentReturn {
   // Live API only — raw PCM audio streaming
   /** Send a raw PCM audio chunk (base64 Int16 16kHz) to Gemini Live API. Only available in Live mode. */
   sendPcmAudio?: (int16Base64: string) => void;
+  /** Push already-computed unknown face descriptors out-of-band (not on a frame).
+   *  Used at session start so the server can match before the first frame. */
+  sendFaceDescriptors?: (descriptors: UnknownFaceDescriptor[]) => void;
+  /** Capture a fresh frame now and send it as the first frame_grid — used the
+   *  moment the session is ready so the startup scene uses a current snapshot. */
+  sendFreshStartupFrame?: () => Promise<void>;
   /** Synchronous ref: true from first queued audio chunk until echo tail ends. Use for mic gating. */
   isBusyRef?: { readonly current: boolean };
 
@@ -351,12 +368,16 @@ export interface UseDualAgentReturn {
   /** Notify the server the sentence builder opened/closed (conversation detour boundary). */
   setBuilderVisible?: (open: boolean) => void;
 
-  // Social trainer bridge — small semantic events to the AAC live-relay
-  // so it can compose the appropriate system prompts itself (wording
-  // lives in server/services/social-bot/aac-bridge-prompts.ts).
+  // Social trainer (three-agent path) — the session is server-owned: the
+  // peer persona replaces the Speaker agent and its speech/text/audio flow
+  // through the normal channels. The client only renders the peer face
+  // from `socialSession` and asks the server to start via the notify call
+  // (used for client-initiated launches; AI launches arrive as app_open).
+  socialSession?: SocialSessionInfo | null;
+  /** Per-turn director state (face target + mode + rapport) while a
+   *  social session is active. Null outside sessions. */
+  socialPeerState?: import("@shared/social-bot/state").BotStatePayload | null;
   notifySocialTrainerStarted?: () => void;
-  notifySocialTrainerPeerSaid?: (text: string) => void;
-  notifySocialTrainerEnded?: (report?: unknown, feedbackSummary?: string) => void;
 
   // Construction board (sentence builder)
   /** Push the current construction-board state to the AI so it can populate the AI strip. */

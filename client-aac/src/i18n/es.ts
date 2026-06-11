@@ -45,6 +45,23 @@ export const es: Translations = {
     cancel: "Cancelar alarma",
   },
 
+  devices: {
+    title: "Dispositivos registrados",
+    thisDevice: "Este dispositivo",
+    lastSeen: "Visto por última vez: {date}",
+    deregister: "Quitar dispositivo",
+    unknownDevice: "Dispositivo desconocido",
+    empty: "No hay dispositivos registrados.",
+    countLimited: "{count} de {limit} dispositivos en uso",
+    countUnlimited: "{count} dispositivos (sin límite)",
+    limitReachedTitle: "Límite de dispositivos alcanzado",
+    limitFullDesc: "Todas las plazas de dispositivos de este estudiante ({limit}) están ocupadas por otros dispositivos. Quite un dispositivo de la lista para liberar una plaza o contacte a su clínico.",
+    overLimitDesc: "Este estudiante tiene {count} dispositivos registrados, pero ahora solo se permiten {limit}. Quite dispositivos de la lista hasta cumplir el límite.",
+    retry: "Reintentar",
+    switchStudent: "Cambiar de estudiante",
+    loadFailed: "Error al cargar los dispositivos.",
+  },
+
   auth: {
     selectStudent: "Seleccionar estudiante",
     loggedInAs: "Conectado como",

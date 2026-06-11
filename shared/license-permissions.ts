@@ -13,6 +13,12 @@ export type BillingRegime = "none" | "us_cpt";
 export interface LicensePermissions {
   all?: boolean;
   maxStudents: number;
+  // Max AAC devices that can be registered per student under this license.
+  // -1 = unlimited, 0 = none. Optional so payloads/rows predating the field
+  // stay valid; resolvePermissions fills the default (-1, so pre-existing
+  // licenses are unaffected). A student enrolled in several institutes gets
+  // the SUM of their institutes' limits (any -1 makes the total unlimited).
+  maxDevicesPerStudent?: number;
   aacEnabled: boolean;
   boardMakerEnabled: boolean;
   customAppsEnabled: boolean;
@@ -34,6 +40,7 @@ export interface LicensePermissions {
 export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   all: false,
   maxStudents: 0,
+  maxDevicesPerStudent: -1,
   aacEnabled: false,
   boardMakerEnabled: false,
   customAppsEnabled: false,
@@ -50,6 +57,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
 export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   all: true,
   maxStudents: -1, // -1 = unlimited
+  maxDevicesPerStudent: -1, // -1 = unlimited
   aacEnabled: true,
   boardMakerEnabled: true,
   customAppsEnabled: true,
@@ -66,6 +74,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
 export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object({
   all: z.boolean().optional(),
   maxStudents: z.number().int(),
+  maxDevicesPerStudent: z.number().int().optional(),
   aacEnabled: z.boolean(),
   boardMakerEnabled: z.boolean(),
   customAppsEnabled: z.boolean(),

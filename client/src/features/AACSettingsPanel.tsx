@@ -5,7 +5,7 @@ import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
-import type { PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
+import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -42,6 +42,7 @@ import {
   Unlink,
   Accessibility,
   Globe,
+  Hand,
   Plus,
   Trash2,
   Video,
@@ -105,6 +106,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [dynamicBoardsEnabled, setDynamicBoardsEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
+  const [definedGestures, setDefinedGestures] = useState<DefinedGesture[]>([]);
   const [permittedYoutubeItems, setPermittedYoutubeItems] = useState<PermittedYoutubeItem[]>([]);
   const [youtubeInput, setYoutubeInput] = useState('');
   const [resolvingYoutube, setResolvingYoutube] = useState(false);
@@ -212,6 +214,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const acc = aac?.accessibility || {};
       setAccessFontSize(acc.fontSize ?? 100);
@@ -254,6 +257,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
+      const originalDefinedGestures = Array.isArray(aac?.definedGestures) ? aac.definedGestures : [];
       const originalPermittedYoutubeItems = resolvePermittedYoutubeItems(aac);
       const origAcc = aac?.accessibility || {};
       const origAccessFontSize = origAcc.fontSize ?? 100;
@@ -289,6 +293,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
+        JSON.stringify(definedGestures) !== JSON.stringify(originalDefinedGestures) ||
         JSON.stringify(permittedYoutubeItems) !== JSON.stringify(originalPermittedYoutubeItems) ||
         accessFontSize !== origAccessFontSize ||
         accessHighContrast !== origAccessHighContrast ||
@@ -296,7 +301,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -330,6 +335,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       dynamicBoardsEnabled: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
+      definedGestures?: DefinedGesture[];
       permittedYoutubeItems?: PermittedYoutubeItem[];
       accessibility?: Record<string, any>;
     }) => {
@@ -386,6 +392,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       dynamicBoardsEnabled,
       appConfig,
       permittedWebsites,
+      definedGestures,
       permittedYoutubeItems,
       accessibility: {
         fontSize: accessFontSize,
@@ -428,6 +435,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const accR = aac?.accessibility || {};
       setAccessFontSize(accR.fontSize ?? 100);
@@ -1676,6 +1684,93 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Plus className="w-4 h-4 me-2" />
                 {t('aacSettings.permittedWebsitesAddWebsite')}
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Defined Gestures */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Hand className="w-5 h-5" />
+                {t('aacSettings.definedGesturesTitle')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.definedGesturesDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {definedGestures.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.definedGesturesEmpty')}</p>
+              )}
+              {definedGestures.map((gesture, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.definedGesturesName')}</Label>
+                      <Input
+                        value={gesture.name}
+                        onChange={(e) =>
+                          setDefinedGestures((prev) =>
+                            prev.map((g, i) => (i === idx ? { ...g, name: e.target.value } : g)),
+                          )
+                        }
+                        placeholder={t('aacSettings.definedGesturesNamePlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.definedGesturesMeaning')}</Label>
+                      <Input
+                        value={gesture.meaning}
+                        onChange={(e) =>
+                          setDefinedGestures((prev) =>
+                            prev.map((g, i) => (i === idx ? { ...g, meaning: e.target.value } : g)),
+                          )
+                        }
+                        placeholder={t('aacSettings.definedGesturesMeaningPlaceholder')}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.definedGesturesDescriptionField')}</Label>
+                    <Input
+                      value={gesture.description || ''}
+                      onChange={(e) =>
+                        setDefinedGestures((prev) =>
+                          prev.map((g, i) => (i === idx ? { ...g, description: e.target.value } : g)),
+                        )
+                      }
+                      placeholder={t('aacSettings.definedGesturesDescriptionPlaceholder')}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setDefinedGestures((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                  >
+                    <Trash2 className="w-3 h-3 me-1" />
+                    {t('aacSettings.definedGesturesRemove')}
+                  </Button>
+                </div>
+              ))}
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setDefinedGestures((prev) => [...prev, { name: '', meaning: '' }])
+                }
+              >
+                <Plus className="w-4 h-4 me-2" />
+                {t('aacSettings.definedGesturesAdd')}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {t('aacSettings.definedGesturesHint')}
+              </p>
             </CardContent>
           </Card>
 

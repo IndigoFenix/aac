@@ -30,6 +30,7 @@ import { setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
 import AlarmOverlay from "@/components/AlarmOverlay";
+import { DeviceManagerModal } from "@/components/DeviceManager";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
 import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
@@ -374,6 +375,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   const [showChatLog, setShowChatLog] = useState(false);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [showDeviceManager, setShowDeviceManager] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [currentSpeech, setCurrentSpeech] = useState<string>("");
@@ -2017,7 +2019,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       />
 
       {/* Profile Setup */}
-      <ProfileSetup 
+      <ProfileSetup
         isOpen={showProfileSetup}
         onComplete={handleProfileComplete}
         onSkip={() => setShowProfileSetup(false)}
@@ -2065,7 +2067,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           getFaceImage={resolveFaceImage}
         >
           <AvatarSpriteProvider>
-          <SocialBotProvider studentId={studentId}>
+          <SocialBotProvider>
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
             onVoiceReady={(fn) => { voiceFnRef.current = fn; }}
@@ -2111,6 +2113,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onVoice={handleVoice}
             onExitStudent={onExitStudent}
             onLogout={() => onLogout()}
+            onManageDevices={() => setShowDeviceManager(true)}
             onFullScreen={handleFullScreen}
             debugMode={debugMode}
             showDebugPanel={showDebugPanel}
@@ -2123,8 +2126,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             }
             rawFaces={rawFaces}
             rawHands={rawHands}
+            identification={currentIdentification}
           />
           <FullscreenAvatarOverlay />
+          <DeviceManagerModal
+            studentId={studentId}
+            isOpen={showDeviceManager}
+            onClose={() => setShowDeviceManager(false)}
+          />
           {debugMode && (
             <UnifiedDebugPanel
               isOpen={showDebugPanel}

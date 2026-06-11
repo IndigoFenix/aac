@@ -1,5 +1,5 @@
 // Verifies that Speaker's tool surface includes the tools the HTTP path
-// needs (private_note, emote, etc.) and that the Live MALFORMED
+// needs (private_thought, emote, etc.) and that the Live MALFORMED
 // short-circuit is correctly scoped to Live mode only.
 
 import {
@@ -19,14 +19,16 @@ const baseConfig: SpeakerToolConfig = {
 };
 
 describe("buildSpeakerToolDeclarations", () => {
-  test("HTTP mode (useDirectAudio=true, httpMode=true) declares private_note", () => {
+  test("HTTP mode (useDirectAudio=true, httpMode=true) declares private_thought", () => {
     const decls = buildSpeakerToolDeclarations({
       ...baseConfig,
       useDirectAudio: true,
       httpMode: true,
     });
     const tools = names(decls);
-    expect(tools).toContain("private_note");
+    expect(tools).toContain("private_thought");
+    // Legacy name must be gone so the model isn't told a stale tool name.
+    expect(tools).not.toContain("private_note");
   });
 
   test("HTTP mode (useDirectAudio=true, httpMode=true) declares emote", () => {
@@ -73,14 +75,14 @@ describe("buildSpeakerToolDeclarations", () => {
     expect(names(decls)).toEqual([]);
   });
 
-  test("Live TEXT modality (useDirectAudio=false) declares speak + private_note", () => {
+  test("Live TEXT modality (useDirectAudio=false) declares speak + private_thought", () => {
     const decls = buildSpeakerToolDeclarations({
       ...baseConfig,
       useDirectAudio: false,
     });
     const tools = names(decls);
     expect(tools).toContain("speak");
-    expect(tools).toContain("private_note");
+    expect(tools).toContain("private_thought");
   });
 
   test("HTTP mode with apps declares open_app and close_app", () => {
@@ -97,13 +99,13 @@ describe("buildSpeakerToolDeclarations", () => {
     expect(tools).toContain("close_app");
   });
 
-  test("HTTP mode in muted state still includes private_note", () => {
+  test("HTTP mode in muted state still includes private_thought", () => {
     const decls = buildSpeakerToolDeclarations({
       ...baseConfig,
       useDirectAudio: true,
       httpMode: true,
       isMutedMode: true,
     });
-    expect(names(decls)).toContain("private_note");
+    expect(names(decls)).toContain("private_thought");
   });
 });

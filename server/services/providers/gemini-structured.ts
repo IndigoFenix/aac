@@ -184,8 +184,9 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
 
     return {
       promptTokens: usage?.promptTokenCount || 0,
-      completionTokens: usage?.candidatesTokenCount || 0,
-      cachedTokens: 0,
+      // Thinking tokens bill as output on Gemini 2.5
+      completionTokens: (usage?.candidatesTokenCount || 0) + (usage?.thoughtsTokenCount || 0),
+      cachedTokens: usage?.cachedContentTokenCount || 0,
       content: text,
       output: candidates,
       toolCalls: functionCalls,

@@ -121,7 +121,15 @@ import {
       requestTimezone?: string;
       onUpdateMemoryValues?: (memoryValues: any) => Promise<void>;
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
-      onCreditsUsed?: (creditsUsed: number) => Promise<void>;
+      onCreditsUsed?: (creditsUsed: number, breakdown?: Record<string, number>) => Promise<void>;
+      /** Per-function-type credit split for the current turn ("chat",
+       *  "web_search", "tool:<name>"). Reset by getResponse; flushed to
+       *  onCreditsUsed alongside the turn total. */
+      private turnCostBreakdown: Record<string, number> = {};
+      /** Function-type key used for the main model calls in the cost
+       *  breakdown. "chat" for user-facing chat; overridden by internal
+       *  consumers (e.g. the AAC Monitor passes "monitor"). */
+      private creditCategory: string = 'chat';
       onThinkingUpdate?: (thinkingText: string) => void;
       onNavigate?: (feature: string) => void;
       onSelectStudent?: (studentId: string) => void;
@@ -161,7 +169,7 @@ import {
           maxCredits: number,
           onUpdateMemoryValues: (memoryValues: any) => Promise<void>,
           onUpdateChatState: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>
-          onCreditsUsed: (creditsUsed: number) => Promise<void>,
+          onCreditsUsed: (creditsUsed: number, breakdown?: Record<string, number>) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           onNavigate?: (feature: string) => void,
           onSelectStudent?: (studentId: string) => void,
@@ -176,6 +184,7 @@ import {
           documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
           providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
           timezone?: string;
+          creditCategory?: string;
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
@@ -205,6 +214,7 @@ import {
           this.onValidateQuestGame = settings.onValidateQuestGame;
           this.loopDetectionConfig = settings.loopDetectionConfig;
           this.requestTimezone = settings.timezone;
+          this.creditCategory = settings.creditCategory ?? 'chat';
 
           this.toolRegistry = defaultToolRegistry({
               agent: settings.agent as any,
@@ -356,13 +366,14 @@ import {
 
       // Generate a response to the conversation in its current state, without adding new messages.
       async getResponse(responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: string }): Promise<MessageResponse> {
+          this.turnCostBreakdown = {};
           const reply = await this.updateConversation(0, responseType, apiValues);
           try {
               if (this.onUpdateChatState){
                   await this.onUpdateChatState(this.chatState, this.log);
               }
               if (this.onCreditsUsed && reply.creditsUsed){
-                  await this.onCreditsUsed(reply.creditsUsed);
+                  await this.onCreditsUsed(reply.creditsUsed, { ...this.turnCostBreakdown });
               }
           } catch (error) {
               console.error('Error updating chat state after user message', error);
@@ -687,6 +698,37 @@ import {
           return { removed: removalSet.size, warnings, historyLength: history.length };
       }
 
+      /** Accumulate one function type's share of the current turn's credits. */
+      private addToTurnBreakdown(category: string, credits: number): void {
+          if (!(credits > 0)) return;
+          this.turnCostBreakdown[category] = (this.turnCostBreakdown[category] || 0) + credits;
+      }
+
+      /**
+       * Bill an internal (non-conversation) LLM call — the history-compression
+       * summaries — through the same onCreditsUsed sink as conversation turns.
+       * These calls don't flow through updateConversation's credit return path,
+       * so they have to report directly.
+       */
+      private async trackInternalLlmUsage(gpt: GPT, response: GPTResponse, label: string): Promise<void> {
+          try {
+              const provider = gpt.providerConfig?.provider || "openai";
+              const model = gpt.providerConfig?.model || "gpt-4o-mini";
+              const credits = creditsForModelUsage(
+                  provider, model,
+                  response.promptTokens || 0,
+                  response.completionTokens || 0,
+                  response.cachedTokens || 0,
+                  response.cacheCreationTokens || 0,
+              );
+              if (credits > 0 && this.onCreditsUsed) {
+                  await this.onCreditsUsed(credits, { "history-compression": credits });
+              }
+          } catch (e) {
+              console.error(`[ChatMessageManager] Failed to bill ${label}:`, e);
+          }
+      }
+
       /**
        * Re-summarize an overly long conversation summary into ~800 chars using gpt-4o-mini.
        */
@@ -709,6 +751,7 @@ import {
                   false, 1,
                   'You are a helpful assistant that condenses conversation summaries. Return only a JSON object with a "text" field.'
               );
+              await this.trackInternalLlmUsage(summaryGpt, response, 'resummarize');
               if (response.content) {
                   try {
                       const parsed = JSON.parse(response.content);
@@ -787,6 +830,7 @@ import {
                   false, 1,
                   'You are a helpful assistant that summarizes conversations. Return only a JSON object with a "text" field containing the summary.'
               );
+              await this.trackInternalLlmUsage(summaryGpt, response, 'generateSummaryForMessages');
               if (response.content) {
                   try {
                       const parsed = JSON.parse(response.content);
@@ -893,16 +937,23 @@ import {
                       gptResponse.cachedTokens,
                       gptResponse.cacheCreationTokens
                   );
+                  this.addToTurnBreakdown(this.creditCategory, creditsUsed);
 
                   // Search surcharge only applies to OpenAI
                   if (provider === "openai" && promptBuild.searchEnabled && promptBuild.searchContextSize) {
-                      creditsUsed += (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize);
+                      const searchCredits = (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize);
+                      this.addToTurnBreakdown('web_search', searchCredits);
+                      creditsUsed += searchCredits;
                   }
 
                   console.log(`prompt=${gptResponse.promptTokens} cached=${gptResponse.cachedTokens} `
                               + `completion=${gptResponse.completionTokens} searchCalls=${gptResponse.searchCalls} `
                               + `provider=${provider} model=${model} billed=${creditsUsed}`);
               }
+              // Count this LLM call once, for every branch below. Previously the
+              // tool-call branch only attached creditsUsed to the message metadata,
+              // so each tool round's own model tokens were never billed.
+              totalCreditsUsed += creditsUsed;
               if (gptResponse.toolCalls?.length){
                   // Send thinking update if callback is available
                   let toolCallMessage: ChatMessage = {
@@ -915,15 +966,21 @@ import {
                       toolCallMessage = enrichToolCallMessage(toolCallMessage, this.agent.apiEndpoints || [], apiValues);
                   }
                   let replyMessages = await makeToolCalls(this.toolRegistry, toolCallMessage);
+                  const toolNameByCallId = new Map(
+                      gptResponse.toolCalls.map((tc: any) => [tc.call_id, tc.name])
+                  );
                   for (let replyMessage of replyMessages){
                       totalCreditsUsed += replyMessage.credits || 0;
+                      this.addToTurnBreakdown(
+                          `tool:${toolNameByCallId.get(replyMessage.toolCallId) ?? 'unknown'}`,
+                          replyMessage.credits || 0,
+                      );
                       await this.addMessage(replyMessage);
                   }
                   console.log('[ChatMsgMgr] After tool calls — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
                   return await this.updateConversation(totalCreditsUsed, responseType, apiValues, toolRound + 1);
               } else if (gptResponse.content){
                   let reply = await this.uponGPTResponse(gptResponse.content, creditsUsed, responseType);
-                  totalCreditsUsed += creditsUsed;
                   return {
                       message: reply,
                       creditsUsed: totalCreditsUsed
@@ -1316,6 +1373,21 @@ import {
           let providerMessages = this.getConversationHistoryAsChatMessages(this.chatState.history, systemPrompt);
 
           let totalCreditsUsed = 0;
+          // Credits already pushed through onCreditsUsed. We flush after every
+          // iteration (not once at the end) so an abort, a thrown provider
+          // error, or max-iteration exhaustion can't drop usage that the
+          // provider already reported.
+          let reportedCredits = 0;
+          this.turnCostBreakdown = {};
+          const flushCredits = async () => {
+              const delta = totalCreditsUsed - reportedCredits;
+              if (delta > 0 && this.onCreditsUsed) {
+                  reportedCredits = totalCreditsUsed;
+                  const breakdown = { ...this.turnCostBreakdown };
+                  this.turnCostBreakdown = {};
+                  await this.onCreditsUsed(delta, breakdown);
+              }
+          };
           const MAX_ITERATIONS = 10;
 
           for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
@@ -1361,6 +1433,7 @@ import {
               let creditsUsed = 0;
               if (usage) {
                   creditsUsed = creditsForModelUsage(providerKey, model, usage.promptTokens, usage.completionTokens, usage.cachedTokens ?? 0, usage.cacheCreationTokens ?? 0);
+                  this.addToTurnBreakdown(this.creditCategory, creditsUsed);
                   totalCreditsUsed += creditsUsed;
               }
 
@@ -1421,19 +1494,24 @@ import {
                   // Let in-flight tool calls finish and save their results
                   const replyMessages = await makeToolCalls(this.toolRegistry, toolCallMessage);
 
-                  // Add all messages to history
+                  // Add all messages to history, billing tool-incurred credits
+                  // (e.g. media analysis, web search) like the non-streaming path
+                  const toolNameByCallId = new Map(toolCalls.map(tc => [tc.call_id, tc.name]));
                   for (const msg of replyMessages) {
+                      totalCreditsUsed += msg.credits || 0;
+                      this.addToTurnBreakdown(
+                          `tool:${toolNameByCallId.get(msg.toolCallId ?? '') ?? 'unknown'}`,
+                          msg.credits || 0,
+                      );
                       await this.addMessage(msg);
                   }
+                  await flushCredits();
 
                   // If aborted, save state and stop — don't call the model again
                   if (signal?.aborted) {
                       console.log('[ChatMessageManager] getStreamingMdResponse: aborted after tool calls, saving state');
                       if (this.onUpdateChatState) {
                           await this.onUpdateChatState(this.chatState, this.log);
-                      }
-                      if (this.onCreditsUsed && totalCreditsUsed) {
-                          await this.onCreditsUsed(totalCreditsUsed);
                       }
                       yield {
                           type: 'complete',
@@ -1455,7 +1533,10 @@ import {
                   continue;
               }
 
-              // No tool calls — this is the final text response
+              // No tool calls — this is the final text response.
+              // Flush credits even when no text came back: the provider may
+              // still have reported (billable) usage for the empty turn.
+              await flushCredits();
               // Save even partial text if aborted mid-stream
               if (accumulatedText) {
                   const newMessage: ChatMessage = {
@@ -1468,9 +1549,6 @@ import {
 
                   if (this.onUpdateChatState) {
                       await this.onUpdateChatState(this.chatState, this.log);
-                  }
-                  if (this.onCreditsUsed && totalCreditsUsed) {
-                      await this.onCreditsUsed(totalCreditsUsed);
                   }
 
                   yield {
@@ -1485,6 +1563,10 @@ import {
 
           // Safety: if we exhausted iterations, save what we have
           console.warn('[ChatMessageManager] getStreamingMdResponse: exhausted max iterations');
+          await flushCredits();
+          if (this.onUpdateChatState) {
+              await this.onUpdateChatState(this.chatState, this.log);
+          }
       }
   }
 

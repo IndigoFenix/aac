@@ -287,6 +287,20 @@ export const ar = {
     unlink: "إزالة",
     linkFailed: "فشل ربط المستخدم",
     unlinkFailed: "فشل إلغاء ربط المستخدم",
+    devices: {
+      title: "أجهزة AAC",
+      description: "الأجهزة المسجلة لـ AAC الخاص بهذا {{STUDENT}}",
+      loadFailed: "فشل تحميل الأجهزة",
+      empty: "لا توجد أجهزة مسجلة.",
+      unknownDevice: "جهاز غير معروف",
+      lastSeen: "آخر ظهور {date}",
+      countLimited: "{count} من {limit} أماكن أجهزة مستخدمة",
+      countUnlimited: "{count} أجهزة مسجلة (بدون حد)",
+      deregister: "إلغاء التسجيل",
+      deregistered: "تم إلغاء تسجيل الجهاز",
+      confirmDeregisterTitle: "إلغاء تسجيل الجهاز؟",
+      confirmDeregisterDesc: "لن يتمكن {device} من استخدام AAC الخاص بهذا {{STUDENT}} حتى يتم تسجيله مرة أخرى.",
+    },
     gradeLevel: "المستوى الدراسي",
     selectGrade: "اختر المستوى...",
     assignToClassroom: "تعيين إلى فصل دراسي",
@@ -2474,6 +2488,19 @@ export const ar = {
     permittedWebsitesUrl: "الرابط",
     permittedWebsitesDescriptionField: "الوصف (يظهر للذكاء الاصطناعي)",
     permittedWebsitesDescriptionPlaceholder: "مثال: موسوعة للأطفال بمقالات بسيطة",
+    // Defined Gestures
+    definedGesturesTitle: "إيماءات معرّفة",
+    definedGesturesDescription: "إيماءات جسدية يراقبها الذكاء الاصطناعي خلال جلسات AAC. أداء إيماءة باتجاه الجهاز يُعامل كضغطة زر تقول معنى الإيماءة.",
+    definedGesturesEmpty: "لا توجد إيماءات معرّفة بعد. أضف واحدة أدناه.",
+    definedGesturesName: "الإيماءة",
+    definedGesturesNamePlaceholder: "مثال: إبهام لأعلى",
+    definedGesturesMeaning: "المعنى (يُنطق بصوت المستخدم)",
+    definedGesturesMeaningPlaceholder: "مثال: نعم، أريد ذلك",
+    definedGesturesDescriptionField: "كيف تبدو (تُعرض للذكاء الاصطناعي)",
+    definedGesturesDescriptionPlaceholder: "مثال: يرفع قبضة مغلقة مع توجيه الإبهام لأعلى",
+    definedGesturesAdd: "إضافة إيماءة",
+    definedGesturesRemove: "إزالة",
+    definedGesturesHint: "يراقب الذكاء الاصطناعي عبر الكاميرا ويستجيب عند التعرف على إيماءة معرّفة موجهة نحو الجهاز.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "قنوات YouTube المسموح بها",
     permittedYoutubeChannelsDescription: "عند التعيين، سيشغل تطبيق YouTube الفيديوهات من هذه القنوات فقط. بدون مفتاح API، يقتصر البحث على آخر 15 فيديو في كل قناة.",
@@ -2791,6 +2818,7 @@ export const ar = {
       showFull: "اقرأ الإشعار الكامل",
       hideFull: "إخفاء الإشعار الكامل",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const ar = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const ar = {
       // Permissions
       grantAll: "منح جميع الصلاحيات",
       maxStudents: "الحد الأقصى لـ {{STUDENTS}}",
+      maxDevicesPerStudent: "الحد الأقصى لأجهزة AAC لكل {{STUDENT}}",
       unlimited: "غير محدود",
       aacEnabled: "AAC مفعّل",
       boardMakerEnabled: "صانع اللوحات",

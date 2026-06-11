@@ -45,6 +45,23 @@ export const fr: Translations = {
     cancel: "Annuler l'alarme",
   },
 
+  devices: {
+    title: "Appareils enregistrés",
+    thisDevice: "Cet appareil",
+    lastSeen: "Vu pour la dernière fois : {date}",
+    deregister: "Retirer l'appareil",
+    unknownDevice: "Appareil inconnu",
+    empty: "Aucun appareil enregistré.",
+    countLimited: "{count} appareils sur {limit} utilisés",
+    countUnlimited: "{count} appareils (sans limite)",
+    limitReachedTitle: "Limite d'appareils atteinte",
+    limitFullDesc: "Toutes les places d'appareils de cet élève ({limit}) sont occupées par d'autres appareils. Retirez un appareil de la liste pour libérer une place, ou contactez votre clinicien.",
+    overLimitDesc: "Cet élève a {count} appareils enregistrés, mais seulement {limit} sont désormais autorisés. Retirez des appareils de la liste jusqu'à respecter la limite.",
+    retry: "Réessayer",
+    switchStudent: "Changer d'élève",
+    loadFailed: "Échec du chargement des appareils.",
+  },
+
   auth: {
     selectStudent: "S\u00e9lectionner un \u00e9l\u00e8ve",
     loggedInAs: "Connect\u00e9 en tant que",

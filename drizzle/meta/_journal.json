@@ -827,6 +827,27 @@
       "when": 1780464000000,
       "tag": "0117_session_debug_logs_on_update_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1781049600000,
+      "tag": "0118_student_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1781136000000,
+      "tag": "0119_aac_defined_gestures",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1781172676617,
+      "tag": "0120_chat_session_cost_breakdown",
+      "breakpoints": true
     }
   ]
 }

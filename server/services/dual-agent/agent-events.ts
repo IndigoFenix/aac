@@ -47,6 +47,14 @@ export interface ButtonPressedEvent extends BaseEvent {
   label: string;
   /** First-person SENTENCE that TTS voiced when the user pressed. */
   sentence: string;
+  /** Set when this press is synthetic — produced by the Coordinator from an
+   *  Observer-recognized defined gesture rather than a physical tap. Routing
+   *  is identical to a real press; renderers annotate the line so agents
+   *  know HOW the statement was made. Source stays "client" because the
+   *  press represents a real user action in the world. */
+  via?: "gesture";
+  /** The defined gesture's name when `via === "gesture"`. */
+  gestureName?: string;
   /** The button's visual GLYPH encoding (for context — Board Manager uses
    *  it when rebuilding so it knows what shape the user just produced). */
   glyph?: string;
@@ -207,12 +215,28 @@ export interface AlarmRaisedEvent extends BaseEvent {
   reason: string;
 }
 
+/**
+ * Observer matched a clinician-defined gesture (aac_settings.defined_gestures)
+ * performed toward the device — emitted from its `report_gesture` tool.
+ * The Coordinator resolves the name against the server-side registry and,
+ * on a match, replays the button-press flow with the gesture's `meaning`
+ * (student TTS + Speaker user_turn + Board Manager), exactly as if the
+ * user had tapped a button voicing that sentence.
+ */
+export interface GestureRecognizedEvent extends BaseEvent {
+  type: "gesture_recognized";
+  source: "observer";
+  /** The defined gesture's name as the model reported it. */
+  gesture: string;
+}
+
 export type ObserverEvent =
   | TranscribedEvent
   | ContextUpdateEvent
   | EngagementChangeEvent
   | FocusRequestEvent
-  | AlarmRaisedEvent;
+  | AlarmRaisedEvent
+  | GestureRecognizedEvent;
 
 // ---------------------------------------------------------------------------
 // Speaker-emitted events
@@ -486,10 +510,28 @@ export interface RemainSilentEvent extends BaseEvent {
   reason: string;
 }
 
+/**
+ * Native-audio Speaker leaked its reasoning into spoken output — its turn
+ * began with the literal token "private_thought" (or the legacy "private_note",
+ * or a self-invented "THOUGHT" label) instead of calling the silent tool.
+ * The SpeakerAgent detects this on the streaming transcript, has the
+ * Coordinator suppress the audio mid-turn, and emits this in place of
+ * speech_text_finalized / speech_end so the leaked text is NOT echoed back
+ * into the model's context (the self-reinforcing doom-loop) and NOT used to
+ * rebuild the board. `note` is the captured reasoning with the leaked marker
+ * stripped — routed to supervisor channels exactly like a real private_thought.
+ */
+export interface ThoughtLeakEvent extends BaseEvent {
+  type: "thought_leak";
+  source: "speaker";
+  note: string;
+}
+
 export type CrossAgentEvent =
   | MonitorCallRequestedEvent
   | PrivateNoteEvent
-  | RemainSilentEvent;
+  | RemainSilentEvent
+  | ThoughtLeakEvent;
 
 // ---------------------------------------------------------------------------
 // Monitor-broadcast event

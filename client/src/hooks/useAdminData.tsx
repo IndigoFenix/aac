@@ -426,6 +426,7 @@ export interface CrmCustomerSession {
   started: string;
   lastUpdate: string;
   creditsUsed: number;
+  costBreakdown?: import("@/components/admin/CostBreakdownCell").SessionCostBreakdown | null;
 }
 
 export interface CrmCustomerListFilters {

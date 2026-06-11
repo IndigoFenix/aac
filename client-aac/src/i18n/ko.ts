@@ -45,6 +45,23 @@ export const ko: Translations = {
     cancel: "경보 취소",
   },
 
+  devices: {
+    title: "등록된 기기",
+    thisDevice: "이 기기",
+    lastSeen: "마지막 사용: {date}",
+    deregister: "기기 제거",
+    unknownDevice: "알 수 없는 기기",
+    empty: "등록된 기기가 없습니다.",
+    countLimited: "{limit}대 중 {count}대 사용 중",
+    countUnlimited: "{count}대 (제한 없음)",
+    limitReachedTitle: "기기 한도 도달",
+    limitFullDesc: "이 학생의 기기 슬롯({limit}개)이 모두 다른 기기로 채워져 있습니다. 아래에서 기기를 제거해 자리를 비우거나 임상가에게 문의하세요.",
+    overLimitDesc: "이 학생에게 {count}대의 기기가 등록되어 있지만 현재 {limit}대만 허용됩니다. 한도에 맞을 때까지 기기를 제거하세요.",
+    retry: "다시 시도",
+    switchStudent: "학생 변경",
+    loadFailed: "기기를 불러오지 못했습니다.",
+  },
+
   auth: {
     selectStudent: "학생 선택",
     loggedInAs: "로그인 계정",

@@ -27,6 +27,7 @@ import {
   ScanSearch,
   Bell,
   Siren,
+  MonitorSmartphone,
 } from "lucide-react";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
@@ -41,6 +42,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { FaceMirror } from "@/components/FaceMirror";
+import { IdentificationBadge } from "@/components/IdentificationBadge";
+import type { IdentificationResult } from "@/hooks/usePersonIdentification";
 
 interface DualAgentConversationBoxProps {
   isVisible: boolean;
@@ -58,6 +61,7 @@ interface DualAgentConversationBoxProps {
   // App-level controls (moved from top nav bar)
   onExitStudent?: () => void;
   onLogout?: () => void;
+  onManageDevices?: () => void;
   onFullScreen?: () => void;
   debugMode?: boolean;
   showDebugPanel?: boolean;
@@ -66,6 +70,8 @@ interface DualAgentConversationBoxProps {
   onTestAlarm?: (level: "alert" | "emergency") => void;
   rawFaces?: RawTrackedFace[];
   rawHands?: RawTrackedHand[];
+  /** Client-side person identification (for the subtle name indicator). */
+  identification?: IdentificationResult | null;
 }
 
 export function DualAgentConversationBox({
@@ -83,6 +89,7 @@ export function DualAgentConversationBox({
   onVoice,
   onExitStudent,
   onLogout,
+  onManageDevices,
   onFullScreen,
   debugMode,
   showDebugPanel,
@@ -90,6 +97,7 @@ export function DualAgentConversationBox({
   onTestAlarm,
   rawFaces,
   rawHands,
+  identification,
 }: DualAgentConversationBoxProps) {
   const {
     currentMessage,
@@ -331,7 +339,9 @@ export function DualAgentConversationBox({
             {socialBot.active ? (
               <div
                 className="relative shrink-0 self-center w-20 flex items-center justify-center select-none"
-                title={socialBot.voiceName ? `Social peer (voice: ${socialBot.voiceName})` : "Social peer"}
+                title={socialBot.characterName
+                  ? `${socialBot.characterName}${socialBot.voiceName ? ` (voice: ${socialBot.voiceName})` : ""}`
+                  : "Social peer"}
               >
                 {socialBot.connected && socialBot.appearance ? (
                   <ProceduralFace
@@ -510,6 +520,18 @@ export function DualAgentConversationBox({
                     </Button>
                   )}
 
+                  {onManageDevices && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onManageDevices}
+                      className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
+                      title={t("devices.title")}
+                    >
+                      <MonitorSmartphone className="w-4 h-4" />
+                    </Button>
+                  )}
+
                   {onExitStudent && (
                     <Button
                       variant="ghost"
@@ -683,6 +705,13 @@ export function DualAgentConversationBox({
                 size={80}
               />
             </button>
+
+            {/* Subtle "who is at the device" indicator, top-aligned beside the
+                Face Mirror. Flips to the other side automatically under RTL via
+                the document `dir`. */}
+            <div className="shrink-0 self-start pt-1">
+              <IdentificationBadge identification={identification ?? null} />
+            </div>
           </div>
         </div>
     </div>

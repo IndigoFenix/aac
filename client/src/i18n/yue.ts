@@ -287,6 +287,20 @@ export const yue = {
     unlink: "移除",
     linkFailed: "關聯用戶失敗",
     unlinkFailed: "取消關聯用戶失敗",
+    devices: {
+      title: "AAC 裝置",
+      description: "已為呢位{{STUDENT}}登記嘅 AAC 裝置",
+      loadFailed: "載入裝置失敗",
+      empty: "冇已登記嘅裝置。",
+      unknownDevice: "未知裝置",
+      lastSeen: "上次使用 {date}",
+      countLimited: "已使用 {count}/{limit} 個裝置名額",
+      countUnlimited: "已登記 {count} 部裝置(無限制)",
+      deregister: "取消登記",
+      deregistered: "已取消裝置登記",
+      confirmDeregisterTitle: "取消登記呢部裝置?",
+      confirmDeregisterDesc: "{device} 將無法再為呢位{{STUDENT}}使用 AAC,除非重新登記。",
+    },
     gradeLevel: "年級",
     selectGrade: "揀年級...",
     assignToClassroom: "分配去班",
@@ -2474,6 +2488,19 @@ export const yue = {
     permittedWebsitesUrl: "網址",
     permittedWebsitesDescriptionField: "描述（畀 AI 睇）",
     permittedWebsitesDescriptionPlaceholder: "例如：兒童百科全書，文章簡單",
+    // Defined Gestures
+    definedGesturesTitle: "已定義手勢",
+    definedGesturesDescription: "AI 喺 AAC 對話期間留意嘅身體手勢。向裝置做出手勢會當成撳掣，講出手勢嘅意思。",
+    definedGesturesEmpty: "仲未定義任何手勢。喺下面加一個。",
+    definedGesturesName: "手勢",
+    definedGesturesNamePlaceholder: "例如：豎起拇指",
+    definedGesturesMeaning: "意思（用使用者把聲讀出）",
+    definedGesturesMeaningPlaceholder: "例如：係，我想要嗰個",
+    definedGesturesDescriptionField: "外觀描述（畀 AI 睇）",
+    definedGesturesDescriptionPlaceholder: "例如：握拳並豎起拇指",
+    definedGesturesAdd: "新增手勢",
+    definedGesturesRemove: "移除",
+    definedGesturesHint: "AI 透過鏡頭觀察，認到向裝置做出嘅已定義手勢就會回應。",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "允許嘅 YouTube 頻道",
     permittedYoutubeChannelsDescription: "設定之後，YouTube 應用只會播放呢啲頻道嘅影片。冇 API 密鑰嘅話，搜尋只限每個頻道最新嘅 15 個影片。",
@@ -2791,6 +2818,7 @@ export const yue = {
       showFull: "閱讀完整通知",
       hideFull: "隱藏完整通知",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const yue = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const yue = {
       // Permissions
       grantAll: "授予所有權限",
       maxStudents: "最大{{STUDENTS}}數",
+      maxDevicesPerStudent: "每位{{STUDENT}}嘅 AAC 裝置上限",
       unlimited: "無限制",
       aacEnabled: "AAC 已啟用",
       boardMakerEnabled: "板製作器",

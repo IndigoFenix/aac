@@ -1292,6 +1292,23 @@ export interface PermittedYoutubeItem {
 }
 
 /**
+ * A clinician-defined student gesture the AAC's Observer agent watches for.
+ * When the Observer sees the student perform `name` toward the device, the
+ * system treats it as a button press voicing `meaning` — the Speaker replies
+ * and the Board Manager rebuilds exactly as for a tapped button.
+ *
+ * `name` is a short identifier ("thumbs up", "hand to mouth"); `description`
+ * optionally details the physical motion so the Observer can recognize it;
+ * `meaning` is the first-person sentence the gesture communicates
+ * ("Yes, I want that", "I'm hungry").
+ */
+export interface DefinedGesture {
+  name: string;
+  description?: string;
+  meaning: string;
+}
+
+/**
  * Single button on an AAC communication board
  */
 export interface BoardButton {

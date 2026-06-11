@@ -311,6 +311,10 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   // student. Subject is the student. Details carry `{ intervalId }`. Logged
   // once per interval — heartbeat extensions are NOT audited (too noisy).
   "rtm_review_recorded",
+  // AAC device registration lifecycle. Subject is the student; subject2 is the
+  // user who triggered it. Details carry `{ deviceId, deviceName }`.
+  "device_registered",
+  "device_deregistered",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -619,6 +623,11 @@ export const aacSettings = pgTable("aac_settings", {
   // Recognition
   knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
 
+  // Defined student gestures — array of { name, description?, meaning }. The
+  // Observer agent treats a recognized gesture toward the device as a button
+  // press voicing `meaning` (see DefinedGesture in schema.ts).
+  definedGestures: jsonb("defined_gestures").default([]),
+
   // Metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -771,6 +780,24 @@ export const studentClassrooms = pgTable("student_classrooms", {
   index("idx_student_classrooms_student_id").on(table.studentId),
   index("idx_student_classrooms_classroom_id").on(table.classroomId),
   index("idx_student_classrooms_is_active").on(table.isActive),
+]);
+
+// AAC devices registered to a student. Each row consumes one slot against the
+// student's effective device limit (sum of maxDevicesPerStudent across the
+// licenses of all institutes the student actively belongs to). The deviceId is
+// a client-generated installation id persisted in the device's localStorage.
+export const studentDevices = pgTable("student_devices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  deviceId: varchar("device_id").notNull(),
+  deviceName: text("device_name"),
+  // Cross-schema FK: users.id lives in schema.ts — constraint exists in DB migrations (ON DELETE SET NULL)
+  registeredByUserId: varchar("registered_by_user_id"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_devices_student_id").on(table.studentId),
+  uniqueIndex("idx_student_devices_student_device").on(table.studentId, table.deviceId),
 ]);
 
 // =============================================================================
@@ -1682,6 +1709,10 @@ export const chatSessions = pgTable("chat_sessions", {
   last: jsonb("last").notNull().default([]),
   deletedAt: timestamp("deleted_at"),
   creditsUsed: real("credits_used").notNull().default(0),
+  // Per-function-type cost breakdown: { "chat": 0.012, "observer": 0.4, "tts": 0.002, ... }.
+  // Keys are charge categories (see server/services/credit-ledger.ts); values sum to
+  // creditsUsed for charges recorded after the column was introduced (0120).
+  costBreakdown: jsonb("cost_breakdown").notNull().default({}),
   priority: real("priority").notNull().default(0),
   status: chatSessionStatusEnum("status").notNull().default("open"),
   useResponsesAPI: boolean("use_responses_api").default(false),
@@ -2735,6 +2766,9 @@ export type UpdateUserStudent = z.infer<typeof updateUserStudentSchema>;
 export type InstituteStudent = typeof instituteStudents.$inferSelect;
 export type InsertInstituteStudent = z.infer<typeof insertInstituteStudentSchema>;
 export type UpdateInstituteStudent = z.infer<typeof updateInstituteStudentSchema>;
+
+export type StudentDevice = typeof studentDevices.$inferSelect;
+export type InsertStudentDevice = typeof studentDevices.$inferInsert;
 
 export type StudentClassroom = typeof studentClassrooms.$inferSelect;
 export type InsertStudentClassroom = z.infer<typeof insertStudentClassroomSchema>;

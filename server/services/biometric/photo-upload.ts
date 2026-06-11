@@ -66,8 +66,9 @@ export async function uploadBiometricPhoto(
 
   // AI gate + descriptor extraction. Rejects non-face images and populates
   // hair/eye color, age/sex, identifying features, and a physicalDescription.
-  // Cost of this call is recorded by apiTracker. Throws NoFaceDetectedError
-  // on rejection — the controller translates that to HTTP 400.
+  // Cost of this call is recorded in the credit ledger (charged to the
+  // uploading user). Throws NoFaceDetectedError on rejection — the
+  // controller translates that to HTTP 400.
   const analysis = await analyzeFacePhoto(resized, "image/jpeg", { userId: opts.userId });
 
   const key = await uploadToS3(resized);

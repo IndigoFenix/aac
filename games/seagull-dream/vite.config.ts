@@ -14,6 +14,14 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "..", "..", "dist", "public-games", GAME_NAME),
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        // Creature lab — dev/debug page for the creature generator
+        // (instructions/creatures.md). Served at /lab.html.
+        lab: path.resolve(__dirname, "lab.html"),
+      },
+    },
   },
   server: {
     port: 5184,

@@ -45,6 +45,23 @@ export const he: Translations = {
     cancel: "ביטול אזעקה",
   },
 
+  devices: {
+    title: "מכשירים רשומים",
+    thisDevice: "מכשיר זה",
+    lastSeen: "נראה לאחרונה: {date}",
+    deregister: "הסרת מכשיר",
+    unknownDevice: "מכשיר לא מזוהה",
+    empty: "אין מכשירים רשומים.",
+    countLimited: "{count} מתוך {limit} מכשירים בשימוש",
+    countUnlimited: "{count} מכשירים (ללא הגבלה)",
+    limitReachedTitle: "הושגה מגבלת המכשירים",
+    limitFullDesc: "כל משבצות המכשירים של תלמיד זה ({limit}) תפוסות על ידי מכשירים אחרים. הסירו מכשיר מהרשימה כדי לפנות מקום, או פנו לקלינאי.",
+    overLimitDesc: "לתלמיד זה {count} מכשירים רשומים, אך כעת מותרים רק {limit}. הסירו מכשירים מהרשימה עד לעמידה במגבלה.",
+    retry: "ניסיון חוזר",
+    switchStudent: "החלפת תלמיד",
+    loadFailed: "טעינת המכשירים נכשלה.",
+  },
+
   auth: {
     selectStudent: "בחירת תלמיד",
     loggedInAs: "מחובר כ",

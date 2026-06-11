@@ -174,18 +174,8 @@ export class CrmRepository {
     await db.update(chatSessions).set(update).where(eq(chatSessions.id, sessionId));
   }
 
-  async addCredits(sessionId: string, credits: number): Promise<void> {
-    if (credits <= 0) return;
-    const session = await this.getSessionById(sessionId);
-    if (!session) return;
-    await db
-      .update(chatSessions)
-      .set({
-        creditsUsed: (session.creditsUsed ?? 0) + credits,
-        updatedAt: new Date(),
-      })
-      .where(eq(chatSessions.id, sessionId));
-  }
+  // Credit charging moved to the shared ledger (server/services/credit-ledger.ts),
+  // which writes creditsUsed + cost_breakdown atomically.
 
   // ──────────────────────────────────────────────────────────────────
   // Admin

@@ -25,6 +25,7 @@ A central **Coordinator** owns the WebSocket to the client, the session state, a
 - Continuously consumes camera frames and raw PCM microphone audio.
 - Emits structured observation events: speech transcripts (with speaker attribution and direction — `device` / `user` / `ambient`), context updates (new person identified, gesture noted, scene change), and engagement-state transitions (rest / wake / sleep).
 - Owns AI **behavioral mode** — the multimodal scene context (who is in the room, who is being addressed, whether the user is engaging the device or talking to someone else) is exactly what determines whether the AI should be in *Companion*, *Facilitator*, or *Standby* mode, so the mode tool lives on the agent with that context. The mode broadcasts to Speaker as a `[MODE]` context injection on every change.
+- Recognizes **defined gestures** — clinician-configured per student in AAC Settings (name + physical description + meaning). When the student performs one toward the device, the Observer reports it and the Coordinator replays the full button-press flow: the gesture's meaning is voiced in the student's voice, Speaker replies, and the Board Manager rebuilds — communication without touching the board.
 - **Never speaks, never modifies the button surface.** Pure sensing plus mode steering.
 
 ### 3b. Speaker Agent (voice)
@@ -103,6 +104,10 @@ The system detects student engagement state and switches between session profile
 - **Resting profile** — lightweight prompt, reduced tool surface, aggressive context compression, used during inferred sleep or quiet periods. The model escalates back to active via an explicit wake action.
 
 This profile-switching reduces always-on multimodal AI cost by approximately an order of magnitude during quiet periods without sacrificing the ability to respond when the student initiates.
+
+## 8a. Usage-Cost Ledger
+
+All LLM and TTS spend funnels through a single ledger (`server/services/credit-ledger.ts`). Every charge fans out to the chat session, student, user, and user↔student rows, and each session additionally accumulates a per-function-type JSON breakdown (`chat_sessions.cost_breakdown`: chat, observer, speaker, board-manager, tts, session-summary, tool:\<name\>, symbol-refinement, interpretation, photo-analysis, deep-analysis, …). The AAC path charges via `DualAgentService.trackLiveUsage/trackHttpUsage/trackTtsUsage`; the clinician chat via the message manager's `onCreditsUsed` callback; standalone services call the ledger directly. The OpenAI image-generation step of symbol creation is intentionally not billed.
 
 ## 9. Classroom (Multi-Student) Mode
 

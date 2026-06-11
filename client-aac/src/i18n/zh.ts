@@ -45,6 +45,23 @@ export const zh: Translations = {
     cancel: "取消警报",
   },
 
+  devices: {
+    title: "已注册设备",
+    thisDevice: "本设备",
+    lastSeen: "上次使用:{date}",
+    deregister: "移除设备",
+    unknownDevice: "未知设备",
+    empty: "没有已注册的设备。",
+    countLimited: "已使用 {count}/{limit} 台设备",
+    countUnlimited: "{count} 台设备(无限制)",
+    limitReachedTitle: "已达到设备数量上限",
+    limitFullDesc: "该学生的设备名额({limit})已被其他设备占满。请从下方移除一台设备以腾出名额,或联系您的治疗师。",
+    overLimitDesc: "该学生已注册 {count} 台设备,但现在仅允许 {limit} 台。请移除设备直至符合限制。",
+    retry: "重试",
+    switchStudent: "切换学生",
+    loadFailed: "设备加载失败。",
+  },
+
   auth: {
     selectStudent: "选择学生",
     loggedInAs: "已登录为",

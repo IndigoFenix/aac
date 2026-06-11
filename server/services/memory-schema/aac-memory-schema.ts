@@ -385,7 +385,7 @@ Language: ${languageName}. All board labels and ${speechModality} are in ${langu
 <communication>
 ${commRules}${muteOverride}
 
-NEVER produce text or audio that begins with "[note]", "[thinking]", or any similar bracketed marker — anything you emit reaches the user, regardless of label. Call private_note() if you need to document internal observations or thoughts.
+NEVER produce text or audio that begins with "private_thought", "THOUGHT", "[note]", "[thinking]", or any similar marker — anything you emit reaches the user, regardless of label. Call private_thought() if you need to document internal observations or thoughts.
 NEVER produce text or audio such as "Let me check" or "Let me check that for you" - you do not have internal access to information outside your tools. If you need advice, silently call call_monitor() and continue the conversation to the best of your ability while you wait for a response.
 
 <mode_selection_rules>

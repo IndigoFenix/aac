@@ -11,6 +11,7 @@
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import { getLanguageName } from "@shared/language-names";
 import { T } from "../../memory-schema/canonical-terms";
+import type { DefinedGesture } from "../defined-gestures";
 import {
   type BaseStudentContext,
   classroomBlock,
@@ -22,6 +23,7 @@ import {
   securityBlock,
   studentDescriptor,
   transcriptionRulesText,
+  wrapUntrusted,
   // private_note intentionally NOT registered on Observer — over-eager
   // note-taking suppresses actual transcript / update_context calls.
   CALL_MONITOR,
@@ -53,13 +55,18 @@ export interface ObserverPromptConfig extends BaseStudentContext {
    *  proactively. Each entry: `name` is the human-readable label,
    *  `hint` is the caretaker-authored "when to use" note. */
   availableBoards?: Array<{ key: string; name: string; hint?: string }>;
+  /** Clinician-defined gestures (aac_settings.defined_gestures). When set,
+   *  the `report_gesture` tool is declared and a <defined_gestures> block
+   *  lists them. A recognized gesture toward the device becomes a button
+   *  press voicing the gesture's `meaning`. */
+  definedGestures?: DefinedGesture[];
 }
 
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
     observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
-    availableBoards,
+    availableBoards, definedGestures,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -103,7 +110,7 @@ USER and DEVICE — special speaker/target labels:
 
 <observations>
 ${observationRulesText(T.button, T.tagPress)}
-</observations>${gestureOverrideBlock(gestureOverrides)}
+</observations>${definedGesturesBlock(studentName, definedGestures)}${gestureOverrideBlock(gestureOverrides)}
 
 <alarm_conditions>
 You can summon a caretaker who may be near [${studentName}]. You're the only part of the system that can see and hear — this is your responsibility. Two levels, each a separate tool:
@@ -175,6 +182,27 @@ ${availableBoards.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).j
   return prompt;
 }
 
+/** `<defined_gestures>` block — the clinician-defined gesture registry the
+ *  Observer watches for. Returns "" when none are configured (the
+ *  report_gesture tool isn't declared then either). */
+function definedGesturesBlock(studentName: string, gestures: DefinedGesture[] | undefined): string {
+  if (!gestures || gestures.length === 0) return "";
+  const rows = gestures.map(g =>
+    `  - "${g.name}"${g.description ? ` — ${wrapUntrusted(g.description)}` : ""} → means: ${wrapUntrusted(g.meaning)}`,
+  ).join("\n");
+  return `
+
+<defined_gestures>
+[${studentName}] has DEFINED GESTURES — each one is a full statement, like pressing a ${T.button}:
+${rows}
+
+When [${studentName}] performs one of these TOWARD the device (facing it, or clearly addressing the AI), call report_gesture(gesture) with the gesture's exact name. The system voices the meaning and responds — you do nothing else for it:
+  - Do NOT also log update_context(person_gesture) for a reported gesture.
+  - Do NOT call wake_up for it — report_gesture wakes the session itself.
+A matching motion NOT directed at the device (e.g. aimed at a person in the room) is a normal observation — use update_context as usual.
+</defined_gestures>`;
+}
+
 // ===========================================================================
 // PER-TURN INJECTION STRINGS
 // ===========================================================================
@@ -184,6 +212,19 @@ ${availableBoards.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).j
  *  reaction trigger is wanted. */
 export const OBSERVER_SCENE_UPDATE_PROMPT =
   "[scene update] React if something here calls for action.";
+
+/** Stronger one-shot prompt used for the FIRST frame of a session. Unlike
+ *  the per-frame reaction trigger, this asks the Observer to actively read
+ *  the room so the rest of the system has context from turn one — the
+ *  setting, who is present, what is happening, and (critically) whether the
+ *  active user is the student. The Coordinator appends the `[PEOPLE PRESENT]`
+ *  block after this string when face matches are available. */
+export const OBSERVER_STARTUP_PROMPT =
+  `[session start] This is the first thing you are seeing this session. Read the room and record what you see via update_context — do not wait for something to "call for action":
+  - The setting / location (log a new_location).
+  - Every person present and what they are doing.
+  - The current activity (a lesson, a therapy session, a meal, play, free time) — log it so the rest of the system can stay on-topic.
+  - Whether the active USER is the student. Use [PEOPLE PRESENT] and the [THE STUDENT] tag to confirm identity rather than guessing; if the student is NOT among the identified faces, say so (set_person_as_user for whoever is actually at the device).`;
 
 // ===========================================================================
 // TOOL DECLARATIONS
@@ -200,6 +241,9 @@ export interface ObserverToolConfig {
    * awake/resting profiles. See buildObserverToolDeclarations.
    */
   restingMode?: boolean;
+  /** Clinician-defined gestures. When non-empty, `report_gesture` is
+   *  declared with these names as the gesture enum. */
+  definedGestures?: DefinedGesture[];
 }
 
 function buildTranscriptTool(): FunctionDeclaration {
@@ -254,6 +298,7 @@ People:
 
 Objects + location:
   - new_object — a notable object appears in view.
+  - object_identified — you recognize a previously-unknown object (e.g. learned its name or purpose).
   - object_leaves — a notable object is no longer in view.
   - new_location — the device appears to be in a new physical location.
 
@@ -263,6 +308,7 @@ Audio:
   - sound_detected — a discrete sound event (doorbell, crash, bark, alarm).
 
 Other:
+  - update_details — add significant details to a previous observation (e.g. "the new_person is [MOM] and she's holding a [LUNCH TRAY]".
   - other — anything not covered above.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
@@ -272,9 +318,9 @@ Other:
           type: "string",
           enum: [
             "new_person", "new_voice", "set_person_as_user", "person_identified",
-            "voice_identified", "person_leaves", "new_location", "new_object",
+            "voice_identified", "person_leaves", "new_location", "new_object", "object_identified",
             "object_leaves", "person_gesture", "person_indicates_object",
-            "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "other",
+            "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "update_details", "other",
           ],
           description: "The category of observation.",
         },
@@ -398,6 +444,34 @@ Use when you observe a real shift:
   },
 };
 
+/** `report_gesture` — declared only when the student has defined gestures.
+ *  The gesture parameter enumerates the registry's names so the model can't
+ *  invent new gestures; the Coordinator still re-validates server-side. */
+function buildReportGestureTool(gestures: DefinedGesture[]): FunctionDeclaration {
+  return {
+    name: "report_gesture",
+    description:
+      `Report that the user just performed one of their DEFINED GESTURES (listed in <defined_gestures>) toward the device.
+
+The system treats it as a ${T.button} press: it voices the gesture's meaning in the user's voice and the AI responds.
+
+  - Call ONCE per physical gesture. The gesture appearing across several consecutive frames is still ONE gesture — don't re-report until it clearly ends and starts again.
+  - ONLY for gestures in <defined_gestures>, directed at the device. Anything else goes through update_context.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        gesture: {
+          type: "string",
+          enum: gestures.map(g => g.name),
+          description: "The defined gesture's exact name.",
+        },
+      },
+      required: ["gesture"],
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Alarm tools — Observer is the only agent with live visual/audio context,
 // so it owns raising caretaker alarms. Two distinct tools (rather than one
@@ -451,7 +525,7 @@ When in genuine doubt, you may err toward raising it, but never fire on a hunch 
 // Builder
 // ---------------------------------------------------------------------------
 
-export function buildObserverToolDeclarations(_config: ObserverToolConfig = {}): Tool[] {
+export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): Tool[] {
   // Observer's tool surface is constant — Observer runs across BOTH awake
   // and resting profiles (resting just shuts off Speaker + BoardManager;
   // Observer keeps observing). WAKE_UP is retained so Observer can self-wake
@@ -463,6 +537,9 @@ export function buildObserverToolDeclarations(_config: ObserverToolConfig = {}):
   declarations.push(buildTranscriptTool());
   declarations.push(buildUpdateContextTool());
   declarations.push(buildRequestFocusTool());
+  if (config.definedGestures && config.definedGestures.length > 0) {
+    declarations.push(buildReportGestureTool(config.definedGestures));
+  }
   declarations.push(SET_INTERACTION_MODE);
   declarations.push(WAKE_UP);
   declarations.push(REST);

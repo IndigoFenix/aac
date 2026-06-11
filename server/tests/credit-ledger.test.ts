@@ -1,0 +1,117 @@
+/**
+ * Coverage for server/services/credit-ledger.ts — the single sink for all
+ * LLM/TTS usage-cost charges.
+ *
+ * Verifies:
+ *  - creditsUsed accumulates on the session row, and chatCreditsUsed on the
+ *    student/user rows, per charge.
+ *  - cost_breakdown accumulates per function-type key (category), including
+ *    repeat charges to the same key and multi-key `breakdown` splits.
+ *  - zero/negative charges are no-ops.
+ *  - charges without a sessionId still hit the user/student rows (e.g.
+ *    interpretation, photo analysis, deep analysis).
+ */
+
+import { describe, it, expect, afterEach } from '@jest/globals';
+import { eq } from 'drizzle-orm';
+import { truncateAll, db } from './helpers/db.js';
+import { chatSessions, students, users } from '@shared/schema';
+import { makeUser, makeStudent } from './helpers/factories.js';
+import { chargeCreditsToLedger } from '../services/credit-ledger.js';
+
+async function insertUser(): Promise<string> {
+  const user = await makeUser();
+  return user.id;
+}
+
+async function insertStudent(ownerUserId: string): Promise<string> {
+  const { student } = await makeStudent(ownerUserId);
+  return student.id;
+}
+
+async function insertSession(userId: string, studentId: string): Promise<string> {
+  const [row] = await db
+    .insert(chatSessions)
+    .values({ chatMode: 'chat', state: {}, userId, studentId })
+    .returning({ id: chatSessions.id });
+  return row.id;
+}
+
+async function readSession(id: string) {
+  const [row] = await db.select().from(chatSessions).where(eq(chatSessions.id, id));
+  return row;
+}
+
+describe('chargeCreditsToLedger', () => {
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  it('accumulates creditsUsed and per-category cost_breakdown on the session', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.01, category: 'observer', label: 't1' });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.02, category: 'observer', label: 't2' });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.005, category: 'tts', label: 't3' });
+
+    const session = await readSession(sessionId);
+    expect(session.creditsUsed).toBeCloseTo(0.035, 9);
+    const breakdown = session.costBreakdown as Record<string, number>;
+    expect(breakdown.observer).toBeCloseTo(0.03, 9);
+    expect(breakdown.tts).toBeCloseTo(0.005, 9);
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    expect(user.chatCreditsUsed).toBeCloseTo(0.035, 9);
+    const [student] = await db.select().from(students).where(eq(students.id, studentId));
+    expect(student.chatCreditsUsed).toBeCloseTo(0.035, 9);
+  });
+
+  it('splits a multi-key breakdown across categories', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({
+      sessionId,
+      credits: 0.03,
+      breakdown: { chat: 0.02, 'tool:generate_image': 0.01 },
+      label: 'clinician turn',
+    });
+
+    const session = await readSession(sessionId);
+    expect(session.creditsUsed).toBeCloseTo(0.03, 9);
+    const breakdown = session.costBreakdown as Record<string, number>;
+    expect(breakdown.chat).toBeCloseTo(0.02, 9);
+    expect(breakdown['tool:generate_image']).toBeCloseTo(0.01, 9);
+  });
+
+  it('uses "other" when no category is given and ignores non-positive charges', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({ sessionId, credits: 0.001, label: 'uncategorized' });
+    await chargeCreditsToLedger({ sessionId, credits: 0, category: 'tts', label: 'zero' });
+    await chargeCreditsToLedger({ sessionId, credits: -5, category: 'tts', label: 'negative' });
+
+    const session = await readSession(sessionId);
+    expect(session.creditsUsed).toBeCloseTo(0.001, 9);
+    const breakdown = session.costBreakdown as Record<string, number>;
+    expect(breakdown.other).toBeCloseTo(0.001, 9);
+    expect(breakdown.tts).toBeUndefined();
+  });
+
+  it('charges user/student rows when there is no chat session (e.g. interpretation)', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+
+    await chargeCreditsToLedger({ studentId, userId, credits: 0.007, category: 'interpretation', label: 'no-session' });
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    expect(user.chatCreditsUsed).toBeCloseTo(0.007, 9);
+    const [student] = await db.select().from(students).where(eq(students.id, studentId));
+    expect(student.chatCreditsUsed).toBeCloseTo(0.007, 9);
+  });
+});

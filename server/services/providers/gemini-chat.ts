@@ -87,7 +87,9 @@ export class GeminiChatProvider implements ChatProvider {
             // both through and the cost layer does (promptTokens -
             // cachedTokens) * uncached_rate + cachedTokens * cached_rate.
             promptTokens: usage.promptTokenCount || 0,
-            completionTokens: usage.candidatesTokenCount || 0,
+            // Thinking tokens bill as output on Gemini 2.5 and are reported
+            // separately from candidatesTokenCount.
+            completionTokens: (usage.candidatesTokenCount || 0) + ((usage as any).thoughtsTokenCount || 0),
             cachedTokens,
           }
         : undefined,
@@ -155,7 +157,8 @@ export class GeminiChatProvider implements ChatProvider {
       if (usage) {
         finalUsage = {
           promptTokens: usage.promptTokenCount || 0,
-          completionTokens: usage.candidatesTokenCount || 0,
+          // Thinking tokens bill as output on Gemini 2.5
+          completionTokens: (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0),
           cachedTokens: usage.cachedContentTokenCount || 0,
         };
       }

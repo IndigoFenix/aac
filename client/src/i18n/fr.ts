@@ -287,6 +287,20 @@ export const fr = {
     unlink: "Supprimer",
     linkFailed: "Échec de la liaison de l'utilisateur",
     unlinkFailed: "Échec de la suppression de la liaison de l'utilisateur",
+    devices: {
+      title: "Appareils AAC",
+      description: "Appareils enregistrés pour l'AAC de cet {{STUDENT}}",
+      loadFailed: "Échec du chargement des appareils",
+      empty: "Aucun appareil enregistré.",
+      unknownDevice: "Appareil inconnu",
+      lastSeen: "Vu pour la dernière fois {date}",
+      countLimited: "{count} places d'appareils sur {limit} utilisées",
+      countUnlimited: "{count} appareils enregistrés (sans limite)",
+      deregister: "Désinscrire",
+      deregistered: "Appareil désinscrit",
+      confirmDeregisterTitle: "Désinscrire l'appareil ?",
+      confirmDeregisterDesc: "{device} ne pourra plus utiliser l'AAC de cet {{STUDENT}} tant qu'il ne sera pas réenregistré.",
+    },
     gradeLevel: "Niveau scolaire",
     selectGrade: "Sélectionner le niveau...",
     assignToClassroom: "Attribuer à une classe",
@@ -2474,6 +2488,19 @@ export const fr = {
     permittedWebsitesUrl: "URL",
     permittedWebsitesDescriptionField: "Description (visible par l'IA)",
     permittedWebsitesDescriptionPlaceholder: "ex. encyclopédie pour enfants avec articles simples",
+    // Defined Gestures
+    definedGesturesTitle: "Gestes définis",
+    definedGesturesDescription: "Gestes physiques que l'IA surveille pendant les sessions AAC. Un geste effectué vers l'appareil est traité comme un appui sur un bouton qui dit la signification du geste.",
+    definedGesturesEmpty: "Aucun geste défini pour l'instant. Ajoutez-en un ci-dessous.",
+    definedGesturesName: "Geste",
+    definedGesturesNamePlaceholder: "ex. pouce levé",
+    definedGesturesMeaning: "Signification (dite avec la voix de l'utilisateur)",
+    definedGesturesMeaningPlaceholder: "ex. Oui, je veux ça",
+    definedGesturesDescriptionField: "À quoi il ressemble (visible par l'IA)",
+    definedGesturesDescriptionPlaceholder: "ex. Lève un poing fermé avec le pouce vers le haut",
+    definedGesturesAdd: "Ajouter un geste",
+    definedGesturesRemove: "Supprimer",
+    definedGesturesHint: "L'IA observe via la caméra et répond lorsqu'elle reconnaît un geste défini dirigé vers l'appareil.",
     // Permitted YouTube Channels
     permittedYoutubeChannelsTitle: "Chaînes YouTube autorisées",
     permittedYoutubeChannelsDescription: "Lorsqu'elles sont définies, l'application YouTube ne lira que les vidéos de ces chaînes. Sans clé d'API, la recherche se limite aux ~15 dernières vidéos de chaque chaîne.",
@@ -2791,6 +2818,7 @@ export const fr = {
       showFull: "Lire l'avis complet",
       hideFull: "Masquer l'avis complet",
     },
+
     sign: {
       title: "Informed consent",
       intro: "You've been asked to review and sign an informed-consent record for your child. Click below to read the notice and complete the form.",
@@ -2809,6 +2837,7 @@ export const fr = {
         generic: "Something went wrong opening this consent link. Please try again or contact the clinic.",
       },
     },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3051,6 +3080,7 @@ export const fr = {
       // Permissions
       grantAll: "Accorder toutes les permissions",
       maxStudents: "Max {{STUDENTS}}",
+      maxDevicesPerStudent: "Nombre max d'appareils AAC par {{STUDENT}}",
       unlimited: "Illimité",
       aacEnabled: "AAC activé",
       boardMakerEnabled: "Créateur de tableaux",

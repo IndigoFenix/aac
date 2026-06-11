@@ -209,6 +209,19 @@ function parseObserved(raw: any): FullTurn & HumorFeatures {
 
 // ── Public types ───────────────────────────────────────────────────────
 
+/** Default Gemini text model for the director's forced-tool calls.
+ *  Exported so callers can attribute usage to the right catalog id when
+ *  they didn't override `SessionConfig.model`. */
+export const DIRECTED_SESSION_DEFAULT_MODEL = "gemini-2.5-flash";
+
+/** Token usage for one director turn, from the stream's usageMetadata.
+ *  Undefined when the provider didn't report usage for the call. */
+export interface TurnUsage {
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens?: number;
+}
+
 export interface TurnResult {
   reply: string;
   faceTarget: FaceTarget;
@@ -216,6 +229,7 @@ export interface TurnResult {
   vector: { valence: number; arousal: number; rapport: number };
   directive: ResponseDirective;
   ext: DirectiveExtensions;
+  usage?: TurnUsage;
 }
 
 export interface SessionConfig {
@@ -422,6 +436,7 @@ export class DirectedSession {
       vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
       directive: this.directive,
       ext,
+      usage: llmReply.usage,
     };
   }
 
@@ -454,8 +469,8 @@ export class DirectedSession {
     };
   }
 
-  private async callLLM(turnTail: string): Promise<{ reply: string; observed: unknown }> {
-    const model = this.cfg.model || "gemini-2.5-flash";
+  private async callLLM(turnTail: string): Promise<{ reply: string; observed: unknown; usage?: TurnUsage }> {
+    const model = this.cfg.model || DIRECTED_SESSION_DEFAULT_MODEL;
 
     // Build contents: prior conversation + the volatile tail as the current user turn.
     const priorContents = this.conversation.map((m) => ({
@@ -507,13 +522,23 @@ export class DirectedSession {
     let fnCall:
       | { name?: string; args?: { reply?: string; observed?: unknown } }
       | undefined;
+    let usage: TurnUsage | undefined;
     for await (const chunk of stream) {
       const parts = chunk.candidates?.[0]?.content?.parts || [];
       const found = parts.find((p: any) => p.functionCall)?.functionCall as typeof fnCall;
-      if (found) {
-        fnCall = found;
-        // Atomic tool-call chunk — we have everything we need.
-        break;
+      if (found) fnCall = found;
+      // usageMetadata typically rides the FINAL chunk, after the tool
+      // call — so we drain the stream instead of breaking on the call.
+      // For a forced single-tool turn the trailing chunks arrive
+      // immediately, so this costs effectively nothing.
+      const um = (chunk as any).usageMetadata;
+      if (um && typeof um.promptTokenCount === "number") {
+        usage = {
+          promptTokens: um.promptTokenCount,
+          // Thinking tokens bill as output on Gemini 2.5
+          completionTokens: (um.candidatesTokenCount ?? 0) + (um.thoughtsTokenCount ?? 0),
+          cachedTokens: um.cachedContentTokenCount || undefined,
+        };
       }
     }
     if (!fnCall || fnCall.name !== TURN_TOOL_SCHEMA.name || typeof fnCall.args?.reply !== "string") {
@@ -524,6 +549,7 @@ export class DirectedSession {
     return {
       reply: fnCall.args.reply,
       observed: fnCall.args.observed,
+      usage,
     };
   }
 }

@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CostBreakdownCell } from "./CostBreakdownCell";
 import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2 } from "lucide-react";
 import {
   useAACSessionsAdmin,
@@ -407,7 +408,9 @@ function AACTab() {
                         <span className="text-xs text-muted-foreground ms-1">(active)</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">${s.creditsUsed.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">
+                      <CostBreakdownCell credits={s.creditsUsed} breakdown={s.costBreakdown} />
+                    </TableCell>
                     <TableCell className="text-right">
                       ${formatCostPerMin(s.creditsUsed, s.started, s.ended, s.lastActivity)}
                     </TableCell>
@@ -525,7 +528,9 @@ function ChatTab() {
                         <span className="text-xs text-muted-foreground ms-1">(active)</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">${s.creditsUsed.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">
+                      <CostBreakdownCell credits={s.creditsUsed} breakdown={s.costBreakdown} />
+                    </TableCell>
                     <TableCell className="text-right">
                       ${formatCostPerMin(s.creditsUsed, s.started, null, s.lastUpdate)}
                     </TableCell>

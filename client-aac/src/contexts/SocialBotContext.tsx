@@ -1,39 +1,41 @@
 // client-aac/src/contexts/SocialBotContext.tsx
 //
-// Hosts the social-bot session and coordinates with the AAC dual-agent
-// when activeApp = "social_trainer". Sits inside DualAgentProvider so it
-// can read/write mute state, send debrief messages, and forward AAC
-// utterances to the bot.
+// Bridges the SERVER-OWNED social-training session into the header UI.
 //
-// What this owns:
-//   - WS lifecycle (via useSocialBotSession)
-//   - Save/restore muteState across the session
-//   - Forward AAC AI utterances → bot text_message (debounced on
-//     utteranceText settling, since utterance streams in fragments)
-//   - On bot session_end: restore mute, dismiss app, send AAC AI a
-//     debrief system message
-//   - Expose state to DualAgentConversationBox for header rendering
-//   - Cancel hook for the cave-click handler
+// In the three-agent system the peer persona REPLACES the Speaker agent
+// server-side (AgentCoordinator.startSocialPeerSession): its speech,
+// streaming text, TTS audio, and the response board all flow through the
+// normal AAC channels. The old separate `/ws/social-bot` connection,
+// mute forcing, utterance forwarding, and client-composed debrief are
+// gone — the server does all of that now.
+//
+// What this context still owns:
+//   - Activation tracking (activeApp === "social_trainer")
+//   - The peer's procedural face data (from the `social_session` message,
+//     surfaced as `socialSession` on the dual-agent context)
+//   - A face target derived from the avatar emote + a mouth-flap level
+//     derived from audio playback
+//   - Asking the server to start client-initiated launches
+//   - Ending the session on cave click (dismissApp → app_dismissed)
 
-import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDualAgentContext } from "./DualAgentContext";
-import { useSocialBotSession, type SocialBotSessionEnd } from "@/hooks/useSocialBotSession";
 import { NEUTRAL_FACE, type FaceTarget, type FaceAppearance } from "@shared/social-bot/ProceduralFace";
 
 interface SocialBotContextValue {
   /** True while a social training session is active. */
   active: boolean;
-  /** True once the bot's WS handshake has completed. */
+  /** True once the server has confirmed the session (face data arrived). */
   connected: boolean;
   /** Where the face should be heading — client lerps from current. */
   faceTarget: FaceTarget;
-  /** Procedural appearance fixed for this session. Null until initialized. */
+  /** Procedural appearance fixed for this session. Null until the server confirms. */
   appearance: FaceAppearance | null;
   expressiveness: number;
   legibility: number;
   /** Instantaneous mouth amplitude (0..1) for lip-sync on the face. */
   speakingLevel: number;
-  /** Latest bot line — replaces the AI's text in the header. */
+  /** Latest peer line — replaces the AI's text in the header. */
   botText: string;
   voiceName: string | null;
   characterName: string | null;
@@ -43,65 +45,72 @@ interface SocialBotContextValue {
 
 const SocialBotContext = createContext<SocialBotContextValue | null>(null);
 
-// Long-stop fallback: if no student-voice TTS audio EVER plays for the
-// current utterance, ship the text after this long. Covers TTS-disabled
-// and audio-context-blocked cases. Set generously because the audio
-// player only flips `isPlaying=true` AFTER it has decoded the first
-// chunk and started a BufferSourceNode — easily 200-800ms of latency
-// from text arrival to isPlaying going true. We must not race that.
-const TTS_AWAIT_GRACE_MS = 3000;
+/** Avatar emote → peer face target. The peer's only mood channel in the
+ *  integrated mode is the Speaker `emote` tool (happy/sad/neutral); map
+ *  each onto the procedural face's mood axes. */
+const EMOTE_FACE: Record<"happy" | "sad" | "neutral", FaceTarget> = {
+  happy: { v: 0.7, a: 0.35, r: 0.6, smirk: 0.15, gx: 0, gy: 0 },
+  sad: { v: -0.5, a: -0.2, r: 0.3, smirk: 0, gx: 0, gy: -0.2 },
+  neutral: { v: 0.15, a: 0, r: 0.4, smirk: 0, gx: 0, gy: 0 },
+};
+
+/** Mouth-flap update cadence. Coarser than rAF on purpose — each tick
+ *  re-renders the provider subtree; the face's internal lerp smooths it. */
+const SPEAKING_TICK_MS = 100;
 
 interface ProviderProps {
-  studentId: string | null;
   children: ReactNode;
 }
 
-export function SocialBotProvider({ studentId, children }: ProviderProps) {
+export function SocialBotProvider({ children }: ProviderProps) {
   const {
     activeApp,
     dismissApp,
-    muteState,
-    setMuteState,
-    notifySocialTrainerStarted,
-    notifySocialTrainerPeerSaid,
-    notifySocialTrainerEnded,
-    utteranceText,
-    isPlaying,
     launchApp,
+    socialSession,
+    socialPeerState,
+    notifySocialTrainerStarted,
+    currentMessage,
+    isPlaying,
+    emote,
   } = useDualAgentContext();
 
   const active = activeApp?.appId === "social_trainer";
+  const connected = !!socialSession;
 
-  // Bot just finished a turn — tell the AAC server (which composes the
-  // [social peer just said] prompt itself and triggers a board rebuild).
-  const onBotTurnComplete = useCallback(
-    (text: string) => {
-      if (!active) return;
-      console.log("[SocialBot] bot turn complete — notifying AAC", { text });
-      notifySocialTrainerPeerSaid(text);
-    },
-    [active, notifySocialTrainerPeerSaid],
-  );
-
-  // Trace activation transitions so we can see whether open_app(social_trainer)
-  // actually fired and was received here.
+  // Trace activation transitions so we can see whether the launch path
+  // (open_app / social_trainer_started) actually fired.
   useEffect(() => {
     console.log("[SocialBot] activation change", {
       active,
-      activeAppId: activeApp?.appId ?? null,
-      studentId,
+      connected,
+      characterName: socialSession?.characterName ?? null,
     });
-  }, [active, activeApp?.appId, studentId]);
+  }, [active, connected, socialSession?.characterName]);
 
-  // Debug helpers. Expose manual launch/dismiss on `window` so the social
-  // bot WS can be tested without depending on the AAC AI's discretion.
+  // Client-initiated launch: when the app activates locally and the
+  // server hasn't confirmed a session yet, ask it to start one. For
+  // AI-initiated launches the server already started the session before
+  // sending app_open — its start guard drops the redundant request.
+  const requestedRef = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      requestedRef.current = false;
+      return;
+    }
+    if (requestedRef.current || socialSession) return;
+    requestedRef.current = true;
+    notifySocialTrainerStarted();
+  }, [active, socialSession, notifySocialTrainerStarted]);
+
+  // Debug helpers. Expose manual launch/dismiss on `window` so a session
+  // can be tested without depending on the AAC AI's discretion.
   //
   // In the browser console:
   //   window.__startSocialBot()    // flip activeApp to social_trainer
   //   window.__stopSocialBot()     // dismiss the active app
   //
-  // Also auto-launch when the URL carries ?launch=social_trainer — useful
-  // when the AAC AI is uncooperative or to repro a session quickly.
+  // Also auto-launch when the URL carries ?launch=social_trainer.
   useEffect(() => {
     (window as any).__startSocialBot = () => {
       console.log("[SocialBot] __startSocialBot() invoked");
@@ -125,183 +134,46 @@ export function SocialBotProvider({ studentId, children }: ProviderProps) {
     };
   }, [launchApp, dismissApp]);
 
-  const session = useSocialBotSession({ studentId, active, onBotTurnComplete });
-
-  // On activation: force the AAC AI into silent/muted mode and notify
-  // the AAC server that a social-training session is starting. The
-  // server composes the actual prompt (wording lives in
-  // server/services/social-bot/aac-bridge-prompts.ts).
-  const activatedRef = useRef(false);
+  // Mouth flap while the peer's TTS audio plays. Layered sines give a
+  // speech-like cadence without an audio analyser tap.
+  const [speakingLevel, setSpeakingLevel] = useState(0);
   useEffect(() => {
-    if (!active) return;
-    if (activatedRef.current) return;
-    activatedRef.current = true;
-    if (muteState !== "muted") {
-      setMuteState("muted");
-    }
-    notifySocialTrainerStarted();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  // On session end (bot- or user-initiated): restore mute, dismiss app,
-  // send the AAC AI a debrief message. Run-once guard so we don't
-  // re-dispatch on every render while sessionEnd is set.
-  const handledEndRef = useRef(false);
-  const sessionEnd = session.sessionEnd;
-  useEffect(() => {
-    if (!active || !sessionEnd || handledEndRef.current) return;
-    handledEndRef.current = true;
-
-    finishSession(sessionEnd);
-
-    function finishSession(end: SocialBotSessionEnd) {
-      // Always leave silent/muted mode on session end, regardless of the
-      // prior state. The post-session debrief is an active conversation
-      // between the AAC AI and the student — silent mode would suppress
-      // the AAC AI's voice and leave the student waiting in silence.
-      setMuteState("unmuted");
-      // Server composes the debrief from the report + feedback summary.
-      notifySocialTrainerEnded(end.report, end.feedback_summary);
-      dismissApp();
-    }
-  }, [active, sessionEnd, dismissApp, setMuteState, notifySocialTrainerEnded]);
-
-  // Reset the activation latches when the session is fully torn down so
-  // the next launch starts clean.
-  useEffect(() => {
-    if (active) return;
-    activatedRef.current = false;
-    handledEndRef.current = false;
-  }, [active]);
-
-  // Forward settled utterances to the bot.
-  //
-  // `utteranceText` from useLiveSession is APPEND-ONLY across the whole
-  // chat session (only reset on clearSession), and both AAC paths feed
-  // into it:
-  //   - Buttons + voiceButtons: server streams `utterance` chunks that
-  //     get appended over the course of one turn.
-  //   - Sentence builder glyph_press: server calls interpret(), then
-  //     sends one `utterance` event with the full interpreted sentence.
-  // Either way we want to forward only the NEW SUFFIX since the last
-  // ship, not the entire accumulated buffer. We track the high-water
-  // mark per session and reset it whenever `active` flips.
-  const shippedThroughRef = useRef("");
-  useEffect(() => {
-    // Reset cursor on each fresh activation so the next session starts clean.
-    if (!active) shippedThroughRef.current = "";
-  }, [active]);
-
-  // Pull stable primitives off the session handle so effects don't refire
-  // on every render of the parent (the dual-agent provider churns a lot).
-  const connectedFlag = session.connected;
-  const sendUtterance = session.sendUtterance;
-  const sessionCancel = session.cancel;
-
-  // Forward the student's utterance to the bot AFTER the student-voice TTS
-  // has finished playing — not when the text settles.
-  //
-  // Why: the AAC button press generates BOTH a text utterance and TTS audio
-  // (the student's voice saying the words out loud). If we ship the text to
-  // the bot the moment it settles, the bot replies while the student-voice
-  // is still mid-sentence, which feels wrong and breaks echo cancellation
-  // assumptions (the bot's input clock should match real-world speech
-  // timing). Instead, we wait for the TTS audio to drain (isPlaying true →
-  // false) and forward the accumulated delta then.
-  //
-  // Fallback: if isPlaying never went true for this turn (e.g. TTS is
-  // disabled or audio context blocked), fire a settle timer so we don't
-  // strand the utterance entirely.
-  const lastPlayingRef = useRef(false);
-  const sawPlayingThisTurnRef = useRef(false);
-
-  // Track isPlaying transitions in a ref so we don't put isPlaying directly
-  // in the forwarding effect's deps (it flips constantly).
-  useEffect(() => {
-    if (isPlaying) sawPlayingThisTurnRef.current = true;
-    lastPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-
-  useEffect(() => {
-    if (!active || !connectedFlag) return;
-    if (!utteranceText) return;
-
-    const cursor = shippedThroughRef.current;
-    const delta = utteranceText.startsWith(cursor)
-      ? utteranceText.slice(cursor.length).trim()
-      : utteranceText.trim();
-    if (!delta) return;
-
-    // Two cases:
-    //   (a) Audio is playing now, OR will start playing for this utterance.
-    //       The isPlaying false-edge watcher (below) will ship when TTS
-    //       finishes. We do nothing here.
-    //   (b) No TTS at all for this utterance (TTS disabled / audio context
-    //       blocked / unusual race). The grace timer below ships as a
-    //       last resort, but ONLY if isPlaying never went true. If audio
-    //       did play and the false-edge watcher already shipped, this
-    //       fallback would double-send — guard against that with
-    //       sawPlayingThisTurnRef.
-    if (isPlaying) {
-      console.log("[SocialBot] utterance delta — awaiting TTS finish", { delta });
+    if (!active || !isPlaying) {
+      setSpeakingLevel(0);
       return;
     }
+    const timer = setInterval(() => {
+      const t = performance.now() / 1000;
+      const level = 0.3 + 0.35 * Math.abs(Math.sin(t * 7)) + 0.2 * Math.abs(Math.sin(t * 13 + 1));
+      setSpeakingLevel(Math.min(1, level));
+    }, SPEAKING_TICK_MS);
+    return () => {
+      clearInterval(timer);
+      setSpeakingLevel(0);
+    };
+  }, [active, isPlaying]);
 
-    console.log("[SocialBot] utterance delta — waiting for TTS to start", { delta });
-    const timer = setTimeout(() => {
-      // If audio is currently playing or ever played for this utterance,
-      // the false-edge watcher owns shipping. Bail.
-      if (lastPlayingRef.current) return;
-      if (sawPlayingThisTurnRef.current) return;
-
-      // Re-check the delta at fire time (utteranceText may have grown).
-      const current = utteranceText;
-      const c = shippedThroughRef.current;
-      const finalDelta = current.startsWith(c) ? current.slice(c.length).trim() : current.trim();
-      if (!finalDelta) return;
-      shippedThroughRef.current = current;
-      console.log("[SocialBot] utterance shipped (no-TTS fallback)", { delta: finalDelta });
-      sendUtterance(finalDelta);
-    }, TTS_AWAIT_GRACE_MS);
-
-    return () => clearTimeout(timer);
-  }, [active, connectedFlag, utteranceText, isPlaying, sendUtterance]);
-
-  // isPlaying false-edge watcher: when TTS finishes after we've staged a
-  // delta, ship it. Lives separately so utteranceText updates don't fight
-  // the timer logic above.
-  const prevIsPlayingForShipRef = useRef(false);
-  useEffect(() => {
-    const wasPlaying = prevIsPlayingForShipRef.current;
-    prevIsPlayingForShipRef.current = isPlaying;
-    if (!active || !connectedFlag) return;
-    if (!wasPlaying || isPlaying) return; // only true → false
-
-    const current = utteranceText ?? "";
-    const c = shippedThroughRef.current;
-    const finalDelta = current.startsWith(c) ? current.slice(c.length).trim() : current.trim();
-    if (!finalDelta) return;
-    shippedThroughRef.current = current;
-    sawPlayingThisTurnRef.current = false;
-    console.log("[SocialBot] utterance shipped on TTS end", { delta: finalDelta });
-    sendUtterance(finalDelta);
-  }, [active, connectedFlag, isPlaying, utteranceText, sendUtterance]);
-
+  // Cave click — end the session. dismissApp() clears the local app and
+  // sends app_dismissed; the server tears down the peer, restores the
+  // companion Speaker, and runs the debrief.
   const cancel = useCallback(() => {
-    sessionCancel();
-  }, [sessionCancel]);
+    if (!active) return;
+    dismissApp();
+  }, [active, dismissApp]);
 
   const value: SocialBotContextValue = {
     active,
-    connected: session.connected,
-    faceTarget: session.faceTarget,
-    appearance: session.appearance,
-    expressiveness: session.expressiveness,
-    legibility: session.legibility,
-    speakingLevel: session.speakingLevel,
-    botText: session.botText,
-    voiceName: session.voiceName,
-    characterName: session.characterName,
+    connected,
+    // The director's per-turn face target is authoritative; the emote
+    // mapping is only a fallback before the first turn lands.
+    faceTarget: socialPeerState?.target ?? EMOTE_FACE[emote] ?? NEUTRAL_FACE,
+    appearance: socialSession?.appearance ?? null,
+    expressiveness: socialSession?.expressiveness ?? 0.85,
+    legibility: socialSession?.legibility ?? 1,
+    speakingLevel,
+    botText: active ? (currentMessage?.content ?? "") : "",
+    voiceName: socialSession?.voiceName ?? null,
+    characterName: socialSession?.characterName ?? null,
     cancel,
   };
 

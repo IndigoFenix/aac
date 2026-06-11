@@ -1121,6 +1121,7 @@ ${transcript}`;
         replyType: "text",
         systemPromptOverride,
         timezone: this.timezone,
+        creditCategory: "monitor",
       });
 
       // Extract any commands or context updates from the response

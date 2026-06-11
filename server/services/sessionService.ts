@@ -38,6 +38,7 @@ import {
   type Persona,
 } from "@shared/schema";
 import { personaRepository } from "../repositories/personaRepository";
+import { chargeCreditsToLedger } from "./credit-ledger";
 import { ChatMessageManager, AgentTemplate, CurrentImage, MdStreamEvent } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
 import {
@@ -141,7 +142,7 @@ async function resolveImageKeysOnBoard(board: any, studentId?: string): Promise<
   // Phase 2 (background): queue generation for missing symbols
   if (generateEnabled && unresolved.length > 0) {
     console.log(`[resolveImageKeysOnBoard] Queuing ${unresolved.length} for generation: ${unresolved.join(", ")}`);
-    queueSymbolGeneration(unresolved);
+    queueSymbolGeneration(unresolved, undefined, { studentId });
   } else if (!generateEnabled && unresolved.length > 0) {
     console.log(`[resolveImageKeysOnBoard] Generation disabled — ${unresolved.length} keys will not be generated`);
   }
@@ -925,6 +926,8 @@ interface GetMessageManagerInput {
   systemPromptOverride?: string;
   /** IANA timezone of the requesting user (for AI prompt context and "today" windows). */
   timezone?: string;
+  /** Function-type key for the session cost_breakdown (default "chat"; the AAC Monitor passes "monitor"). */
+  creditCategory?: string;
 }
 
 interface GetMessageManagerResult {
@@ -1688,16 +1691,19 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     await updateSession(session.id, update);
   };
 
-  const onCreditsUsed = async (creditsUsed: number) => {
+  const onCreditsUsed = async (creditsUsed: number, breakdown?: Record<string, number>) => {
     await spendCredits(context, creditsUsed);
     if (session) {
-      await db
-        .update(chatSessions)
-        .set({
-          creditsUsed: sql`${chatSessions.creditsUsed} + ${creditsUsed}`,
-          lastUpdate: new Date(),
-        })
-        .where(eq(chatSessions.id, session.id));
+      // Session-row update (creditsUsed + per-function-type cost_breakdown)
+      // goes through the shared ledger; user/student rows are handled by
+      // spendCredits above.
+      await chargeCreditsToLedger({
+        sessionId: session.id,
+        credits: creditsUsed,
+        breakdown,
+        category: "chat",
+        label: "clinician-chat",
+      });
     }
   };
 
@@ -2021,6 +2027,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     currentImage: input.currentImage,
     providerConfig: llmConfig,
     timezone: input.timezone,
+    creditCategory: input.creditCategory,
   });
 
 
@@ -2202,6 +2209,9 @@ export interface OnMessageInput {
 
   /** IANA timezone of the requesting user (e.g. "America/New_York"). Used for AI prompt context. */
   timezone?: string;
+
+  /** Function-type key for the session cost_breakdown (default "chat"; the AAC Monitor passes "monitor"). */
+  creditCategory?: string;
 }
 
 /**
@@ -2242,7 +2252,7 @@ function classifyError(error: any): string {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone, creditCategory } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -2258,6 +2268,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       currentImage,
       systemPromptOverride,
       timezone,
+      creditCategory,
     });
 
     // Debug: Log what we injected
@@ -2354,6 +2365,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       currentImage,
       systemPromptOverride,
       timezone,
+      creditCategory: input.creditCategory,
     });
 
     // Debug: Log what we injected

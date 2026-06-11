@@ -97,6 +97,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [grantAll, setGrantAll] = useState(false);
   const [maxStudents, setMaxStudents] = useState(5);
   const [maxStudentsUnlimited, setMaxStudentsUnlimited] = useState(false);
+  // AAC device slots per student; -1 (unlimited) is the back-compat default
+  const [maxDevicesPerStudent, setMaxDevicesPerStudent] = useState(0);
+  const [maxDevicesUnlimited, setMaxDevicesUnlimited] = useState(true);
   const [aacEnabled, setAacEnabled] = useState(false);
   const [boardMakerEnabled, setBoardMakerEnabled] = useState(false);
   const [customAppsEnabled, setCustomAppsEnabled] = useState(false);
@@ -131,6 +134,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           setGrantAll(perms.all || false);
           setMaxStudents(perms.maxStudents === -1 ? 0 : (perms.maxStudents ?? 0));
           setMaxStudentsUnlimited(perms.maxStudents === -1);
+          const maxDevices = perms.maxDevicesPerStudent ?? -1;
+          setMaxDevicesPerStudent(maxDevices === -1 ? 0 : maxDevices);
+          setMaxDevicesUnlimited(maxDevices === -1);
           setAacEnabled(perms.aacEnabled ?? false);
           setBoardMakerEnabled(perms.boardMakerEnabled ?? false);
           setCustomAppsEnabled(perms.customAppsEnabled ?? false);
@@ -160,6 +166,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setGrantAll(false);
     setMaxStudents(5);
     setMaxStudentsUnlimited(false);
+    setMaxDevicesPerStudent(0);
+    setMaxDevicesUnlimited(true);
     setAacEnabled(false);
     setBoardMakerEnabled(false);
     setCustomAppsEnabled(false);
@@ -212,6 +220,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       return {
         all: true,
         maxStudents: -1,
+        maxDevicesPerStudent: -1,
         aacEnabled: true,
         boardMakerEnabled: true,
         customAppsEnabled: true,
@@ -228,6 +237,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     return {
       all: false,
       maxStudents: maxStudentsUnlimited ? -1 : maxStudents,
+      maxDevicesPerStudent: maxDevicesUnlimited ? -1 : maxDevicesPerStudent,
       aacEnabled,
       boardMakerEnabled,
       customAppsEnabled,
@@ -645,6 +655,32 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                         onCheckedChange={(v) => setMaxStudentsUnlimited(!!v)}
                       />
                       <label htmlFor="maxStudentsUnlimited" className="text-xs text-muted-foreground cursor-pointer">
+                        {t('admin.licenses.unlimited')}
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Max AAC devices per student — a multi-institute student's
+                    effective limit is the SUM across their institutes' licenses */}
+                <div className="flex items-center justify-between">
+                  <Label>{t('admin.licenses.maxDevicesPerStudent')}</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      className="w-20"
+                      value={maxDevicesPerStudent}
+                      onChange={(e) => setMaxDevicesPerStudent(parseInt(e.target.value) || 0)}
+                      disabled={maxDevicesUnlimited}
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <Checkbox
+                        id="maxDevicesUnlimited"
+                        checked={maxDevicesUnlimited}
+                        onCheckedChange={(v) => setMaxDevicesUnlimited(!!v)}
+                      />
+                      <label htmlFor="maxDevicesUnlimited" className="text-xs text-muted-foreground cursor-pointer">
                         {t('admin.licenses.unlimited')}
                       </label>
                     </div>

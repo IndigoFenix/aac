@@ -91,7 +91,8 @@ export class GeminiProvider implements LLMProvider {
     if (usageMetadata) {
       return {
         promptTokens: usageMetadata.promptTokenCount || 0,
-        completionTokens: usageMetadata.candidatesTokenCount || 0,
+        // Thinking tokens bill as output on Gemini 2.5
+        completionTokens: (usageMetadata.candidatesTokenCount || 0) + (usageMetadata.thoughtsTokenCount || 0),
         totalTokens: usageMetadata.totalTokenCount || 0
       };
     }

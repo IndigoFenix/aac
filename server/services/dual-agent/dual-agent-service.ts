@@ -10,6 +10,7 @@ import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
 import { creditsForModelUsage, creditsForLiveUsage, creditsForTtsUsage, type TtsProvider } from "../chat/cost-helpers";
+import { chargeCreditsToLedger } from "../credit-ledger";
 import type { LLMProviderKey } from "@shared/llm-options";
 import {
   InteractiveAgent,
@@ -165,6 +166,10 @@ export class DualAgentService {
    * Persist a credit charge to chatSessions / students / users / userStudents.
    * Used by both the legacy HTTP path (aggregate tokens) and the Live API
    * path (modality-split tokens).
+   *
+   * Every id is optional: user-only charges (e.g. the standalone social
+   * trainer, which has no chat_sessions row and no student) pass "" for
+   * sessionId/studentId and only the user row updates.
    */
   private async persistCreditCharge(
     sessionId: string,
@@ -172,46 +177,9 @@ export class DualAgentService {
     userId: string | undefined,
     credits: number,
     logSuffix: string,
+    category: string,
   ): Promise<void> {
-    if (credits <= 0) return;
-    try {
-      await db
-        .update(chatSessions)
-        .set({ creditsUsed: sql`${chatSessions.creditsUsed} + ${credits}`, lastUpdate: new Date() })
-        .where(eq(chatSessions.id, sessionId));
-
-      if (studentId) {
-        await db
-          .update(students)
-          .set({ chatCreditsUsed: sql`${students.chatCreditsUsed} + ${credits}`, chatCreditsUpdated: new Date() })
-          .where(eq(students.id, studentId));
-      }
-
-      if (userId) {
-        await db
-          .update(users)
-          .set({ chatCreditsUsed: sql`${users.chatCreditsUsed} + ${credits}`, chatCreditsUpdated: new Date() })
-          .where(eq(users.id, userId));
-      }
-
-      if (studentId && userId) {
-        await db
-          .update(userStudents)
-          .set({
-            chatCreditsUsed: sql`${userStudents.chatCreditsUsed} + ${credits}`,
-            chatCreditsUpdated: new Date(),
-          })
-          .where(and(
-            eq(userStudents.userId, userId),
-            eq(userStudents.studentId, studentId),
-            eq(userStudents.isActive, true)
-          ));
-      }
-
-      console.log(`[DualAgentService] Tracked ${credits.toFixed(6)} credits (${logSuffix})`);
-    } catch (error) {
-      console.error("[DualAgentService] Error tracking credits:", error);
-    }
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix });
   }
 
   /**
@@ -251,7 +219,7 @@ export class DualAgentService {
         + (usage.cacheCreationTokens ? ` cacheWrite=${usage.cacheCreationTokens}` : "")
         + ` (no-modality-details)`;
     }
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label ?? "live");
   }
 
   /**
@@ -277,7 +245,7 @@ export class DualAgentService {
       + (cachedTokens ? ` cacheRead=${cachedTokens}` : "")
       + (cacheCreationTokens ? ` cacheWrite=${cacheCreationTokens}` : "")
       + ` [${label}]`;
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label);
   }
 
   /**
@@ -297,7 +265,7 @@ export class DualAgentService {
     if (characters <= 0) return;
     const credits = creditsForTtsUsage(provider, characters);
     const logSuffix = `tts provider=${provider} chars=${characters}`;
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, "tts");
   }
 
   /**

@@ -2,11 +2,12 @@
 // Pass an uploaded face photo through Gemini to (a) confirm it's a face and
 // (b) extract structured physical descriptors for biometric_data.
 //
-// Cost of each call is recorded via apiTracker so it shows up in usage
-// reports alongside other LLM spend.
+// Cost of each call is recorded in the credit ledger (charged to the
+// uploading user); apiTracker only logs timing.
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { apiTracker } from "../apiTracker";
+import { chargeModelUsage } from "../credit-ledger";
 
 const ANALYSIS_MODEL = "gemini-2.5-flash";
 
@@ -128,6 +129,21 @@ export async function analyzeFacePhoto(
     opts.userId,
     opts.sessionId,
   );
+
+  const usage = (response as any)?.usageMetadata;
+  if (usage) {
+    chargeModelUsage({
+      provider: "gemini",
+      model: ANALYSIS_MODEL,
+      promptTokens: usage.promptTokenCount ?? 0,
+      // Thinking tokens bill as output on Gemini 2.5
+      completionTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
+      cachedTokens: usage.cachedContentTokenCount ?? 0,
+      userId: opts.userId,
+      category: "photo-analysis",
+      label: "face-photo-analysis",
+    }).catch(err => console.error("[PhotoAnalyzer] cost ledger charge failed:", err));
+  }
 
   const text = (response as any)?.text
     ?? (response as any)?.candidates?.[0]?.content?.parts?.[0]?.text;

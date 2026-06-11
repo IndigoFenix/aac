@@ -98,6 +98,16 @@ Predefined categories and what they cover:
 
 Pick the SINGLE best fit. If none of the six clearly fit but the topic is still identifiable (e.g. movies, music, school subjects), pick "new" and supply a short label. If you genuinely cannot tell what they're looking for, pick "unknown".`;
 
+/** Usage report for the seeder's one LLM call — fired even when the
+ *  classification result is unusable, since the tokens were still billed. */
+export interface GuessingSeedUsage {
+  provider: typeof SEEDER_PROVIDER;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+}
+
 /**
  * Classify the recent conversation into one of the guessing categories.
  * Returns null on transport / parse failure — callers should fall back
@@ -106,6 +116,7 @@ Pick the SINGLE best fit. If none of the six clearly fit but the topic is still 
 export async function seedGuessingFromConversation(input: {
   lastAIQuestion: string;
   signal?: AbortSignal;
+  onUsage?: (usage: GuessingSeedUsage) => void;
 }): Promise<GuessingSeedResult | null> {
   const question = input.lastAIQuestion.trim();
   if (!question) return null;
@@ -131,6 +142,16 @@ export async function seedGuessingFromConversation(input: {
   } catch (err: any) {
     console.warn(`[guessing-seeder] LLM call failed: ${err?.message ?? err}`);
     return null;
+  }
+
+  if (result.usage) {
+    input.onUsage?.({
+      provider: SEEDER_PROVIDER,
+      model: SEEDER_MODEL,
+      promptTokens: result.usage.promptTokens,
+      completionTokens: result.usage.completionTokens,
+      cachedTokens: result.usage.cachedTokens ?? 0,
+    });
   }
 
   const call = result.toolCalls?.[0];
