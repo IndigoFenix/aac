@@ -267,9 +267,6 @@ const STARTUP_FALLBACK_MS = 6_000;
  *  before greeting — batches a burst of update_context calls so the greeting
  *  follows the LAST one. */
 const STARTUP_GREET_AFTER_CONTEXT_MS = 400;
-/** Once the user is identified but no scene context has arrived yet, wait this
- *  long for the Observer's description before greeting anyway. */
-const STARTUP_GREET_WAIT_CONTEXT_MS = 1_500;
 
 const RECENT_EVENTS_WINDOW = 20;
 /** How many conversational events accumulate before a rolling session
@@ -2963,27 +2960,27 @@ export class AgentCoordinator {
   }
 
   /**
-   * (Re)arm the startup-greeting settle timer once the active user is
-   * identified (face match of student/linked-user, or set_person_as_user). The
-   * greeting fires from the timer — never inline — so the [SESSION START]
-   * command always lands AFTER the Observer's update_context was injected to
-   * Speaker:
-   *   - context already received → short settle (batches trailing updates);
-   *   - identified but no context yet → wait a window for the scene description.
-   * We never consume startup on a non-identifying observation, and the hard
-   * fallback timer still caps the total wait.
+   * Arm the startup-greeting settle timer. The greeting requires BOTH the user
+   * identified (face match of student/linked-user, or set_person_as_user) AND
+   * scene context — and fires from the timer, never inline — so the
+   * [SESSION START] command always lands AFTER the Observer's update_context
+   * was injected to Speaker. We arm ONLY once context has arrived; re-arming on
+   * each context flush batches a burst and fires just after the last one. If
+   * the user is identified but context never comes, the hard fallback timer is
+   * the sole backstop (it greets without context). We never consume startup on
+   * a non-identifying observation.
    */
   private maybeArmStartupGreet(): void {
     if (!this.startupPending || this.state !== "ready") return;
     if (!this.activeUserIdentified()) return;
-    const firstTime = !this.startupUserIdentified;
     this.startupUserIdentified = true;
+    // Once we know who's here, guarantee an eventual greeting even if the
+    // scene description never arrives (idempotent).
+    this.armStartupFallback();
+    // Greet only AFTER scene context — otherwise the greeting would precede
+    // the Observer's update_context (it raced ahead via early face ID).
     if (this.startupContextReceived) {
       this.armStartupGreetTimer(STARTUP_GREET_AFTER_CONTEXT_MS);
-    } else if (firstTime) {
-      // Identified but no scene context yet — wait a window for it. Don't
-      // re-arm on later identifications (that would keep pushing it out).
-      this.armStartupGreetTimer(STARTUP_GREET_WAIT_CONTEXT_MS);
     }
   }
 
@@ -3074,6 +3071,17 @@ export class AgentCoordinator {
    * the streaming frame_grid path and the immediate initialFrame at connect.
    */
   private async forwardFrameToObserver(data: string): Promise<void> {
+    // Drop frames while the Observer's Live session isn't connected yet (its
+    // setupComplete can land a few hundred ms AFTER we mark the session ready).
+    // Crucially we DON'T count these — otherwise the stronger startup prompt
+    // would ride a frame the Observer never actually processes, and the first
+    // real frame would get the plain scene-update prompt instead.
+    if (!this.observer?.isConnected) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("FRAME dropped", "observer not connected yet");
+      });
+      return;
+    }
     // Bump first (before any await) so a concurrently-processed second frame
     // can't also be treated as the first.
     this.frameCount += 1;

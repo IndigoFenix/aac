@@ -565,6 +565,10 @@ export function DualAgentConversationBox({
                       Monitor
                     </span>
                   )}
+
+                  {/* Subtle "who is at the device" indicator — top-right of the
+                      upper row, directly above the "New" button. */}
+                  <IdentificationBadge identification={identification ?? null} />
                 </div>
               </div>
 
@@ -705,13 +709,6 @@ export function DualAgentConversationBox({
                 size={80}
               />
             </button>
-
-            {/* Subtle "who is at the device" indicator, top-aligned beside the
-                Face Mirror. Flips to the other side automatically under RTL via
-                the document `dir`. */}
-            <div className="shrink-0 self-start pt-1">
-              <IdentificationBadge identification={identification ?? null} />
-            </div>
           </div>
         </div>
     </div>

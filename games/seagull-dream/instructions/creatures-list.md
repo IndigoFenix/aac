@@ -94,3 +94,10 @@ Notes
     - can go pretty much anywhere - might be best to make a dedicated skin-growth system mostly unconnected to general body plan and animation (may be related to defenses though)
     - overlaps with plant structure system for complex structures like branching antlers, treehopper hats, etc
     - can save this for later
+
+# Plan: Everything is a Modified Lobster
+
+The modularity of arthropod body plans makes them great as a foundation for building this system, and lobsters have some of the most complex set of limbs available. We'll use them as a foundation.
+
+2 main body segments: Thorax and Abdomen.
+Each segment has an arbitrary number of sub-segments.

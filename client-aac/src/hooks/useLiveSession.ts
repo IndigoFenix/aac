@@ -1380,27 +1380,39 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend]);
 
   /**
-   * Capture a FRESH single frame right now and send it as the first frame_grid.
-   * Called the moment the session is ready so the Observer's startup scene
-   * description uses a current snapshot — not the ~10s-stale frame captured at
-   * connect time. Best-effort: silently no-ops if the camera isn't available.
+   * Capture a FRESH single frame and send it as the first frame_grid the moment
+   * the session is ready, so the Observer's startup scene description uses a
+   * current snapshot — not the ~10s-stale frame captured at connect time.
+   *
+   * Retries the capture: at session-ready the multi-camera / shared <video> is
+   * often not settled yet (the shared-camera fallback only kicks in ~2.5s in),
+   * so a single attempt returns nothing and the Observer's first frame would
+   * otherwise wait for the activity monitor. We poll until the camera yields a
+   * frame (or give up after a few seconds and let the activity monitor cover it).
    */
   const sendFreshStartupFrame = useCallback(async () => {
     const capture = captureFrameRef.current;
     if (!capture) return;
-    try {
-      const blob = await capture();
-      if (!blob || blob.size === 0) return;
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
-        reader.readAsDataURL(blob);
-      });
-      console.log("[useLiveSession] Sending fresh startup frame,", blob.size, "bytes");
-      wsSend({ type: "frame_grid", data: base64 });
-    } catch (err) {
-      console.warn("[useLiveSession] Fresh startup frame capture failed:", err);
+    const DEADLINE = Date.now() + 5000;
+    for (let attempt = 0; Date.now() < DEADLINE; attempt++) {
+      try {
+        const blob = await capture();
+        if (blob && blob.size > 0) {
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+            reader.readAsDataURL(blob);
+          });
+          console.log(`[useLiveSession] Sending fresh startup frame (attempt ${attempt + 1}),`, blob.size, "bytes");
+          wsSend({ type: "frame_grid", data: base64 });
+          return;
+        }
+      } catch (err) {
+        console.warn("[useLiveSession] Fresh startup frame capture failed:", err);
+      }
+      await new Promise((r) => setTimeout(r, 300));
     }
+    console.warn("[useLiveSession] Fresh startup frame: camera never yielded a frame in time");
   }, [wsSend]);
 
   // Mute setter — user-only toggle (cave click). Notify server so the live
