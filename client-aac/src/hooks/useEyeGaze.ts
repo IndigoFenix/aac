@@ -18,6 +18,12 @@ interface UseEyeGazeOptions {
   preferredProvider?: EyeGazeProviderType | "auto";
 }
 
+// Samples below this confidence don't move the gaze point. Providers signal
+// "no eyes found" through confidence: camera emits 0 when the face is lost
+// (0.7 when tracking), Tobii forwards its validity field (0 when invalid).
+// The dwell layer then sees the point go stale and suspends selection.
+const MIN_GAZE_CONFIDENCE = 0.3;
+
 interface UseEyeGazeReturn {
   gazePoint: GazePoint | null;
   gazeData: GazeData | null;
@@ -102,8 +108,8 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     }
 
     const handler = (data: GazeData) => {
-      setGazePoint(data.point);
       setGazeData(data);
+      if (data.confidence >= MIN_GAZE_CONFIDENCE) setGazePoint(data.point);
     };
     service.onGaze(handler);
 

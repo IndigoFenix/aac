@@ -13,7 +13,7 @@
 // transforms: integration math stays trivial here, and mesh.ts derives
 // whatever transform representation three.js needs.
 
-import type { EndEffector, FlexChainGenome, Genome, LimbFunction, LimbPlacement } from "./genome";
+import type { FlexChainGenome, Genome, LimbPlacement } from "./genome";
 
 // ── Vec3 (minimal, allocation-per-call is fine at build time) ───────────
 
@@ -161,8 +161,11 @@ export function torsoRadiusAt(g: Genome, t: number): number {
 // genome's control points. Flat 1 outside the points' span, so a body
 // with no profile is unchanged. Points are sorted on clamp.
 export function profileFactorAt(g: Genome, t: number): number {
-  const p = g.spine.profile;
-  if (!p || p.length === 0) return 1;
+  const raw = g.spine.profile;
+  if (!raw || raw.length === 0) return 1;
+  // Tolerate unsorted input (the lab edits points in place) — clamp keeps
+  // the canonical interchange form sorted, but don't depend on it here.
+  const p = raw.length > 1 ? [...raw].sort((a, b) => a.at - b.at) : raw;
   if (t <= p[0].at) return p[0].scale;
   const last = p[p.length - 1];
   if (t >= last.at) return last.scale;
@@ -183,15 +186,13 @@ export function profileFactorAt(g: Genome, t: number): number {
 // copies the bone builder consumes. A bilateral group becomes `count`
 // rows spread along its station span; a radial group becomes `count`
 // spokes at one station. Size gravitation scales each copy. Every copy
-// keeps its function / placement / end-effector and group/index so the
-// gait layer (phase 2) can coordinate a group's copies together. This is
-// where the "≤3 leg TYPES, duplicated" simplification is unfolded.
+// keeps its placement and group/index so the gait layer (phase 2) can
+// coordinate a group's copies together. Every limb is a leg — role
+// (leg / wing / arm) emerges in the build from shape + posture.
 
 /** One concrete limb copy (a bilateral row or a radial spoke). */
 export interface ResolvedLimb {
-  function: LimbFunction;
   placement: LimbPlacement;
-  endEffector: EndEffector;
   station: number;
   /** Source group index — copies of one group share a gait later. */
   group: number;
@@ -206,12 +207,16 @@ export interface ResolvedLimb {
   membrane: number;
   splay: number;
   kneeLift: number;
-  crouch: number;
+  kneeBend: number;
+  jointZigzag: number;
   footLengthFrac: number;
   stance: number;
   toeCount: number;
   toeLengthFrac: number;
   toeSpread: number;
+  toeContrast: number;
+  opposition: number;
+  toeCurl: number;
 }
 
 export function resolveLimbs(g: Genome): { limbs: ResolvedLimb[] } {
@@ -229,9 +234,7 @@ export function resolveLimbs(g: Genome): { limbs: ResolvedLimb[] } {
         : grp.stationStart + (grp.stationEnd - grp.stationStart) * t;
       const azimuth = grp.placement === "radial" ? (r / count) * Math.PI * 2 : 0;
       limbs.push({
-        function: grp.function,
         placement: grp.placement,
-        endEffector: grp.endEffector,
         station,
         group: gi,
         index: r,
@@ -243,12 +246,16 @@ export function resolveLimbs(g: Genome): { limbs: ResolvedLimb[] } {
         membrane: grp.membrane,
         splay: grp.splay,
         kneeLift: grp.kneeLift,
-        crouch: grp.crouch,
+        kneeBend: grp.kneeBend,
+        jointZigzag: grp.jointZigzag,
         footLengthFrac: grp.footLengthFrac,
         stance: grp.stance,
         toeCount: grp.toeCount,
         toeLengthFrac: grp.toeLengthFrac,
         toeSpread: grp.toeSpread,
+        toeContrast: grp.toeContrast,
+        opposition: grp.opposition,
+        toeCurl: grp.toeCurl,
       });
     }
   });
@@ -398,22 +405,19 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
   ));
   const headCenter = scale(add(headBone.head, headBone.tail), 0.5);
 
-  // 5) Limbs — ONE unified path over resolveLimbs(). Function "leg"
-  //    ground-solves to y=0 after the body lift; arms/wings/fins fold out
-  //    statically. Placement lays copies bilaterally (mirrored L/R) or
-  //    radially (spokes around the body). The end-effector caps the tip
-  //    (foot / hoof / hand / claw / paddle).
+  // 5) Limbs — ONE kind: a leg. Every limb is built as a leg that tries
+  //    to reach the ground. Leg LENGTH is fixed; the posture engine
+  //    (step 6) sets the body height (tallest leg leads), then each leg
+  //    folds/sprawls to reach — or, if it can't reach at that height,
+  //    lifts off and hangs (an arm). Role is emergent, never tagged.
   //
-  // Leg statics — everything about a leg's stance that doesn't depend on
-  // the body lift. Contact centerlines sit slightly below their radius
-  // (×0.85) so the skin visibly bears weight instead of grazing.
-  const hasSole = (eff: EndEffector): boolean =>
-    eff === "foot" || eff === "hoof" || eff === "hand";
+  // Leg statics — stance facts independent of the body height. Contact
+  // centerlines sit ~0.85× their radius so the skin bears weight.
   interface LegStatics {
     legLen: number;
-    effLen: number;
-    lateral: number;
-    drop: number;
+    lateral0: number;
+    maxDrop: number; // vertical hip→foot reach with the leg straight
+    minDrop: number; // vertical reach with the leg fully folded
     footLen: number;
     ankleH: number;
     contactY: number;
@@ -424,17 +428,14 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
     const legLen = limb.lengthFrac * L;
     const baseR = limb.radiusFrac * maxR;
     const tipR = baseR * limb.taper;
-    const footLen = hasSole(limb.endEffector) ? limb.footLengthFrac * legLen : 0;
     const ballR = tipR * 1.05;
+    const footLen = limb.footLengthFrac * legLen;
     const contactY = (footLen > 1e-6 ? ballR : tipR) * 0.85;
-    const effLen = legLen * (1 - 0.5 * limb.crouch) * 0.98;
-    const lateral = limb.splay * legLen * 0.45;
-    // Arched (arthropod) limbs sling the body LOW between high knees.
-    const bodyLow = 1 - 0.5 * limb.kneeLift;
-    const drop =
-      Math.sqrt(Math.max(effLen * effLen - lateral * lateral, (0.25 * effLen) ** 2)) * bodyLow;
+    const lateral0 = limb.splay * legLen * 0.45;
+    const maxDrop = Math.sqrt(Math.max(legLen * legLen - lateral0 * lateral0, (0.3 * legLen) ** 2));
+    const minDrop = 0.32 * legLen;
     const ankleH = footLen > 1e-6 ? footLen * (0.1 + 0.7 * limb.stance) : 0;
-    return { legLen, effLen, lateral, drop, footLen, ankleH, contactY, ballR, tipR };
+    return { legLen, lateral0, maxDrop, minDrop, footLen, ankleH, contactY, ballR, tipR };
   };
 
   interface PendingLeg {
@@ -461,11 +462,15 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
   const stationPoint = (station: number): Vec3 =>
     add(rear, scale(axis, (1 - station) * L));
 
-  // End-effector digits: builds the toe/finger/pincer bones at a limb's
-  // contact point (`ball`), pointing along `fwd`. Used by both the leg
-  // ground-solve (grounded = digit tips rest on y≈radius) and the static
-  // arm build (grounded = false → digits curl down-forward like a hand).
-  // Digits are single-bone chains (`<chain>d<k>`) parented to `parentIdx`.
+  // Digits: builds toe/finger/pincer bones at the limb's contact point
+  // (`ball`), fanned along `fwd`. There are no digit "types" — a hoof is
+  // one thick digit, a hand is several with the end one opposed, a claw is
+  // a curled pair. Differentiation works like leg rows: `toeContrast`
+  // shrinks the outer digits, `opposition` swings the last digit back as a
+  // thumb, `toeCurl` curls them under. Digit radius scales so the row ≈
+  // the limb-tip girth, so feet line up with the limb. Single-bone chains
+  // (`<chain>d<k>`) parented to `parentIdx`. grounded=false → a hanging
+  // hand (digits curl down-forward).
   const addDigits = (o: {
     ball: Vec3;
     fwd: Vec3;
@@ -479,43 +484,36 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
     const tipR = baseR * o.limb.taper;
     const ballR = tipR * 1.05;
     const legLen = o.limb.lengthFrac * L;
-    const footLen = hasSole(o.limb.endEffector) ? o.limb.footLengthFrac * legLen : 0;
+    const footLen = o.limb.footLengthFrac * legLen;
     const span = footLen > 1e-6 ? footLen : legLen * 0.18;
-    const eff = o.limb.endEffector;
-    // Per-digit fan angle + length/radius multipliers.
-    const specs: Array<{ ang: number; lenMult: number; radMult: number }> = [];
-    if (eff === "hoof") {
-      specs.push({ ang: 0, lenMult: 0.5, radMult: 2 });
-    } else if (eff === "claw") {
-      specs.push({ ang: 0.32, lenMult: 1.3, radMult: 1.2 });
-      specs.push({ ang: -0.32, lenMult: 1.3, radMult: 1.2 });
-    } else if (eff === "hand") {
-      const n = Math.max(2, Math.min(5, Math.round(o.limb.toeCount)));
-      for (let k = 0; k < n; k++) {
-        const a = n > 1 ? (k / (n - 1) - 0.5) * o.limb.toeSpread * 0.7 : 0;
-        specs.push({ ang: a, lenMult: 1.4, radMult: 0.55 });
+    const n = Math.max(1, Math.round(o.limb.toeCount));
+    const curl = o.limb.toeCurl;
+    // Digit radius so the fanned row spans roughly the limb-tip girth
+    // (1 digit ≈ a hoof matching the tip; many digits get thinner).
+    const rBase = ballR * (1.15 / Math.sqrt(n));
+    for (let k = 0; k < n; k++) {
+      const t = n > 1 ? k / (n - 1) : 0.5; // 0..1 across the row
+      const mult = 1 - o.limb.toeContrast * (Math.abs(t - 0.5) / 0.5);
+      const isThumb = k === n - 1 && n >= 2 && o.limb.opposition > 0.05;
+      let ang = n > 1 ? (t - 0.5) * o.limb.toeSpread : 0;
+      if (isThumb) ang -= o.sideSign * o.limb.opposition * 1.6; // swing back/in
+      const dir = rotate(o.fwd, Y_AXIS, ang);
+      const dlen = o.limb.toeLengthFrac * span * mult * (isThumb ? 0.8 : 1);
+      const dr = Math.max(rBase * mult, 1e-4);
+      const tipDr = dr * 0.55;
+      const name = `${o.chain}d${k}`;
+      let tail: Vec3;
+      if (o.grounded) {
+        // On the ground; curl digs the tip down and shortens the run
+        // (claws); an opposed thumb lifts off the ground.
+        const run = dlen * (1 - 0.45 * curl);
+        const y = isThumb ? o.ball.y + dlen * 0.4 : tipDr * 0.85 - curl * tipDr * 0.6;
+        tail = v3(o.ball.x + dir.x * run, Math.max(y, tipDr * 0.2), o.ball.z + dir.z * run);
+      } else {
+        // Hanging hand: curl down-forward; the thumb opposes inward.
+        const drop = dlen * (0.4 + 0.5 * curl);
+        tail = v3(o.ball.x + dir.x * dlen, o.ball.y - drop, o.ball.z + dir.z * dlen);
       }
-      // Opposed thumb, off to one side.
-      specs.push({ ang: -o.sideSign * (o.limb.toeSpread * 0.5 + 0.5), lenMult: 1, radMult: 0.7 });
-    } else {
-      const n = Math.max(0, Math.round(o.limb.toeCount));
-      for (let k = 0; k < n; k++) {
-        const a = n > 1 ? (k / (n - 1) - 0.5) * o.limb.toeSpread : 0;
-        specs.push({ ang: a, lenMult: 1, radMult: 1 });
-      }
-    }
-    const r = ballR * (0.6 - 0.05 * Math.max(0, specs.length - 1));
-    specs.forEach((sp, di) => {
-      const dir = rotate(o.fwd, Y_AXIS, sp.ang);
-      const dlen = o.limb.toeLengthFrac * span * sp.lenMult;
-      const dr = Math.max(r * sp.radMult, 1e-4);
-      const tipR2 = dr * 0.6; // the digit's tail radius
-      const name = `${o.chain}d${di}`;
-      // Grounded: the digit TIP centerline sits at ~0.85× its tip radius
-      // so the skin bears weight (above ground, within one radius of it).
-      const tail = o.grounded
-        ? v3(o.ball.x + dir.x * dlen, tipR2 * 0.85, o.ball.z + dir.z * dlen)
-        : v3(o.ball.x + dir.x * dlen, o.ball.y - dlen * 0.5, o.ball.z + dir.z * dlen);
       bones.push({
         id: name,
         parent: o.parentIdx,
@@ -524,11 +522,11 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
         head: o.ball,
         tail,
         radiusHead: dr,
-        radiusTail: dr * 0.6,
+        radiusTail: tipDr,
         flatten: 0,
         aspect: 1,
       });
-    });
+    }
   };
 
   // Lay a limb's copies into concrete instances: bilateral → mirrored
@@ -556,11 +554,6 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
     const parentBone = torsoBoneAt(limb.station);
     const tR = torsoRadiusAt(g, limb.station);
     const center = stationPoint(limb.station);
-    const isLeg = limb.function === "leg";
-    const isArm = limb.function === "arm";
-    const paddle = limb.endEffector === "paddle";
-    // Paddle/flipper forces the limb into a flattened blade.
-    const limbFlatten = paddle ? Math.max(limb.membrane, 0.8) : limb.membrane;
     const statics = legStatics(limb);
 
     for (const inst of placeInstances(limb)) {
@@ -569,218 +562,194 @@ export function buildSkeleton(g: Genome): CreatureSkeleton {
         center,
         add(scale(inst.outDir, tR * csW * 0.85), v3(0, -tR * csH * 0.25, 0)),
       );
-
-      if (isLeg) {
-        // Placeholder straight-down chain; ground-solved after the lift.
-        const firstBone = bones.length;
-        let point = hip;
-        for (let i = 0; i < segs; i++) {
-          const next = add(point, v3(0, -segLen, 0));
-          const f0 = i / segs;
-          const f1 = (i + 1) / segs;
-          bones.push({
-            id: `${chain}${i}`,
-            parent: i === 0 ? parentBone : bones.length - 1,
-            kind: "limb",
-            chain,
-            head: point,
-            tail: next,
-            radiusHead: baseR * (1 - f0) + tipR * f0,
-            radiusTail: baseR * (1 - f1) + tipR * f1,
-            flatten: limbFlatten,
-            aspect: 1,
-          });
-          point = next;
-        }
-        let footBone = -1;
-        if (statics.footLen > 1e-6) {
-          footBone = bones.length;
-          bones.push({
-            id: `${chain}foot`,
-            parent: bones.length - 1,
-            kind: "limb",
-            chain, // same chain → the loft flows leg→foot around the ankle
-            head: point,
-            tail: add(point, v3(0, -statics.footLen, 0)),
-            radiusHead: tipR,
-            radiusTail: statics.ballR,
-            flatten: 0.35,
-            aspect: 1,
-          });
-        }
-        pendingLegs.push({ limb, chain, outDir: inst.outDir, sideSign: inst.sideSign, hip, statics, firstBone, footBone });
-      } else {
-        // arm / wing / fin — fold out statically (not ground-solved).
-        let dir = isArm
-          ? normalize(add(scale(inst.outDir, 0.25), v3(0, -0.85, 0.3)))
-          : normalize(add(scale(inst.outDir, 0.9), v3(0, 0.15, -0.35)));
-        let point = hip;
-        for (let i = 0; i < segs; i++) {
-          if (i > 0) {
-            dir = isArm
-              ? normalize(rotate(dir, X_AXIS, -0.45)) // curl forward
-              : normalize(rotate(dir, Y_AXIS, inst.sideSign * 0.55)); // fold rearward
-          }
-          const next = add(point, scale(dir, segLen));
-          const f0 = i / segs;
-          const f1 = (i + 1) / segs;
-          bones.push({
-            id: `${chain}${i}`,
-            parent: i === 0 ? parentBone : bones.length - 1,
-            kind: "limb",
-            chain,
-            head: point,
-            tail: next,
-            radiusHead: baseR * (1 - f0) + tipR * f0,
-            radiusTail: baseR * (1 - f1) + tipR * f1,
-            flatten: limbFlatten,
-            aspect: 1,
-          });
-          point = next;
-        }
-        // A grasping arm grows a hand/claw at its tip (curls down-forward).
-        if (isArm && (limb.endEffector === "hand" || limb.endEffector === "claw")) {
-          addDigits({ ball: point, fwd: dir, parentIdx: bones.length - 1, chain, limb, sideSign: inst.sideSign, grounded: false });
-        }
+      // Placeholder straight-down chain; the pose pass (step 7) either
+      // ground-solves it or hangs it once the body height is known.
+      const firstBone = bones.length;
+      let point = hip;
+      for (let i = 0; i < segs; i++) {
+        const next = add(point, v3(0, -segLen, 0));
+        const f0 = i / segs;
+        const f1 = (i + 1) / segs;
+        bones.push({
+          id: `${chain}${i}`,
+          parent: i === 0 ? parentBone : bones.length - 1,
+          kind: "limb",
+          chain,
+          head: point,
+          tail: next,
+          radiusHead: baseR * (1 - f0) + tipR * f0,
+          radiusTail: baseR * (1 - f1) + tipR * f1,
+          flatten: limb.membrane,
+          aspect: 1,
+        });
+        point = next;
       }
+      let footBone = -1;
+      if (statics.footLen > 1e-6) {
+        footBone = bones.length;
+        bones.push({
+          id: `${chain}foot`,
+          parent: bones.length - 1,
+          kind: "limb",
+          chain, // same chain → the loft flows leg→foot around the ankle
+          head: point,
+          tail: add(point, v3(0, -statics.footLen, 0)),
+          radiusHead: tipR,
+          radiusTail: statics.ballR,
+          flatten: 0.35,
+          aspect: 1,
+        });
+      }
+      pendingLegs.push({ limb, chain, outDir: inst.outDir, sideSign: inst.sideSign, hip, statics, firstBone, footBone });
     }
     limbIdx++;
   }
 
-  // 6) Body lift — how high the torso center sits so the creature RESTS
-  //    on y=0. Legged: tallest leg pair sets the height (others bend
-  //    more); always at least belly clearance. Legless: belly touches.
-  // Lowest skin point of the axial body (torso+tail+neck+head bones).
+  // 6) Body height (posture engine). Leg length is FIXED; `bodyHeight`
+  //    picks the hip height over the legs' reach envelope. The TALLEST
+  //    leg leads: at bodyHeight=1 the body rises until that leg is
+  //    straight, and any leg too short to reach there lifts off (→ arm).
+  //    Belly clearance floors it; a legless body simply rests.
   let lowestSurface = Infinity;
   for (const b of bones) {
     if (b.kind === "limb") continue;
-    lowestSurface = Math.min(
-      lowestSurface,
-      b.head.y - b.radiusHead,
-      b.tail.y - b.radiusTail,
-    );
+    lowestSurface = Math.min(lowestSurface, b.head.y - b.radiusHead, b.tail.y - b.radiusTail);
   }
+  const bellyLift = -lowestSurface + (pendingLegs.length > 0 ? 0.02 * L : 0);
+  // Lift at which each leg is exactly straight (its ceiling).
+  const liftStraight = (leg: PendingLeg): number =>
+    leg.statics.contactY + leg.statics.ankleH + leg.statics.maxDrop - leg.hip.y;
   let lift: number;
   if (pendingLegs.length > 0) {
-    // Every foot must reach the ground: the SHORTEST requirement wins
-    // and longer legs fold more (real animals bend, they don't stilt).
-    // The belly-clearance floor still applies — stubby legs on a fat
-    // body may end up stretched or dangling, which is honest.
-    let wanted = Infinity;
-    for (const leg of pendingLegs) {
-      const s = leg.statics;
-      wanted = Math.min(wanted, s.drop + s.ankleH + s.contactY - leg.hip.y);
-    }
-    lift = Math.max(-lowestSurface + 0.02 * L, wanted);
+    const hHigh = Math.max(...pendingLegs.map(liftStraight));
+    const hLow = Math.max(bellyLift, hHigh * 0.4);
+    lift = Math.min(hHigh, Math.max(bellyLift, hLow + (hHigh - hLow) * g.posture.bodyHeight));
   } else {
     lift = -lowestSurface;
   }
+  // A leg reaches the ground iff the body isn't higher than its ceiling.
+  const grounded = new Map<PendingLeg, boolean>();
+  for (const leg of pendingLegs) grounded.set(leg, lift <= liftStraight(leg) + 1e-6);
   for (const b of bones) {
     b.head = add(b.head, v3(0, lift, 0));
     b.tail = add(b.tail, v3(0, lift, 0));
   }
 
-  // 7) Ground-solve the legs: two-pseudo-bone analytic IK from the
-  //    lifted hip to the ANKLE (ball + stance height), with the
-  //    elbow/knee arcing toward a continuous POLE direction —
-  //    kneeLift 0 = sagittal fold (mammal: front pairs fold backward
-  //    like elbows, rear pairs forward like knees), ~0.5 = lateral
-  //    elbow-out (reptile sprawl), 1 = arched above the torso
-  //    (arthropod). The foot then runs forward to the ball, and toes
-  //    fan from the ball to the ground.
+  // Tail drag — the tail does not hold itself up. Any part that droops
+  // below the ground rests on it instead of clipping through. Re-link
+  // afterward so the chain stays contiguous.
+  const tailBones = bones.filter((b) => b.kind === "tail");
+  for (const b of tailBones) {
+    if (b.head.y < b.radiusHead) b.head = v3(b.head.x, b.radiusHead, b.head.z);
+    if (b.tail.y < b.radiusTail) b.tail = v3(b.tail.x, b.radiusTail, b.tail.z);
+  }
+  for (let i = 1; i < tailBones.length; i++) tailBones[i].head = tailBones[i - 1].tail;
+
+  // 7) Pose each leg. GROUNDED legs get a two-pseudo-bone analytic IK
+  //    from the lifted hip to the foot: the foot reaches OUT along the
+  //    limb's outward direction by however much slack the leg has (so a
+  //    low body sprawls and a high body tucks under — fold or sprawl), and
+  //    the knee arcs toward a pole set by kneeLift (elevation: fold-under
+  //    → sprawl → arch) and kneeBend (sagittal: rearward knee ↔ forward
+  //    elbow, explicit, no auto-flip). LIFTED legs just hang from the hip.
   for (const leg of pendingLegs) {
     const s = leg.statics;
     const hip = add(leg.hip, v3(0, lift, 0));
-    const ankleY = s.contactY + s.ankleH;
-    // The foot steps OUT along the limb's outward direction (±X for
-    // bilateral, the spoke for radial).
-    const ankle = v3(hip.x + leg.outDir.x * s.lateral, ankleY, hip.z + leg.outDir.z * s.lateral);
-
-    const dx = ankle.x - hip.x;
-    const dy = ankle.y - hip.y;
-    const dz = ankle.z - hip.z;
-    let dist = Math.hypot(dx, dy, dz);
-    const l1 = s.legLen * 0.52;
-    const l2 = s.legLen * 0.48;
-    dist = Math.min(dist, (l1 + l2) * 0.999);
-    const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist);
-    const h = Math.sqrt(Math.max(l1 * l1 - a * a, 0));
-    const dirN = dist > 1e-9 ? v3(dx / dist, dy / dist, dz / dist) : v3(0, -1, 0);
-
-    // Pole direction: quadratic blend mammal → reptile → arthropod. The
-    // lateral/arthropod lean follows the limb's outward direction, so it
-    // works for radial spokes as well as bilateral ±X.
-    const sagZ = leg.limb.station < 0.5 ? -1 : 1;
-    const k = leg.limb.kneeLift;
-    const w0 = (1 - k) * (1 - k);
-    const w1 = 2 * k * (1 - k);
-    const w2 = k * k;
-    const pole = normalize(v3(
-      leg.outDir.x * (w1 * 1.0 + w2 * 0.55),
-      w0 * 0.1 + w1 * 0.35 + w2 * 1.0,
-      leg.outDir.z * (w1 * 1.0 + w2 * 0.55) + w0 * sagZ + w1 * sagZ * 0.25,
-    ));
-    // Project the pole perpendicular to the hip→ankle axis.
-    const dot = pole.x * dirN.x + pole.y * dirN.y + pole.z * dirN.z;
-    let perp = v3(pole.x - dirN.x * dot, pole.y - dirN.y * dot, pole.z - dirN.z * dot);
-    perp = length(perp) > 1e-6 ? normalize(perp) : normalize(v3(0, -dirN.z, dirN.y));
-    const knee = add(add(hip, scale(dirN, a)), scale(perp, h));
-
-    // Distribute the chain's segments along hip→knee→ankle, then
-    // zigzag the interior joints (alternating along the pole) so
-    // 3–4 segment crouched legs read as folded, not bowed.
     const segs = leg.limb.segments;
-    const upperSegs = Math.max(1, Math.floor(segs / 2));
-    const points: Vec3[] = [];
-    for (let i = 0; i <= segs; i++) {
-      if (i <= upperSegs) {
-        const t = i / upperSegs;
-        points.push(v3(
-          hip.x + (knee.x - hip.x) * t,
-          hip.y + (knee.y - hip.y) * t,
-          hip.z + (knee.z - hip.z) * t,
-        ));
-      } else {
-        const t = (i - upperSegs) / (segs - upperSegs);
-        points.push(v3(
-          knee.x + (ankle.x - knee.x) * t,
-          knee.y + (ankle.y - knee.y) * t,
-          knee.z + (ankle.z - knee.z) * t,
-        ));
-      }
-    }
-    if (segs >= 3) {
-      const zig = leg.limb.crouch * s.legLen * 0.06;
-      for (let i = 1; i < segs; i++) {
-        if (i === upperSegs) continue; // the knee itself is the apex
-        const sign = i % 2 === 0 ? 1 : -1;
-        points[i] = add(points[i], scale(perp, sign * zig));
-      }
-    }
-    for (let i = 0; i < segs; i++) {
-      const b = bones[leg.firstBone + i];
-      b.head = points[i];
-      b.tail = points[i + 1];
-    }
 
-    // End-effector. The foot runs forward (+Z) with a splay-driven
-    // toe-out; the contact point (ball, or the bare leg tip when there is
-    // no sole) anchors the digits, which the shared builder fans onto the
-    // ground per the effector (foot/hoof/hand/claw).
-    const fwd = normalize(add(v3(0, 0, 1), scale(leg.outDir, 0.3 * leg.limb.splay)));
-    let ball = ankle;
-    if (leg.footBone >= 0) {
-      const dropF = ankleY - s.contactY;
-      const run = Math.sqrt(Math.max(s.footLen * s.footLen - dropF * dropF, (0.15 * s.footLen) ** 2));
-      ball = v3(ankle.x + fwd.x * run, s.contactY, ankle.z + fwd.z * run);
-      const fb = bones[leg.footBone];
-      fb.head = ankle;
-      fb.tail = ball;
-    }
-    const eff = leg.limb.endEffector;
-    if (eff !== "none" && eff !== "paddle") {
-      const parentIdx = leg.footBone >= 0 ? leg.footBone : leg.firstBone + leg.limb.segments - 1;
+    if (grounded.get(leg)) {
+      const ankleY = s.contactY + s.ankleH;
+      // The foot sits OUT by the splay (lateral). The knee then bends to
+      // absorb whatever slack the body height leaves: a high body → near
+      // straight, a low body → deeply folded (fold, not sprawl). Splay is
+      // what spreads the feet; body height only changes the bend.
+      const ankle = v3(hip.x + leg.outDir.x * s.lateral0, ankleY, hip.z + leg.outDir.z * s.lateral0);
+
+      const dx = ankle.x - hip.x;
+      const dy = ankle.y - hip.y;
+      const dz = ankle.z - hip.z;
+      let dist = Math.hypot(dx, dy, dz);
+      const l1 = s.legLen * 0.52;
+      const l2 = s.legLen * 0.48;
+      dist = Math.min(dist, (l1 + l2) * 0.999);
+      const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist);
+      const h = Math.sqrt(Math.max(l1 * l1 - a * a, 0));
+      const dirN = dist > 1e-9 ? v3(dx / dist, dy / dist, dz / dist) : v3(0, -1, 0);
+
+      // Pole: kneeLift sets the elevation (fold-under → sprawl → arch);
+      // kneeBend sets the sagittal direction (no front/back auto-flip).
+      const k = leg.limb.kneeLift;
+      const w0 = (1 - k) * (1 - k);
+      const w1 = 2 * k * (1 - k);
+      const w2 = k * k;
+      const bend = leg.limb.kneeBend;
+      const pole = normalize(v3(
+        leg.outDir.x * (w1 + w2 * 0.55),
+        w0 * 0.1 + w1 * 0.35 + w2 * 1.0,
+        leg.outDir.z * (w1 + w2 * 0.55) + bend * (w0 + w1 * 0.4),
+      ));
+      const dot = pole.x * dirN.x + pole.y * dirN.y + pole.z * dirN.z;
+      let perp = v3(pole.x - dirN.x * dot, pole.y - dirN.y * dot, pole.z - dirN.z * dot);
+      perp = length(perp) > 1e-6 ? normalize(perp) : normalize(v3(0, -dirN.z, dirN.y));
+      const knee = add(add(hip, scale(dirN, a)), scale(perp, h));
+
+      const upperSegs = Math.max(1, Math.floor(segs / 2));
+      const points: Vec3[] = [];
+      for (let i = 0; i <= segs; i++) {
+        if (i <= upperSegs) {
+          const t = i / upperSegs;
+          points.push(v3(hip.x + (knee.x - hip.x) * t, hip.y + (knee.y - hip.y) * t, hip.z + (knee.z - hip.z) * t));
+        } else {
+          const t = (i - upperSegs) / (segs - upperSegs);
+          points.push(v3(knee.x + (ankle.x - knee.x) * t, knee.y + (ankle.y - knee.y) * t, knee.z + (ankle.z - knee.z) * t));
+        }
+      }
+      if (segs >= 3) {
+        const zig = leg.limb.jointZigzag * s.legLen * 0.06;
+        for (let i = 1; i < segs; i++) {
+          if (i === upperSegs) continue;
+          points[i] = add(points[i], scale(perp, (i % 2 === 0 ? 1 : -1) * zig));
+        }
+      }
+      for (let i = 0; i < segs; i++) {
+        bones[leg.firstBone + i].head = points[i];
+        bones[leg.firstBone + i].tail = points[i + 1];
+      }
+
+      // Foot runs forward with a splay-driven toe-out; digits fan onto the
+      // ground from the ball (or the bare leg tip when there's no sole).
+      const fwd = normalize(add(v3(0, 0, 1), scale(leg.outDir, 0.3 * leg.limb.splay)));
+      let ball = ankle;
+      if (leg.footBone >= 0) {
+        const dropF = ankleY - s.contactY;
+        const run = Math.sqrt(Math.max(s.footLen * s.footLen - dropF * dropF, (0.15 * s.footLen) ** 2));
+        ball = v3(ankle.x + fwd.x * run, s.contactY, ankle.z + fwd.z * run);
+        bones[leg.footBone].head = ankle;
+        bones[leg.footBone].tail = ball;
+      }
+      const parentIdx = leg.footBone >= 0 ? leg.footBone : leg.firstBone + segs - 1;
       addDigits({ ball, fwd, parentIdx, chain: leg.chain, limb: leg.limb, sideSign: leg.sideSign, grounded: true });
+    } else {
+      // LIFTED — the leg can't reach the ground at this height, so it
+      // hangs down-and-forward (an arm). kneeBend curls it fore/aft.
+      let dir = normalize(add(scale(leg.outDir, 0.18), v3(0, -0.9, 0.25)));
+      let point = hip;
+      for (let i = 0; i < segs; i++) {
+        if (i > 0) dir = normalize(rotate(dir, X_AXIS, leg.limb.kneeBend * 0.5 - 0.25));
+        const next = add(point, scale(dir, s.legLen / segs));
+        bones[leg.firstBone + i].head = point;
+        bones[leg.firstBone + i].tail = next;
+        point = next;
+      }
+      let ball = point;
+      if (leg.footBone >= 0) {
+        const fdir = normalize(add(dir, v3(0, -0.4, 0)));
+        ball = add(point, scale(fdir, s.footLen));
+        bones[leg.footBone].head = point;
+        bones[leg.footBone].tail = ball;
+      }
+      const parentIdx = leg.footBone >= 0 ? leg.footBone : leg.firstBone + segs - 1;
+      addDigits({ ball, fwd: dir, parentIdx, chain: leg.chain, limb: leg.limb, sideSign: leg.sideSign, grounded: false });
     }
   }
 

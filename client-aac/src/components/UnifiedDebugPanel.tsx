@@ -1064,14 +1064,10 @@ export default function UnifiedDebugPanel({
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
-                    <div className="text-[10px] text-gray-500">Current cell</div>
-                    <div className="text-[11px] font-medium font-mono">{dwellDebug.currentCellId ?? "—"}</div>
-                  </div>
-                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
-                    <div className="text-[10px] text-gray-500">Disabled at cell</div>
-                    <div className="text-[11px] font-medium font-mono">{dwellDebug.disabledAtCellId ?? "—"}</div>
+                <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                  <div className="text-[10px] text-gray-500">Gaze signal</div>
+                  <div className={`text-[11px] font-medium ${dwellDebug.gazeStale ? "text-orange-600" : "text-green-600"}`}>
+                    {dwellDebug.gazeStale ? "Stale — dwell suspended" : "Live"}
                   </div>
                 </div>
                 {dwellDebug.dwellElementLabel && (

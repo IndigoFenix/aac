@@ -95,9 +95,15 @@ Notes
     - overlaps with plant structure system for complex structures like branching antlers, treehopper hats, etc
     - can save this for later
 
-# Plan: Everything is a Modified Lobster
+# Update Plan:
 
-The modularity of arthropod body plans makes them great as a foundation for building this system, and lobsters have some of the most complex set of limbs available. We'll use them as a foundation.
-
-2 main body segments: Thorax and Abdomen.
-Each segment has an arbitrary number of sub-segments.
+Legs:
+- Only one kind of limb - a leg. All legs are variations of the same structure.
+- Leg function is determined by shape and position.
+- Leg length is not altered by body posture. Instead, leg length constrains possible body postures and leg/arm function may be altered by the current body posture, which may change during animations.
+- Posture is split into bodyPitch and bodyHeight.
+- Example - when bodyHeight increases, legs straighten. When bodyHeight decreases, legs fold or sprawl. When positioned upright, short forelegs lift off the ground and functionally become arms. Animations emerge naturally from where the animal wants its head to be, or from physics (like bipedalism of some lizards when running)
+- Tail also does not alter leg length; if not held up it will simply drag on the ground.
+- The leg mechanic that flips bending direction based on body position and keeps feet facing forward looks good, but it feels like mammalian bias, and instant-flips are probably a shortcut that could be customized better.
+- Likewise, a wing or flipper should just be a membranous leg - think like a pterosaur that can run on its wings. Maybe making joint rotation an independent parameter for all limbs, allowing wings that rest behind the back, is the best solution.
+- Feet are very primitive right now (they don't line up with the end of the limb's girth). Fingers can be differentiated from each other in the same way that multiple rows of legs are.

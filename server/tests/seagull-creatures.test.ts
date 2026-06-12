@@ -15,7 +15,6 @@ import {
   randomGenome,
   validateGenome,
   MAX_LIMB_GROUPS,
-  MAX_LOCOMOTOR_GROUPS,
   MAX_LIMB_COUNT,
   MAX_CHAINS,
   MAX_CHAIN_COUNT,
@@ -63,7 +62,7 @@ describe("genome: validate + clamp", () => {
       spine: { torsoSegments: 999, torsoLengthM: -5, girth: "fat", girthPeak: NaN },
       neck: "long",
       head: { sizeFrac: 100, eyePairs: 7.3 },
-      limbGroups: new Array(10).fill({ function: "leg", count: 99, stationStart: 2, segments: 0, endEffector: "blade", placement: "spiral" }),
+      limbGroups: new Array(10).fill({ count: 99, stationStart: 2, segments: 0, placement: "spiral" }),
       skin: { baseColor: "blue", bellyColor: "#GGGGGG" },
       posture: null,
     };
@@ -73,12 +72,8 @@ describe("genome: validate + clamp", () => {
     expect(r.ok).toBe(true);
     expect(clamped.limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
     expect(clamped.limbGroups[0].count).toBeLessThanOrEqual(MAX_LIMB_COUNT);
-    // The locomotor cap holds: excess leg types become non-legs.
-    expect(clamped.limbGroups.filter((l) => l.function === "leg").length).toBeLessThanOrEqual(MAX_LOCOMOTOR_GROUPS);
-    // Unknown enums are coerced to valid ones, not left invalid.
-    expect(clamped.limbGroups.every((l) => ["leg", "arm", "wing", "fin"].includes(l.function))).toBe(true);
+    // Unknown placement is coerced to a valid one, not left invalid.
     expect(clamped.limbGroups.every((l) => ["bilateral", "radial"].includes(l.placement))).toBe(true);
-    expect(clamped.limbGroups.every((l) => ["none", "foot", "hoof", "hand", "claw", "paddle"].includes(l.endEffector))).toBe(true);
     expect(clamped.spine.torsoSegments).toBeLessThanOrEqual(12);
     expect(clamped.spine.torsoLengthM).toBeGreaterThan(0);
     expect(clamped.skin.baseColor).toMatch(/^#[0-9a-f]{6}$/);
@@ -247,40 +242,25 @@ describe("skeleton", () => {
     }
   });
 
-  it("grounds the rest pose: leg/toe skin touches down, legless bellies rest", () => {
+  it("grounds the rest pose: a support touches down, nothing sinks, bellies rest", () => {
     for (const seed of SEEDS) {
       const g = randomGenome(seed);
       const skel = buildSkeleton(g);
-      // Contact bones: the last bone of every non-membrane limb chain
-      // (ball of foot or leg tip) and every toe tip. Their centerline
-      // sits at ~0.85 × radius so the skin bears weight: above ground,
-      // but within one radius of it.
-      const limbChains = new Map<string, typeof skel.bones>();
-      for (const b of skel.bones) {
-        if (b.kind !== "limb" || b.flatten >= 0.5) continue;
-        const arr = limbChains.get(b.chain) ?? [];
-        arr.push(b);
-        limbChains.set(b.chain, arr);
-      }
-      for (const [, bonesOf] of limbChains) {
-        const contact = bonesOf[bonesOf.length - 1];
-        expect(contact.tail.y).toBeGreaterThanOrEqual(-1e-9);
-        expect(contact.tail.y - contact.radiusTail).toBeLessThanOrEqual(1e-9);
-      }
-      // The axial body never sinks below ground (limbs and flexible
-      // chains are exempt — a hanging tentacle/trunk may dip lower).
+      // The axial body never sinks below the ground. Limbs (whose feet
+      // and digits press the skin onto the ground) and flexible chains
+      // (hanging tentacles/trunks) are exempt.
       for (const b of skel.bones) {
         if (b.kind === "limb" || b.kind === "chain") continue;
-        expect(b.head.y - b.radiusHead).toBeGreaterThanOrEqual(-1e-6);
         expect(b.tail.y - b.radiusTail).toBeGreaterThanOrEqual(-1e-6);
+        expect(b.head.y - b.radiusHead).toBeGreaterThanOrEqual(-1e-6);
       }
-      // Legless creatures actually REST on the ground (no hovering).
-      if (skel.bones.every((b) => b.kind !== "limb")) {
-        const lowest = Math.min(
-          ...skel.bones.map((b) => Math.min(b.head.y - b.radiusHead, b.tail.y - b.radiusTail)),
-        );
-        expect(lowest).toBeLessThan(1e-6);
-      }
+      // The creature REST on SOMETHING: either a limb contact touches down
+      // or (legless) the belly does. Lifted limbs (arms) may float — but
+      // at least one support reaches the ground.
+      const lowest = Math.min(
+        ...skel.bones.flatMap((b) => [b.head.y - b.radiusHead, b.tail.y - b.radiusTail]),
+      );
+      expect(lowest).toBeLessThanOrEqual(1e-6);
     }
   });
 
@@ -288,7 +268,6 @@ describe("skeleton", () => {
     const g = defaultGenome();
     const grp = g.limbGroups[0];
     grp.count = 1;
-    grp.endEffector = "foot";
     grp.footLengthFrac = 0.25;
     grp.toeCount = 3;
     const skel = buildSkeleton(g);
@@ -326,13 +305,15 @@ describe("skeleton", () => {
 
   it("kneeLift=1 arches the joint above the hip (arthropod legs)", () => {
     const archLeg: LimbGroupGenome = {
-      function: "leg", placement: "bilateral", endEffector: "foot",
+      placement: "bilateral",
       count: 1, stationStart: 0.5, stationEnd: 0.5, sizePeak: 1, sizeContrast: 0,
       segments: 3, lengthFrac: 0.9, radiusFrac: 0.08, taper: 0.6,
-      membrane: 0, splay: 0.9, kneeLift: 1, crouch: 0.6,
-      footLengthFrac: 0.1, stance: 0.8, toeCount: 0, toeLengthFrac: 0.3, toeSpread: 0,
+      membrane: 0, splay: 0.9, kneeLift: 1, kneeBend: 0, jointZigzag: 0.6,
+      footLengthFrac: 0.1, stance: 0.8, toeCount: 1, toeLengthFrac: 0.3, toeSpread: 0,
+      toeContrast: 0, opposition: 0, toeCurl: 0,
     };
     const g = defaultGenome();
+    g.posture.bodyHeight = 0.1; // body slung low so the high knees arch up
     g.limbGroups = [archLeg];
     const skel = buildSkeleton(g);
     const chain = skel.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
@@ -342,7 +323,8 @@ describe("skeleton", () => {
 
     // And the mammal configuration keeps joints below the hip.
     const g2 = defaultGenome();
-    g2.limbGroups = [{ ...archLeg, kneeLift: 0, splay: 0.1, crouch: 0.3 }];
+    g2.posture.bodyHeight = 0.1;
+    g2.limbGroups = [{ ...archLeg, kneeLift: 0, splay: 0.1, jointZigzag: 0.3 }];
     const skel2 = buildSkeleton(g2);
     const chain2 = skel2.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
     const jointPeak2 = Math.max(...chain2.slice(0, -1).map((b) => b.tail.y));
@@ -383,28 +365,31 @@ describe("skeleton", () => {
     expect(mid[1].lengthFrac).toBeGreaterThan(mid[2].lengthFrac);
   });
 
-  it("builds limbs by function (wing folds out, arm hangs down, no ground reach)", () => {
+  it("role is emergent: a membranous limb carries flatten; a short forelimb lifts off and hangs", () => {
+    const leg: LimbGroupGenome = { ...defaultGenome().limbGroups[0] };
     const g = defaultGenome();
-    // Replace the default quadruped with one leg type + a wing + an arm,
-    // so limb0 = legs, limb1 = wing, limb2 = arm.
+    // limb0 = long rear legs (lead, ground), limb1 = membranous forelimb
+    // (a wing), limb2 = a short forelimb (an arm) that can't reach.
+    g.posture.bodyHeight = 1; // ride high so short forelimbs lift off
     g.limbGroups = [
-      { ...g.limbGroups[0], count: 1 },
-      { function: "wing", placement: "bilateral", endEffector: "none", count: 1, stationStart: 0.2, stationEnd: 0.2, sizePeak: 1, sizeContrast: 0, segments: 3, lengthFrac: 1.4, radiusFrac: 0.1, taper: 0.4, membrane: 0.9, splay: 0.9, kneeLift: 0.2, crouch: 0.2, footLengthFrac: 0, stance: 0.3, toeCount: 0, toeLengthFrac: 0.5, toeSpread: 0.4 },
-      { function: "arm", placement: "bilateral", endEffector: "none", count: 1, stationStart: 0.3, stationEnd: 0.3, sizePeak: 1, sizeContrast: 0, segments: 2, lengthFrac: 0.5, radiusFrac: 0.08, taper: 0.6, membrane: 0, splay: 0.3, kneeLift: 0.2, crouch: 0.2, footLengthFrac: 0, stance: 0.3, toeCount: 0, toeLengthFrac: 0.5, toeSpread: 0.4 },
+      { ...leg, count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.9 },
+      { ...leg, count: 1, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 0.45, membrane: 0.9, footLengthFrac: 0 },
+      { ...leg, count: 1, stationStart: 0.3, stationEnd: 0.3, lengthFrac: 0.4, membrane: 0, footLengthFrac: 0 },
     ];
     const skel = buildSkeleton(g);
-    // Wing bones carry membrane as flatten.
+    // The membranous limb's bones carry the membrane as flatten.
     const wing = skel.bones.filter((b) => b.chain === "limb1L");
-    expect(wing.length).toBe(3);
+    expect(wing.length).toBeGreaterThan(0);
     expect(wing.every((b) => b.flatten > 0.5)).toBe(true);
-    // Arm hangs: its tip is well below its shoulder, no membrane.
+    // The short forelimbs can't reach the ground at this height, so they
+    // hang: their tips sit below their shoulders (and above the foot of a
+    // grounded rear leg, i.e. they didn't ground-solve to y≈0).
     const arm = skel.bones.filter((b) => b.chain === "limb2L");
-    expect(arm.length).toBe(2);
-    expect(arm.every((b) => b.flatten < 0.5)).toBe(true);
     expect(arm[arm.length - 1].tail.y).toBeLessThan(arm[0].head.y);
-    // Wings/arms don't reach for the ground (no foot bones on them).
-    expect(skel.bones.some((b) => b.id === "limb1Lfoot")).toBe(false);
-    expect(skel.bones.some((b) => b.id === "limb2Lfoot")).toBe(false);
+    expect(arm[arm.length - 1].tail.y).toBeGreaterThan(0.05);
+    // The long rear leg DID ground (a foot tip near y=0).
+    const rearTip = skel.bones.filter((b) => b.chain.startsWith("limb0L")).pop()!;
+    expect(rearTip.tail.y).toBeLessThan(0.05);
   });
 
   it("builds flexible chains as 'chain*' bone chains rooted on the attach point", () => {
@@ -519,17 +504,15 @@ describe("skeleton", () => {
     expect(buildSkeleton(g).membranes.length).toBe(0);
   });
 
-  it("never exceeds 3 locomotor leg types from the random producer", () => {
+  it("stays within the limb-group cap from the random producer", () => {
     for (const seed of SEEDS) {
-      const g = randomGenome(seed);
-      expect(g.limbGroups.filter((l) => l.function === "leg").length).toBeLessThanOrEqual(MAX_LOCOMOTOR_GROUPS);
-      expect(g.limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
+      expect(randomGenome(seed).limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
     }
   });
 
   it("radial placement spawns `count` ground-solved spokes (no L/R mirror)", () => {
     const g = defaultGenome();
-    g.limbGroups = [{ ...g.limbGroups[0], placement: "radial", count: 5, endEffector: "foot" }];
+    g.limbGroups = [{ ...g.limbGroups[0], placement: "radial", count: 5 }];
     const skel = buildSkeleton(g);
     const legChains = new Set(
       skel.bones.filter((b) => b.kind === "limb" && /^limb\d+r$/.test(b.chain)).map((b) => b.chain),
@@ -542,41 +525,38 @@ describe("skeleton", () => {
     }
   });
 
-  it("end-effectors shape the tip: claw=2 digits/no sole, hoof=1, paddle=blade", () => {
+  it("digits emerge from continuous properties: hoof=1, claw=pair, hand=many; membrane flattens", () => {
     const base = defaultGenome().limbGroups[0];
-    const build = (eff: typeof base.endEffector): ReturnType<typeof buildSkeleton> =>
-      buildSkeleton({ ...defaultGenome(), limbGroups: [{ ...base, count: 1, endEffector: eff, footLengthFrac: 0.2, toeCount: 3 }] });
+    const build = (over: Partial<LimbGroupGenome>): ReturnType<typeof buildSkeleton> =>
+      buildSkeleton({ ...defaultGenome(), limbGroups: [{ ...base, count: 1, footLengthFrac: 0.2, ...over }] });
+    const digitCount = (skel: ReturnType<typeof buildSkeleton>): number =>
+      new Set(skel.bones.filter((b) => b.chain.startsWith("limb0Ld")).map((b) => b.chain)).size;
 
-    const claw = build("claw");
-    expect(claw.bones.some((b) => b.id === "limb0Lfoot")).toBe(false); // no sole
-    expect(new Set(claw.bones.filter((b) => b.chain.startsWith("limb0Ld")).map((b) => b.chain)).size).toBe(2);
+    expect(digitCount(build({ toeCount: 1 }))).toBe(1); // hoof
+    expect(digitCount(build({ toeCount: 2, toeCurl: 0.8 }))).toBe(2); // pincer pair
+    expect(digitCount(build({ toeCount: 5, opposition: 0.8 }))).toBe(5); // hand (thumb is one)
 
-    const hoof = build("hoof");
-    expect(hoof.bones.some((b) => b.id === "limb0Lfoot")).toBe(true);
-    expect(new Set(hoof.bones.filter((b) => b.chain.startsWith("limb0Ld")).map((b) => b.chain)).size).toBe(1);
-
-    const paddle = build("paddle");
-    expect(paddle.bones.some((b) => b.id === "limb0Lfoot")).toBe(false);
-    expect(paddle.bones.some((b) => b.chain.startsWith("limb0Ld"))).toBe(false);
-    expect(paddle.bones.filter((b) => b.chain === "limb0L").every((b) => b.flatten >= 0.8)).toBe(true);
+    // A membranous leg flattens into a blade (a flipper / wing).
+    const flip = build({ membrane: 0.9 });
+    expect(flip.bones.filter((b) => b.chain === "limb0L").some((b) => b.flatten > 0.5)).toBe(true);
   });
 
-  it("a grasping arm grows a hand (fingers + thumb) at its tip", () => {
+  it("a lifted forelimb grows digits (a hand) at its hanging tip", () => {
+    const leg = defaultGenome().limbGroups[0];
     const g = defaultGenome();
+    g.posture.bodyHeight = 1; // ride high so the short forelimb lifts off
     g.limbGroups = [
-      { ...g.limbGroups[0], count: 1 },
-      { ...g.limbGroups[0], function: "arm", endEffector: "hand", count: 1, stationStart: 0.3, stationEnd: 0.3, footLengthFrac: 0, toeCount: 3 },
+      { ...leg, count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.9 },
+      { ...leg, count: 1, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 0.45, footLengthFrac: 0, toeCount: 4, opposition: 0.8 },
     ];
     const skel = buildSkeleton(g);
-    // 3 fingers + 1 opposed thumb, hung off the arm tip (chain limb1L).
     const digits = new Set(skel.bones.filter((b) => b.chain.startsWith("limb1Ld")).map((b) => b.chain));
     expect(digits.size).toBe(4);
   });
 
-  it("clamp coerces the 4th+ leg type to a non-leg (locomotor cap)", () => {
-    const clamped = clampGenome({ version: 1, limbGroups: new Array(5).fill({ function: "leg" }) });
-    expect(clamped.limbGroups.length).toBe(5);
-    expect(clamped.limbGroups.filter((l) => l.function === "leg").length).toBe(MAX_LOCOMOTOR_GROUPS);
+  it("clamp truncates to the limb-group cap", () => {
+    const clamped = clampGenome({ version: 1, limbGroups: new Array(9).fill({ placement: "bilateral" }) });
+    expect(clamped.limbGroups.length).toBe(MAX_LIMB_GROUPS);
     expect(validateGenome(clamped).ok).toBe(true);
   });
 

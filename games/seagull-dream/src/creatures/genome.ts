@@ -99,30 +99,16 @@ export interface HeadGenome {
   eyeAngle: number;
 }
 
-// Limb model — see instructions/creatures.md. ONE unified `limbGroups[]`.
-// Every limb is a function-tagged TYPE, duplicated by `count` and placed
-// bilaterally (mirrored rows) or radially (spokes), with a size
-// gravitation along the duplication. The empirical "≤3 distinct types"
-// rule applies only to the LOCOMOTOR (function = "leg") subset — real
-// animals don't use more than ~3 functionally distinct leg types — while
-// wings / fins / arms duplicate freely. A swappable end-effector caps the
-// tip (foot, hoof, hand, claw, paddle). "Is it a wing?" is the explicit
-// `function`, never a membrane threshold, so a webbed-footed leg never
-// becomes a wing.
-
-/** What a limb is FOR — drives how it's built, posed, and (later) gaited.
- *  "leg" is ground-solved and counts toward the ≤3 locomotor cap; the
- *  rest fold out from the body and are never ground-solved. */
-export type LimbFunction = "leg" | "arm" | "wing" | "fin";
-
-/** The manipulator/contact structure at a limb's tip. */
-export type EndEffector =
-  | "none" // bare taper (a stub, a tentacle-ish leg tip)
-  | "foot" // sole + fanned toes (plantigrade → digitigrade)
-  | "hoof" // single blunt weight-bearing club (ungulate)
-  | "hand" // palm + fingers + an opposed thumb (grasping)
-  | "claw" // two opposed pincer digits (crab/lobster/raptor)
-  | "paddle"; // flattened blade, no digits (flipper / fin-limb)
+// Limb model — see instructions/creatures.md. ONE kind of limb: a leg.
+// There is NO function/end-effector enum. A limb's role emerges from its
+// shape, position, and the current posture:
+//   - a WING / FLIPPER is a leg with high `membrane`;
+//   - an ARM is a leg too short to reach the ground at the current
+//     `bodyHeight`, so it lifts off and hangs;
+//   - a HOOF / HAND / CLAW is digit variation (count + differentiation +
+//     opposition + curl), the same way leg rows vary.
+// Leg LENGTH is fixed; it constrains the achievable body postures rather
+// than being stretched to fit (see PostureGenome.bodyHeight).
 
 /** How a limb type's copies are arranged around the body. */
 export type LimbPlacement =
@@ -130,7 +116,6 @@ export type LimbPlacement =
   | "radial"; // `count` spokes evenly around the vertical axis (radial body)
 
 export interface LimbGroupGenome {
-  function: LimbFunction;
   placement: LimbPlacement;
   /** Copies of this type: bilateral → rows (each an L/R pair); radial →
    *  spokes around the body. */
@@ -149,36 +134,47 @@ export interface LimbGroupGenome {
   sizeContrast: number;
   /** Chain segments (2 = simple hinge, 4 = many-jointed crawler). */
   segments: number;
-  /** Length / torso length. */
+  /** Length / torso length. FIXED — does not stretch to the ground. */
   lengthFrac: number;
   /** Base radius / max torso radius. */
   radiusFrac: number;
   /** Tip radius / base radius. */
   taper: number;
-  /** 0 = round limb .. 1 = flattened, widened airfoil (wing/fin/web). */
+  /** 0 = round limb .. 1 = flattened, widened web (wing / flipper). */
   membrane: number;
-  /** 0 = erect, hangs under the body (mammal). 1 = sprawled sideways
-   *  (lizard/oar). */
+  /** Sideways sprawl of the foot from under the hip. */
   splay: number;
-  /** Joint pole-direction blend: 0 = sagittal fold under the body
-   *  (mammal), ~0.5 = lateral elbow-out (reptile sprawl), 1 = arched up
-   *  ABOVE the torso (arthropod). */
+  /** Joint pole elevation: 0 = folds under the body (mammal/bird),
+   *  ~0.5 = lateral sprawl (reptile), 1 = arched ABOVE the torso
+   *  (arthropod). */
   kneeLift: number;
-  /** Rest fold: 0 = near-straight column, 1 = deeply folded (frog sit). */
-  crouch: number;
-  /** End-effector at the tip. */
-  endEffector: EndEffector;
-  /** Foot/effector length / leg length (foot/hoof/hand). */
+  /** Sagittal bend of the joint: -1 = apex points rearward (knee),
+   *  +1 = forward (elbow), 0 = neutral. Explicit per limb — there is NO
+   *  automatic front/back flip. */
+  kneeBend: number;
+  /** Interior-joint zigzag for multi-segment legs (so they read as
+   *  folded, not bowed). Purely cosmetic; no effect on reach. */
+  jointZigzag: number;
+  // ── End structure (digits) ───────────────────────────────────────────
+  /** Foot/sole length / leg length. 0 = digits straight off the limb tip. */
   footLengthFrac: number;
   /** Stance: 0 = plantigrade (flat foot), 0.5 = digitigrade (on toes),
    *  1 = unguligrade (toe-tips/hoof). Raises the ankle. */
   stance: number;
-  /** Digits on the effector (toes/fingers; claw forces 2). */
+  /** Digits on the foot. 1 = a single peg/hoof. */
   toeCount: number;
   /** Digit length / foot length. */
   toeLengthFrac: number;
   /** Total fan angle across the digits, radians. */
   toeSpread: number;
+  /** Digit size gravitation: 0 = all equal, 1 = outer digits shrink to
+   *  nothing (the same mechanism as leg-row `sizeContrast`). */
+  toeContrast: number;
+  /** Opposition: 0 = all digits parallel (paw), 1 = the end digit fully
+   *  opposes the rest (thumb / pincer). */
+  opposition: number;
+  /** Digit curl: 0 = flat on the ground, 1 = curled under (claw / grip). */
+  toeCurl: number;
 }
 
 // Flexible chains — see instructions/creatures.md. ONE primitive for
@@ -265,6 +261,12 @@ export interface PostureGenome {
   /** Rest pitch of the torso axis, radians. 0 = horizontal,
    *  positive = chest raised (penguin-ward). */
   bodyPitch: number;
+  /** How high the body rides, 0 = slung low (legs folded/sprawled) ..
+   *  1 = raised high (legs straight). The TALLEST leg sets the ceiling;
+   *  legs too short to reach the ground at this height lift off and hang
+   *  (becoming arms). Leg length is fixed, so this is what makes a body
+   *  bipedal, sprawled, or upright. */
+  bodyHeight: number;
 }
 
 export interface Genome {
@@ -276,8 +278,9 @@ export interface Genome {
   neck: NeckGenome;
   tail: TailGenome;
   head: HeadGenome;
-  /** 0..MAX_LIMB_GROUPS limb TYPES (legs, arms, wings, fins). At most
-   *  MAX_LOCOMOTOR_GROUPS of them may be function "leg". */
+  /** 0..MAX_LIMB_GROUPS limb TYPES. Every limb is a leg; role emerges
+   *  from shape/position/posture (a wing is a membranous leg, an arm is a
+   *  leg that can't reach the ground at the current bodyHeight). */
   limbGroups: LimbGroupGenome[];
   /** 0..MAX_CHAINS flexible chains (antennae, tentacles, trunk, …). */
   chains: FlexChainGenome[];
@@ -287,16 +290,13 @@ export interface Genome {
   posture: PostureGenome;
 }
 
-/** Total limb TYPES one creature can carry (legs + arms + wings + fins). */
-export const MAX_LIMB_GROUPS = 6;
-/** At most 3 functionally distinct LOCOMOTOR (function = "leg") types —
- *  the empirical cap across real animals. */
-export const MAX_LOCOMOTOR_GROUPS = 3;
+/** Total limb TYPES one creature can carry. Few, by design — real
+ *  animals reuse one leg structure with variation, not many distinct
+ *  types (a wing is just a membranous leg). */
+export const MAX_LIMB_GROUPS = 5;
 /** Copies (rows or radial spokes) one limb type can be duplicated into. */
 export const MAX_LIMB_COUNT = 8;
-export const LIMB_FUNCTIONS: readonly LimbFunction[] = ["leg", "arm", "wing", "fin"];
 export const LIMB_PLACEMENTS: readonly LimbPlacement[] = ["bilateral", "radial"];
-export const END_EFFECTORS: readonly EndEffector[] = ["none", "foot", "hoof", "hand", "claw", "paddle"];
 /** Distinct flexible-chain entries one creature can carry (each may
  *  spawn several chains via `count`). */
 export const MAX_CHAINS = 4;
@@ -366,8 +366,8 @@ export const HEAD_RANGES: RangesOf<HeadGenome> = {
   eyeAngle: { min: 0.15, max: 1.5 },
 };
 
-// Only the numeric limb fields get ranges; function/placement/endEffector
-// are enums handled separately in clamp/validate.
+// Only the numeric limb fields get ranges; `placement` is an enum handled
+// separately in clamp/validate.
 export const LIMB_GROUP_RANGES: RangesOf<LimbGroupGenome> = {
   count: { min: 1, max: MAX_LIMB_COUNT, int: true },
   stationStart: { min: 0, max: 1 },
@@ -381,12 +381,16 @@ export const LIMB_GROUP_RANGES: RangesOf<LimbGroupGenome> = {
   membrane: { min: 0, max: 1 },
   splay: { min: 0, max: 1 },
   kneeLift: { min: 0, max: 1 },
-  crouch: { min: 0, max: 1 },
+  kneeBend: { min: -1, max: 1 },
+  jointZigzag: { min: 0, max: 1 },
   footLengthFrac: { min: 0, max: 0.6 },
   stance: { min: 0, max: 1 },
-  toeCount: { min: 0, max: 5, int: true },
+  toeCount: { min: 1, max: 5, int: true },
   toeLengthFrac: { min: 0.2, max: 1 },
-  toeSpread: { min: 0, max: 1.2 },
+  toeSpread: { min: 0, max: 1.4 },
+  toeContrast: { min: 0, max: 1 },
+  opposition: { min: 0, max: 1 },
+  toeCurl: { min: 0, max: 1 },
 };
 
 // Only the numeric chain fields get ranges; attach/radial/tip are
@@ -415,6 +419,7 @@ export const MEMBRANE_RANGES: RangesOf<MembraneGenome> = {
 
 export const POSTURE_RANGES: RangesOf<PostureGenome> = {
   bodyPitch: { min: -0.4, max: 1.2 },
+  bodyHeight: { min: 0, max: 1 },
 };
 
 // ── Default ──────────────────────────────────────────────────────────────
@@ -445,21 +450,21 @@ export function defaultGenome(): Genome {
       eyeAngle: 0.7,
     },
     // One leg type, duplicated into a fore + hind pair — the generic
-    // quadruped. Distinct fore/hind types would be two groups.
+    // quadruped. Distinct fore/hind bend would be two groups.
     limbGroups: [
       {
-        function: "leg", placement: "bilateral",
+        placement: "bilateral",
         count: 2, stationStart: 0.18, stationEnd: 0.85, sizePeak: 1, sizeContrast: 0.12,
         segments: 3, lengthFrac: 0.58, radiusFrac: 0.18, taper: 0.55,
-        membrane: 0, splay: 0.15, kneeLift: 0.15, crouch: 0.25,
-        endEffector: "foot",
+        membrane: 0, splay: 0.15, kneeLift: 0.15, kneeBend: -0.4, jointZigzag: 0.25,
         footLengthFrac: 0.22, stance: 0.4, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5,
+        toeContrast: 0.2, opposition: 0, toeCurl: 0.1,
       },
     ],
     chains: [],
     membranes: [],
     skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
-    posture: { bodyPitch: 0 },
+    posture: { bodyPitch: 0, bodyHeight: 0.6 },
   };
 }
 
@@ -555,28 +560,16 @@ export function validateGenome(value: unknown): ValidationResult {
     if (g.limbGroups.length > MAX_LIMB_GROUPS) {
       errors.push(`limbGroups: ${g.limbGroups.length} types exceeds max ${MAX_LIMB_GROUPS}`);
     }
-    let locomotor = 0;
     g.limbGroups.forEach((grp, i) => {
       if (!isRecord(grp)) {
         errors.push(`limbGroups[${i}]: not an object`);
         return;
       }
-      if (!LIMB_FUNCTIONS.includes(grp.function as LimbFunction)) {
-        errors.push(`limbGroups[${i}].function: expected one of ${LIMB_FUNCTIONS.join("/")}, got ${JSON.stringify(grp.function)}`);
-      } else if (grp.function === "leg") {
-        locomotor++;
-      }
       if (!LIMB_PLACEMENTS.includes(grp.placement as LimbPlacement)) {
         errors.push(`limbGroups[${i}].placement: expected one of ${LIMB_PLACEMENTS.join("/")}, got ${JSON.stringify(grp.placement)}`);
       }
-      if (!END_EFFECTORS.includes(grp.endEffector as EndEffector)) {
-        errors.push(`limbGroups[${i}].endEffector: expected one of ${END_EFFECTORS.join("/")}, got ${JSON.stringify(grp.endEffector)}`);
-      }
       checkNumbers(grp, LIMB_GROUP_RANGES as unknown as Record<string, FieldRange>, `limbGroups[${i}]`, errors);
     });
-    if (locomotor > MAX_LOCOMOTOR_GROUPS) {
-      errors.push(`limbGroups: ${locomotor} locomotor (leg) types exceeds max ${MAX_LOCOMOTOR_GROUPS}`);
-    }
   }
 
   if (!Array.isArray(g.chains)) {
@@ -711,22 +704,12 @@ export function clampGenome(value: unknown): Genome {
   const g = isRecord(value) ? value : {};
 
   const groupsIn = Array.isArray(g.limbGroups) ? g.limbGroups.slice(0, MAX_LIMB_GROUPS) : d.limbGroups;
-  let legCount = 0;
   const limbGroups = groupsIn.map((grp): LimbGroupGenome => {
     const numeric = clampSection(grp, LIMB_GROUP_RANGES as unknown as Record<string, FieldRange>, LIMB_GROUP_DEFAULT);
     const rec = isRecord(grp) ? grp : {};
-    let fn = LIMB_FUNCTIONS.includes(rec.function as LimbFunction) ? (rec.function as LimbFunction) : "leg";
-    // Enforce the locomotor cap structurally: excess leg types become arms
-    // so validateGenome(clampGenome(x)) always passes.
-    if (fn === "leg") {
-      if (legCount >= MAX_LOCOMOTOR_GROUPS) fn = "arm";
-      else legCount++;
-    }
     const placement = LIMB_PLACEMENTS.includes(rec.placement as LimbPlacement)
       ? (rec.placement as LimbPlacement) : "bilateral";
-    const endEffector = END_EFFECTORS.includes(rec.endEffector as EndEffector)
-      ? (rec.endEffector as EndEffector) : (fn === "leg" ? "foot" : "none");
-    return { ...numeric, function: fn, placement, endEffector };
+    return { ...numeric, placement };
   });
 
   const chainsIn = Array.isArray(g.chains) ? g.chains.slice(0, MAX_CHAINS) : [];
@@ -850,7 +833,7 @@ export function randomGenome(seed: number): Genome {
   const limbStyle = rng();
   const kneeLift = lerp(0.05, 1, limbStyle);
   const styleSplay = Math.min(1, lerp(0.1, 0.95, limbStyle) * lerp(0.7, 1.3, rng()));
-  const styleCrouch = Math.min(1, lerp(0.15, 0.8, limbStyle) * lerp(0.7, 1.2, rng()));
+  const styleZigzag = Math.min(1, lerp(0.15, 0.8, limbStyle) * lerp(0.7, 1.2, rng()));
   // Foot stance is its own axis (bears vs dogs vs horses share erect
   // legs). Hoofward stances get fewer, tighter toes and a hoof effector.
   const stance = rng();
@@ -863,8 +846,8 @@ export function randomGenome(seed: number): Genome {
     count: number,
     stationStart: number,
     stationEnd: number,
+    over: Partial<LimbGroupGenome> = {},
   ): LimbGroupGenome => ({
-    function: "leg",
     placement: "bilateral",
     count,
     stationStart,
@@ -878,57 +861,56 @@ export function randomGenome(seed: number): Genome {
     membrane: rng() < 0.15 ? lerp(0.2, 0.45, rng()) : lerp(0, 0.1, rng()),
     splay: styleSplay,
     kneeLift,
-    crouch: styleCrouch,
-    endEffector: hoofward ? "hoof" : "foot",
+    kneeBend: lerp(-0.6, 0.6, rng()),
+    jointZigzag: styleZigzag,
     footLengthFrac: lerp(0.12, 0.35, rng()),
     stance,
     toeCount,
     toeLengthFrac: lerp(0.35, 0.7, rng()),
     toeSpread,
+    toeContrast: lerp(0, 0.4, rng()),
+    opposition: 0,
+    toeCurl: lerp(0, 0.4, rng()),
+    ...over,
   });
-  const wing = (station: number, fn: LimbFunction): LimbGroupGenome => ({
-    function: fn,
-    placement: "bilateral",
-    count: 1,
-    stationStart: station,
-    stationEnd: station,
-    sizePeak: 1,
-    sizeContrast: 0,
-    segments: 3 + Math.round(rng()),
-    lengthFrac: lerp(0.8, 1.8, rng()),
-    radiusFrac: lerp(0.06, 0.14, rng()),
-    taper: lerp(0.2, 0.5, rng()),
-    membrane: fn === "arm" ? lerp(0, 0.15, rng()) : lerp(0.75, 1, rng()),
-    splay: lerp(0.7, 1, rng()),
-    kneeLift: 0.2,
-    crouch: 0.2,
-    endEffector: fn === "arm" ? "hand" : "none",
-    footLengthFrac: 0,
-    stance: 0.3,
-    toeCount: 3,
-    toeLengthFrac: 0.5,
-    toeSpread: 0.4,
-  });
+  // A wing/flipper is just a membranous forelimb (an emergent role, not a
+  // type). It often folds back (kneeBend rearward) and lifts off if it
+  // can't reach the ground at the body's height.
+  const wingLimb = (station: number): LimbGroupGenome =>
+    legGroup(1, station, station, {
+      membrane: lerp(0.8, 1, rng()),
+      lengthFrac: lerp(1.0, 1.7, rng()),
+      radiusFrac: lerp(0.05, 0.09, rng()),
+      taper: lerp(0.2, 0.4, rng()),
+      splay: lerp(0.7, 0.95, rng()),
+      kneeLift: 0.1,
+      kneeBend: -0.7,
+      footLengthFrac: 0,
+      toeCount: 1,
+    });
 
+  let biped = false;
   if (planRoll < 0.12) {
     // limbless — slither/swim
   } else if (planRoll < 0.35) {
-    // biped: one rear leg type, optional wings up front
-    limbGroups.push(legGroup(1, lerp(0.7, 0.9, rng()), 0.85));
-    if (rng() < 0.6) limbGroups.push(wing(lerp(0.1, 0.25, rng()), "wing"));
+    // biped: one rear leg type, short or absent forelimbs (the forelimbs
+    // lift off at the high body posture and read as arms/wings).
+    biped = true;
+    limbGroups.push(legGroup(1, lerp(0.72, 0.88, rng()), 0.86));
+    if (rng() < 0.6) limbGroups.push(wingLimb(lerp(0.12, 0.25, rng())));
   } else if (planRoll < 0.85) {
     if (manyLegged) {
       // one leg type duplicated into a row of pairs (centipede-ish)
       limbGroups.push(legGroup(3 + Math.round(rng() * 3), lerp(0.1, 0.2, rng()), lerp(0.8, 0.95, rng())));
     } else if (rng() < 0.4) {
-      // distinct fore + hind types (two groups)
-      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2));
-      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9));
+      // distinct fore + hind bend (two groups, opposite kneeBend)
+      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2, { kneeBend: lerp(0.2, 0.7, rng()) }));
+      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9, { kneeBend: lerp(-0.7, -0.2, rng()) }));
     } else {
       // one type, fore+hind rows (generic quadruped)
       limbGroups.push(legGroup(2, lerp(0.1, 0.22, rng()), lerp(0.8, 0.92, rng())));
     }
-    if (rng() < 0.15) limbGroups.push(wing(lerp(0.3, 0.5, rng()), "wing"));
+    if (rng() < 0.15) limbGroups.push(wingLimb(lerp(0.3, 0.45, rng())));
   } else {
     // hexapod: one type, three rows
     limbGroups.push(legGroup(3, lerp(0.08, 0.18, rng()), lerp(0.82, 0.95, rng())));
@@ -1008,15 +990,12 @@ export function randomGenome(seed: number): Genome {
       bellyColor: randHexColor(rng, [0.6, 0.85]),
       accentColor: randHexColor(rng, [0.1, 0.35]),
     },
-    // Upright (penguin-ward) only for a single rear leg pair with no
-    // other legs — a true biped stance.
+    // Bipeds stand upright and ride high (so the forelimbs lift off);
+    // everyone else stays nearer horizontal. Arthropod-styled bodies sit
+    // lower/sprawled; mammal-styled ride higher.
     posture: {
-      bodyPitch:
-        limbGroups.filter((l) => l.function === "leg").length === 1 &&
-        limbGroups[0].function === "leg" && limbGroups[0].count === 1 &&
-        limbGroups[0].stationStart > 0.6
-          ? lerp(0.5, 1.1, rng())
-          : lerp(-0.05, 0.2, rng()),
+      bodyPitch: biped ? lerp(0.6, 1.1, rng()) : lerp(-0.05, 0.2, rng()),
+      bodyHeight: biped ? lerp(0.8, 1.0, rng()) : lerp(0.35, 0.8, 1 - limbStyle * 0.6),
     },
   };
   return clampGenome(raw);

@@ -15,27 +15,25 @@ import {
   validateGenome,
   HEAD_RANGES,
   LIMB_GROUP_RANGES,
-  LIMB_FUNCTIONS,
   LIMB_PLACEMENTS,
-  END_EFFECTORS,
   CHAIN_RANGES,
   CHAIN_ATTACH,
   CHAIN_TIPS,
   MEMBRANE_RANGES,
   MEMBRANE_EDGES,
+  PROFILE_POINT_RANGES,
   MAX_LIMB_GROUPS,
   MAX_CHAINS,
   MAX_MEMBRANES,
+  MAX_PROFILE_POINTS,
   NECK_RANGES,
   POSTURE_RANGES,
   SPINE_RANGES,
   TAIL_RANGES,
   type ChainAttach,
   type ChainTip,
-  type EndEffector,
   type FieldRange,
   type Genome,
-  type LimbFunction,
   type LimbPlacement,
   type MembraneEdge,
 } from "./genome";
@@ -282,6 +280,32 @@ function buildPanel(): void {
   }
 
   sliderSection("spine", genome.spine as unknown as Record<string, number>, SPINE_RANGES, true);
+
+  // Body profile (tagmata) — pinch/bulge control points along the trunk.
+  // An array, so it isn't auto-slidered; it gets a dedicated editor.
+  {
+    const s = section("body profile (tagmata)");
+    genome.spine.profile.forEach((pt, i) => {
+      const row = el("div", "lab-row", s);
+      el("label", undefined, row).textContent = `point ${i}`;
+      const remove = el("button", "danger", row);
+      remove.textContent = "remove";
+      remove.addEventListener("click", () => { genome.spine.profile.splice(i, 1); buildPanel(); rebuild(); });
+      slider(s, "  at", pt as unknown as Record<string, number>, "at", PROFILE_POINT_RANGES.at);
+      slider(s, "  scale", pt as unknown as Record<string, number>, "scale", PROFILE_POINT_RANGES.scale);
+    });
+    if (genome.spine.profile.length < MAX_PROFILE_POINTS) {
+      const row = el("div", "lab-row", s);
+      const add = el("button", undefined, row);
+      add.textContent = "add point";
+      add.addEventListener("click", () => {
+        genome.spine.profile.push({ at: 0.5, scale: 0.6 });
+        buildPanel();
+        rebuild();
+      });
+    }
+  }
+
   sliderSection("neck", genome.neck as unknown as Record<string, number>, NECK_RANGES);
   sliderSection("tail", genome.tail as unknown as Record<string, number>, TAIL_RANGES);
   sliderSection("head", genome.head as unknown as Record<string, number>, HEAD_RANGES);
@@ -295,14 +319,6 @@ function buildPanel(): void {
     genome.limbGroups.forEach((grp, i) => {
       const head = el("div", "lab-row", s);
       el("label", undefined, head).textContent = `limb ${i}`;
-      const fnSel = el("select", undefined, head) as HTMLSelectElement;
-      for (const fn of LIMB_FUNCTIONS) {
-        const opt = el("option", undefined, fnSel) as HTMLOptionElement;
-        opt.value = fn;
-        opt.textContent = fn;
-        if (fn === grp.function) opt.selected = true;
-      }
-      fnSel.addEventListener("change", () => { grp.function = fnSel.value as LimbFunction; buildPanel(); rebuild(); });
       const placeSel = el("select", undefined, head) as HTMLSelectElement;
       for (const pl of LIMB_PLACEMENTS) {
         const opt = el("option", undefined, placeSel) as HTMLOptionElement;
@@ -311,14 +327,6 @@ function buildPanel(): void {
         if (pl === grp.placement) opt.selected = true;
       }
       placeSel.addEventListener("change", () => { grp.placement = placeSel.value as LimbPlacement; rebuild(); });
-      const effSel = el("select", undefined, head) as HTMLSelectElement;
-      for (const eff of END_EFFECTORS) {
-        const opt = el("option", undefined, effSel) as HTMLOptionElement;
-        opt.value = eff;
-        opt.textContent = eff;
-        if (eff === grp.endEffector) opt.selected = true;
-      }
-      effSel.addEventListener("change", () => { grp.endEffector = effSel.value as EndEffector; rebuild(); });
       const remove = el("button", "danger", head);
       remove.textContent = "remove";
       remove.addEventListener("click", () => { genome.limbGroups.splice(i, 1); buildPanel(); rebuild(); });
@@ -336,9 +344,9 @@ function buildPanel(): void {
         rebuild();
       });
       const addWing = el("button", undefined, row);
-      addWing.textContent = "add wing";
+      addWing.textContent = "add wing/arm";
       addWing.addEventListener("click", () => {
-        genome.limbGroups.push(clampGenome({ limbGroups: [{ function: "wing", endEffector: "none", membrane: 0.9, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 1.3, splay: 0.85 }] }).limbGroups[0]);
+        genome.limbGroups.push(clampGenome({ limbGroups: [{ membrane: 0.9, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 1.3, splay: 0.85, kneeBend: -0.7, footLengthFrac: 0, toeCount: 1 }] }).limbGroups[0]);
         buildPanel();
         rebuild();
       });

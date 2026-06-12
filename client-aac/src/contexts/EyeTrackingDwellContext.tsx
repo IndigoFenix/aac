@@ -2,9 +2,17 @@
 // Dwell selection for eye gaze or mouse/external-device cursor control.
 // Hit-tests [data-dwell] elements and triggers click after dwell timeout.
 //
-// After a selection, hovering is disabled until either:
-//   1. The cursor moves 40px (straight-line) from where it was disabled, OR
-//   2. The cursor enters a different grid cell (data-dwell-cell attribute).
+// After a selection, hovering is disabled until the cursor moves 40px
+// (straight-line) from where it was disabled. Genuine movement is the ONLY
+// way to re-arm: a board rebuild that places a new button under a stationary
+// cursor must never re-trigger a selection.
+//
+// In eyegaze mode, dwell is suspended while the gaze signal is stale (no
+// fresh sample within STALE_GAZE_MS). Eyegaze providers stream continuously
+// while a user is present, so silence means the tracker lost the eyes or the
+// user left. Cursor-control ("mouse") mode is NOT staleness-gated — there a
+// physically still cursor is the legitimate dwell gesture and stillness
+// produces no events to judge freshness by.
 //
 // Uses requestAnimationFrame (throttled to ~20Hz) instead of setInterval so
 // external devices that move the cursor without firing mousemove still work.
@@ -12,6 +20,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import type { CalibrationSample } from "@/lib/gazeEstimator";
 import type { GazePoint } from "@/lib/eyegaze/types";
+import { DwellEngine, DEFAULT_REACTIVATION_PX } from "@shared/dwell-engine";
 
 // ─── Types ───────────────────────────────────────────────────────
 export type DwellMode = "off" | "eyegaze" | "mouse";
@@ -26,8 +35,8 @@ export interface DwellDebugInfo {
   hoverEnabled: boolean;
   movementFromAnchor: number;
   movementThreshold: number;
-  currentCellId: string | null;
-  disabledAtCellId: string | null;
+  /** True when no fresh gaze sample arrived within STALE_GAZE_MS (eyegaze mode only). */
+  gazeStale: boolean;
   dwellElementLabel: string | null;
   dwellProgress: number;
 }
@@ -53,9 +62,8 @@ export interface EyeTrackingDwellContextValue {
 const DEFAULT_DEBUG: DwellDebugInfo = {
   hoverEnabled: true,
   movementFromAnchor: 0,
-  movementThreshold: 40,
-  currentCellId: null,
-  disabledAtCellId: null,
+  movementThreshold: DEFAULT_REACTIVATION_PX,
+  gazeStale: false,
   dwellElementLabel: null,
   dwellProgress: 0,
 };
@@ -93,8 +101,10 @@ interface Props {
   children: ReactNode;
 }
 
-const REACTIVATION_PX = 40;
 const TICK_INTERVAL_MS = 50; // throttle rAF to ~20Hz
+// Eyegaze providers emit 20-90Hz while tracking; even blinks are shorter
+// than this. No sample for this long means the signal is gone, not still.
+const STALE_GAZE_MS = 500;
 
 /** Find the [data-dwell] element under a point, respecting [data-dwell-trap] boundaries. */
 function hitTestDwell(x: number, y: number): HTMLElement | null {
@@ -136,12 +146,8 @@ export function EyeTrackingDwellProvider({
   const cursorPosRef = useRef<GazePoint | null>(null);  // mouse mode
   const gazePointRef = useRef<GazePoint | null>(null);   // eyegaze mode
 
-  // ── Dwell state refs (mutated in rAF loop, never in deps) ──
-  const hoverEnabledRef = useRef(true);
-  const disableAnchorRef = useRef<GazePoint | null>(null);
-  const disabledCellIdRef = useRef<string | null>(null);
-  const currentDwellElRef = useRef<HTMLElement | null>(null);
-  const dwellStartRef = useRef(0);
+  // ── Dwell state (decision logic lives in the shared DwellEngine) ──
+  const gazeUpdatedAtRef = useRef(0); // performance.now() of last fresh gaze sample
 
   // ── Stable refs for props that change often ──
   const isCalibratingRef = useRef(isCalibrating);
@@ -149,7 +155,12 @@ export function EyeTrackingDwellProvider({
 
   // ── Sync props to refs ──
   useEffect(() => { setIsCalibrated(externalIsCalibrated); }, [externalIsCalibrated]);
-  useEffect(() => { gazePointRef.current = externalGazePoint; }, [externalGazePoint]);
+  useEffect(() => {
+    gazePointRef.current = externalGazePoint;
+    // Each gaze sample arrives as a fresh object, so this effect runs per
+    // sample even when coordinates repeat — making it a freshness signal.
+    if (externalGazePoint) gazeUpdatedAtRef.current = performance.now();
+  }, [externalGazePoint]);
 
   // ── Mouse/pointer tracking (mouse mode) ──
   useEffect(() => {
@@ -209,9 +220,16 @@ export function EyeTrackingDwellProvider({
       setGazePosition(null);
       setDwellTarget(null);
       setDwellDebug(DEFAULT_DEBUG);
-      hoverEnabledRef.current = true;
       return;
     }
+
+    // Fresh engine per mode/timing change: staleness gating applies to
+    // eyegaze only — in cursor-control mode a still cursor IS the dwell
+    // gesture and stillness produces no events to judge freshness by.
+    const engine = new DwellEngine<HTMLElement>({
+      dwellTimeMs,
+      staleGazeMs: mode === "eyegaze" ? STALE_GAZE_MS : null,
+    });
 
     let rafId: number;
     let lastTickTime = 0;
@@ -228,87 +246,30 @@ export function EyeTrackingDwellProvider({
       if (!point || isCalibratingRef.current) {
         setGazePosition(point ?? null);
         setDwellTarget(null);
-        currentDwellElRef.current = null;
+        engine.clearTarget();
         return;
       }
 
       setGazePosition(point);
 
-      // Hit test
       const dwellEl = hitTestDwell(point.x, point.y);
-      const cellId = dwellEl?.getAttribute("data-dwell-cell") ?? null;
+      const r = engine.update(dwellEl, point, time, gazeUpdatedAtRef.current);
 
-      // ── Check hover re-activation ──
-      let distFromAnchor = 0;
-      if (!hoverEnabledRef.current) {
-        const anchor = disableAnchorRef.current;
-        if (anchor) {
-          const dx = point.x - anchor.x;
-          const dy = point.y - anchor.y;
-          distFromAnchor = Math.sqrt(dx * dx + dy * dy);
-        }
-        const movedEnough = distFromAnchor >= REACTIVATION_PX;
-        const differentCell = cellId !== null && cellId !== disabledCellIdRef.current;
+      if (r.fired) r.fired.click();
 
-        if (movedEnough || differentCell) {
-          hoverEnabledRef.current = true;
-          disableAnchorRef.current = null;
-          disabledCellIdRef.current = null;
-        }
-      }
-
-      // ── Update debug ──
+      setDwellTarget(
+        r.target
+          ? { element: r.target, rect: r.target.getBoundingClientRect(), progress: r.progress }
+          : null,
+      );
       setDwellDebug({
-        hoverEnabled: hoverEnabledRef.current,
-        movementFromAnchor: distFromAnchor,
-        movementThreshold: REACTIVATION_PX,
-        currentCellId: cellId,
-        disabledAtCellId: disabledCellIdRef.current,
-        dwellElementLabel: currentDwellElRef.current?.textContent?.slice(0, 30) ?? null,
-        dwellProgress: 0, // updated below if dwelling
+        hoverEnabled: r.hoverEnabled,
+        movementFromAnchor: r.movementFromAnchor,
+        movementThreshold: DEFAULT_REACTIVATION_PX,
+        gazeStale: r.gazeStale,
+        dwellElementLabel: (r.target ?? r.fired)?.textContent?.slice(0, 30) ?? null,
+        dwellProgress: r.progress,
       });
-
-      // ── Hover disabled → skip dwell ──
-      if (!hoverEnabledRef.current) {
-        currentDwellElRef.current = null;
-        setDwellTarget(null);
-        return;
-      }
-
-      // ── No element → reset dwell ──
-      if (!dwellEl) {
-        currentDwellElRef.current = null;
-        setDwellTarget(null);
-        return;
-      }
-
-      const now = Date.now();
-
-      // ── Same element → advance timer ──
-      if (dwellEl === currentDwellElRef.current) {
-        const elapsed = now - dwellStartRef.current;
-        const progress = Math.min(1, elapsed / dwellTimeMs);
-
-        if (progress >= 1) {
-          // Select
-          dwellEl.click();
-          hoverEnabledRef.current = false;
-          disableAnchorRef.current = { x: point.x, y: point.y };
-          disabledCellIdRef.current = cellId;
-          currentDwellElRef.current = null;
-          setDwellTarget(null);
-          setDwellDebug(prev => ({ ...prev, hoverEnabled: false, dwellProgress: 1 }));
-        } else {
-          setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress });
-          setDwellDebug(prev => ({ ...prev, dwellProgress: progress }));
-        }
-        return;
-      }
-
-      // ── Different element → start new timer ──
-      currentDwellElRef.current = dwellEl;
-      dwellStartRef.current = now;
-      setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress: 0 });
     };
 
     rafId = requestAnimationFrame(tick);

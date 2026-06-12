@@ -81,25 +81,27 @@ regimes, no discrete classes. Everything grows from one structure:
   chain* (length, radius, taper, stiffness), so worm → fish → whale →
   long-necked grazer are points in one space, reached by stretching and
   thickening — never by swapping models.
-- **Locomotor legs** — capped at **3 distinct TYPES** (`legGroups`). Real
-  animals, however many legs they have, don't use more than ~3
-  functionally distinct leg types for locomotion. Each type is
-  DUPLICATED into `pairs` rows spread across a `stationStart..stationEnd`
-  span, with a size gravitation (`sizePeak` 0 front / 0.5 middle / 1 back,
-  `sizeContrast`) so a row can grow toward the front, middle, or back.
-  Rows of one type share a gait — fewer "silly walks", more real-world
-  movement strategies, and simpler animation. All articulation params
-  (segments, length, radius, splay, kneeLift, crouch, foot, stance, toes,
-  + webbing `membrane`) are shared by every row in the group.
-- **Specialized appendages** — non-leg limbs (`appendages`), tagged by
-  `function` (wing / fin / arm), defined individually with
-  function-specific rules. `membrane 0→1` makes a wing/fin airfoil; arms
-  hang and don't reach for the ground. "Is it a wing?" is the explicit
-  function, NOT a membrane threshold on a leg — so a leg with webbed feet
-  never accidentally becomes a wing.
+- **Limbs — ONE kind: a leg** (`limbGroups`). There is NO
+  function/end-effector enum (removed 2026-06-12). A limb's ROLE emerges
+  from shape + position + posture: a **wing/flipper** is a leg with high
+  `membrane`; an **arm** is a leg too short to reach the ground at the
+  current `bodyHeight`, so it lifts off and hangs; a **hoof/hand/claw** is
+  digit variation (`toeCount` + `toeContrast` gravitation + `opposition`
+  thumb + `toeCurl`). Each type is DUPLICATED by `count` into bilateral
+  rows or radial spokes across `stationStart..stationEnd`, with size
+  gravitation (`sizePeak`/`sizeContrast`). Joint orientation is explicit:
+  `kneeLift` (fold-under → sprawl → arch) + `kneeBend` (rearward knee ↔
+  forward elbow) — NO mammalian front/back auto-flip. Few types by design
+  (`MAX_LIMB_GROUPS`).
+- **Posture drives the body** — `bodyPitch` + `bodyHeight`. Leg length is
+  FIXED; `bodyHeight` picks the hip height over the legs' reach envelope.
+  The TALLEST leg leads: raising the body straightens the long legs and
+  lifts the short ones off (→ arms), which is what makes a body bipedal,
+  sprawled, or upright. Splay spreads the feet; body height only changes
+  the knee bend (fold, not sprawl). The tail doesn't hold itself up — it
+  drags on the ground if it droops.
 - **Head** — the spine's front taper plus a sensory cluster: eye count /
   size / placement, jaw-vs-beak blend (beak = rigid jaw extreme).
-- **Posture** — sprawl→erect, horizontal→vertical body angle.
 
 Locomotion *capability* is derived from morphology + environment, not
 declared: wing area vs gravity × air density says whether it can fly,
@@ -297,6 +299,15 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      flat crab with claw-arms, plesiosaur flippers. Tests now 35.
    - **Radial BODY plans** (jellyfish/anemone/urchin) now reachable via
      `placement: "radial"` on a near-zero axis.
+   - **Leg rethink** **DONE 2026-06-12** (per creatures-list.md "Update
+     Plan"): collapsed the function/end-effector zoo into ONE leg type;
+     role is emergent (membrane→wing, short-reach→arm, digits→hoof/hand/
+     claw). Posture split into `bodyPitch` + `bodyHeight`; leg length is
+     fixed and the posture engine (tallest-leg-leads) folds/lifts legs to
+     match. Joint orientation = explicit `kneeLift`+`kneeBend` (no
+     auto-flip). Digits differentiate like leg rows; feet sized to the
+     limb-tip girth. Tail drags. The body-segmentation (tagmata) editor is
+     now in the lab. All 17 examples + 39 tests migrated.
    - Midline membranes **DONE 2026-06-11**: `genome.membranes:
      MembraneGenome[]` — ONE primitive for the dorsal fin, anal fin,
      dimetrodon sail, and (a dorsal + ventral panel over the tail) a

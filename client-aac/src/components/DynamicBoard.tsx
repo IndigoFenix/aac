@@ -552,7 +552,6 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
-          data-dwell-cell={`grid-${index}`}
           data-testid={`board-${kind}`}
           key={`btn-${kind}-${index}`}
           initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
@@ -582,7 +581,6 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
-          data-dwell-cell={`grid-${index}`}
           key={`btn-${button.label}-${index}`}
           initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -622,7 +620,6 @@ export default function DynamicBoard({
         iconFlex={level.iconFlex}
         textFlex={level.textFlex}
         entering={isEntering}
-        extraButtonProps={{ "data-dwell-cell": `grid-${index}` }}
         cornerIndicator={
           isLinkButton ? (
             <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>

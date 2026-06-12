@@ -50,7 +50,7 @@ export interface BoardButtonVisualProps {
   ariaLabel?: string;
   /** Optional extra content rendered as an absolute overlay (e.g. link arrow). */
   cornerIndicator?: ReactNode;
-  /** Passed through to the motion.button so callers can pin data-dwell-cell etc. */
+  /** Passed through to the motion.button so callers can pin data-* attributes etc. */
   extraButtonProps?: Record<string, unknown>;
   /**
    * When false, render a non-interactive <div> (same visual) instead of a
