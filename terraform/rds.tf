@@ -7,7 +7,7 @@
 # =============================================================================
 data "aws_rds_engine_version" "postgres" {
   engine             = "postgres"
-  preferred_versions = ["16.11", "16.10", "16.9", "16.8", "16.6", "15.15", "15.14", "15.13", "15.12", "15.10", "14.20", "14.19"]
+  preferred_versions = ["16.13", "16.12", "16.11", "16.10", "16.9", "16.8", "16.6", "15.15", "15.14", "15.13", "15.12", "15.10", "14.20", "14.19"]
 }
 
 # =============================================================================
@@ -125,6 +125,12 @@ resource "aws_db_instance" "main" {
 
   lifecycle {
     prevent_destroy = false  # Set to true in production after initial setup
+
+    # AWS owns the minor version (auto_minor_version_upgrade = true), so it may
+    # bump the live instance (e.g. 16.11 -> 16.13) during maintenance. Don't let
+    # Terraform try to reconcile engine_version back down — RDS rejects that as a
+    # downgrade and fails the apply. Let auto-upgrade manage minor versions.
+    ignore_changes = [engine_version]
   }
 }
 
