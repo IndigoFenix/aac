@@ -885,6 +885,7 @@ export function ChatFeature() {
               {sessionId && (
                 headerEditing ? (
                   <Input
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the title field when the user enters edit mode
                     autoFocus
                     value={headerValue}
                     onChange={(e) => setHeaderValue(e.target.value)}

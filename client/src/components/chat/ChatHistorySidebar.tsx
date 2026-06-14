@@ -155,6 +155,7 @@ export function ChatHistorySidebar({
                 {isEditing ? (
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Input
+                      // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the rename field when the user enters edit mode
                       autoFocus
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
