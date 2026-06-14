@@ -9,7 +9,7 @@ import {
   type CloudSample,
   type CloudSampleOpts,
 } from "./cloud-field";
-import type { WeatherMap } from "./weather-map";
+import type { WeatherMap, SynopticSample } from "./weather-map";
 import type {
   CloudSystem,
   CloudSystemOpts,
@@ -43,9 +43,10 @@ import type {
 // continuous shell + per-pixel distance crossfade (copied below — far field
 // and crossfade must exist for the A/B to be honest).
 
-// LOD constants — mirror cloud-system.ts so the A/B is apples-to-apples.
-const EXPAND_FACTOR = 4;
-const FADE_FACTOR = 1.6;
+// LOD: tiers tile by distance and a blob geomorphs onto its coarse PARENT in
+// the outer band (see the walk), so there are no fixed per-tier sizes and no
+// alpha dissolve between tiers — a coarse blob is exactly its fine children
+// merged. Band factors live inline in the walk.
 const MAX_BLOBS = 14000;
 const POSITION_JITTER = 0.42;
 const MAX_BILLBOARD_CELL_SIZE_M = 20_000;
@@ -55,7 +56,18 @@ const DEFAULT_MIN_DENSITY = 0.05;
 const DEFAULT_BAKE_BUDGET_MS = 0.5;
 const MAX_BAKE_ROWS_PER_FRAME = 16;
 const DEFAULT_UPDATE_INTERVAL = 2;
-const MAX_FRESH_SAMPLES_PER_REBUILD = 1400;
+const MAX_FRESH_SAMPLES_PER_REBUILD = 4000;
+// Cross-frame blob cache (camera-independent geometry, weather-time-dependent).
+// Two generations swapped every CACHE_GEN_SECONDS retire cells the camera left;
+// entries refresh after a staggered TTL so refreshes don't clump into a frame.
+const CACHE_TTL_SECONDS = 0.7;
+const CACHE_GEN_SECONDS = 2.5;
+// View-cone cull half-angle cosine. A 60° vFOV / 16:9 frustum's corners sit
+// ~49° off forward, so a 72° cone never clips on-screen blobs but removes the
+// whole rear hemisphere and far sides (~half the candidates). Blobs whose own
+// radius subtends a large angle (dist < 3×radius) are exempt — their center can
+// sit outside the cone while the blob is still visible.
+const CULL_CONE_COS = Math.cos((72 * Math.PI) / 180); // ≈ 0.31
 const TEXTURE_UPLOAD_ROW_BATCH = 32;
 const NIGHT_AMBIENT = 0.12;
 
@@ -71,6 +83,21 @@ const BLOB_FILL_DENSITY_BOOST = 0.4;// dense cells inflate to close gaps
 // inside their altitude band.
 const SQUASH_STRATUS = 0.22;
 const SQUASH_CUMULUS = 0.95;
+// Minimum synoptic cover for a coarse envelope blob to exist (a genuine clear).
+const COARSE_COVER_MIN = 0.1;
+// Cloud entry. The near-plane dissolve band is max(NEAR_BAND_MIN, N × per-frame
+// camera movement) so a fast fly-through can't cross it in one frame and flash
+// the boundary (discussion's fade_band ≥ N·v·Δt); clamped so a teleport doesn't
+// dissolve the whole sky. ENTRY_FEATHER erodes the silhouette near the camera.
+const NEAR_BAND_MIN = 14;
+const NEAR_BAND_SPEED_N = 4;
+const NEAR_BAND_MAX = 3000;
+const ENTRY_FEATHER = 0.5;
+// Billboard-variant edge fuzz (fraction of radius): wide & soft up close,
+// thin & crisp past FUZZ_FAR_DIST so distant billboards read solid.
+const FUZZ_CLOSE = 0.34;
+const FUZZ_FAR = 0.05;
+const FUZZ_FAR_DIST = 5000;
 
 /** Per-update perf counters (mirrors cloudSystemStats keys the lab reads). */
 export const cloudBlobStats = {
@@ -107,6 +134,7 @@ varying vec3 vUp;
 varying float vFade;
 varying float vSeed;
 varying float vUpCoord;   // -1 base .. +1 top, for the base→top gradient
+varying float vRadius;    // blob radius (m) — for proximity silhouette feather
 
 // Cheap hash-value noise on a unit direction — billowy cauliflower edge.
 float h31(vec3 p) {
@@ -153,6 +181,7 @@ void main() {
   vFade = iFade;
   vSeed = iSeed;
   vUpCoord = upc;
+  vRadius = iRadius;
 
   vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
   gl_Position = projectionMatrix * mvPosition;
@@ -170,8 +199,9 @@ uniform vec3 uSunDirW;     // world-space sun direction (normalized)
 uniform float uHasSun;
 uniform float uOpacity;
 uniform float uRim;
-uniform float uNearFadeBand; // meters — near-plane dissolve width
-uniform float uCamNear;
+uniform float uNearFadeBand; // meters — near-plane dissolve width (speed-adaptive)
+uniform float uFeather;      // proximity silhouette erosion strength
+uniform float uInside;       // cloud density AT the camera (0..1) — fog takeover
 
 varying vec3 vColor;
 varying vec3 vWorldPos;
@@ -179,10 +209,35 @@ varying vec3 vUp;
 varying float vFade;
 varying float vSeed;
 varying float vUpCoord;
+varying float vRadius;
 
-// Ordered-ish hashed dither so fade/dissolve need no back-to-front sort.
-float dither(vec2 fc, float seed) {
-  return fract(sin(dot(fc + seed, vec2(12.9898, 78.233))) * 43758.5453);
+// Stochastic (screen-door) transparency lets fades/dissolves work with no
+// back-to-front sort. The threshold MUST be anchored in WORLD space, not screen
+// space (gl_FragCoord), or it crawls as the camera moves — the dominant motion
+// artifact. This is Wyman & McGuire "Hashed Alpha Testing": the hash is keyed on
+// world position so a surface point keeps its threshold, while the scale is
+// anchored to screen-space derivatives so the noise grain stays ~constant on
+// screen regardless of distance.
+float hash13(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+float hashedAlphaThreshold(vec3 wp, float seed) {
+  float maxDeriv = max(length(dFdx(wp)), length(dFdy(wp)));
+  float pixScale = 1.0 / max(1e-8, maxDeriv);
+  vec2 pixScales = vec2(exp2(floor(log2(pixScale))), exp2(ceil(log2(pixScale))));
+  vec3 ws = wp + seed * 19.19;
+  vec2 a = vec2(hash13(floor(pixScales.x * ws)), hash13(floor(pixScales.y * ws)));
+  float lerpF = fract(log2(pixScale));
+  float x = (1.0 - lerpF) * a.x + lerpF * a.y;
+  float t = clamp(min(lerpF, 1.0 - lerpF), 1.0e-3, 0.5);
+  vec3 cases = vec3(
+    x * x / (2.0 * t * (1.0 - t)),
+    (x - 0.5 * t) / (1.0 - t),
+    1.0 - ((1.0 - x) * (1.0 - x) / (2.0 * t * (1.0 - t))));
+  float thr = (x < (1.0 - t)) ? ((x < t) ? cases.x : cases.y) : cases.z;
+  return clamp(thr, 1.0e-6, 1.0);
 }
 
 void main() {
@@ -211,19 +266,194 @@ void main() {
 
   // Fresnel rim — the "cloud not rock" cue. Backlit silhouette glow, pushed
   // toward the lit cloud color.
-  float fres = pow(1.0 - max(0.0, dot(N, viewDir)), 3.0);
+  float fres = pow(1.0 - max(0.0, dot(N, viewDir)), 2.5);
   col += uRim * fres * vColor * (0.4 + 0.6 * lit);
 
-  // Cloud entry: near-plane soft dissolve. The face nearest the camera goes
-  // transparent before it clips, so you never punch through a hard polygon —
-  // the fogContribution envelope carries the interior.
   float fragDist = length(cameraPosition - vWorldPos);
-  float nearFade = clamp((fragDist - uCamNear) / max(1.0, uNearFadeBand), 0.0, 1.0);
 
-  float a = vFade * nearFade * uOpacity;
-  // Dithered (screen-door) discard — order-independent transparency. Solid
-  // core blobs (a≈1) stay solid; only fading/edge fragments thin out.
-  if (a < dither(gl_FragCoord.xy, vSeed * 7.0)) discard;
+  // Cloud entry — two coupled cues off camera distance, both reading the same
+  // geometry the fogContribution envelope reads:
+  //  (1) Near-plane soft dissolve. The face you'd punch through fades to
+  //      transparent within uNearFadeBand of the camera, so you never see a
+  //      hard polygon cross-section; the interior fog takes over. The band is
+  //      speed-adaptive (set per frame) so a fast fly-through can't cross it in
+  //      one frame and flash the boundary.
+  float nearFade = smoothstep(0.0, uNearFadeBand, fragDist);
+  //  (2) Proximity silhouette feather. Right before entry the billowy rim
+  //      erodes into wisps so the cloud "opens up" instead of presenting a
+  //      crisp edge. Kept to a SMALL absolute band (tied to the dissolve band,
+  //      a few × it) — radius-relative ranges erode huge blobs from km away and
+  //      grain the whole view. This band sits inside the interior-fog distance,
+  //      so its stochastic grain is hidden once you're actually enveloped.
+  // Once the camera is actually INSIDE cloud, the surface gives up and the
+  // interior fog carries the look (discussion's regime split) — so suppress the
+  // feather, whose stochastic grain would otherwise speckle the whole envelope.
+  float featherAmt = uFeather * (1.0 - smoothstep(0.15, 0.55, uInside));
+  float closeness = 1.0 - smoothstep(uNearFadeBand, uNearFadeBand * 4.0, fragDist);
+  float feather = 1.0 - closeness * fres * featherAmt;
+
+  float a = vFade * nearFade * feather * uOpacity;
+  // World-anchored hashed-alpha discard — order-independent transparency with no
+  // crawl under motion. Solid core blobs (a≈1) stay solid; only fading/edge/
+  // entry fragments thin out.
+  if (a < hashedAlphaThreshold(vWorldPos, vSeed)) discard;
+
+  #include <logdepthbuf_fragment>
+  gl_FragColor = vec4(col, 1.0);
+  #include <fog_fragment>
+}
+`;
+
+// ── Billboard variant ───────────────────────────────────────────────────────
+//
+// EXPERIMENT: the SAME walk/placement/sizing/geomorph/envelope as the 3-D
+// blobs, but each instance is a camera-facing QUAD instead of an icosphere —
+// to test whether the billboards' old failure was the billboard nature or just
+// wrong sizing (now fixed by the shared walk). Two refinements over a naive
+// billboard:
+//   • Angle stretch — the quad is shaped into the ELLIPSE the squashed
+//     ellipsoid would project to (tangential axis always full radius; up-axis
+//     shrinks to radius×squash edge-on), so it occupies the same screen area as
+//     the blob. Cheap: a couple of dot products + one sqrt per instance.
+//   • Distance-sharpening fuzz — the soft edge band is a FRACTION of the radius
+//     that shrinks with camera distance, so far billboards read crisp/solid and
+//     near ones are soft and wispy.
+// Opaque + world-anchored hashed alpha (no sort, no crawl) like the blobs, for
+// an apples-to-apples A/B.
+
+const BILLBOARD_VERT = /* glsl */ `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+#include <fog_pars_vertex>
+
+attribute vec3 iCenter;
+attribute vec3 iUp;
+attribute vec3 iColor;
+attribute float iRadius;
+attribute float iSquash;
+attribute float iSeed;
+attribute float iFade;
+
+varying vec3 vColor;
+varying vec3 vWorldPos;   // billboard center (lighting view dir, fog)
+varying vec3 vFragW;      // this corner's world pos (camera-stable hashed alpha)
+varying vec2 vQuad;       // unit-disc coord [-1,1]
+varying vec3 vUp;
+varying float vFade;
+varying float vSeed;
+varying float vDist;
+
+void main() {
+  vec4 centerW = modelMatrix * vec4(iCenter, 1.0);
+  vec3 upW = normalize(mat3(modelMatrix) * iUp);
+  vec3 toCam = cameraPosition - centerW.xyz;
+  float dist = length(toCam);
+  vec3 viewDir = toCam / max(1.0, dist);
+  float facing = abs(dot(viewDir, upW));
+  // Elliptical silhouette: up-axis shrinks toward radius×squash edge-on.
+  float minorScale = sqrt(facing * facing + iSquash * iSquash * (1.0 - facing * facing));
+
+  vec4 mvPosition = viewMatrix * centerW;
+  vec3 upV = (viewMatrix * vec4(upW, 0.0)).xyz;
+  vec2 sUp = upV.xy;
+  float sl = length(sUp);
+  vec2 minorDir = sl > 1e-4 ? sUp / sl : vec2(0.0, 1.0);
+  vec2 majorDir = vec2(-minorDir.y, minorDir.x);
+
+  vec2 q = (uv - 0.5) * 2.0;
+  float R = iRadius;
+  vec2 off = majorDir * (q.x * R) + minorDir * (q.y * R * minorScale);
+  mvPosition.xy += off;
+  gl_Position = projectionMatrix * mvPosition;
+
+  // World pos of this corner = center + camera-right/up (from the view matrix
+  // rows) × the screen offset. Keeps the hashed-alpha threshold world-stable.
+  mat3 vm = mat3(viewMatrix);
+  vec3 camRight = vec3(vm[0][0], vm[1][0], vm[2][0]);
+  vec3 camUp    = vec3(vm[0][1], vm[1][1], vm[2][1]);
+  vFragW = centerW.xyz + camRight * off.x + camUp * off.y;
+
+  vColor = iColor;
+  vWorldPos = centerW.xyz;
+  vQuad = q;
+  vUp = upW;
+  vFade = iFade;
+  vSeed = iSeed;
+  vDist = dist;
+
+  #include <logdepthbuf_vertex>
+  #include <fog_vertex>
+}
+`;
+
+const BILLBOARD_FRAG = /* glsl */ `
+#include <logdepthbuf_pars_fragment>
+#include <fog_pars_fragment>
+precision highp float;
+
+uniform vec3 uSunDirW;
+uniform float uHasSun;
+uniform float uOpacity;
+uniform float uRim;
+uniform float uBillow;
+uniform float uFuzzClose;
+uniform float uFuzzFar;
+uniform float uFuzzFarDist;
+
+varying vec3 vColor;
+varying vec3 vWorldPos;
+varying vec3 vFragW;
+varying vec2 vQuad;
+varying vec3 vUp;
+varying float vFade;
+varying float vSeed;
+varying float vDist;
+
+float hash13(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+float hashedAlphaThreshold(vec3 wp, float seed) {
+  float md = max(length(dFdx(wp)), length(dFdy(wp)));
+  float ps = 1.0 / max(1e-8, md);
+  vec2 pss = vec2(exp2(floor(log2(ps))), exp2(ceil(log2(ps))));
+  vec3 ws = wp + seed * 19.19;
+  vec2 a = vec2(hash13(floor(pss.x * ws)), hash13(floor(pss.y * ws)));
+  float lf = fract(log2(ps));
+  float x = (1.0 - lf) * a.x + lf * a.y;
+  float t = clamp(min(lf, 1.0 - lf), 1.0e-3, 0.5);
+  vec3 c = vec3(x * x / (2.0 * t * (1.0 - t)), (x - 0.5 * t) / (1.0 - t),
+    1.0 - ((1.0 - x) * (1.0 - x) / (2.0 * t * (1.0 - t))));
+  float thr = (x < (1.0 - t)) ? ((x < t) ? c.x : c.y) : c.z;
+  return clamp(thr, 1.0e-6, 1.0);
+}
+
+void main() {
+  float r = length(vQuad);
+  float distF = clamp(vDist / uFuzzFarDist, 0.0, 1.0);
+  // Billowy silhouette (smooth, two harmonics) that flattens with distance.
+  float ang = atan(vQuad.y, vQuad.x);
+  float billow = uBillow * 0.5 * (sin(ang * 5.0 + vSeed * 30.0) * 0.6
+    + sin(ang * 8.0 + vSeed * 17.0) * 0.4) * (1.0 - 0.7 * distF);
+  float edge = 1.0 + billow;
+  // Fuzz = fraction of radius, smaller at distance → far = crisp/solid.
+  float fuzz = mix(uFuzzClose, uFuzzFar, distF);
+  float aMask = smoothstep(edge, edge - max(0.01, fuzz), r);
+  if (aMask < 0.003) discard;
+
+  // Flat terminator shading on the cloud's up (true billboard, no per-pixel
+  // normal). Day side bright, night dark.
+  float d = dot(vUp, uSunDirW);
+  float dayT = smoothstep(-0.15, 0.2, d);
+  float lit = mix(1.0,
+    mix(${NIGHT_AMBIENT.toFixed(2)}, 1.0, dayT) * (0.7 + 0.3 * max(d, 0.0)), uHasSun);
+  vec3 col = vColor * lit;
+  // Soft silhouette brighten — the backlit-edge "this is a cloud" cue.
+  col += uRim * smoothstep(edge - 0.4, edge, r) * vColor * (0.4 + 0.6 * lit);
+
+  float a = vFade * aMask * uOpacity;
+  if (a < hashedAlphaThreshold(vFragW, vSeed)) discard;
 
   #include <logdepthbuf_fragment>
   gl_FragColor = vec4(col, 1.0);
@@ -343,13 +573,66 @@ const _sampleOut: CloudSample = {
   cumuliformity: 0,
   storm: 0,
 };
+const _blobSample: CloudSample = {
+  density: 0,
+  color: new THREE.Color(),
+  layerIndex: -1,
+  cumuliformity: 0,
+  storm: 0,
+};
+const _blobPos = new THREE.Vector3();
+const _synTmp: SynopticSample = { cover: 0, vigor: 0, zoneT: 0, storm: 0 };
+const _coarseCol = new THREE.Color();
 const _sunLocal = new THREE.Vector3();
 const _sunDirW = new THREE.Vector3();
 const _invParent = new THREE.Matrix4();
 
+/** Geometry of one blob at one grid cell — pure function of (cell, field,
+ *  time), independent of the camera, so it caches across a rebuild and is
+ *  SHARED between a fine blob (as itself) and a coarse blob (as a parent that
+ *  fine children collapse onto). That sharing is what makes the LOD handoff a
+ *  refinement instead of a dissolve. */
+interface BlobGeom {
+  cx: number; cy: number; cz: number;   // planet-local center (snapped)
+  ux: number; uy: number; uz: number;   // planet-local up
+  rad: number;                          // tangential radius
+  squash: number;
+  r: number; g: number; b: number;      // tinted color
+  seed: number;
+}
+/** Cache slot — `geom: null` caches "empty sky" (below floor / out of layer) so
+ *  clear regions don't re-sample every frame. */
+interface BlobCacheEntry { geom: BlobGeom | null; expiresAt: number; }
+
 // ── Implementation ─────────────────────────────────────────────────────────
 
+/** Unit quad (position + uv) for the billboard variant. */
+function makeQuadGeometry(): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
+    -0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0,
+  ]), 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([
+    0, 0, 1, 0, 1, 1, 0, 1,
+  ]), 2));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  return g;
+}
+
+/** 3-D icosphere blobs (the default experimental renderer). */
 export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
+  return createBlobLikeSystem(opts, "mesh");
+}
+
+/** Same walk/sizing/geomorph, rendered as angle-stretched soft billboards. */
+export function createBillboardCloudSystem(opts: CloudSystemOpts): CloudSystem {
+  return createBlobLikeSystem(opts, "billboard");
+}
+
+function createBlobLikeSystem(
+  opts: CloudSystemOpts,
+  variant: "mesh" | "billboard",
+): CloudSystem {
   let field = opts.field;
   let map: WeatherMap = buildWeatherMap(field, opts.timeSeconds ?? 0);
 
@@ -370,6 +653,19 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
   let rim = 0.6;
   let sunWorldPos: THREE.Vector3 | null = null;
 
+  // Previous camera position (planet-local) for the speed-adaptive entry band.
+  const lastCamLocal = new THREE.Vector3();
+  let haveLastCam = false;
+
+  // Blob-geometry cache (BlobGeom). Keyed by cell hash; an entry is shared
+  // whether the cell is walked as itself or looked up as a parent that fine
+  // children collapse onto — that identity is what makes the LOD handoff a
+  // refinement, not a dissolve. Persistent across frames (2-gen + TTL): a cell's
+  // geometry depends only on (cell, weather-time), so it survives many frames.
+  let blobCacheCur = new Map<number, BlobCacheEntry>();
+  let blobCachePrev = new Map<number, BlobCacheEntry>();
+  let lastGenSwap = 0;
+
   // Instance buffers.
   const iCenter = new Float32Array(MAX_BLOBS * 3);
   const iUp = new Float32Array(MAX_BLOBS * 3);
@@ -379,10 +675,13 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
   const iSeed = new Float32Array(MAX_BLOBS);
   const iFade = new Float32Array(MAX_BLOBS);
 
-  const base = new THREE.IcosahedronGeometry(1, BLOB_ICO_DETAIL);
+  const base = variant === "mesh"
+    ? new THREE.IcosahedronGeometry(1, BLOB_ICO_DETAIL)
+    : makeQuadGeometry();
   const geom = new THREE.InstancedBufferGeometry();
   geom.index = base.index;
   geom.setAttribute("position", base.getAttribute("position"));
+  if (variant === "billboard") geom.setAttribute("uv", base.getAttribute("uv"));
   const aCenter = new THREE.InstancedBufferAttribute(iCenter, 3);
   const aUp = new THREE.InstancedBufferAttribute(iUp, 3);
   const aColor = new THREE.InstancedBufferAttribute(iColor, 3);
@@ -406,12 +705,17 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
       uOpacity: { value: 0 },
       uRim: { value: rim },
       uBillow: { value: billow },
-      uNearFadeBand: { value: 600 },
-      uCamNear: { value: 1 },
+      uNearFadeBand: { value: NEAR_BAND_MIN },
+      uFeather: { value: ENTRY_FEATHER },
+      uInside: { value: 0 },
+      // Billboard-only (ignored by the mesh shader; harmless extras).
+      uFuzzClose: { value: FUZZ_CLOSE },
+      uFuzzFar: { value: FUZZ_FAR },
+      uFuzzFarDist: { value: FUZZ_FAR_DIST },
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     },
-    vertexShader: BLOB_VERT,
-    fragmentShader: BLOB_FRAG,
+    vertexShader: variant === "mesh" ? BLOB_VERT : BILLBOARD_VERT,
+    fragmentShader: variant === "mesh" ? BLOB_FRAG : BILLBOARD_FRAG,
     transparent: false,   // OPAQUE — dithered discard handles fade, no sort
     depthTest: true,
     depthWrite: true,
@@ -420,7 +724,7 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
   });
 
   const blobs = new THREE.Mesh(geom, material);
-  blobs.name = "cloud_blobs";
+  blobs.name = variant === "mesh" ? "cloud_blobs" : "cloud_blob_billboards";
   blobs.frustumCulled = false;
   blobs.renderOrder = 2;
 
@@ -548,7 +852,11 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
     return true;
   }
 
-  function update(cameraLocalPos: THREE.Vector3, timeSeconds: number): void {
+  function update(
+    cameraLocalPos: THREE.Vector3,
+    timeSeconds: number,
+    cameraLocalForward?: THREE.Vector3,
+  ): void {
     lastTimeSeconds = timeSeconds;
     if (field.layers.length === 0) {
       geom.instanceCount = 0;
@@ -574,12 +882,34 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
     material.uniforms.uRim.value = rim;
     material.uniforms.uBillow.value = billow;
 
+    // Speed-adaptive cloud-entry band: widen the near-plane dissolve with how
+    // far the camera moved this frame, so a fast fly-through dissolves the
+    // surface over several frames instead of flashing a hard cross-section.
+    let perFrameMove = 0;
+    if (haveLastCam) perFrameMove = cameraLocalPos.distanceTo(lastCamLocal);
+    lastCamLocal.copy(cameraLocalPos);
+    haveLastCam = true;
+    material.uniforms.uNearFadeBand.value = Math.min(
+      NEAR_BAND_MAX,
+      Math.max(NEAR_BAND_MIN, NEAR_BAND_SPEED_N * perFrameMove),
+    );
+    // Cloud density at the camera → "insideness": when enveloped, the fog owns
+    // the look and the surface feather is suppressed (no grain in the soup).
+    cloudDensityAt(field, map, cameraLocalPos, timeSeconds, sampleOpts, _sampleOut);
+    material.uniforms.uInside.value = _sampleOut.density;
+
     let layerMinAlt = Infinity;
     let layerMaxAlt = -Infinity;
+    let minDetailScale = Infinity;
     for (const layer of field.layers) {
       if (layer.baseAltitudeM < layerMinAlt) layerMinAlt = layer.baseAltitudeM;
       if (layer.topAltitudeM > layerMaxAlt) layerMaxAlt = layer.topAltitudeM;
+      if (layer.detailScaleM < minDetailScale) minDetailScale = layer.detailScaleM;
     }
+    // A cell wider than the detail scale straddles cloud + gap, so its center
+    // sample is unrepresentative — that's the coarse-tier hole/pop. Such cells
+    // get footprint sub-sampling (below).
+    const coarseCellThreshold = minDetailScale;
 
     const camRadius = cameraLocalPos.length();
     const camAlt = camRadius - field.planetRadiusM;
@@ -617,23 +947,135 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
     }
 
     let count = 0;
-    let freshSampleBudget = MAX_FRESH_SAMPLES_PER_REBUILD;
+    let sampleBudget = MAX_FRESH_SAMPLES_PER_REBUILD;
     const planetRadius = field.planetRadiusM;
+    const tierCellCount = CLOUD_CELL_SIZES_M.length;
+    // View-cone cull setup (only if a forward direction was supplied).
+    const cullEnabled = cameraLocalForward !== undefined;
+    const fwdX = cameraLocalForward ? cameraLocalForward.x : 0;
+    const fwdY = cameraLocalForward ? cameraLocalForward.y : 0;
+    const fwdZ = cameraLocalForward ? cameraLocalForward.z : 0;
+    // Retire cells the camera flew away from: swap generations periodically
+    // (entries also expire by TTL). NOT cleared every rebuild — that's the whole
+    // point of cross-frame caching.
+    if (timeSeconds - lastGenSwap > CACHE_GEN_SECONDS) {
+      const tmp = blobCachePrev;
+      blobCachePrev = blobCacheCur;
+      tmp.clear();
+      blobCacheCur = tmp;
+      lastGenSwap = timeSeconds;
+    }
 
+    // Pure (camera-independent) blob geometry at a grid cell, cached + shared.
+    // Returns null for cells outside the layer or below the density floor.
+    function computeBlob(tierIdx: number, ix: number, iy: number, iz: number): BlobGeom | null {
+      const key = hashCell(field.seed, tierIdx, ix, iy, iz);
+      let ce = blobCacheCur.get(key);
+      if (!ce) {
+        ce = blobCachePrev.get(key);
+        if (ce) blobCacheCur.set(key, ce); // promote into the live generation
+      }
+      if (ce && timeSeconds < ce.expiresAt) return ce.geom;
+      if (sampleBudget <= 0) return ce ? ce.geom : null; // reuse stale if starved
+      // Staggered TTL (hash-spread) so refreshes don't clump into one frame.
+      const expiresAt = timeSeconds
+        + CACHE_TTL_SECONDS * (0.75 + 0.5 * (((key >>> 24) & 0xff) / 255));
+      const cs = CLOUD_CELL_SIZES_M[tierIdx];
+      const jx = (((key >>> 0) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
+      const jy = (((key >>> 8) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
+      const jz = (((key >>> 16) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
+      let cx = (ix + 0.5 + jx) * cs;
+      let cy = (iy + 0.5 + jy) * cs;
+      let cz = (iz + 0.5 + jz) * cs;
+      let radius = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      const alt = radius - planetRadius;
+      if (alt < layerMinAlt - cs || alt > layerMaxAlt + cs) {
+        blobCacheCur.set(key, { geom: null, expiresAt }); return null;
+      }
+
+      // A cell wider than the detail scale (coarse tier) must read the SMOOTH
+      // synoptic ENVELOPE — the large-scale cloud fraction — not the detail-
+      // carved density. Detail carving (which puff, which gap) is the fine
+      // tiers' job; sampling it at coarse spacing renders spurious holes in
+      // broken regions that the fine grid fills (the distance pop). So:
+      //   coarse → cover envelope (1 map read, size ∝ √cover, no gaps)
+      //   fine   → full carved density (puffs + real gaps)
+      const sub = cs > coarseCellThreshold;
+      let bestD = 0, bR = 0, bG = 0, bB = 0, bCum = 0, bLayer = -1, coverScale = 1;
+      sampleBudget--;
+      if (sub) {
+        const L0 = field.layers[0];
+        const lat = Math.asin(Math.max(-1, Math.min(1, cy / radius)));
+        const lon = Math.atan2(cz, cx);
+        map.sample(lon + L0.mapLonOffsetRad, lat, timeSeconds, sampleOpts.windMult, _synTmp);
+        const cover = Math.min(1, _synTmp.cover * L0.coverageMul);
+        if (cover < COARSE_COVER_MIN) { blobCacheCur.set(key, { geom: null, expiresAt }); return null; }
+        bestD = cover;
+        bCum = L0.cumuliformity;
+        bLayer = 0;
+        _coarseCol.copy(L0.beltColor).lerp(L0.zoneColor, _synTmp.zoneT)
+          .multiplyScalar(1 - 0.35 * _synTmp.storm);
+        bR = _coarseCol.r; bG = _coarseCol.g; bB = _coarseCol.b;
+        coverScale = Math.sqrt(cover); // envelope area → blob radius
+      } else {
+        _blobPos.set(cx, cy, cz);
+        cloudDensityAt(field, map, _blobPos, timeSeconds, sampleOpts, _blobSample, cs, 0xffff);
+        if (_blobSample.density < minDensity) { blobCacheCur.set(key, { geom: null, expiresAt }); return null; }
+        bestD = _blobSample.density;
+        bR = _blobSample.color.r; bG = _blobSample.color.g; bB = _blobSample.color.b;
+        bCum = _blobSample.cumuliformity; bLayer = _blobSample.layerIndex;
+      }
+
+      const layerIdx = bLayer;
+      const layer = layerIdx >= 0 ? field.layers[layerIdx] : field.layers[0];
+      const layerThick = layer.topAltitudeM - layer.baseAltitudeM;
+      if (cs > layerThick && layerIdx >= 0) {
+        const lo = layer.baseAltitudeM + layerThick * 0.35;
+        const hiA = layer.baseAltitudeM + layerThick * 0.65;
+        const snapped = alt < lo ? lo : alt > hiA ? hiA : alt;
+        if (snapped !== alt) {
+          const sc = (planetRadius + snapped) / Math.max(1, radius);
+          cx *= sc; cy *= sc; cz *= sc;
+          radius = planetRadius + snapped;
+        }
+      }
+      const invR = 1 / Math.max(1, radius);
+      const fill = 1 + BLOB_FILL_DENSITY_BOOST * Math.min(1, bestD * 1.2);
+      const tanRadius = cs * BLOB_RADIUS_CELL_FRAC * fill * coverScale;
+      let squash = SQUASH_STRATUS + (SQUASH_CUMULUS - SQUASH_STRATUS) * bCum;
+      const maxHalfH = layerThick * 0.6;
+      if (tanRadius * squash > maxHalfH) squash = maxHalfH / tanRadius;
+      const bg: BlobGeom = {
+        cx, cy, cz,
+        ux: cx * invR, uy: cy * invR, uz: cz * invR,
+        rad: tanRadius, squash,
+        r: bR, g: bG, b: bB,
+        seed: (key & 0xffff) * 0.001,
+      };
+      blobCacheCur.set(key, { geom: bg, expiresAt });
+      return bg;
+    }
+
+    let prevOuterFadeEnd = 0;
     for (let ti = 0; ti < tierCount; ti++) {
       const tier = tiers[ti];
       const cellSize = CLOUD_CELL_SIZES_M[tier];
       const tierStartCount = count;
 
-      const childTier = ti > 0 ? tiers[ti - 1] : -1;
-      const childCellSize = childTier >= 0 ? CLOUD_CELL_SIZES_M[childTier] : 0;
-      const isInnermost = ti === 0;
       const isOutermost = ti === tierCount - 1;
 
-      const innerExpand = isInnermost ? 0 : childCellSize * EXPAND_FACTOR;
-      const innerFadeEnd = isInnermost ? 0 : innerExpand * FADE_FACTOR;
-      const outerExpand = isOutermost ? cellSize * 8 : cellSize * EXPAND_FACTOR;
-      const outerFadeEnd = isOutermost ? cellSize * 12 : outerExpand * FADE_FACTOR;
+      // Bands TILE (no overlap): this tier's inner edge is the finer tier's
+      // outer-fade end. Within [outerExpand, outerFadeEnd] a blob geomorphs onto
+      // its coarse parent; the coarser tier resumes at exactly that shape. The
+      // OUTERMOST walked tier has no walked parent — it alpha-fades to the shell
+      // instead (the shell is its "parent").
+      const innerCull = prevOuterFadeEnd;
+      // Hold full own-detail across most of the band; confine the collapse to
+      // the last stretch (8×→10× cell) right before the coarse tier resumes, so
+      // near/mid blobs stay sharp and only merge as they near the handoff.
+      const outerExpand = cellSize * 8;
+      const outerFadeEnd = isOutermost ? cellSize * 12 : cellSize * 10;
+      prevOuterFadeEnd = outerFadeEnd;
 
       const reach = Math.ceil(outerFadeEnd / cellSize) + 1;
       const outerReject = outerFadeEnd + cellSize * 0.7;
@@ -692,95 +1134,89 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
               const cRad2 = q + ccy * ccy;
               if (cRad2 < rLo2 || cRad2 > rHi2) continue;
 
-              const jh = hashCell(field.seed, tier, ix, iy, iz);
-              const jx = (((jh >>> 0) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
-              const jy = (((jh >>> 8) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
-              const jz = (((jh >>> 16) & 0xff) / 255 - 0.5) * 2 * POSITION_JITTER;
-              let cx = (ix + 0.5 + jx) * cellSize;
-              let cy = (iy + 0.5 + jy) * cellSize;
-              let cz = (iz + 0.5 + jz) * cellSize;
+              // Own blob (jitter + field sample live in computeBlob, cached).
+              const own = computeBlob(tier, ix, iy, iz);
+              if (!own) continue;
 
-              let radius = Math.sqrt(cx * cx + cy * cy + cz * cz);
-              let alt = radius - planetRadius;
-              if (alt < layerMinAlt - altMargin || alt > layerMaxAlt + altMargin) continue;
-
-              const ddx = cx - cameraLocalPos.x;
-              const ddy = cy - cameraLocalPos.y;
-              const ddz = cz - cameraLocalPos.z;
+              const ddx = own.cx - cameraLocalPos.x;
+              const ddy = own.cy - cameraLocalPos.y;
+              const ddz = own.cz - cameraLocalPos.z;
               const dist2 = ddx * ddx + ddy * ddy + ddz * ddz;
               if (dist2 > outerFadeEnd * outerFadeEnd) continue;
               const dist = Math.sqrt(dist2);
+              // Inner edge: hard handoff to the finer tier, whose blobs collapse
+              // onto these — so the cut is seamless and needs no fade.
+              if (dist < innerCull) continue;
 
-              let innerWeight = 1;
-              if (!isInnermost) {
-                if (dist < innerExpand) continue;
-                if (dist < innerFadeEnd) {
-                  innerWeight = (dist - innerExpand) / Math.max(1, innerFadeEnd - innerExpand);
-                }
+              // View-cone cull: drop blobs outside the camera's forward cone
+              // (behind / far sides). Blobs near enough that their own radius
+              // subtends a wide angle are exempt (center can be out of cone
+              // while the blob is on-screen).
+              if (cullEnabled && dist > own.rad * 3.0) {
+                const fdot = (ddx * fwdX + ddy * fwdY + ddz * fwdZ) / dist;
+                if (fdot < CULL_CONE_COS) continue;
               }
-              let outerWeight = 1;
-              if (dist > outerExpand) {
-                outerWeight = 1 - (dist - outerExpand) / Math.max(1, outerFadeEnd - outerExpand);
-              }
-              const fade = innerWeight * outerWeight;
-              if (fade < 0.02) continue;
 
               cloudBlobStats.cellsPassed++;
 
-              // Field sample (no cache in the experiment — fresh, capped).
-              if (freshSampleBudget <= 0) continue;
-              freshSampleBudget--;
-              _samplePosTmp.set(cx, cy, cz);
-              cloudDensityAt(field, map, _samplePosTmp, timeSeconds, sampleOpts, _sampleOut, cellSize, 0xffff);
-              if (_sampleOut.density < minDensity) continue;
+              // Refinement r: 1 = full own detail; ramps to 0 across the outer
+              // band where the blob COLLAPSES onto its coarse parent.
+              let r = 1;
+              if (dist > outerExpand) {
+                r = 1 - (dist - outerExpand) / Math.max(1, outerFadeEnd - outerExpand);
+              }
+              if (r <= 0.001) continue;
 
-              const layerIdx = _sampleOut.layerIndex;
-              const layer = layerIdx >= 0 ? field.layers[layerIdx] : field.layers[0];
-              const layerThick = layer.topAltitudeM - layer.baseAltitudeM;
-              const cum = _sampleOut.cumuliformity;
+              let cx = own.cx, cy = own.cy, cz = own.cz;
+              let size = own.rad, squash = own.squash;
+              let colR = own.r, colG = own.g, colB = own.b;
+              let alpha = 1;
 
-              // Snap a coarse-tier blob (cell wider than the layer) into the
-              // layer's meaty band so it doesn't float above / sag below.
-              if (cellSize > layerThick && layerIdx >= 0) {
-                const lo = layer.baseAltitudeM + layerThick * 0.35;
-                const hiA = layer.baseAltitudeM + layerThick * 0.65;
-                const snapped = alt < lo ? lo : alt > hiA ? hiA : alt;
-                if (snapped !== alt) {
-                  const sc = (planetRadius + snapped) / Math.max(1, radius);
-                  cx *= sc; cy *= sc; cz *= sc;
-                  radius = planetRadius + snapped;
-                  alt = snapped;
+              if (isOutermost) {
+                // No walked parent — fade to the shell across the outer band.
+                alpha = r;
+              } else {
+                // Geomorph onto the coarse parent: at r→0 the blob shares the
+                // parent's center + size (siblings coincide → the parent blob),
+                // so the coarser tier resumes the same shape. Mass-preserving
+                // refinement, not a dissolve.
+                const pcs = CLOUD_CELL_SIZES_M[tier + 1];
+                const parent = computeBlob(
+                  tier + 1,
+                  Math.floor((ix + 0.5) * cellSize / pcs),
+                  Math.floor((iy + 0.5) * cellSize / pcs),
+                  Math.floor((iz + 0.5) * cellSize / pcs),
+                );
+                if (parent) {
+                  cx = parent.cx + (own.cx - parent.cx) * r;
+                  cy = parent.cy + (own.cy - parent.cy) * r;
+                  cz = parent.cz + (own.cz - parent.cz) * r;
+                  size = parent.rad + (own.rad - parent.rad) * r;
+                  squash = parent.squash + (own.squash - parent.squash) * r;
+                  colR = parent.r + (own.r - parent.r) * r;
+                  colG = parent.g + (own.g - parent.g) * r;
+                  colB = parent.b + (own.b - parent.b) * r;
+                } else {
+                  // Parent cleared the density floor away — fade out instead.
+                  alpha = r;
                 }
               }
 
-              const invR = 1 / Math.max(1, radius);
-              const upX = cx * invR, upY = cy * invR, upZ = cz * invR;
-
-              // Tangential radius fills the cell; dense cells inflate to close
-              // inter-cell gaps under solid cover.
-              const fill = 1 + BLOB_FILL_DENSITY_BOOST * Math.min(1, _sampleOut.density * 1.2);
-              const tanRadius = cellSize * BLOB_RADIUS_CELL_FRAC * fill;
-
-              // Squash along up: stratus → lens, cumulus → ball, but never
-              // taller than the layer band.
-              let squash = SQUASH_STRATUS + (SQUASH_CUMULUS - SQUASH_STRATUS) * cum;
-              const maxHalfH = layerThick * 0.6;
-              if (tanRadius * squash > maxHalfH) squash = maxHalfH / tanRadius;
-
+              const invR2 = 1 / Math.max(1, Math.sqrt(cx * cx + cy * cy + cz * cz));
               const bi3 = count * 3;
               iCenter[bi3 + 0] = cx;
               iCenter[bi3 + 1] = cy;
               iCenter[bi3 + 2] = cz;
-              iUp[bi3 + 0] = upX;
-              iUp[bi3 + 1] = upY;
-              iUp[bi3 + 2] = upZ;
-              iColor[bi3 + 0] = _sampleOut.color.r;
-              iColor[bi3 + 1] = _sampleOut.color.g;
-              iColor[bi3 + 2] = _sampleOut.color.b;
-              iRadius[count] = tanRadius;
+              iUp[bi3 + 0] = cx * invR2;
+              iUp[bi3 + 1] = cy * invR2;
+              iUp[bi3 + 2] = cz * invR2;
+              iColor[bi3 + 0] = colR;
+              iColor[bi3 + 1] = colG;
+              iColor[bi3 + 2] = colB;
+              iRadius[count] = size;
               iSquash[count] = squash;
-              iSeed[count] = (jh & 0xffff) * 0.001;
-              iFade[count] = fade;
+              iSeed[count] = own.seed;
+              iFade[count] = alpha;
               count++;
             }
           }
@@ -854,9 +1290,8 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
   }
 
   function setProjection(_pixelsPerUnit: number, _viewportHeightPx: number): void {
-    // Blob shader is unit-agnostic; near-fade band is in meters. Keep the near
-    // plane in sync for the dissolve.
-    material.uniforms.uCamNear.value = 1;
+    // Blob shader is unit-agnostic; the entry band is in meters and driven by
+    // camera motion in update(). Nothing projection-dependent to push.
   }
 
   function setField(f: CloudFieldParams): void {
@@ -866,6 +1301,8 @@ export function createBlobCloudSystem(opts: CloudSystemOpts): CloudSystem {
     mapTexture = makeMapTexture(map);
     rowsSinceUpload = 0;
     initialSweepDone = false;
+    blobCacheCur.clear();
+    blobCachePrev.clear();
     buildShells();
     setOpacity(opacity);
   }

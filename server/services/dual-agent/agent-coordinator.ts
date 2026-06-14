@@ -50,8 +50,13 @@ import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
 import { buildDefaultClientConfig } from "./client-config";
-import { APP_REGISTRY, getEnabledAppsFromConfig } from "./app-registry";
+import { APP_REGISTRY, getEnabledAppsFromConfig, getAppDefinition } from "./app-registry";
 import type { AppConfig } from "./app-registry";
+import type { AACAppDefinition } from "./types";
+import { customAppRepository } from "../../repositories/customAppRepository";
+import { licenseService } from "../licenseService";
+import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import { isGoalTreeApp, prepareGoalTreeAppOpen } from "./goal-tree-app";
 
 import type {
   AgentEvent,
@@ -1559,6 +1564,13 @@ export class AgentCoordinator {
       clientConfig: buildDefaultClientConfig(),
     });
 
+    // Deliver the apps lists to the client. The client populates its Apps
+    // board ONLY from a session_snapshot (useLiveSession's session_snapshot
+    // handler → setEnabledApps/setAvailableCustomApps); the legacy live-relay
+    // sent this, but this 3-agent path never did — so the board was empty
+    // (no default built-ins, no custom apps). See feedback_live_relay_is_legacy.
+    this.sendAppsSnapshot();
+
     // 9. Push the default home board so the client has a surface to render
     //    before Board Manager produces anything. The legacy path does the
     //    same — without it, the user sees a blank screen until conversation
@@ -1668,6 +1680,36 @@ export class AgentCoordinator {
     // Cache the defined-gesture registry for report_gesture resolution.
     this.definedGestures = parseDefinedGestures(student?.aacSettings?.definedGestures);
 
+    // Apps: built-ins (from the per-student appConfig, already resolved onto
+    // state.appState.enabledApps by initializeSession) plus assigned custom
+    // apps (license-gated). Wired here so the Speaker prompt lists them AND the
+    // open_app tool declaration carries them (the coordinator reads
+    // promptInputs.speaker.enabledApps / .availableCustomApps below). Also
+    // cached on state.availableCustomApps for the client snapshot + open
+    // resolution. Without this the 3-agent path never knew any apps existed.
+    const enabledAppDefs = (state.appState?.enabledApps || [])
+      .map((id) => getAppDefinition(id))
+      .filter((a): a is AACAppDefinition => !!a);
+    if (state.availableCustomApps === undefined && this.userId && this.studentId) {
+      try {
+        const perms = await licenseService.getUserPermissions(this.userId);
+        if (perms.customAppsEnabled) {
+          const apps = await customAppRepository.getAssignedAppsForStudent(this.studentId);
+          state.availableCustomApps = apps.map((a) => ({
+            id: a.id,
+            name: a.name,
+            imageUrl: (a as any).imageUrl ?? null,
+            description: a.description,
+          }));
+        } else {
+          state.availableCustomApps = [];
+        }
+      } catch (err) {
+        logLiveSession("CUSTOM_APPS_FETCH_FAILED", String(err));
+        state.availableCustomApps = [];
+      }
+    }
+
     const base = {
       studentName,
       language,
@@ -1723,6 +1765,16 @@ export class AgentCoordinator {
         // with the interpret() tool — Speaker no longer needs it.
         sessionSummary: state.sessionSummary,
         availableBoards: state.availableBoards?.map(b => ({ key: b.key, name: b.name, hint: b.hint })),
+        // Apps the Speaker may launch via open_app. enabledApps drives both the
+        // prompt's "Available apps" block and the open_app tool declaration
+        // (rebuilt from these ids at coordinator line ~1422).
+        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
+        availableCustomApps: (state.availableCustomApps || []).map(a => ({
+          id: a.id,
+          name: a.name,
+          description: a.description,
+        })),
+        permittedWebsites: state.permittedWebsites,
       },
       boardManager: {
         ...base,
@@ -3555,7 +3607,7 @@ export class AgentCoordinator {
         this.routeModeChange(event);
         return;
       case "app_open_requested":
-        this.routeAppOpen(event);
+        void this.routeAppOpen(event);
         return;
       case "app_close_requested":
         this.routeAppClose(event);
@@ -3799,8 +3851,53 @@ export class AgentCoordinator {
     this.invokeBoardManager([event]);
   }
 
-  private routeAppOpen(event: AppOpenRequestedEvent): void {
-    if (event.appId === "social_trainer") {
+  /** Build + send a session_snapshot carrying the apps lists so the client's
+   *  Apps board can render them. Local-storage persistence is deferred in the
+   *  3-agent path (config.localStorageEnabled=false) — the snapshot is used
+   *  purely to deliver enabledApps/availableCustomApps for now; full
+   *  persistence parity is a separate follow-up. */
+  private sendAppsSnapshot(): void {
+    const cache = dualAgentService.getSessionCache(this.sessionId!);
+    const state = cache?.state;
+    if (!state) return;
+
+    const enabledAppsForClient = (state.appState?.enabledApps || [])
+      .map((id) => getAppDefinition(id))
+      .filter((a): a is AACAppDefinition => !!a)
+      .map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
+
+    const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
+      sessionId: state.sessionId,
+      studentId: state.studentId,
+      userId: state.userId,
+      messages: state.messages,
+      pendingMessages: state.pendingMessages.map((pm) => ({
+        role: pm.role,
+        content: pm.content,
+        timestamp: pm.timestamp,
+      })),
+      muteState: state.muteState,
+      currentBoard: state.currentBoard || null,
+      boardButtonLabels: state.boardButtonLabels,
+      aiAddedButtonLabels: state.aiAddedButtonLabels,
+      loadedBoardId: state.loadedBoardId,
+      currentPageId: state.currentPageId,
+      enabledApps: enabledAppsForClient.length ? enabledAppsForClient : undefined,
+      availableCustomApps: state.availableCustomApps,
+      timestamp: Date.now(),
+    };
+
+    this.send({
+      type: "session_snapshot",
+      snapshot,
+      // Persistence deferred for the 3-agent path — see method doc.
+      config: { localStorageEnabled: false, remoteStorageEnabled: true, encryptionKey: null },
+    });
+  }
+
+  private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
+    const appId = event.appId;
+    if (appId === "social_trainer") {
       // Not a client-rendered app: the social trainer replaces the
       // Speaker with a peer persona server-side. The client only renders
       // the peer's face in the header (driven by the social_session
@@ -3808,10 +3905,76 @@ export class AgentCoordinator {
       void this.startSocialPeerSession("speaker_open_app");
       return;
     }
-    this.send({ type: "app_open", data: { appId: event.appId, data: event.data } });
-    this.speaker?.sendContextInjection(`[APP OPEN] ${event.appId}${event.data ? ` (${event.data})` : ""}`);
-    // Board Manager may want to surface app-specific buttons.
-    this.invokeBoardManager([event]);
+
+    // Built-in AAC app? (drawing, music, youtube, games, …)
+    const builtIn = getAppDefinition(appId);
+    if (builtIn) {
+      if (appId === "youtube") {
+        // Browse mode needs the permitted channels/videos/playlists in the
+        // payload (the client RSS-fetches each channel's recent uploads). The
+        // legacy search-to-play path (data → resolved videoId) is not yet
+        // ported here — when content exists we open the browse UI; otherwise
+        // we tell the Speaker so it can redirect the user.
+        const cache = dualAgentService.getSessionCache(this.sessionId!);
+        const st = cache?.state;
+        const channels = st?.permittedYoutubeChannels || [];
+        const videos = st?.permittedYoutubeVideos || [];
+        const playlists = st?.permittedYoutubePlaylists || [];
+        if (channels.length || videos.length || playlists.length) {
+          this.send({ type: "app_open", data: { appId: "youtube", appData: { channels, videos, playlists } } });
+        } else if (event.data) {
+          // No curated content but the AI passed a query — let the client search.
+          this.send({ type: "app_open", data: { appId: "youtube", data: event.data } });
+        } else {
+          this.speaker?.sendContextInjection(
+            `[APP OPEN FAILED] YouTube has no permitted channels, playlists, or videos configured and no search query was given — tell the user this activity isn't available right now and suggest something else.`,
+          );
+          return;
+        }
+      } else {
+        this.send({ type: "app_open", data: { appId, data: event.data } });
+      }
+      this.speaker?.sendContextInjection(`[APP OPEN] ${appId}${event.data ? ` (${event.data})` : ""}`);
+      this.invokeBoardManager([event]);
+      return;
+    }
+
+    // Otherwise treat it as a custom app id — resolve + validate the definition
+    // and ship the renderable payload (the client renders custom apps only when
+    // it receives { appId: "custom_app", appData: { id, definition } }, or the
+    // dedicated goal-tree payload). Mirrors the legacy live-relay open_app path.
+    try {
+      const app = await customAppRepository.getApp(appId);
+      if (!app) {
+        this.speaker?.sendContextInjection(`[APP OPEN FAILED] app ${appId} not found — tell the user it isn't available.`);
+        return;
+      }
+      if (isGoalTreeApp(app)) {
+        const prepared = prepareGoalTreeAppOpen(app);
+        if (!prepared.ok) {
+          this.speaker?.sendContextInjection(`[APP OPEN FAILED] ${prepared.error}`);
+          return;
+        }
+        this.send({ type: "app_open", data: prepared.payload });
+      } else {
+        const validation = validateCustomAppDefinition(app.definition);
+        if (!validation.ok) {
+          this.speaker?.sendContextInjection(
+            `[APP OPEN FAILED] custom app "${app.name}" definition is invalid: ${validation.errors.slice(0, 2).join("; ")}`,
+          );
+          return;
+        }
+        this.send({
+          type: "app_open",
+          data: { appId: "custom_app", appData: { id: app.id, definition: validation.data } },
+        });
+      }
+      this.speaker?.sendContextInjection(`[APP OPEN] ${app.name}`);
+      this.invokeBoardManager([event]);
+    } catch (err) {
+      logLiveSession("APP_OPEN_FAILED", `${appId}: ${String(err)}`);
+      this.speaker?.sendContextInjection(`[APP OPEN FAILED] couldn't open the app — tell the user and suggest something else.`);
+    }
   }
 
   private routeAppClose(event: AppCloseRequestedEvent): void {

@@ -7,23 +7,36 @@ import {
   cloudSystemStats,
   type CloudSystem,
 } from "../cloud-system";
-import { createBlobCloudSystem, cloudBlobStats } from "../cloud-blobs";
+import {
+  createBlobCloudSystem,
+  createBillboardCloudSystem,
+  cloudBlobStats,
+} from "../cloud-blobs";
 import type { Atmosphere } from "../physics-system/features";
 
 // Renderer selection — A/B the shipping billboards vs experimental renderers
 // (instructions/clouds-renderer-v2-plan.md). Switchable live in the panel and
-// via ?renderer=blobs / window.__labSetRenderer for the screenshot harness.
-type RendererMode = "billboards" | "blobs";
+// via ?renderer=<mode> / window.__labSetRenderer for the screenshot harness.
+//   billboards     — shipping cloud-system.ts (legacy)
+//   blobs          — 3-D icosphere blobs (cloud-blobs.ts)
+//   blob-billboard — SAME blob walk/sizing, rendered as angle-stretched
+//                    soft billboards (tests "was it the billboards or the size?")
+type RendererMode = "billboards" | "blobs" | "blob-billboard";
+const RENDERER_MODES: RendererMode[] = ["billboards", "blobs", "blob-billboard"];
 const RENDERER_FACTORY: Record<RendererMode, (o: { field: any; timeSeconds?: number }) => CloudSystem> = {
   billboards: createCloudSystem,
   blobs: createBlobCloudSystem,
+  "blob-billboard": createBillboardCloudSystem,
 };
 const RENDERER_STATS: Record<RendererMode, typeof cloudSystemStats> = {
   billboards: cloudSystemStats,
   blobs: cloudBlobStats,
+  "blob-billboard": cloudBlobStats, // same walk → same stats object
 };
-let rendererMode: RendererMode =
-  new URLSearchParams(location.search).get("renderer") === "blobs" ? "blobs" : "billboards";
+const _urlRenderer = new URLSearchParams(location.search).get("renderer");
+let rendererMode: RendererMode = (RENDERER_MODES as string[]).includes(_urlRenderer ?? "")
+  ? (_urlRenderer as RendererMode)
+  : "billboards";
 function activeStats(): typeof cloudSystemStats {
   return RENDERER_STATS[rendererMode];
 }
@@ -662,7 +675,7 @@ const statsEl = document.getElementById("lab-stats")!;
 
 // Renderer A/B selector.
 const rendererSelect = document.createElement("select");
-for (const mode of ["billboards", "blobs"] as RendererMode[]) {
+for (const mode of RENDERER_MODES) {
   const o = document.createElement("option");
   o.value = mode;
   o.textContent = `renderer: ${mode}`;
@@ -739,12 +752,26 @@ declare global {
   }
 }
 window.__labSetRenderer = (mode: string) => {
-  if (mode === "billboards" || mode === "blobs") {
-    rendererMode = mode;
+  if ((RENDERER_MODES as string[]).includes(mode)) {
+    rendererMode = mode as RendererMode;
     rendererSelect.value = mode;
     loadScenario(scenario);
   }
 };
+// Precise camera placement for reproducing distance-dependent artifacts.
+(window as unknown as { __labSetCam(alt: number, yaw: number, pitch: number): void })
+  .__labSetCam = (alt: number, yaw: number, pitch: number) => {
+    camAltM = alt;
+    yawDeg = yaw;
+    pitchDeg = pitch;
+  };
+// Relocate the camera site to an arbitrary lat/lon (bypasses findSite) so
+// coverage can be sampled at neutral, unbiased positions.
+(window as unknown as { __labSetSite(lat: number, lon: number): void })
+  .__labSetSite = (lat: number, lon: number) => {
+    basis = siteBasis(lat, lon);
+    applySite(scenario);
+  };
 window.__labGoto = (name: string) => {
   select.value = name;
   const s = SCENARIOS.find((x) => x.name === name);
@@ -770,6 +797,8 @@ window.__labStats = () => JSON.stringify({
   tierSprites: activeStats().tierSprites,
   cellsIterated: activeStats().cellsIterated,
   cellsPassed: activeStats().cellsPassed,
+  walkMs: +activeStats().walkMs.toFixed(2),
+  bakeMs: +activeStats().bakeMs.toFixed(2),
 });
 // Flicker metric: advance the camera forward `strideM` per rendered
 // frame with wind + weather evolution frozen, pixel-diffing consecutive
@@ -841,7 +870,10 @@ function stepFrame(dt: number): void {
     cloudSystem.setProjection(computeCloudPixelsPerUnit(camera, vpH), vpH);
     cloudSystem.setSunWorldPos(_sunPos);
     _camLocal.copy(camera.position).sub(planetGroup.position);
-    cloudSystem.update(_camLocal, labTime);
+    // planetGroup is only translated (no rotation) in the lab, so the camera's
+    // world forward (_fwd) is also its planet-local forward — pass it so the
+    // blob renderer can view-cone-cull its walk.
+    cloudSystem.update(_camLocal, labTime, _fwd);
   }
 
   updateFogAndSky(dt);

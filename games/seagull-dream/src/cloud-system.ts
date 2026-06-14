@@ -215,8 +215,14 @@ export interface CloudSystem {
   setField(field: CloudFieldParams): void;
   /** Per-frame update. cameraLocalPos is the camera in the body's local
    *  frame (after subtracting body.worldPosition and applying
-   *  body.inverseOrientation). */
-  update(cameraLocalPos: THREE.Vector3, timeSeconds: number): void;
+   *  body.inverseOrientation). cameraLocalForward (optional, normalized,
+   *  same frame) lets a renderer view-cone-cull its walk; omit it to disable
+   *  culling. */
+  update(
+    cameraLocalPos: THREE.Vector3,
+    timeSeconds: number,
+    cameraLocalForward?: THREE.Vector3,
+  ): void;
   /** Set the opacity multiplier for the entire cloud system (used by the
    *  mesh-fade-in path so clouds appear with the rest of the body). */
   setOpacity(opacity: number): void;

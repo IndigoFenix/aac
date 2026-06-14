@@ -137,14 +137,95 @@ are edge-on. 3-D blobs have real thickness so they don't collapse like tangent
 discs, but they must hand to the shell *before* they shrink sub-pixel — the
 reach-scaled crossfade already governs this.
 
-### 4.5 Tier reorganization is the residual snap (open risk for Exp. 1)
-Fixed topology kills per-blob pop, but the blob **set** still changes across the
-200 m / 2 km / 20 km tiers (each tier's maxima are independent). Hash-stable
-placement keeps frame-to-frame coherence; the LOD band cross-fades the
-membership. This softens but doesn't fully erase distance-shift reorganization.
-If it reads as visible "churn," that is the signal to escalate to Experiment 2
-(raymarch has no tiers). The dominant cue the user is missing — parallax — is
-fixed regardless.
+### 4.5 Tier reorganization — SOLVED by geomorph refinement
+Originally the tiers cross-faded membership (each tier's maxima independent), so
+crossing a LOD band dissolved one set into an unrelated one — a tier "faded as
+if it contained" the next. Fixed in `cloud-blobs.ts`: tiers now **tile by
+distance** and each fine blob **geomorphs onto its coarse parent** in the outer
+band — at `r→0` the siblings share the parent's center+size, and because we
+render opaque, N coincident parent-size blobs *are* one parent blob. The coarser
+tier resumes at exactly that shape (shared `computeBlob` cache → identical
+geometry). So a coarse blob is literally its fine children merged; approaching
+splits it back into them. Mass-preserving refinement, no dissolve.
+
+Verified via `__labFlicker` (forward dolly, weather frozen): `above-deck`
+~0.9 %/step smooth, `crossfade-climb` 0.17 % — the tier-handoff churn is gone.
+**Caveat on the metric:** it measures *all* inter-frame pixel change, so for a
+parallax-correct 3-D renderer it conflates desired parallax with pops — it is no
+longer a clean pop-detector (billboards scored ~0 % precisely *because* they're
+flat). Residual pops now live in the **cloud-entry** regime (`broken-flight`
+showed a single ~40 % spike on fly-through), which is §3's near-plane-dissolve /
+fog-handoff work, NOT the tier system. Dithered transparency also **crawls**
+under motion (screen-space hash) — follow-up: blue-noise / temporal dither.
+
+### 4.6b Coarse tier = synoptic envelope, not carved detail (fixed)
+Two distance pops were reported: a stratus deck showed a big hole at 26 km that
+filled at 20 km; a fair-weather cloud vanished over a 190 m altitude change. Both
+were the **coarse tier point-sampling the detail-carved density**: a 20 km cell's
+center (or 5 sub-samples) lands in the gaps between sub-cell puffs in a *broken*
+region, so it renders empty where the fine grid renders cloud. Sub-sampling +
+`√frac` sizing made it worse (shrank partial cells → wider hole). Fix in
+`computeBlob`: a cell wider than the layer's detail scale reads the **smooth
+synoptic cover envelope** (`map.sample`) instead of `cloudDensityAt` — coarse =
+large-scale cloud fraction (no spurious gaps), fine = carved puffs + real gaps.
+Size ∝ √cover, so a near-solid deck fills in while a scattered field stays
+scattered (verified: `crossfade-climb` keeps blue gaps; `stratus-underside` 26 km
+is now solid like 20 km). This is "coarse is the low-pass of the field, fine adds
+detail" — the same source-of-truth discipline as the shell crossfade.
+
+### 4.8 Cloud entry (implemented) + the stochastic-transparency limit
+Entry is three coupled cues off camera distance, all in `cloud-blobs.ts`:
+- **Near-plane soft dissolve** — `nearFade = smoothstep(0, band, fragDist)`; the
+  face you'd clip into fades before the camera reaches it. `band =
+  max(NEAR_BAND_MIN, N × per-frame camera move)`, so a fast fly-through can't
+  cross it in one frame and flash a hard cross-section.
+- **Proximity silhouette feather** — erodes the rim into wisps, kept to a SMALL
+  absolute band (× the dissolve band, NOT radius-relative — radius-relative
+  erodes km-wide blobs from km away and grains the whole screen).
+- **Interior fog handoff** — unchanged (`fogContribution` → world/lab fog;
+  ~100 m visibility inside dense cloud at full boost). Feather is suppressed by
+  `uInside` (camera cloud density) so the fog, not grain, owns the soup.
+
+Stochastic transparency (world-anchored **hashed alpha**, Wyman & McGuire —
+replaced the screen-space dither, which crawled under motion) means fades are
+order-independent with no sort, but partial-alpha edges are **grainy**, not
+smooth. Approach/normal views read clean; *deep inside a dense deck* (camera
+embedded, fog visibility > the dissolve band) still shows grain. Mitigations:
+denser interior fog, full resolution (960 px swiftshader stills exaggerate it),
+or — the only true fix — TAA / a sorted alpha pass (both off-budget). Acceptable
+for now; the approach (the actual "don't punch a polygon wall" goal) works.
+
+### 4.9 Culling & perf
+**DONE — view-cone cull + cross-frame cache** (the two biggest wins):
+- **View-cone cull.** `update()` takes an optional `cameraLocalForward`; the walk
+  drops blobs whose center is >72° off forward (rear hemisphere + far sides),
+  with a `dist < 3×radius` exemption so big near blobs aren't wrongly culled.
+  ~50 % fewer emitted/uploaded/vertex-shaded blobs (above-deck 2301→943,
+  stratus 2857→1367), view identical. Billboard renderer ignores the new arg.
+- **Cross-frame blob cache.** `blobCache` was cleared every rebuild (re-sampling
+  the whole field, ~30 ms cold). Now a two-generation TTL cache (0.7 s staggered
+  TTL, gen swap every 2.5 s) — a cell's geometry depends only on (cell,
+  weather-time), so it survives many frames. Warm-frame walk dropped ~8×
+  (above-deck 29.6→3.7 ms; stratus 5.9 ms; fair-weather 1.8 ms on swiftshader).
+  Cache is shared with the geomorph parent lookups, so collapse targets stay
+  identical across frames.
+
+**STILL OPEN — occlusion / early-Z.** Opaque + depthWrite gives per-fragment
+depth rejection, BUT the `discard` in the hashed-alpha path **disables early-Z**
+on most GPUs, so every fragment runs the full shader before the depth test —
+overdraw, worst inside dense decks. Fix: split a no-`discard` opaque pass (solid
+blobs, early-Z on, front-to-back) from a `discard` pass (only fading/edge/entry
+blobs). Bigger change (two draws / materials); deferred.
+
+### 4.7 Cel / flat-shaded art direction (recommended, game-wide)
+The blob shader already uses banded (cel) diffuse + flat per-face normals from
+screen-space derivatives — that's *why* a 162-vert icosphere reads as cloud. Cel
+shading is the right house style for the whole low-poly universe: it hides
+faceting (so polycount can stay low everywhere — terrain, creatures, clouds),
+unifies the look, and is cheaper than PBR. If adopted game-wide, fold the
+clouds' banding/rim into a shared toon-shading helper so cloud, terrain, and
+creature lighting share one ramp. Tradeoff: cel shading flattens form cues, so
+silhouette + rim do the heavy lifting (already true for the blobs).
 
 ### 4.6 Unbounded detail-noise advection (pre-existing, minor)
 `cloud-field` advects detail noise by `wind·timeSeconds`; over a long session

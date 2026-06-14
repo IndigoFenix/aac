@@ -28,12 +28,19 @@ export const DEFAULT_RECIPIENTS: ReadonlyArray<ConsentRecipientCategory> = [
   },
   {
     category: "llm_provider",
-    name: "OpenAI Realtime / Anthropic Claude",
+    name: "Anthropic Claude",
     purpose:
-      "Realtime AAC interaction and clinician chat (when configured). During " +
-      "AAC sessions this includes transmitting live microphone audio and camera " +
-      "video — which may contain the student's and bystanders' facial imagery — " +
-      "for realtime processing.",
+      "Supervises the AAC session and manages session memory (the 'monitor' " +
+      "role), and powers clinician chat when configured. This includes " +
+      "processing transcripts of the AAC conversation.",
+  },
+  {
+    category: "llm_provider",
+    name: "OpenAI",
+    purpose:
+      "Generates communication-symbol icons from short text tags. Does not " +
+      "receive conversation content, audio, video, or other personal " +
+      "information.",
   },
   {
     category: "tts_provider",

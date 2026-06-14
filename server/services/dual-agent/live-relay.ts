@@ -2,6 +2,21 @@
 // WebSocket relay layer v2: bridges a client WebSocket to a live provider session.
 // Clean rewrite with explicit state machine replacing boolean guard flags.
 // Handles tool call dispatch, TTS synthesis, contact enrollment, monitor triggering.
+//
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │ ⚠️  THIS IS THE LEGACY SINGLE-AGENT RELAY — IT IS NOT THE LIVE PATH.        │
+// │                                                                            │
+// │ By default every session hands the socket off to AgentCoordinator (the     │
+// │ Observer/Speaker/BoardManager "3/4-agent" system) and `return`s — see      │
+// │ handleInitialize's `useThreeAgent` branch (~line 2284). The legacy code    │
+// │ below (initializeSession, localStorageConfig, the onReady block,           │
+// │ sendSessionSnapshot, etc.) ONLY runs when AAC_USE_LEGACY_RELAY=1 or the     │
+// │ student is in AAC_LEGACY_RELAY_STUDENT_IDS.                                 │
+// │                                                                            │
+// │ ⇒ DO NOT debug or fix live behaviour here. Anything the live client sees   │
+// │   (board, apps, snapshot, tools) flows through agent-coordinator.ts.       │
+// │   Editing this file to change live behaviour is a REPEATED MISTAKE.        │
+// └──────────────────────────────────────────────────────────────────────────┘
 
 import type { IncomingMessage } from "http";
 import { randomBytes } from "crypto";
@@ -6185,7 +6200,11 @@ When creating or referencing calendar events, interpret and speak in this local 
     });
   }
 
-  /** Build and send a session_snapshot message to the client for local persistence. */
+  /** Build and send a session_snapshot message to the client for local persistence.
+   *  ⚠️ LEGACY PATH ONLY — see the banner at the top of this file. In the live
+   *  3/4-agent path this never runs; the client's `enabledApps` /
+   *  `availableCustomApps` (and local-storage snapshot) must be sent from
+   *  agent-coordinator.ts instead. */
   sendSessionSnapshot(): void {
     if (!this.localStorageConfig || !this.sessionCache?.state) return;
 
