@@ -83,22 +83,78 @@ regimes, no discrete classes. Everything grows from one structure:
   thickening — never by swapping models.
 - **Limbs — ONE kind: a leg** (`limbGroups`). There is NO
   function/end-effector enum (removed 2026-06-12). A limb's ROLE emerges
-  from shape + position + posture: a **wing/flipper** is a leg with high
-  `membrane`; an **arm** is a leg too short to reach the ground at the
-  current `bodyHeight`, so it lifts off and hangs; a **hoof/hand/claw** is
-  digit variation (`toeCount` + `toeContrast` gravitation + `opposition`
-  thumb + `toeCurl`). Each type is DUPLICATED by `count` into bilateral
-  rows or radial spokes across `stationStart..stationEnd`, with size
-  gravitation (`sizePeak`/`sizeContrast`). Joint orientation is explicit:
-  `kneeLift` (fold-under → sprawl → arch) + `kneeBend` (rearward knee ↔
-  forward elbow) — NO mammalian front/back auto-flip. Few types by design
-  (`MAX_LIMB_GROUPS`).
+  from shape + **attachment** + **strain**: a **wing/flipper** is a leg
+  with high `membrane`; an **arm** is a leg that can't plant a foot cheaply
+  at the current `bodyHeight` (too short, or socketed too high), so it
+  lifts off and hangs; a **hoof/hand/claw** is digit variation (`toeCount`
+  + `toeContrast` gravitation + `opposition` thumb + `toeCurl`). Each type
+  is DUPLICATED by `count` into bilateral rows or radial spokes across
+  `stationStart..stationEnd`, with size gravitation
+  (`sizePeak`/`sizeContrast`). Few types by design (`MAX_LIMB_GROUPS`).
+- **A limb is a 3-section chain (femur / tibia / foot) posed by 3 DOF**
+  (rebuilt 2026-06-12 — replaces `attachAngle`/`kneeBend`/`segments`/
+  `jointZigzag`; arthropods don't get more DOF, just a render subdivision).
+  `attachHeight` is now ONLY the MOUNT position (where on the cross-section
+  the limb roots, and whether it can bear weight at all — a dorsal mount is
+  a wing). Where the limb AIMS is the three NEUTRAL degrees of freedom:
+  `restProtraction` (fore/aft swing), `restLevation` (carried down / out /
+  up), `restFlexion` (signed knee fold). This split is what the mantis
+  needs: it mounts low (so it *can* reach the ground) yet rests raised.
+  `legBalance` (−1 long femur .. +1 long shank) sets the femur:tibia split
+  (moves the knee; doesn't change reach).
+- **Joints have a REST and a RANGE** (reworked 2026-06-12). Each joint sits
+  at its rest angle when relaxed and may travel up to its range limit under
+  load — the two are distinct (a knee can rest extended yet flex deeply).
+  The **foot is the 3rd joint (ankle)**: `stance` is now its REST pitch, not
+  an outcome — the actual stance EMERGES, a body held high (`bodyHeight`
+  near 1) rising up onto the tip (unguligrade), a low one settling flat
+  (plantigrade). `flexRange`/`ankleRange` cap knee/ankle travel; stiffness
+  comes from girth. The grounded pose is a STRAIN-MINIMIZING equilibrium:
+  the ankle pitch is the limb's one free DOF and settles where total strain
+  is least — the joint springs (toward rest) plus the effort to bear the
+  load with a bent knee. A heavy body on STRONG legs straightens them into
+  pillars (graviportal/elephant), a light one relaxes into its springy rest
+  crouch (cursorial), a heavy body on WEAK legs sags (stand-height cap) —
+  three regimes from girth + weight. `legTwist` (long-axis pronation)
+  rotates each joint's bend plane down the limb, so a claw curls out →
+  forward → in in 3D.
+  (NOTE: because high `bodyHeight` now means "on the toes," example
+  bodyHeights were re-tuned down where they should stand flat.)
+  - A **recruited** (weight-bearing) limb depresses + extends away from
+    neutral until its foot reaches the strain-solved contact (2-bone IK);
+    the knee arches by `restLevation`, folds the way `restFlexion` signs,
+    and the foot now lies in the LIMB'S OWN PLANE — a sprawled leg's foot
+    points outward, a tucked leg's forward, never forced to +Z.
+  - An **un-recruited** limb just holds its neutral three angles by forward
+    kinematics: a dorsal+levated+folded limb is a folded wing; a depressed
+    extended one is a hanging arm; a protracted extended one is a crab claw
+    held forward; a levated folded one is a mantis forearm.
+  - **Load recruitment** (added 2026-06-12) decides which *capable* limbs
+    actually bear weight: candidates (mount low, leggy, in reach) are ranked
+    by a `recruitCost` read off their neutral aim — a limb reaching forward
+    (protraction) and carried high (levation) is a manipulator, costly to
+    recruit. Natural standers are always recruited; a manipulator only if
+    the body is still under-supported AND its foot pulls the support base
+    under the center of mass (a cheap axis-aligned proxy for "CoM inside the
+    support polygon"). So a crab's claws stay forward and a mantis's
+    forearms stay raised while the other legs hold the body — but strip those
+    legs and the manipulators DEPLOY to the ground to keep balance.
+  - **Stability sprawl:** stance WIDTH grows with `restLevation` — a levated
+    limb plants wide (stable base, knee arches up); a depressed one stands
+    narrow under the body.
+- **Girth → weight & strength.** Body girth → trunk weight; limb girth →
+  support capacity. A heavy trunk on thin legs can't stand as tall — it sags
+  toward belly-rest (the `bodyHeight` ceiling drops). Membranous or
+  thread-thin limbs can't bear weight at all.
 - **Posture drives the body** — `bodyPitch` + `bodyHeight`. Leg length is
-  FIXED; `bodyHeight` picks the hip height over the legs' reach envelope.
-  The TALLEST leg leads: raising the body straightens the long legs and
-  lifts the short ones off (→ arms), which is what makes a body bipedal,
-  sprawled, or upright. Splay spreads the feet; body height only changes
-  the knee bend (fold, not sprawl). The tail doesn't hold itself up — it
+  FIXED; `bodyHeight` picks the hip height over the SUPPORT legs' reach
+  envelope (dorsal non-support limbs never set the height). The tallest
+  support leg leads; the body floors at belly-rest when legs are too short
+  (or too weak) to lift it clear. The strain solve is RE-RUN whenever the
+  torso target moves — the lab's "animate posture" toggle drives `bodyHeight`
+  + `bodyPitch` from a clock and you watch limbs plant/lift live (the seam
+  where this morphology starts to blend into the animation layer). The tail
+  doesn't hold itself up — it
   drags on the ground if it droops.
 - **Head** — the spine's front taper plus a sensory cluster: eye count /
   size / placement, jaw-vs-beak blend (beak = rigid jaw extreme).
@@ -186,7 +242,17 @@ continuously (exactly like the player's wing/rocket/warp split):
 
 - **Walk/run** — phase-offset stepping across N leg pairs (gait pattern
   from leg count + speed), 2-bone IK per foot against `heightAt`,
-  body bob + spine sway.
+  body bob + spine sway. **First pass DONE 2026-06-12** (`gait.ts`): the
+  gait does NOT re-pose limbs itself — it produces per-leg foot-target
+  OFFSETS (stance slides the planted foot back; swing lifts and carries it
+  forward) + a body bob, fed into the SAME strain IK that builds the rest
+  pose (the rest pose is the gait at zero stride). Patterns (trot/pace/
+  bound/wave) fall out of each leg's (side, station) — no per-creature
+  tables. STILL OPEN: forward locomotion across the pad (treadmill only so
+  far); spine sway; and **whole-body load/balance** — needed to keep the
+  CoM over the support polygon, which is what makes dynamic gaits (bipeds,
+  running with flight phases) and gait *selection* work rather than the
+  hand-picked statically-stable patterns used now.
 - **Fly** — reuse the player's flight-strain concept: flap rate/amplitude
   from how hard the creature must work against gravity, air density,
   and speed; glide when lift suffices; fold in dives.
@@ -304,10 +370,36 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      role is emergent (membrane→wing, short-reach→arm, digits→hoof/hand/
      claw). Posture split into `bodyPitch` + `bodyHeight`; leg length is
      fixed and the posture engine (tallest-leg-leads) folds/lifts legs to
-     match. Joint orientation = explicit `kneeLift`+`kneeBend` (no
-     auto-flip). Digits differentiate like leg rows; feet sized to the
-     limb-tip girth. Tail drags. The body-segmentation (tagmata) editor is
-     now in the lab. All 17 examples + 39 tests migrated.
+     match. Digits differentiate like leg rows; feet sized to the limb-tip
+     girth. Tail drags. The body-segmentation (tagmata) editor is now in
+     the lab. All 17 examples + 39 tests migrated.
+   - **Attachment + strain model** **DONE 2026-06-12** (the next step on
+     legs): replaced the `kneeLift`/`splay` pose knobs with `attachHeight`
+     (socket position around the cross-section) + `attachAngle` (fore/aft
+     tilt). A socket swing-cone + a girth-derived strength budget decide,
+     per limb, whether a foot can be planted at low strain (it bears
+     weight) or must lift and fold (a wing folds up/back along its normal;
+     a shoulder arm hangs). Knee elevation/sprawl is now emergent from the
+     socket; only `kneeBend` (fore/aft) stays authored. `skeleton.ts`:
+     `canSupport`/`solveFoot`, socket normal + cone, lift floored at
+     belly-rest.
+   - **Stability + weight + torso-driven motion** **DONE 2026-06-12** (the
+     follow-ups): (1) `stanceFrac(attachHeight)` gives each socket a natural
+     stance WIDTH — flank sockets plant feet wide and the knee arches up
+     into the arthropod/reptile sprawl (the above-the-back arch the strain-
+     only first test had suppressed); `solveFoot` targets that width.
+     (2) `bodyMass` (trunk volume) vs leg `capacity` (Σ girth²) → a gentle
+     `heightFactor` so a heavy body on thin legs sags toward belly-rest
+     (girth now drives weight AND strength). (3) Grounding gate simplified
+     to robust `isLeggy` (membrane < 0.55 + slenderness) + reach, instead of
+     a brittle absolute-strain calc that broke thin-legged arthropods.
+     (4) Lab "animate posture" toggle drives `bodyHeight`/`bodyPitch` from a
+     clock and re-solves the skeleton each frame (`rebuildGeometry`) — limbs
+     plant/lift live as the torso moves; the bridge into the animation layer.
+     Verified in lab (humanoid now reads right, hexapod arches over its back,
+     quadruped clean). Tests 41 (added stance-width + heavy-body-sags). KNOWN
+     GAPS: spider still droops (heavy abdomen, camera-dependent); per-limb
+     load is independent, not a whole-body distribution.
    - Midline membranes **DONE 2026-06-11**: `genome.membranes:
      MembraneGenome[]` — ONE primitive for the dorsal fin, anal fin,
      dimetrodon sail, and (a dorsal + ventral panel over the tail) a
@@ -320,6 +412,39 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      limb's `membrane`. Tests now 38. Still to do: plating/shell. THEN
      gaits (phase 2).
 2. **Procedural animation** — three gaits + continuous blending, IK.
+   - **Walk gait (first pass) DONE 2026-06-12**: pure-math `gait.ts`
+     (`legPhaseOffset`/`footCycle`/`bodyBob`, patterns trot/pace/bound/
+     wave) feeds foot-target offsets into `buildSkeleton(genome, gait?)` —
+     reuses the strain IK, no re-pose path. Lab "walk gait" section (toggle
+     + pattern + cadence/stride/step-height/duty). Verified: quadruped
+     trots, hexapod alternating-tripod waves. Tests 49 (+8 gait).
+   - **3-DOF / 3-section limb rebuild DONE 2026-06-12** (crab/mantis prompted
+     it): the limb is now a femur/tibia/foot chain posed by `restProtraction`
+     / `restLevation` / `restFlexion`, with `attachHeight` demoted to pure
+     mount position (removed `attachAngle`/`kneeBend`/`segments`/
+     `jointZigzag`). Recruited limbs IK to the ground; un-recruited ones hold
+     their neutral angles by FK (wing fold / arm hang / crab-claw forward /
+     mantis pray all from the same three numbers). The foot lies in the
+     limb's plane (sprawled feet point outward — fixes "feet always +Z").
+     All 17 examples re-authored.
+   - **Load recruitment + balance (first pass) DONE 2026-06-12**: a capable
+     limb bears weight only if NEEDED — candidates ranked by `recruitCost`
+     (forward/raised aim = manipulator); natural standers always recruited, a
+     manipulator only while the body is under-supported and its foot pulls
+     the base under the CoM (axis-aligned support-polygon proxy). Crab claws
+     now stay forward and a new Mantis example holds its forearms in a pray
+     with NO mount cheat (claws/forearms mount low, recruitment keeps them
+     up); strip the walking legs and they deploy. 18 examples; tests 50.
+   - **Whole-body / dynamic balance DONE 2026-06-12**: pure-math `balance.ts`
+     (convex hull of the planted feet, `supportMargin` = signed CoM-inside-
+     hull distance, `balanceShift`). The body now SHIFTS horizontally so its
+     CoM rides over the support polygon — a creature leans over its feet when
+     the stance is asymmetric (a biped over its two-foot line, a sprawl). A
+     fast (low-`dutyFactor`) gait adds a forward lean (momentum), letting the
+     CoM ride ahead of the support — the dynamic part. Symmetric quadrupeds
+     don't shift (CoM already inside). Tests 59. NEXT: gait selection (pick
+     walk/run from speed) + true flight-phase timing; fly + swim/slither;
+     forward locomotion; spine sway.
 3. **Phylogeny** — founders, species mutation, lab phylogeny browser.
 4. **Planet integration** — spawning/streaming (scatter-style stable
    anchors), behavior LOD, population caps. Planned separately when

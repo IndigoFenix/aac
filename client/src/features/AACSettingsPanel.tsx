@@ -56,13 +56,27 @@ interface AACSettingsPanelProps {
   onClose?: () => void;
 }
 
-const DEFAULT_AAC_PROMPT = `You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.
-You should:
-- Respond in a friendly, supportive manner
-- Keep responses concise and clear
-- Help expand on the user's symbol selections to form complete thoughts
-- Ask clarifying questions when needed
-- Be patient and encouraging`;
+// The custom AAC prompt is now a LIST of rules (one caretaker request per
+// entry) rather than one block of text. "Reset to default" seeds the list with
+// these starter rules.
+const DEFAULT_AAC_RULES: string[] = [
+  'Respond in a friendly, supportive manner',
+  'Keep responses concise and clear',
+  "Help expand on the user's symbol selections to form complete thoughts",
+  'Ask clarifying questions when needed',
+  'Be patient and encouraging',
+];
+
+/**
+ * Coerce a stored prompt field into a clean string[] of rules. The columns are
+ * jsonb arrays now, but legacy rows / device storage may still hold a single
+ * string — treat that whole string as one rule so nothing is lost.
+ */
+function toRuleArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  if (typeof value === 'string' && value.trim()) return [value];
+  return [];
+}
 
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
@@ -76,10 +90,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
   // Form state
   const [aiName, setAiName] = useState('');
-  const [chatAgentPrompt, setChatAgentPrompt] = useState('');
-  // Auto-generated AAC prompt — AI-owned digest. Shown read-only; clinicians
-  // can clear it but don't hand-edit it (it's regenerated as the assistant learns).
-  const [autoAacPrompt, setAutoAacPrompt] = useState('');
+  // Custom AAC prompt — a LIST of caretaker-requested rules (one per entry).
+  const [chatAgentPrompt, setChatAgentPrompt] = useState<string[]>([]);
+  // Auto-generated AAC prompt — AI-owned list of notes. Shown read-only;
+  // clinicians can delete entries but don't hand-edit them (the assistant
+  // maintains them as it learns).
+  const [autoAacPrompt, setAutoAacPrompt] = useState<string[]>([]);
   const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
@@ -92,6 +108,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
+  const [glyphInputTranslation, setGlyphInputTranslation] = useState(false);
   const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
@@ -186,8 +203,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
-      setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setAutoAacPrompt(aac?.autoAacPrompt || '');
+      setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
+      setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
@@ -200,6 +217,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
+      setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -230,8 +248,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       const aac = (student as any).aacSettings;
       const originalAiName = aac?.aiName || '';
-      const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
-      const originalAutoPrompt = aac?.autoAacPrompt || '';
+      const originalPrompt = toRuleArray(aac?.chatAgentPrompt);
+      const originalAutoPrompt = toRuleArray(aac?.autoAacPrompt);
       const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? false;
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
@@ -244,6 +262,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
+      const originalGlyphInputTranslation = aac?.glyphInputTranslation ?? false;
       const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
@@ -266,8 +285,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const origAccessEnhancedFocus = origAcc.enhancedFocusIndicator ?? false;
       setHasChanges(
         aiName !== originalAiName ||
-        chatAgentPrompt !== originalPrompt ||
-        autoAacPrompt !== originalAutoPrompt ||
+        JSON.stringify(chatAgentPrompt) !== JSON.stringify(originalPrompt) ||
+        JSON.stringify(autoAacPrompt) !== JSON.stringify(originalAutoPrompt) ||
         liveAudioSpeaker !== originalLiveAudioSpeaker ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
@@ -280,6 +299,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
         singleGlyphButtons !== originalSingleGlyphButtons ||
+        glyphInputTranslation !== originalGlyphInputTranslation ||
         startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
@@ -301,14 +321,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, glyphInputTranslation, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
       aiName?: string;
-      chatAgentPrompt: string;
-      autoAacPrompt: string;
+      chatAgentPrompt: string[];
+      autoAacPrompt: string[];
       liveAudioSpeaker?: boolean;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
@@ -321,6 +341,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useLocalTts?: boolean;
       iconTextRatio: number;
       singleGlyphButtons: boolean;
+      glyphInputTranslation: boolean;
       startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
@@ -378,6 +399,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useLocalTts,
       iconTextRatio,
       singleGlyphButtons,
+      glyphInputTranslation,
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
@@ -407,8 +429,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
-      setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setAutoAacPrompt(aac?.autoAacPrompt || '');
+      setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
+      setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
@@ -421,6 +443,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
+      setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
@@ -446,7 +469,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   };
 
   const handleResetToDefault = () => {
-    setChatAgentPrompt(DEFAULT_AAC_PROMPT);
+    setChatAgentPrompt([...DEFAULT_AAC_RULES]);
+  };
+
+  // ── Custom prompt rule-list editing ──
+  const updateChatRule = (index: number, value: string) => {
+    setChatAgentPrompt((prev) => prev.map((r, i) => (i === index ? value : r)));
+  };
+  const removeChatRule = (index: number) => {
+    setChatAgentPrompt((prev) => prev.filter((_, i) => i !== index));
+  };
+  const addChatRule = () => {
+    setChatAgentPrompt((prev) => [...prev, '']);
+  };
+  // Auto-notes list — clinicians can only delete entries, not edit them.
+  const removeAutoNote = (index: number) => {
+    setAutoAacPrompt((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Resolve any pasted YouTube link (channel / playlist / video) via the
@@ -953,6 +991,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   data-testid="switch-single-glyph-buttons"
                 />
               </div>
+              <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                <div className="flex-1 pr-4">
+                  <Label htmlFor="glyph-input-translation" className="text-sm font-medium">
+                    {t('aacSettings.glyphInputTranslation')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('aacSettings.glyphInputTranslationDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="glyph-input-translation"
+                  checked={glyphInputTranslation}
+                  onCheckedChange={setGlyphInputTranslation}
+                  data-testid="switch-glyph-input-translation"
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -1301,59 +1355,115 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Custom prompt — a LIST of caretaker-requested rules, one row
+                  each. Clinicians add/edit/remove individual rules rather than
+                  rewriting one block of text, so the AI never clobbers the set. */}
               <div className="space-y-2">
-                <Label htmlFor="chatPrompt" className="text-base font-medium">
+                <Label className="text-base font-medium">
                   {t('aacSettings.systemPrompt')}
                 </Label>
-                <Textarea
-                  id="chatPrompt"
-                  value={chatAgentPrompt}
-                  onChange={(e) => setChatAgentPrompt(e.target.value)}
-                  placeholder={t('aacSettings.systemPromptPlaceholder')}
-                  className="min-h-[200px] font-mono text-sm"
-                />
                 <p className="text-xs text-muted-foreground">
                   {t('aacSettings.systemPromptHint')}
                 </p>
+                {chatAgentPrompt.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic py-2">
+                    {t('aacSettings.promptRulesEmpty')}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {chatAgentPrompt.map((rule, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <Textarea
+                          value={rule}
+                          onChange={(e) => updateChatRule(i, e.target.value)}
+                          placeholder={t('aacSettings.promptRulePlaceholder')}
+                          rows={1}
+                          className="min-h-[44px] text-sm flex-1"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeChatRule(i)}
+                          aria-label={t('aacSettings.removeRule')}
+                          className="shrink-0 mt-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addChatRule}
+                    className="text-xs"
+                  >
+                    <Plus className="w-3 h-3 me-1" />
+                    {t('aacSettings.addRule')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetToDefault}
+                    className="text-xs"
+                  >
+                    <RotateCcw className="w-3 h-3 me-1" />
+                    {t('aacSettings.resetToDefault')}
+                  </Button>
+                </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleResetToDefault}
-                className="text-xs"
-              >
-                <RotateCcw className="w-3 h-3 me-1" />
-                {t('aacSettings.resetToDefault')}
-              </Button>
 
-              {/* Auto-generated context — AI-owned digest, shown read-only. The
-                  assistant keeps this current as it learns about the student. */}
+              {/* Auto-generated notes — AI-owned list, shown read-only. The
+                  assistant maintains these as it learns about the student;
+                  clinicians can delete individual notes. */}
               <div className="space-y-2 border-t pt-4">
                 <Label className="text-base font-medium flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
                   {t('aacSettings.autoPromptLabel')}
                 </Label>
-                <Textarea
-                  value={autoAacPrompt}
-                  readOnly
-                  placeholder={t('aacSettings.autoPromptEmpty')}
-                  className="min-h-[140px] font-mono text-sm bg-muted/50"
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {t('aacSettings.autoPromptHint')}
+                <p className="text-xs text-muted-foreground">
+                  {t('aacSettings.autoPromptHint')}
+                </p>
+                {autoAacPrompt.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic py-2">
+                    {t('aacSettings.autoPromptEmpty')}
                   </p>
+                ) : (
+                  <div className="space-y-2">
+                    {autoAacPrompt.map((note, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-2 rounded-md border bg-muted/50 p-2"
+                      >
+                        <p className="text-sm flex-1 whitespace-pre-wrap break-words">
+                          {note}
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeAutoNote(i)}
+                          aria-label={t('aacSettings.removeNote')}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {autoAacPrompt.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setAutoAacPrompt('')}
-                    disabled={!autoAacPrompt}
-                    className="text-xs shrink-0"
+                    onClick={() => setAutoAacPrompt([])}
+                    className="text-xs"
                   >
                     <Trash2 className="w-3 h-3 me-1" />
                     {t('aacSettings.clearAutoPrompt')}
                   </Button>
-                </div>
+                )}
               </div>
             </CardContent>
           </Card>

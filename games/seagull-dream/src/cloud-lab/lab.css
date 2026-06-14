@@ -1,0 +1,78 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  font-family: ui-monospace, Consolas, monospace;
+}
+#lab-scene {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+#lab-panel {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  background: rgba(10, 14, 22, 0.82);
+  color: #cdd6e4;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 230px;
+  z-index: 10;
+}
+.lab-title {
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+  color: #8fb6e8;
+}
+#lab-controls select {
+  width: 100%;
+  margin-bottom: 6px;
+  background: #1a2230;
+  color: #cdd6e4;
+  border: 1px solid #33415a;
+  padding: 2px;
+}
+#lab-controls .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+#lab-controls .row label {
+  flex: 0 0 78px;
+  color: #94a3b8;
+}
+#lab-controls .row input[type="range"] {
+  flex: 1;
+}
+#lab-controls .row .val {
+  flex: 0 0 38px;
+  text-align: right;
+  color: #e2e8f0;
+}
+#lab-stats {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(10, 14, 22, 0.82);
+  color: #9fb0c8;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: pre;
+  z-index: 10;
+}
+#lab-hint {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  color: #5a6a82;
+  font-size: 11px;
+  z-index: 10;
+}

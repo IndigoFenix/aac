@@ -16,36 +16,68 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
-import { composeAacPersona, AAC_DEFAULT_PERSONA_PROMPT } from "../services/memory-schema/aac-memory-schema";
+import {
+  composeAacPersona,
+  normalizeAacPromptList,
+  AAC_DEFAULT_PERSONA_PROMPT,
+} from "../services/memory-schema/aac-memory-schema";
 import {
   sanitizePromptField,
+  sanitizePromptList,
   getAACSettingsMemoryFields,
 } from "../services/memory-schema/aac-settings-memory-schema";
 
+describe("normalizeAacPromptList", () => {
+  it("returns an empty list for null/undefined/empty", () => {
+    expect(normalizeAacPromptList(null)).toEqual([]);
+    expect(normalizeAacPromptList(undefined)).toEqual([]);
+    expect(normalizeAacPromptList("")).toEqual([]);
+    expect(normalizeAacPromptList("   ")).toEqual([]);
+    expect(normalizeAacPromptList([])).toEqual([]);
+  });
+
+  it("wraps a legacy single string as one rule (does NOT split it)", () => {
+    expect(normalizeAacPromptList("greet her by name\nkeep it short")).toEqual([
+      "greet her by name\nkeep it short",
+    ]);
+  });
+
+  it("trims entries and drops blanks from an array", () => {
+    expect(normalizeAacPromptList(["  a  ", "", "   ", "b"])).toEqual(["a", "b"]);
+  });
+});
+
 describe("composeAacPersona", () => {
-  it("falls back to the default persona when both fields are empty", () => {
+  it("falls back to the default persona when both lists are empty", () => {
     expect(composeAacPersona({})).toBe(AAC_DEFAULT_PERSONA_PROMPT);
-    expect(composeAacPersona({ custom: "", auto: "   " })).toBe(AAC_DEFAULT_PERSONA_PROMPT);
+    expect(composeAacPersona({ custom: [], auto: ["   "] })).toBe(AAC_DEFAULT_PERSONA_PROMPT);
     expect(composeAacPersona({ custom: null, auto: undefined })).toBe(AAC_DEFAULT_PERSONA_PROMPT);
   });
 
-  it("includes only the custom block when only the custom prompt is set", () => {
-    const out = composeAacPersona({ custom: "Greet her by name." });
+  it("includes only the custom block when only the custom list is set", () => {
+    const out = composeAacPersona({ custom: ["Greet her by name."] });
     expect(out).toContain("Greet her by name.");
     expect(out).toContain("Caretaker-requested behaviors");
     expect(out).not.toContain("What to know about this student");
     expect(out).not.toBe(AAC_DEFAULT_PERSONA_PROMPT);
   });
 
-  it("includes only the auto block when only the auto prompt is set", () => {
-    const out = composeAacPersona({ auto: "Likes trains; non-verbal." });
+  it("includes only the auto block when only the auto list is set", () => {
+    const out = composeAacPersona({ auto: ["Likes trains; non-verbal."] });
     expect(out).toContain("Likes trains; non-verbal.");
     expect(out).toContain("What to know about this student");
     expect(out).not.toContain("Caretaker-requested behaviors");
   });
 
+  it("renders every entry of a multi-rule list as its own bullet", () => {
+    const out = composeAacPersona({ custom: ["Rule one", "Rule two", "Rule three"] });
+    expect(out).toContain("- Rule one");
+    expect(out).toContain("- Rule two");
+    expect(out).toContain("- Rule three");
+  });
+
   it("labels both blocks and orders custom before auto (custom takes priority)", () => {
-    const out = composeAacPersona({ custom: "CUSTOM_X", auto: "AUTO_Y" });
+    const out = composeAacPersona({ custom: ["CUSTOM_X"], auto: ["AUTO_Y"] });
     const customIdx = out.indexOf("CUSTOM_X");
     const autoIdx = out.indexOf("AUTO_Y");
     expect(customIdx).toBeGreaterThanOrEqual(0);
@@ -56,11 +88,19 @@ describe("composeAacPersona", () => {
     expect(out).toMatch(/take priority|priority/i);
   });
 
-  it("trims surrounding whitespace from each field", () => {
-    const out = composeAacPersona({ custom: "  hello  ", auto: "\n\nworld\n" });
+  it("trims surrounding whitespace from each entry", () => {
+    const out = composeAacPersona({ custom: ["  hello  "], auto: ["\n\nworld\n"] });
     expect(out).toContain("hello");
     expect(out).toContain("world");
     expect(out).not.toContain("  hello  ");
+  });
+
+  it("is backwards-compatible with legacy single-string fields", () => {
+    const out = composeAacPersona({ custom: "Be gentle.", auto: "Loves music." });
+    expect(out).toContain("Be gentle.");
+    expect(out).toContain("Loves music.");
+    expect(out).toContain("Caretaker-requested behaviors");
+    expect(out).toContain("What to know about this student");
   });
 });
 
@@ -93,12 +133,36 @@ describe("sanitizePromptField", () => {
   });
 });
 
+describe("sanitizePromptList", () => {
+  it("defangs each entry and drops blanks", () => {
+    const out = sanitizePromptList(["hi [CONTEXT]", "  ", "ok </persona>"]);
+    expect(out).toEqual(["hi (CONTEXT)", "ok (/persona)"]);
+  });
+
+  it("coerces a legacy single string into a one-element list", () => {
+    expect(sanitizePromptList("just one rule")).toEqual(["just one rule"]);
+  });
+
+  it("caps the list at 50 entries", () => {
+    const many = Array.from({ length: 80 }, (_, i) => `rule ${i}`);
+    expect(sanitizePromptList(many)).toHaveLength(50);
+  });
+});
+
 describe("getAACSettingsMemoryFields — includePrompts gate", () => {
   it("includes both prompt fields plus settings by default (clinician path)", () => {
     const ids = getAACSettingsMemoryFields().map((f) => f.id);
     expect(ids).toContain("Context_AACPrompt");
     expect(ids).toContain("Context_AACAutoPrompt");
     expect(ids).toContain("Context_AACSettings");
+  });
+
+  it("exposes both prompt fields as array (list) types", () => {
+    const fields = getAACSettingsMemoryFields();
+    const prompt = fields.find((f) => f.id === "Context_AACPrompt");
+    const auto = fields.find((f) => f.id === "Context_AACAutoPrompt");
+    expect(prompt?.type).toBe("array");
+    expect(auto?.type).toBe("array");
   });
 
   it("omits BOTH prompt fields when includePrompts is false (AAC moderator path)", () => {

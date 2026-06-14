@@ -407,8 +407,12 @@ export function createWorld(
     //     shells; their shaders' uOpacity (aliased to material.opacity)
     //     is driven by GFX.atmShellMult so the player can dial it down.
     //   • cloud_shell_* — translucent planet-wide cloud decks.
-    // Cloud sprites are Points (not Mesh) so they bypass this traverse;
-    // their opacity is handled by setRuntimeOpts in updateHalos.
+    //   • cloud_sprites — the instanced-quad cloud billboards. These
+    //     used to be THREE.Points (which skipped this traverse via the
+    //     isMesh check); as a Mesh, forcing transparent=false here
+    //     discards their Gaussian alpha and renders every puff as a
+    //     SOLID WHITE DISC. Their opacity is driven by setRuntimeOpts
+    //     in updateHalos.
     body.group.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -418,6 +422,7 @@ export function createWorld(
         return;
       }
       if (mesh.name.startsWith("cloud_shell")) return;
+      if (mesh.name === "cloud_sprites") return;
       const mat = mesh.material;
       if (Array.isArray(mat)) {
         for (const m of mat) {
@@ -1385,7 +1390,10 @@ export function createSky(scene: THREE.Scene): Sky {
             // (density=1) gives visibility ~100 m at full boost.
             rawCloudFog = _cloudFog.density * GFX.cloudFogBoost * 0.01;
             // Only adopt the sample's color while actually in cloud —
-            // empty samples report black.
+            // empty samples report black. fogContribution returns the
+            // UNSHADED cloud color; without the day/night factor a
+            // night-side cloud interior glows bright grey.
+            _cloudFog.color.multiplyScalar(0.1 + 0.9 * dayT);
             smoothedCloudFogColor.lerp(_cloudFog.color, Math.min(1, dt * 3.5));
           }
         }

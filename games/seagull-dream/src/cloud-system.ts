@@ -98,12 +98,16 @@ const PUFF_OVERSIZE = 1.15;
 // draw a 200 km sprite at the cloud altitude.
 const MAX_BILLBOARD_CELL_SIZE_M = 20_000;
 
-// Shell crossfade altitudes (m above the layer top). Below LOW, shell
-// is hidden — billboards alone render. Above HIGH, shell is fully
-// opaque. Because shell and billboards now share the weather map, the
-// blend band can be tight without visible pattern swaps.
-const SHELL_FADE_LOW_MULT = 2;
-const SHELL_FADE_HIGH_MULT = 8;
+// Shell crossfade — PER-PIXEL by camera distance, not by camera
+// altitude. The shell fades in exactly where the billboards' outermost
+// tier fades out, at ANY camera position: flying above a deck, the deck
+// continues seamlessly past the billboard reach to the horizon; from
+// orbit every pixel is beyond reach and the shell is fully opaque; from
+// inside the layer, overhead shell pixels are near and stay invisible.
+// (The old altitude-based fade left a gap — between the billboard reach
+// and the shell's fade-in altitude the far deck simply didn't render.)
+const SHELL_FADE_NEAR_FRAC = 0.55; // × billboard reach — fade starts
+const SHELL_FADE_FAR_FRAC = 0.95;  // × billboard reach — fully opaque
 
 // Default density floor — below this a cell contributes nothing and is
 // dropped before sorting. Live-overridable via setRuntimeOpts.
@@ -128,22 +132,22 @@ const MAX_BAKE_ROWS_PER_FRAME = 16;
 // quarters the steady-state walk cost. Live-tunable from the GFX panel.
 const DEFAULT_UPDATE_INTERVAL = 2;
 
-// Distance sort buckets for the counting sort. Sprites are translucent
-// Gaussians — ordering errors *within* one bucket (≈0.4% of the view
-// distance) are invisible, and the counting sort is allocation-free and
-// O(n), unlike Array.prototype.sort with a comparator.
+// Far-to-near ordering — allocation-free 2-pass LSD radix sort on
+// (quantized distance << 4 | stable hash sub-key).
 //
-// SORT_SUB: deterministic per-sprite sub-key within a distance bucket.
-// Counting sort is stable w.r.t. INPUT order — but the input order is
-// the cell-walk iteration order, which changes as the camera crosses
-// cell boundaries (and the column merged/split band logic can outright
-// reverse a column's iteration). Same-bucket overlapping sprites then
-// swap blend order between frames → visible flicker. A hash-derived
-// sub-key pins each sprite's order within its bucket regardless of how
-// the walk visited it.
-const SORT_BUCKETS = 256;
-const SORT_SUB = 16;
-const SORT_KEYS = SORT_BUCKETS * SORT_SUB;
+// Why exact-ish distance and not coarse buckets: with ~940 m counting-
+// sort buckets, overlapping translucent sprites SWAP blend order every
+// time one of them crosses a bucket boundary as the camera moves — the
+// composite visibly flips between two states ("clouds flicker between
+// two positions"). Quantizing to SORT_DIST_QUANTUM_M means a pair can
+// only swap when their true distance ordering actually changes (or
+// within a 2 m tie, where the hash sub-key keeps the order stable and
+// the visual difference is nil).
+const SORT_DIST_QUANTUM_M = 2;
+const SORT_DIST_BITS = 17; // × 2 m → 262 km, beyond the billboard reach
+const SORT_SUB_BITS = 4;
+const RADIX_LO_BITS = 11;  // pass 1: low 11 bits (2048 histogram)
+const RADIX_HI_BITS = SORT_DIST_BITS + SORT_SUB_BITS - RADIX_LO_BITS; // pass 2
 
 // Cap on fresh (cache-miss) field samples per rebuild. In steady flight
 // only a few dozen cells miss per frame; the cap exists for cold-cache
@@ -191,6 +195,10 @@ export interface CloudSystemRuntimeOpts {
   bakeBudgetMs?: number;
   /** Rebuild the billboard set every N update calls (≥1). */
   updateInterval?: number;
+  /** Multiplier on the shell detail-noise amplitude (debug). */
+  shellDetailMult?: number;
+  /** Shell debug visualization mode (0 = off). */
+  shellDebug?: number;
 }
 
 export interface CloudSystemOpts {
@@ -227,14 +235,19 @@ export interface CloudSystem {
 
 // ── Sprite shader ──────────────────────────────────────────────────────────
 //
-// Vertex: world-space sprite center → clip space. gl_PointSize scaled so
-// `size` (in scene meters) projects to the correct pixel size at the
-// sprite's view-space distance.
+// INSTANCED QUAD billboards — not gl_Points. Points are culled entirely
+// the moment their CENTER leaves the frustum and their size silently
+// clamps at a driver limit, so any sprite that grows toward screen scale
+// (flying under/through a deck) pops in and out. The interim workaround
+// faded out screen-scale sprites — which deleted the entire overhead
+// deck when standing beneath it. Real triangles clip per-fragment at the
+// screen edges, have no size limit, and need no such hack.
 //
-// Fragment: analytical Gaussian falloff from gl_PointCoord. Center alpha
-// is full, edge alpha decays to zero. No texture lookup — the math is
-// cheaper than a 64² CanvasTexture sample and stays sharp at any size.
-// Sun shading is baked into the per-sprite color on the CPU.
+// Vertex: instance center (planet-local) → camera-facing quad in view
+// space, scaled by the tangent-disc orientation factor.
+// Fragment: analytical Gaussian falloff from the quad UV. No texture —
+// the math is cheaper than a CanvasTexture sample and stays sharp at any
+// size. Sun shading is baked into the per-instance color on the CPU.
 
 const VERT = /* glsl */ `
 // The renderer runs with logarithmicDepthBuffer — every built-in material
@@ -246,50 +259,50 @@ const VERT = /* glsl */ `
 #include <logdepthbuf_pars_vertex>
 #include <fog_pars_vertex>
 
-attribute vec4 color;        // RGB (sun-shaded) + per-sprite alpha
+attribute vec3 iOffset;      // instance center, planet-local meters
+attribute vec4 color;        // RGB (sun-shaded) + per-instance alpha
 attribute float size;        // sprite diameter in scene meters
 attribute float orientation; // 0 = camera-facing puff, 1 = planet-tangent disc
 
-uniform float uPixelsPerUnit;  // canvasHeight × 0.5 / tan(halfFov)
+uniform float uPixelsPerUnit;  // kept for API compatibility (unused)
 uniform float uOpacity;
-uniform float uViewportPx;     // canvas height in px — near-sprite dissolve scale
+uniform float uViewportPx;     // kept for API compatibility (unused)
 
 varying vec4 vColor;
+varying vec2 vUv;
 
 void main() {
-  vec4 worldP = modelMatrix * vec4(position, 1.0);
-  vec4 mvPosition = viewMatrix * worldP;
-  gl_Position = projectionMatrix * mvPosition;
-  #include <logdepthbuf_vertex>
-  #include <fog_vertex>
-  float dist = max(1.0, -mvPosition.z);
+  vec4 centerW = modelMatrix * vec4(iOffset, 1.0);
 
   // Planet-tangent disc mode: shrink the sprite by |dot(viewDir, upDir)|
   // where upDir is the planet-local up at the cell. From above the disc
   // shows at full size; from edge-on it collapses to zero. The model
   // matrix's translation column is the planet center in world space, so
-  // upDir is just normalize(worldP - planetCenter).
+  // upDir is just normalize(centerW - planetCenter).
   vec3 planetCenter = modelMatrix[3].xyz;
-  vec3 upDir = normalize(worldP.xyz - planetCenter);
-  vec3 viewDir = normalize(cameraPosition - worldP.xyz);
+  vec3 upDir = normalize(centerW.xyz - planetCenter);
+  vec3 toCam = cameraPosition - centerW.xyz;
+  float dist = length(toCam);
+  vec3 viewDir = toCam / max(1.0, dist);
   float facing = abs(dot(viewDir, upDir));
   float orientScale = mix(1.0, facing, orientation);
 
-  float rawPx = size * uPixelsPerUnit / dist * orientScale;
+  // Camera-facing quad: expand the unit quad in view space.
+  vUv = uv;
+  vec2 corner = (uv - 0.5) * size * orientScale;
+  vec4 mvPosition = viewMatrix * centerW;
+  mvPosition.xy += corner;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <logdepthbuf_vertex>
+  #include <fog_vertex>
 
-  // Near-sprite dissolve. A gl_Point is culled ENTIRELY the moment its
-  // CENTER leaves the frustum, and gl_PointSize silently clamps at the
-  // driver limit — so a puff that has grown to screen scale pops in and
-  // out as the camera flies past/through it ("clouds jumping around").
-  // Fade the sprite out as it approaches screen scale instead: by the
-  // time its center can exit the view, it no longer contributes. The
-  // "inside a cloud" job is handed to the scene-fog boost
-  // (fogContribution), which already models envelopment.
-  float nearFade = 1.0 - smoothstep(uViewportPx * 0.75, uViewportPx * 2.0, rawPx);
+  // Proximity dissolve — only when the camera is about to be INSIDE the
+  // puff. The scene-fog envelope boost (fogContribution) models the
+  // inside view; this fade hands off to it instead of letting one
+  // sprite white the whole screen.
+  float prox = dist / max(1.0, size);
+  float nearFade = smoothstep(0.28, 0.55, prox);
 
-  // Explicit cap so mid-size sprites degrade predictably on low
-  // point-size-limit GPUs rather than at an invisible driver clamp.
-  gl_PointSize = min(rawPx, uViewportPx * 2.0);
   vColor = vec4(color.rgb, color.a * uOpacity * nearFade);
 }
 `;
@@ -302,8 +315,9 @@ const FRAG = /* glsl */ `
 #include <fog_pars_fragment>
 precision mediump float;
 varying vec4 vColor;
+varying vec2 vUv;
 void main() {
-  vec2 c = gl_PointCoord - 0.5;
+  vec2 c = vUv - 0.5;
   float r2 = dot(c, c);
   if (r2 > 0.25) discard;
   // exp(-k r²) Gaussian, normalised so r²=0 → 1 and r²=0.25 → ~0.05.
@@ -339,6 +353,7 @@ const SHELL_VERT = /* glsl */ `
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
 varying vec3 vNormalW;
+varying float vCamDist;
 void main() {
   vLocalPos = position;
   vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -346,6 +361,9 @@ void main() {
   // Sphere centered at local origin → normal is just the normalized
   // local position, rotated to world space.
   vNormalW = normalize(mat3(modelMatrix) * normalize(position));
+  // Camera distance for the billboard↔shell crossfade (computed here —
+  // cameraPosition is guaranteed in the vertex stage).
+  vCamDist = distance(cameraPosition, wp.xyz);
   vec4 mvPosition = viewMatrix * wp;
   gl_Position = projectionMatrix * mvPosition;
   #include <logdepthbuf_vertex>
@@ -375,13 +393,15 @@ uniform float uDetailAmp;
 uniform float uSeed;
 uniform vec3 uSunPosW;
 uniform float uHasSun;            // 0 = unlit
-uniform float uShellOpacity;      // camera-altitude crossfade
+uniform float uReach;             // billboard reach (m) — crossfade scale
+uniform float uDebug;             // 1 = raw cover, 2 = raw cover w/o drift
 uniform float uOpacity;           // global cloudMult slider
 uniform float uLayerDensity;
 
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
 varying vec3 vNormalW;
+varying float vCamDist;
 
 float shellHash(vec3 p) {
   p = fract(p * 0.3183099 + uSeed * 0.1);
@@ -410,6 +430,11 @@ float shellValueNoise(vec3 p) {
 
 void main() {
   #include <logdepthbuf_fragment>
+  // Billboard↔shell crossfade — billboards own the near field, the
+  // shell takes over where they fade out, regardless of altitude.
+  float shellFade = smoothstep(uReach * ${SHELL_FADE_NEAR_FRAC.toFixed(2)},
+    uReach * ${SHELL_FADE_FAR_FRAC.toFixed(2)}, vCamDist);
+  if (shellFade < 0.01) discard;
   float r = length(vLocalPos);
   float lat = asin(clamp(vLocalPos.y / r, -1.0, 1.0));
   float lon = atan(vLocalPos.z, vLocalPos.x);
@@ -424,15 +449,31 @@ void main() {
   float v = clamp(lat / 3.14159265359 + 0.5, 0.0, 1.0);
   vec4 syn = texture2D(uMap, vec2(u, v));
 
+  // Debug visualizations: 1 = raw sampled cover, 2 = cover without the
+  // drift scroll (isolates drift-induced sampling artifacts).
+  if (uDebug > 1.5) {
+    syn = texture2D(uMap, vec2(lon / 6.28318530718 + 0.5, v));
+    gl_FragColor = vec4(vec3(syn.r), 1.0);
+    return;
+  }
+  if (uDebug > 0.5) {
+    gl_FragColor = vec4(vec3(syn.r), 1.0);
+    return;
+  }
+
   float cover = syn.r * uCoverageMul;
   if (cover < 0.02) discard;
 
   // Detail sparkle — two octaves of value noise so the deck isn't a
   // bilinear blur at medium range. Macro structure stays the map's job.
+  // The amplitude fades out at full-disc distances: a lattice noise this
+  // coarse reads as a checkerboard when the whole planet is in view.
   vec3 dp = vLocalPos / uDetailScale;
   float dn = shellValueNoise(dp) + 0.5 * shellValueNoise(dp * 2.07);
   dn /= 1.5;
-  float a = cover * (1.0 + uDetailAmp * (dn - 0.5) * 2.0) * uLayerDensity;
+  float detailAmp = uDetailAmp
+    * (1.0 - smoothstep(uPlanetRadius * 0.5, uPlanetRadius * 1.5, vCamDist));
+  float a = cover * (1.0 + detailAmp * (dn - 0.5) * 2.0) * uLayerDensity;
   a = clamp(a, 0.0, 1.0);
   if (a < 0.02) discard;
 
@@ -446,7 +487,7 @@ void main() {
   float lit = 0.12 + 0.88 * dayT * (0.62 + 0.38 * max(d, 0.0));
   col *= mix(1.0, lit, uHasSun);
 
-  gl_FragColor = vec4(col, a * uShellOpacity * uOpacity);
+  gl_FragColor = vec4(col, a * shellFade * uOpacity);
   #include <fog_fragment>
 }
 `;
@@ -471,6 +512,9 @@ export const cloudSystemStats = {
   sortMs: 0,
   cellsIterated: 0,
   cellsPassed: 0,
+  sprites: 0,
+  /** Sprites emitted per billboard tier index on the last rebuild. */
+  tierSprites: [0, 0, 0, 0, 0],
 };
 
 // ── Implementation ─────────────────────────────────────────────────────────
@@ -498,25 +542,38 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
   let lastTimeSeconds = 0;
   let updateCounter = 0;
   let updateInterval = DEFAULT_UPDATE_INTERVAL;
+  let shellDetailMult = 1;
+  let shellDebug = 0;
 
   let sunWorldPos: THREE.Vector3 | null = null;
 
-  // GPU buffers.
+  // GPU buffers — instanced quad billboards (see the VERT comment for
+  // why these are not gl_Points).
   const positions = new Float32Array(MAX_SPRITES * 3);
   const colorsRgba = new Float32Array(MAX_SPRITES * 4);
   const sizes = new Float32Array(MAX_SPRITES);
   const orientations = new Float32Array(MAX_SPRITES);
 
-  const geom = new THREE.BufferGeometry();
-  const posAttr = new THREE.BufferAttribute(positions, 3);
-  const colorAttr = new THREE.BufferAttribute(colorsRgba, 4);
-  const sizeAttr = new THREE.BufferAttribute(sizes, 1);
-  const orientAttr = new THREE.BufferAttribute(orientations, 1);
-  geom.setAttribute("position", posAttr);
+  const geom = new THREE.InstancedBufferGeometry();
+  // Base quad: unit square in the XY plane, expanded in view space by
+  // the vertex shader.
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
+    -0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0,
+  ]), 3));
+  geom.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([
+    0, 0, 1, 0, 1, 1, 0, 1,
+  ]), 2));
+  geom.setIndex([0, 1, 2, 0, 2, 3]);
+  const posAttr = new THREE.InstancedBufferAttribute(positions, 3);
+  const colorAttr = new THREE.InstancedBufferAttribute(colorsRgba, 4);
+  const sizeAttr = new THREE.InstancedBufferAttribute(sizes, 1);
+  const orientAttr = new THREE.InstancedBufferAttribute(orientations, 1);
+  geom.setAttribute("iOffset", posAttr);
   geom.setAttribute("color", colorAttr);
   geom.setAttribute("size", sizeAttr);
   geom.setAttribute("orientation", orientAttr);
-  geom.setDrawRange(0, 0);
+  geom.instanceCount = 0;
+      cloudSystemStats.sprites = 0;
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
@@ -537,7 +594,7 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
     fog: true,
   });
 
-  const points = new THREE.Points(geom, material);
+  const points = new THREE.Mesh(geom, material);
   points.name = "cloud_sprites";
   // Bounding sphere can't be computed automatically (positions change
   // every frame). The camera-relative iteration bounds visibility.
@@ -560,8 +617,13 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
     tex.wrapS = THREE.RepeatWrapping;       // longitude wraps
     tex.wrapT = THREE.ClampToEdgeWrapping;  // latitude clamps at poles
     tex.magFilter = THREE.LinearFilter;
-    tex.minFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
+    // Mipmaps matter: from a full-disc distance one screen pixel spans
+    // several map texels, and bilinear-only minification renders the
+    // texel grid as a checkerboard moiré across the planet. Maps are
+    // power-of-two by construction (weatherMapWidth), so mip generation
+    // is cheap and re-runs automatically on each upload.
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
     tex.needsUpdate = true;
     return tex;
   }
@@ -581,10 +643,22 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
       shell.material.dispose();
     }
     shells = [];
+    // Chord sag: a tessellated sphere dips R·θ²/8 below the true sphere
+    // between vertices. Cloud layers sit a tiny fraction of the radius
+    // above the surface (Jupiter: 25 km on 7e7 m — sag at 96 segments
+    // is 37 km!), so without compensation the planet surface bulges
+    // through every shell quad as a grid of glyph-shaped holes. Lift
+    // the shell by the sag (with margin); the altitude error is
+    // invisible at the distances the shell renders at.
+    const SHELL_W_SEG = 128;
+    const SHELL_H_SEG = 96;
+    const segAngle = (2 * Math.PI) / SHELL_W_SEG;
+    const chordSag = field.planetRadiusM * segAngle * segAngle / 8;
     for (let li = 0; li < field.layers.length; li++) {
       const layer = field.layers[li];
       const shellRadiusM = field.planetRadiusM
-        + (layer.baseAltitudeM + layer.topAltitudeM) * 0.5;
+        + (layer.baseAltitudeM + layer.topAltitudeM) * 0.5
+        + chordSag * 1.3;
       const shellMat = new THREE.ShaderMaterial({
         uniforms: {
           uMap: { value: mapTexture },
@@ -603,7 +677,8 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
           uSeed: { value: field.seed },
           uSunPosW: { value: new THREE.Vector3() },
           uHasSun: { value: 0 },
-          uShellOpacity: { value: 0 },
+          uReach: { value: 240_000 }, // pushed per-frame in update()
+          uDebug: { value: 0 },
           uOpacity: { value: material.uniforms.uOpacity.value },
           uLayerDensity: { value: layer.density },
           // Renderer-managed FogExp2 uniforms (fog: true).
@@ -621,7 +696,7 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
         side: THREE.DoubleSide,
       });
       const shellMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(shellRadiusM, 96, 64),
+        new THREE.SphereGeometry(shellRadiusM, SHELL_W_SEG, SHELL_H_SEG),
         shellMat,
       );
       shellMesh.name = `cloud_shell_${li}`;
@@ -648,11 +723,11 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
   const candOrient = new Float32Array(MAX_SPRITES);
   const candDist = new Float32Array(MAX_SPRITES);
   const candSub = new Uint8Array(MAX_SPRITES);
-  // Counting-sort scratch — all preallocated, zero per-frame allocation.
-  const candBucket = new Uint16Array(MAX_SPRITES);
-  const bucketCount = new Uint32Array(SORT_KEYS);
-  const bucketStart = new Uint32Array(SORT_KEYS);
+  // Radix-sort scratch — all preallocated, zero per-frame allocation.
+  const candKey = new Uint32Array(MAX_SPRITES);
+  const radixHist = new Uint32Array(1 << RADIX_LO_BITS);
   const sortedIdx = new Uint32Array(MAX_SPRITES);
+  const sortedIdxB = new Uint32Array(MAX_SPRITES);
 
   // ── Cell-sample cache ──────────────────────────────────────────────────
   // Keyed by the cell's jitter hash (already computed for positioning);
@@ -743,7 +818,8 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
   function update(cameraLocalPos: THREE.Vector3, timeSeconds: number): void {
     lastTimeSeconds = timeSeconds;
     if (field.layers.length === 0) {
-      geom.setDrawRange(0, 0);
+      geom.instanceCount = 0;
+      cloudSystemStats.sprites = 0;
       return;
     }
 
@@ -776,20 +852,29 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
       if (layer.topAltitudeM > layerTopMax) layerTopMax = layer.topAltitudeM;
     }
 
-    // Shell crossfade — derived from camera altitude relative to the
-    // tallest layer's top.
     const camRadius = cameraLocalPos.length();
     const camAlt = camRadius - field.planetRadiusM;
-    const fadeLow = Math.max(1, layerTopMax * SHELL_FADE_LOW_MULT);
-    const fadeHigh = Math.max(fadeLow + 1, layerTopMax * SHELL_FADE_HIGH_MULT);
-    const shellOpacity = THREE.MathUtils.smoothstep(camAlt, fadeLow, fadeHigh);
+
+    // Billboard tiers — only sizes the shell doesn't own.
+    const allTiers = activeCloudTiers(field.planetRadiusM);
+    const tiers = allTiers.filter(
+      (t) => CLOUD_CELL_SIZES_M[t] <= MAX_BILLBOARD_CELL_SIZE_M,
+    );
+    const tierCount = tiers.length;
+    const largestCell = CLOUD_CELL_SIZES_M[tiers[tierCount - 1]];
+    // Outermost tier's outerFadeEnd — the billboard reach. The shell's
+    // per-pixel crossfade is scaled to this so it takes over exactly
+    // where the billboards end.
+    const maxReachM = largestCell * 12;
 
     for (const shell of shells) {
       const u = shell.material.uniforms;
       u.uTime.value = timeSeconds;
       u.uEpoch.value = map.epochSec;
       u.uWindMult.value = sampleOpts.windMult;
-      u.uShellOpacity.value = shellOpacity;
+      u.uReach.value = maxReachM;
+      u.uDetailAmp.value = 0.35 * shellDetailMult;
+      u.uDebug.value = shellDebug;
       u.uHasSun.value = hasSun ? 1 : 0;
       if (hasSun && sunWorldPos) u.uSunPosW.value.copy(sunWorldPos);
     }
@@ -805,21 +890,13 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
       return;
     }
 
-    // Billboard tiers — only sizes the shell doesn't own.
-    const allTiers = activeCloudTiers(field.planetRadiusM);
-    const tiers = allTiers.filter(
-      (t) => CLOUD_CELL_SIZES_M[t] <= MAX_BILLBOARD_CELL_SIZE_M,
-    );
-    const tierCount = tiers.length;
-
     // High-altitude early-out: when the camera is so far above the layer
     // that no billboard cell can be within its outermost fade distance,
     // skip the whole walk — the shell alone represents the planet. This
     // is the common case for every materialized body seen from space.
-    const largestCell = CLOUD_CELL_SIZES_M[tiers[tierCount - 1]];
-    const maxReachM = largestCell * 12; // outermost tier's outerFadeEnd
     if (camAlt - layerMaxAlt > maxReachM) {
-      geom.setDrawRange(0, 0);
+      geom.instanceCount = 0;
+      cloudSystemStats.sprites = 0;
       return;
     }
 
@@ -830,6 +907,7 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
     for (let ti = 0; ti < tierCount; ti++) {
       const tier = tiers[ti];
       const cellSize = CLOUD_CELL_SIZES_M[tier];
+      const tierStartCount = count;
 
       // LOD fade band.
       const childTier = ti > 0 ? tiers[ti - 1] : -1;
@@ -857,10 +935,13 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
       const iyC = Math.floor(cameraLocalPos.y / cellSize);
       const izC = Math.floor(cameraLocalPos.z / cellSize);
 
-      // Altitude pre-filter margin. A cell can intersect the layer even
+      // Altitude pre-filter margin. A cell can intersect a layer even
       // if its center altitude is up to cellSize away from the layer's
       // altitude range (cube can poke into the layer from outside; the
-      // ±0.4-cell jitter is also absorbed by this margin).
+      // ±0.4-cell jitter is also absorbed by this margin). The sampler's
+      // footprint gate (±half cell beyond layer bounds) means even cells
+      // whose centers miss a thin layer still contribute — no parity
+      // holes when the layer is thinner than the cell.
       const altMargin = cellSize;
       const minOkAlt = layerMinAlt - altMargin;
       const maxOkAlt = layerMaxAlt + altMargin;
@@ -872,6 +953,260 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
       const iyMinClamp = iyC - reach;
       const iyMaxClamp = iyC + reach;
 
+      // ── Shared cell processing: cache → field sample → cluster/disc
+      // emission.
+      const processCell = (
+        jh: number, cix: number, ciy: number, ciz: number,
+        cx: number, cy: number, cz: number,
+        radius: number, alt: number, dist: number, fade: number,
+        mask: number,
+      ): void => {
+        cloudSystemStats.cellsPassed++;
+
+        // Field sample — weather map + local detail — through the cell
+        // cache. Samples are camera-independent, so they survive across
+        // frames until their staggered TTL expires.
+        let entry = cacheLookup(jh, cix, ciy, ciz, timeSeconds);
+        if (!entry) {
+          if (freshSampleBudget <= 0) return; // condense next rebuild
+          freshSampleBudget--;
+          _samplePosTmp.set(cx, cy, cz);
+          // cellSize = sampling footprint — thin layers under big cells
+          // get column-sampled instead of point-sampled.
+          cloudDensityAt(field, map, _samplePosTmp, timeSeconds, sampleOpts, _sampleOut, cellSize, mask);
+          entry = {
+            ix: cix, iy: ciy, iz: ciz,
+            density: _sampleOut.density,
+            r: _sampleOut.color.r,
+            g: _sampleOut.color.g,
+            b: _sampleOut.color.b,
+            cum: _sampleOut.cumuliformity,
+            layerIdx: _sampleOut.layerIndex,
+            // Staggered expiry — hash-spread so refreshes don't clump
+            // into a single frame.
+            expiresAt: timeSeconds
+              + CACHE_TTL_SECONDS * (0.75 + 0.5 * (((jh >>> 24) & 0xff) / 255)),
+          };
+          cacheCur.set(jh, entry);
+        }
+        if (entry.density < minDensity) return;
+
+        const layerIdx = entry.layerIdx;
+        const cum = entry.cum;
+        const layer = layerIdx >= 0 ? field.layers[layerIdx] : field.layers[0];
+        const layerThick = layer.topAltitudeM - layer.baseAltitudeM;
+
+        // Emission snap for coarse tiers: the footprint gate admits
+        // cells whose centers sit up to half a cell OUTSIDE a thin
+        // layer (their cube still overlaps it). Render those at the
+        // layer, not at the stray center — otherwise coarse-tier
+        // sprites sag below the deck base toward the terrain or float
+        // above its top.
+        if (cellSize > layerThick && layerIdx >= 0) {
+          const lo = layer.baseAltitudeM + layerThick * 0.25;
+          const hiA = layer.baseAltitudeM + layerThick * 0.8;
+          const snapped = alt < lo ? lo : alt > hiA ? hiA : alt;
+          if (snapped !== alt) {
+            const sc = (planetRadius + snapped) / Math.max(1, radius);
+            cx *= sc; cy *= sc; cz *= sc;
+            radius = planetRadius + snapped;
+            alt = snapped;
+          }
+        }
+
+        // Sprite orientation:
+        //   flat deck (cum=0) → 1 always (planet-tangent disc)
+        //   tower (cum=1)     → 0 close (puff), 1 far (disc)
+        // Distance metric in cell-sizes so it scales with tier.
+        const distInCells = dist / cellSize;
+        const distFactor = Math.min(1, Math.max(0, (distInCells - 1) / 3));
+        const orientation = (1 - cum) + cum * distFactor;
+
+        // Planet-local "up" at the cell — used for sun shading and
+        // cluster offsets.
+        const invRadius = 1 / Math.max(1, radius);
+        const upX = cx * invRadius;
+        const upY = cy * invRadius;
+        const upZ = cz * invRadius;
+
+        // Sun shading — terminator + diffuse. CPU-side so the sprite
+        // shader stays a cheap Gaussian splat.
+        let shade = 1;
+        if (hasSun) {
+          const sd = upX * _sunLocal.x + upY * _sunLocal.y + upZ * _sunLocal.z;
+          const dayT = THREE.MathUtils.smoothstep(sd, -0.12, 0.2);
+          const diffuse = sd > 0 ? sd : 0;
+          shade = NIGHT_AMBIENT + (1 - NIGHT_AMBIENT) * dayT
+            * (SHADE_DIFFUSE_FLOOR + (1 - SHADE_DIFFUSE_FLOOR) * diffuse);
+        }
+
+        const baseAlpha = entry.density * fade;
+
+        if (orientation >= SHEET_ORIENTATION_THRESHOLD) {
+          // ── Sheet regime: tangent disc(s). Tiles with neighbor cells
+          // into a continuous deck; collapses edge-on so it can't clip
+          // terrain. The half-size companion disc keeps an ISOLATED
+          // deck-edge cell from reading as one circle.
+          //
+          // LOD fade is applied mostly as SIZE, only mildly as alpha:
+          // alpha-fading the huge outer-tier discs paints a translucent
+          // white film over everything behind them — the "milky veil
+          // glued to the terrain" artifact. Discs that shrink stay
+          // opaque cloud, and the shell's distance crossfade covers the
+          // thinning.
+          const fadeSize = 0.7 + 0.3 * fade;
+          const fadeAlpha = 0.65 + 0.35 * fade;
+          const discSize = cellSize * DISC_OVERSIZE * spriteOversize * fadeSize;
+          for (let si = 0; si < 2; si++) {
+            if (count >= MAX_SPRITES) break;
+            let sx = cx, sy = cy, sz = cz;
+            let size = discSize;
+            let alpha = entry.density * fadeAlpha;
+            if (si === 1) {
+              const sh = jh ^ 0x68bc21eb;
+              // Tangential offset via a hashed direction with the
+              // radial component projected out.
+              let ox = (((sh >>> 0) & 0xff) / 255 - 0.5);
+              let oy = (((sh >>> 8) & 0xff) / 255 - 0.5);
+              let oz = (((sh >>> 16) & 0xff) / 255 - 0.5);
+              const dotUp = ox * upX + oy * upY + oz * upZ;
+              ox -= dotUp * upX; oy -= dotUp * upY; oz -= dotUp * upZ;
+              const olen = Math.sqrt(ox * ox + oy * oy + oz * oz);
+              if (olen < 1e-6) continue;
+              const om = (cellSize * 0.4) / olen;
+              sx += ox * om; sy += oy * om; sz += oz * om;
+              size = discSize * 0.6;
+              // Ramp in just past the regime threshold so cells
+              // arriving from the puff branch don't pop a disc.
+              const ramp = Math.min(1,
+                (orientation - SHEET_ORIENTATION_THRESHOLD) / 0.08);
+              alpha = entry.density * fadeAlpha * 0.55 * ramp;
+              if (alpha < 0.01) continue;
+            }
+            candPosX[count] = sx;
+            candPosY[count] = sy;
+            candPosZ[count] = sz;
+            candColR[count] = entry.r * shade;
+            candColG[count] = entry.g * shade;
+            candColB[count] = entry.b * shade;
+            candAlpha[count] = alpha;
+            candSize[count] = size;
+            // Keep the continuous blend value (≥ threshold here, → 1
+            // with distance) so cells arriving from the puff branch
+            // don't pop in edge-on size.
+            candOrient[count] = orientation;
+            candDist[count] = dist;
+            candSub[count] = ((jh >>> 9) ^ (si * 7)) & 15;
+            count++;
+          }
+        } else {
+          // ── Puff regime: a cluster of overlapping puffs, sized by
+          // the LAYER (≤ ~thickness) so big-tier cells become banks of
+          // cloud rather than one giant ball, spread tangentially
+          // across the cell footprint, bottoms clamped to the layer
+          // base (flat condensation level — also what keeps sprites out
+          // of the terrain).
+          // Coverage continuity: a dense cell must FILL its footprint or
+          // gaps open between adjacent cells even under near-solid
+          // cover. Puff size scales with local density — sparse cells
+          // keep small distinct puffs, saturated cells fuse into an
+          // unbroken mass. (Local and principled, unlike the old global
+          // sprite-oversize inflation.)
+          const fillMul = 1 + 0.5 * Math.min(1, entry.density * 1.2);
+          const puffD = Math.min(cellSize, layerThick * PUFF_LAYER_THICK_FRAC) * fillMul;
+          let puffs = Math.round((cellSize / puffD) * 1.5);
+          if (puffs < MIN_CLUSTER_PUFFS) puffs = MIN_CLUSTER_PUFFS;
+          if (puffs > MAX_CLUSTER_PUFFS) puffs = MAX_CLUSTER_PUFFS;
+
+          // Tangent frame at the cell (poles handled by helper-axis
+          // switch on the dominant up component).
+          let hx = 0, hy = 1, hz = 0;
+          if (upY > 0.9 || upY < -0.9) { hx = 1; hy = 0; }
+          let t1x = upY * hz - upZ * hy;
+          let t1y = upZ * hx - upX * hz;
+          let t1z = upX * hy - upY * hx;
+          const t1len = Math.sqrt(t1x * t1x + t1y * t1y + t1z * t1z);
+          t1x /= t1len; t1y /= t1len; t1z /= t1len;
+          const t2x = upY * t1z - upZ * t1y;
+          const t2y = upZ * t1x - upX * t1z;
+          const t2z = upX * t1y - upY * t1x;
+
+          // Sheet convergence — as orientation approaches the sheet
+          // threshold (stratus, or any cell receding into the
+          // distance), the cluster continuously collapses to a single
+          // cell-sized disc: spreads shrink, sizes grow, and surplus
+          // puffs fade out one at a time. The regime switch is then
+          // seamless instead of a 6-puff→disc pop.
+          const sheetT = THREE.MathUtils.smoothstep(
+            orientation, 0.5, SHEET_ORIENTATION_THRESHOLD,
+          );
+          const spreadMul = 1 - sheetT;
+          const discSize = cellSize * DISC_OVERSIZE * spriteOversize;
+
+          const tanSpread = Math.max(puffD * 0.35, (cellSize - puffD) * 0.5) * spreadMul;
+          const radSpread = layerThick * PUFF_RADIAL_SPREAD_FRAC * cum * spreadMul;
+          // Overlapping-alpha conservation — the cluster center is
+          // covered by ~2-3 puffs, so each carries less alpha. The
+          // effective count shrinks as surplus puffs fade.
+          const effPuffs = Math.max(1, puffs * (1 - sheetT));
+          const subAlpha = baseAlpha / Math.sqrt(Math.max(1, effPuffs * 0.75));
+
+          for (let si = 0; si < puffs; si++) {
+            if (count >= MAX_SPRITES) break;
+            // Per-puff fade-out as the cluster converges: puff si is
+            // fully present while effPuffs > si+1, fades across one
+            // unit, then drops.
+            const presence = Math.min(1, Math.max(0, effPuffs - si));
+            if (presence < 0.02) break;
+            const sh = jh ^ ((si + 1) * 0x85ebca6b);
+            const h1 = ((sh >>> 0) & 0xff) / 255;
+            const h2 = ((sh >>> 8) & 0xff) / 255;
+            const h3 = ((sh >>> 16) & 0xff) / 255;
+            const h4 = ((sh >>> 24) & 0xff) / 255;
+
+            const o1 = (h1 - 0.5) * 2 * tanSpread;
+            const o2 = (h2 - 0.5) * 2 * tanSpread;
+            let or = (h3 - 0.5) * 2 * radSpread;
+            // Vigorous cells raise their last puff into a tower.
+            if (cum > 0.5 && si === puffs - 1) or += puffD * TOWER_RAISE_FRAC * spreadMul;
+
+            const puffSize = puffD * (0.7 + 0.6 * h4) * PUFF_OVERSIZE * spriteOversize;
+            const size = puffSize + (discSize - puffSize) * sheetT;
+
+            // Flat-base clamp: puff bottom stays at/above the layer
+            // base regardless of where the cell center sits. Clearance
+            // scales with puffiness — a tangent disc has no vertical
+            // extent, so a sheet-converged sprite needs (and must not
+            // get) any lift.
+            const minCenterAlt = layer.baseAltitudeM
+              + size * 0.5 * PUFF_BASE_CLEARANCE * (1 - orientation);
+            if (alt + or < minCenterAlt) or = minCenterAlt - alt;
+
+            const sx = cx + t1x * o1 + t2x * o2 + upX * or;
+            const sy = cy + t1y * o1 + t2y * o2 + upY * or;
+            const sz = cz + t1z * o1 + t2z * o2 + upZ * or;
+
+            // Vertical brightness gradient — dark flat bases, bright
+            // tops.
+            const vn = Math.max(-1, Math.min(1, or / Math.max(1, layerThick * 0.5)));
+            const lum = shade * (1 + vn * CLUSTER_BASE_DARKEN);
+
+            candPosX[count] = sx;
+            candPosY[count] = sy;
+            candPosZ[count] = sz;
+            candColR[count] = entry.r * lum;
+            candColG[count] = entry.g * lum;
+            candColB[count] = entry.b * lum;
+            candAlpha[count] = subAlpha * presence;
+            candSize[count] = size;
+            candOrient[count] = orientation;
+            candDist[count] = dist;
+            candSub[count] = ((jh >>> 9) ^ (si * 7)) & 15;
+            count++;
+          }
+        }
+      };
+
       for (let dx = -reach; dx <= reach; dx++) {
         const ix = ixC + dx;
         const colX = (ix + 0.5) * cellSize;
@@ -880,15 +1215,18 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
           const iz = izC + dz;
           const colZ = (iz + 0.5) * cellSize;
 
-          // ── Column culling. Clouds live in a thin spherical shell, so
-          // for each (x, z) column only a short run of y cells can ever
+          // ── Column culling. Clouds live in a thin spherical shell —
+          // for each (x, z) column only a short run of y cells can
           // intersect it: cy² ∈ [rLo² − q, rHi² − q] where q = x² + z².
-          // This replaces the old full-cube walk — the iteration drops
-          // from O(reach³) to O(reach² × shellThickness), which is the
-          // bulk of the win on the big outer tiers.
+          // O(reach² × shellThickness) instead of O(reach³). At grazing
+          // incidence (column nearly parallel to the shell) the run is
+          // long, but each cell covers a DIFFERENT patch of the deck —
+          // that's geometry, not overdraw.
           const q = colX * colX + colZ * colZ;
           const hi2 = rHi2 - q;
           if (hi2 <= 0) continue; // column entirely outside the shell
+          const cdx = colX - cameraLocalPos.x;
+          const cdz = colZ - cameraLocalPos.z;
           const cyHi = Math.sqrt(hi2);
           const lo2 = rLo2 - q;
           const cyLo = lo2 > 0 ? Math.sqrt(lo2) : 0;
@@ -917,14 +1255,12 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
               if (count >= MAX_SPRITES) break;
               cloudSystemStats.cellsIterated++;
 
-              // ── Cheap rejects FIRST, on the unjittered center — no
+              // Cheap rejects FIRST, on the unjittered center — no
               // hash, no sqrt, no Map lookup for the (majority of)
               // cells that are out of range. Margins absorb the ≤0.7×
               // cellSize the jitter can move a cell.
               const ccy = (iy + 0.5) * cellSize;
-              const cdx = colX - cameraLocalPos.x;
               const cdy = ccy - cameraLocalPos.y;
-              const cdz = colZ - cameraLocalPos.z;
               const cDist2 = cdx * cdx + cdy * cdy + cdz * cdz;
               if (cDist2 > outerReject2) continue;
               const cRad2 = q + ccy * ccy;
@@ -969,250 +1305,68 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
               }
               const fade = innerWeight * outerWeight;
               if (fade < 0.02) continue;
-              cloudSystemStats.cellsPassed++;
 
-              // Field sample — weather map + local detail — through the
-              // cell cache. Samples are camera-independent, so they
-              // survive across frames until their staggered TTL expires.
-              let entry = cacheLookup(jh, ix, iy, iz, timeSeconds);
-              if (!entry) {
-                if (freshSampleBudget <= 0) continue; // condense next rebuild
-                freshSampleBudget--;
-                _samplePosTmp.set(cx, cy, cz);
-                cloudDensityAt(field, map, _samplePosTmp, timeSeconds, sampleOpts, _sampleOut);
-                entry = {
-                  ix, iy, iz,
-                  density: _sampleOut.density,
-                  r: _sampleOut.color.r,
-                  g: _sampleOut.color.g,
-                  b: _sampleOut.color.b,
-                  cum: _sampleOut.cumuliformity,
-                  layerIdx: _sampleOut.layerIndex,
-                  // Staggered expiry — hash-spread so refreshes don't
-                  // clump into a single frame.
-                  expiresAt: timeSeconds
-                    + CACHE_TTL_SECONDS * (0.75 + 0.5 * (((jh >>> 24) & 0xff) / 255)),
-                };
-                cacheCur.set(jh, entry);
-              }
-              if (entry.density < minDensity) continue;
-
-              const layerIdx = entry.layerIdx;
-              const cum = entry.cum;
-              const layer = layerIdx >= 0 ? field.layers[layerIdx] : field.layers[0];
-              const layerThick = layer.topAltitudeM - layer.baseAltitudeM;
-
-              // Sprite orientation:
-              //   flat deck (cum=0) → 1 always (planet-tangent disc)
-              //   tower (cum=1)     → 0 close (puff), 1 far (disc)
-              // Distance metric in cell-sizes so it scales with tier.
-              const distInCells = dist / cellSize;
-              const distFactor = Math.min(1, Math.max(0, (distInCells - 1) / 3));
-              const orientation = (1 - cum) + cum * distFactor;
-
-              // Planet-local "up" at the cell — used for sun shading and
-              // cluster offsets.
-              const invRadius = 1 / Math.max(1, radius);
-              const upX = cx * invRadius;
-              const upY = cy * invRadius;
-              const upZ = cz * invRadius;
-
-              // Sun shading — terminator + diffuse. CPU-side so the
-              // sprite shader stays a cheap Gaussian splat.
-              let shade = 1;
-              if (hasSun) {
-                const sd = upX * _sunLocal.x + upY * _sunLocal.y + upZ * _sunLocal.z;
-                const dayT = THREE.MathUtils.smoothstep(sd, -0.12, 0.2);
-                const diffuse = sd > 0 ? sd : 0;
-                shade = NIGHT_AMBIENT + (1 - NIGHT_AMBIENT) * dayT
-                  * (SHADE_DIFFUSE_FLOOR + (1 - SHADE_DIFFUSE_FLOOR) * diffuse);
-              }
-
-              const baseAlpha = entry.density * fade;
-
-              if (orientation >= SHEET_ORIENTATION_THRESHOLD) {
-                // ── Sheet regime: tangent disc(s). Tiles with neighbor
-                // cells into a continuous deck; collapses edge-on so it
-                // can't clip terrain. The half-size companion disc keeps
-                // an ISOLATED deck-edge cell from reading as one circle.
-                const discSize = cellSize * DISC_OVERSIZE * spriteOversize;
-                for (let si = 0; si < 2; si++) {
-                  if (count >= MAX_SPRITES) break;
-                  let sx = cx, sy = cy, sz = cz;
-                  let size = discSize;
-                  let alpha = baseAlpha;
-                  if (si === 1) {
-                    const sh = jh ^ 0x68bc21eb;
-                    // Tangential offset via a hashed direction with the
-                    // radial component projected out.
-                    let ox = (((sh >>> 0) & 0xff) / 255 - 0.5);
-                    let oy = (((sh >>> 8) & 0xff) / 255 - 0.5);
-                    let oz = (((sh >>> 16) & 0xff) / 255 - 0.5);
-                    const dotUp = ox * upX + oy * upY + oz * upZ;
-                    ox -= dotUp * upX; oy -= dotUp * upY; oz -= dotUp * upZ;
-                    const olen = Math.sqrt(ox * ox + oy * oy + oz * oz);
-                    if (olen < 1e-6) continue;
-                    const om = (cellSize * 0.4) / olen;
-                    sx += ox * om; sy += oy * om; sz += oz * om;
-                    size = discSize * 0.6;
-                    // Ramp in just past the regime threshold so cells
-                    // arriving from the puff branch don't pop a disc.
-                    const ramp = Math.min(1,
-                      (orientation - SHEET_ORIENTATION_THRESHOLD) / 0.08);
-                    alpha = baseAlpha * 0.55 * ramp;
-                    if (alpha < 0.01) continue;
-                  }
-                  candPosX[count] = sx;
-                  candPosY[count] = sy;
-                  candPosZ[count] = sz;
-                  candColR[count] = entry.r * shade;
-                  candColG[count] = entry.g * shade;
-                  candColB[count] = entry.b * shade;
-                  candAlpha[count] = alpha;
-                  candSize[count] = size;
-                  // Keep the continuous blend value (≥ threshold here,
-                  // → 1 with distance) so cells arriving from the puff
-                  // branch don't pop in edge-on size.
-                  candOrient[count] = orientation;
-                  candDist[count] = dist;
-                  candSub[count] = ((jh >>> 9) ^ (si * 7)) & 15;
-                  count++;
-                }
-              } else {
-                // ── Puff regime: a cluster of overlapping puffs, sized
-                // by the LAYER (≤ ~thickness) so big-tier cells become
-                // banks of cloud rather than one giant ball, spread
-                // tangentially across the cell footprint, bottoms
-                // clamped to the layer base (flat condensation level —
-                // also what keeps sprites out of the terrain).
-                const puffD = Math.min(cellSize, layerThick * PUFF_LAYER_THICK_FRAC);
-                let puffs = Math.round((cellSize / puffD) * 1.5);
-                if (puffs < MIN_CLUSTER_PUFFS) puffs = MIN_CLUSTER_PUFFS;
-                if (puffs > MAX_CLUSTER_PUFFS) puffs = MAX_CLUSTER_PUFFS;
-
-                // Tangent frame at the cell (poles handled by helper-axis
-                // switch on the dominant up component).
-                let hx = 0, hy = 1, hz = 0;
-                if (upY > 0.9 || upY < -0.9) { hx = 1; hy = 0; }
-                let t1x = upY * hz - upZ * hy;
-                let t1y = upZ * hx - upX * hz;
-                let t1z = upX * hy - upY * hx;
-                const t1len = Math.sqrt(t1x * t1x + t1y * t1y + t1z * t1z);
-                t1x /= t1len; t1y /= t1len; t1z /= t1len;
-                const t2x = upY * t1z - upZ * t1y;
-                const t2y = upZ * t1x - upX * t1z;
-                const t2z = upX * t1y - upY * t1x;
-
-                // Sheet convergence — as orientation approaches the
-                // sheet threshold (stratus, or any cell receding into
-                // the distance), the cluster continuously collapses to
-                // a single cell-sized disc: spreads shrink, sizes grow,
-                // and surplus puffs fade out one at a time. The regime
-                // switch is then seamless instead of a 6-puff→disc pop.
-                const sheetT = THREE.MathUtils.smoothstep(
-                  orientation, 0.5, SHEET_ORIENTATION_THRESHOLD,
-                );
-                const spreadMul = 1 - sheetT;
-                const discSize = cellSize * DISC_OVERSIZE * spriteOversize;
-
-                const tanSpread = Math.max(puffD * 0.35, (cellSize - puffD) * 0.5) * spreadMul;
-                const radSpread = layerThick * PUFF_RADIAL_SPREAD_FRAC * cum * spreadMul;
-                // Overlapping-alpha conservation — the cluster center is
-                // covered by ~2-3 puffs, so each carries less alpha. The
-                // effective count shrinks as surplus puffs fade.
-                const effPuffs = Math.max(1, puffs * (1 - sheetT));
-                const subAlpha = baseAlpha / Math.sqrt(Math.max(1, effPuffs * 0.75));
-
-                for (let si = 0; si < puffs; si++) {
-                  if (count >= MAX_SPRITES) break;
-                  // Per-puff fade-out as the cluster converges: puff si
-                  // is fully present while effPuffs > si+1, fades across
-                  // one unit, then drops.
-                  const presence = Math.min(1, Math.max(0, effPuffs - si));
-                  if (presence < 0.02) break;
-                  const sh = jh ^ ((si + 1) * 0x85ebca6b);
-                  const h1 = ((sh >>> 0) & 0xff) / 255;
-                  const h2 = ((sh >>> 8) & 0xff) / 255;
-                  const h3 = ((sh >>> 16) & 0xff) / 255;
-                  const h4 = ((sh >>> 24) & 0xff) / 255;
-
-                  const o1 = (h1 - 0.5) * 2 * tanSpread;
-                  const o2 = (h2 - 0.5) * 2 * tanSpread;
-                  let or = (h3 - 0.5) * 2 * radSpread;
-                  // Vigorous cells raise their last puff into a tower.
-                  if (cum > 0.5 && si === puffs - 1) or += puffD * TOWER_RAISE_FRAC * spreadMul;
-
-                  const puffSize = puffD * (0.7 + 0.6 * h4) * PUFF_OVERSIZE * spriteOversize;
-                  const size = puffSize + (discSize - puffSize) * sheetT;
-
-                  // Flat-base clamp: puff bottom stays at/above the
-                  // layer base regardless of where the cell center sits.
-                  // Clearance scales with puffiness — a tangent disc has
-                  // no vertical extent, so a sheet-converged sprite needs
-                  // (and must not get) any lift.
-                  const minCenterAlt = layer.baseAltitudeM
-                    + size * 0.5 * PUFF_BASE_CLEARANCE * (1 - orientation);
-                  if (alt + or < minCenterAlt) or = minCenterAlt - alt;
-
-                  const sx = cx + t1x * o1 + t2x * o2 + upX * or;
-                  const sy = cy + t1y * o1 + t2y * o2 + upY * or;
-                  const sz = cz + t1z * o1 + t2z * o2 + upZ * or;
-
-                  // Vertical brightness gradient — dark flat bases,
-                  // bright tops.
-                  const vn = Math.max(-1, Math.min(1, or / Math.max(1, layerThick * 0.5)));
-                  const lum = shade * (1 + vn * CLUSTER_BASE_DARKEN);
-
-                  candPosX[count] = sx;
-                  candPosY[count] = sy;
-                  candPosZ[count] = sz;
-                  candColR[count] = entry.r * lum;
-                  candColG[count] = entry.g * lum;
-                  candColB[count] = entry.b * lum;
-                  candAlpha[count] = subAlpha * presence;
-                  candSize[count] = size;
-                  candOrient[count] = orientation;
-                  candDist[count] = dist;
-                  candSub[count] = ((jh >>> 9) ^ (si * 7)) & 15;
-                  count++;
-                }
-              }
+              processCell(jh, ix, iy, iz, cx, cy, cz, radius, alt, dist, fade, 0xffff);
             }
           }
         }
         if (count >= MAX_SPRITES) break;
       }
+      cloudSystemStats.tierSprites[ti] = count - tierStartCount;
+    }
+    for (let ti = tierCount; ti < cloudSystemStats.tierSprites.length; ti++) {
+      cloudSystemStats.tierSprites[ti] = 0;
     }
 
     cloudSystemStats.walkMs = performance.now() - statT1;
     const statT2 = performance.now();
 
     if (count === 0) {
-      geom.setDrawRange(0, 0);
+      geom.instanceCount = 0;
+      cloudSystemStats.sprites = 0;
       return;
     }
 
-    // Order far-to-near for correct alpha-over compositing. Counting
-    // sort over (distance bucket × deterministic sub-key) — O(n), no
-    // allocation, no comparator. Bucket width is maxReachM / 256;
-    // ordering errors within a bucket are invisible between translucent
-    // Gaussians, and the hash sub-key keeps same-bucket order STABLE
-    // across frames regardless of cell-walk iteration order.
-    bucketCount.fill(0);
-    const invDist = (SORT_BUCKETS - 1) / maxReachM;
+    // Order far-to-near for correct alpha-over compositing — see the
+    // SORT_DIST_QUANTUM_M comment for why this is an exact-ish radix
+    // sort rather than coarse buckets. Keys are inverted so the
+    // ascending radix yields far-first.
+    const distQMax = (1 << SORT_DIST_BITS) - 1;
+    const invQuantum = 1 / SORT_DIST_QUANTUM_M;
     for (let i = 0; i < count; i++) {
-      let b = (candDist[i] * invDist) | 0;
-      if (b > SORT_BUCKETS - 1) b = SORT_BUCKETS - 1;
-      const key = b * SORT_SUB + candSub[i];
-      candBucket[i] = key;
-      bucketCount[key]++;
+      let dq = (candDist[i] * invQuantum) | 0;
+      if (dq > distQMax) dq = distQMax;
+      candKey[i] = ((distQMax - dq) << SORT_SUB_BITS) | candSub[i];
     }
+    // LSD radix pass 1 — low bits.
+    const loMask = (1 << RADIX_LO_BITS) - 1;
+    radixHist.fill(0);
+    for (let i = 0; i < count; i++) radixHist[candKey[i] & loMask]++;
     let acc = 0;
-    for (let k = SORT_KEYS - 1; k >= 0; k--) {
-      bucketStart[k] = acc;
-      acc += bucketCount[k];
+    for (let b = 0; b <= loMask; b++) {
+      const c = radixHist[b];
+      radixHist[b] = acc;
+      acc += c;
     }
-    for (let i = 0; i < count; i++) sortedIdx[bucketStart[candBucket[i]]++] = i;
+    for (let i = 0; i < count; i++) {
+      sortedIdxB[radixHist[candKey[i] & loMask]++] = i;
+    }
+    // LSD radix pass 2 — high bits (stable, so pass-1 order is kept).
+    const hiMask = (1 << RADIX_HI_BITS) - 1;
+    radixHist.fill(0);
+    for (let i = 0; i < count; i++) {
+      radixHist[(candKey[i] >>> RADIX_LO_BITS) & hiMask]++;
+    }
+    acc = 0;
+    for (let b = 0; b <= hiMask; b++) {
+      const c = radixHist[b];
+      radixHist[b] = acc;
+      acc += c;
+    }
+    for (let i = 0; i < count; i++) {
+      const src = sortedIdxB[i];
+      sortedIdx[radixHist[(candKey[src] >>> RADIX_LO_BITS) & hiMask]++] = src;
+    }
 
     // Pack into render buffers in sorted order.
     for (let i = 0; i < count; i++) {
@@ -1233,7 +1387,8 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
     colorAttr.needsUpdate = true;
     sizeAttr.needsUpdate = true;
     orientAttr.needsUpdate = true;
-    geom.setDrawRange(0, count);
+    geom.instanceCount = count;
+    cloudSystemStats.sprites = count;
     cloudSystemStats.sortMs = performance.now() - statT2;
   }
 
@@ -1268,6 +1423,8 @@ export function createCloudSystem(opts: CloudSystemOpts): CloudSystem {
     if (o.vigorMult !== undefined) sampleOpts.vigorMult = o.vigorMult;
     if (o.bakeBudgetMs !== undefined) bakeBudgetMs = o.bakeBudgetMs;
     if (o.updateInterval !== undefined) updateInterval = o.updateInterval;
+    if (o.shellDetailMult !== undefined) shellDetailMult = o.shellDetailMult;
+    if (o.shellDebug !== undefined) shellDebug = o.shellDebug;
   }
 
   function setSunWorldPos(pos: THREE.Vector3 | null): void {

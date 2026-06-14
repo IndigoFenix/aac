@@ -77,9 +77,9 @@ export interface PendingMessage {
 /**
  * Structured output of the thorough-startup prompt enhancer.
  *
- * The enhancer LLM converts the clinician-written `chatAgentPrompt` plus
- * student data, calendar events, and recent notes into tag-delimited
- * sections. Each section is injected at a specific location in the
+ * The enhancer LLM converts the clinician-written `chatAgentPrompt` list (one
+ * rule per entry) plus the `autoAacPrompt` notes list, student data, calendar
+ * events, and recent notes into tag-delimited sections. Each section is injected at a specific location in the
  * Interactive Agent's system prompt by `buildInteractiveAgentPrompt`,
  * REPLACING the static template content where applicable:
  *

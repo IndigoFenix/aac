@@ -40,6 +40,7 @@ import {
 import { buildSkeleton } from "./skeleton";
 import { buildCreatureMesh, LOFT, type BuiltCreature } from "./mesh";
 import { CREATURE_EXAMPLES } from "./examples";
+import { DEFAULT_GAIT, GAIT_PATTERNS, type GaitParams, type GaitPattern } from "./gait";
 
 // ── Scene ────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,17 @@ let seed = 1;
 let autoFrame = true;
 let wireframe = false;
 let showSkeleton = false;
+// Posture animation: when on, the torso target (bodyHeight + a gentle pitch
+// rear-up) is driven by a clock and the skeleton re-solves every frame, so
+// you watch legs plant/lift and knees fold as the body rises and lowers.
+let animatePosture = false;
+const savedPosture = { bodyPitch: 0, bodyHeight: 0 };
+// Walk gait: when on, the animation loop advances the gait phase from a
+// clock and the skeleton is re-solved each frame with gait-driven foot
+// targets (stance/swing) + body bob.
+let walking = false;
+const gaitMisc = { cadence: 1.1 }; // gait cycles per second
+const gaitParams: GaitParams = { ...DEFAULT_GAIT };
 
 const statsEl = document.getElementById("lab-stats")!;
 
@@ -105,9 +117,12 @@ function disposeBuilt(): void {
   }
 }
 
-function rebuild(): void {
+// Rebuild ONLY the geometry from the current genome — cheap enough to run
+// every frame, which is how the posture animation re-solves the strain pose
+// (legs plant/lift, knees fold/straighten) as the torso target moves.
+function rebuildGeometry(): ReturnType<typeof buildSkeleton> {
   disposeBuilt();
-  const skel = buildSkeleton(genome);
+  const skel = buildSkeleton(genome, walking ? gaitParams : undefined);
   built = buildCreatureMesh(skel, genome);
   (built.mesh.material as THREE.MeshStandardMaterial).wireframe = wireframe;
   scene.add(built.mesh);
@@ -115,11 +130,14 @@ function rebuild(): void {
     skeletonHelper = new THREE.SkeletonHelper(built.mesh);
     scene.add(skeletonHelper);
   }
-
   const s = built.stats;
   statsEl.textContent =
     `${s.vertices} verts · ${s.triangles} tris · ${s.bones} bones · ${s.buildMs.toFixed(1)} ms`;
+  return skel;
+}
 
+function rebuild(): void {
+  const skel = rebuildGeometry();
   if (autoFrame) {
     const size = Math.max(
       skel.bounds.max.x - skel.bounds.min.x,
@@ -311,6 +329,35 @@ function buildPanel(): void {
   sliderSection("head", genome.head as unknown as Record<string, number>, HEAD_RANGES);
   sliderSection("posture", genome.posture as unknown as Record<string, number>, POSTURE_RANGES);
 
+  // Walk gait — phase-offset stepping (gait.ts). Toggle "walk" to animate
+  // it; the skeleton re-solves each frame with gait-driven foot targets.
+  {
+    const s = section("walk gait");
+    const row0 = el("div", "lab-row", s);
+    el("label", undefined, row0).textContent = "walk";
+    const cb = el("input", undefined, row0);
+    cb.type = "checkbox";
+    cb.checked = walking;
+    cb.addEventListener("change", () => {
+      walking = cb.checked;
+      if (!walking) { gaitParams.phase = 0; rebuild(); }
+    });
+    const row1 = el("div", "lab-row", s);
+    el("label", undefined, row1).textContent = "pattern";
+    const sel = el("select", undefined, row1) as HTMLSelectElement;
+    for (const p of GAIT_PATTERNS) {
+      const opt = el("option", undefined, sel) as HTMLOptionElement;
+      opt.value = p;
+      opt.textContent = p;
+      if (p === gaitParams.pattern) opt.selected = true;
+    }
+    sel.addEventListener("change", () => { gaitParams.pattern = sel.value as GaitPattern; });
+    slider(s, "cadence", gaitMisc, "cadence", { min: 0.2, max: 3, step: 0.05 });
+    slider(s, "stride", gaitParams as unknown as Record<string, number>, "strideFrac", { min: 0.1, max: 1 });
+    slider(s, "step height", gaitParams as unknown as Record<string, number>, "stepHeight", { min: 0, max: 0.5 });
+    slider(s, "duty factor", gaitParams as unknown as Record<string, number>, "dutyFactor", { min: 0.3, max: 0.95 });
+  }
+
   // Limb groups — unified legs / arms / wings / fins. Each is a TYPE,
   // duplicated by `count`, placed bilaterally or radially, with an
   // end-effector. ≤3 of them may be function "leg".
@@ -346,7 +393,7 @@ function buildPanel(): void {
       const addWing = el("button", undefined, row);
       addWing.textContent = "add wing/arm";
       addWing.addEventListener("click", () => {
-        genome.limbGroups.push(clampGenome({ limbGroups: [{ membrane: 0.9, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 1.3, splay: 0.85, kneeBend: -0.7, footLengthFrac: 0, toeCount: 1 }] }).limbGroups[0]);
+        genome.limbGroups.push(clampGenome({ limbGroups: [{ membrane: 0.9, stationStart: 0.2, stationEnd: 0.2, lengthFrac: 1.3, attachHeight: 0.85, restProtraction: -0.4, restLevation: 0.7, restFlexion: 0.6, footLengthFrac: 0, toeCount: 1 }] }).limbGroups[0]);
         buildPanel();
         rebuild();
       });
@@ -450,6 +497,16 @@ function buildPanel(): void {
       ["wireframe", () => wireframe, (v) => { wireframe = v; }],
       ["skeleton", () => showSkeleton, (v) => { showSkeleton = v; }],
       ["auto-frame camera", () => autoFrame, (v) => { autoFrame = v; }],
+      ["animate posture (torso target)", () => animatePosture, (v) => {
+        animatePosture = v;
+        if (v) {
+          savedPosture.bodyPitch = genome.posture.bodyPitch;
+          savedPosture.bodyHeight = genome.posture.bodyHeight;
+        } else {
+          genome.posture.bodyPitch = savedPosture.bodyPitch;
+          genome.posture.bodyHeight = savedPosture.bodyHeight;
+        }
+      }],
     ];
     for (const [label, get, set] of toggles) {
       const row = el("div", "lab-row", s);
@@ -531,6 +588,20 @@ buildPanel();
 rebuild();
 
 renderer.setAnimationLoop(() => {
+  const t = performance.now() / 1000;
+  if (animatePosture) {
+    // Drive the torso target from a clock; the strain solver re-poses the
+    // limbs each frame — legs straighten then fold, short forelimbs lift
+    // off as the body rises, the tail drags as it sinks.
+    genome.posture.bodyHeight = 0.5 - 0.5 * Math.cos(t * 1.1); // 0 → 1 → 0
+    genome.posture.bodyPitch = savedPosture.bodyPitch + 0.25 * Math.sin(t * 0.55);
+  }
+  if (walking) {
+    // Advance the gait cycle; the legs step (stance/swing) and the body
+    // bobs as the skeleton re-solves with gait-driven foot targets.
+    gaitParams.phase = (t * gaitMisc.cadence) % 1;
+  }
+  if (animatePosture || walking) rebuildGeometry();
   controls.update();
   renderer.render(scene, camera);
 });

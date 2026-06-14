@@ -42,6 +42,10 @@ interface DynamicBoardProps {
   suppressLocalSpeech?: boolean;
   /** Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text). Default 3 (balanced). */
   iconTextRatio?: number;
+  /** Extra rem subtracted from the available-height baseline when the header is
+   *  grown (e.g. the glyphInputTranslation strip). Keeps button icon/text sizing
+   *  proportional to the shrunken board area. Default 0. */
+  extraHeaderOffset?: number;
 }
 
 /**
@@ -142,6 +146,7 @@ export default function DynamicBoard({
   getFaceImage,
   suppressLocalSpeech = false,
   iconTextRatio = 3,
+  extraHeaderOffset = 0,
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
@@ -166,8 +171,10 @@ export default function DynamicBoard({
 
   // Compute icon/text font sizes dynamically based on available height and row count.
   // Available height ≈ 100dvh - header (6rem) - quickActions (~3.5rem) - padding (~1rem) = 100dvh - 10.5rem
-  const iconFontSize = `clamp(1rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.iconScale}), 8rem)`;
-  const textFontSize = `clamp(0.5rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.textScale}), 1.5rem)`;
+  // `extraHeaderOffset` adds the grown-header allowance (e.g. the glyphInputTranslation strip).
+  const baselineRem = 10.5 + extraHeaderOffset;
+  const iconFontSize = `clamp(1rem, calc((100dvh - ${baselineRem}rem) / ${gridRows} * ${level.iconScale}), 8rem)`;
+  const textFontSize = `clamp(0.5rem, calc((100dvh - ${baselineRem}rem) / ${gridRows} * ${level.textScale}), 1.5rem)`;
 
   const [slots, setSlots] = useState<SlotState[]>(Array(totalSlots).fill(BLANK_SLOT));
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -132,9 +132,10 @@ export interface LimbGroupGenome {
   /** Size gravitation: 0 = all copies equal, 1 = the farthest from the
    *  peak shrinks to nearly nothing. */
   sizeContrast: number;
-  /** Chain segments (2 = simple hinge, 4 = many-jointed crawler). */
-  segments: number;
-  /** Length / torso length. FIXED — does not stretch to the ground. */
+  /** Length / torso length. FIXED — does not stretch to the ground. The
+   *  limb is always a 3-section chain (femur / tibia / foot); the math
+   *  models 3 degrees of freedom, not a variable joint count (extra
+   *  arthropod joints are a rendering detail, not more DOF). */
   lengthFrac: number;
   /** Base radius / max torso radius. */
   radiusFrac: number;
@@ -142,25 +143,65 @@ export interface LimbGroupGenome {
   taper: number;
   /** 0 = round limb .. 1 = flattened, widened web (wing / flipper). */
   membrane: number;
-  /** Sideways sprawl of the foot from under the hip. */
-  splay: number;
-  /** Joint pole elevation: 0 = folds under the body (mammal/bird),
-   *  ~0.5 = lateral sprawl (reptile), 1 = arched ABOVE the torso
-   *  (arthropod). */
-  kneeLift: number;
-  /** Sagittal bend of the joint: -1 = apex points rearward (knee),
-   *  +1 = forward (elbow), 0 = neutral. Explicit per limb — there is NO
-   *  automatic front/back flip. */
-  kneeBend: number;
-  /** Interior-joint zigzag for multi-segment legs (so they read as
-   *  folded, not bowed). Purely cosmetic; no effect on reach. */
-  jointZigzag: number;
-  // ── End structure (digits) ───────────────────────────────────────────
-  /** Foot/sole length / leg length. 0 = digits straight off the limb tip. */
+  /** MOUNT POSITION around the body cross-section: 0 = ventral midline
+   *  (under the belly), 0.5 = lateral (the side), 1 = dorsal midline (the
+   *  back). This is only WHERE the limb roots — its hip point, and whether
+   *  it can plausibly reach the ground at all (a dorsally-mounted limb is a
+   *  wing, not a leg). Where the limb AIMS when relaxed is separate (the
+   *  three rest DOF below), so a mantis can mount low — and so reach the
+   *  ground — yet hold its forearms raised. */
+  attachHeight: number;
+  // ── Rest pose — the three limb degrees of freedom ────────────────────
+  // A limb is a 3-section chain (femur / tibia / foot) posed like a real
+  // one by three rotations. These are the NEUTRAL (relaxed, unloaded)
+  // values: the gait modulates protraction on top, and a weight-bearing
+  // limb depresses + extends away from neutral until its foot finds the
+  // ground. An un-recruited limb simply holds these three angles.
+  /** Protraction / retraction — fore/aft swing: -1 = swept fully rearward,
+   *  +1 = forward, 0 = straight out. (The gait's stride rides on top.) */
+  restProtraction: number;
+  /** Levation / depression — how high the limb is carried: -1 = depressed
+   *  (hangs straight down, the mammal tuck), 0 = out to the side (reptile
+   *  sprawl), +1 = levated (raised up — a wing, a mantis forearm). Also
+   *  sets how wide the foot plants and how high the knee arches. */
+  restLevation: number;
+  /** Knee REST flexion — how folded the knee sits when relaxed, signed so
+   *  the fold direction is explicit: 0 = extended (straight); + folds one
+   *  way (forward / elbow), - the other (rearward / knee). A weight-bearing
+   *  knee deviates from this toward the range limit to reach the ground, but
+   *  keeps this sign for which way it bows. */
+  restFlexion: number;
+  /** Knee RANGE — how far the knee can travel from rest before the joint
+   *  locks (the anatomical limit), as a fraction of the full fold. 1 = free,
+   *  0 = rigid at its rest angle. Separate from rest: a knee can rest
+   *  extended yet still flex deeply under load. */
+  flexRange: number;
+  /** Long-axis TWIST of the limb (pronation), radians of rotation applied
+   *  progressively to each joint's bend plane down the chain. 0 = all three
+   *  sections fold in one plane; non-zero spirals them (a crab claw whose
+   *  femur swings out, tibia forward, foot in). */
+  legTwist: number;
+  /** Femur ↔ tibia length split: 0 = even (the two upper sections equal),
+   *  -1 = long femur / short shank, +1 = short femur / long shank. Moves
+   *  where the knee/elbow sits along the limb (a long shank reads as a
+   *  cursorial leaper; the foot, the 3rd section, is sized separately by
+   *  footLengthFrac). Doesn't change reach — the foot lands the same. */
+  legBalance: number;
+  // ── Ankle (3rd joint) + foot (3rd section); digits ride on it ────────
+  /** Foot (3rd section) length / leg length. 0 = the limb tip is the foot. */
   footLengthFrac: number;
-  /** Stance: 0 = plantigrade (flat foot), 0.5 = digitigrade (on toes),
-   *  1 = unguligrade (toe-tips/hoof). Raises the ankle. */
+  /** Ankle REST pitch — where the foot joint sits when relaxed: 0 =
+   *  plantigrade (sole flat), 0.5 = digitigrade (up on the ball), 1 =
+   *  unguligrade (on the tip / hoof). This is the joint's NEUTRAL; a planted
+   *  foot deviates from it toward the range limit as posture demands — a
+   *  body held high rides up onto the tip, a low one settles flat — so the
+   *  actual stance emerges rather than being dialled in. (Named `stance`
+   *  still; it is now the ankle rest, not the outcome.) */
   stance: number;
+  /** Ankle RANGE — how far the foot joint can pitch from its rest before it
+   *  locks, as a fraction. 1 = free to rise onto the tip under load, 0 =
+   *  rigid at its rest pitch. */
+  ankleRange: number;
   /** Digits on the foot. 1 = a single peg/hoof. */
   toeCount: number;
   /** Digit length / foot length. */
@@ -374,17 +415,20 @@ export const LIMB_GROUP_RANGES: RangesOf<LimbGroupGenome> = {
   stationEnd: { min: 0, max: 1 },
   sizePeak: { min: 0, max: 1 },
   sizeContrast: { min: 0, max: 1 },
-  segments: { min: 2, max: 4, int: true },
   lengthFrac: { min: 0.1, max: 2.5 },
   radiusFrac: { min: 0.03, max: 0.6 },
   taper: { min: 0.1, max: 1 },
   membrane: { min: 0, max: 1 },
-  splay: { min: 0, max: 1 },
-  kneeLift: { min: 0, max: 1 },
-  kneeBend: { min: -1, max: 1 },
-  jointZigzag: { min: 0, max: 1 },
+  attachHeight: { min: 0, max: 1 },
+  restProtraction: { min: -1, max: 1 },
+  restLevation: { min: -1, max: 1 },
+  restFlexion: { min: -1, max: 1 },
+  flexRange: { min: 0, max: 1 },
+  legTwist: { min: -1.5, max: 1.5, step: 0.02 },
+  legBalance: { min: -1, max: 1 },
   footLengthFrac: { min: 0, max: 0.6 },
   stance: { min: 0, max: 1 },
+  ankleRange: { min: 0, max: 1 },
   toeCount: { min: 1, max: 5, int: true },
   toeLengthFrac: { min: 0.2, max: 1 },
   toeSpread: { min: 0, max: 1.4 },
@@ -455,9 +499,10 @@ export function defaultGenome(): Genome {
       {
         placement: "bilateral",
         count: 2, stationStart: 0.18, stationEnd: 0.85, sizePeak: 1, sizeContrast: 0.12,
-        segments: 3, lengthFrac: 0.58, radiusFrac: 0.18, taper: 0.55,
-        membrane: 0, splay: 0.15, kneeLift: 0.15, kneeBend: -0.4, jointZigzag: 0.25,
-        footLengthFrac: 0.22, stance: 0.4, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5,
+        lengthFrac: 0.58, radiusFrac: 0.18, taper: 0.55,
+        membrane: 0, attachHeight: 0.38, restProtraction: 0, restLevation: -0.45, restFlexion: -0.3,
+        flexRange: 1, legTwist: 0, legBalance: 0,
+        footLengthFrac: 0.22, stance: 0.4, ankleRange: 1, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5,
         toeContrast: 0.2, opposition: 0, toeCurl: 0.1,
       },
     ],
@@ -831,9 +876,12 @@ export function randomGenome(seed: number): Genome {
   // one way of standing): 0..~0.45 erect mammal, mid = reptile sprawl,
   // high = arthropod arch. Continuous — intermediates exist.
   const limbStyle = rng();
-  const kneeLift = lerp(0.05, 1, limbStyle);
-  const styleSplay = Math.min(1, lerp(0.1, 0.95, limbStyle) * lerp(0.7, 1.3, rng()));
-  const styleZigzag = Math.min(1, lerp(0.15, 0.8, limbStyle) * lerp(0.7, 1.2, rng()));
+  // Legs MOUNT low-lateral regardless of style (so they can reach the
+  // ground); style instead sets how the limb is CARRIED: a mammal depresses
+  // its legs straight down (low levation), an arthropod levates them out
+  // into a sprawl (high levation).
+  const attachHeight = lerp(0.3, 0.48, limbStyle);
+  const restLevation = lerp(-0.55, 0.3, limbStyle);
   // Foot stance is its own axis (bears vs dogs vs horses share erect
   // legs). Hoofward stances get fewer, tighter toes and a hoof effector.
   const stance = rng();
@@ -854,17 +902,20 @@ export function randomGenome(seed: number): Genome {
     stationEnd,
     sizePeak: rng() < 0.5 ? 1 : rng(), // often biggest at the rear
     sizeContrast: lerp(0, 0.4, rng()),
-    segments: 2 + Math.round(rng() + limbStyle * 0.8),
     lengthFrac: lerp(0.25, 0.85, rng()),
     radiusFrac: lerp(0.08, 0.28, rng()) * lerp(1, 0.5, limbStyle),
     taper: lerp(0.35, 0.75, rng()),
     membrane: rng() < 0.15 ? lerp(0.2, 0.45, rng()) : lerp(0, 0.1, rng()),
-    splay: styleSplay,
-    kneeLift,
-    kneeBend: lerp(-0.6, 0.6, rng()),
-    jointZigzag: styleZigzag,
+    attachHeight,
+    restProtraction: lerp(-0.15, 0.15, rng()),
+    restLevation,
+    restFlexion: lerp(-0.6, 0.6, rng()),
+    flexRange: 1,
+    legTwist: rng() < 0.25 ? lerp(-0.6, 0.6, rng()) : 0,
+    legBalance: lerp(-0.3, 0.5, rng()),
     footLengthFrac: lerp(0.12, 0.35, rng()),
     stance,
+    ankleRange: 1,
     toeCount,
     toeLengthFrac: lerp(0.35, 0.7, rng()),
     toeSpread,
@@ -874,17 +925,18 @@ export function randomGenome(seed: number): Genome {
     ...over,
   });
   // A wing/flipper is just a membranous forelimb (an emergent role, not a
-  // type). It often folds back (kneeBend rearward) and lifts off if it
-  // can't reach the ground at the body's height.
+  // type): dorsally mounted, carried up and rearward, folded — so it can't
+  // bear weight and rests up and back along the body.
   const wingLimb = (station: number): LimbGroupGenome =>
     legGroup(1, station, station, {
       membrane: lerp(0.8, 1, rng()),
       lengthFrac: lerp(1.0, 1.7, rng()),
       radiusFrac: lerp(0.05, 0.09, rng()),
       taper: lerp(0.2, 0.4, rng()),
-      splay: lerp(0.7, 0.95, rng()),
-      kneeLift: 0.1,
-      kneeBend: -0.7,
+      attachHeight: lerp(0.8, 0.95, rng()),
+      restProtraction: lerp(-0.7, -0.3, rng()),
+      restLevation: lerp(0.6, 0.9, rng()),
+      restFlexion: 0.6,
       footLengthFrac: 0,
       toeCount: 1,
     });
@@ -903,9 +955,9 @@ export function randomGenome(seed: number): Genome {
       // one leg type duplicated into a row of pairs (centipede-ish)
       limbGroups.push(legGroup(3 + Math.round(rng() * 3), lerp(0.1, 0.2, rng()), lerp(0.8, 0.95, rng())));
     } else if (rng() < 0.4) {
-      // distinct fore + hind bend (two groups, opposite kneeBend)
-      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2, { kneeBend: lerp(0.2, 0.7, rng()) }));
-      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9, { kneeBend: lerp(-0.7, -0.2, rng()) }));
+      // distinct fore + hind knee fold (two groups, opposite restFlexion)
+      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2, { restFlexion: lerp(0.2, 0.7, rng()) }));
+      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9, { restFlexion: lerp(-0.7, -0.2, rng()) }));
     } else {
       // one type, fore+hind rows (generic quadruped)
       limbGroups.push(legGroup(2, lerp(0.1, 0.22, rng()), lerp(0.8, 0.92, rng())));

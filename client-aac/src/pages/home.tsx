@@ -1485,6 +1485,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     );
   }
 
+  // Experiment (glyphInputTranslation): when on, the header grows to show a
+  // glyph translation of incoming speech, and the board area shrinks to fit.
+  // Suppressed inside the Sentence Builder and when the header is hidden.
+  const glyphStripActive =
+    !!userProfile?.aacSettings?.glyphInputTranslation &&
+    showConversation &&
+    !showConstructionBoard;
+  // Shared growth amount (rem) — used for both the <main> top padding and the
+  // DynamicBoard font-size baseline so they stay in sync. Keep equal to the
+  // strip height rendered in DualAgentConversationBox.
+  const GLYPH_STRIP_REM = 5;
+
   return (
     <AccessibilityProvider settings={userProfile?.aacSettings?.accessibility}>
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
@@ -1573,9 +1585,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       )}
 
       {/* Main 3-Section Board Layout */}
-      <main className={`flex-1 flex flex-col relative ${
-        showConversation ? 'pt-24' : 'pt-4'
-      }`}>
+      <main
+        className={`flex-1 flex flex-col relative ${
+          showConversation ? 'pt-24' : 'pt-4'
+        }`}
+        style={glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
+      >
         {/* Audio Feedback Indicator */}
         <AnimatePresence>
           {isSpeaking && (
@@ -1792,6 +1807,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
                 getFaceImage={resolveFaceImage}
                 suppressLocalSpeech={aiSessionActive}
+                extraHeaderOffset={glyphStripActive ? GLYPH_STRIP_REM : 0}
               />
             </div>
           ) : (
@@ -2100,6 +2116,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           />
           <DualAgentConversationBox
             isVisible={showConversation}
+            glyphStripActive={glyphStripActive}
             onToggle={() => setShowConversation(!showConversation)}
             selectedSymbols={selectedSymbols}
             onClearSymbols={() => setSelectedSymbols([])}

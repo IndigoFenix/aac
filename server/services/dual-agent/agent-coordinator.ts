@@ -1437,6 +1437,7 @@ export class AgentCoordinator {
       maxBoardItems: 12,
       language: promptInputs.boardManager.language,
       singleGlyphButtons: promptInputs.boardManager.singleGlyphButtons,
+      glyphInputTranslation: promptInputs.boardManager.glyphInputTranslation,
     };
     this.boardManagerToolConfig = bmToolConfig;
 
@@ -1738,6 +1739,7 @@ export class AgentCoordinator {
         loadedBoardName: state.loadedBoardData?.name ?? null,
         autoSymbolsEnabled: !!(student?.aacSettings?.generateSymbols),
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
+        glyphInputTranslation: !!student?.aacSettings?.glyphInputTranslation,
         boardManagerGuidance: sections?.boardManagerGuidance,
         sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
         boardManagerExamples: sections?.boardManagerExamples,
@@ -4761,6 +4763,13 @@ export class AgentCoordinator {
       type: "board",
       data: buildBoardFromButtons(merged as any),
     });
+    // Experiment (glyphInputTranslation): mirror the translated incoming speech
+    // into the header glyph strip. Only sent when BoardManager supplied
+    // `input_glyphs` (replies to incoming speech) — on follow-ups it's absent
+    // and the client keeps the strip's last value.
+    if (event.inputGlyph?.glyph) {
+      this.send({ type: "input_glyphs", data: event.inputGlyph });
+    }
     void this.applySymbolPipeline(merged as any);
   }
 

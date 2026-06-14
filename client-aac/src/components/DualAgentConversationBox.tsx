@@ -37,6 +37,7 @@ import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { Glyph } from "@/components/Glyph";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -50,6 +51,10 @@ interface DualAgentConversationBoxProps {
   onToggle: () => void;
   selectedSymbols?: string[];
   onClearSymbols?: () => void;
+  /** Experiment (glyphInputTranslation): when true, render a glyph strip
+   *  beneath the header showing a translation of the latest incoming speech.
+   *  Home owns the gating (setting on + header visible + not in the builder). */
+  glyphStripActive?: boolean;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
   onUnloadBoard?: () => void;
@@ -79,6 +84,7 @@ export function DualAgentConversationBox({
   onToggle,
   selectedSymbols,
   onClearSymbols,
+  glyphStripActive,
   onBoardUpdate,
   onSetBoard,
   onUnloadBoard,
@@ -139,6 +145,7 @@ export function DualAgentConversationBox({
     paused,
     setPaused,
     thinkingPulse,
+    inputGlyph,
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
   const socialBot = useSocialBot();
@@ -710,6 +717,29 @@ export function DualAgentConversationBox({
               />
             </button>
           </div>
+
+          {/* Experiment (glyphInputTranslation): glyph translation of the
+              speech last directed at the user. The strip stays mounted (so the
+              header height is stable) and keeps its last value until the server
+              sends a fresh translation. */}
+          {glyphStripActive && (
+            <div
+              className="mt-1 flex items-center justify-center"
+              style={{ height: "4rem" }}
+              aria-hidden={!inputGlyph?.glyph}
+            >
+              {inputGlyph?.glyph ? (
+                <Glyph
+                  glyph={inputGlyph.glyph}
+                  fallback={inputGlyph.fallback}
+                  height="100%"
+                  noBackground
+                />
+              ) : (
+                <span className="text-white/30 text-2xl tracking-widest select-none">···</span>
+              )}
+            </div>
+          )}
         </div>
     </div>
   );

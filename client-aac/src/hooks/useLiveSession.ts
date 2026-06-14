@@ -56,6 +56,9 @@ export interface UseLiveSessionOptions {
   classroomId?: string | null;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
+  /** Experiment (glyphInputTranslation): glyph-string translation of the
+   *  speech just directed at the user, for the header glyph strip. */
+  onInputGlyphs?: (data: { glyph: string; fallback?: string }) => void;
   onContextBoardUpdate?: (board: ParsedBoardData) => void;
   onContextBoardRemove?: (label: string) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
@@ -86,6 +89,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     classroomId,
     language = "en",
     onBoardUpdate,
+    onInputGlyphs,
     onContextBoardUpdate,
     onContextBoardRemove,
     onBoardPatch,
@@ -297,6 +301,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Stable refs for callbacks
   const onBoardUpdateRef = useRef(onBoardUpdate);
   onBoardUpdateRef.current = onBoardUpdate;
+  const onInputGlyphsRef = useRef(onInputGlyphs);
+  onInputGlyphsRef.current = onInputGlyphs;
   const onContextBoardUpdateRef = useRef(onContextBoardUpdate);
   onContextBoardUpdateRef.current = onContextBoardUpdate;
   const onContextBoardRemoveRef = useRef(onContextBoardRemove);
@@ -509,6 +515,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "board":
           onBoardUpdateRef.current?.(msg.data);
+          break;
+
+        case "input_glyphs":
+          if (msg.data?.glyph) onInputGlyphsRef.current?.(msg.data);
           break;
 
         case "context_button_add":

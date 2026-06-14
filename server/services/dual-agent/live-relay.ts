@@ -46,7 +46,7 @@ import { logDualAgent, logLiveSession, runInSessionContext } from "./dual-agent-
 import { activityLogService } from "../activityLogService";
 import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
-import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, composeAacPersona } from "../memory-schema/aac-memory-schema";
+import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, composeAacPersona, normalizeAacPromptList } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
@@ -694,6 +694,7 @@ export type ServerMessage =
   | { type: "utterance"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
+  | { type: "input_glyphs"; data: { glyph: string; fallback?: string } }  // experiment (glyphInputTranslation): glyph translation of incoming speech for the header strip
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
@@ -2590,7 +2591,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       // 9. Store greeting for onReady to send
       const isMuted = this.muteState === "muted";
       const student = cached.monitorAgent.getStudent?.();
-      const personaHint = (student?.aacSettings?.chatAgentPrompt?.trim() || student?.aacSettings?.autoAacPrompt?.trim())
+      const personaHint = (student && (normalizeAacPromptList(student.aacSettings?.chatAgentPrompt).length > 0 || normalizeAacPromptList(student.aacSettings?.autoAacPrompt).length > 0))
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the ${T.button}s contextually relevant." : "";

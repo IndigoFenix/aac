@@ -209,9 +209,13 @@ export function createSynopticField(params: SynopticParams): SynopticField {
 
   // Frequencies in cycles-per-radian on the unit sphere.
   const freqIso = Math.max(0.5, params.planetRadiusM / params.synopticScaleM);
-  // Streak chart: long in longitude, short in latitude.
-  const freqLon = freqIso / (1 + 6 * params.streakiness);
-  const freqLat = freqIso * (1 + 1.5 * params.streakiness);
+  // Streak chart: long in longitude, short in latitude. The anisotropy
+  // RATIO is kept moderate — extreme axis ratios expose the simplex
+  // lattice as a diamond/checker pattern across the disc. Additional
+  // elongation comes from the two-tap longitude smear in sampleAt.
+  const freqLon = freqIso / (1 + 2.5 * params.streakiness);
+  const freqLat = freqIso * (1 + 0.6 * params.streakiness);
+  const smearLon = 0.5 / Math.max(0.25, freqLon);
 
   function sampleAt(
     lonRad: number,
@@ -310,7 +314,13 @@ export function createSynopticField(params: SynopticParams): SynopticField {
     let n = nIso;
     const streakW = p.streakiness * Math.sqrt(Math.max(0, cosLat));
     if (streakW > 0.01) {
-      let nStreak = noise(Math.cos(lon) * freqLon, Math.sin(lon) * freqLon, lat * freqLat + morph)
+      // Two taps separated along longitude — smears features into
+      // wind-stretched streaks without the lattice artifacts of a
+      // heavily anisotropic single sample.
+      const lon2 = lon + smearLon;
+      let nStreak = 0.5 * (
+        noise(Math.cos(lon) * freqLon, Math.sin(lon) * freqLon, lat * freqLat + morph)
+        + noise(Math.cos(lon2) * freqLon, Math.sin(lon2) * freqLon, lat * freqLat + morph))
         + 0.5 * noise(Math.cos(lon) * freqLon * 2.07 + 11.3, Math.sin(lon) * freqLon * 2.07, lat * freqLat * 2.07);
       nStreak /= 1.5;
       n = nIso * (1 - streakW) + nStreak * streakW;

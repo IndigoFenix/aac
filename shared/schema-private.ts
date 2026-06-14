@@ -507,16 +507,21 @@ export const aacSettings = pgTable("aac_settings", {
 
   // AI chat behavior
   // Two distinct per-student AAC prompt fields, both edited ONLY during
-  // clinician interactions (the live AAC moderator can never write either):
-  //   chatAgentPrompt — the CUSTOM prompt: specific behaviors caretakers have
+  // clinician interactions (the live AAC moderator can never write either).
+  // Each is a LIST of rules/notes (jsonb array of strings) — one entry per
+  // request — so the AI grows the list and removes an entry only when a newer
+  // one contradicts it or it becomes irrelevant, instead of replacing the lot.
+  // Legacy single-string values are wrapped into a 1-element array (migration
+  // 0121); runtime readers normalize string | string[] defensively.
+  //   chatAgentPrompt — the CUSTOM list: specific behaviors caretakers have
   //     explicitly requested. Rigid; changed only when a caretaker asks. Takes
-  //     priority over the auto prompt (except where it clashes with safety).
-  //   autoAacPrompt — the AUTO prompt: a digest the clinician AI generates and
-  //     keeps current as it learns new things about the student. It is "what the
-  //     AAC needs to know about this student" — the live startup AI can't dig
+  //     priority over the auto list (except where it clashes with safety).
+  //   autoAacPrompt — the AUTO list: notes the clinician AI generates and keeps
+  //     current as it learns new things about the student. It is "what the AAC
+  //     needs to know about this student" — the live startup AI can't dig
   //     through reports, so this stands in for that detail.
-  chatAgentPrompt: text("chat_agent_prompt"), // CUSTOM prompt (caretaker-requested behaviors)
-  autoAacPrompt: text("auto_aac_prompt"), // AUTO prompt (AI-generated student digest)
+  chatAgentPrompt: jsonb("chat_agent_prompt").$type<string[]>(), // CUSTOM list (caretaker-requested behaviors)
+  autoAacPrompt: jsonb("auto_aac_prompt").$type<string[]>(), // AUTO list (AI-generated student notes)
   modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
   startupMode: integer("startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
 
@@ -553,6 +558,13 @@ export const aacSettings = pgTable("aac_settings", {
   // Display settings
   iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference
+
+  // Experiment: mirror text directed at the student (AI replies + heard speech)
+  // back as a glyph strip in the header. When on, the header grows (the board
+  // area shrinks to fit) on every page except the Sentence Builder, and the
+  // Board Manager populates `rebuild_board`'s `input_glyphs` with a glyph
+  // translation of the text it is replying to. Clinician-only (AI cannot set).
+  glyphInputTranslation: boolean("glyph_input_translation").default(false).notNull(),
 
   // Constrain AI-generated buttons to a single GLYPH each (the glyph may still
   // carry modifiers — what's restricted is the per-button GLYPH count). When
@@ -2284,13 +2296,23 @@ export const updateStudentSchema = createInsertSchema(students).omit({
 }).partial();
 
 // AAC settings schemas
-export const insertAacSettingsSchema = createInsertSchema(aacSettings).omit({
+// drizzle-zod types every jsonb column as the generic `Json` union, ignoring
+// `.$type<string[]>()`. For the two AAC prompt list columns that mismatches
+// drizzle's insert type (`string[]`), so refine them to `string[]` explicitly.
+// A plain schema (vs a callback) is used verbatim, so keep it nullish to stay
+// optional+nullable like the column — otherwise `create({ studentId })` breaks.
+const aacPromptListRefine = {
+  chatAgentPrompt: z.array(z.string()).nullish(),
+  autoAacPrompt: z.array(z.string()).nullish(),
+};
+
+export const insertAacSettingsSchema = createInsertSchema(aacSettings, aacPromptListRefine).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateAacSettingsSchema = createInsertSchema(aacSettings).omit({
+export const updateAacSettingsSchema = createInsertSchema(aacSettings, aacPromptListRefine).omit({
   id: true,
   studentId: true,
   createdAt: true,

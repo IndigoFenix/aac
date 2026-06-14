@@ -1061,7 +1061,7 @@ You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any
  * Replaces buildAACPersonaSystemPrompt when used in dual-agent context.
  */
 export function buildMonitorSystemPrompt(
-  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; autoAacPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
+  student: { name: string; aacSettings?: { chatAgentPrompt?: string[] | string | null; autoAacPrompt?: string[] | string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
   muteState: 'unmuted' | 'muted' = 'unmuted',
   interactivePrompt?: string,
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
@@ -1219,33 +1219,56 @@ export const AAC_DEFAULT_PERSONA_PROMPT = `You should:
 - Keep the user's communication abilities in mind at all times`;
 
 /**
+ * Coerce a per-student AAC prompt field into a clean list of rule strings.
+ *
+ * The fields are stored as jsonb string arrays (migration 0121), but legacy
+ * rows — and values arriving from device external storage — may still be a
+ * single string. A legacy string is treated as ONE rule (not split), so no
+ * intent is lost. Trims each entry and drops blanks.
+ */
+export function normalizeAacPromptList(
+  value: string | string[] | null | undefined,
+): string[] {
+  if (value == null) return [];
+  const arr = Array.isArray(value) ? value : [value];
+  return arr
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v.length > 0);
+}
+
+/**
  * Combine the two per-student AAC prompt fields into a single persona string
- * for the fast/raw startup path (no enhancer). The CUSTOM prompt
- * (caretaker-requested behaviors) takes priority over the AUTO prompt
- * (AI-generated student digest); both are labeled so the live model knows
+ * for the fast/raw startup path (no enhancer). The CUSTOM list
+ * (caretaker-requested behaviors) takes priority over the AUTO list
+ * (AI-generated student notes); both are labeled so the live model knows
  * which is a directive and which is background. Safety protocols baked into
- * the system prompt always supersede both. When neither field is set, falls
- * back to AAC_DEFAULT_PERSONA_PROMPT.
+ * the system prompt always supersede both. When neither list has entries,
+ * falls back to AAC_DEFAULT_PERSONA_PROMPT.
+ *
+ * Each field may be a string array (current) or a single string (legacy) —
+ * both are normalized via normalizeAacPromptList. List entries are rendered as
+ * bullet points so each request reads as a distinct rule.
  *
  * The thorough-startup enhancer takes the same two fields separately and folds
  * them into its `persona` section; this helper is for when that enhancer
  * output isn't available.
  */
 export function composeAacPersona(opts: {
-  custom?: string | null;
-  auto?: string | null;
+  custom?: string | string[] | null;
+  auto?: string | string[] | null;
 }): string {
-  const custom = opts.custom?.trim() || "";
-  const auto = opts.auto?.trim() || "";
-  if (!custom && !auto) return AAC_DEFAULT_PERSONA_PROMPT;
+  const custom = normalizeAacPromptList(opts.custom);
+  const auto = normalizeAacPromptList(opts.auto);
+  if (custom.length === 0 && auto.length === 0) return AAC_DEFAULT_PERSONA_PROMPT;
+  const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
   const parts: string[] = [];
-  if (custom) {
+  if (custom.length > 0) {
     parts.push(
-      `Caretaker-requested behaviors — follow these. They take priority over the background notes below, except where they would conflict with safety:\n${custom}`,
+      `Caretaker-requested behaviors — follow these. They take priority over the background notes below, except where they would conflict with safety:\n${bullets(custom)}`,
     );
   }
-  if (auto) {
-    parts.push(`What to know about this student:\n${auto}`);
+  if (auto.length > 0) {
+    parts.push(`What to know about this student:\n${bullets(auto)}`);
   }
   return parts.join("\n\n");
 }

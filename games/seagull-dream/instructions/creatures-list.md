@@ -7,7 +7,8 @@ A non-exhaustive list of archetypal creatures the engine should eventually be ab
     - Hydra
     - Anemone
     - Sea urchin
-    (We can treat it as basically just a mouth with tentacles around it, like a disembodied octopus mouth)
+    - Sea star
+    We can radial creatures as basically just a mouth with tentacles around it, like a disembodied octopus mouth. A radial creature doesn't have "legs", but is a "mouth" that is either floating (jellies), facing down to the ground (sea stars) or crawls on its "back" (anemones). They will need their own gait system but generally radial creatures are either slow or uncoordinated so this should be a simpler system than the bilaterals.
 
 - Simple bilateral invertebrates
     - Earthworm (Basic round worm)
@@ -94,6 +95,8 @@ Notes
     - can go pretty much anywhere - might be best to make a dedicated skin-growth system mostly unconnected to general body plan and animation (may be related to defenses though)
     - overlaps with plant structure system for complex structures like branching antlers, treehopper hats, etc
     - can save this for later
+
+
 
 # Update Plan:
 

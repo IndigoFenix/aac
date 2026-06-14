@@ -403,6 +403,11 @@ export interface BoardRebuiltEvent extends BaseEvent {
   /** Who the buttons are addressed to. Carried over into button-press
    *  events when the user picks one. Defaults to "DEVICE". */
   target?: SpeechParty;
+  /** Experiment (glyphInputTranslation): a glyph-string translation of the
+   *  incoming speech this board replies to, for the header glyph strip.
+   *  Serialized from rebuild_board's `input_glyphs` array via serializeGlyph.
+   *  Absent on follow-up rebuilds (the strip then keeps its last value). */
+  inputGlyph?: { glyph: string; fallback?: string };
 }
 
 export interface ContextButtonAddedEvent extends BaseEvent {

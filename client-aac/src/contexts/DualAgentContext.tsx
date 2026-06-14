@@ -48,6 +48,10 @@ interface DualAgentContextType {
   // Board state
   currentBoard: ParsedBoardData | null;
   contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>;
+  /** Experiment (glyphInputTranslation): glyph-string translation of the
+   *  speech last directed at the user, for the header strip. Sticky — only
+   *  replaced when new incoming speech is translated. */
+  inputGlyph: { glyph: string; fallback?: string } | null;
 
   // User-controlled mute state (cave click — AI cannot toggle this)
   muteState: 'unmuted' | 'muted';
@@ -264,6 +268,7 @@ function DualAgentProviderInner({
   // Context sidebar: queue of buttons, last 4 visible. New buttons push oldest out.
   const [contextButtons, setContextButtons] = React.useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>>([]);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
+  const [inputGlyph, setInputGlyph] = React.useState<{ glyph: string; fallback?: string } | null>(null);
   const [symbolUpdate, setSymbolUpdate] = React.useState<{ buttonLabel: string; symbolPath: string } | null>(null);
   const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
@@ -335,6 +340,13 @@ function DualAgentProviderInner({
     onBoardUpdateRef.current?.(board);
   }, []);
 
+  // Experiment (glyphInputTranslation): the server only sends a translation
+  // when there's fresh incoming speech, so storing it as-is keeps the strip's
+  // last value across button-press follow-ups.
+  const handleInputGlyphs = useCallback((data: { glyph: string; fallback?: string }) => {
+    setInputGlyph(data);
+  }, []);
+
   const handleBoardPatch = useCallback((patch: BoardPatch) => {
     setBoardPatch(patch);
     onBoardPatchProp?.(patch);
@@ -389,6 +401,7 @@ function DualAgentProviderInner({
     classroomId,
     language,
     onBoardUpdate: handleBoardUpdate,
+    onInputGlyphs: handleInputGlyphs,
     onContextBoardUpdate: useCallback((buttonData: any) => {
       setContextButtons(prev => {
         const next = [...prev, buttonData];
@@ -706,6 +719,7 @@ function DualAgentProviderInner({
       agent={liveAgent}
       currentBoard={currentBoard}
       contextButtons={contextButtons}
+      inputGlyph={inputGlyph}
       setCurrentBoard={setCurrentBoard}
       boardPatch={boardPatch}
       symbolUpdate={symbolUpdate}
@@ -738,6 +752,7 @@ interface ProviderShellProps {
   agent: UseDualAgentReturn;
   currentBoard: ParsedBoardData | null;
   contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>;
+  inputGlyph: { glyph: string; fallback?: string } | null;
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   boardPatch: BoardPatch | null;
   symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
@@ -774,6 +789,7 @@ function ProviderShell({
   agent,
   currentBoard,
   contextButtons,
+  inputGlyph,
   setCurrentBoard,
   boardPatch,
   symbolUpdate,
@@ -814,6 +830,7 @@ function ProviderShell({
 
     currentBoard,
     contextButtons,
+    inputGlyph,
 
     muteState: agent.muteState,
     setMuteState: agent.setMuteState,

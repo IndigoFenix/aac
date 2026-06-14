@@ -28,6 +28,17 @@ import {
   torsoRadiusAt,
 } from "../../games/seagull-dream/src/creatures/skeleton.js";
 import { CREATURE_EXAMPLES } from "../../games/seagull-dream/src/creatures/examples.js";
+import {
+  footCycle,
+  legPhaseOffset,
+  DEFAULT_GAIT,
+  type GaitParams,
+} from "../../games/seagull-dream/src/creatures/gait.js";
+import {
+  convexHull2D,
+  supportMargin,
+  balanceShift,
+} from "../../games/seagull-dream/src/creatures/balance.js";
 
 const SEEDS = [1, 2, 42, 1337, 0xCAFE, 987654321];
 
@@ -273,8 +284,9 @@ describe("skeleton", () => {
     const skel = buildSkeleton(g);
     for (const side of ["L", "R"]) {
       const chain = skel.bones.filter((b) => b.chain === `limb0${side}`);
-      // segments leg bones + 1 foot bone in the same chain.
-      expect(chain.length).toBe(grp.segments + 1);
+      // The limb is a fixed 3-section chain lofted as femur(2)+tibia(2)
+      // bones, + 1 foot bone in the same chain = 5.
+      expect(chain.length).toBe(5);
       expect(chain[chain.length - 1].id).toBe(`limb0${side}foot`);
       const digits = skel.bones.filter((b) => b.chain.startsWith(`limb0${side}d`));
       expect(digits.length).toBe(3);
@@ -303,32 +315,177 @@ describe("skeleton", () => {
     expect(unguligrade).toBeGreaterThan(digitigrade);
   });
 
-  it("kneeLift=1 arches the joint above the hip (arthropod legs)", () => {
+  it("a levated limb rides the knee up (sprawl) vs a depressed one (tuck under)", () => {
+    // Knee elevation is no longer authored — it emerges from how the limb is
+    // CARRIED (restLevation): a levated (sprawled) limb plants its foot wide
+    // and arches the knee out and UP; a depressed limb stands narrow and
+    // folds the knee down and under.
     const archLeg: LimbGroupGenome = {
       placement: "bilateral",
       count: 1, stationStart: 0.5, stationEnd: 0.5, sizePeak: 1, sizeContrast: 0,
-      segments: 3, lengthFrac: 0.9, radiusFrac: 0.08, taper: 0.6,
-      membrane: 0, splay: 0.9, kneeLift: 1, kneeBend: 0, jointZigzag: 0.6,
-      footLengthFrac: 0.1, stance: 0.8, toeCount: 1, toeLengthFrac: 0.3, toeSpread: 0,
+      lengthFrac: 0.9, radiusFrac: 0.1, taper: 0.6,
+      membrane: 0, attachHeight: 0.4, restProtraction: 0, restLevation: 0.3, restFlexion: 0,
+      flexRange: 1, legTwist: 0, legBalance: 0,
+      footLengthFrac: 0.1, stance: 0.8, ankleRange: 1, toeCount: 1, toeLengthFrac: 0.3, toeSpread: 0,
       toeContrast: 0, opposition: 0, toeCurl: 0,
     };
-    const g = defaultGenome();
-    g.posture.bodyHeight = 0.1; // body slung low so the high knees arch up
-    g.limbGroups = [archLeg];
-    const skel = buildSkeleton(g);
-    const chain = skel.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
-    const hipY = chain[0].head.y;
-    const jointPeak = Math.max(...chain.slice(0, -1).map((b) => b.tail.y));
-    expect(jointPeak).toBeGreaterThan(hipY);
+    const kneePeak = (restLevation: number): { peak: number; hipY: number } => {
+      const g = defaultGenome();
+      g.posture.bodyHeight = 0.1; // slung low so the bend shows
+      g.limbGroups = [{ ...archLeg, restLevation }];
+      const chain = buildSkeleton(g).bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
+      return { peak: Math.max(...chain.slice(0, -1).map((b) => b.tail.y)), hipY: chain[0].head.y };
+    };
+    const high = kneePeak(0.3);
+    const low = kneePeak(-0.5);
+    // The levated limb carries its knee higher than the depressed one...
+    expect(high.peak).toBeGreaterThan(low.peak);
+    // ...and the depressed (mammal) limb keeps the joint tucked below the hip.
+    expect(low.peak).toBeLessThan(low.hipY);
+  });
 
-    // And the mammal configuration keeps joints below the hip.
-    const g2 = defaultGenome();
-    g2.posture.bodyHeight = 0.1;
-    g2.limbGroups = [{ ...archLeg, kneeLift: 0, splay: 0.1, jointZigzag: 0.3 }];
-    const skel2 = buildSkeleton(g2);
-    const chain2 = skel2.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
-    const jointPeak2 = Math.max(...chain2.slice(0, -1).map((b) => b.tail.y));
-    expect(jointPeak2).toBeLessThan(chain2[0].head.y);
+  it("load recruitment: a capable manipulator stays raised when other legs support, and deploys when they are removed", () => {
+    // Forelegs are mounted low (so they CAN reach the ground) but aimed like
+    // a manipulator (reaching forward, raised, folded). With enough walking
+    // legs the body is already supported, so the forelegs stay raised; strip
+    // the walkers and the forelegs must deploy to keep the body up.
+    const foreFootY = (walkRows: number): { fore: number; walk: number } => {
+      const g = defaultGenome();
+      g.posture.bodyHeight = 0.5;
+      g.tail.segments = 0; // keep the CoM mid-body
+      const walk = {
+        ...g.limbGroups[0], attachHeight: 0.45, restProtraction: 0, restLevation: 0.2,
+        restFlexion: 0, lengthFrac: 0.6, radiusFrac: 0.05, footLengthFrac: 0.1, toeCount: 1,
+      };
+      const fore = { ...walk, restProtraction: 0.2, restLevation: 0.85, restFlexion: 0.2 };
+      g.limbGroups = [
+        // count 2 → a rear row (0.85) + a front row (0.4); count 1 → rear only.
+        { ...walk, count: walkRows, stationStart: 0.85, stationEnd: 0.4 },
+        { ...fore, count: 1, stationStart: 0.18, stationEnd: 0.18 },
+      ];
+      const skel = buildSkeleton(g);
+      const foreFoot = skel.bones.find((b) => b.id === `limb${walkRows}Lfoot`)!; // group1 copy0
+      const walkFoot = skel.bones.find((b) => b.id === "limb0Lfoot")!;
+      return { fore: foreFoot.tail.y, walk: walkFoot.tail.y };
+    };
+    const supported = foreFootY(3); // 6 walking legs hold the body
+    expect(supported.fore).toBeGreaterThan(supported.walk + 0.1); // foreleg held UP, not planted
+    const stripped = foreFootY(1); // only 2 walking legs — the forelegs must deploy
+    expect(stripped.fore).toBeLessThan(supported.fore - 0.1); // dropped toward the ground
+  });
+
+  it("stance width grows with restLevation (stability sprawl)", () => {
+    // A levated (sprawled) limb plants its foot WIDER for a stable base; a
+    // depressed limb stands narrow, straight under the body.
+    const footX = (restLevation: number): number => {
+      const g = defaultGenome();
+      g.posture.bodyHeight = 0.5;
+      g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, restLevation }];
+      const foot = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!;
+      return Math.abs(foot.head.x); // ankle lateral offset from the centerline
+    };
+    expect(footX(0.3)).toBeGreaterThan(footX(-0.5) + 0.02);
+  });
+
+  it("restProtraction swings both legs the same way (mirror-symmetric, not one fore/one aft)", () => {
+    const feet = (restProtraction: number) => {
+      const g = defaultGenome();
+      g.posture.bodyHeight = 0.5;
+      g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, restLevation: 0.3, restProtraction, footLengthFrac: 0.15 }];
+      const skel = buildSkeleton(g);
+      const l = skel.bones.find((b) => b.id === "limb0Lfoot")!.tail;
+      const r = skel.bones.find((b) => b.id === "limb0Rfoot")!.tail;
+      return { l, r };
+    };
+    const fwd = feet(0.6);
+    const neutral = feet(0);
+    // Left and right feet stay mirror-symmetric: same z (fore/aft), opposite x.
+    expect(fwd.l.z).toBeCloseTo(fwd.r.z, 6);
+    expect(fwd.l.x).toBeCloseTo(-fwd.r.x, 6);
+    // And +protraction carries BOTH feet forward of their neutral position.
+    expect(fwd.l.z).toBeGreaterThan(neutral.l.z + 0.05);
+    expect(fwd.r.z).toBeGreaterThan(neutral.r.z + 0.05);
+  });
+
+  it("legBalance moves the knee without changing where the foot lands", () => {
+    const kneeAndFoot = (legBalance: number) => {
+      const g = defaultGenome();
+      g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, legBalance, footLengthFrac: 0.1 }];
+      const skel = buildSkeleton(g);
+      const chain = skel.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
+      const knee = chain[1].tail; // femur/tibia junction (4 loft bones: knee at index 1's tail)
+      const foot = skel.bones.find((b) => b.id === "limb0Lfoot")!.tail;
+      return { kneeY: knee.y, footY: foot.y, footZ: foot.z };
+    };
+    const longFemur = kneeAndFoot(-0.8);
+    const longShank = kneeAndFoot(0.8);
+    // The total length is unchanged, so the foot lands in the same place...
+    expect(longFemur.footY).toBeCloseTo(longShank.footY, 4);
+    expect(longFemur.footZ).toBeCloseTo(longShank.footZ, 4);
+    // ...but the knee sits at a different height.
+    expect(Math.abs(longFemur.kneeY - longShank.kneeY)).toBeGreaterThan(0.02);
+  });
+
+  it("stance emerges from posture: held high the foot rises onto its tip, held low it stays flat", () => {
+    const ankleRise = (bodyHeight: number): number => {
+      const g = defaultGenome();
+      g.posture.bodyHeight = bodyHeight;
+      g.limbGroups = [{ ...g.limbGroups[0], stance: 0.15, footLengthFrac: 0.28, ankleRange: 1 }];
+      const foot = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!;
+      return foot.head.y - foot.tail.y; // ankle height above the ground contact (ball)
+    };
+    expect(ankleRise(1.0)).toBeGreaterThan(ankleRise(0.3) + 0.02);
+  });
+
+  it("legTwist rotates a held limb out of its plane (3D curl)", () => {
+    const tip = (legTwist: number) => {
+      const g = defaultGenome();
+      // membrane → not leggy → always held (forward kinematics), so the twist shows.
+      g.limbGroups = [{ ...g.limbGroups[0], count: 1, membrane: 0.9, footLengthFrac: 0, restFlexion: 0.6, attachHeight: 0.5, legTwist }];
+      const chain = buildSkeleton(g).bones.filter((b) => b.chain === "limb0L");
+      return chain[chain.length - 1].tail;
+    };
+    const t0 = tip(0);
+    const t1 = tip(1.0);
+    expect(Math.hypot(t1.x - t0.x, t1.y - t0.y, t1.z - t0.z)).toBeGreaterThan(0.02);
+  });
+
+  it("strain solve: a heavy load straightens the bent rest knee toward a pillar", () => {
+    // Same bent rest knee; under a heavy share the joint springs are overrun
+    // and the knee straightens (a load-cheap column), while a light,
+    // thick-legged limb relaxes back to its bent rest crouch.
+    // Both have strong (thick) legs — only the body weight differs.
+    const kneeAngle = (girth: number): number => {
+      const g = defaultGenome();
+      g.spine.girth = girth; // body weight
+      g.posture.bodyHeight = 0.5;
+      g.limbGroups = [{ ...g.limbGroups[0], radiusFrac: 0.18, restFlexion: -0.7, stance: 0.5, footLengthFrac: 0.2, ankleRange: 1 }];
+      const chain = buildSkeleton(g).bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
+      const hip = chain[0].head, knee = chain[1].tail, ankle = chain[chain.length - 1].tail;
+      const a = [hip.x - knee.x, hip.y - knee.y, hip.z - knee.z];
+      const b = [ankle.x - knee.x, ankle.y - knee.y, ankle.z - knee.z];
+      const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const la = Math.hypot(...a), lb = Math.hypot(...b);
+      return Math.acos(Math.max(-1, Math.min(1, dot / (la * lb)))); // π = straight
+    };
+    const heavy = kneeAngle(0.42); // heavy trunk → straightens toward a pillar
+    const light = kneeAngle(0.08); // light trunk → relaxes to its bent rest
+    expect(heavy).toBeGreaterThan(light + 0.05);
+  });
+
+  it("a heavy body on thin legs stands lower than on thick legs", () => {
+    // Girth → weight (body) and strength (legs): give a fat trunk spindly
+    // legs and it sags toward belly-rest instead of standing tall.
+    const standHeight = (radiusFrac: number): number => {
+      const g = defaultGenome();
+      g.spine.girth = 0.4; // heavy trunk
+      g.posture.bodyHeight = 1; // ask to stand as tall as possible
+      g.limbGroups = [{ ...g.limbGroups[0], radiusFrac }];
+      const skel = buildSkeleton(g);
+      const torso = skel.bones.filter((b) => b.kind === "torso");
+      return Math.max(...torso.map((b) => b.head.y)); // top of the trunk
+    };
+    expect(standHeight(0.06)).toBeLessThan(standHeight(0.22));
   });
 
   it("resolveLimbs duplicates a leg type into evenly-spaced rows", () => {
@@ -613,5 +770,142 @@ describe("skeleton", () => {
     // Eyes mirror across the sagittal plane.
     const xs = eyes.map((e) => e.position.x).sort((a, b) => a - b);
     expect(xs[0]).toBeCloseTo(-xs[xs.length - 1], 9);
+  });
+});
+
+describe("gait (procedural walk)", () => {
+  it("foot cycle is continuous at the stance↔swing seam", () => {
+    const p: GaitParams = { ...DEFAULT_GAIT, dutyFactor: 0.6 };
+    // Just before / after the seam (u = duty) the foot neither jumps nor
+    // is mid-air: advance ≈ -0.5 and lift ≈ 0 on both sides.
+    const before = footCycle(0.6 - 1e-4, { ...p, phase: 0 });
+    const after = footCycle(0.6 + 1e-4, { ...p, phase: 0 });
+    expect(before.planted).toBe(true);
+    expect(after.planted).toBe(false);
+    expect(before.advance).toBeCloseTo(-0.5, 2);
+    expect(after.advance).toBeCloseTo(-0.5, 2);
+    expect(before.lift).toBeCloseTo(0, 2);
+    expect(after.lift).toBeCloseTo(0, 2);
+  });
+
+  it("a foot is planted for the duty fraction of the cycle", () => {
+    const p: GaitParams = { ...DEFAULT_GAIT, dutyFactor: 0.7 };
+    let planted = 0;
+    const N = 1000;
+    for (let i = 0; i < N; i++) planted += footCycle(0, { ...p, phase: i / N }).planted ? 1 : 0;
+    expect(planted / N).toBeCloseTo(0.7, 1);
+  });
+
+  it("the swing foot lifts; the planted one stays down", () => {
+    let lifted = 0;
+    let down = 0;
+    let maxLift = 0;
+    const N = 200;
+    for (let i = 0; i < N; i++) {
+      const c = footCycle(0, { ...DEFAULT_GAIT, phase: i / N });
+      if (c.planted) { down++; expect(c.lift).toBe(0); } else { lifted++; maxLift = Math.max(maxLift, c.lift); }
+    }
+    expect(lifted).toBeGreaterThan(0);
+    expect(down).toBeGreaterThan(0);
+    expect(maxLift).toBeGreaterThan(0.9); // mid-swing reaches full step height
+  });
+
+  it("trot phases diagonal legs together, antiphase to the other pair", () => {
+    const fl = legPhaseOffset({ stationFrac: 0.2, side: -1 }, "trot"); // front-left
+    const fr = legPhaseOffset({ stationFrac: 0.2, side: 1 }, "trot"); // front-right
+    const hl = legPhaseOffset({ stationFrac: 0.8, side: -1 }, "trot"); // hind-left
+    const hr = legPhaseOffset({ stationFrac: 0.8, side: 1 }, "trot"); // hind-right
+    expect(fl).toBeCloseTo(hr, 9); // one diagonal pair shares a phase
+    expect(fr).toBeCloseTo(hl, 9); // the other diagonal pair shares a phase
+    expect(Math.abs(fl - fr)).toBeCloseTo(0.5, 9); // pairs are antiphase
+  });
+
+  it("pace phases by side (left legs together, right legs together)", () => {
+    const fl = legPhaseOffset({ stationFrac: 0.2, side: -1 }, "pace");
+    const hl = legPhaseOffset({ stationFrac: 0.8, side: -1 }, "pace");
+    const fr = legPhaseOffset({ stationFrac: 0.2, side: 1 }, "pace");
+    expect(fl).toBeCloseTo(hl, 9); // same side → same phase
+    expect(Math.abs(fl - fr)).toBeCloseTo(0.5, 9); // opposite sides antiphase
+  });
+
+  it("a walking skeleton lifts the swing foot and keeps a planted foot down", () => {
+    // Default quadruped: limb0 = front pair (station 0.18), limb1 = hind
+    // (0.85). Under a trot at phase 0.8 the front-left foot is mid-swing
+    // and the front-right is planted.
+    const g = defaultGenome();
+    const restY = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!.tail.y;
+    const gait: GaitParams = { phase: 0.8, strideFrac: 0.5, stepHeight: 0.3, dutyFactor: 0.6, pattern: "trot" };
+    const walk = buildSkeleton(g, gait);
+    const swing = walk.bones.find((b) => b.id === "limb0Lfoot")!;
+    const stance = walk.bones.find((b) => b.id === "limb0Rfoot")!;
+    expect(swing.tail.y).toBeGreaterThan(restY + 0.03); // lifted off the ground
+    expect(stance.tail.y).toBeLessThan(swing.tail.y); // its diagonal partner stays down
+  });
+
+  it("the gait is deterministic for the same genome + params", () => {
+    const g = defaultGenome();
+    const gait: GaitParams = { ...DEFAULT_GAIT, phase: 0.37 };
+    const a = buildSkeleton(g, gait).bones.map((b) => b.tail.y);
+    const b = buildSkeleton(g, gait).bones.map((b) => b.tail.y);
+    expect(a).toEqual(b);
+  });
+
+  it("with no gait the rest pose is unchanged (gait is purely additive)", () => {
+    const g = defaultGenome();
+    const rest = buildSkeleton(g).bones.map((b) => `${b.tail.x},${b.tail.y},${b.tail.z}`);
+    const restAgain = buildSkeleton(g, undefined).bones.map((b) => `${b.tail.x},${b.tail.y},${b.tail.z}`);
+    expect(rest).toEqual(restAgain);
+  });
+});
+
+describe("balance (CoM over the support polygon)", () => {
+  it("convexHull2D returns the outer corners of a point cloud", () => {
+    const hull = convexHull2D([
+      { x: 0, z: 0 }, { x: 2, z: 0 }, { x: 2, z: 2 }, { x: 0, z: 2 }, { x: 1, z: 1 }, // interior point
+    ]);
+    expect(hull.length).toBe(4); // the square's 4 corners; the interior point is dropped
+  });
+
+  it("supportMargin is positive inside the polygon, negative outside", () => {
+    const hull = convexHull2D([{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: 1, z: 1 }, { x: -1, z: 1 }]);
+    expect(supportMargin({ x: 0, z: 0 }, hull)).toBeGreaterThan(0); // centre
+    expect(supportMargin({ x: 2, z: 0 }, hull)).toBeLessThan(0); // outside
+    // A degenerate support (a line — two feet) is never strictly inside.
+    expect(supportMargin({ x: 0, z: 0 }, [{ x: -1, z: 0 }, { x: 1, z: 0 }])).toBeLessThanOrEqual(0);
+  });
+
+  it("balanceShift moves an off-balance CoM toward the feet, and leaves a balanced one alone", () => {
+    const feet = [{ x: -1, z: 0 }, { x: 1, z: 0 }, { x: 0, z: 2 }];
+    const inside = balanceShift({ x: 0, z: 0.8 }, feet, 0.1); // already over the support
+    expect(Math.hypot(inside.x, inside.z)).toBeLessThan(1e-6);
+    const out = balanceShift({ x: 0, z: -2 }, feet, 0.1); // behind the feet
+    expect(out.z).toBeGreaterThan(0.1); // shifts forward, toward the support
+  });
+
+  it("a biped leans its body so the CoM rides over its two feet", () => {
+    const g = defaultGenome();
+    g.posture = { bodyPitch: 1.0, bodyHeight: 0.8 };
+    g.tail.segments = 0;
+    g.neck = { segments: 3, lengthFrac: 1.0, radiusFrac: 0.5, lift: 0.2 }; // long neck → CoM would pull forward
+    g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.82, stationEnd: 0.82, lengthFrac: 0.9, attachHeight: 0.3, restLevation: -0.5 }];
+    const skel = buildSkeleton(g);
+    // Mass-weighted centre of the posed trunk.
+    let mx = 0, mz = 0, m = 0;
+    for (const b of skel.bones) {
+      if (b.kind !== "torso") continue;
+      const r = (b.radiusHead + b.radiusTail) / 2;
+      const len = Math.hypot(b.tail.x - b.head.x, b.tail.y - b.head.y, b.tail.z - b.head.z);
+      const w = r * r * len;
+      mx += w * (b.head.x + b.tail.x) / 2; mz += w * (b.head.z + b.tail.z) / 2; m += w;
+    }
+    mx /= m; mz /= m;
+    const feet = ["limb0Lfoot", "limb0Rfoot"].map((id) => {
+      const f = skel.bones.find((b) => b.id === id)!;
+      return { x: f.tail.x, z: f.tail.z };
+    });
+    // The trunk centre should sit near the foot line (leaned over the feet),
+    // not far in front of it.
+    const margin = supportMargin({ x: mx, z: mz }, convexHull2D(feet));
+    expect(Math.abs(margin)).toBeLessThan(0.18 * g.spine.torsoLengthM);
   });
 });

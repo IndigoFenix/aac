@@ -38,7 +38,14 @@ export default defineConfig({
     // Standalone vite dev (`npm run client:dev`): the pre-built games under
     // /games/* are served by the Express server, not vite — proxy them so
     // embedded game iframes (quest-game preview) work in this mode too.
+    // The main client itself reaches the backend via the absolute VITE_API_URL,
+    // so these /api + /auth proxies don't affect its own calls (absolute URLs
+    // bypass the proxy). They exist for Express-served pages reached THROUGH
+    // the /games proxy — e.g. the games login page POSTs a relative /auth/login,
+    // which would otherwise resolve to the vite origin (:5173) and 404.
     proxy: {
+      "/api":   { target: "http://localhost:5000", changeOrigin: true },
+      "/auth":  { target: "http://localhost:5000", changeOrigin: true },
       "/games": { target: "http://localhost:5000", changeOrigin: true },
     },
     watch: {

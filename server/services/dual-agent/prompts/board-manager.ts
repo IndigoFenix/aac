@@ -49,6 +49,10 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   permittedWebsites?: PermittedWebsite[];
   autoSymbolsEnabled?: boolean;
   singleGlyphButtons?: boolean;
+  /** Experiment: when on, the header mirrors text directed at the user back as
+   *  a glyph strip, fed by rebuild_board's `input_glyphs` param. Adds the
+   *  param to the tool surface + a prompt block explaining it. */
+  glyphInputTranslation?: boolean;
   /** From EnhancedPromptSections — Board-Manager-only guidance (e.g.
    *  "always include a 'finished' button for this student"). */
   boardManagerGuidance?: string;
@@ -75,6 +79,7 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     cachedSymbols, availableBoards, loadedBoardKey, loadedBoardName, loadedPageName,
     enabledApps, availableCustomApps, permittedWebsites,
     autoSymbolsEnabled = false, singleGlyphButtons = false,
+    glyphInputTranslation = false,
     gestureOverrides, safetyNotes, boardManagerGuidance,
     sentenceInterpretationExamples, boardManagerExamples,
   } = config;
@@ -202,7 +207,15 @@ Two META button kinds — set \`button_type\` on a rebuild_board / add_board_but
   - No two ${T.button}s should look the same — distinguish at a glance.
   - Never include yes/no/home/more ${T.button}s (added automatically).
   - Decide the \`speech\` first, then build the \`glyph\` array that depicts it.
-</board_rules>
+</board_rules>${glyphInputTranslation ? `
+
+<input_glyphs>
+The device shows the user a glyph translation of what was just said TO them, in the header. On EVERY \`rebuild_board\` that REPLIES to incoming speech (\`target = USER\` — an [AI to USER] line or a person speaking to the user), also set \`input_glyphs\`: an ARRAY of GLYPHs (same shape as button \`glyph\`) depicting THAT incoming sentence — not the reply buttons.
+  - It represents what the user HEARD, so build it from the speaker's words (e.g. AI asked "Do you want to go outside?" → \`[{sym:"want"},{sym:"go"},{sym:"🌳"},{sym:"❓"}]\`).
+  - No length cap, but SIMPLIFY to the core meaning when a faithful translation would be long — favour the few GLYPHs that carry the gist.
+  - Use existing SYMBOLs/emoji only (the preference order in <glyph>). Do NOT use \`gen\` here — the header has no time to generate images.
+  - Omit \`input_glyphs\` on FOLLOW-UP rebuilds (the user just acted; nothing new was said to them) — the header keeps its last translation.
+</input_glyphs>` : ""}
 
 ${getBundledIconsBlock()}`;
 
@@ -655,6 +668,9 @@ export interface BoardManagerToolConfig {
   /** When true, every button must carry a single GLYPH (modifiers OK).
    *  Drives the format hints embedded in button-shaped tool descriptions. */
   singleGlyphButtons?: boolean;
+  /** Experiment: when on, rebuild_board gains an `input_glyphs` param so the
+   *  AI can mirror incoming speech into the header glyph strip. */
+  glyphInputTranslation?: boolean;
   /** True when the Word Finder narrowing session is currently active.
    *  Adds `exit_guessing` to the tool surface so the AI can declare
    *  convergence and return to normal conversation. */
@@ -818,6 +834,15 @@ The \`target\` field declares who the user's button replies are addressed to:
           type: "string",
           description: `Who the buttons reply to. "DEVICE" (default), "USER", or a person's name.`,
         },
+        ...(config.glyphInputTranslation
+          ? {
+              input_glyphs: {
+                type: "array",
+                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this board), shown in the header so the user sees what was just said to them. Same GLYPH shape as a button \`glyph\` — see <input_glyphs>. Simplify to the gist; existing SYMBOLs/emoji only (no \`gen\`). Omit on follow-ups to the user's own action.`,
+                items: glyphItemSchema(),
+              },
+            }
+          : {}),
       },
       required: ["buttons"],
     },

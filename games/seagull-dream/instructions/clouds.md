@@ -22,10 +22,60 @@ cloud-field.ts   LOCAL scale (~1–100 km). Adds vertical structure
 cloud-system.ts  Renderers, all reading the SAME map bytes:
                   • shell  — sphere mesh / GLSL, samples the map
                              texture directly (orbit & far view)
-                  • sprites — hierarchical cell walk + Gaussian point
-                             billboards (flight & ground view)
+                  • sprites — hierarchical cell walk + INSTANCED QUAD
+                             Gaussian billboards (flight & ground view)
                   • fog    — fogContribution() at the camera position
 ```
+
+### Cloud Lab (cloud-lab.html)
+
+Standalone scenario viewer (`src/cloud-lab/lab.ts`) with 14 authored
+scenarios — Earth at every altitude, fog stress, night, terminator,
+Jupiter, Venus, Mars — using the same fog pipeline as world.ts.
+Scenarios auto-relocate to representative weather (`findSite`).
+`shot-clouds.cjs` captures all scenarios headlessly into `caps-clouds/`.
+Headless hooks: `__labGoto(name)`, `__labLook(yaw,pitch)`, `__labStats()`,
+`__labSet(key,val)` (incl. `shellDebug` 1/2 = raw cover visualization),
+and `__labFlicker(steps,strideM)` — a numeric flicker metric that steps
+the camera with wind/bake frozen and pixel-diffs consecutive frames
+(healthy: ≤0.5% changed pixels per 3 m step).
+
+### Hard-won rendering invariants (violating these re-introduces bugs)
+
+- **Quads, not gl_Points.** Points are culled whole when their CENTER
+  exits the frustum and clamp at a driver size limit — big near sprites
+  pop in and out while flying ("clouds flicker/jump"). Instanced quads
+  clip per-fragment. Do not "fix" near-sprite popping with screen-size
+  alpha fades: that deletes the overhead deck when standing under it.
+- **Exact-ish sort order.** Far-to-near via 2-pass radix on distance
+  quantized to 2 m + stable hash tie-break. Coarse distance buckets make
+  overlapping sprites SWAP blend order as the camera crosses bucket
+  boundaries — visible composite flicker.
+- **Footprint sampling, not point sampling.** A tier whose cells are
+  bigger than a layer is thick must treat samples as COLUMN samples
+  (cloud-field's `sampleScaleM`): gate widened ±half cell, profile
+  pulled to the layer's meaty part, emission altitude snapped into the
+  layer. Without this, thin decks decimate to the ~thickness/cellSize
+  fraction of columns whose grid centers happen to land inside.
+  (Do NOT try per-column "slab" samples on the global y-grid instead —
+  at low latitude, y-columns run nearly parallel to the shell and their
+  sphere intersections are spaced cellSize/sin(lat) apart.)
+- **Shell chord sag.** A tessellated shell sphere dips R·θ²/8 between
+  vertices — more than the cloud altitude on giants — and the planet
+  bulges through every quad as a glyph grid. The shell is lifted by the
+  computed sag.
+- **Weather-map texture needs mipmaps** — full-disc views undersample a
+  1024-texel map into a few hundred pixels; bilinear-only minification
+  renders the texel grid as moiré.
+- **Night fog shading** — `fogContribution` returns UNSHADED cloud
+  color; multiply by the day/night factor before tinting scene fog or
+  night cloud interiors glow.
+- **Shell↔billboard crossfade is per-pixel by DISTANCE**, scaled to the
+  billboard reach — the shell takes over exactly where billboards end,
+  at any camera altitude. (Altitude-based shell fading leaves a no-cloud
+  gap between billboard reach and the fade-in altitude.) Relatedly, LOD
+  fade on the big sheet discs is applied mostly as SIZE: alpha-fading
+  them paints a translucent white film over the terrain behind.
 
 ### Why a baked map
 
@@ -124,8 +174,9 @@ its fade-in; no synchronous prebake hitch.
 - **Rebuild cadence** — billboards rebuild every `cloudUpdateEvery`
   frames (default 2); sprites are planet-anchored so off-frames stay
   coherent.
-- **Counting sort** — far-to-near ordering via 256 distance buckets;
-  O(n), allocation-free (replaces comparator Array.sort).
+- **Radix sort** — far-to-near ordering, 2-pass LSD radix on distance
+  quantized to 2 m + hash tie-break; O(n), allocation-free. (See the
+  rendering invariants above for why not coarse buckets.)
 - **High-altitude early-out** — above billboard reach the walk is
   skipped entirely; the shell alone represents the planet from space.
 - **Perf counters** — `cloudSystemStats` (bake/walk/sort ms, cells) and

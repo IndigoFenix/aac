@@ -8,14 +8,15 @@
  * different mode (setup mode here vs. AAC mode during a live session). These two
  * prompt fields are how its setup-mode self prepares its AAC-mode self.
  *
- * Fields:
- * - Context_AACPrompt: Caretaker instructions — specific behaviors a caretaker
- *     has explicitly requested. Rigid; changed only on caretaker request.
- *     (DB column: chatAgentPrompt.)
- * - Context_AACAutoPrompt: The assistant's scratchpad — a self-maintained
- *     consolidation of everything its AAC-mode self needs to know about the
- *     student. Updated whenever new information about the student is learned.
- *     (DB column: autoAacPrompt.)
+ * Fields (the two prompt fields are LISTS of strings — one rule/note per entry —
+ * so the assistant ADDS entries and removes one only when superseded, rather
+ * than rewriting the whole field):
+ * - Context_AACPrompt: Caretaker instructions — a list of specific behaviors a
+ *     caretaker has explicitly requested. Rigid; entries added/removed only on
+ *     caretaker request. (DB column: chatAgentPrompt, jsonb string[].)
+ * - Context_AACAutoPrompt: The assistant's scratchpad — a self-maintained list
+ *     of notes its AAC-mode self needs to know about the student. New notes are
+ *     added as information is learned. (DB column: autoAacPrompt, jsonb string[].)
  * - Context_AACSettings: All other AAC settings (voice, display, input, symbols, etc.)
  *
  * Both prompt fields are written ONLY during clinician interactions. In AAC mode
@@ -39,6 +40,7 @@ import {
 } from "../chat/memory-types";
 import { studentService } from "../studentService";
 import type { AccessCtx } from "../sharing/visibility";
+import { normalizeAacPromptList } from "./aac-memory-schema";
 
 // ============================================================================
 // DB HELPERS
@@ -102,6 +104,19 @@ export function sanitizePromptField(input: string): string {
   return p;
 }
 
+/**
+ * Sanitize a list of AAC prompt rules (the array form of the two prompt
+ * fields). Coerces string | string[] to an array, defangs each entry via
+ * sanitizePromptField, trims, and drops blanks. Caps the list to 50 entries
+ * so a runaway writer can't bloat the live system prompt.
+ */
+export function sanitizePromptList(input: string | string[] | null | undefined): string[] {
+  return normalizeAacPromptList(input)
+    .map((rule) => sanitizePromptField(rule).trim())
+    .filter((rule) => rule.length > 0)
+    .slice(0, 50);
+}
+
 async function readAACSettings(ctx: DBOperationContext): Promise<Record<string, any> | null> {
   const studentId = ctx.all.studentId;
   if (!studentId) return null;
@@ -160,16 +175,18 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     if (WRITABLE_COLUMNS.has(k)) filtered[k] = v;
   }
 
-  // Sanitize both prompt fields on write. Both are fed into the thorough-startup
-  // enhancer (each wrapped in a per-session nonced <<UNTRUSTED-...>> marker) and
-  // — when the enhancer fails or fast-startup is selected — concatenated raw
-  // into the live <persona> block. Without this gate either field is a
-  // clinician-controllable prompt-injection slot. See sanitizePromptField.
-  if (typeof filtered.chatAgentPrompt === "string") {
-    filtered.chatAgentPrompt = sanitizePromptField(filtered.chatAgentPrompt);
+  // Sanitize both prompt fields on write. Each is now a LIST of rule strings
+  // (jsonb array). Both are fed into the thorough-startup enhancer (each rule
+  // wrapped in a per-session nonced <<UNTRUSTED-...>> marker) and — when the
+  // enhancer fails or fast-startup is selected — concatenated raw into the live
+  // <persona> block. Without this gate either field is a clinician-controllable
+  // prompt-injection slot. Legacy single-string writes are coerced to a
+  // 1-element list. See sanitizePromptList / sanitizePromptField.
+  if (filtered.chatAgentPrompt !== undefined) {
+    filtered.chatAgentPrompt = sanitizePromptList(filtered.chatAgentPrompt);
   }
-  if (typeof filtered.autoAacPrompt === "string") {
-    filtered.autoAacPrompt = sanitizePromptField(filtered.autoAacPrompt);
+  if (filtered.autoAacPrompt !== undefined) {
+    filtered.autoAacPrompt = sanitizePromptList(filtered.autoAacPrompt);
   }
 
   if (Object.keys(filtered).length === 0) return updates;
@@ -190,78 +207,109 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 // ============================================================================
 
 /**
- * Context_AACPrompt — Caretaker instructions (DB: chatAgentPrompt). Behaviors a
- * caretaker has explicitly requested for AAC sessions. Rigid: change it only on
- * caretaker request.
+ * Context_AACPrompt — Caretaker instructions (DB: chatAgentPrompt). A LIST of
+ * behaviors a caretaker has explicitly requested for AAC sessions, one rule per
+ * entry. Rigid: ADD a new rule when a caretaker asks; DELETE one only when a
+ * newer rule contradicts it or it is no longer relevant. Never replace the
+ * whole list.
  */
-export const AAC_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
+export const AAC_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
   id: "Context_AACPrompt",
-  type: "object",
+  type: "array",
   title: "AAC Caretaker Instructions",
   description:
-    "Behaviors a caretaker has explicitly asked you to follow in AAC mode " +
+    "A LIST of behaviors a caretaker has explicitly asked you to follow in AAC mode, ONE rule per entry " +
     "(e.g. \"greet her by name\", \"keep sentences short\", \"don't offer food choices\"). " +
-    "Rigid and human-owned — update only when a user asks to change how you behave during sessions. Should always be in English, even if the user's primary language is not English.",
+    "Rigid and human-owned. To record a new request, `add` it as a new entry — do NOT rewrite the whole list. " +
+    "`delete` an entry (by its index or exact text) only when a newer request contradicts it or it is no longer relevant. " +
+    "Each rule should always be in English, even if the user's primary language is not English.",
   opened: true,
-  properties: {
-    prompt: {
-      id: "prompt",
-      type: "string",
-      title: "Prompt Text",
-      description: "The full custom prompt text",
-    },
+  items: {
+    id: "Rule",
+    type: "string",
+    title: "Caretaker Request",
+    description: "One caretaker-requested behavior",
   },
   db: {
     read: async (ctx) => {
       const settings = await readAACSettings(ctx);
-      if (!settings) return null;
-      return { prompt: settings.chatAgentPrompt || "" };
+      return normalizeAacPromptList(settings?.chatAgentPrompt);
     },
     write: async (ctx, value) => {
-      if (value?.prompt !== undefined) {
-        await writeAACSettings(ctx, { chatAgentPrompt: value.prompt });
-      }
-      return value;
+      await writeAACSettings(ctx, { chatAgentPrompt: sanitizePromptList(value as any) });
+      return sanitizePromptList(value as any);
+    },
+    add: async (ctx, value) => {
+      const current = normalizeAacPromptList((await readAACSettings(ctx))?.chatAgentPrompt);
+      const rule = sanitizePromptField(String(value ?? "")).trim();
+      if (rule) current.push(rule);
+      await writeAACSettings(ctx, { chatAgentPrompt: current });
+      return rule;
+    },
+    delete: async (ctx, keyOrIndex) => {
+      const current = normalizeAacPromptList((await readAACSettings(ctx))?.chatAgentPrompt);
+      const next = typeof keyOrIndex === "number"
+        ? current.filter((_, i) => i !== keyOrIndex)
+        : current.filter((r) => r !== String(keyOrIndex));
+      await writeAACSettings(ctx, { chatAgentPrompt: next });
+    },
+    clear: async (ctx) => {
+      await writeAACSettings(ctx, { chatAgentPrompt: [] });
     },
   },
 };
 
 /**
- * Context_AACAutoPrompt — Your scratchpad (DB: autoAacPrompt). What your AAC-mode
- * self needs to know about this student, consolidated in one place because in
- * AAC mode you can't read their reports mid-session. Update it as you learn new
- * things about the student.
+ * Context_AACAutoPrompt — Your scratchpad (DB: autoAacPrompt). A LIST of notes,
+ * one per entry, on what your AAC-mode self needs to know about this student,
+ * because in AAC mode you can't read their reports mid-session. ADD a note as
+ * you learn something new; DELETE a note only when a newer one supersedes it or
+ * it is no longer true. Never replace the whole list.
  */
-export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldObjectWithDB = {
+export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
   id: "Context_AACAutoPrompt",
-  type: "object",
+  type: "array",
   title: "AAC Scratchpad (your notes on the student)",
   description:
-    "Your scratchpad of non-sensitive, functional information your AAC-mode self needs to communicate with and support this student — " +
-    "communication level, interests, triggers, physical and cognitive abilities, people around them, current goals. Keep it functional: " +
+    "A LIST of non-sensitive, functional notes (ONE per entry) your AAC-mode self needs to communicate with and support this student — " +
+    "communication level, interests, triggers, physical and cognitive abilities, people around them, current goals. Keep each note functional: " +
     "capture what you'd watch for and DO, never clinical labels. Translate medical facts into behavior — e.g. \"may have seizures; if she " +
     "suddenly goes blank, stay calm and alert a caretaker\" rather than naming a diagnosis; leave bare diagnoses, history, medications, and " +
-    "test scores in the student's gated records. Update this freely so your AAC-mode self stays current — do not ask the user if they want you to update it, just do it. Should always be in English, even if the user's primary language is not English.",
+    "test scores in the student's gated records. `add` a new note as you learn something — do NOT rewrite the whole list; `delete` a note " +
+    "(by index or exact text) only when a newer one supersedes it or it is no longer true. Update freely — do not ask the user first, just do it. " +
+    "Each note should always be in English, even if the user's primary language is not English.",
   opened: true,
-  properties: {
-    prompt: {
-      id: "prompt",
-      type: "string",
-      title: "Prompt Text",
-      description: "The full auto-generated prompt text",
-    },
+  items: {
+    id: "Note",
+    type: "string",
+    title: "Student Note",
+    description: "One functional note about the student",
   },
   db: {
     read: async (ctx) => {
       const settings = await readAACSettings(ctx);
-      if (!settings) return null;
-      return { prompt: settings.autoAacPrompt || "" };
+      return normalizeAacPromptList(settings?.autoAacPrompt);
     },
     write: async (ctx, value) => {
-      if (value?.prompt !== undefined) {
-        await writeAACSettings(ctx, { autoAacPrompt: value.prompt });
-      }
-      return value;
+      await writeAACSettings(ctx, { autoAacPrompt: sanitizePromptList(value as any) });
+      return sanitizePromptList(value as any);
+    },
+    add: async (ctx, value) => {
+      const current = normalizeAacPromptList((await readAACSettings(ctx))?.autoAacPrompt);
+      const note = sanitizePromptField(String(value ?? "")).trim();
+      if (note) current.push(note);
+      await writeAACSettings(ctx, { autoAacPrompt: current });
+      return note;
+    },
+    delete: async (ctx, keyOrIndex) => {
+      const current = normalizeAacPromptList((await readAACSettings(ctx))?.autoAacPrompt);
+      const next = typeof keyOrIndex === "number"
+        ? current.filter((_, i) => i !== keyOrIndex)
+        : current.filter((r) => r !== String(keyOrIndex));
+      await writeAACSettings(ctx, { autoAacPrompt: next });
+    },
+    clear: async (ctx) => {
+      await writeAACSettings(ctx, { autoAacPrompt: [] });
     },
   },
 };
@@ -524,9 +572,9 @@ From here, in clinician mode, you interact through text alone. But in AAC mode y
 
 So requests like "when you notice the student getting upset…", "when she points at the window…", or "if he starts to cry, …" are things your AAC-mode self will genuinely be able to act on. NEVER reply that you can't see or hear the student — instead, set the instruction up now so your AAC-mode self knows to do it.
 
-You prepare for AAC sessions through two notes-to-self. You can only edit them here in setup mode — in AAC mode you read them but can't change them:
-- **Context_AACPrompt — user instructions.** Specific behaviors a user has explicitly asked for (e.g. "greet her by name", "keep sentences short", "don't offer food choices", "if he starts crying, play calming music"). When a user tells you to do something "while you're with the student", "during AAC sessions", or "have the AAC do X", they're adding to THIS note. These instructions take priority over your scratchpad.
-- **Context_AACAutoPrompt — your scratchpad.** Your own running notes of non-sensitive, functional information on the student: everything you'll want at hand when you're with them in AAC mode — communication level, interests, relevant physical or cognitive capabilities, behavioral facts, triggers, who's around them, current goals. In AAC mode you can't stop to read through their reports, so consolidate anything important here. Whenever you learn something new about the student in conversation, jot it down so your AAC-mode self stays current.
+You prepare for AAC sessions through two notes-to-self, and EACH IS A LIST — one rule or note per entry. You can only edit them here in setup mode — in AAC mode you read them but can't change them. Crucially: these are running lists, NOT single blocks of text. To record something new, "add" it as a NEW entry; never rewrite or replace the whole list. Only "delete" an entry when a newer one contradicts it or it is no longer relevant — otherwise old rules and notes stay put.
+- **Context_AACPrompt — user instructions (a list).** Each entry is one behavior a user has explicitly asked for (e.g. "greet her by name", "keep sentences short", "don't offer food choices", "if he starts crying, play calming music"). When a user tells you to do something "while you're with the student", "during AAC sessions", or "have the AAC do X", "add" it as a new entry in THIS list. If a new request contradicts an existing entry, delete the old one and add the new. These instructions take priority over your scratchpad.
+- **Context_AACAutoPrompt — your scratchpad (a list).** Each entry is one non-sensitive, functional note on the student: things you'll want at hand when you're with them in AAC mode — communication level, interests, relevant physical or cognitive capabilities, behavioral facts, triggers, who's around them, current goals. In AAC mode you can't stop to read through their reports, so keep the important things here. Whenever you learn something new about the student, "add" it as a new note; delete a note only when it's superseded or no longer true.
 
 Context_AACPrompt and Context_AACAutoPrompt should be written in English, even if the user's primary language is not English, because LLMs are more reliable at understanding instructions and notes in English.
 

@@ -171,7 +171,19 @@ export const DEFAULT_SAMPLE_OPTS: CloudSampleOpts = {
 /** Sample the cloud field at (localPos, time). `map` is the body's baked
  *  weather map (the synoptic authority); this adds vertical structure and
  *  local detail. Fills and returns `out`. Cheap enough to call ~10k times
- *  per frame: one bilinear map read + ≤2 simplex octaves per layer. */
+ *  per frame: one bilinear map read + ≤2 simplex octaves per layer.
+ *
+ *  `sampleScaleM` is the caller's sampling footprint (LOD cell size; 0 =
+ *  point sample). A footprint larger than a layer's local thickness is a
+ *  COLUMN sample, not a point sample — the vertical profile is evaluated
+ *  pulled toward the layer's density peak, so thin solid decks don't
+ *  decimate into sparse blobs when coarse tiers happen to center their
+ *  cells near the profile's zero edges.
+ *
+ *  `layerMask` restricts which layers contribute (bit i = layer i). The
+ *  renderer uses it to split a tier's work between volumetric cells
+ *  (layers thicker than the cell) and per-column slab samples (layers
+ *  thinner than the cell). */
 export function cloudDensityAt(
   field: CloudFieldParams,
   map: WeatherMap,
@@ -179,6 +191,8 @@ export function cloudDensityAt(
   timeSeconds: number,
   opts: CloudSampleOpts,
   out: CloudSample,
+  sampleScaleM = 0,
+  layerMask = 0xffff,
 ): CloudSample {
   cloudFieldStats.samples++;
   out.density = 0;
@@ -208,8 +222,15 @@ export function cloudDensityAt(
 
   let bestDensity = 0;
   for (let li = 0; li < field.layers.length; li++) {
+    if (!(layerMask & (1 << li))) continue;
     const layer = field.layers[li];
-    if (altitude < layer.baseAltitudeM || altitude > layer.topAltitudeM) continue;
+    const fullThick = layer.topAltitudeM - layer.baseAltitudeM;
+    // Altitude gate — widened by the footprint when the cell is bigger
+    // than the layer (the cell's volume can overlap the layer even when
+    // its center misses it).
+    const gateHalf = sampleScaleM > fullThick ? sampleScaleM * 0.5 : 0;
+    if (altitude < layer.baseAltitudeM - gateHalf
+      || altitude > layer.topAltitudeM + gateHalf) continue;
 
     // Synoptic sample — the layer's lon offset decorrelates stacked layers.
     map.sample(lon + layer.mapLonOffsetRad, lat, timeSeconds, opts.windMult, _synTmp);
@@ -219,12 +240,23 @@ export function cloudDensityAt(
 
     // Local cloud top rises with vigor: low-vigor regions are shallow
     // decks, high-vigor regions develop the layer's full depth (towers).
-    const fullThick = layer.topAltitudeM - layer.baseAltitudeM;
     const localThick = fullThick * (layer.vigorResponse > 0.01
       ? 0.3 + 0.7 * vigor
       : 1);
-    const altT = (altitude - layer.baseAltitudeM) / Math.max(1, localThick);
-    if (altT >= 1) continue;
+
+    // Footprint correction — when the cell is bigger than the (locally
+    // developed) layer, this is a column sample: compress the profile-
+    // evaluation altitude toward the layer's density peak and keep it
+    // inside the meaty part of the profile.
+    let altEval = altitude;
+    if (sampleScaleM > localThick) {
+      const mid = layer.baseAltitudeM + localThick * 0.5;
+      const rel = (altitude - mid) * (localThick / sampleScaleM);
+      const lim = localThick * 0.35;
+      altEval = mid + Math.max(-lim, Math.min(lim, rel));
+    }
+    const altT = (altEval - layer.baseAltitudeM) / Math.max(1, localThick);
+    if (altT >= 1 || altT <= 0) continue;
 
     // Local shape axis: baseline cumuliformity pushed up by vigor.
     const cum = Math.min(1, layer.cumuliformity + vigor * 0.85);
@@ -344,13 +376,16 @@ const CLOUD_TYPE_ANCHORS: Record<Atmosphere["cloudType"], CloudTypeAnchor> = {
   },
 };
 
-/** Tint where air is sinking. Darken the zone color and shift toward the
- *  warmer end — belts on Jupiter expose deeper, warmer chemistry. */
-function deriveBeltColor(zone: THREE.Color): THREE.Color {
-  const belt = zone.clone().multiplyScalar(0.7);
-  // Push slightly red — sinking air shows hotter, redder chemistry below.
-  belt.r = Math.min(1, belt.r * 1.1);
-  belt.b *= 0.85;
+/** Tint where air is sinking, scaled by banding intensity. On strongly
+ *  banded giants, belts expose deeper, warmer chemistry — darker and
+ *  red-shifted. On weakly banded worlds (Earth) the same formula would
+ *  paint dirt-brown cumulus, so the belt stays a subtle grey shade of
+ *  the zone color. */
+function deriveBeltColor(zone: THREE.Color, bandingIntensity: number): THREE.Color {
+  const b = THREE.MathUtils.clamp(bandingIntensity, 0, 1);
+  const belt = zone.clone().multiplyScalar(0.93 - 0.23 * b);
+  belt.r = Math.min(1, belt.r * (1 + 0.1 * b));
+  belt.b *= 1 - 0.15 * b;
   return belt;
 }
 
@@ -392,7 +427,7 @@ export function deriveCloudField(opts: DeriveCloudFieldOpts): CloudFieldParams {
   const baseM = atmosphere.cloudBaseAltitudeKm * 1000;
   const thickM = Math.max(500, atmosphere.cloudThicknessKm * 1000);
   const zoneColor = atmosphere.skyZenithColor.clone();
-  const beltColor = deriveBeltColor(zoneColor);
+  const beltColor = deriveBeltColor(zoneColor, bandingIntensity);
 
   // Circulation derivation:
   //  - cellsPerHemisphere = ceil(bandCount/2), since bandCount counts both

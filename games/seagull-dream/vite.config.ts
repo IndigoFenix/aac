@@ -20,6 +20,9 @@ export default defineConfig({
         // Creature lab — dev/debug page for the creature generator
         // (instructions/creatures.md). Served at /lab.html.
         lab: path.resolve(__dirname, "lab.html"),
+        // Cloud lab — scenario viewer for the cloud/weather system
+        // (instructions/clouds.md). Served at /cloud-lab.html.
+        cloudlab: path.resolve(__dirname, "cloud-lab.html"),
       },
     },
   },

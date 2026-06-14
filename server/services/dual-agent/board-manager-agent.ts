@@ -55,7 +55,7 @@ import {
   GUESSING_HINT_COLD,
   BUILDER_HINT,
 } from "./prompts/board-manager";
-import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson } from "./interactive-agent";
+import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson, serializeGlyph } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
@@ -503,12 +503,26 @@ function parseToolCall(
         };
         return event;
       }
+      // Experiment (glyphInputTranslation): serialize the optional
+      // `input_glyphs` array into a glyph string for the header strip. The
+      // schema only exposes this param when the setting is on, so args carry
+      // it solely in that case.
+      let inputGlyph: { glyph: string; fallback?: string } | undefined;
+      if (Array.isArray(args.input_glyphs) && args.input_glyphs.length > 0) {
+        const ser = serializeGlyph(args.input_glyphs);
+        if (ser.sentence) {
+          inputGlyph = ser.fallback
+            ? { glyph: ser.sentence, fallback: ser.fallback }
+            : { glyph: ser.sentence };
+        }
+      }
       const event: BoardRebuiltEvent = {
         type: "board_rebuilt",
         source: "board-manager",
         timestamp: now,
         buttons,
         target: typeof args.target === "string" ? args.target : undefined,
+        ...(inputGlyph ? { inputGlyph } : {}),
       };
       return event;
     }
