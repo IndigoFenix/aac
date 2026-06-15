@@ -56,7 +56,7 @@ import type { AACAppDefinition } from "./types";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { licenseService } from "../licenseService";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
-import { isGoalTreeApp, prepareGoalTreeAppOpen } from "./goal-tree-app";
+import { isGoalTreeApp, prepareGoalTreeAppOpen, goalTreeStartupSpec, goalTreeStartupNote } from "./goal-tree-app";
 
 import type {
   AgentEvent,
@@ -110,7 +110,12 @@ import {
 import type { AACMuteState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
 import { getLanguageName } from "@shared/language-names";
-import { generatePersona, describePersona, type GeneratedPersona } from "../social-bot/persona-generator";
+import { languageLevelFromInt } from "@shared/aac-language-level";
+import type { InterlocutorRegister } from "@shared/interlocutor-register";
+import { generatePersona, describePersona, buildSlpConfig, type GeneratedPersona } from "../social-bot/persona-generator";
+import { COMPETENCIES, type Archetype, type Competency } from "../social-bot/personality-and-challenge";
+import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
+import { resolveAppStartupParams, type StartupResolveContext } from "./startup-resolver";
 import { pickVoice as pickSocialPeerVoice } from "../social-bot/voice-pick";
 import {
   buildSocialDebriefDirective,
@@ -121,7 +126,7 @@ import { authenticateUpgrade } from "../realtime/ws-auth";
 import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { collectGlyphImageKeys, validateBoardButtons } from "./board-button-validator";
-import { expandSuggestionKey } from "./interactive-agent";
+import { expandSuggestionKey, recoverOfferedSuggestionKey } from "./interactive-agent";
 import { isValidSuggestionKey, parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry";
 import {
   createState as createGuessingState,
@@ -296,18 +301,33 @@ const AUDIO_FLUSH_INTERVAL_MS = 250;
 
 /** Corrective injected into the native-audio Speaker after it leaks its
  *  reasoning into spoken output. Framed as a system correction: reassure
- *  the model the child did NOT hear it (so it doesn't try to "take it back"
+ *  the model the user did NOT hear it (so it doesn't try to "take it back"
  *  aloud), name the exact failure, and point it back to the silent tool.
  *  Also forbids the bare-"THOUGHT" label the model drifts into. English,
  *  matching every other meta-injection ([MODE], [CONTEXT], …). */
 const THOUGHT_LEAK_CORRECTION =
   `[SYSTEM CORRECTION] Your last turn began by voicing your private reasoning ` +
   `(it started with "private_thought" or a similar label). That audio was caught and ` +
-  `suppressed — the child did NOT hear it, so do NOT apologize for it or refer to it. ` +
+  `suppressed — the user did NOT hear it, so do NOT apologize for it or refer to it. ` +
   `Reminder: a private thought is SILENT. To record reasoning, call the private_thought ` +
   `function — never speak or write it. Never prefix what you say with "private_thought", ` +
-  `"THOUGHT", or any similar marker; everything you voice reaches the child. ` +
+  `"THOUGHT", or any similar marker; everything you voice reaches the user. ` +
   `Continue the conversation naturally on your next turn.`;
+
+/** Corrective injected after the Speaker prefixes its spoken reply with a
+ *  leaked meta-tag ("[USER to YOU]", "[MODE …]", "[CONTEXT …]"). The tag was
+ *  already stripped before it reached the user, the TTS, and the
+ *  transcript — this just reminds the model the bracketed tags are INPUT
+ *  markers it should never reproduce. Framed like every other meta-injection
+ *  ([MODE], [CONTEXT], …) and reassures the model so it doesn't try to "take
+ *  it back" aloud. */
+const LEADING_TAG_CORRECTION =
+  `[SYSTEM CORRECTION] Your last reply began with a bracketed tag like ` +
+  `"[USER to YOU]" or "[MODE …]". Those bracketed tags are INPUT markers the ` +
+  `system adds so you know who is speaking and what is happening — they are ` +
+  `NOT part of what you say. That prefix was caught and removed, so the user ` +
+  `did NOT see or hear it; do not apologize for it or refer to it. Going ` +
+  `forward, speak in plain words with NO bracketed prefix — just your reply.`;
 
 /** Convert a raw 16-bit-LE mono PCM buffer to a WAV buffer by prepending
  *  a 44-byte header. Mirrors LiveRelay.pcmToWav so the new path produces
@@ -662,6 +682,10 @@ export class AgentCoordinator {
    *  default to whatever the new prompt's defaults imply). Re-broadcast
    *  to all three agents at the end of every wake transition. */
   private currentInteractionMode: "companion" | "facilitator" = "companion";
+  /** Register of the human the user is currently talking to (peer vs helper),
+   *  as last reported by the Observer. Biases the BoardManager palette. A live
+   *  social-training session overrides this to "peer". `undefined` → balanced. */
+  private currentInterlocutorRegister: InterlocutorRegister | undefined;
 
   /** Cached AI name from this session's settings, used for DEVICE
    *  identity matching in transcripts. */
@@ -669,6 +693,10 @@ export class AgentCoordinator {
   /** Cached active-student first-name; treated as a synonym for USER in
    *  transcript speaker/target comparisons. */
   private currentStudentName: string | undefined;
+  /** Cached active-student FULL name. The Observer routinely tags
+   *  transcripts with the full name even though prompts use the first
+   *  name, so USER-target matching must accept both. */
+  private currentStudentFullName: string | undefined;
 
   /** Default target the BoardManager's next rebuild applies to its
    *  buttons. Updated by routeBoardRebuilt (carries through to
@@ -1259,6 +1287,13 @@ export class AgentCoordinator {
         this.speaker?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
         this.observer?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
         return;
+      case "request_app_open":
+        // Student pressed an app that declares startup parameters. The client
+        // can't open it instantly (params shape the initial state), so it asks
+        // the server to resolve them first. We reuse the SAME routeAppOpen path
+        // as the AI's open_app — the only difference is source: "student".
+        void this.handleStudentAppOpen(msg.appId, msg.appData);
+        return;
       case "social_trainer_started":
         // Client-initiated launch (apps surface / debug helper). The
         // AI-initiated path arrives via routeAppOpen("social_trainer").
@@ -1676,6 +1711,7 @@ export class AgentCoordinator {
 
     // Cache for downstream speech-party comparisons (routeTranscribed, etc.)
     this.currentStudentName = studentName;
+    this.currentStudentFullName = student?.name || undefined;
     this.aiName = aiName;
     // Cache the defined-gesture registry for report_gesture resolution.
     this.definedGestures = parseDefinedGestures(student?.aacSettings?.definedGestures);
@@ -1754,6 +1790,9 @@ export class AgentCoordinator {
         // apply when text → server TTS handles the voicing.
         liveAudio: this.useDirectAudio,
         sessionGoals: sections?.sessionGoals,
+        // Sentence length/complexity matched to the student (general AAC
+        // setting; default tier emits no directive). Same column the peer reads.
+        languageLevel: languageLevelFromInt((student?.aacSettings as any)?.languageLevel),
         // Three-agent path uses speech-only examples; DON'T fall back to
         // the legacy interactModeExamples (those contain rebuild_board
         // calls Speaker doesn't have). When the enhancer hasn't been
@@ -1792,6 +1831,8 @@ export class AgentCoordinator {
         autoSymbolsEnabled: !!(student?.aacSettings?.generateSymbols),
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
         glyphInputTranslation: !!student?.aacSettings?.glyphInputTranslation,
+        // Button utterances match the student's receptive language level.
+        languageLevel: languageLevelFromInt((student?.aacSettings as any)?.languageLevel),
         boardManagerGuidance: sections?.boardManagerGuidance,
         sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
         boardManagerExamples: sections?.boardManagerExamples,
@@ -2885,12 +2926,19 @@ export class AgentCoordinator {
   private routeTranscribed(event: TranscribedEvent): void {
     const target = event.target ?? "UNKNOWN";
     const aiName = this.aiName;
-    const studentName = this.currentStudentName;
     const toDevice = isDeviceTarget(target, aiName);
-    const toUser = isUserTarget(target, studentName);
+    // `targetIsUser` is the Observer's authoritative routing flag. When the
+    // model omitted it (older / sloppy call), fall back to matching the
+    // target against the student name. This is what gates the board
+    // rebuild — see the toUser branch below.
+    const toUser = event.targetIsUser
+      ?? isUserTarget(target, this.currentStudentFullName, this.currentStudentName);
 
-    // Same `<speaker> to <target>` shape as button presses. Speaker
-    // identity is the actual person who spoke (or USER for a USER alias).
+    // `<speaker> to <target>` shape, same as button presses. We KEEP the
+    // real identities here — the user's actual name is preserved so the
+    // Speaker never confuses them with a third party. Only the AI is
+    // abstracted to "YOU" (no identity-confusion risk; the Speaker prompt
+    // keys its reply decision on "[X to YOU]").
     const targetLabel = toDevice ? "YOU" : target;
     const rendered = `[${event.speaker} to ${targetLabel}] "${event.text}"`;
 
@@ -2931,7 +2979,7 @@ export class AgentCoordinator {
       // one-on-one conversation with the student: only USER → DEVICE
       // speech reaches it. Other speakers (named third parties, UNKNOWN)
       // are logged for the Monitor but not delivered as turns.
-      if (this.socialPeer && !isUserTarget(event.speaker, this.currentStudentName)) {
+      if (this.socialPeer && !isUserTarget(event.speaker, this.currentStudentFullName, this.currentStudentName)) {
         flowNote("COORDINATOR", `Social session: dropped device-targeted transcript from non-user speaker "${event.speaker}".`);
         this.appendToConversationLog("system", rendered);
         return;
@@ -3744,7 +3792,7 @@ export class AgentCoordinator {
     // Speaker addressed `target` (default USER). Mirror the unified
     // `[<speaker> to <target>] "..."` shape used everywhere else.
     const target = event.target ?? PARTY_USER;
-    const targetForLog = isUserTarget(target, this.currentStudentName)
+    const targetForLog = isUserTarget(target, this.currentStudentFullName, this.currentStudentName)
       ? "USER"
       : target;
     if (event.transcript) {
@@ -3765,6 +3813,15 @@ export class AgentCoordinator {
         "assistant",
         this.socialPeer ? `[${speakerLabel}] "${event.transcript}"` : event.transcript,
       );
+    }
+
+    // Speaker leaked a bracketed input tag onto the front of its reply.
+    // It was already stripped from the transcript above; nudge the model
+    // (one-shot context injection) so it stops prefixing its speech. On
+    // the HTTP path this buffers and rides along with the next user turn.
+    if (event.strippedLeadingTag) {
+      this.speaker?.sendContextInjection(LEADING_TAG_CORRECTION);
+      flowNote("SPEAKER", `leading-tag leak stripped + corrective injected: "${event.strippedLeadingTag}"`);
     }
 
     // BoardManager rebuild already fired on speech_start (where the
@@ -3799,9 +3856,13 @@ export class AgentCoordinator {
     // value lives here after the Live agents reconnect.
     const prev = this.currentInteractionMode;
     this.currentInteractionMode = event.mode;
+    // Track who the user is talking to so the BoardManager can shape its palette
+    // (peer → social, helper → needs). Facilitator carries the register; going
+    // back to companion (talking to the AI) clears it to a balanced default.
+    this.currentInterlocutorRegister = event.mode === "facilitator" ? event.register : undefined;
     flowNote(
       "COORDINATOR",
-      `Mode change: ${prev} → ${event.mode}${event.reason ? ` (${event.reason})` : ""}`,
+      `Mode change: ${prev} → ${event.mode}${event.register ? ` [${event.register}]` : ""}${event.reason ? ` (${event.reason})` : ""}`,
     );
     this.send({
       type: "interaction_mode_changed",
@@ -3864,7 +3925,16 @@ export class AgentCoordinator {
     const enabledAppsForClient = (state.appState?.enabledApps || [])
       .map((id) => getAppDefinition(id))
       .filter((a): a is AACAppDefinition => !!a)
-      .map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        icon: a.icon,
+        // social_trainer has a startup spec but is server-managed (its peer is
+        // resolved inside startSocialPeerSession and launched via the
+        // social_trainer_started message), so it does NOT use the client
+        // request_app_open round-trip — keep its flag false.
+        needsStartupResolution: !!a.startup && a.id !== "social_trainer",
+      }));
 
     const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
       sessionId: state.sessionId,
@@ -3895,14 +3965,87 @@ export class AgentCoordinator {
     });
   }
 
+  /**
+   * Assemble the resolver context from already-computed session state — the
+   * SAME student material the live agents see (persona, goals, memory, summary)
+   * plus recent/pending turns. No recompute, no extra DB load. The billing sink
+   * is pre-bound to this session so the resolver only emits token counts.
+   */
+  private buildStartupResolveContext(
+    spec: AppStartupSpec,
+    trigger: { source: "ai" | "student"; data?: string },
+  ): StartupResolveContext {
+    const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+    const state = cache?.state;
+    const student = cache?.monitorAgent.getStudent?.();
+    const sections = state?.enhancedSections;
+    const language = student?.primaryLanguage || undefined;
+
+    const sessionId = this.sessionId ?? "";
+    const studentId = this.studentId ?? "";
+    const userId = this.userId;
+
+    return {
+      spec,
+      trigger,
+      studentDisplayName: student?.firstName || student?.name?.split(" ")[0] || undefined,
+      languageName: language ? getLanguageName(language) : undefined,
+      persona: sections?.persona,
+      sessionGoals: sections?.sessionGoals,
+      memoryContext: state?.memoryContext,
+      sessionSummary: state?.sessionSummary,
+      recentTurns: this.conversationLog.slice(-8).map((t) => ({ role: t.role, content: t.content })),
+      pendingTurns: (state?.pendingMessages ?? []).map((m) => ({ role: m.role, content: m.content })),
+      trackUsage: (prompt, completion, cached, model) => {
+        void dualAgentService
+          .trackHttpUsage(sessionId, studentId, userId, "gemini", model, prompt, completion, cached, "startup-resolver")
+          .catch((err) => console.error("[AgentCoordinator] trackHttpUsage(startup-resolver) failed:", err));
+      },
+    };
+  }
+
+  /** Resolve an app's startup params (or defaults). Thin wrapper around the
+   *  resolver that builds the context from session state. */
+  private async resolveStartupParams(
+    spec: AppStartupSpec,
+    source: "ai" | "student",
+    data?: string,
+  ): Promise<{ params: StartupParams; resolverNote?: string }> {
+    const result = await resolveAppStartupParams(this.buildStartupResolveContext(spec, { source, data }));
+    return { params: result.params, resolverNote: result.resolverNote };
+  }
+
+  /**
+   * Student pressed an app that declares startup params (request_app_open). The
+   * client deferred to the server so params can be resolved before the app
+   * renders. Wake an idle session (a press is engagement), then run the exact
+   * same routeAppOpen path the AI's open_app uses — only the source differs.
+   */
+  private async handleStudentAppOpen(appId: string, appData?: unknown): Promise<void> {
+    if (this.state !== "ready" || !this.sessionId) return;
+    if (this.asleep) await this.wakeFromSleep();
+    if (this.sessionProfile === "resting") await this.transitionToProfile("awake");
+    this.noteEngagementActivity();
+    await this.routeAppOpen({
+      type: "app_open_requested",
+      source: "client",
+      timestamp: Date.now(),
+      appId,
+      data: typeof appData === "string" ? appData : undefined,
+    });
+  }
+
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
     const appId = event.appId;
+    const triggerSource: "ai" | "student" = event.source === "client" ? "student" : "ai";
     if (appId === "social_trainer") {
       // Not a client-rendered app: the social trainer replaces the
       // Speaker with a peer persona server-side. The client only renders
       // the peer's face in the header (driven by the social_session
-      // message sent from startSocialPeerSession).
-      void this.startSocialPeerSession("speaker_open_app");
+      // message sent from startSocialPeerSession). Startup params are
+      // resolved INSIDE startSocialPeerSession so all entry points
+      // (AI open_app, client social_trainer_started) get tuned peers.
+      void this.startSocialPeerSession(triggerSource === "ai" ? "speaker_open_app" : "client_launch");
       return;
     }
 
@@ -3932,7 +4075,23 @@ export class AgentCoordinator {
           return;
         }
       } else {
-        this.send({ type: "app_open", data: { appId, data: event.data } });
+        // Apps with a startup definition get intelligently-chosen params
+        // (e.g. space_trader's startLevel) resolved before launch. Apps
+        // without one open instantly with no params, exactly as before.
+        let params: StartupParams | undefined;
+        let resolverNote: string | undefined;
+        if (builtIn.startup) {
+          const r = await this.resolveStartupParams(builtIn.startup, triggerSource, event.data);
+          params = r.params;
+          resolverNote = r.resolverNote;
+        }
+        this.send({
+          type: "app_open",
+          data: { appId, data: event.data, ...(params ? { appData: { params } } : {}) },
+        });
+        if (resolverNote) {
+          this.speaker?.sendContextInjection(`[APP STARTUP] ${appId}: ${resolverNote}`);
+        }
       }
       this.speaker?.sendContextInjection(`[APP OPEN] ${appId}${event.data ? ` (${event.data})` : ""}`);
       this.invokeBoardManager([event]);
@@ -3956,6 +4115,12 @@ export class AgentCoordinator {
           return;
         }
         this.send({ type: "app_open", data: prepared.payload });
+        // Light startup tuning: resolve how the companion should frame the
+        // quest for this student and fold it into the AI's context note. The
+        // certified game payload is unchanged (no client plumbing).
+        const { params } = await this.resolveStartupParams(goalTreeStartupSpec(), triggerSource);
+        const note = goalTreeStartupNote(params);
+        if (note) this.speaker?.sendContextInjection(`[GAME STARTUP]${note}`);
       } else {
         const validation = validateCustomAppDefinition(app.definition);
         if (!validation.ok) {
@@ -4020,7 +4185,58 @@ export class AgentCoordinator {
       const language = student?.primaryLanguage || "en";
       const aac = student?.aacSettings as any;
 
-      const persona = generatePersona();
+      // Resolve startup params so the peer is tuned to THIS student and the
+      // current conversation (gender, personality, shared interests, challenge
+      // level, scenario). Runs for every entry point (AI open_app + client
+      // launch); falls back to a random persona if resolution yields nothing.
+      const startupSpec = getAppDefinition("social_trainer")?.startup;
+      let peerDifficulty: number | undefined;
+      let practiceScenario: string | undefined;
+      let aiTargetSkills: Competency[] = [];
+      let personaOpts: { archetype?: Archetype; gender?: "male" | "female"; interestHints?: string[] } = {};
+      if (startupSpec) {
+        const { params } = await this.resolveStartupParams(
+          startupSpec,
+          origin === "speaker_open_app" ? "ai" : "student",
+        );
+        const g = params.genderHint;
+        const a = params.archetypeHint;
+        personaOpts = {
+          gender: g === "male" || g === "female" ? g : undefined,
+          archetype: typeof a === "string" && a !== "any" ? (a as Archetype) : undefined,
+          interestHints: Array.isArray(params.interestHints)
+            ? (params.interestHints as unknown[]).filter((x): x is string => typeof x === "string")
+            : undefined,
+        };
+        const diffMap: Record<string, number> = { gentle: 0.25, medium: 0.45, challenging: 0.65 };
+        peerDifficulty = typeof params.difficulty === "string" ? diffMap[params.difficulty] : undefined;
+        practiceScenario = typeof params.scenario === "string" ? params.scenario : undefined;
+        // AI's optional session focus. Schema-validated to the competency enum,
+        // but re-filter defensively.
+        aiTargetSkills = Array.isArray(params.targetSkills)
+          ? (params.targetSkills as unknown[]).filter(
+              (x): x is Competency => typeof x === "string" && (COMPETENCIES as string[]).includes(x),
+            )
+          : [];
+      }
+
+      // SLP config: clinician per-app defaults (appConfig.social_trainer) supply
+      // the goal set, the locked floor, and the challenge ceiling; the AI's
+      // targetSkills, when present, narrow the focus on top. buildSlpConfig
+      // enforces the locks regardless of what the AI picked.
+      const socialCfg = ((aac?.appConfig as Record<string, any> | undefined)?.social_trainer ?? {}) as {
+        targetSkills?: Competency[];
+        lockedSkills?: Competency[];
+        maxChallengeIntensity?: number;
+      };
+      const effectiveTargets = aiTargetSkills.length ? aiTargetSkills : (socialCfg.targetSkills ?? []);
+      const peerSlp = buildSlpConfig({
+        targetSkills: effectiveTargets,
+        lockedSkills: socialCfg.lockedSkills,
+        maxChallengeIntensity: socialCfg.maxChallengeIntensity,
+      });
+
+      const persona = generatePersona(personaOpts);
       const voiceName = pickSocialPeerVoice(persona.gender, [
         this.aiVoice?.geminiVoiceName,
         this.studentVoice?.geminiVoiceName,
@@ -4056,6 +4272,14 @@ export class AgentCoordinator {
         persona,
         languageName: getLanguageName(language),
         model: peerModel,
+        difficulty: peerDifficulty,
+        // Inherit the student's general AAC language level (sentence
+        // length/complexity) so the peer talks at the same register as the
+        // companion. Default tier emits no constraint.
+        languageLevel: languageLevelFromInt(aac?.languageLevel),
+        // Goal/locked dimensions + challenge ceiling (clinician defaults
+        // narrowed by the AI's optional session focus).
+        slpConfig: peerSlp,
         callbacks: {
           onEvent: (e) => this.onSpeakerEvent(e),
           onSpeakText: (text) => this.onSpeakerSpeakText(text),
@@ -4106,11 +4330,23 @@ export class AgentCoordinator {
         },
       });
 
+      const scenarioPhrase: Record<string, string> = {
+        greeting: "greeting someone new",
+        making_friends: "making a new friend",
+        sharing_interests: "sharing what they like",
+        handling_disagreement: "handling a friendly disagreement",
+        joining_a_group: "joining a group conversation",
+      };
+      const scenarioFocus =
+        practiceScenario && scenarioPhrase[practiceScenario]
+          ? ` The focus for this session is ${scenarioPhrase[practiceScenario]}.`
+          : "";
+
       // Observer must re-attribute the device voice while the peer talks.
       this.observer?.sendContextInjection(
-        `[SOCIAL TRAINING STARTED] The user is practicing conversation with a virtual peer named ${persona.name}. The device voice is now ${persona.name} (a practice character), not the companion AI.`,
+        `[SOCIAL TRAINING STARTED] The user is practicing conversation with a virtual peer named ${persona.name}. The device voice is now ${persona.name} (a practice character), not the companion AI.${scenarioFocus}`,
       );
-      this.appendToConversationLog("system", `[SOCIAL TRAINING STARTED] peer=${persona.name}`);
+      this.appendToConversationLog("system", `[SOCIAL TRAINING STARTED] peer=${persona.name}${practiceScenario ? ` scenario=${practiceScenario}` : ""}`);
 
       // The STUDENT opens the conversation (the director's initiation
       // competency depends on it — the engine deliberately doesn't greet
@@ -4121,7 +4357,7 @@ export class AgentCoordinator {
         type: "monitor_broadcast",
         source: "monitor",
         timestamp: Date.now(),
-        contextInjection: `A social-practice session just started: a virtual peer named ${persona.name} is on screen, waiting for the user to start the conversation. Rebuild the board with generic openers the user can press: greetings ("Hi", "Hello"), simple ice-breakers ("What's your name?", "How are you?"), and a way to introduce themselves. Do not include any specific person's name.`,
+        contextInjection: `A social-practice session just started: a virtual peer named ${persona.name} is on screen, waiting for the user to start the conversation.${scenarioFocus} Rebuild the board with generic openers the user can press: greetings ("Hi", "Hello"), simple ice-breakers ("What's your name?", "How are you?"), and a way to introduce themselves. Do not include any specific person's name.`,
       };
       this.recordEvent(greetingTrigger);
       void this.invokeBoardManager([greetingTrigger]);
@@ -4479,6 +4715,16 @@ export class AgentCoordinator {
     flowNote("BOARD_MGR", `Deferred press cleared: ${reason}`);
   }
 
+  /** The register the BoardManager should shape its palette for. A live social-
+   *  training session means the user is talking to a PEER — the same legitimate
+   *  "a peer is present" signal a real peer contact carries (we feed only the
+   *  register, never the bot's internals). Otherwise use the Observer's last
+   *  read (peer/helper/unknown); `undefined` lets the board offer a balanced mix. */
+  private resolveInterlocutorRegister(): InterlocutorRegister | undefined {
+    if (this.socialPeer) return "peer";
+    return this.currentInterlocutorRegister;
+  }
+
   private async invokeBoardManager(triggeringEvents: AgentEvent[]): Promise<void> {
     if (!this.boardManager) return;
     // Profile gate — resting means no board mutations. Observer keeps
@@ -4595,6 +4841,7 @@ export class AgentCoordinator {
         model: BOARD_MANAGER_DEFAULT_MODEL,
         signal: controller.signal,
         forceRebuildDirective: forceRebuildDirective ?? undefined,
+        interlocutorRegister: this.resolveInterlocutorRegister(),
       };
       if (forceRebuildDirective) {
         flowNote(
@@ -4836,6 +5083,7 @@ export class AgentCoordinator {
     const suggestionExpanded: any[] = [];
     const specialButtons: Btn[] = [];     // wordfinder / more — bypass validator
     const regular: Btn[] = [];
+    const offeredKeys = this.guessingState?.offeredKeys ?? [];
     for (const b of event.buttons) {
       // A registry suggestion key may arrive in `glyph` (legacy) OR `label`
       // (current — the model puts the key in `label` and often adds a
@@ -4854,6 +5102,24 @@ export class AgentCoordinator {
         if (expanded) {
           suggestionExpanded.push(expanded);
           continue;
+        }
+      }
+      // Recover a misauthored registry suggestion while guessing: the model
+      // copied a value out of an offered key into a `narrow`/`guess` button (or
+      // a bare-value label) instead of emitting the key. Re-fold it so the
+      // button localizes and routes as a guessing_press (see
+      // recoverOfferedSuggestionKey).
+      if (this.guessingState) {
+        const recoveredKey = recoverOfferedSuggestionKey(
+          { label: labelStr, narrowDimension: (b as any).narrowDimension, narrowValue: (b as any).narrowValue },
+          offeredKeys,
+        );
+        if (recoveredKey) {
+          const expanded = expandSuggestionKey(recoveredKey);
+          if (expanded) {
+            suggestionExpanded.push(expanded);
+            continue;
+          }
         }
       }
       const entry: Btn = {
@@ -5177,7 +5443,14 @@ export class AgentCoordinator {
     const escapeKind = detectBinaryChoiceEscapeKind(event.option1?.glyph, event.option2?.glyph);
     this.send({
       type: "binary_choice",
-      data: { options: [event.option1, event.option2], escapeKind },
+      data: {
+        options: [event.option1, event.option2],
+        escapeKind,
+        // Experiment (glyphInputTranslation): glyph translation of the
+        // incoming speech, shown above the overlay buttons. Only present
+        // when BoardManager supplied `input_glyphs`.
+        ...(event.inputGlyph?.glyph ? { inputGlyph: event.inputGlyph } : {}),
+      },
     });
   }
 

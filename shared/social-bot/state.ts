@@ -41,6 +41,8 @@ export interface BotStatePayload {
 
 // ── Session report (end of session) ────────────────────────────────────
 
+// Keep in lock-step with the `Competency` union + COMPETENCIES array in
+// server/services/social-bot/personality-and-challenge.ts.
 export type Competency =
   | "responsiveness"
   | "reciprocity"
@@ -49,7 +51,20 @@ export type Competency =
   | "assertiveness"
   | "complimentCalibration"
   | "initiation"
-  | "interestEngagement";
+  | "interestEngagement"
+  // Batch A — conversation mechanics:
+  | "turnTaking"
+  | "topicMaintenance"
+  | "topicShifting"
+  | "greetings"
+  | "leaveTaking"
+  // Batch B — social-emotional + register:
+  | "perspectiveTaking"
+  | "emotionExpression"
+  | "empathy"
+  | "politeness"
+  | "askingForHelp"
+  | "refusal";
 
 export interface CompetencySnapshot {
   competency: Competency;
@@ -87,4 +102,15 @@ export const COMPETENCY_LABEL: Record<Competency, string> = {
   complimentCalibration: "giving compliments well",
   initiation: "starting conversations",
   interestEngagement: "engaging with their interests",
+  turnTaking: "taking turns",
+  topicMaintenance: "staying on topic",
+  topicShifting: "changing topics smoothly",
+  greetings: "saying hello",
+  leaveTaking: "saying goodbye",
+  perspectiveTaking: "thinking about how others feel",
+  emotionExpression: "naming their own feelings",
+  empathy: "showing they care",
+  politeness: "being polite",
+  askingForHelp: "asking for help",
+  refusal: "saying no kindly",
 };

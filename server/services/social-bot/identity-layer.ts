@@ -59,6 +59,21 @@ export interface ContentFeatures {
   compliment: boolean;
   complimentSpecific: number;      // 0 generic ("you're great") .. 1 specific & earned
   complimentSincere: number;       // 0 hollow/flattery .. 1 sincere
+  // conversation mechanics (batch-A competency detection):
+  interrupted: boolean;            // user cut in / didn't wait their turn
+  topicShiftBridged: boolean;      // when they changed subject, did they segue (vs jump)?
+  greeting: boolean;               // user opened with a greeting (hi / hello / their name)
+  nearClosing: boolean;            // the conversation is at a natural wrap-up point
+  closedGracefully: boolean;       // at a wrap-up point, the user closed it (bye / "this was nice")
+  // social-emotional + register (batch-B competency detection):
+  consideredPeerPerspective: boolean; // user referenced/asked about how YOU (the peer) feel or think
+  expressedOwnEmotion: boolean;       // user named a feeling of their own ("I'm happy" / "that's scary")
+  empathyOpportunity: boolean;        // you shared something emotional that warranted a caring response
+  userShowedEmpathy: boolean;         // at such a moment, the user responded with care/concern
+  seemedStuck: boolean;               // user seemed confused / stuck / unsure
+  askedForHelp: boolean;              // when stuck, they asked you for help or clarification
+  declined: boolean;                  // user turned down a request/suggestion you made
+  refusedPolitely: boolean;           // if they declined, they did it kindly (vs harshly)
 }
 
 export type FullTurn = UserTurnFeatures & ContentFeatures;

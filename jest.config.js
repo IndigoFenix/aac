@@ -1,3 +1,16 @@
+// IMPORTANT — how to run these tests:
+//   This config uses ts-jest's native-ESM preset (useESM + extensionsToTreatAsEsm).
+//   Jest's ESM support requires Node's `--experimental-vm-modules` flag, which the
+//   `npm test` script sets via NODE_OPTIONS. Running the binary directly
+//   (`npx jest <pattern>`) WITHOUT that flag fails confusingly on the first file
+//   in any chain that uses `import.meta` (e.g. providers/claude-structured.ts) or
+//   imports a `.tsx` (e.g. shared/social-bot/ProceduralFace.tsx) — surfacing as
+//   "Cannot use 'import.meta' outside a module" or "Unexpected token '<'". These
+//   are NOT broken tests; the transform just isn't applied without ESM mode.
+//   To run a single suite, go through the npm script so the flag is set:
+//       npm test -- <pattern>            (e.g. npm test -- social-peer-speaker)
+//   or set it yourself:  NODE_OPTIONS=--experimental-vm-modules npx jest <pattern>
+
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 export default {
   preset: 'ts-jest/presets/default-esm',

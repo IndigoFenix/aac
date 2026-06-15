@@ -712,6 +712,7 @@ export const yue: Translations = {
   appsBoard: {
     title: "應用程式",
     empty: "未啟用任何應用程式。",
+    starting: "正在啟動…",
   },
 
   social: {

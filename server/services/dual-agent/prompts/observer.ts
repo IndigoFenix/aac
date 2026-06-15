@@ -95,10 +95,8 @@ ${transcriptionRulesText(studentName, T.button, T.tagPress)}
 
 A visible face beats a voice match. If [${studentName}]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.
 
-USER and DEVICE — special speaker/target labels:
-  - **USER** — the active user.
-    - Normally [${studentName}]. If [${studentName}] isn't present, USER becomes whoever is clearly at the device.
-    - "USER" or [${studentName}]'s actual name both work — same party.
+The active user and the DEVICE:
+  - **The active user** — normally [${studentName}]; if [${studentName}] isn't present, it's whoever is clearly at the device. Refer to them by their REAL name in speaker/target (don't flatten it to a generic word), and set \`targetIsUser: true\` on the transcript whenever speech is directed at them. The name keeps the Speaker from confusing them with others; the flag is what surfaces reply options.
   - **DEVICE** — the AI itself${aiName ? ` (called [${aiName}])` : ""}.
     - Speech targets DEVICE when someone looks at the screen, uses the AI's name, or is replying to the AI's last utterance.
 
@@ -256,25 +254,25 @@ DO NOT transcribe:
   - The device's TTS playing back the ${T.button} the user just pressed.
   - Your sibling Speaker's voice through the room speakers (arrives as an [OWN_SPEECH] context note).
 
-Speaker/target values (ALWAYS English, regardless of conversation language):
+speaker / target — name the ACTUAL person (ALWAYS English / Latin letters, regardless of conversation language):
+  - Always use the person's real identity: their name or a SHORT role label ("Mom", "Teacher", "Yael"). Use the active user's OWN name too — never replace it with a generic word. Preserving real names lets the Speaker tell people apart.
   - **DEVICE** — the AI itself. Use as TARGET when the person is addressing the AI (looking at the screen, using the AI's name, replying to the AI's last utterance).
-  - **USER** — the active user.
-    - The student if present; otherwise the most prominent person at the device looking at the screen.
-    - The student's actual name in Latin letters works too.
-  - **UNKNOWN** — speaker or target genuinely unidentifiable (off-camera voice, stranger). NOT a fallback for "I'm unsure between USER and DEVICE" — make a best guess instead.
-  - Identified third party — caregiver / sibling / teacher. SHORT English label or Latin-letter name ("Mom", "Teacher", "Yael"). Never non-Latin scripts in this field.
+  - **UNKNOWN** — speaker or target genuinely unidentifiable (off-camera voice, stranger). NOT a fallback for "I'm unsure" — make a best guess instead.
 
-YOU decide definitively who is addressing whom. Err toward USER or DEVICE rather than UNKNOWN whenever either is plausible.`,
+targetIsUser — set TRUE when the speech is directed AT the active user (the person operating this device: the student if present, otherwise whoever is clearly at the screen). This is what tells the system to surface response options for them, so set it accurately even when you also name the user in \`target\`. Leave false/unset when the speech is to the DEVICE, to a third party, or is ambient.
+
+YOU decide definitively who is addressing whom. Err toward a known identity rather than UNKNOWN whenever plausible.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: "The transcribed speech." },
-        speaker: { type: "string", description: "Who spoke. DEVICE / USER / UNKNOWN / an identified name." },
-        target: { type: "string", description: "Who the speech is directed at. DEVICE / USER / UNKNOWN / an identified name." },
+        speaker: { type: "string", description: "Who spoke — their real name / role, or DEVICE / UNKNOWN. Use the user's actual name, not a generic label." },
+        target: { type: "string", description: "Who the speech is directed at — their real name / role, or DEVICE / UNKNOWN. Use the user's actual name, not a generic label." },
+        targetIsUser: { type: "boolean", description: "True when the speech is directed at the active user (the person at the device). Drives whether the board surfaces reply options." },
         confidence: { type: "string", enum: ["high", "medium", "low"], description: "Transcription confidence." },
       },
-      required: ["text", "speaker", "target"],
+      required: ["text", "speaker", "target", "targetIsUser"],
     },
   };
 }
@@ -428,7 +426,12 @@ const SET_INTERACTION_MODE: FunctionDeclaration = {
 
 Use when you observe a real shift:
   - Someone walks in and starts talking with the user → facilitator.
-  - The other person leaves, or the user turns back to the screen alone → companion.`,
+  - The other person leaves, or the user turns back to the screen alone → companion.
+
+When switching to **facilitator**, also set \`register\` to say WHAT KIND of person the user is talking to — this shapes the buttons the board offers them:
+  - **peer** — a friend or another child: a back-and-forth conversation. The board should lean social (reactions, questions back, sharing), not requests.
+  - **helper** — a caretaker, parent, teacher, or therapist: the board should make needs & requests easy.
+  Judge from [PEOPLE PRESENT] (a listed relationship like "friend"/"classmate" → peer; "mom"/"teacher"/"therapist" → helper) or, for someone unknown, from what you see (another kid playing → peer; an adult assisting → helper). Omit \`register\` only if you truly can't tell.`,
   behavior: Behavior.NON_BLOCKING,
   parametersJsonSchema: {
     type: "object",
@@ -439,6 +442,11 @@ Use when you observe a real shift:
         description: "The mode to switch to.",
       },
       reason: { type: "string", description: "Brief reason for the mode change (e.g. 'Mom just walked in and started talking with [STUDENT]')." },
+      register: {
+        type: "string",
+        enum: ["peer", "helper"],
+        description: "Who the user is talking to (facilitator mode): 'peer' (friend/another kid → social back-and-forth) or 'helper' (caretaker/parent/teacher/therapist → needs & requests).",
+      },
     },
     required: ["mode"],
   },

@@ -14,24 +14,60 @@ export const PARTY_DEVICE = "DEVICE";
 export const PARTY_USER = "USER";
 export const PARTY_UNKNOWN = "UNKNOWN";
 
-/** Identifies the AI itself. The AI may also be referred to by its
- *  configured name; pass that name in when available. */
-export function isDeviceTarget(value: string | undefined, aiName?: string): boolean {
-  if (!value) return false;
-  const v = value.trim().toUpperCase();
-  if (v === PARTY_DEVICE) return true;
-  if (aiName && value.trim().toLowerCase() === aiName.trim().toLowerCase()) return true;
+/** Lowercase, punctuation-stripped word tokens of a name/value. The
+ *  Observer model writes names with trailing punctuation ("שחף!"),
+ *  honorifics, or in full ("שחף סוחמי") even when the system only knows
+ *  the first name — so we compare on whole-word tokens, not raw strings. */
+function nameTokens(s: string): string[] {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.,…״”“"'`׳()[\]{}:;]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** True when `value` refers to the same party as any of `names`. Matches
+ *  if the whole token sequences are equal OR any single name token appears
+ *  as a standalone token in `value`. This makes a first-name config match a
+ *  full-name target (and vice-versa): the Observer routinely tags speech
+ *  with the student's FULL name while the system caches only the first
+ *  name. Token-level matching avoids the exact-string mismatch that
+ *  silently dropped board rebuilds for facilitator questions. */
+function matchesAnyName(value: string, names: (string | undefined)[]): boolean {
+  const valTokens = nameTokens(value);
+  if (valTokens.length === 0) return false;
+  const valJoined = valTokens.join(" ");
+  for (const n of names) {
+    if (!n) continue;
+    const nTokens = nameTokens(n);
+    if (nTokens.length === 0) continue;
+    if (valJoined === nTokens.join(" ")) return true;
+    if (nTokens.some((t) => valTokens.includes(t))) return true;
+  }
   return false;
 }
 
-/** Identifies the active user. Accepts the literal "USER" token OR the
- *  student's actual name (case-insensitive match). */
-export function isUserTarget(value: string | undefined, studentName?: string): boolean {
+/** Identifies the AI itself. The AI may also be referred to by its
+ *  configured name(s); pass any known forms in (full and/or short). */
+export function isDeviceTarget(
+  value: string | undefined,
+  ...aiNames: (string | undefined)[]
+): boolean {
   if (!value) return false;
-  const v = value.trim().toUpperCase();
-  if (v === PARTY_USER) return true;
-  if (studentName && value.trim().toLowerCase() === studentName.trim().toLowerCase()) return true;
-  return false;
+  if (value.trim().toUpperCase() === PARTY_DEVICE) return true;
+  return matchesAnyName(value, aiNames);
+}
+
+/** Identifies the active user. Accepts the literal "USER" token OR any
+ *  known form of the student's name (first, full, with punctuation). */
+export function isUserTarget(
+  value: string | undefined,
+  ...studentNames: (string | undefined)[]
+): boolean {
+  if (!value) return false;
+  if (value.trim().toUpperCase() === PARTY_USER) return true;
+  return matchesAnyName(value, studentNames);
 }
 
 export function isUnknownTarget(value: string | undefined): boolean {

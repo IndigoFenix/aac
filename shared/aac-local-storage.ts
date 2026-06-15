@@ -51,8 +51,11 @@ export interface AacSessionSnapshot {
   currentPageId?: string | null;
   /** Monitor agent notes (from chatMemory.Student_Notes) */
   monitorNotes?: string;
-  /** Built-in apps enabled for this session (id + display name + icon). */
-  enabledApps?: Array<{ id: string; name: string; icon: string }>;
+  /** Built-in apps enabled for this session (id + display name + icon).
+   *  `needsStartupResolution` marks apps whose launch must round-trip to the
+   *  server to resolve intelligently-chosen startup params before rendering
+   *  (the client shows a brief loading state instead of launching instantly). */
+  enabledApps?: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps?: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
   /** When this snapshot was created (epoch ms) */

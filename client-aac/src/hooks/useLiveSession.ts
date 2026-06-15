@@ -199,8 +199,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Enabled built-in apps + custom apps assigned to this student.
   // Populated from session_snapshot and consumed by the Apps board overlay.
-  const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string }>>([]);
+  const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>>([]);
   const [availableCustomApps, setAvailableCustomApps] = useState<Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>>([]);
+
+  // Set to the appId while a request_app_open round-trip is in flight (the
+  // server is resolving startup params). The Apps board shows a loading state
+  // and the incoming `app_open` (or a client backstop) clears it.
+  const [appOpenPending, setAppOpenPending] = useState<string | null>(null);
+  const appOpenBackstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // App canvas capture ref (for drawing app, etc.)
   const captureAppCanvasRef = useRef<(() => Promise<Blob | null>) | null>(null);
@@ -239,9 +245,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // otherwise. The display layer doesn't need to know the rule — it just
   // renders the kind it's told.
   const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
+  // Experiment (glyphInputTranslation): glyph translation of the speech this
+  // choice replies to, shown above the two overlay buttons. Null when off or
+  // the choice isn't a reply to incoming speech.
+  const [binaryChoiceInputGlyph, setBinaryChoiceInputGlyph] = useState<{ glyph: string; fallback?: string } | null>(null);
   const dismissBinaryChoice = useCallback(() => {
     setBinaryChoiceOptions(null);
     setBinaryChoiceEscapeKind(null);
+    setBinaryChoiceInputGlyph(null);
   }, []);
 
   // Caretaker alarm raised by the Observer agent. "alert" = a short
@@ -257,6 +268,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Deferred ask_binary_choice: same pattern — buffered options until TTS ends
   const pendingAskBinaryChoiceRef = useRef<BinaryChoiceOption[] | null>(null);
   const pendingAskBinaryChoiceEscapeKindRef = useRef<"maybe" | "neither" | null>(null);
+  const pendingAskBinaryChoiceInputGlyphRef = useRef<{ glyph: string; fallback?: string } | null>(null);
 
   // Local storage config (from server) — stored as ref to avoid re-renders
   const localStorageConfigRef = useRef<AacLocalStorageConfig | null>(null);
@@ -288,10 +300,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       if (pendingAskBinaryChoiceRef.current) {
         const opts = pendingAskBinaryChoiceRef.current;
         const kind = pendingAskBinaryChoiceEscapeKindRef.current;
+        const glyph = pendingAskBinaryChoiceInputGlyphRef.current;
         pendingAskBinaryChoiceRef.current = null;
         pendingAskBinaryChoiceEscapeKindRef.current = null;
+        pendingAskBinaryChoiceInputGlyphRef.current = null;
         setBinaryChoiceOptions(opts);
         setBinaryChoiceEscapeKind(kind);
+        setBinaryChoiceInputGlyph(glyph);
       }
     },
   });
@@ -712,9 +727,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "binary_choice": {
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
           const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
+          const inputGlyph = (msg.data as any)?.inputGlyph as { glyph: string; fallback?: string } | undefined;
           if (opts.length >= 2) {
             setBinaryChoiceOptions(opts.slice(0, 2));
             setBinaryChoiceEscapeKind(escapeKind ?? null);
+            setBinaryChoiceInputGlyph(inputGlyph?.glyph ? inputGlyph : null);
           }
           break;
         }
@@ -723,9 +740,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Deferred binary-choice — show overlay after TTS playback completes
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
           const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
+          const inputGlyph = (msg.data as any)?.inputGlyph as { glyph: string; fallback?: string } | undefined;
           if (opts.length >= 2) {
             pendingAskBinaryChoiceRef.current = opts.slice(0, 2);
             pendingAskBinaryChoiceEscapeKindRef.current = escapeKind ?? null;
+            pendingAskBinaryChoiceInputGlyphRef.current = inputGlyph?.glyph ? inputGlyph : null;
           }
           break;
         }
@@ -752,6 +771,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "app_open":
+          // Clear any pending request_app_open round-trip + its backstop.
+          if (appOpenBackstopRef.current) {
+            clearTimeout(appOpenBackstopRef.current);
+            appOpenBackstopRef.current = null;
+          }
+          setAppOpenPending(null);
           setActiveApp(msg.data);
           break;
 
@@ -965,10 +990,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           if (pendingAskBinaryChoiceRef.current && !audioPlayer.isPlaying) {
             const opts = pendingAskBinaryChoiceRef.current;
             const kind = pendingAskBinaryChoiceEscapeKindRef.current;
+            const glyph = pendingAskBinaryChoiceInputGlyphRef.current;
             pendingAskBinaryChoiceRef.current = null;
             pendingAskBinaryChoiceEscapeKindRef.current = null;
+            pendingAskBinaryChoiceInputGlyphRef.current = null;
             setBinaryChoiceOptions(opts);
             setBinaryChoiceEscapeKind(kind);
+            setBinaryChoiceInputGlyph(glyph);
           }
           break;
       }
@@ -1476,6 +1504,27 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     setActiveApp({ appId, appData });
   }, []);
 
+  /**
+   * Ask the server to open an app that declares startup parameters: it resolves
+   * the params (from the conversation + student) and replies with the normal
+   * `app_open` message, which clears the pending state and renders the app. A
+   * 6s backstop falls back to an instant local launch so the student is never
+   * stuck if the round-trip is lost.
+   */
+  const requestAppOpen = useCallback((appId: string, appData?: any) => {
+    if (appOpenBackstopRef.current) clearTimeout(appOpenBackstopRef.current);
+    setAppOpenPending(appId);
+    wsSend({ type: "request_app_open", appId, appData });
+    appOpenBackstopRef.current = setTimeout(() => {
+      appOpenBackstopRef.current = null;
+      setAppOpenPending((cur) => {
+        if (cur !== appId) return cur; // already resolved/changed
+        setActiveApp({ appId, appData });
+        return null;
+      });
+    }, 6000);
+  }, [wsSend]);
+
   const clearSession = useCallback(() => {
     if (wsRef.current) {
       closingIntentionallyRef.current = true;
@@ -1568,6 +1617,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     activeApp,
     dismissApp,
     launchApp,
+    requestAppOpen,
+    appOpenPending,
     captureAppCanvasRef,
     // Apps available to launch from the static Apps board overlay
     enabledApps,
@@ -1585,6 +1636,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Binary-choice overlay (yes/no now routed through this same surface)
     binaryChoiceOptions,
     binaryChoiceEscapeKind,
+    binaryChoiceInputGlyph,
     dismissBinaryChoice,
 
     // Caretaker alarm raised by the Observer agent

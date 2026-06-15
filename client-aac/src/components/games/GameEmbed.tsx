@@ -25,7 +25,7 @@ import {
   onGameMessage,
   sendToGame,
   type GameMessage,
-  type PlatformMessage,
+  type PlatformMessageInput,
 } from "@shared/games-bridge";
 import { API_BASE_URL } from "@/lib/api-base";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -33,7 +33,7 @@ import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
 export interface GameEmbedHandle {
   /** Push a structured message down to the embedded game. */
-  send: (msg: Omit<PlatformMessage, "__aivotaGameBridge">) => void;
+  send: (msg: PlatformMessageInput) => void;
 }
 
 export interface GameEmbedProps {
@@ -70,10 +70,16 @@ export interface GameEmbedProps {
    * answers with `player_action: game_loaded` or `load_game_rejected`.
    */
   gamePayload?: unknown;
+  /**
+   * Startup parameters (resolved server-side from the conversation/student)
+   * carried on the `init` message (e.g. space_trader's `{ startLevel }`). The
+   * game reads what it understands and ignores the rest.
+   */
+  initParams?: Record<string, unknown>;
 }
 
 const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed(
-  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false, gamePayload },
+  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false, gamePayload, initParams },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -129,12 +135,8 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
         }
 
         // AI surface — forward to live session if available.
-        if (
-          (msg as GameMessage & { type: string }).type === "ai_observation" &&
-          dualAgent?.sendContextOnly
-        ) {
-          const surface = (msg as unknown as { surface?: unknown }).surface;
-          dualAgent.sendContextOnly(formatSurface(surface));
+        if (msg.type === "ai_observation" && dualAgent?.sendContextOnly) {
+          dualAgent.sendContextOnly(formatSurface(msg.surface));
         }
 
         onMessage?.(msg);
@@ -151,17 +153,20 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     if (!iframeReady) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const init: Omit<PlatformMessage, "__aivotaGameBridge"> = {
-      type: "init",
+    // Inferred (not annotated as Omit<PlatformMessage, …> — plain Omit over a
+    // union collapses to the common keys and drops locale/dwellMs/params).
+    const init = {
+      type: "init" as const,
       locale: typeof navigator !== "undefined" ? navigator.language : undefined,
       // Games with their own dwell logic honour the platform's configured dwell time.
       dwellMs: dwell?.dwellTimeMs,
+      ...(initParams ? { params: initParams } : {}),
     };
     sendToGame(iframe, init);
     if (gamePayload !== undefined) {
       sendToGame(iframe, { type: "load_game", game: gamePayload });
     }
-  }, [iframeReady, dwell?.dwellTimeMs, gamePayload]);
+  }, [iframeReady, dwell?.dwellTimeMs, gamePayload, initParams]);
 
   // Forward gaze position into the iframe's local coordinate space at ~30 Hz.
   // Coordinates produced by the dwell context are page-space; we subtract the

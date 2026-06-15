@@ -710,6 +710,7 @@ export const en = {
   appsBoard: {
     title: "Apps",
     empty: "No apps are enabled.",
+    starting: "Starting…",
   },
 
   social: {

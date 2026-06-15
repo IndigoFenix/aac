@@ -581,6 +581,14 @@ export const aacSettings = pgTable("aac_settings", {
   useUnapprovedSymbols: boolean("use_unapproved_symbols").default(true).notNull(), // Also show unapproved (newly generated) symbols
   dynamicBoardsEnabled: boolean("dynamic_boards_enabled").default(false).notNull(), // AI can generate/edit boards during AAC sessions
 
+  // Language level — how long/complex the AI's sentences are, matched to the
+  // student's receptive language. Integer 1..5 mapping to the LANGUAGE_LEVELS
+  // tiers in shared/aac-language-level.ts (1=single_words .. 5=complex).
+  // Default 4 = full_sentences (current behavior). General AAC trait: drives
+  // both the companion Speaker's register AND the social-trainer peer's
+  // default. Sentence-length focused; no separate vocabulary dial.
+  languageLevel: integer("language_level").default(4).notNull(),
+
   // Input settings
   // Sign language code to recognize during AAC sessions ('asl', 'isr', etc.).
   // Null disables sign language detection.

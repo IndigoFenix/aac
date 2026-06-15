@@ -1,3 +1,18 @@
+// ⚠️ ADDING A NEW AAC SETTING? It will SILENTLY NOT SAVE unless you also update
+// the SERVER whitelist. Saving goes PATCH /api/students/:id → studentController
+// → studentService.updateStudent, which splits the body against the
+// `AAC_SETTINGS_FIELDS` allow-list in `server/services/studentService.ts` and
+// DROPS any field not in it. So for each new aac_settings column, do ALL of:
+//   1. Add the column in `shared/schema-private.ts` (+ a drizzle migration).
+//   2. Add the field name to `AAC_SETTINGS_FIELDS` in server/services/studentService.ts
+//      ← the step that's been missed repeatedly (the panel save no-ops without it).
+//   3. Wire it here: useState + load-from-aac + dirty-check + the mutation
+//      type + the handleSave payload + the cancel/reset.
+//   4. (If the AI should read/write it too) expose it in
+//      `server/services/memory-schema/aac-settings-memory-schema.ts`
+//      (WRITABLE_COLUMNS + AAC_SETTINGS_FIELD.properties).
+// Settings nested inside `appConfig` (e.g. socialTrainer) DON'T need step 2 —
+// `appConfig` is already whitelisted; only brand-new top-level columns do.
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
@@ -7,6 +22,13 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
 import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
+import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
+import { COMPETENCY_LABEL } from '@shared/social-bot/state';
+
+// All trainable social-skill keys, in canonical order. Sourced from the shared
+// competency-label map so this list grows automatically as competencies are added.
+const SOCIAL_SKILLS = Object.keys(COMPETENCY_LABEL);
+const DEFAULT_SOCIAL_CEILING = 0.4;
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -105,6 +127,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [studentVoicePitch, setStudentVoicePitch] = useState(0);
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
+  const [languageLevel, setLanguageLevel] = useState(DEFAULT_LANGUAGE_LEVEL_INT);
   const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
   const [glyphInputTranslation, setGlyphInputTranslation] = useState(false);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
@@ -213,6 +236,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
@@ -257,6 +281,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStudentVoicePitch = aac?.studentVoicePitch ?? 0;
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
+      const originalLanguageLevel = aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT;
       const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
       const originalGlyphInputTranslation = aac?.glyphInputTranslation ?? false;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
@@ -293,6 +318,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         studentVoicePitch !== originalStudentVoicePitch ||
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
+        languageLevel !== originalLanguageLevel ||
         singleGlyphButtons !== originalSingleGlyphButtons ||
         glyphInputTranslation !== originalGlyphInputTranslation ||
         eyegazeEnabled !== originalEyegazeEnabled ||
@@ -315,7 +341,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -334,6 +360,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch?: number;
       useLocalTts?: boolean;
       iconTextRatio: number;
+      languageLevel: number;
       singleGlyphButtons: boolean;
       glyphInputTranslation: boolean;
       eyegazeEnabled: boolean;
@@ -391,6 +418,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoicePitch,
       useLocalTts,
       iconTextRatio,
+      languageLevel,
       singleGlyphButtons,
       glyphInputTranslation,
       eyegazeEnabled,
@@ -434,6 +462,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
@@ -538,6 +567,19 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       </div>
     );
   }
+
+  // Social Trainer per-app config (appConfig.social_trainer). Edited directly
+  // through appConfig, which is already in the dirty-check + save payload.
+  const social = (appConfig.social_trainer ?? {}) as {
+    targetSkills?: string[]; lockedSkills?: string[]; maxChallengeIntensity?: number;
+  };
+  const socialTargets = social.targetSkills ?? [];
+  const socialLocked = social.lockedSkills ?? [];
+  const socialCeiling = typeof social.maxChallengeIntensity === 'number' ? social.maxChallengeIntensity : DEFAULT_SOCIAL_CEILING;
+  const setSocial = (patch: Record<string, unknown>) =>
+    setAppConfig((prev) => ({ ...prev, social_trainer: { ...(prev.social_trainer ?? {}), ...patch } }));
+  const toggleSkill = (list: string[], key: string) =>
+    list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
 
   return (
     <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-full">
@@ -912,6 +954,136 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     </div>
                   </>
                 )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Language Level */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                {t('aacSettings.languageLevel')}
+              </CardTitle>
+              <CardDescription>
+                {t('aacSettings.languageLevelDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={String(languageLevel)}
+                onValueChange={(v) => setLanguageLevel(Number(v))}
+              >
+                <SelectTrigger data-testid="select-language-level">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGE_LEVELS.map((key, i) => (
+                    <SelectItem key={key} value={String(i + 1)}>
+                      {t(`aacSettings.languageLevel_${key}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-2">
+                {t(`aacSettings.languageLevel_${LANGUAGE_LEVELS[languageLevel - 1] ?? 'full_sentences'}_desc`)}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Social Trainer */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                {t('aacSettings.socialTrainerTitle')}
+              </CardTitle>
+              <CardDescription>
+                {t('aacSettings.socialTrainerDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Focus skills (default goals) */}
+              <div>
+                <Label className="text-sm font-medium">{t('aacSettings.socialTrainerFocus')}</Label>
+                <p className="text-xs text-muted-foreground mb-2">{t('aacSettings.socialTrainerFocusHint')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {SOCIAL_SKILLS.map((key) => {
+                    const active = socialTargets.includes(key);
+                    const locked = socialLocked.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => setSocial({ targetSkills: toggleSkill(socialTargets, key) })}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-xs border transition-colors",
+                          locked
+                            ? "opacity-40 cursor-not-allowed border-border"
+                            : active
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border hover:border-primary/50 text-muted-foreground"
+                        )}
+                        data-testid={`social-focus-${key}`}
+                      >
+                        {t(`aacSettings.socialSkill_${key}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Off-limits skills (locked) */}
+              <div className="pt-4 border-t">
+                <Label className="text-sm font-medium">{t('aacSettings.socialTrainerLocked')}</Label>
+                <p className="text-xs text-muted-foreground mb-2">{t('aacSettings.socialTrainerLockedHint')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {SOCIAL_SKILLS.map((key) => {
+                    const active = socialLocked.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          const nextLocked = toggleSkill(socialLocked, key);
+                          // A newly-locked skill can't also be a focus goal.
+                          setSocial({
+                            lockedSkills: nextLocked,
+                            targetSkills: nextLocked.includes(key)
+                              ? socialTargets.filter((k) => k !== key)
+                              : socialTargets,
+                          });
+                        }}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-xs border transition-colors",
+                          active
+                            ? "border-destructive bg-destructive/10 text-foreground"
+                            : "border-border hover:border-destructive/50 text-muted-foreground"
+                        )}
+                        data-testid={`social-locked-${key}`}
+                      >
+                        {t(`aacSettings.socialSkill_${key}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Challenge ceiling */}
+              <div className="pt-4 border-t">
+                <Label className="text-sm font-medium">{t('aacSettings.socialTrainerCeiling')}</Label>
+                <p className="text-xs text-muted-foreground mb-2">{t('aacSettings.socialTrainerCeilingHint')}</p>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={[socialCeiling]}
+                    onValueChange={([v]) => setSocial({ maxChallengeIntensity: v })}
+                    className="flex-1"
+                    data-testid="social-challenge-ceiling"
+                  />
+                  <span className="text-xs tabular-nums w-10 text-right">{Math.round(socialCeiling * 100)}%</span>
                 </div>
               </div>
             </CardContent>

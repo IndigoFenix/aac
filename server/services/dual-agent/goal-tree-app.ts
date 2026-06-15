@@ -9,8 +9,51 @@
 import type { CustomApp } from "@shared/schema";
 import { certifyGoalTreeGame, type GoalTreeGame } from "@shared/goal-tree/index";
 import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
+import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
 
 export { GOAL_TREE_APP_TYPE };
+
+/**
+ * Light startup definition for a quest game. The certified content (goals,
+ * difficulty, layout) is fixed — what's tunable is how the AI companion frames
+ * the session for THIS student. v1 resolves a single "encouragement" knob; the
+ * resolved value is folded into the companion's context note (no client
+ * plumbing — the game payload is unchanged).
+ */
+export function goalTreeStartupSpec(): AppStartupSpec {
+  return {
+    appId: GOAL_TREE_APP_TYPE,
+    guidance:
+      "A quest game is opening. The game itself is fixed; you are only choosing how the AI companion " +
+      "should frame it for this student. Pick `encouragement`: \"high\" for a student who needs lots of " +
+      "warmth and celebration, \"gentle\" for one who needs a calm, low-pressure tone, or \"normal\" otherwise. " +
+      "Prefer \"normal\" unless the conversation clearly suggests otherwise.",
+    paramsSchema: {
+      type: "object",
+      properties: {
+        encouragement: {
+          type: "string",
+          enum: ["gentle", "normal", "high"],
+          description: "Companion framing tone for this session.",
+        },
+      },
+      required: ["encouragement"],
+    },
+    defaults: { encouragement: "normal" },
+  };
+}
+
+/** Map resolved quest params into an extra companion-context sentence (or ""). */
+export function goalTreeStartupNote(params: StartupParams): string {
+  switch (params.encouragement) {
+    case "high":
+      return " Be especially warm and encouraging — celebrate every small step out loud.";
+    case "gentle":
+      return " Keep your guidance calm and low-pressure; no rush, no big reactions.";
+    default:
+      return "";
+  }
+}
 
 export interface GoalTreeAppOpen {
   ok: true;

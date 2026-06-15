@@ -712,6 +712,7 @@ export const pt: Translations = {
   appsBoard: {
     title: "Aplicativos",
     empty: "Nenhum aplicativo ativado.",
+    starting: "Iniciando…",
   },
 
   social: {

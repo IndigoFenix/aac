@@ -138,8 +138,18 @@ export interface TranscribedEvent extends BaseEvent {
   source: "observer";
   text: string;
   speaker: SpeechParty;
-  /** Who the speech is directed at. See SpeechParty. */
+  /** Who the speech is directed at — the actual identity (real name /
+   *  role / "DEVICE" for the AI / "UNKNOWN"). The Observer is NO LONGER
+   *  asked to overwrite the active user's name with "USER"; identity is
+   *  preserved so the Speaker never confuses the user with a third party.
+   *  Use `targetIsUser` for routing instead of string-matching this. */
   target: SpeechParty;
+  /** Authoritative routing flag set by the Observer: the speech is
+   *  directed at the active user (the person operating the AAC device).
+   *  When true the Coordinator rebuilds the board so the user can reply.
+   *  Undefined on older/sloppy calls — the Coordinator then falls back to
+   *  name-matching `target` against the student name. */
+  targetIsUser?: boolean;
   confidence: "high" | "medium" | "low";
   /** Legacy field — mirrors `target` for older renderers. Computed by the
    *  parser; do not set when constructing fresh events. */
@@ -276,6 +286,12 @@ export interface SpeechEndEvent extends BaseEvent {
    *  explicitly set a different target via its `set_speech_target` tool
    *  before this turn. BoardManager rebuilds when target=USER. */
   target?: SpeechParty;
+  /** Set to the removed prefix when the SpeakerAgent stripped a leaked
+   *  leading meta-tag (e.g. "[USER to YOU]") off the front of this
+   *  utterance. The transcript above is already cleaned; this field only
+   *  signals the Coordinator to inject a one-shot corrective reminding
+   *  Speaker not to prefix its speech with bracketed tags. */
+  strippedLeadingTag?: string;
 }
 
 export interface EmoteChangeEvent extends BaseEvent {
@@ -301,6 +317,9 @@ export interface ModeChangeEvent extends BaseEvent {
   source: "observer";
   mode: "companion" | "facilitator";
   reason?: string;
+  /** Who the user is talking to in facilitator mode (peer vs helper) — biases
+   *  the BoardManager palette. Omitted when the Observer can't tell. */
+  register?: "peer" | "helper";
 }
 
 /** Board Manager's call to interpret() — voicing a user-composed
@@ -324,7 +343,9 @@ export interface InterpretIntentEvent extends BaseEvent {
  *  so it can produce app-relevant buttons. */
 export interface AppOpenRequestedEvent extends BaseEvent {
   type: "app_open_requested";
-  source: "speaker";
+  /** "speaker" when the AI calls open_app; "client" when the student presses an
+   *  app tile and the client asks the server to open it (request_app_open). */
+  source: "speaker" | "client";
   appId: string;
   /** Optional search query / payload (e.g. YouTube videoId). */
   data?: string;
@@ -432,6 +453,12 @@ export interface BinaryChoiceShownEvent extends BaseEvent {
   option1: BoardButton;
   option2: BoardButton;
   target?: SpeechParty;
+  /** Experiment (glyphInputTranslation): a glyph-string translation of the
+   *  incoming speech this choice replies to, shown above the two overlay
+   *  buttons so the user sees what was just said to them. Serialized from
+   *  show_binary_choice's `input_glyphs` array via serializeGlyph. Absent
+   *  when the setting is off or the choice isn't a reply to incoming speech. */
+  inputGlyph?: { glyph: string; fallback?: string };
 }
 
 export interface BuilderSuggestedEvent extends BaseEvent {

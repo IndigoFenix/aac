@@ -604,6 +604,34 @@ export function expandSuggestionKey(key: string): SuggestionButton | null {
 }
 
 /**
+ * Recover the registry `suggestion:<dim>:<value>` key for a guessing-mode button
+ * the model authored as a `narrow`/`guess` (or bare-value label) when it should
+ * have echoed an offered key. The model frequently does this for simple binary /
+ * ternary dimensions — pace "fast"/"slow", who "with_others", where "on_screen" —
+ * copying the raw VALUE out of the offered key; that value renders untranslated
+ * and routes as a plain press, not a guessing_press. We re-fold it by trying, in
+ * order: (1) `suggestion:<narrowDimension>:<narrowValue>` when that's a real key,
+ * then (2) the offered key whose value equals the button's narrowValue / label.
+ * Returns the recovered key, or null when nothing matches (a genuine AI guess).
+ */
+export function recoverOfferedSuggestionKey(
+  button: { label?: string; narrowDimension?: string; narrowValue?: string },
+  offeredKeys: string[],
+): string | null {
+  const narrowDim = button.narrowDimension?.trim();
+  const narrowVal = button.narrowValue?.trim();
+  const reconstructed = narrowDim && narrowVal ? `suggestion:${narrowDim}:${narrowVal}` : null;
+  if (reconstructed && isValidSuggestionKey(reconstructed)) return reconstructed;
+  const candidate = (narrowVal || button.label || "").trim().toLowerCase();
+  if (!candidate) return null;
+  for (const key of offeredKeys) {
+    const parsed = parseSuggestionKey(key);
+    if (parsed && parsed.value.toLowerCase() === candidate) return key;
+  }
+  return null;
+}
+
+/**
  * Split a parsed button list into trusted, already-expanded guessing-mode
  * SUGGESTION buttons and everything else. Suggestion buttons arrive as bare
  * `suggestion:<dim>:<value>` keys (no pipes), which parseBoardButtons leaves as

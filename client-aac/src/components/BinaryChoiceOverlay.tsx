@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { SentenceButton, type SentenceButtonInput } from "@/components/SentenceButton";
+import { Glyph } from "@/components/Glyph";
 import type { BinaryChoiceOption } from "@/hooks/dual-agent-types";
 
 interface BinaryChoiceOverlayProps {
@@ -27,13 +28,18 @@ interface BinaryChoiceOverlayProps {
    *  rule. Null falls back to "neither" for the rare case of an older
    *  server build that didn't ship the field. */
   escapeKind?: "maybe" | "neither" | null;
+  /** Experiment (glyphInputTranslation): a glyph-string translation of the
+   *  speech this choice replies to. When present, it renders as a strip ABOVE
+   *  the two option buttons so the user sees what was just said to them.
+   *  Null/absent when the setting is off or the choice isn't a reply. */
+  inputGlyph?: { glyph: string; fallback?: string } | null;
   onSelect: (option: BinaryChoiceOption) => void;
   /** Dismiss without voicing anything (the small Cancel button + 30s timeout). */
   onCancel: () => void;
   onDismiss: () => void;
 }
 
-export default function BinaryChoiceOverlay({ options, escapeKind, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
+export default function BinaryChoiceOverlay({ options, escapeKind, inputGlyph, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
   const { t } = useLanguage();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -78,6 +84,23 @@ export default function BinaryChoiceOverlay({ options, escapeKind, onSelect, onC
           transition={{ duration: 0.15 }}
         >
           <div className="flex flex-col items-center gap-3">
+            {/* Experiment (glyphInputTranslation): glyph translation of the
+                speech this choice replies to, shown above the buttons so the
+                user sees what was just said to them. Only rendered when the
+                server supplied a translation. */}
+            {inputGlyph?.glyph && (
+              <motion.div
+                className="flex items-center justify-center rounded-2xl bg-white/85 px-5 py-3 shadow-lg"
+                style={{ height: "5rem" }}
+                initial={{ opacity: 0, y: -16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.15 }}
+              >
+                <Glyph glyph={inputGlyph.glyph} fallback={inputGlyph.fallback} height="100%" noBackground />
+              </motion.div>
+            )}
+
             {/* Two options plus the equally-sized escape button, all rendered
                 as full SENTENCE BUTTONs. The shared component handles glyph
                 rendering, animated SYMBOLs, and auto-green/red coloring for

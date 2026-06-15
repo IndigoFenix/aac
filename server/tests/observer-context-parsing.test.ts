@@ -54,3 +54,44 @@ describe("parseToolCall — update_context normalization", () => {
     expect(ev?.type).toBe("transcribed");
   });
 });
+
+describe("parseToolCall — transcript targetIsUser flag", () => {
+  it("carries an explicit targetIsUser=true through with the real name preserved", () => {
+    const ev = parseToolCall(
+      call("transcript", { text: "קוביה או גליל?", speaker: "שלי פרי", target: "שחף סוחמי", targetIsUser: true }),
+      NOW,
+    );
+    expect(ev).toMatchObject({
+      type: "transcribed",
+      speaker: "שלי פרי",   // identity preserved, NOT flattened to USER
+      target: "שחף סוחמי",
+      targetIsUser: true,
+      direction: "user",
+    });
+  });
+
+  it("carries targetIsUser=false (speech to the AI) and marks direction device", () => {
+    const ev = parseToolCall(
+      call("transcript", { text: "what's the time?", speaker: "Mom", target: "DEVICE", targetIsUser: false }),
+      NOW,
+    );
+    expect(ev).toMatchObject({ type: "transcribed", targetIsUser: false, direction: "device" });
+  });
+
+  it("coerces the string variants 'true'/'false'", () => {
+    expect(parseToolCall(call("transcript", { text: "x", speaker: "Mom", target: "Sam", targetIsUser: "true" }), NOW))
+      .toMatchObject({ targetIsUser: true, direction: "user" });
+    expect(parseToolCall(call("transcript", { text: "x", speaker: "Mom", target: "Sam", targetIsUser: "false" }), NOW))
+      .toMatchObject({ targetIsUser: false, direction: "ambient" });
+  });
+
+  it("leaves targetIsUser undefined when the model omits it (so the Coordinator's name-match fallback applies)", () => {
+    const ev = parseToolCall(call("transcript", { text: "hi", speaker: "Mom", target: "Sam" }), NOW) as any;
+    expect(ev.type).toBe("transcribed");
+    expect(ev.targetIsUser).toBeUndefined();
+  });
+
+  it("still drops a transcript missing text/speaker/target", () => {
+    expect(parseToolCall(call("transcript", { text: "hi", speaker: "Mom" }), NOW)).toBeNull();
+  });
+});

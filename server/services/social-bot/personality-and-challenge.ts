@@ -132,8 +132,25 @@ export function describeGenome(g: PersonalityGenome): string {
 // ---------------------------------------------------------------------------
 
 export type Competency =
+  // Core 8 (original):
   | "responsiveness" | "reciprocity" | "attunement" | "repair"
-  | "assertiveness" | "complimentCalibration" | "initiation" | "interestEngagement";
+  | "assertiveness" | "complimentCalibration" | "initiation" | "interestEngagement"
+  // Batch A — conversation mechanics:
+  | "turnTaking" | "topicMaintenance" | "topicShifting" | "greetings" | "leaveTaking"
+  // Batch B — social-emotional + register:
+  | "perspectiveTaking" | "emotionExpression" | "empathy" | "politeness" | "askingForHelp" | "refusal";
+
+/** The full competency set, in canonical order. Single source for the engine
+ *  (emptyProfile), the SLP-config builder (goal/locked scoping), and the
+ *  startup-schema enum (targetSkills). Grows in later phases — keep the
+ *  `Competency` union + COMPETENCY_LABEL in shared/social-bot/state.ts in
+ *  lock-step (Record<Competency,...> there forces a label for each entry). */
+export const COMPETENCIES: Competency[] = [
+  "responsiveness", "reciprocity", "attunement", "repair",
+  "assertiveness", "complimentCalibration", "initiation", "interestEngagement",
+  "turnTaking", "topicMaintenance", "topicShifting", "greetings", "leaveTaking",
+  "perspectiveTaking", "emotionExpression", "empathy", "politeness", "askingForHelp", "refusal",
+];
 
 interface Skill { value: number; samples: number } // value 0..1, EMA
 
@@ -151,20 +168,35 @@ export interface SlpConfig {
 
 export function emptyProfile(): LearnerProfile {
   const skills = {} as Record<Competency, Skill>;
-  (["responsiveness","reciprocity","attunement","repair","assertiveness",
-    "complimentCalibration","initiation","interestEngagement"] as Competency[])
-    .forEach((c) => (skills[c] = { value: 0.5, samples: 0 }));
+  COMPETENCIES.forEach((c) => (skills[c] = { value: 0.5, samples: 0 }));
   return { skills, probeHistory: [] };
 }
 
 const MIN_SAMPLES = 8; // don't flag a weakness on thin data
 
-/** Slow EMA nudge from the per-turn signals + the director's `notes`. */
+/** Slow EMA nudge from the per-turn signals + the director's `notes`.
+ *  The batch-A conversation-mechanics fields are CONDITIONALLY sampled — the
+ *  director passes `null`/`undefined` on turns where a skill doesn't apply
+ *  (e.g. greetings only matter at the start) so the EMA isn't polluted, mirroring
+ *  the existing `repaired` / `complimentSpecific` pattern. */
 export function updateProfile(p: LearnerProfile, ev: {
   contingency: number; addressedBid: boolean; askShare: number; disclosed: boolean;
   affectTracksCharacter: boolean; repaired: boolean | null; tookOwnStance: boolean;
   sycophantic: boolean; complimentSpecific: number | null; initiatedBid: boolean;
   engagedCharacterInterest: boolean | null;
+  // batch A — conversation mechanics
+  turnTaking?: boolean;              // always sampled: did they take turns (not interrupt)
+  topicMaintained?: number | null;   // sampled after turn 1: 1 - topicShift
+  topicShiftedWell?: boolean | null; // sampled only when a real subject change happened
+  greeted?: boolean | null;          // sampled only at a greeting moment (early turns)
+  leaveTaking?: boolean | null;      // sampled only near a closing moment
+  // batch B — social-emotional + register
+  consideredPerspective?: boolean;   // always sampled: did they consider the peer's view
+  expressedEmotion?: boolean;        // always sampled: did they name their own feeling
+  polite?: number | null;            // always sampled: manner (0..1 courtesy/respect)
+  showedEmpathy?: boolean | null;    // sampled only at an empathy opportunity
+  askedForHelp?: boolean | null;     // sampled only when they seemed stuck
+  refusedWell?: boolean | null;      // sampled only when they declined something
 }) {
   const bump = (c: Competency, target: number) => {
     const s = p.skills[c];
@@ -179,6 +211,19 @@ export function updateProfile(p: LearnerProfile, ev: {
   if (ev.complimentSpecific !== null) bump("complimentCalibration", ev.complimentSpecific);
   bump("initiation", ev.initiatedBid ? 0.85 : 0.4);
   if (ev.engagedCharacterInterest !== null) bump("interestEngagement", ev.engagedCharacterInterest ? 0.85 : 0.35);
+  // batch A
+  if (ev.turnTaking !== undefined) bump("turnTaking", ev.turnTaking ? 0.75 : 0.2);
+  if (ev.topicMaintained != null) bump("topicMaintenance", ev.topicMaintained);
+  if (ev.topicShiftedWell != null) bump("topicShifting", ev.topicShiftedWell ? 0.85 : 0.3);
+  if (ev.greeted != null) bump("greetings", ev.greeted ? 0.9 : 0.35);
+  if (ev.leaveTaking != null) bump("leaveTaking", ev.leaveTaking ? 0.9 : 0.25);
+  // batch B
+  if (ev.consideredPerspective !== undefined) bump("perspectiveTaking", ev.consideredPerspective ? 0.85 : 0.4);
+  if (ev.expressedEmotion !== undefined) bump("emotionExpression", ev.expressedEmotion ? 0.85 : 0.4);
+  if (ev.polite != null) bump("politeness", ev.polite);
+  if (ev.showedEmpathy != null) bump("empathy", ev.showedEmpathy ? 0.9 : 0.25);
+  if (ev.askedForHelp != null) bump("askingForHelp", ev.askedForHelp ? 0.85 : 0.3);
+  if (ev.refusedWell != null) bump("refusal", ev.refusedWell ? 0.85 : 0.3);
 }
 
 export type Probe =
@@ -188,17 +233,77 @@ export type Probe =
   | "assert_wrong_view"   // weak assertiveness: provoke, see if they push back
   | "mild_rupture"        // weak repair: take recoverable offense (bounded!)
   | "drop_interest_cue"   // weak interestEngagement: see if they pick it up
+  | "hold_floor"          // weak turnTaking: take a longer turn, see if they wait
+  | "anchor_topic"        // weak topicMaintenance: stay put, see if they keep it going
+  | "invite_topic_change" // weak topicShifting: signal a lull, see if they move us on
+  | "wind_down_cue"       // weak leaveTaking: cue an ending, see if they close it out
+  | "state_feeling"       // weak perspectiveTaking: voice an inner state, see if they notice
+  | "invite_feeling"      // weak emotionExpression: share a feeling, invite a reciprocal
+  | "share_minor_trouble" // weak empathy: share a small upset, see if they show care
+  | "do_a_favor"          // weak politeness: offer something nice, see if they're courteous
+  | "introduce_obstacle"  // weak askingForHelp: be a touch unclear, see if they ask
+  | "unreasonable_request"// weak refusal: make a small declinable ask, see how they say no
   | "none";               // scaffold instead
 
 const PROBE_FOR: Partial<Record<Competency, Probe>> = {
   initiation: "go_minimal", reciprocity: "stop_volunteering", attunement: "shift_mood_silently",
   assertiveness: "assert_wrong_view", repair: "mild_rupture", interestEngagement: "drop_interest_cue",
+  turnTaking: "hold_floor", topicMaintenance: "anchor_topic", topicShifting: "invite_topic_change",
+  leaveTaking: "wind_down_cue",
+  perspectiveTaking: "state_feeling", emotionExpression: "invite_feeling", empathy: "share_minor_trouble",
+  politeness: "do_a_favor", askingForHelp: "introduce_obstacle", refusal: "unreasonable_request",
+  // greetings: detection only — no mid-session probe makes sense.
 };
 
+/** Probes that put the student on the spot with emotional friction. They only
+ *  land well if the student can recover — so they're softened when the student's
+ *  repair/attunement is weak (see shapeIntensity). */
+const FRICTION_PROBES = new Set<Probe>([
+  "mild_rupture", "assert_wrong_view", "unreasonable_request",
+]);
+
+/** Below this, the shaped probe is too faint to be worth the disruption —
+ *  scaffold instead. Lets the interaction terms (low language level + low
+ *  recovery on a friction probe) decide "don't probe this now". */
+const MIN_USEFUL_INTENSITY = 0.08;
+
+/** Language-level → intensity multiplier. A student at single words / short
+ *  phrases can't engage a strong provocation, so every probe is gentler the
+ *  simpler their language. tier index 1..5; undefined → full strength. */
+function languageFactor(tier?: number): number {
+  if (tier === undefined) return 1;
+  return [0.5, 0.7, 0.85, 1, 1][Math.max(0, Math.min(4, Math.round(tier) - 1))];
+}
+
+/** Shape the raw ZPD intensity by the INTERACTION between skills and the
+ *  language level — not just the target's own gap. */
+function shapeIntensity(
+  base: number,
+  probe: Probe,
+  p: LearnerProfile,
+  ceiling: number,
+  languageLevelTier?: number,
+): number {
+  let i = base * languageFactor(languageLevelTier);
+  if (FRICTION_PROBES.has(probe)) {
+    // Friction needs a recovery buffer. Average repair + attunement readiness;
+    // low buffer halves the probe (a student who can't recover shouldn't be
+    // ruptured hard). High buffer leaves it at full strength.
+    const recovery = (p.skills.repair.value + p.skills.attunement.value) / 2;
+    i *= lerp(0.5, 1, clamp(recovery));
+  }
+  return clamp(i, 0, ceiling);
+}
+
 /** Decide whether to challenge this turn, and at what. Honors all SLP gates,
- *  the scaffold:challenge ratio, ZPD bounding, and the back-off rule. */
-export function selectChallenge(p: LearnerProfile, slp: SlpConfig, turnIndex: number):
-  { probe: Probe; dim: Competency | null; intensity: number } {
+ *  the scaffold:challenge ratio, ZPD bounding, the back-off rule, and the
+ *  interaction shaping (adjacent-skill recovery buffer + language level). */
+export function selectChallenge(
+  p: LearnerProfile,
+  slp: SlpConfig,
+  turnIndex: number,
+  opts: { languageLevelTier?: number } = {},
+): { probe: Probe; dim: Competency | null; intensity: number } {
 
   // scaffold most of the time
   if (Math.random() > slp.challengeRatio) return { probe: "none", dim: null, intensity: 0 };
@@ -212,6 +317,7 @@ export function selectChallenge(p: LearnerProfile, slp: SlpConfig, turnIndex: nu
   if (!candidates.length) return { probe: "none", dim: null, intensity: 0 };
 
   const dim = candidates[0];
+  const probe = PROBE_FOR[dim]!;
 
   // BACK-OFF: if recent probes on this dim kept failing, scaffold instead.
   const recent = p.probeHistory.filter((h) => h.dim === dim).slice(-3);
@@ -220,8 +326,14 @@ export function selectChallenge(p: LearnerProfile, slp: SlpConfig, turnIndex: nu
   // ZPD: challenge just past current competence. Weaker skill => gentler probe,
   // and never exceed the clinician's intensity ceiling.
   const gap = 0.7 - p.skills[dim].value;            // how far below "comfortable"
-  const intensity = clamp(lerp(0.2, 0.6, gap), 0, slp.maxChallengeIntensity);
-  return { probe: PROBE_FOR[dim]!, dim, intensity };
+  const baseIntensity = clamp(lerp(0.2, 0.6, gap), 0, slp.maxChallengeIntensity);
+
+  // INTERACTION SHAPING: soften by the recovery buffer (for friction probes)
+  // and the student's language level. If shaping collapses it, scaffold.
+  const intensity = shapeIntensity(baseIntensity, probe, p, slp.maxChallengeIntensity, opts.languageLevelTier);
+  if (intensity < MIN_USEFUL_INTENSITY) return { probe: "none", dim, intensity: 0 };
+
+  return { probe, dim, intensity };
 }
 
 /** Record the outcome so back-off and the profile both learn from it. */
@@ -229,3 +341,52 @@ export function recordProbeOutcome(p: LearnerProfile, dim: Competency, success: 
   p.probeHistory.push({ dim, success });
   if (p.probeHistory.length > 30) p.probeHistory.shift();
 }
+
+// ---------------------------------------------------------------------------
+// 4. SLP CONFIG BUILDER  (clinician defaults + AI-narrowed targeting)
+// ---------------------------------------------------------------------------
+//
+// Precedence the caller implements: clinician default < AI override < locks.
+// This builder takes the already-resolved `targetSkills` (the effective goal
+// set) plus the clinician's hard constraints and enforces them:
+//   - lockedSkills are ALWAYS removed from goalDimensions (a hard floor the AI
+//     cannot override) and recorded as lockedDimensions.
+//   - targetSkills scopes which competencies may be probed; empty → all (minus
+//     locked).
+//   - maxChallengeIntensity is clamped to [0,1]; it caps every probe.
+
+export const DEFAULT_MAX_CHALLENGE_INTENSITY = 0.4;
+export const DEFAULT_CHALLENGE_RATIO = 0.25;
+
+export interface SlpConfigOptions {
+  /** Effective goal set (AI override or clinician default). Empty → all. */
+  targetSkills?: Competency[];
+  /** Clinician-only hard floor — never probed, removed from goals. */
+  lockedSkills?: Competency[];
+  /** Clinician ceiling on probe intensity (0..1). */
+  maxChallengeIntensity?: number;
+  challengeRatio?: number;
+}
+
+export function buildSlpConfig(opts: SlpConfigOptions = {}): SlpConfig {
+  const locked = (opts.lockedSkills ?? []).filter((c) => COMPETENCIES.includes(c));
+  const lockedSet = new Set(locked);
+
+  const requested = (opts.targetSkills && opts.targetSkills.length ? opts.targetSkills : COMPETENCIES)
+    .filter((c) => COMPETENCIES.includes(c) && !lockedSet.has(c));
+  // De-dupe while preserving canonical order.
+  const scoped = COMPETENCIES.filter((c) => requested.includes(c));
+  // If targeting + locks leave nothing, fall back to everything-but-locked so
+  // the engine always has a candidate pool (it just scaffolds otherwise).
+  const goalDimensions = scoped.length ? scoped : COMPETENCIES.filter((c) => !lockedSet.has(c));
+
+  return {
+    goalDimensions,
+    lockedDimensions: locked,
+    maxChallengeIntensity: clamp(opts.maxChallengeIntensity ?? DEFAULT_MAX_CHALLENGE_INTENSITY, 0, 1),
+    challengeRatio: opts.challengeRatio ?? DEFAULT_CHALLENGE_RATIO,
+  };
+}
+
+/** All competencies in scope, default ceiling — the unconfigured baseline. */
+export const DEFAULT_SLP_CONFIG: SlpConfig = buildSlpConfig();

@@ -712,6 +712,7 @@ export const he: Translations = {
   appsBoard: {
     title: "אפליקציות",
     empty: "אין אפליקציות פעילות.",
+    starting: "מתחיל…",
   },
 
   social: {

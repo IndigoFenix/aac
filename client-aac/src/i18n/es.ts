@@ -712,6 +712,7 @@ export const es: Translations = {
   appsBoard: {
     title: "Aplicaciones",
     empty: "No hay aplicaciones habilitadas.",
+    starting: "Iniciando…",
   },
 
   social: {

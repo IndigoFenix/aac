@@ -103,8 +103,17 @@ export default function SpaceTraderApp() {
     const off = onPlatformMessage(msg => {
       if (msg.type === 'request_close') {
         sendToParent({ type: 'session_end', reason: 'quit' });
+      } else if (msg.type === 'init') {
+        // The platform may pass a resolved starting level (chosen to fit the
+        // student). Regenerate the world at that level using the current
+        // dimensions. Standalone (no parent) never sends init → stays level 0.
+        const startLevel = (msg.params as { startLevel?: unknown } | undefined)?.startLevel;
+        if (typeof startLevel === 'number' && startLevel > 0) {
+          const cur = stateRef.current;
+          stateRef.current = createGameState(cur.width, cur.height, Math.floor(startLevel));
+        }
       }
-      // Other message types are accepted but ignored for now (init, expression, etc.)
+      // Other message types are accepted but ignored for now (expression, etc.)
     });
     return () => off();
   }, []);

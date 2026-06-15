@@ -18,7 +18,6 @@
 import type {
   Archetype,
   PersonalityGenome,
-  SlpConfig,
 } from "./personality-and-challenge";
 import { deriveParams, sampleGenome } from "./personality-and-challenge";
 import type { CharacterIdentity } from "./identity-layer";
@@ -126,11 +125,19 @@ const ACCESSORY_INTEREST: Record<NonNullable<FaceAppearance["accessory"]>["kind"
 function generateIdentity(
   rng: () => number,
   accessory: FaceAppearance["accessory"] | undefined,
+  interestHints?: string[],
 ): CharacterIdentity {
   const loveCount = 2 + Math.floor(rng() * 2); // 2 or 3
   const coldCount = 1 + Math.floor(rng() * 2); // 1 or 2
 
-  const loves = pickN(LOVE_INTERESTS, loveCount, rng);
+  // Seeded interests (e.g. topics the student loves, so the peer shares common
+  // ground) take priority and fill the remaining love slots from the pool.
+  const seeded = (interestHints ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  const fillCount = Math.max(0, loveCount - seeded.length);
+  const loves = [
+    ...seeded,
+    ...pickN(LOVE_INTERESTS.filter((l) => !seeded.includes(l)), fillCount, rng),
+  ];
   const colds = pickN(COLD_INTERESTS, coldCount, rng);
 
   const interests: Record<string, number> = {};
@@ -175,6 +182,9 @@ export interface GeneratePersonaOptions {
   archetype?: Archetype;
   /** Force a specific gender. Omit to roll 50/50. */
   gender?: Gender;
+  /** Topics the peer should love (e.g. the student's interests, so they share
+   *  common ground). Up to 3 are seeded as strong affinities. */
+  interestHints?: string[];
   /** Inject a deterministic RNG for tests. Defaults to Math.random. */
   rng?: () => number;
 }
@@ -185,7 +195,7 @@ export function generatePersona(opts: GeneratePersonaOptions = {}): GeneratedPer
   const genome = sampleGenome(archetype);
   // Appearance first so the accessory (if any) can seed an interest.
   const appearance = randomAppearance(rng);
-  const identity = generateIdentity(rng, appearance.accessory);
+  const identity = generateIdentity(rng, appearance.accessory, opts.interestHints);
   const gender: Gender = opts.gender ?? (rng() < 0.5 ? "male" : "female");
   const namePool = gender === "male" ? MALE_NAMES : FEMALE_NAMES;
   const name = namePool[Math.floor(rng() * namePool.length)];
@@ -201,23 +211,17 @@ export function generatePersona(opts: GeneratePersonaOptions = {}): GeneratedPer
   };
 }
 
-// ── Default SLP config (still hardcoded — clinician dial comes later) ─
-
-export const DEFAULT_SLP_CONFIG: SlpConfig = {
-  goalDimensions: [
-    "responsiveness",
-    "reciprocity",
-    "attunement",
-    "repair",
-    "assertiveness",
-    "complimentCalibration",
-    "initiation",
-    "interestEngagement",
-  ],
-  lockedDimensions: [],
-  maxChallengeIntensity: 0.4,
-  challengeRatio: 0.25,
-};
+// ── SLP config ────────────────────────────────────────────────────────
+// The builder + default live in personality-and-challenge.ts (pure, no
+// face/appearance imports, so they're unit-testable in isolation). Re-exported
+// here for the existing call sites that import them from persona-generator.
+export {
+  buildSlpConfig,
+  DEFAULT_SLP_CONFIG,
+  DEFAULT_MAX_CHALLENGE_INTENSITY,
+  DEFAULT_CHALLENGE_RATIO,
+  type SlpConfigOptions,
+} from "./personality-and-challenge";
 
 export const DEFAULT_DIFFICULTY = 0.4;
 

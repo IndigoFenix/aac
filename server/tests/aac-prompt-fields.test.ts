@@ -25,7 +25,10 @@ import {
   sanitizePromptField,
   sanitizePromptList,
   getAACSettingsMemoryFields,
+  readSocialTrainerConfig,
+  sanitizeSocialTrainerConfig,
 } from "../services/memory-schema/aac-settings-memory-schema";
+import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 
 describe("normalizeAacPromptList", () => {
   it("returns an empty list for null/undefined/empty", () => {
@@ -170,5 +173,46 @@ describe("getAACSettingsMemoryFields — includePrompts gate", () => {
     expect(ids).not.toContain("Context_AACPrompt");
     expect(ids).not.toContain("Context_AACAutoPrompt");
     expect(ids).toContain("Context_AACSettings");
+  });
+});
+
+describe("Social Trainer config (nested under Context_AACSettings)", () => {
+  it("reads a complete shape from appConfig.social_trainer, defaulting empties", () => {
+    expect(readSocialTrainerConfig(null)).toEqual({ targetSkills: [], lockedSkills: [] });
+    expect(readSocialTrainerConfig({ appConfig: {} })).toEqual({ targetSkills: [], lockedSkills: [] });
+    expect(
+      readSocialTrainerConfig({
+        appConfig: { social_trainer: { targetSkills: ["turnTaking"], lockedSkills: ["repair"], maxChallengeIntensity: 0.3 } },
+      }),
+    ).toEqual({ targetSkills: ["turnTaking"], lockedSkills: ["repair"], maxChallengeIntensity: 0.3 });
+  });
+
+  it("sanitize drops unknown skill keys and clamps the ceiling", () => {
+    expect(
+      sanitizeSocialTrainerConfig({
+        targetSkills: ["turnTaking", "not_a_skill", "empathy"],
+        lockedSkills: ["bogus"],
+        maxChallengeIntensity: 5,
+      }),
+    ).toEqual({ targetSkills: ["turnTaking", "empathy"], lockedSkills: [], maxChallengeIntensity: 1 });
+    expect(sanitizeSocialTrainerConfig({ maxChallengeIntensity: -2 })).toEqual({ maxChallengeIntensity: 0 });
+  });
+
+  it("sanitize handles partial patches (only present keys)", () => {
+    expect(sanitizeSocialTrainerConfig({ targetSkills: ["greetings"] })).toEqual({ targetSkills: ["greetings"] });
+    expect(sanitizeSocialTrainerConfig({})).toEqual({});
+    expect(sanitizeSocialTrainerConfig(null)).toEqual({});
+  });
+
+  it("exposes socialTrainer as a structured branch with its own db + the full skill enum", () => {
+    const settings = getAACSettingsMemoryFields().find((f) => f.id === "Context_AACSettings") as any;
+    const st = settings.properties.socialTrainer;
+    expect(st.type).toBe("object");
+    expect(typeof st.db.read).toBe("function");
+    expect(typeof st.db.write).toBe("function");
+    // Three branches: focus / off-limits / ceiling.
+    expect(Object.keys(st.properties).sort()).toEqual(["lockedSkills", "maxChallengeIntensity", "targetSkills"]);
+    // The skill enum stays in sync with the canonical competency set (all 19).
+    expect(st.properties.targetSkills.items.enum).toEqual(Object.keys(COMPETENCY_LABEL));
   });
 });

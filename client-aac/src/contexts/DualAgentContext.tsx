@@ -56,7 +56,7 @@ interface DualAgentContextType {
   // User-controlled mute state (cave click — AI cannot toggle this)
   muteState: 'unmuted' | 'muted';
   setMuteState: (state: 'unmuted' | 'muted') => void;
-  lastModeChange: { mode: 'interact' | 'assist' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
+  lastModeChange: { mode: 'companion' | 'facilitator' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -108,9 +108,14 @@ interface DualAgentContextType {
   activeApp: ActiveAppData | null;
   dismissApp: () => void;
   launchApp: (appId: string, appData?: any) => void;
+  /** Ask the server to resolve startup params then open the app (for apps with
+   *  needsStartupResolution). Replies via the normal app_open message. */
+  requestAppOpen: (appId: string, appData?: any) => void;
+  /** appId currently awaiting a request_app_open round-trip, or null. */
+  appOpenPending: string | null;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
   /** Built-in apps enabled for this session — drives the static Apps board overlay. */
-  enabledApps: Array<{ id: string; name: string; icon: string }>;
+  enabledApps: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
@@ -130,6 +135,9 @@ interface DualAgentContextType {
    *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
    *  overlay is active. */
   binaryChoiceEscapeKind: "maybe" | "neither" | null;
+  /** Experiment (glyphInputTranslation): glyph translation of the speech this
+   *  choice replies to, shown above the overlay buttons. Null when inactive. */
+  binaryChoiceInputGlyph: { glyph: string; fallback?: string } | null;
   dismissBinaryChoice: () => void;
 
   // Caretaker alarm raised by the Observer agent. "alert" = short
@@ -873,6 +881,8 @@ function ProviderShell({
     activeApp: agent.activeApp,
     dismissApp: agent.dismissApp,
     launchApp: agent.launchApp,
+    requestAppOpen: agent.requestAppOpen,
+    appOpenPending: agent.appOpenPending,
     registerAppCanvasCapture,
     enabledApps: agent.enabledApps,
     availableCustomApps: agent.availableCustomApps,
@@ -883,6 +893,7 @@ function ProviderShell({
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,
+    binaryChoiceInputGlyph: (agent as any).binaryChoiceInputGlyph ?? null,
     dismissBinaryChoice: agent.dismissBinaryChoice,
 
     activeAlarm: agent.activeAlarm,

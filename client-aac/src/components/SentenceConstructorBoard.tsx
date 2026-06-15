@@ -242,7 +242,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const [modeChip, setModeChip] = useState<string>(defaultModeChip("who"));
   const [glyph, setGlyph] = useState<ParsedGlyph>(EMPTY_GLYPH);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
-  const [tone, setTone] = useState<Record<ToneTag, boolean>>({
+  // Only the two prosody tone tags are toggled here (tense tags past/future
+  // are applied elsewhere), so this state covers just that subset of ToneTag.
+  const [tone, setTone] = useState<Record<"question" | "exclamation", boolean>>({
     question: false,
     exclamation: false,
   });

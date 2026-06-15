@@ -12,6 +12,7 @@
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import type { AgentEvent } from "../agent-events";
 import { getLanguageName } from "@shared/language-names";
+import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 import type { PermittedWebsite } from "@shared/schema";
 import { T } from "../../memory-schema/canonical-terms";
 import {
@@ -49,6 +50,10 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   permittedWebsites?: PermittedWebsite[];
   autoSymbolsEnabled?: boolean;
   singleGlyphButtons?: boolean;
+  /** How long/complex the user's button utterances should be, matched to their
+   *  receptive language. Constrains `speech`/`label` length (not the GLYPH
+   *  encoding). Omit / default tier emits no block. */
+  languageLevel?: LanguageLevel;
   /** Experiment: when on, the header mirrors text directed at the user back as
    *  a glyph strip, fed by rebuild_board's `input_glyphs` param. Adds the
    *  param to the tool surface + a prompt block explaining it. */
@@ -79,12 +84,18 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     cachedSymbols, availableBoards, loadedBoardKey, loadedBoardName, loadedPageName,
     enabledApps, availableCustomApps, permittedWebsites,
     autoSymbolsEnabled = false, singleGlyphButtons = false,
-    glyphInputTranslation = false,
+    glyphInputTranslation = false, languageLevel,
     gestureOverrides, safetyNotes, boardManagerGuidance,
     sentenceInterpretationExamples, boardManagerExamples,
   } = config;
 
   const languageName = getLanguageName(language);
+  // Language-level constraint on button utterance length/complexity. Null at the
+  // default tier → no block (existing students unchanged).
+  const bmLangDirective = languageLevel ? languageLevelDirective(languageLevel) : null;
+  const languageLevelBlock = bmLangDirective
+    ? `\n\n<language_level>\n${bmLangDirective}\nThis caps the \`speech\` and \`label\` text of every ${T.button} you build — keep them this short and simple. The GLYPH encoding is unaffected (it's language-neutral).\n</language_level>`
+    : "";
   const descriptor = studentDescriptor(config);
   const peopleLine = knownPeopleLine(knownContacts);
 
@@ -163,6 +174,20 @@ The TARGET label on the incoming tagged event decides whether to build a board a
 [${studentName}] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit ${T.button}s that would reveal student-private information.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
+<conversation_register>
+WHO the user is talking to changes WHAT they need to say. A \`[REGISTER]\` note tells you; with no note, offer a balanced mix.
+
+  - \`[REGISTER] helper\` — they're talking to a caretaker, parent, teacher, or therapist. Needs and requests belong here: help, want, more, all done, "I need…", plus politeness (please, thank you, hello).
+  - \`[REGISTER] peer\` — they're talking to a friend or another kid. This is a BACK-AND-FORTH conversation, NOT a request desk. Lead with social, reciprocal moves and keep needs to a minimum:
+      - React to what the peer said: "cool!", "really?", "me too", "no way", "that's funny".
+      - Hand the turn back / keep it going: "what about you?", "why?", "tell me more", "and then?".
+      - Share something of their own: "I like that too", "guess what", "I have one".
+      - Greetings & goodbyes, agreeing & disagreeing, taking turns.
+      - Surface a need (water, bathroom, help) ONLY if the user clearly signals one — don't fill a social board with requests.
+
+Bias, don't lock: a peer board may still carry one "I need a break" escape, and a helper board can still be warm.
+</conversation_register>
+
 <glyph>
 A ${T.button} is \`{ speech, glyph, label }\`:
   - \`speech\` — the first-person SENTENCE the TTS voices on press, in ${languageName} ("I want some water").
@@ -188,7 +213,7 @@ ${singleGlyphButtons ? `One GLYPH per ${T.button}.` : `Match the glyph count to 
 **MODIFIERs** come ONLY from <bundled_icons> (or are emojis). Invented modifiers ("new", "sad", "scary") render as a meaningless dot — use an emoji that encodes the quality, or carry it in \`speech\` only${singleGlyphButtons ? "" : "; never add a GLYPH just to attach an adjective"}.
 
 Example: \`{ speech: "I want a red apple", glyph: [{sym:"i_me"},{sym:"want"},{sym:"🍎",mods:["color_red"]}], label: "Red apple" }\`
-</glyph>
+</glyph>${languageLevelBlock}
 
 <meta_buttons>
 Two META button kinds — set \`button_type\` on a rebuild_board / add_board_button entry. Speech/label are ignored; the device renders a FIXED appearance.
@@ -210,10 +235,10 @@ Two META button kinds — set \`button_type\` on a rebuild_board / add_board_but
 </board_rules>${glyphInputTranslation ? `
 
 <input_glyphs>
-The device shows the user a glyph translation of what was just said TO them, in the header. On EVERY \`rebuild_board\` that REPLIES to incoming speech (\`target = USER\` — an [AI to USER] line or a person speaking to the user), also set \`input_glyphs\`: an ARRAY of GLYPHs (same shape as button \`glyph\`) depicting THAT incoming sentence — not the reply buttons.
+The device shows the user a glyph translation of what was just said TO them. On EVERY \`rebuild_board\` (header strip) or \`show_binary_choice\` (above the two overlay ${T.button}s) that REPLIES to incoming speech (\`target = USER\` — an [AI to USER] line or a person speaking to the user), also set \`input_glyphs\`: an ARRAY of GLYPHs (same shape as button \`glyph\`) depicting THAT incoming sentence — not the reply buttons.
   - It represents what the user HEARD, so build it from the speaker's words (e.g. AI asked "Do you want to go outside?" → \`[{sym:"want"},{sym:"go"},{sym:"🌳"},{sym:"❓"}]\`).
   - No length cap, but SIMPLIFY to the core meaning when a faithful translation would be long — favour the few GLYPHs that carry the gist.
-  - Use existing SYMBOLs/emoji only (the preference order in <glyph>). Do NOT use \`gen\` here — the header has no time to generate images.
+  - Use existing SYMBOLs/emoji only (the preference order in <glyph>). Do NOT use \`gen\` here — there is no time to generate images.
   - Omit \`input_glyphs\` on FOLLOW-UP rebuilds (the user just acted; nothing new was said to them) — the header keeps its last translation.
 </input_glyphs>` : ""}
 
@@ -328,6 +353,7 @@ On [GUESSING STATE] the user is finding a word they can't reach directly. Build 
 **Button shapes:**
 
   1. **Registry key** — when the latest [GUESSING STATE] \`offered_keys\` fit, emit a ${T.button} with ONLY \`label\` set to the key (e.g. \`{ label: "suggestion:things.kind:animal" }\`) — NO \`glyph\`, \`speech\`, or \`op\`; the system fills the picture + voiced label. NEVER invent keys.
+    - ALWAYS use the full key. Even for a simple two-way question (e.g. fast or slow), emit \`{ label: "suggestion:actions.pace:fast" }\` and \`{ label: "suggestion:actions.pace:slow" }\` — do NOT re-author an offered key as a \`narrow\`/\`contrast\` button copying its value (\`{ kind:"narrow", value:"fast" }\`). That value is untranslated and routes wrong; the registry key is localized for the user.
   2. **Your own narrowing** — when no offered dimension fits, propose one. Use the SAME \`dimension\` across the batch.
     - \`{ kind:"narrow", dimension:"genre", value:"Comedy", glyph:[{sym:"😂"}], speech:"funny" }\`
   3. **"Closer to A or B?"** — to bisect a niche concept space, ONE contrast button (2+ poles allowed).
@@ -962,7 +988,7 @@ The \`sentence\` argument MUST be the FINAL natural-language sentence, first-per
   };
 }
 
-function buildShowBinaryChoiceTool(): FunctionDeclaration {
+function buildShowBinaryChoiceTool(config: BoardManagerToolConfig): FunctionDeclaration {
   return {
     name: "show_binary_choice",
     description: `Show two large overlay ${T.button}s. Use for ANY question with exactly two natural answers — binary choice or yes/no.
@@ -982,6 +1008,15 @@ function buildShowBinaryChoiceTool(): FunctionDeclaration {
           type: "string",
           description: `Who the choice is addressed to. "DEVICE" (default), "USER", or a person's name.`,
         },
+        ...(config.glyphInputTranslation
+          ? {
+              input_glyphs: {
+                type: "array",
+                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this choice), shown ABOVE the two overlay ${T.button}s so the user sees what was just said to them. Same GLYPH shape as a button \`glyph\` — see <input_glyphs>. Simplify to the gist; existing SYMBOLs/emoji only (no \`gen\`). Omit when the choice isn't a reply to incoming speech.`,
+                items: glyphItemSchema(),
+              },
+            }
+          : {}),
       },
       required: ["option1", "option2"],
     },
@@ -1126,7 +1161,7 @@ export function buildBoardManagerToolDeclarations(config: BoardManagerToolConfig
     declarations.push(buildPressButtonTool());
   }
 
-  declarations.push(buildShowBinaryChoiceTool());
+  declarations.push(buildShowBinaryChoiceTool(config));
   declarations.push(buildSuggestConstructionButtonsTool());
   declarations.push(buildSetMemoryChipsTool());
   declarations.push(buildInterpretTool());

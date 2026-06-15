@@ -18,7 +18,7 @@ export type PlatformMessage = BridgeMessageBase & (
    * user's license; games that require licensing must refuse to start without
    * a valid token. Standalone access is gated separately at the server layer.
    */
-  | { type: "init"; locale?: string; studentDisplayName?: string; licenseToken?: string; dwellMs?: number }
+  | { type: "init"; locale?: string; studentDisplayName?: string; licenseToken?: string; dwellMs?: number; params?: Record<string, unknown> }
   | { type: "expression"; emotion: string; confidence: number }
   | { type: "people_present"; names: string[] }
   | { type: "ai_comment"; text: string }
@@ -46,6 +46,12 @@ export type GameMessage = BridgeMessageBase & (
   | { type: "score"; value: number; delta?: number }
   | { type: "level_changed"; level: number }
   | { type: "session_end"; reason: "won" | "quit" | "error"; summary?: string }
+  /**
+   * Free-form observation the embedding platform forwards to the live AI
+   * session as a `[GAME OBSERVATION]` context update. `surface` is any
+   * JSON-serializable shape — game and AI co-evolve without a schema.
+   */
+  | { type: "ai_observation"; surface: unknown }
   | { type: "request_close" }
 );
 
@@ -70,6 +76,13 @@ function isBridgeMessage(value: unknown): value is BridgeMessageBase & { type: s
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
+
+/** A platform→game message as passed to `sendToGame` (the `__aivotaGameBridge`
+ *  tag is stamped by the helper). Distributes over the union so variant-specific
+ *  fields survive — plain `Omit` would collapse it to the common keys. */
+export type PlatformMessageInput = DistributiveOmit<PlatformMessage, "__aivotaGameBridge">;
+/** A game→platform message as passed to `sendToParent`. */
+export type GameMessageInput = DistributiveOmit<GameMessage, "__aivotaGameBridge">;
 
 /** The embedding parent's origin, from the referrer the browser set when it
  *  loaded this iframe. Used as the postMessage targetOrigin so game→platform
@@ -103,7 +116,7 @@ function originAllowlist(iframe: HTMLIFrameElement): string[] | undefined {
 }
 
 /** Send a message from a game up to its embedding platform. No-op when running standalone. */
-export function sendToParent(msg: DistributiveOmit<GameMessage, "__aivotaGameBridge">): void {
+export function sendToParent(msg: GameMessageInput): void {
   if (typeof window === "undefined" || window.parent === window) return;
   const tagged = { ...msg, [TAG]: true } as GameMessage;
   window.parent.postMessage(tagged, parentTargetOrigin());
@@ -114,7 +127,7 @@ export function sendToParent(msg: DistributiveOmit<GameMessage, "__aivotaGameBri
  *  leaked to a different document if the frame ever navigates cross-origin. */
 export function sendToGame(
   iframe: HTMLIFrameElement,
-  msg: DistributiveOmit<PlatformMessage, "__aivotaGameBridge">,
+  msg: PlatformMessageInput,
   targetOrigin?: string,
 ): void {
   const win = iframe.contentWindow;

@@ -712,6 +712,7 @@ export const ko: Translations = {
   appsBoard: {
     title: "앱",
     empty: "활성화된 앱이 없습니다.",
+    starting: "시작 중…",
   },
 
   social: {

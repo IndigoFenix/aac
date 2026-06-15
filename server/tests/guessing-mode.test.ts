@@ -42,6 +42,7 @@ import {
   serializeGlyph,
   glyphStringToJson,
   parseStructuredBoardButton,
+  recoverOfferedSuggestionKey,
 } from "../services/dual-agent/interactive-agent";
 import { validateBoardButtons } from "../services/dual-agent/board-button-validator";
 
@@ -636,6 +637,43 @@ describe("server-side suggestion-button expansion", () => {
     expect(others).toHaveLength(1);
     expect(others[0].label).toBe("I want water");
     expect(suggestions.every((s) => s.buttonType === "suggestion")).toBe(true);
+  });
+});
+
+describe("recoverOfferedSuggestionKey", () => {
+  const offered = ["suggestion:actions.pace:fast", "suggestion:actions.pace:slow"];
+
+  it("recovers from a narrow button reconstructing dimension+value (the 'fast/slow' bug)", () => {
+    // Model copied the offered key's parts into a narrow button instead of
+    // echoing the key — the label would render the raw English value.
+    const key = recoverOfferedSuggestionKey(
+      { label: "fast", narrowDimension: "actions.pace", narrowValue: "fast" },
+      offered,
+    );
+    expect(key).toBe("suggestion:actions.pace:fast");
+  });
+
+  it("recovers from a bare-value label by matching an offered key's value", () => {
+    expect(recoverOfferedSuggestionKey({ label: "slow" }, offered)).toBe(
+      "suggestion:actions.pace:slow",
+    );
+  });
+
+  it("matches offered values case-insensitively (snake_case values included)", () => {
+    const whoOffered = ["suggestion:actions.who:with_others", "suggestion:actions.who:alone"];
+    expect(recoverOfferedSuggestionKey({ label: "With_Others" }, whoOffered)).toBe(
+      "suggestion:actions.who:with_others",
+    );
+  });
+
+  it("returns null for a genuine AI guess that matches no offered value", () => {
+    expect(
+      recoverOfferedSuggestionKey({ label: "Spider-Man" }, offered),
+    ).toBeNull();
+  });
+
+  it("returns null when no keys are offered and the value isn't a real dim+value", () => {
+    expect(recoverOfferedSuggestionKey({ label: "fast" }, [])).toBeNull();
   });
 });
 

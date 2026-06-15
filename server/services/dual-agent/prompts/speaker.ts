@@ -11,6 +11,7 @@
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import { getLanguageName } from "@shared/language-names";
+import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 import { flattenPermittedWebsites } from "@shared/permitted-websites";
 import type { PermittedWebsite } from "@shared/schema";
 import { T } from "../../memory-schema/canonical-terms";
@@ -54,6 +55,10 @@ export interface SpeakerPromptConfig extends BaseStudentContext {
    *  voices). HTTP→TTS uses a fixed voice so this gate stays off there. */
   liveAudio?: boolean;
   sessionGoals?: string;
+  /** How long/complex the AI's sentences should be, matched to the student's
+   *  receptive language. Omit (or the default `full_sentences` tier) emits no
+   *  directive — the model's natural register. */
+  languageLevel?: LanguageLevel;
   /** Three-agent speaker-specific dialogue (speech-only). When omitted,
    *  falls back to a static speech-only fallback. NOT the legacy
    *  interact_mode.dialogue example, which contains rebuild_board calls
@@ -77,6 +82,7 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
     studentName, persona, language, memoryContext, muteState,
     aiName, knownContacts: _knownContacts, classroom,
     useDirectAudio = false, liveAudio = false, sessionGoals, sessionSummary,
+    languageLevel,
     interactModeExamples, assistModeExamples: _assistModeExamples,
     gestureOverrides, safetyNotes,
     availableBoards, enabledApps, availableCustomApps, permittedWebsites,
@@ -107,6 +113,14 @@ The user has muted you.
 </muted>`
     : "";
 
+  // Language-level constraint (sentence length/complexity matched to the
+  // student). Null at the default tier → no block, so existing students'
+  // prompts are unchanged.
+  const langDirective = languageLevel ? languageLevelDirective(languageLevel) : null;
+  const languageBlock = langDirective
+    ? `\n\n<language_level>\n${langDirective}\nThis governs HOW you say things, not whether you reply.\n</language_level>`
+    : "";
+
   const commRules = liveAudio
     ? `Input arrives as text transcripts; you speak directly as native audio. Natural pacing, intonation, and brief pauses are part of the reply — use them.`
     : useDirectAudio
@@ -130,14 +144,15 @@ Every incoming statement is tagged \`[<speaker> to <target>] "..."\`.
   - What matters is who the statement is TO, not who it's from.
   - An UNKNOWN speaker is still a real person who actually spoke.
 
-TO patterns:
+TO patterns — what matters is the TARGET (the part after "to"):
   - **[X to YOU]** — addressed to YOU (the AI). Reply aloud — short, warm, conversational. React, ask a follow-up.
-    - X can be USER, a known name, or UNKNOWN — all mean "someone in the room is talking to you."
-  - **[X to USER]** — addressed to the user. Stay quiet — the board surfaces response options.
+    - X can be USER (a ${T.button} press), a known name, or UNKNOWN — all mean "someone is talking to you."
+  - **[X to ${studentName}]** / **[X to USER]** — someone is talking TO the user, not to you. Stay quiet — the board surfaces the user's response options.
   - **[X to anyone else]** — addressed to a third party. Stay quiet unless they later address YOU.
+  - Rule of thumb: reply ONLY when the target is YOU. Any other target → stay quiet.
 
 ${toolsSuppressed ? "" : `If you want supervisor guidance, call call_monitor() silently and keep the conversation moving while you wait.
-`}</communication>
+`}</communication>${languageBlock}
 
 <when_to_reply>
   - Everything you emit as text is voiced aloud.
@@ -289,12 +304,20 @@ ${sessionSummary}
 
   if (liveAudio) {
     prompt += `\n\n<voice_identity>
-You have one fixed AI voice.
+  All of your voice output is audible to the user, and all of your text output is visible to the user. Speak naturally, and keep it clean and clear for the user to understand.
+  - NEVER output private thoughts as part of your reply. If you need to think, use private_thought() and then immediately follow with a spoken reply or remain_silent().
+  - NEVER output function names or other code-like text as part of your reply - call them as functions.
   - NEVER imitate, mimic, or play back the voice of any person you hear (user, caregiver, visitor — anyone).
-  - Do NOT reproduce someone's exact words in their voice as a "response."
-  - To refer to what someone said, paraphrase in your own voice.
+  - Bracketed tags (\`[USER to YOU]\`, \`[MODE ...]\`, \`[CONTEXT ...]\`, \`[YOU to USER]\`) are markers the SYSTEM adds automatically for clarity and record-keeping. NEVER output them as part of your reply.
 </voice_identity>`;
-  }
+  } else {
+    prompt += `\n\n<voice_identity>
+  All of your text output is voiced aloud by a separate TTS. Speak naturally, and keep it clean and clear for the user to understand.
+  - NEVER output private thoughts as part of your reply. If you need to think, use private_thought() and then immediately follow with a spoken reply or remain_silent().
+  - NEVER output function names or other code-like text as part of your reply - call them as functions.
+  - Bracketed tags (\`[USER to YOU]\`, \`[MODE ...]\`, \`[CONTEXT ...]\`, \`[YOU to USER]\`) are markers the SYSTEM adds automatically for clarity and record-keeping. NEVER output them as part of your reply.
+</voice_identity>`;
+}
 
   return prompt;
 }

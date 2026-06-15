@@ -235,8 +235,10 @@ export interface UseDualAgentReturn {
   // User-controlled mute state (cave toggle — the AI cannot change this)
   muteState: 'unmuted' | 'muted';
   setMuteState: (state: 'unmuted' | 'muted') => void;
-  /** Last AI-initiated mode change — used to flash the "AI: <mode>" indicator. */
-  lastModeChange: { mode: 'interact' | 'assist' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
+  /** Last AI-initiated mode change — used to flash the "AI: <mode>" indicator.
+   *  Canonical modes are companion/facilitator/standby (legacy interact/assist
+   *  are mapped to companion/facilitator in the interaction_mode_changed handler). */
+  lastModeChange: { mode: 'companion' | 'facilitator' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -260,10 +262,15 @@ export interface UseDualAgentReturn {
   dismissApp: () => void;
   /** Client-initiated app launch — e.g. AAC board button with an open_website action. */
   launchApp: (appId: string, appData?: any) => void;
+  /** Ask the server to resolve startup params, then open the app (apps with
+   *  needsStartupResolution). Server replies via the normal app_open message. */
+  requestAppOpen: (appId: string, appData?: any) => void;
+  /** appId currently awaiting a request_app_open round-trip, or null. */
+  appOpenPending: string | null;
   /** Register a function to capture the app canvas (e.g. drawing) for detection */
   captureAppCanvasRef: React.MutableRefObject<(() => Promise<Blob | null>) | null>;
   /** Built-in apps enabled for this session (id + display name + icon). */
-  enabledApps: Array<{ id: string; name: string; icon: string }>;
+  enabledApps: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
@@ -315,6 +322,10 @@ export interface UseDualAgentReturn {
    *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
    *  overlay is active. The display layer doesn't decide the kind. */
   binaryChoiceEscapeKind: "maybe" | "neither" | null;
+  /** Experiment (glyphInputTranslation): glyph translation of the speech this
+   *  choice replies to, shown above the two overlay buttons. Null when off or
+   *  the choice isn't a reply to incoming speech. */
+  binaryChoiceInputGlyph: { glyph: string; fallback?: string } | null;
   dismissBinaryChoice: () => void;
 
   // Live API only — raw PCM audio streaming

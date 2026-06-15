@@ -145,11 +145,26 @@ describe("glyphInputTranslation — input_glyphs gating on rebuild_board", () =>
     expect(props.input_glyphs.items.properties).toHaveProperty("mods");
   });
 
-  test("input_glyphs never appears on add_board_button / sidebar / binary even when enabled", () => {
+  test("input_glyphs never appears on add_board_button / sidebar even when enabled", () => {
     const decls = buildBoardManagerToolDeclarations({ ...baseConfig, glyphInputTranslation: true });
-    for (const toolName of ["add_board_button", "add_context_button", "show_binary_choice"]) {
+    for (const toolName of ["add_board_button", "add_context_button"]) {
       const fd = decls[0].functionDeclarations!.find(d => d.name === toolName)!;
       expect((fd.parametersJsonSchema as any).properties).not.toHaveProperty("input_glyphs");
     }
+  });
+
+  test("show_binary_choice gains input_glyphs only when glyphInputTranslation is on", () => {
+    const off = buildBoardManagerToolDeclarations(baseConfig)[0].functionDeclarations!
+      .find(d => d.name === "show_binary_choice")!;
+    expect((off.parametersJsonSchema as any).properties).not.toHaveProperty("input_glyphs");
+
+    const on = buildBoardManagerToolDeclarations({ ...baseConfig, glyphInputTranslation: true })[0].functionDeclarations!
+      .find(d => d.name === "show_binary_choice")!;
+    const props = (on.parametersJsonSchema as any).properties;
+    expect(props).toHaveProperty("input_glyphs");
+    expect(props.input_glyphs.type).toBe("array");
+    // Same per-glyph shape as a button glyph (sym/mods).
+    expect(props.input_glyphs.items.properties).toHaveProperty("sym");
+    expect(props.input_glyphs.items.properties).toHaveProperty("mods");
   });
 });

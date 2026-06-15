@@ -154,11 +154,20 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
       const target = asString(args.target);
       if (!text || !speaker || !target) return null;
       const confidence = (asString(args.confidence) as TranscribedEvent["confidence"] | undefined) ?? "medium";
+      // Authoritative routing flag from the Observer. Coerce the usual
+      // wire variants; leave undefined when the model omitted it so the
+      // Coordinator's name-match fallback still kicks in.
+      const rawTargetIsUser = args.targetIsUser;
+      const targetIsUser: boolean | undefined =
+        typeof rawTargetIsUser === "boolean" ? rawTargetIsUser
+        : rawTargetIsUser === "true" ? true
+        : rawTargetIsUser === "false" ? false
+        : undefined;
       // Legacy `direction` field — mirror target for older renderers.
-      // "DEVICE" → "device", "USER"/student name → "user", else "ambient".
+      // Prefer the explicit flag; fall back to name-matching the target.
       const direction: SpeechDirection = isDeviceTarget(target)
         ? "device"
-        : isUserTarget(target)
+        : (targetIsUser ?? isUserTarget(target))
           ? "user"
           : "ambient";
       const event: TranscribedEvent = {
@@ -168,6 +177,7 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
         text,
         speaker,
         target,
+        targetIsUser,
         direction,
         confidence,
       };
@@ -209,12 +219,15 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
         : raw === "facilitator" || raw === "assist" ? "facilitator"
         : null;
       if (!mode) return null;
+      const rawRegister = asString(args.register);
+      const register = rawRegister === "peer" || rawRegister === "helper" ? rawRegister : undefined;
       const event: ModeChangeEvent = {
         type: "mode_change",
         source: "observer",
         timestamp: now,
         mode,
         reason: asString(args.reason),
+        ...(register ? { register } : {}),
       };
       return event;
     }

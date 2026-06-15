@@ -41,6 +41,7 @@ import {
 import { studentService } from "../studentService";
 import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList } from "./aac-memory-schema";
+import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 
 // ============================================================================
 // DB HELPERS
@@ -162,7 +163,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "voiceType", "studentVoiceType", "geminiAiVoice", "geminiStudentVoice",
     "aiVoicePitch", "studentVoicePitch", "useLocalTts",
     "elevenlabsEnabled", "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
-    "iconTextRatio", "usePcsSymbols", "singleGlyphButtons",
+    "iconTextRatio", "languageLevel", "usePcsSymbols", "singleGlyphButtons",
     "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider",
     "signLanguage", "multiCameraMode",
@@ -200,6 +201,80 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 
   console.log(`[aac-settings-memory] Wrote ${Object.keys(filtered).length} fields for student ${studentId}`);
   return updates;
+}
+
+// ============================================================================
+// SOCIAL TRAINER CONFIG  (nested under Context_AACSettings → socialTrainer)
+// ----------------------------------------------------------------------------
+// The Social Trainer's per-student goals live in aacSettings.appConfig under the
+// `social_trainer` key (read by AgentCoordinator.startSocialPeerSession). We
+// surface them as a clean, structured sub-object rather than leaving them buried
+// in the opaque appConfig JSON, so the assistant can read/edit them by name.
+// Reads/writes go through the helpers below so a write MERGES into appConfig
+// (never clobbering sibling app config like youtube/spotify) and skill keys are
+// validated against the canonical competency list.
+// ============================================================================
+
+/** Canonical competency keys (the trainable social skills) + a human list for
+ *  the field description. Sourced from the shared label map so it stays in sync
+ *  as competencies are added. */
+const SOCIAL_SKILL_KEYS = Object.keys(COMPETENCY_LABEL);
+const SOCIAL_SKILL_SET = new Set(SOCIAL_SKILL_KEYS);
+const SOCIAL_SKILL_LIST = Object.entries(COMPETENCY_LABEL)
+  .map(([k, label]) => `${k} (${label})`)
+  .join(", ");
+
+export interface SocialTrainerConfig {
+  targetSkills: string[];
+  lockedSkills: string[];
+  maxChallengeIntensity?: number;
+}
+
+/** Read the structured config out of a settings row's appConfig. Always returns
+ *  a complete shape (empty arrays = "all skills" / no locks). */
+export function readSocialTrainerConfig(settings: Record<string, any> | null): SocialTrainerConfig {
+  const st = (settings?.appConfig && typeof settings.appConfig === "object"
+    ? (settings.appConfig as any).social_trainer
+    : undefined) ?? {};
+  const out: SocialTrainerConfig = {
+    targetSkills: Array.isArray(st.targetSkills) ? st.targetSkills.filter((s: unknown): s is string => typeof s === "string") : [],
+    lockedSkills: Array.isArray(st.lockedSkills) ? st.lockedSkills.filter((s: unknown): s is string => typeof s === "string") : [],
+  };
+  if (typeof st.maxChallengeIntensity === "number" && Number.isFinite(st.maxChallengeIntensity)) {
+    out.maxChallengeIntensity = st.maxChallengeIntensity;
+  }
+  return out;
+}
+
+/** Validate/clamp an incoming (possibly partial) social-trainer patch: drop
+ *  unknown skill keys, clamp the ceiling to [0,1]. Pure — unit-tested. */
+export function sanitizeSocialTrainerConfig(incoming: any): Partial<SocialTrainerConfig> {
+  const out: Partial<SocialTrainerConfig> = {};
+  if (incoming && typeof incoming === "object") {
+    if (Array.isArray(incoming.targetSkills)) {
+      out.targetSkills = incoming.targetSkills.filter((s: unknown): s is string => typeof s === "string" && SOCIAL_SKILL_SET.has(s));
+    }
+    if (Array.isArray(incoming.lockedSkills)) {
+      out.lockedSkills = incoming.lockedSkills.filter((s: unknown): s is string => typeof s === "string" && SOCIAL_SKILL_SET.has(s));
+    }
+    if (incoming.maxChallengeIntensity != null) {
+      const n = Number(incoming.maxChallengeIntensity);
+      if (Number.isFinite(n)) out.maxChallengeIntensity = Math.max(0, Math.min(1, n));
+    }
+  }
+  return out;
+}
+
+/** Merge a patch into appConfig.social_trainer, preserving sibling app config.
+ *  Re-reads the row so concurrent youtube/spotify settings aren't clobbered. */
+async function writeSocialTrainerConfig(ctx: DBOperationContext, incoming: any): Promise<SocialTrainerConfig> {
+  const settings = await readAACSettings(ctx);
+  const appConfig: Record<string, any> =
+    settings?.appConfig && typeof settings.appConfig === "object" ? { ...settings.appConfig } : {};
+  const current = appConfig.social_trainer && typeof appConfig.social_trainer === "object" ? appConfig.social_trainer : {};
+  appConfig.social_trainer = { ...current, ...sanitizeSocialTrainerConfig(incoming) };
+  await writeAACSettings(ctx, { appConfig });
+  return readSocialTrainerConfig({ appConfig });
 }
 
 // ============================================================================
@@ -400,6 +475,15 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       title: "Icon/Text Ratio",
       description: "Icon-to-text size ratio on buttons (1-5, 1=mostly icon, 5=mostly text)",
     },
+    languageLevel: {
+      id: "languageLevel",
+      type: "string",
+      title: "Language Level",
+      description:
+        "How long/complex the AI's sentences are, matched to the student's receptive language (1-5): " +
+        "1=single words, 2=short phrases, 3=simple sentences, 4=full sentences, 5=complex. " +
+        "Applies to the companion AI and the social-trainer peer. Default 4.",
+    },
     // Symbols
     usePcsSymbols: {
       id: "usePcsSymbols",
@@ -499,7 +583,48 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "appConfig",
       type: "string",
       title: "App Configuration",
-      description: "Per-app settings as JSON (e.g. { youtube: { enabled: true } })",
+      description: "Per-app settings as JSON (e.g. { youtube: { enabled: true } }). NOTE: the Social Trainer's goals are surfaced separately under `socialTrainer` below — edit them there, not here.",
+    },
+    // Social Trainer — structured, so it's editable by name instead of buried in
+    // the appConfig JSON. Its own db ops persist into appConfig.social_trainer
+    // (merge-safe). Three branches only: focus / off-limits / ceiling.
+    socialTrainer: {
+      id: "socialTrainer",
+      type: "object",
+      title: "Social Trainer",
+      description:
+        "Goals and challenge level for the Social Trainer practice peer. The AI may narrow the focus per session within these bounds; locked skills and the ceiling are always honored.",
+      properties: {
+        targetSkills: {
+          id: "targetSkills",
+          type: "array",
+          title: "Focus skills",
+          description:
+            "Social skills to work on (the default session goals). Empty means all skills are in scope. Allowed values: " +
+            SOCIAL_SKILL_LIST + ".",
+          items: { id: "skill", type: "string", enum: SOCIAL_SKILL_KEYS },
+        },
+        lockedSkills: {
+          id: "lockedSkills",
+          type: "array",
+          title: "Off-limits skills",
+          description:
+            "Skills the peer must NEVER deliberately challenge (a hard floor the in-session AI cannot override). Same allowed values as Focus skills.",
+          items: { id: "skill", type: "string", enum: SOCIAL_SKILL_KEYS },
+        },
+        maxChallengeIntensity: {
+          id: "maxChallengeIntensity",
+          type: "number",
+          title: "Challenge ceiling",
+          description: "Cap (0–1) on how demanding challenges may get. Default 0.4. Lower is gentler.",
+          minimum: 0,
+          maximum: 1,
+        },
+      },
+      db: {
+        read: async (ctx) => readSocialTrainerConfig(await readAACSettings(ctx)),
+        write: async (ctx, value) => writeSocialTrainerConfig(ctx, value),
+      },
     },
   },
   db: {
@@ -518,11 +643,29 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
         knownPeople: _kp, // managed by biometric system
         ...exposed
       } = settings;
+      // Surface the Social Trainer config as a clean structured branch, and
+      // strip its raw copy out of the exposed appConfig so there's a single
+      // source of truth (the assistant edits it via `socialTrainer`, not the
+      // appConfig blob). Other app config (youtube/spotify/…) stays visible.
+      if (exposed.appConfig && typeof exposed.appConfig === "object") {
+        const { social_trainer: _stRaw, ...restAppConfig } = exposed.appConfig as Record<string, any>;
+        exposed.appConfig = restAppConfig;
+      }
+      exposed.socialTrainer = readSocialTrainerConfig(settings);
       return exposed;
     },
     write: async (ctx, value) => {
       if (value && typeof value === 'object') {
+        // Persist the column-backed fields first (incl. any appConfig the AI
+        // sent — which won't contain social_trainer, since read strips it)…
         await writeAACSettings(ctx, value);
+        // …then merge the structured socialTrainer back into appConfig so it
+        // survives and sibling app config isn't clobbered. (The normal edit
+        // path goes through socialTrainer's own db.write; this covers a
+        // whole-object set of Context_AACSettings.)
+        if ((value as any).socialTrainer && typeof (value as any).socialTrainer === "object") {
+          await writeSocialTrainerConfig(ctx, (value as any).socialTrainer);
+        }
       }
       return value;
     },

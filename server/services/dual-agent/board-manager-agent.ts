@@ -21,6 +21,7 @@
 
 import type { FunctionDeclaration } from "@google/genai";
 import type { LLMProviderKey } from "@shared/llm-options";
+import type { InterlocutorRegister } from "@shared/interlocutor-register";
 import { getChatProvider } from "../providers/provider-factory";
 import type {
   ChatProvider,
@@ -218,6 +219,11 @@ export interface BoardManagerInvocationInput {
    *  (e.g. when a newer event supersedes this one). */
   signal?: AbortSignal;
 
+  /** Register of the person the user is currently talking to (peer vs helper),
+   *  resolved by the Coordinator — biases the palette per <conversation_register>.
+   *  Omit / "unknown" → balanced mix. */
+  interlocutorRegister?: InterlocutorRegister;
+
   /** Mandatory-rebuild directive — set by the Coordinator when the user
    *  pressed a home-board navigation button (INTERACT / INTERESTS /
    *  FEELINGS / etc.). When present, the action hint becomes a
@@ -270,6 +276,12 @@ function toChatTool(decl: FunctionDeclaration): ChatTool {
  *  message that gives the model "what's happening right now." */
 function renderInvocationContext(input: BoardManagerInvocationInput): string {
   const lines: string[] = [];
+
+  // Who the user is talking to → shapes the palette (see <conversation_register>).
+  // Omitted when unknown so the model falls back to a balanced mix.
+  if (input.interlocutorRegister === "peer" || input.interlocutorRegister === "helper") {
+    lines.push(`[REGISTER] ${input.interlocutorRegister}`);
+  }
 
   // Current surface state
   if (input.loadedBoardId) {
@@ -630,6 +642,19 @@ function parseToolCall(
         glyph: b.glyph,
         glyphFallback: b.glyphFallback,
       });
+      // Experiment (glyphInputTranslation): serialize the optional
+      // `input_glyphs` array into a glyph string for display above the two
+      // overlay buttons. Same handling as rebuild_board — the schema only
+      // exposes this param when the setting is on.
+      let inputGlyph: { glyph: string; fallback?: string } | undefined;
+      if (Array.isArray(args.input_glyphs) && args.input_glyphs.length > 0) {
+        const ser = serializeGlyph(args.input_glyphs);
+        if (ser.sentence) {
+          inputGlyph = ser.fallback
+            ? { glyph: ser.sentence, fallback: ser.fallback }
+            : { glyph: ser.sentence };
+        }
+      }
       const event: BinaryChoiceShownEvent = {
         type: "binary_choice_shown",
         source: "board-manager",
@@ -637,6 +662,7 @@ function parseToolCall(
         option1: toEventButton(o1),
         option2: toEventButton(o2),
         target: typeof args.target === "string" ? args.target : undefined,
+        ...(inputGlyph ? { inputGlyph } : {}),
       };
       return event;
     }

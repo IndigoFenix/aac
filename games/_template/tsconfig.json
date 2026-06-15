@@ -6,6 +6,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
+    "baseUrl": ".",
     "paths": {
       "@shared/*": ["../../shared/*"]
     }

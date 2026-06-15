@@ -41,8 +41,10 @@ import {
 import {
   deriveParams,
   emptyProfile,
+  recordProbeOutcome,
   selectChallenge,
   updateProfile,
+  type Competency,
   type EngineParams,
   type LearnerProfile,
   type PersonalityGenome,
@@ -54,6 +56,7 @@ import type {
   UserTurnFeatures,
 } from "./conversation-director";
 import type { FaceAppearance, FaceTarget } from "@shared/social-bot/ProceduralFace";
+import { type LanguageLevel, languageLevelToInt } from "@shared/aac-language-level";
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -197,6 +200,21 @@ function parseObserved(raw: any): FullTurn & HumorFeatures {
     compliment: !!o.compliment,
     complimentSpecific: clamp(defaulted(o.complimentSpecific, 0), 0, 1),
     complimentSincere: clamp(defaulted(o.complimentSincere, 0), 0, 1),
+    // conversation mechanics
+    interrupted: !!o.interrupted,
+    topicShiftBridged: !!o.topicShiftBridged,
+    greeting: !!o.greeting,
+    nearClosing: !!o.nearClosing,
+    closedGracefully: !!o.closedGracefully,
+    // social-emotional + register
+    consideredPeerPerspective: !!o.consideredPeerPerspective,
+    expressedOwnEmotion: !!o.expressedOwnEmotion,
+    empathyOpportunity: !!o.empathyOpportunity,
+    userShowedEmpathy: !!o.userShowedEmpathy,
+    seemedStuck: !!o.seemedStuck,
+    askedForHelp: !!o.askedForHelp,
+    declined: !!o.declined,
+    refusedPolitely: !!o.refusedPolitely,
     // humor
     userAttemptedHumor: !!o.userAttemptedHumor,
     humorFitMood: clamp(defaulted(o.humorFitMood, 0.5), 0, 1),
@@ -246,6 +264,9 @@ export interface SessionConfig {
   model?: string;
   /** Resolved language NAME (e.g. "English"). null = mirror the user. */
   language: string | null;
+  /** Student's receptive language level (general AAC setting) — caps the
+   *  peer's sentence length/complexity. Omit for the default register. */
+  languageLevel?: LanguageLevel;
 }
 
 export class DirectedSession {
@@ -259,6 +280,10 @@ export class DirectedSession {
   private params: EngineParams;
   private scaffolding: number;
   private turnIndex = 0;
+  /** The probe issued last turn, awaiting the user's response THIS turn so its
+   *  outcome can be recorded (feeds the back-off rule). The snapshot lets us
+   *  tell whether the target skill was re-sampled and whether it held/rose. */
+  private pendingProbe: { dim: Competency; value: number; samples: number } | null = null;
   /** Cacheable system prefix (built once at construction). */
   private readonly sessionPrefix: string;
   /** Conversation log (user turn + bot reply pairs) for the LLM. */
@@ -279,7 +304,7 @@ export class DirectedSession {
     };
     this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, params.balanceFlipAt);
 
-    this.sessionPrefix = buildSessionPrefix(cfg.name, cfg.gender, cfg.genome, cfg.identity, cfg.humorStyle, cfg.language);
+    this.sessionPrefix = buildSessionPrefix(cfg.name, cfg.gender, cfg.genome, cfg.identity, cfg.humorStyle, cfg.language, cfg.languageLevel);
 
     // Log the full session prefix once so a debugger can see exactly what
     // persona/identity/safety the LLM is being given. Big block; gated
@@ -321,7 +346,9 @@ export class DirectedSession {
       this.turnIndex,
     );
 
-    const challenge = selectChallenge(this.profile, this.cfg.slp, this.turnIndex);
+    const challenge = selectChallenge(this.profile, this.cfg.slp, this.turnIndex, {
+      languageLevelTier: this.cfg.languageLevel ? languageLevelToInt(this.cfg.languageLevel) : undefined,
+    });
 
     const ext: DirectiveExtensions = {
       identityMove: withIdentity.identityMove,
@@ -417,11 +444,79 @@ export class DirectedSession {
       complimentSpecific: parsed.compliment ? parsed.complimentSpecific : null,
       initiatedBid: parsed.disclosure > 0.4 || (parsed.wasQuestion && parsed.contingency < 0.4),
       engagedCharacterInterest: parsed.topic ? (this.cfg.identity.interests[parsed.topic] ?? 0) > 0.4 : null,
+      // batch A — conversation mechanics. Conditional sampling so each EMA only
+      // moves on turns where the skill is actually in play.
+      turnTaking: !parsed.interrupted,
+      topicMaintained: this.turnIndex > 1 ? 1 - parsed.topicShift : null,
+      topicShiftedWell: parsed.topicShift > 0.5 ? parsed.topicShiftBridged : null,
+      greeted: this.turnIndex <= 2 ? parsed.greeting : null,
+      leaveTaking: parsed.nearClosing ? parsed.closedGracefully : null,
+      // batch B — social-emotional + register. Opportunity-gated so the EMA
+      // only moves when the moment actually called for the skill.
+      consideredPerspective: parsed.consideredPeerPerspective,
+      expressedEmotion: parsed.expressedOwnEmotion,
+      polite: parsed.manner,
+      showedEmpathy: parsed.empathyOpportunity ? parsed.userShowedEmpathy : null,
+      askedForHelp: parsed.seemedStuck ? parsed.askedForHelp : null,
+      refusedWell: parsed.declined ? parsed.refusedPolitely : null,
     });
+
+    // 9b. Probe outcome + back-off. The probe issued LAST turn was answered by
+    // the turn we just processed. Record success only if the target skill was
+    // actually re-sampled (an opportunity arose); a probe that drew no signal
+    // is inconclusive, not a failure. Then arm THIS turn's probe for next time.
+    if (this.pendingProbe) {
+      const s = this.profile.skills[this.pendingProbe.dim];
+      if (s.samples > this.pendingProbe.samples) {
+        recordProbeOutcome(this.profile, this.pendingProbe.dim, s.value >= this.pendingProbe.value);
+      }
+      this.pendingProbe = null;
+    }
+    if (challenge.probe !== "none" && challenge.dim) {
+      const s = this.profile.skills[challenge.dim];
+      this.pendingProbe = { dim: challenge.dim, value: s.value, samples: s.samples };
+    }
 
     // 10. Recompute mode + base directive for NEXT turn.
     this.mode = classifyMode(this.vector);
     this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, this.params.balanceFlipAt);
+
+    // Engine-state trace — the deterministic decisions BEHIND this turn's reply
+    // (the directive + probe the model was given) and the resulting affect
+    // state, so a debugger can see WHY the peer behaved as it did (e.g. a
+    // withholding probe firing, rapport stuck low) without re-deriving it from
+    // the prose directive. Pairs with the "TURN N → / ← LLM" sections.
+    logLiveSession(
+      `SOCIAL BOT TURN ${this.turnIndex} engine`,
+      JSON.stringify({
+        // what DROVE this turn's reply (computed pre-call from the prior state)
+        directive: {
+          tone: withIdentity.tone,
+          energy: Number(withIdentity.energy.toFixed(2)),
+          pragmaticMove: withIdentity.pragmaticMove,
+          lengthHint: withIdentity.lengthHint,
+          mayDisclose: withIdentity.mayDisclose,
+          identityMove: ext.identityMove ?? null,
+          probe: ext.probe ?? null,
+        },
+        challenge: { probe: challenge.probe, dim: challenge.dim, intensity: Number(challenge.intensity.toFixed(2)) },
+        // resulting affect state (what the NEXT turn starts from)
+        vector: {
+          v: Number(this.vector.valence.x.toFixed(2)),
+          a: Number(this.vector.arousal.x.toFixed(2)),
+          r: Number(this.vector.rapport.x.toFixed(2)),
+        },
+        mode: this.mode,
+        scaffolding: Number(this.scaffolding.toFixed(2)),
+        askShare: Number(this.trackers.askShare.toFixed(2)),
+        // tracked skills weakest-first — explains which probe the engine reaches for
+        skills: Object.entries(this.profile.skills)
+          .filter(([, s]) => s.samples > 0)
+          .sort((a, b) => a[1].value - b[1].value)
+          .map(([d, s]) => `${d}=${s.value.toFixed(2)}/${s.samples}`)
+          .join(" "),
+      }, null, 2),
+    );
 
     // 11. Persist into conversation log so the LLM sees its own prior reply.
     this.conversation.push({ role: "user", text: transcript });

@@ -21,6 +21,7 @@ import {
 import { GPT, type GPTInputItem } from "../chat/gpt";
 import { startOfDayInTimezone, formatLocalDateTime } from "../../lib/timezone";
 import { getLanguageName } from "@shared/language-names";
+import { languageLevelFromInt, languageLevelDirective, languageLevelExampleReplies } from "@shared/aac-language-level";
 import { T } from "../memory-schema/canonical-terms";
 import type { EnhancedPromptSections } from "./types";
 
@@ -338,6 +339,26 @@ export class MonitorAgent {
       // still decodes multi-glyph user-composed SENTENCEs).
       const singleGlyphButtons = !!aac?.singleGlyphButtons;
 
+      // ── Language level (sentence length/complexity matched to the user) ──
+      // The live AI imitates the EXAMPLES this enhancer generates far more than
+      // it obeys a standalone directive, so when the student needs simpler
+      // language we must constrain the examples themselves — every spoken AI
+      // line and every example button utterance. Empty at the default tier
+      // (full_sentences) so existing students' enhancer output is unchanged.
+      const languageLevel = languageLevelFromInt(aac?.languageLevel);
+      const langLevelDirective = languageLevelDirective(languageLevel);
+      const langLevelExamples = languageLevelExampleReplies(languageLevel);
+      const languageLevelBlock = langLevelDirective
+        ? `## Language level — CRITICAL, shapes every example you generate
+
+This user's spoken/comprehension level is "${languageLevel.replace(/_/g, " ")}". ${langLevelDirective}
+- This is NOT optional polish. The live AI copies the examples below far more than it follows any rule, so the examples MUST already be at this level — a one-line directive elsewhere won't hold if your examples show long sentences.
+- Apply it to EVERY line the AI speaks (the \`You speak:\` lines and the Speaker reply lines) AND to the \`speech\` and \`label\` text of EVERY example ${T.button} you generate. Keep them as short and simple as the level demands; one idea per turn.
+- Only the spoken/label TEXT simplifies. The visual \`sentence\`/${T.glyph} encoding is language-neutral and unaffected.${langLevelExamples ? `\n- At this level, the AI's spoken replies look like: ${langLevelExamples} — match this brevity (translated to ${languageName}).` : ""}
+
+`
+        : "";
+
       // ── Parse interests into a clean list ──
       // The enhancer needs to know the EXACT listed interests as a typed list
       // (not a stringified blob) so each example section's instructions can
@@ -580,7 +601,7 @@ Emit EXACTLY the seven sections below, in this order, each wrapped in its nonced
 
 A section may be empty: write the open tag, optionally a brief reason on one line, then the close tag. Do NOT omit a tag pair — the parser depends on all seven being present.
 
-${openTag("persona")}
+${languageLevelBlock}${openTag("persona")}
 [100–250 words. Personality + relationship + communication profile.]
 - Open with who the AI is for this user (a companion, a patient friend, a curious co-explorer — pick a tone that fits the user's age, interests, and the user-written prompt).
 - Include a short paragraph about the user: name, age, gender (if known), interests, and — REQUIRED — a clear, specific description of how the user communicates. At minimum: do they speak aloud, and if so what kind (fluent sentences, single words, vocalizations only, occasional approximations) versus what they rely on the ${T.board} for. Quote or paraphrase the Communication profile line above directly. If no profile is on file, state that and instruct the AI to treat any audible voice as belonging to someone other than the user until evidence proves otherwise.

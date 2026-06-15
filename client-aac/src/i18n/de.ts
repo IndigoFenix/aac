@@ -712,6 +712,7 @@ export const de: Translations = {
   appsBoard: {
     title: "Apps",
     empty: "Keine Apps aktiviert.",
+    starting: "Wird gestartet…",
   },
 
   social: {

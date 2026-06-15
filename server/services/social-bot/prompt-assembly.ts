@@ -21,6 +21,7 @@ import type { CharacterIdentity, IdentityMove } from "./identity-layer";
 import type { PersonalityGenome } from "./personality-and-challenge";
 import type { HumorMove, HumorStyle, SharedMoment } from "./humor-and-history";
 import type { Probe } from "./personality-and-challenge";
+import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 
 // ── Stable, never-changes blocks ───────────────────────────────────────
 
@@ -138,6 +139,20 @@ export function renderIdentity(
   ].filter(Boolean).join("\n");
 }
 
+/** `# LANGUAGE LEVEL` block — caps the peer's sentence length/complexity to
+ *  match the student's receptive language. Inherited from the general AAC
+ *  setting. Empty at the default tier so the prefix is unchanged. */
+function buildLanguageLevelBlock(level: LanguageLevel | undefined): string {
+  const directive = level ? languageLevelDirective(level) : null;
+  if (!directive) return "";
+  return [
+    `# LANGUAGE LEVEL`,
+    ``,
+    `${directive}`,
+    `This caps your sentence length and complexity — it overrides the "one or two sentences" default above whenever it is stricter. It never changes WHAT you mean, only how simply you say it.`,
+  ].join("\n");
+}
+
 export function buildSessionPrefix(
   name: string,
   gender: "male" | "female",
@@ -146,13 +161,17 @@ export function buildSessionPrefix(
   humorStyleVal: HumorStyle,
   /** Resolved language NAME ("English"). null = mirror the user. */
   language: string | null,
+  /** Student's receptive language level (general AAC setting). Omit for the
+   *  default register. */
+  languageLevel?: LanguageLevel,
 ): string {
   return [
     buildRoleAndFrame(language),
     renderIdentity(name, gender, genome, identity, humorStyleVal),
+    buildLanguageLevelBlock(languageLevel),
     HARD_RULES,
     OUTPUT_CONTRACT,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 // ── Per-turn (volatile) rendering ──────────────────────────────────────
@@ -227,6 +246,16 @@ const PROBE_LINES: Record<Exclude<Probe, "none">, (hint?: string) => string> = {
   assert_wrong_view: (s) => `State your view ${s ?? "plainly"}; don't soften it; wait.`,
   mild_rupture: () => `Show that something landed a little wrong — mild and recoverable. Give them room to make it right.`,
   drop_interest_cue: (t) => `Mention ${t ?? "something you care about"} in passing; don't push.`,
+  hold_floor: () => `Take a slightly fuller turn than usual — finish your thought before handing back. See if they wait for you rather than jumping in.`,
+  anchor_topic: () => `Stay firmly on the current topic; don't introduce anything new. Leave it to them to keep it going.`,
+  invite_topic_change: () => `Let this topic reach a small lull — sound a little done with it, without starting anything new. See if they can move you both onto something else smoothly.`,
+  wind_down_cue: () => `Gently signal the conversation is wrapping up (e.g. "this was really nice"). See if they close it out — a goodbye, a wrap-up — rather than leaving it hanging.`,
+  state_feeling: () => `Voice a small inner state of your own ("I'm a little nervous about that, honestly"). Don't explain it further — see if they notice and ask about how you feel.`,
+  invite_feeling: () => `Share how something makes YOU feel, then leave an opening for them to say how they feel too. Invite, don't interrogate.`,
+  share_minor_trouble: () => `Share a small, recoverable trouble of your own (e.g. "I had a rough morning"). Mild — see if they respond with any care or concern.`,
+  do_a_favor: () => `Offer them something small and kind ("you can go first", "you can pick"). See if they respond politely — a thanks, a kind word.`,
+  introduce_obstacle: () => `Say something a touch unclear or use an idea they might not follow, then pause. See if they ask you to explain rather than going quiet or guessing.`,
+  unreasonable_request: () => `Make a small, clearly declinable request ("can I have your turn too?"). Keep it light — see HOW they say no, not whether they cave.`,
 };
 
 export interface DirectiveExtensions {
@@ -348,6 +377,21 @@ export const TURN_TOOL_SCHEMA = {
           compliment: { type: "boolean" },
           complimentSpecific: { type: "number" },
           complimentSincere: { type: "number" },
+          // conversation mechanics
+          interrupted: { type: "boolean", description: "Did the user cut in or talk over you / not wait their turn?" },
+          topicShiftBridged: { type: "boolean", description: "If they changed the subject, did they segue smoothly (vs an abrupt jump)? Only meaningful when topicShift is high." },
+          greeting: { type: "boolean", description: "Did the user open with a greeting (hi/hello/your name)? Only meaningful in the first turn or two." },
+          nearClosing: { type: "boolean", description: "Does the conversation feel like it's at a natural wrap-up point (someone is leaving / winding down)?" },
+          closedGracefully: { type: "boolean", description: "At such a wrap-up point, did the user close it out properly (a goodbye / 'this was nice')? Only meaningful when nearClosing." },
+          // social-emotional + register
+          consideredPeerPerspective: { type: "boolean", description: "Did the user reference or ask about how YOU (the character) feel or think — not just themselves?" },
+          expressedOwnEmotion: { type: "boolean", description: "Did the user name a feeling of their own ('I'm happy', 'that's scary')?" },
+          empathyOpportunity: { type: "boolean", description: "Did YOU just share something emotional (a worry, a small upset, excitement) that warranted a caring response?" },
+          userShowedEmpathy: { type: "boolean", description: "At such a moment, did the user respond with care or concern? Only meaningful when empathyOpportunity." },
+          seemedStuck: { type: "boolean", description: "Did the user seem confused, stuck, or unsure this turn?" },
+          askedForHelp: { type: "boolean", description: "When stuck, did they ask you for help or clarification (vs going quiet / giving up)? Only meaningful when seemedStuck." },
+          declined: { type: "boolean", description: "Did the user turn down a request or suggestion you made?" },
+          refusedPolitely: { type: "boolean", description: "If they declined, did they do it kindly (vs harshly/rudely)? Only meaningful when declined." },
           // humor
           userAttemptedHumor: { type: "boolean" },
           humorFitMood: { type: "number", description: "0 wrong moment .. 1 well-timed." },

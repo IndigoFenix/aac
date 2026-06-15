@@ -712,6 +712,7 @@ export const zh: Translations = {
   appsBoard: {
     title: "应用",
     empty: "未启用任何应用程序。",
+    starting: "正在启动…",
   },
 
   social: {

@@ -697,6 +697,7 @@ export type ClientMessage =
   | { type: "exit_guessing"; reason?: string }                          // user-initiated word-finder cancel (any surface — quick-button toggle, sentence-builder toggle, etc.)
   | { type: "builder_open" }                                            // sentence builder opened — begin a conversation detour
   | { type: "builder_close" }                                           // sentence builder closed — end the builder detour
+  | { type: "request_app_open"; appId: string; appData?: any }          // student pressed an app that needs server-resolved startup params; server resolves then replies with app_open
   | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
   | { type: "social_trainer_peer_said"; text: string }                  // SocialBot peer just spoke — server composes the per-turn context
   | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string }; // SocialBot session ended — server composes the debrief
@@ -728,7 +729,7 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "utterance")
-  | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection.
+  | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither"; inputGlyph?: { glyph: string; fallback?: string } } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection. `inputGlyph` (experiment glyphInputTranslation) is a glyph translation of the incoming speech, shown above the buttons.
   | { type: "ask_binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }

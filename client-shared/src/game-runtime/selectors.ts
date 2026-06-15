@@ -281,6 +281,8 @@ export function canDropAt(
   const [w, h] = cls.size ?? [1, 1];
   const [cx, cy] = cell;
   const room = getRoom(def, state.currentRoomId);
+  // Gridless rooms (size undefined) have no cells to drop into.
+  if (!room.size) return false;
   const [rw, rh] = room.size;
 
   if (cx < 0 || cy < 0 || cx + w > rw || cy + h > rh) return false;

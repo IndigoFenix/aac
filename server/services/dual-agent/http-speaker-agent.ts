@@ -33,6 +33,7 @@ import {
 } from "./prompts/speaker";
 import type { FunctionDeclaration } from "@google/genai";
 import { SentenceStreamer } from "./sentence-streamer";
+import { LeadingTagStripper } from "./leading-tag-stripper";
 import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
 import type { LiveUsage } from "./live-provider";
 import type { SpeakerCallbacks, SpeakerStartConfig, SpeakerOutputEvent } from "./speaker-agent";
@@ -265,6 +266,10 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     ];
 
     const splitter = new SentenceStreamer();
+    // Strips a leaked leading meta-tag ("[USER to YOU] …") off the front of
+    // the reply BEFORE it reaches the sentence splitter (so TTS never voices
+    // it), the client subtitle, or the persisted transcript.
+    const tagStripper = new LeadingTagStripper();
     let speechStartEmitted = false;
     let fullText = "";
     const toolCalls: Array<{ name: string; arguments: string }> = [];
@@ -299,17 +304,23 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
       for await (const chunk of stream) {
         if (controller.signal.aborted) break;
         switch (chunk.type) {
-          case "text_delta":
-            fullText += chunk.text;
+          case "text_delta": {
+            // Run the delta through the leading-tag stripper first. It
+            // withholds text while a leading "[" is still open, then emits
+            // cleaned text for the rest of the turn.
+            const cleaned = tagStripper.push(chunk.text);
+            if (!cleaned) break;
+            fullText += cleaned;
             // Forward to the client as a streaming text delta — same
             // path the Live native-audio outputTranscription uses. The
             // subtitle / avatar mouth track this so the user sees text
             // appear as it's generated, not only after TTS completes.
-            if (chunk.text) this.callbacks.onTranscriptionDelta?.(chunk.text);
-            for (const sentence of splitter.push(chunk.text)) {
+            this.callbacks.onTranscriptionDelta?.(cleaned);
+            for (const sentence of splitter.push(cleaned)) {
               onSentenceReady(sentence);
             }
             break;
+          }
           case "tool_call_delta":
             // Gemini emits complete tool calls (not partial args). Just
             // collect each as it arrives.
@@ -338,12 +349,23 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         return;
       }
 
+      // Flush the tag stripper first — if it withheld an unclosed "[" run
+      // (degenerate utterance), release it as ordinary text now.
+      const heldLead = tagStripper.flush();
+      if (heldLead) {
+        fullText += heldLead;
+        this.callbacks.onTranscriptionDelta?.(heldLead);
+        for (const sentence of splitter.push(heldLead)) onSentenceReady(sentence);
+      }
       // Flush any partial trailing fragment as the final sentence so it
       // also gets voiced.
       const tail = splitter.flush();
       if (tail) onSentenceReady(tail);
 
       const transcript = fullText.trim();
+      if (tagStripper.stripped) {
+        flowOutput("SPEAKER", "leading_tag_stripped", tagStripper.strippedTag);
+      }
 
       // ----- Partition tool calls --------------------------------------
       // private_thought and remain_silent are handled specially here. Other
@@ -541,6 +563,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
           timestamp: Date.now(),
           transcript,
           target: this.pendingSpeechTarget ?? "USER",
+          strippedLeadingTag: tagStripper.stripped ? tagStripper.strippedTag : undefined,
         };
         this.callbacks.onEvent(se);
       } else if (!hasRemainSilent && noteCalls.length > 0) {

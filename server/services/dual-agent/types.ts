@@ -3,6 +3,7 @@
 
 import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import type { LLMProviderKey } from "@shared/llm-options";
+import type { AppStartupSpec } from "@shared/app-startup";
 
 /**
  * User-controlled mute state for the AAC system. Toggled only by the user
@@ -35,6 +36,12 @@ export interface AACAppDefinition {
   enabledByDefault: boolean;
   /** If true, the app's canvas is captured and sent with detection requests */
   supportsDetectionCapture?: boolean;
+  /**
+   * Optional startup definition. When present, opening this app triggers a
+   * resolver LLM call that fills `startup.paramsSchema`; the resolved params are
+   * handed to the app at launch. Apps without it open instantly with no params.
+   */
+  startup?: AppStartupSpec;
 }
 
 /**

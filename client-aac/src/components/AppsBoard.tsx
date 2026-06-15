@@ -5,6 +5,9 @@ interface EnabledAppEntry {
   id: string;
   name: string;
   icon: string;
+  /** When true, picking this app resolves startup params server-side before
+   *  opening (the parent shows a loading state). Pass-through only here. */
+  needsStartupResolution?: boolean;
 }
 
 interface CustomAppEntry {

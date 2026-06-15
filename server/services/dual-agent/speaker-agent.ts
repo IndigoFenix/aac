@@ -30,6 +30,11 @@ import {
   SPEAKER_TOOL_ACK,
 } from "./prompts/speaker";
 import { flowInput, flowTool, flowOutput } from "./agent-flow-logger";
+import {
+  LeadingTagStripper,
+  stripLeadingTags,
+  extractLeadingTags,
+} from "./leading-tag-stripper";
 import type {
   SpeakerEvent,
   SpeechStartEvent,
@@ -157,6 +162,13 @@ export class SpeakerAgent implements ISpeakerAgent {
    *  speaking. Defaults to "USER" — applied to the next SpeechEnd event
    *  and reset by resetTurnAccumulators(). */
   private pendingSpeechTarget: string | undefined;
+  /** Incrementally strips a leaked leading meta-tag ("[USER to YOU]", …)
+   *  off the streaming subtitle so the child never sees it. A fresh
+   *  instance per turn (resetTurnAccumulators). */
+  private subtitleStripper = new LeadingTagStripper();
+  /** The leading tag the model leaked into its spoken output this turn
+   *  (empty when none). Drives the Coordinator's one-shot corrective. */
+  private leakedLeadingTagThisTurn = "";
 
   constructor(providerKey: LLMProviderKey, callbacks: SpeakerCallbacks) {
     this.providerKey = providerKey;
@@ -289,6 +301,8 @@ export class SpeakerAgent implements ISpeakerAgent {
     this.speechStartEmittedThisTurn = false;
     this.pendingSpeechTarget = undefined;
     this.leakedThoughtThisTurn = false;
+    this.subtitleStripper = new LeadingTagStripper();
+    this.leakedLeadingTagThisTurn = "";
   }
 
   private maybeEmitSpeechStart(): void {
@@ -340,7 +354,15 @@ export class SpeakerAgent implements ISpeakerAgent {
       return;
     }
 
-    if (text.trim()) this.callbacks.onTranscriptionDelta?.(text);
+    // Strip a leaked leading meta-tag ("[USER to YOU]", "[MODE …]") off the
+    // FRONT of the utterance before it reaches the client subtitle / avatar
+    // mouth. The stripper withholds deltas while the bracket is still open,
+    // then passes cleaned text through unchanged for the rest of the turn.
+    const cleaned = this.subtitleStripper.push(text);
+    if (this.subtitleStripper.stripped && !this.leakedLeadingTagThisTurn) {
+      this.leakedLeadingTagThisTurn = this.subtitleStripper.strippedTag;
+    }
+    if (cleaned.trim()) this.callbacks.onTranscriptionDelta?.(cleaned);
   }
 
   /** Fires when the text portion of the model's turn is complete
@@ -353,7 +375,9 @@ export class SpeakerAgent implements ISpeakerAgent {
     // The ThoughtLeakEvent is emitted from handleTurnComplete instead, so
     // BoardManager never rebuilds from it and it's never echoed back.
     if (this.leakedThoughtThisTurn) return;
-    const transcript = this.currentTurnTranscript.trim();
+    // Strip a leaked leading meta-tag so BoardManager builds replies from
+    // the real utterance, not "[USER to YOU] …".
+    const transcript = stripLeadingTags(this.currentTurnTranscript).trim();
     if (!transcript) return;
     flowOutput("SPEAKER", "text_finalized", transcript);
     const event: SpeechTextFinalizedEvent = {
@@ -404,7 +428,17 @@ export class SpeakerAgent implements ISpeakerAgent {
     //   2. Inject [OWN_SPEECH]: <transcript> into Observer for context
     //   3. Trigger Board Manager rebuild for the follow-up surface
     if (this.useDirectAudio && this.currentTurnHadAudio) {
-      const transcript = this.currentTurnTranscript.trim();
+      // Strip a leaked leading meta-tag off the final transcript that gets
+      // echoed back into Speaker's own context + Observer + the
+      // conversation log — otherwise the tag teaches the model the prefix
+      // is expected and the behavior compounds.
+      const rawTranscript = this.currentTurnTranscript.trim();
+      const transcript = stripLeadingTags(rawTranscript).trim();
+      const leakedLeadingTag =
+        this.leakedLeadingTagThisTurn || extractLeadingTags(rawTranscript);
+      if (leakedLeadingTag) {
+        flowOutput("SPEAKER", "leading_tag_stripped", leakedLeadingTag);
+      }
       flowOutput("SPEAKER", "speech", transcript || "(no transcript)");
       const event: SpeechEndEvent = {
         type: "speech_end",
@@ -412,6 +446,7 @@ export class SpeakerAgent implements ISpeakerAgent {
         timestamp: Date.now(),
         transcript,
         target: this.pendingSpeechTarget ?? "USER",
+        strippedLeadingTag: leakedLeadingTag || undefined,
       };
       this.callbacks.onEvent(event);
     }
@@ -428,7 +463,7 @@ export class SpeakerAgent implements ISpeakerAgent {
         type: "speech_end",
         source: "speaker",
         timestamp: Date.now(),
-        transcript: this.currentTurnTranscript.trim() + " [interrupted]",
+        transcript: stripLeadingTags(this.currentTurnTranscript).trim() + " [interrupted]",
       };
       this.callbacks.onEvent(event);
     }
@@ -476,8 +511,15 @@ export class SpeakerAgent implements ISpeakerAgent {
     switch (call.name) {
       case "speak": {
         // Fallback path only. Text is fed to server TTS by the Coordinator.
-        const text = asString(args.text);
-        if (!text) return [];
+        const rawText = asString(args.text);
+        if (!rawText) return [];
+        // Strip a leaked leading meta-tag ("[USER to YOU] …") so the TTS
+        // never voices it and it never re-enters the transcript.
+        const text = stripLeadingTags(rawText).trim() || rawText;
+        const leakedLeadingTag = extractLeadingTags(rawText);
+        if (leakedLeadingTag) {
+          flowOutput("SPEAKER", "leading_tag_stripped", leakedLeadingTag);
+        }
         // Notify Coordinator to send the text through TTS.
         this.callbacks.onSpeakText?.(text);
         // Emit SpeechStart + SpeechEnd in one go — fallback path doesn't
@@ -488,6 +530,7 @@ export class SpeakerAgent implements ISpeakerAgent {
           source: "speaker",
           timestamp: now,
           transcript: text,
+          strippedLeadingTag: leakedLeadingTag || undefined,
         };
         // Reset accumulators since this synthetic SpeechEnd doesn't go
         // through handleTurnComplete's native-audio path.

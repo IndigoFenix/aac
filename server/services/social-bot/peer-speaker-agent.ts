@@ -22,7 +22,9 @@
 import { DirectedSession, type TurnResult, type TurnUsage } from "./directed-session";
 import { buildSocialBotGenAIClient } from "./genai-client";
 import type { GeneratedPersona } from "./persona-generator";
+import type { LanguageLevel } from "@shared/aac-language-level";
 import { DEFAULT_SLP_CONFIG, DEFAULT_DIFFICULTY } from "./persona-generator";
+import type { SlpConfig } from "./personality-and-challenge";
 import type { ISpeakerAgent } from "../dual-agent/speaker-interface";
 import type { SpeakerStartConfig, SpeakerOutputEvent } from "../dual-agent/speaker-agent";
 import type {
@@ -94,6 +96,16 @@ export interface SocialPeerAgentOptions {
   languageName: string;
   /** Gemini text model for the director's forced-tool calls. */
   model: string;
+  /** Challenge level 0–1; omit for DEFAULT_DIFFICULTY. May be resolved from
+   *  the app's startup definition to match the student's readiness. */
+  difficulty?: number;
+  /** Student's receptive language level (general AAC setting) — caps the
+   *  peer's sentence length/complexity. Omit for the default register. */
+  languageLevel?: LanguageLevel;
+  /** Resolved SLP config — goal/locked dimensions + challenge ceiling, built
+   *  from the clinician's per-app defaults and the AI's session focus. Omit
+   *  for DEFAULT_SLP_CONFIG (all skills in scope, default ceiling). */
+  slpConfig?: SlpConfig;
   callbacks: SocialPeerCallbacks;
 }
 
@@ -124,10 +136,11 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       identity: p.identity,
       appearance: p.appearance,
       humorStyle: p.humorStyle,
-      slp: DEFAULT_SLP_CONFIG,
-      difficulty: DEFAULT_DIFFICULTY,
+      slp: this.opts.slpConfig ?? DEFAULT_SLP_CONFIG,
+      difficulty: this.opts.difficulty ?? DEFAULT_DIFFICULTY,
       model: this.opts.model,
       language: this.opts.languageName,
+      languageLevel: this.opts.languageLevel,
     });
     this.opened = true;
     flowNote("SPEAKER", `Social peer director started (model=${this.opts.model}, peer=${p.name})`);
@@ -204,6 +217,15 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
     }
     if (result.usage) this.opts.callbacks.onUsage?.(result.usage);
     if (!this.opened) return; // closed while the LLM call was in flight
+
+    // Short engine summary for the flow log — why the peer replied as it did
+    // (mode, affect, the active probe/identity move). The full per-turn engine
+    // dump lives in live-session-debug.log ("SOCIAL BOT TURN N engine").
+    flowNote(
+      "SPEAKER",
+      `peer engine: mode=${result.mode} r=${result.vector.rapport.toFixed(2)} v=${result.vector.valence.toFixed(2)} ` +
+        `tone=${result.directive.tone} move=${result.ext.identityMove ?? "-"} probe=${result.ext.probe ?? "-"}`,
+    );
 
     // Face first — the client starts lerping while TTS spins up
     // (mirrors the standalone relay's bot_state-before-audio ordering).
