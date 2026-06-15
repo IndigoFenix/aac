@@ -132,8 +132,8 @@ export class MonitorAgent {
     sessionId: string;
     initialContext?: string;
     enhancedSections?: EnhancedPromptSections;
-    /** Usage from the thorough-startup enhancer call (only set when
-     *  startupMode === 1 actually fired an LLM call). The Coordinator /
+    /** Usage from the thorough-startup enhancer call (unset only when the
+     *  enhancer fell back to the no-LLM degraded path). The Coordinator /
      *  dualAgentService charges credits for this — startup is a real,
      *  measurable cost that wasn't being tracked previously. */
     enhancerUsage?: {
@@ -166,12 +166,12 @@ export class MonitorAgent {
       allowNotes: aac?.allowNotes ?? true,
     };
 
-    // Branch on startup mode: 0=fast (no LLM), 1=thorough (single LLM call with pre-loaded data)
-    const startupMode = aac?.startupMode ?? 0;
-    console.log("[MonitorAgent] Startup mode:", startupMode === 0 ? "fast" : "thorough");
-    const contextResult = startupMode === 1
-      ? await this.thoroughStartup(student)
-      : await this.fastInitializeContext(student);
+    // Startup is always thorough: a single LLM call over pre-loaded student
+    // data produces the enhanced prompt sections. (The old "fast" mode that
+    // skipped the LLM call was removed — `fastInitializeContext` survives only
+    // as the degraded fallback inside `thoroughStartup` when the enhancer call
+    // fails.)
+    const contextResult = await this.thoroughStartup(student);
 
     // Store the session ID if we created one
     this.sessionId = contextResult.sessionId;
@@ -249,8 +249,12 @@ export class MonitorAgent {
   }
 
   /**
-   * Fast startup (mode 0): Read chatMemory fields directly from already-loaded student record.
-   * No LLM call, no extra DB queries — instant startup.
+   * Degraded-fallback context build: read chatMemory fields directly from the
+   * already-loaded student record with no LLM call and no extra DB queries.
+   * This is no longer a selectable startup mode — `thoroughStartup` is always
+   * used — but it remains the resilient fallback that `thoroughStartup` drops
+   * to if the enhancer LLM call throws, so a session still comes up with the
+   * raw memory dump even when the enhancer is unavailable.
    */
   private async fastInitializeContext(student: any): Promise<{
     sessionId: string;

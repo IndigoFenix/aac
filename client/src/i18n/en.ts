@@ -2403,13 +2403,6 @@ export const en = {
     singleGlyphButtonsDesc: "Constrain AI-generated buttons to a single symbol or phrase each. Useful for early communicators.",
     glyphInputTranslation: "Glyph Input Translation",
     glyphInputTranslationDesc: "Mirror speech directed at the user (the AI's replies and overheard speech) as a strip of glyphs in the header. Experimental.",
-    // Startup
-    startupMode: "Startup Mode",
-    startupModeDesc: "How much context to load when starting an AAC session",
-    startupFast: "Fast",
-    startupThorough: "Thorough",
-    startupFastDesc: "Instant startup. Loads notes and preferences from memory — no AI warm-up call.",
-    startupThoroughDesc: "Thorough startup. Preloads goals, medical info, and educational data, then asks the AI to compile a session briefing.",
     // Eyegaze
     eyegaze: "Eyegaze Selection",
     eyegazeDesc: "Enable dwell-based symbol selection using mouse or external eye tracker",

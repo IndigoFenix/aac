@@ -31,8 +31,6 @@ import {
   User,
   Loader2,
   LayoutGrid,
-  Zap,
-  Search,
   Crosshair,
   Play,
   Shield,
@@ -109,7 +107,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
   const [glyphInputTranslation, setGlyphInputTranslation] = useState(false);
-  const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
@@ -218,7 +215,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
-      setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
@@ -263,7 +259,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
       const originalGlyphInputTranslation = aac?.glyphInputTranslation ?? false;
-      const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
@@ -300,7 +295,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         iconTextRatio !== originalIconTextRatio ||
         singleGlyphButtons !== originalSingleGlyphButtons ||
         glyphInputTranslation !== originalGlyphInputTranslation ||
-        startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
         eyegazeProvider !== originalEyegazeProvider ||
@@ -321,7 +315,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, glyphInputTranslation, startupMode, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -342,7 +336,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       iconTextRatio: number;
       singleGlyphButtons: boolean;
       glyphInputTranslation: boolean;
-      startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
       eyegazeProvider: string;
@@ -400,7 +393,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       iconTextRatio,
       singleGlyphButtons,
       glyphInputTranslation,
-      startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
@@ -444,7 +436,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
-      setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
@@ -1007,49 +998,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   data-testid="switch-glyph-input-translation"
                 />
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Startup Mode */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="w-5 h-5" />
-                {t('aacSettings.startupMode')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.startupModeDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-3 justify-center">
-                {([
-                  { mode: 0, tKey: 'aacSettings.startupFast' as const, icon: Zap },
-                  { mode: 1, tKey: 'aacSettings.startupThorough' as const, icon: Search },
-                ] as const).map(({ mode, tKey, icon: Icon }) => {
-                  const isActive = startupMode === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setStartupMode(mode)}
-                      className={cn(
-                        "flex flex-col items-center justify-center px-6 py-3 rounded-lg border-2 transition-all min-w-[120px]",
-                        isActive
-                          ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                          : "border-border hover:border-primary/50 bg-card"
-                      )}
-                    >
-                      <Icon className="w-6 h-6 mb-1" />
-                      <span className="text-sm font-medium">{t(tKey)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                {startupMode === 0 && t('aacSettings.startupFastDesc')}
-                {startupMode === 1 && t('aacSettings.startupThoroughDesc')}
-              </p>
             </CardContent>
           </Card>
 

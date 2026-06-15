@@ -7,6 +7,7 @@ import { LogOut, User, Building2, Users } from "lucide-react";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
+import { API_BASE_URL } from "@/lib/api-base";
 
 interface Student {
   id: string;
@@ -55,7 +56,7 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
   const [selectedInstituteId, setSelectedInstituteId] = useState<string | null>(null);
   const [selectedClassroomId, setSelectedClassroomId] = useState<string | null>(null);
 
-  const apiBase = import.meta.env.VITE_API_URL?.replace(/\/+$/, "") ?? "";
+  const apiBase = API_BASE_URL;
 
   // Fetch user's institutes
   const { data: institutesData, isLoading: institutesLoading } = useQuery<InstitutesResponse>({

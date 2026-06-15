@@ -95,9 +95,14 @@ const NEAR_BAND_MAX = 3000;
 const ENTRY_FEATHER = 0.5;
 // Billboard-variant edge fuzz (fraction of radius): wide & soft up close,
 // thin & crisp past FUZZ_FAR_DIST so distant billboards read solid.
-const FUZZ_CLOSE = 0.34;
-const FUZZ_FAR = 0.05;
+const FUZZ_CLOSE = 0.18;  // "slight" soft edge up close
+const FUZZ_FAR = 0.04;
 const FUZZ_FAR_DIST = 5000;
+// Billboard size multiplier (matches the blob's billow-expanded extent) and
+// up-axis ellipse floor (a flat lens stays a thin band rather than vanishing
+// edge-on — the 3-D blob keeps a billowy cross-section there).
+const BILLBOARD_SIZE_MUL = 1.3;
+const BILLBOARD_MIN_MINOR = 0.35;
 
 /** Per-update perf counters (mirrors cloudSystemStats keys the lab reads). */
 export const cloudBlobStats = {
@@ -107,6 +112,7 @@ export const cloudBlobStats = {
   cellsIterated: 0,
   cellsPassed: 0,
   sprites: 0,
+  culled: 0, // blobs dropped by the containment cull (mesh variant)
   tierSprites: [0, 0, 0, 0, 0],
 };
 
@@ -336,7 +342,6 @@ attribute float iFade;
 
 varying vec3 vColor;
 varying vec3 vWorldPos;   // billboard center (lighting view dir, fog)
-varying vec3 vFragW;      // this corner's world pos (camera-stable hashed alpha)
 varying vec2 vQuad;       // unit-disc coord [-1,1]
 varying vec3 vUp;
 varying float vFade;
@@ -349,29 +354,32 @@ void main() {
   vec3 toCam = cameraPosition - centerW.xyz;
   float dist = length(toCam);
   vec3 viewDir = toCam / max(1.0, dist);
+
+  // Face the camera, then squash the up-axis into the ELLIPSE the ellipsoid
+  // would project to: tangential axis = full radius always; up-axis shrinks to
+  // radius×squash edge-on. This makes the billboard occupy the same screen area
+  // as the 3-D blob AND lie flat along the deck, so a large near billboard does
+  // not bulge down into the terrain (the reason to prefer ellipses over round).
+  // A small floor keeps a very flat lens from collapsing to a sub-pixel sliver
+  // that vanishes at grazing angles (the 3-D blob keeps a billowy band there).
   float facing = abs(dot(viewDir, upW));
-  // Elliptical silhouette: up-axis shrinks toward radius×squash edge-on.
-  float minorScale = sqrt(facing * facing + iSquash * iSquash * (1.0 - facing * facing));
+  float minorScale = max(${BILLBOARD_MIN_MINOR.toFixed(2)},
+    sqrt(facing * facing + iSquash * iSquash * (1.0 - facing * facing)));
 
   vec4 mvPosition = viewMatrix * centerW;
-  vec3 upV = (viewMatrix * vec4(upW, 0.0)).xyz;
-  vec2 sUp = upV.xy;
-  float sl = length(sUp);
-  vec2 minorDir = sl > 1e-4 ? sUp / sl : vec2(0.0, 1.0);
-  vec2 majorDir = vec2(-minorDir.y, minorDir.x);
-
   vec2 q = (uv - 0.5) * 2.0;
-  float R = iRadius;
-  vec2 off = majorDir * (q.x * R) + minorDir * (q.y * R * minorScale);
+  float R = iRadius * ${BILLBOARD_SIZE_MUL.toFixed(2)};
+  // Start from the round camera-facing offset, then SQUASH only the component
+  // along the screen-projected planet-up by minorScale → the ellipse. At
+  // minorScale=1 this is exactly the round quad (so it can never collapse).
+  vec2 viewOff = q * R;
+  vec2 upScreen = (viewMatrix * vec4(upW, 0.0)).xy;
+  float ul = length(upScreen);
+  vec2 sUp = ul > 1e-4 ? upScreen / ul : vec2(0.0, 1.0);
+  float along = dot(viewOff, sUp);
+  vec2 off = (viewOff - along * sUp) + along * minorScale * sUp;
   mvPosition.xy += off;
   gl_Position = projectionMatrix * mvPosition;
-
-  // World pos of this corner = center + camera-right/up (from the view matrix
-  // rows) × the screen offset. Keeps the hashed-alpha threshold world-stable.
-  mat3 vm = mat3(viewMatrix);
-  vec3 camRight = vec3(vm[0][0], vm[1][0], vm[2][0]);
-  vec3 camUp    = vec3(vm[0][1], vm[1][1], vm[2][1]);
-  vFragW = centerW.xyz + camRight * off.x + camUp * off.y;
 
   vColor = iColor;
   vWorldPos = centerW.xyz;
@@ -402,7 +410,6 @@ uniform float uFuzzFarDist;
 
 varying vec3 vColor;
 varying vec3 vWorldPos;
-varying vec3 vFragW;
 varying vec2 vQuad;
 varying vec3 vUp;
 varying float vFade;
@@ -442,21 +449,33 @@ void main() {
   float aMask = smoothstep(edge, edge - max(0.01, fuzz), r);
   if (aMask < 0.003) discard;
 
-  // Flat terminator shading on the cloud's up (true billboard, no per-pixel
-  // normal). Day side bright, night dark.
-  float d = dot(vUp, uSunDirW);
-  float dayT = smoothstep(-0.15, 0.2, d);
-  float lit = mix(1.0,
-    mix(${NIGHT_AMBIENT.toFixed(2)}, 1.0, dayT) * (0.7 + 0.3 * max(d, 0.0)), uHasSun);
+  // SOLID albedo × a world-anchored LIGHT/SHADOW MASK keyed on the SUN (not the
+  // camera): the cloud reads bright when you see its front-lit side and dark
+  // when back-lit (frontLit), with a gradient toward the sun across the sprite
+  // (grad). Because the mask tracks the sun direction it stays pinned to the
+  // cloud as you look around — the impostor normal, being camera-relative,
+  // swam. Sun AZIMUTH + elevation are captured; a flat sprite still can't
+  // resolve the full 3-D form (the blobs do that).
+  vec3 viewDir = normalize(cameraPosition - vWorldPos);
+  float frontLit = dot(viewDir, uSunDirW);            // +1 see lit side, −1 backlit
+  vec2 sunScreen = (viewMatrix * vec4(uSunDirW, 0.0)).xy;
+  float ssl = length(sunScreen);
+  vec2 sDir = ssl > 1e-4 ? sunScreen / ssl : vec2(0.0);
+  float grad = dot(vQuad, sDir);                       // + toward the sun on screen
+  float mask = clamp(0.5 + 0.4 * frontLit + 0.22 * grad, 0.0, 1.0);
+  float band = floor(mask * 3.0 + 0.5) / 3.0;          // 3-step toon
+  float dayT = smoothstep(-0.15, 0.2, dot(vUp, uSunDirW));
+  float lit = mix(1.0, mix(${NIGHT_AMBIENT.toFixed(2)}, mix(0.45, 1.0, band), dayT), uHasSun);
   vec3 col = vColor * lit;
-  // Soft silhouette brighten — the backlit-edge "this is a cloud" cue.
-  col += uRim * smoothstep(edge - 0.4, edge, r) * vColor * (0.4 + 0.6 * lit);
 
+  // Billboards alpha-BLEND (unlike the opaque blobs): soft edges stay smooth
+  // instead of dithered, and thin edge-on ellipses render correctly (the
+  // derivative-based hashed-alpha test misbehaves on sub-pixel-thin geometry).
   float a = vFade * aMask * uOpacity;
-  if (a < hashedAlphaThreshold(vFragW, vSeed)) discard;
+  if (a < 0.004) discard;
 
   #include <logdepthbuf_fragment>
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, a);
   #include <fog_fragment>
 }
 `;
@@ -508,6 +527,7 @@ uniform float uHasSun;
 uniform float uReach;
 uniform float uOpacity;
 uniform float uLayerDensity;
+uniform float uMinDensity;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
 varying vec3 vNormalW;
@@ -541,6 +561,8 @@ void main() {
   float u = (lon + uLonOffset - drift) / 6.28318530718 + 0.5;
   float v = clamp(lat / 3.14159265359 + 0.5, 0.0, 1.0);
   vec4 syn = texture2D(uMap, vec2(u, v));
+  // Smooth display of the density field with fuzzy boundaries (alpha ∝ cover +
+  // detail sparkle) — the ORIGINAL shell look. Not thresholded into splotches.
   float cover = syn.r * uCoverageMul;
   if (cover < 0.02) discard;
   vec3 dp = vLocalPos / uDetailScale;
@@ -599,6 +621,7 @@ interface BlobGeom {
   squash: number;
   r: number; g: number; b: number;      // tinted color
   seed: number;
+  cum: number;                          // local cumuliformity (tower gate)
 }
 /** Cache slot — `geom: null` caches "empty sky" (below floor / out of layer) so
  *  clear regions don't re-sample every frame. */
@@ -633,8 +656,19 @@ function createBlobLikeSystem(
   opts: CloudSystemOpts,
   variant: "mesh" | "billboard",
 ): CloudSystem {
+  const isBillboard = variant === "billboard";
   let field = opts.field;
-  let map: WeatherMap = buildWeatherMap(field, opts.timeSeconds ?? 0);
+  // v3 structured renderer can hand in ONE shared weather map (and own the bake
+  // + shell elsewhere) so deck + tower passes read identical weather.
+  const usingSharedMap = opts.sharedMap !== undefined;
+  let map: WeatherMap = opts.sharedMap ?? buildWeatherMap(field, opts.timeSeconds ?? 0);
+  const externallyBaked = opts.externallyBaked === true;
+  const noShell = opts.noShell === true;
+
+  // Tower gate (0 = off): emit only blobs whose cumuliformity clears the gate —
+  // the overhang/tower excess that the deck heightmap can't represent.
+  let towerGate = 0;
+  const TOWER_GATE_BAND = 0.12; // smooth fade so towers don't pop onto the deck
 
   let minDensity = DEFAULT_MIN_DENSITY;
   let bakeBudgetMs = DEFAULT_BAKE_BUDGET_MS;
@@ -674,6 +708,130 @@ function createBlobLikeSystem(
   const iSquash = new Float32Array(MAX_BLOBS);
   const iSeed = new Float32Array(MAX_BLOBS);
   const iFade = new Float32Array(MAX_BLOBS);
+
+  // Billboard alpha-blend needs back-to-front sorting. Distance is quantized to
+  // SORT_QUANT_M and ties are broken by a STABLE per-sprite key (iSeed), so
+  // overlapping sprites don't swap blend order — the coarse-bucket flicker the
+  // original billboard system suffered. (The opaque blobs never sort.)
+  const SORT_QUANT_M = 2;
+  const sortIdx = isBillboard ? new Uint32Array(MAX_BLOBS) : null;
+  const sortDistQ = isBillboard ? new Int32Array(MAX_BLOBS) : null;
+  const tmpC = isBillboard ? new Float32Array(MAX_BLOBS * 3) : null;
+  const tmpU = isBillboard ? new Float32Array(MAX_BLOBS * 3) : null;
+  const tmpCol = isBillboard ? new Float32Array(MAX_BLOBS * 3) : null;
+  const tmpR = isBillboard ? new Float32Array(MAX_BLOBS) : null;
+  const tmpSq = isBillboard ? new Float32Array(MAX_BLOBS) : null;
+  const tmpSe = isBillboard ? new Float32Array(MAX_BLOBS) : null;
+  const tmpF = isBillboard ? new Float32Array(MAX_BLOBS) : null;
+  let lastBillboardCount = 0;
+
+  /** Reorder the instance buffers far-to-near from the camera (planet-local).
+   *  No-op for the opaque mesh variant. */
+  function sortBillboards(cx: number, cy: number, cz: number, n: number): void {
+    if (!sortIdx || !sortDistQ || n === 0) return;
+    for (let i = 0; i < n; i++) {
+      const i3 = i * 3;
+      const dx = iCenter[i3] - cx, dy = iCenter[i3 + 1] - cy, dz = iCenter[i3 + 2] - cz;
+      sortDistQ[i] = (Math.sqrt(dx * dx + dy * dy + dz * dz) / SORT_QUANT_M) | 0;
+      sortIdx[i] = i;
+    }
+    // Far-to-near (larger quantized distance first); stable iSeed tie-break.
+    sortIdx.subarray(0, n).sort((a, b) => {
+      const dd = sortDistQ[b] - sortDistQ[a];
+      return dd !== 0 ? dd : iSeed[a] - iSeed[b];
+    });
+    tmpC!.set(iCenter.subarray(0, n * 3));
+    tmpU!.set(iUp.subarray(0, n * 3));
+    tmpCol!.set(iColor.subarray(0, n * 3));
+    tmpR!.set(iRadius.subarray(0, n));
+    tmpSq!.set(iSquash.subarray(0, n));
+    tmpSe!.set(iSeed.subarray(0, n));
+    tmpF!.set(iFade.subarray(0, n));
+    for (let i = 0; i < n; i++) {
+      const src = sortIdx[i], i3 = i * 3, s3 = src * 3;
+      iCenter[i3] = tmpC![s3]; iCenter[i3 + 1] = tmpC![s3 + 1]; iCenter[i3 + 2] = tmpC![s3 + 2];
+      iUp[i3] = tmpU![s3]; iUp[i3 + 1] = tmpU![s3 + 1]; iUp[i3 + 2] = tmpU![s3 + 2];
+      iColor[i3] = tmpCol![s3]; iColor[i3 + 1] = tmpCol![s3 + 1]; iColor[i3 + 2] = tmpCol![s3 + 2];
+      iRadius[i] = tmpR![src]; iSquash[i] = tmpSq![src]; iSeed[i] = tmpSe![src]; iFade[i] = tmpF![src];
+    }
+  }
+
+  function uploadInstanceAttrs(): void {
+    aCenter.needsUpdate = true;
+    aUp.needsUpdate = true;
+    aColor.needsUpdate = true;
+    aRadius.needsUpdate = true;
+    aSquash.needsUpdate = true;
+    aSeed.needsUpdate = true;
+    aFade.needsUpdate = true;
+  }
+
+  // ── Containment cull (opaque mesh only) ──────────────────────────────────
+  // log-depth defeats early-Z (every fragment writes gl_FragDepth → late-Z), so
+  // a blob whose VOLUME is fully inside another opaque blob still shades (pure
+  // overdraw). It is never visible, so drop it on the CPU. Conservative (margin
+  // < 1, 3-D distance) so a partly-visible blob is never culled. Spatial hash at
+  // the mean radius (blobs in view are mostly one tier → ~1 per cell).
+  const cullRemoved = isBillboard ? null : new Uint8Array(MAX_BLOBS);
+  const cullGrid = isBillboard ? null : new Map<number, number[]>();
+  function cullHash(a: number, b: number, c: number): number {
+    return (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) | 0;
+  }
+  function cullContainedBlobs(n: number): number {
+    if (!cullRemoved || !cullGrid || n < 2) return n;
+    let sumR = 0;
+    for (let i = 0; i < n; i++) sumR += iRadius[i];
+    const inv = 1 / Math.max(1, sumR / n);
+    cullGrid.clear();
+    for (let i = 0; i < n; i++) {
+      const k = cullHash(
+        Math.floor(iCenter[i * 3] * inv),
+        Math.floor(iCenter[i * 3 + 1] * inv),
+        Math.floor(iCenter[i * 3 + 2] * inv));
+      let arr = cullGrid.get(k);
+      if (!arr) { arr = []; cullGrid.set(k, arr); }
+      arr.push(i);
+    }
+    cullRemoved.fill(0, 0, n);
+    let culled = 0;
+    for (let i = 0; i < n; i++) {
+      if (cullRemoved[i]) continue;
+      const bx = iCenter[i * 3], by = iCenter[i * 3 + 1], bz = iCenter[i * 3 + 2];
+      const rB = iRadius[i];
+      const ci = Math.floor(bx * inv), cj = Math.floor(by * inv), ck = Math.floor(bz * inv);
+      let done = false;
+      for (let dx = -1; dx <= 1 && !done; dx++)
+        for (let dy = -1; dy <= 1 && !done; dy++)
+          for (let dz = -1; dz <= 1 && !done; dz++) {
+            const arr = cullGrid.get(cullHash(ci + dx, cj + dy, ck + dz));
+            if (!arr) continue;
+            for (let t = 0; t < arr.length; t++) {
+              const j = arr[t];
+              if (j === i || cullRemoved[j]) continue;
+              const rA = iRadius[j];
+              if (rA <= rB * 1.05) continue; // container must be meaningfully larger
+              const ex = bx - iCenter[j * 3], ey = by - iCenter[j * 3 + 1], ez = bz - iCenter[j * 3 + 2];
+              const dist = Math.sqrt(ex * ex + ey * ey + ez * ez);
+              if (dist + rB <= rA * 0.82) { cullRemoved[i] = 1; culled++; done = true; break; }
+            }
+          }
+    }
+    cloudBlobStats.culled = culled;
+    if (culled === 0) return n;
+    let w = 0;
+    for (let r = 0; r < n; r++) {
+      if (cullRemoved[r]) continue;
+      if (w !== r) {
+        const w3 = w * 3, r3 = r * 3;
+        iCenter[w3] = iCenter[r3]; iCenter[w3 + 1] = iCenter[r3 + 1]; iCenter[w3 + 2] = iCenter[r3 + 2];
+        iUp[w3] = iUp[r3]; iUp[w3 + 1] = iUp[r3 + 1]; iUp[w3 + 2] = iUp[r3 + 2];
+        iColor[w3] = iColor[r3]; iColor[w3 + 1] = iColor[r3 + 1]; iColor[w3 + 2] = iColor[r3 + 2];
+        iRadius[w] = iRadius[r]; iSquash[w] = iSquash[r]; iSeed[w] = iSeed[r]; iFade[w] = iFade[r];
+      }
+      w++;
+    }
+    return w;
+  }
 
   const base = variant === "mesh"
     ? new THREE.IcosahedronGeometry(1, BLOB_ICO_DETAIL)
@@ -716,9 +874,13 @@ function createBlobLikeSystem(
     },
     vertexShader: variant === "mesh" ? BLOB_VERT : BILLBOARD_VERT,
     fragmentShader: variant === "mesh" ? BLOB_FRAG : BILLBOARD_FRAG,
-    transparent: false,   // OPAQUE — dithered discard handles fade, no sort
+    // Blobs are OPAQUE (dithered discard, no sort). Billboards alpha-BLEND for
+    // smooth soft edges; depthWrite off so they layer over each other and the
+    // terrain (depth-tested but not occluding) — like classic cloud sprites.
+    transparent: variant === "billboard",
     depthTest: true,
-    depthWrite: true,
+    depthWrite: variant === "mesh",
+    blending: THREE.NormalBlending,
     fog: true,
     // WebGL2 (three's default) has dFdx/dFdy as core GLSL — no extension flag.
   });
@@ -790,6 +952,7 @@ function createBlobLikeSystem(
           uReach: { value: 240_000 },
           uOpacity: { value: opacity },
           uLayerDensity: { value: layer.density },
+          uMinDensity: { value: minDensity },
           ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         },
         vertexShader: SHELL_VERT,
@@ -812,12 +975,13 @@ function createBlobLikeSystem(
       shells.push({ material: shellMat, mesh: shellMesh });
     }
   }
-  buildShells();
+  if (!noShell) buildShells();
 
   // ── Bake pacing (copied) ─────────────────────────────────────────────────
   let initialSweepDone = false;
   const INITIAL_SWEEP_BUDGET_MS = 4;
   function bakeTick(timeSeconds: number): void {
+    if (externallyBaked) return; // another sub-system owns the shared map's bake
     const budget = initialSweepDone
       ? bakeBudgetMs
       : Math.max(bakeBudgetMs, INITIAL_SWEEP_BUDGET_MS);
@@ -931,12 +1095,20 @@ function createBlobLikeSystem(
       u.uDetailAmp.value = 0.35 * shellDetailMult;
       u.uHasSun.value = hasSun ? 1 : 0;
       u.uOpacity.value = opacity;
+      u.uMinDensity.value = minDensity;
       if (hasSun && sunWorldPos) u.uSunPosW.value.copy(sunWorldPos);
     }
 
     updateCounter++;
     if (updateCounter % Math.max(1, Math.round(updateInterval)) !== 0) {
       cloudBlobStats.walkMs = 0;
+      // Off-frame: the sprite set is unchanged, but the camera moved, so the
+      // billboard blend order must be refreshed every frame (cheap) or it
+      // flickers between rebuilds.
+      if (isBillboard && lastBillboardCount > 0) {
+        sortBillboards(cameraLocalPos.x, cameraLocalPos.y, cameraLocalPos.z, lastBillboardCount);
+        uploadInstanceAttrs();
+      }
       return;
     }
 
@@ -1009,7 +1181,12 @@ function createBlobLikeSystem(
         const lon = Math.atan2(cz, cx);
         map.sample(lon + L0.mapLonOffsetRad, lat, timeSeconds, sampleOpts.windMult, _synTmp);
         const cover = Math.min(1, _synTmp.cover * L0.coverageMul);
-        if (cover < COARSE_COVER_MIN) { blobCacheCur.set(key, { geom: null, expiresAt }); return null; }
+        // The placement threshold (minDensity, the live "cloud cover" slider)
+        // also gates coarse decks, so one control thins both near puffs and
+        // distant decks.
+        if (cover < Math.max(COARSE_COVER_MIN, minDensity)) {
+          blobCacheCur.set(key, { geom: null, expiresAt }); return null;
+        }
         bestD = cover;
         bCum = L0.cumuliformity;
         bLayer = 0;
@@ -1051,6 +1228,7 @@ function createBlobLikeSystem(
         rad: tanRadius, squash,
         r: bR, g: bG, b: bB,
         seed: (key & 0xffff) * 0.001,
+        cum: bCum,
       };
       blobCacheCur.set(key, { geom: bg, expiresAt });
       return bg;
@@ -1138,6 +1316,17 @@ function createBlobLikeSystem(
               const own = computeBlob(tier, ix, iy, iz);
               if (!own) continue;
 
+              // Tower gate (structured renderer): the deck heightmap owns flat
+              // cloud, so emit only the overhang/tower excess. Smooth fade so a
+              // tower eases in over the deck instead of popping.
+              let gateF = 1;
+              if (towerGate > 0) {
+                let gt = (own.cum - (towerGate - TOWER_GATE_BAND)) / (2 * TOWER_GATE_BAND);
+                gt = gt < 0 ? 0 : gt > 1 ? 1 : gt;
+                gateF = gt * gt * (3 - 2 * gt);
+                if (gateF <= 0.004) continue;
+              }
+
               const ddx = own.cx - cameraLocalPos.x;
               const ddy = own.cy - cameraLocalPos.y;
               const ddz = own.cz - cameraLocalPos.z;
@@ -1216,7 +1405,7 @@ function createBlobLikeSystem(
               iRadius[count] = size;
               iSquash[count] = squash;
               iSeed[count] = own.seed;
-              iFade[count] = alpha;
+              iFade[count] = alpha * gateF;
               count++;
             }
           }
@@ -1234,16 +1423,19 @@ function createBlobLikeSystem(
     if (count === 0) {
       geom.instanceCount = 0;
       cloudBlobStats.sprites = 0;
+      lastBillboardCount = 0;
       return;
     }
 
-    aCenter.needsUpdate = true;
-    aUp.needsUpdate = true;
-    aColor.needsUpdate = true;
-    aRadius.needsUpdate = true;
-    aSquash.needsUpdate = true;
-    aSeed.needsUpdate = true;
-    aFade.needsUpdate = true;
+    if (isBillboard) {
+      // Billboards alpha-blend → sort far-to-near before upload.
+      sortBillboards(cameraLocalPos.x, cameraLocalPos.y, cameraLocalPos.z, count);
+      lastBillboardCount = count;
+    } else {
+      // Opaque mesh → drop fully-occluded (contained) blobs to cut overdraw.
+      count = cullContainedBlobs(count);
+    }
+    uploadInstanceAttrs();
     geom.instanceCount = count;
     cloudBlobStats.sprites = count;
   }
@@ -1256,7 +1448,14 @@ function createBlobLikeSystem(
     out.color.setRGB(0, 0, 0);
     if (field.layers.length === 0) return;
     cloudDensityAt(field, map, cameraLocalPos, lastTimeSeconds, sampleOpts, _sampleOut);
-    out.density = _sampleOut.density;
+    // Match the VISIBLE clouds: a puff is only drawn where density > minDensity,
+    // so the interior fog must use the SAME threshold (remapped 0→1 above it).
+    // Otherwise raising the cover slider leaves "invisible fog" in gaps where a
+    // cloud was culled out. Fog now fades in exactly as you enter a drawn cloud
+    // and thickens with depth into it.
+    const d = _sampleOut.density;
+    if (d <= minDensity) return;
+    out.density = (d - minDensity) / Math.max(1e-3, 1 - minDensity);
     out.color.copy(_sampleOut.color);
   }
 
@@ -1276,6 +1475,7 @@ function createBlobLikeSystem(
     if (o.updateInterval !== undefined) updateInterval = o.updateInterval;
     if (o.shellDetailMult !== undefined) shellDetailMult = o.shellDetailMult;
     if (o.shellDebug !== undefined) shellDebug = o.shellDebug;
+    if (o.towerGate !== undefined) towerGate = o.towerGate;
     // Reuse the spriteOversize slider as the rim-strength knob in the lab, and
     // detail slider already maps to detailMult; billow stays at default.
   }
@@ -1296,14 +1496,19 @@ function createBlobLikeSystem(
 
   function setField(f: CloudFieldParams): void {
     field = f;
-    mapTexture.dispose();
-    map = buildWeatherMap(field, lastTimeSeconds);
-    mapTexture = makeMapTexture(map);
-    rowsSinceUpload = 0;
-    initialSweepDone = false;
+    if (!usingSharedMap) {
+      // Owner of its own map — rebuild it. (In the structured renderer the map
+      // is shared and the owner re-creates sub-systems on a field change, so
+      // this branch is skipped.)
+      mapTexture.dispose();
+      map = buildWeatherMap(field, lastTimeSeconds);
+      mapTexture = makeMapTexture(map);
+      rowsSinceUpload = 0;
+      initialSweepDone = false;
+    }
     blobCacheCur.clear();
     blobCachePrev.clear();
-    buildShells();
+    if (!noShell) buildShells();
     setOpacity(opacity);
   }
 

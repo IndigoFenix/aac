@@ -523,7 +523,7 @@ export const aacSettings = pgTable("aac_settings", {
   chatAgentPrompt: jsonb("chat_agent_prompt").$type<string[]>(), // CUSTOM list (caretaker-requested behaviors)
   autoAacPrompt: jsonb("auto_aac_prompt").$type<string[]>(), // AUTO list (AI-generated student notes)
   modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
-  startupMode: integer("startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
+  startupMode: integer("startup_mode").default(0), // DEPRECATED: no behavioral effect — startup is always thorough. Kept (selectable/saveable) for settings compatibility.
 
   // Voice settings
   voiceType: text("voice_type"), // AI voice: 'auto', 'man', 'woman', 'boy', 'girl'

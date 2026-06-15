@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -50,6 +50,7 @@
     "release:aac:build": "npm run electron:build && npm run build:sidecar && electron-builder --win --publish never",
     "release:aac:publish": "node scripts/publish-aac-release.mjs",
     "release:aac": "npm run release:aac:build && npm run release:aac:publish",
+    "publish:main": "git push origin HEAD:main",
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
     "audit:critical": "npm audit --audit-level=critical",

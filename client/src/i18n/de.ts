@@ -2403,13 +2403,6 @@ export const de = {
     singleGlyphButtonsDesc: "Beschränkt KI-generierte Tasten auf je ein Symbol oder eine Phrase. Hilfreich für Kommunikationsanfänger.",
     glyphInputTranslation: "Glyphen-Übersetzung der Sprache",
     glyphInputTranslationDesc: "Zeigt an den Benutzer gerichtete Sprache (die Antworten der KI und mitgehörte Sprache) als Glyphenleiste in der Kopfzeile an. Experimentell.",
-    // Startup
-    startupMode: "Startmodus",
-    startupModeDesc: "Wie viel Kontext beim Starten einer AAC-Sitzung geladen wird",
-    startupFast: "Schnell",
-    startupThorough: "Gründlich",
-    startupFastDesc: "Sofortiger Start. Lädt Notizen und Präferenzen aus dem Speicher -- kein KI-Aufwärmaufruf.",
-    startupThoroughDesc: "Gründlicher Start. Lädt Ziele, medizinische Informationen und Bildungsdaten vor und bittet die KI, eine Sitzungsbesprechung zusammenzustellen.",
     // Eyegaze
     eyegaze: "Blicksteuerung",
     eyegazeDesc: "Verweilbasierte Symbolauswahl mit Maus oder externem Eye-Tracker aktivieren",

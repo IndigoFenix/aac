@@ -2403,13 +2403,6 @@ export const he = {
     singleGlyphButtonsDesc: "הגבל את הכפתורים שהבינה המלאכותית יוצרת לסמל או ביטוי בודד. מתאים למתקשרים בתחילת דרכם.",
     glyphInputTranslation: "תרגום דיבור לסמלים",
     glyphInputTranslationDesc: "הצגת הדיבור המופנה למשתמש (תגובות הבינה המלאכותית ודיבור שנשמע בסביבה) כרצועת סמלים בכותרת. ניסיוני.",
-    // Startup
-    startupMode: "מצב הפעלה",
-    startupModeDesc: "How much context to load when starting an AAC session",
-    startupFast: "מהיר",
-    startupThorough: "מעמיק",
-    startupFastDesc: "הפעלה מיידית. טוען הערות והעדפות מהזיכרון — ללא קריאת חימום AI.",
-    startupThoroughDesc: "הפעלה מעמיקה. טוען מראש יעדים, מידע רפואי ונתוני חינוך, ואז מבקש מה-AI לקמפל תדריך הפעלה.",
     // Eyegaze
     eyegaze: "בחירת מבט עין",
     eyegazeDesc: "הפעל בחירת סמלים מבוססת שהייה באמצעות עכבר או עוקב עין חיצוני",

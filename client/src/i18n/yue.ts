@@ -2403,13 +2403,6 @@ export const yue = {
     singleGlyphButtonsDesc: "將AI生成嘅按鈕限制為單一符號或短語。啱啱開始學溝通嘅人士適用。",
     glyphInputTranslation: "語音符號翻譯",
     glyphInputTranslationDesc: "將對使用者講嘅說話（AI嘅回覆同聽到嘅說話）以符號條形式喺頂部顯示。實驗性功能。",
-    // Startup
-    startupMode: "啟動模式",
-    startupModeDesc: "啟動 AAC 工作階段嗰陣載入幾多背景資料",
-    startupFast: "快速",
-    startupThorough: "全面",
-    startupFastDesc: "即時啟動。從記憶載入筆記同偏好——唔使 AI 預熱。",
-    startupThoroughDesc: "全面啟動。預載目標、醫療資料同教育資料，然後叫 AI 寫工作階段簡報。",
     // Eyegaze
     eyegaze: "眼動選擇",
     eyegazeDesc: "用滑鼠或外部眼動追蹤器啟用基於停留嘅符號選擇",

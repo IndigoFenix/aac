@@ -199,6 +199,10 @@ export interface CloudSystemRuntimeOpts {
   shellDetailMult?: number;
   /** Shell debug visualization mode (0 = off). */
   shellDebug?: number;
+  /** v3 structured renderer: emit blobs ONLY where local cumuliformity exceeds
+   *  this gate (the overhang/tower excess) — flat regions are left to the deck
+   *  heightmap. 0 = no gate (emit everything, normal blob behaviour). */
+  towerGate?: number;
 }
 
 export interface CloudSystemOpts {
@@ -206,6 +210,17 @@ export interface CloudSystemOpts {
   field: CloudFieldParams;
   /** Sim-time (seconds) at creation — used for the initial map prebake. */
   timeSeconds?: number;
+  /** v3 structured renderer: share ONE weather map across sub-systems instead
+   *  of each building its own (one bake, one source of truth). */
+  sharedMap?: WeatherMap;
+  /** Don't bake the shared map — another sub-system owns the bake. */
+  externallyBaked?: boolean;
+  /** Don't build the orbital shell — another sub-system owns the far field. */
+  noShell?: boolean;
+  /** Deck heightmap mode (v3 structured renderer): "base" = thin flat base
+   *  (default, good from below); "mound" = track the full cloud top so the
+   *  surface rises into hills where the column towers (the tower bulk). */
+  deckMode?: "base" | "mound";
 }
 
 export interface CloudSystem {

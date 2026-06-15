@@ -151,8 +151,10 @@ export interface CelestialBody {
   heightAt?(localDir: THREE.Vector3): number;
 
   /** Per-body internal update (e.g. LOD walk for rocky planets). Called by
-   *  world.update AFTER the body's transform has been advanced for the frame. */
-  update(cameraWorldPos: THREE.Vector3, dt: number): void;
+   *  world.update AFTER the body's transform has been advanced for the frame.
+   *  cameraForwardWorld (optional, normalized, world space) lets the body pass a
+   *  view direction to its cloud system for view-cone culling. */
+  update(cameraWorldPos: THREE.Vector3, dt: number, cameraForwardWorld?: THREE.Vector3): void;
 
   // ── Optional visual hints used by the sky / atmosphere ──────────────────
   /** Daytime sky background color (zenith — directly overhead, used by

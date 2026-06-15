@@ -642,4 +642,15 @@ export const GFX = {
    *  planet-anchored so off-frames stay coherent; raising this trades
    *  LOD-fade latency for CPU. */
   cloudUpdateEvery: 2,
+  /** Cloud renderer (index into CLOUD_RENDERER_NAMES): 0 billboards (legacy),
+   *  1 blobs (3-D icosphere), 2 blob-billboard (angle-stretch sprites),
+   *  3 surfacenets (isosurface mesh), 4 deck (v3 heightmap base). Changing it
+   *  live re-creates each body's cloud system. See
+   *  instructions/clouds-renderer-v3-plan.md. */
+  cloudRenderer: 0,
 };
+
+/** Display names for GFX.cloudRenderer (the index is the array position). */
+export const CLOUD_RENDERER_NAMES = [
+  "billboards", "blobs", "blob-billboard", "surfacenets", "deck", "structured",
+] as const;

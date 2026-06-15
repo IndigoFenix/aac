@@ -94,12 +94,12 @@ describe("applyCorsPolicy", () => {
     process.env.ALLOWED_ORIGINS = "https://aivota.ai";
     await withApp(async (port) => {
       const res = await probe(port, {
-        Host: "aivota-staging.onrender.com",
+        Host: "aivota-demo.onrender.com",
         "X-Forwarded-Proto": "https",
-        Origin: "https://aivota-staging.onrender.com",
+        Origin: "https://aivota-demo.onrender.com",
       });
       expect(res.status).toBe(200);
-      expect(res.headers["access-control-allow-origin"]).toBe("https://aivota-staging.onrender.com");
+      expect(res.headers["access-control-allow-origin"]).toBe("https://aivota-demo.onrender.com");
     });
   });
 
@@ -134,7 +134,7 @@ describe("applyCorsPolicy", () => {
     process.env.ALLOWED_ORIGINS = "https://aivota.ai";
     await withApp(async (port) => {
       const res = await probe(port, {
-        Host: "aivota-staging.onrender.com",
+        Host: "aivota-demo.onrender.com",
         "X-Forwarded-Proto": "https",
         Origin: "app://aac",
       });
@@ -147,7 +147,7 @@ describe("applyCorsPolicy", () => {
     // ALLOWED_ORIGINS + APP_URL both unset (deleted in beforeEach).
     await withApp(async (port) => {
       const res = await probe(port, {
-        Host: "aivota-staging.onrender.com",
+        Host: "aivota-demo.onrender.com",
         "X-Forwarded-Proto": "https",
         Origin: "app://aac",
       });

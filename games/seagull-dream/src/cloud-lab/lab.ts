@@ -12,6 +12,9 @@ import {
   createBillboardCloudSystem,
   cloudBlobStats,
 } from "../cloud-blobs";
+import { createSurfaceNetsCloudSystem, cloudSurfaceStats } from "../cloud-surfacenets";
+import { createDeckCloudSystem, cloudDeckStats } from "../cloud-deck";
+import { createStructuredCloudSystem } from "../cloud-structured";
 import type { Atmosphere } from "../physics-system/features";
 
 // Renderer selection — A/B the shipping billboards vs experimental renderers
@@ -21,17 +24,23 @@ import type { Atmosphere } from "../physics-system/features";
 //   blobs          — 3-D icosphere blobs (cloud-blobs.ts)
 //   blob-billboard — SAME blob walk/sizing, rendered as angle-stretched
 //                    soft billboards (tests "was it the billboards or the size?")
-type RendererMode = "billboards" | "blobs" | "blob-billboard";
-const RENDERER_MODES: RendererMode[] = ["billboards", "blobs", "blob-billboard"];
+type RendererMode = "billboards" | "blobs" | "blob-billboard" | "surfacenets" | "deck" | "structured";
+const RENDERER_MODES: RendererMode[] = ["billboards", "blobs", "blob-billboard", "surfacenets", "deck", "structured"];
 const RENDERER_FACTORY: Record<RendererMode, (o: { field: any; timeSeconds?: number }) => CloudSystem> = {
   billboards: createCloudSystem,
   blobs: createBlobCloudSystem,
   "blob-billboard": createBillboardCloudSystem,
+  surfacenets: createSurfaceNetsCloudSystem,
+  deck: createDeckCloudSystem,
+  structured: createStructuredCloudSystem,
 };
 const RENDERER_STATS: Record<RendererMode, typeof cloudSystemStats> = {
   billboards: cloudSystemStats,
   blobs: cloudBlobStats,
   "blob-billboard": cloudBlobStats, // same walk → same stats object
+  surfacenets: cloudSurfaceStats,
+  deck: cloudDeckStats,
+  structured: cloudDeckStats, // base+mound decks; tierSprites[0] = edge-blob count
 };
 const _urlRenderer = new URLSearchParams(location.search).get("renderer");
 let rendererMode: RendererMode = (RENDERER_MODES as string[]).includes(_urlRenderer ?? "")
@@ -220,6 +229,7 @@ const SCENARIOS: LabScenario[] = [
 const OPTS = {
   cloudMult: 1.0,
   spriteOversize: 1.0,
+  minDensity: 0.05, // placement threshold — raise to thin out cloud cover
   windMult: 1.0,
   detailMult: 1.0,
   vigorMult: 1.0,
@@ -727,6 +737,7 @@ function slider(label: string, key: keyof typeof OPTS, min: number, max: number,
 
 slider("opacity", "cloudMult", 0, 2, 0.05);
 slider("oversize", "spriteOversize", 0.5, 2.5, 0.05);
+slider("cover thresh", "minDensity", 0, 0.6, 0.01);
 slider("wind", "windMult", 0, 5, 0.1);
 slider("detail", "detailMult", 0, 2, 0.05);
 slider("vigor", "vigorMult", 0, 2, 0.05);
@@ -799,6 +810,7 @@ window.__labStats = () => JSON.stringify({
   cellsPassed: activeStats().cellsPassed,
   walkMs: +activeStats().walkMs.toFixed(2),
   bakeMs: +activeStats().bakeMs.toFixed(2),
+  culled: (activeStats() as { culled?: number }).culled ?? 0,
 });
 // Flicker metric: advance the camera forward `strideM` per rendered
 // frame with wind + weather evolution frozen, pixel-diffing consecutive
@@ -858,6 +870,7 @@ function stepFrame(dt: number): void {
     cloudSystem.setRuntimeOpts({
       opacity: OPTS.cloudMult,
       spriteOversize: OPTS.spriteOversize,
+      minDensity: OPTS.minDensity,
       windMult: OPTS.windMult,
       detailMult: OPTS.detailMult,
       vigorMult: OPTS.vigorMult,

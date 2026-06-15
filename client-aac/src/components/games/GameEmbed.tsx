@@ -27,6 +27,7 @@ import {
   type GameMessage,
   type PlatformMessage,
 } from "@shared/games-bridge";
+import { API_BASE_URL } from "@/lib/api-base";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
@@ -216,8 +217,7 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
   // 5174 and hit the AAC's SPA fallback (rendering the AAC inside itself).
   const resolvedSrc = useMemo(() => {
     if (!src.startsWith("/")) return src;
-    const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
-    return base + src;
+    return API_BASE_URL + src;
   }, [src]);
 
   // Memoize the iframe element so it isn't torn down on unrelated re-renders.

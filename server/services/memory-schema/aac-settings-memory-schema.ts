@@ -473,7 +473,7 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "startupMode",
       type: "string",
       title: "Startup Mode",
-      description: "0=fast (no LLM call), 1=thorough (preloads context + LLM summary)",
+      description: "Deprecated — no behavioral effect; startup is always thorough. Kept for settings compatibility.",
     },
     // Privacy
     allowReadProgress: {

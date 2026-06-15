@@ -1902,7 +1902,7 @@ import {
       startupMode: {
         id: "startupMode",
         type: "integer",
-        description: "0=fast (no LLM call), 1=thorough (preloads context + LLM summary)",
+        description: "Deprecated — no behavioral effect; startup is always thorough. Kept for settings compatibility.",
         minimum: 0,
         maximum: 1,
       },

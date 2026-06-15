@@ -38,7 +38,8 @@ import type { ResolvedBody } from "./physics-system/system";
 import type { Body, BodyState } from "./physics-system/body";
 import type { BodyFeatures } from "./physics-system/features";
 import { deriveCloudField, type CloudFieldParams } from "./cloud-field";
-import { createCloudSystem, type CloudSystem } from "./cloud-system";
+import { type CloudSystem } from "./cloud-system";
+import { createCloudByIndex } from "./cloud-factory";
 
 // Unified celestial-body creator.
 //
@@ -799,7 +800,25 @@ function buildRockyBody(
     seed,
   });
   let cloudSystem: CloudSystem | null = null;
+  let cloudRendererIdx = -1; // which GFX.cloudRenderer the current system is
   const _cloudCamLocal = new THREE.Vector3();
+  const _cloudCamFwd = new THREE.Vector3();
+
+  /** (Re)build the cloud system for the current GFX.cloudRenderer. Called from
+   *  materialize, and again from update() to live-swap renderers when the debug
+   *  menu changes GFX.cloudRenderer (re-bakes weather → a brief one-frame hitch).
+   *  (Function declaration so it can be hoisted above `group`/`body`.) */
+  function makeCloudSystem(): void {
+    if (cloudField.layers.length === 0) return;
+    if (cloudSystem) { group.remove(cloudSystem.group); cloudSystem.dispose(); }
+    cloudSystem = createCloudByIndex(GFX.cloudRenderer, {
+      field: cloudField,
+      timeSeconds: performance.now() * 0.001,
+    });
+    group.add(cloudSystem.group);
+    body.cloudSystem = cloudSystem;
+    cloudRendererIdx = GFX.cloudRenderer;
+  }
 
   // Sky color: the palette wins. The previous "stylized vs default"
   // detector excluded EARTHLIKE_BLUE because its skyDay literally
@@ -907,7 +926,7 @@ function buildRockyBody(
       return out;
     },
 
-    update(cameraWorldPos: THREE.Vector3, _dt: number): void {
+    update(cameraWorldPos: THREE.Vector3, _dt: number, cameraForwardWorld?: THREE.Vector3): void {
       if (!materialized) return;
       // Amortize deferred root-mesh builds: one chunk per frame per body.
       // After all 6 face roots are built the LOD walk runs normally and
@@ -923,11 +942,21 @@ function buildRockyBody(
       // Cloud sprites — same local-camera vector as the terrain LOD walk.
       // performance.now() drives wind drift so the field is smooth across
       // frames without needing world simTime here.
+      // Live renderer swap from the debug menu (only after first materialize).
+      if (cloudRendererIdx !== -1 && GFX.cloudRenderer !== cloudRendererIdx) {
+        makeCloudSystem();
+      }
       if (cloudSystem) {
         _cloudCamLocal.copy(cameraWorldPos)
           .sub(this.worldPosition)
           .applyQuaternion(this.inverseOrientation);
-        cloudSystem.update(_cloudCamLocal, performance.now() * 0.001);
+        // Rotate the camera forward into the body-local frame (direction → no
+        // translation) so the blob renderer can view-cone-cull behind the camera.
+        let fwd: THREE.Vector3 | undefined;
+        if (cameraForwardWorld) {
+          fwd = _cloudCamFwd.copy(cameraForwardWorld).applyQuaternion(this.inverseOrientation);
+        }
+        cloudSystem.update(_cloudCamLocal, performance.now() * 0.001, fwd);
       }
       // TODO(features): volcano emission, life biosignatures (city
       // lights on night side for intelligent stage), tectonic crack
@@ -1021,16 +1050,7 @@ uniform float uOceanDepthBias;`,
       // system is per-body and parented to `group` so it rotates with
       // the planet; the body.update closure feeds it the camera-local
       // position every frame.
-      if (cloudField.layers.length > 0) {
-        cloudSystem = createCloudSystem({
-          field: cloudField,
-          // Same clock body.update feeds cloudSystem.update — keeps the
-          // weather map's bake epoch and the residual drift consistent.
-          timeSeconds: performance.now() * 0.001,
-        });
-        group.add(cloudSystem.group);
-        body.cloudSystem = cloudSystem;
-      }
+      makeCloudSystem();
 
       // Atmosphere halo shell — fuzzy limb glow around the silhouette.
       // Skip for airless bodies.

@@ -10,7 +10,7 @@
 // each panel, sections use <details>/<summary> so individual categories can
 // be expanded/collapsed without losing the whole panel's state.
 
-import { PLAYER, CONTROLS, SPEED, SKY, GFX, GALAXY, CHUNKS, PLANET } from "./config";
+import { PLAYER, CONTROLS, SPEED, SKY, GFX, GALAXY, CHUNKS, PLANET, CLOUD_RENDERER_NAMES } from "./config";
 import { DEFAULT_GALAXY_PARAMS } from "./galaxy";
 import type { Player } from "./player";
 import type { World } from "./world";
@@ -221,9 +221,10 @@ function tuningSections(): Section[] {
     {
       title: "Clouds",
       sliders: [
+        { label: "renderer", target: G, field: "cloudRenderer", min: 0, max: CLOUD_RENDERER_NAMES.length - 1, step: 1, format: (v) => CLOUD_RENDERER_NAMES[Math.round(v)] ?? String(v) },
         { label: "opacity", target: G, field: "cloudMult", min: 0, max: 2, step: 0.05, format: fmtX },
         { label: "sprite size", target: G, field: "cloudSpriteOversize", min: 0.5, max: 3, step: 0.05, format: fmtX },
-        { label: "min density", target: G, field: "cloudMinDensity", min: 0, max: 0.3, step: 0.01, format: fmt3 },
+        { label: "cover thresh", target: G, field: "cloudMinDensity", min: 0, max: 0.6, step: 0.01, format: fmt3 },
         { label: "wind mult", target: G, field: "cloudWindMult", min: 0, max: 5, step: 0.1, format: fmtX },
         { label: "fog boost", target: G, field: "cloudFogBoost", min: 0, max: 2, step: 0.05, format: fmtX },
         { label: "detail", target: G, field: "cloudDetailMult", min: 0, max: 2, step: 0.05, format: fmtX },

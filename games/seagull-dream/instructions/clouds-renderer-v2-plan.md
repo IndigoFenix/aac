@@ -86,6 +86,110 @@ distance crossfade are **reused unchanged**; only the near primitive differs.
 
 Lowest risk, highest reuse, most low-poly-native. This is the baseline.
 
+### Experiment 1b — Billboard variant (same walk, sprite instead of icosphere)
+`createBillboardCloudSystem` reuses the ENTIRE blob pipeline (walk, sizing,
+geomorph, coarse envelope, cull, cache) and only swaps the icosphere for a
+camera-facing quad — to test whether the old billboards' failure was the
+billboards or the (now-fixed) sizing. Lab mode `blob-billboard`. Findings:
+- **Angle-stretch ellipse, face camera.** The quad squashes its up-axis to the
+  ellipse the ellipsoid projects to (occupies the blob's screen area; lies flat
+  so large near sprites don't bulge into terrain). GOTCHA: building the ellipse
+  from a reconstructed `majorDir/minorDir` screen basis produced **degenerate
+  quads** (rendered nothing). The robust form is to take the round offset
+  `q*R` and squash only its component along the screen-projected up —
+  identical to round at `minorScale=1`, so it can never collapse. A small floor
+  (`BILLBOARD_MIN_MINOR`) keeps flat decks from thinning to nothing (a flat
+  sprite at the center plane can't fill a deck-from-below the way the 3-D blob's
+  volume does).
+- **Alpha-blended, not opaque+hashed.** Billboards want smooth soft edges;
+  hashed-alpha grains them AND misbehaves on sub-pixel-thin edge-on ellipses.
+  So the billboard material is `transparent`, `depthWrite:false`.
+- **Solid albedo + alpha edge + SUN light/shadow mask.** One albedo color
+  (`vColor`); the edge is alpha (an earlier rim brighten made a hard white
+  boundary ring). Shading is a world-anchored **light/shadow mask keyed on the
+  SUN** — `frontLit = dot(viewDir, sunW)` (bright when you see the front-lit
+  side, dark when back-lit) plus a gradient toward the sun's screen projection.
+  A first attempt used a sphere-IMPOSTOR normal (reconstructed from the sprite
+  UV), but that normal is **camera-relative** so the shade *swam* as you looked
+  around — e.g. looking horizontally at lit cloud tops showed them in shadow.
+  Keying on the sun fixes it (tracks the sun, stays pinned to the cloud).
+  Captures sun azimuth + elevation; a flat sprite still can't resolve the full
+  3-D form — the icosphere blobs do.
+- **Coverage / placement threshold.** `minDensity` (live "cover thresh" slider)
+  gates BOTH the fine puffs and the coarse envelope, so one control thins the
+  whole sky (0.05 = full field → 0.30 = sparse scattered). The direct lever for
+  "too many clouds." Blob size is already density-driven (coarse `√cover`, fine
+  `fill`), so a size-from-density slider is a trivial add if wanted.
+  **`fogContribution` matches it:** the interior fog now applies the SAME
+  threshold (returns 0 below `minDensity`, remapped 0→1 above), so raising the
+  cover slider doesn't leave "invisible fog" in gaps where a cloud was culled —
+  fog fades in exactly as you enter a drawn cloud and thickens with depth.
+- **Sorted far-to-near** (`sortBillboards`) every frame, including off-frames
+  (camera moves between rebuilds). Distance quantized to 2 m + STABLE iSeed
+  tie-break — the proven fix for the original system's coarse-bucket blend-order
+  flicker. Opaque blob variant never sorts.
+- **Result:** soft, fluffy, smooth clouds — a genuinely different aesthetic from
+  the chunky faceted opaque blobs, and it reads well at every altitude. So the
+  answer to "was it the billboards or the size?" is: **mostly the size** — with
+  the corrected walk, billboards look good; the remaining blob-vs-billboard gap
+  is aesthetic (chunky/low-poly vs soft/fluffy) plus the deck-from-below volume
+  cue, not a sizing failure.
+
+### Experiment 3 — Surface Nets (isosurface mesh) — `cloud-surfacenets.ts`
+Built to kill the dense-field LAG: the blob/billboard renderers draw one opaque
+primitive per field maximum and rely on OVERLAP, so a dense field draws many
+layers deep and fill cost scales with TOTAL coverage (worse: the dithered
+`discard` defeats early-Z). Surface Nets samples density on a local tangent grid
+around the camera, places one vertex per boundary cell (avg of edge crossings),
+and stitches quads — rendering ONLY the cloud surface. Lab mode `surfacenets`.
+- **Geometry verified correct** (a solid-color debug fills the view; the camera
+  at 8 km sits *between* deck top and cirrus, engulfed in surface).
+- **Normals from the density gradient** (free — uses the 8 corners already
+  gathered; winding-independent) → real world-anchored toon shading.
+- **Deck-only (layer 0).** A thin smooth cirrus veil on top caps the stack flat
+  and doubles the grid; restricting to layer 0 shows the deck and halves cost.
+- **Edge fade by HORIZONTAL distance** from the camera column (the patch is
+  centred under the camera), not 3-D distance — else a deck viewed from altitude
+  fades just for being far below.
+- **Floating origin:** mesh anchored at the ground point, vertices stored
+  RELATIVE to it, so float32 stays precise at planetary radius.
+
+**v1 findings / open issues:**
+1. **The field is SMOOTH at 600 m.** Surface Nets is honest to the density
+   field, and the deck top has little 600-m-scale relief — the blobs' lumpiness
+   was largely billow displacement + clustering, NOT the field. So the surface
+   reads flat from above. Bumpy cumulus needs added field detail OR vertex
+   displacement (billow) on the extracted surface.
+2. **CPU sampling is the new bottleneck** (~7 ms deck-only; ~10 k corner samples)
+   — it trades GPU overdraw for CPU. Needs a corner cache (snap the grid to a
+   world lattice so corners persist as the camera moves) before it beats the
+   blobs on cost.
+3. **Patch boundary / shell crossfade** is visible (the dither arc at the patch
+   edge); the surface fades by horizontal distance but the shell still fades by
+   3-D distance, so they don't meet cleanly. Multi-resolution (fine near, coarse
+   out) or a matched crossfade is the fix.
+4. Entry (near-plane dissolve) + fog reused as-is.
+The architecture is proven (overdraw gone); it needs detail + a corner cache +
+crossfade polish to be a clear win.
+
+**Billow added (`billow3` / `SURF_BILLOW_AMP`), but it doesn't rescue the look.**
+High-frequency 3-D value noise (above the grid Nyquist) is added to density
+before extraction, gated by density (no spurious puffs in clear sky), so the
+isosurface AND its gradient normals get lumps. Geometrically correct, but the
+surface STILL reads as a smooth grey mass from every realistic angle: deck tops
+and cumulus bases are inherently flat, the camera is often engulfed, and at
+viewing distance with high sun the gentle relief barely shades. **Conclusion:
+the bottleneck is now SHADING/READABILITY, not geometry.** To look like cloud it
+needs the cues the blobs/billboards have — ambient occlusion in the valleys,
+fresnel rim translucency, fragment-scale normal perturbation, and a darker base
+→ bright top gradient — i.e. a real shading pass, plus the corner cache for cost.
+That's a meaningful amount of work; meanwhile the blobs already read as cloud.
+**Pragmatic alternative for the LAG specifically:** the early-Z two-pass split on
+the blobs (solid pass without `discard` → early-Z on; fading/edge pass with
+`discard`) should cut dense-field fill cost without the surface-nets readability
+and CPU tradeoffs. Recommended next step unless committing to surface-nets
+shading.
+
 ### Experiment 2 — Analytic raymarched shell (the discussion's option B)
 
 A single shell sphere whose fragment shader marches the **thin** atmosphere
@@ -210,12 +314,25 @@ for now; the approach (the actual "don't punch a polygon wall" goal) works.
   Cache is shared with the geomorph parent lookups, so collapse targets stay
   identical across frames.
 
-**STILL OPEN — occlusion / early-Z.** Opaque + depthWrite gives per-fragment
-depth rejection, BUT the `discard` in the hashed-alpha path **disables early-Z**
-on most GPUs, so every fragment runs the full shader before the depth test —
-overdraw, worst inside dense decks. Fix: split a no-`discard` opaque pass (solid
-blobs, early-Z on, front-to-back) from a `discard` pass (only fading/edge/entry
-blobs). Bigger change (two draws / materials); deferred.
+**Overdraw / early-Z — early-Z is UNAVAILABLE here.** The cloud shaders run with
+`logarithmicDepthBuffer` (required so clouds depth-test correctly against the
+log-depth planet/terrain), which makes every fragment **write `gl_FragDepth`** —
+and that alone forces **late-Z** regardless of `discard`. So a no-`discard` pass
+would NOT regain early-Z; occluded opaque fragments shade no matter what. (The
+two-pass split idea is moot here.)
+
+**DONE — CPU containment cull** (`cullContainedBlobs`, mesh variant): achieves
+what early-Z would, on the CPU — a blob whose VOLUME is fully inside a larger
+opaque blob is never visible, so it's dropped before submit (spatial hash at the
+mean radius; conservative margin 0.82 + 3-D distance so a partly-visible blob is
+never culled). Measured: **53 % culled** on a solid stratus deck, **55 %**
+above-deck, **26 %** inside a broken deck, **3 %** on a sparse field — i.e. it
+removes ~half the overdraw exactly where dense fields lag, and ~nothing where
+there's nothing to cull, with NO visual change (the deck stays solid). Cheap
+(sub-ms hash). LIMITATION: only removes CONTAINED blobs, not all OCCLUDED ones
+(a blob *behind* another, not inside it, still shades then fails late-Z). For the
+rest, the surface-extraction architecture (Exp. 3) is the only full fix, or fewer
+/cheaper blobs (lower `BLOB_ICO_DETAIL`, sooner far-fade).
 
 ### 4.7 Cel / flat-shaded art direction (recommended, game-wide)
 The blob shader already uses banded (cel) diffuse + flat per-face normals from

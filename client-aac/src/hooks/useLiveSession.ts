@@ -10,6 +10,7 @@ import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
+import { API_BASE_URL } from "@/lib/api-base";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
 /** Context passed when guessing is launched from the sentence builder for a slot.
@@ -1010,10 +1011,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         }
       }
 
-      // Build WebSocket URL from VITE_API_URL (same base as HTTP requests)
-      // In dev: VITE_API_URL="http://localhost:5000" → "ws://localhost:5000/ws/live"
-      // In prod: VITE_API_URL="" or unset → same origin as page
-      const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+      // Build WebSocket URL from the resolved API base (same base as HTTP requests).
+      // In dev: "http://localhost:5000" → "ws://localhost:5000/ws/live"
+      // Electron: demo backend → "wss://aivota-demo.onrender.com/ws/live"
+      // Web (staging/demo/prod): "" → same origin as page
+      const apiBase = API_BASE_URL;
       // Append ?test=1 if the page URL has ?test=1 — routes to the MinimalLiveRelay
       // on the server, bypassing tools, system prompt, and state machine.
       const isTestMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "1";

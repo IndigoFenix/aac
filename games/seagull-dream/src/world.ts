@@ -16,6 +16,9 @@ import {
   type StarRecord,
 } from "./galaxy";
 
+// Scratch for the camera world forward passed to bodies (for cloud view-cone cull).
+const _camFwd = new THREE.Vector3();
+
 // Space-first world.
 //
 // The world owns a Universe registry of stars (a few thousand entries, each
@@ -932,11 +935,12 @@ export function createWorld(
     update(camera, screenHeightPx, dt) {
       simTime += dt;
       const cameraPos = camera.position;
+      camera.getWorldDirection(_camFwd); // normalized world forward
       for (const b of bodies) {
         advanceBodyTransform(b, simTime, dt);
       }
       for (const b of bodies) {
-        b.update(cameraPos, dt);
+        b.update(cameraPos, dt, _camFwd);
       }
       updateHalos(camera, screenHeightPx);
     },

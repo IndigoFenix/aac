@@ -2403,13 +2403,6 @@ export const ko = {
     singleGlyphButtonsDesc: "AI가 생성하는 버튼을 하나의 기호나 구문으로 제한합니다. 의사소통 초보자에게 유용합니다.",
     glyphInputTranslation: "음성의 글리프 변환",
     glyphInputTranslationDesc: "사용자에게 향한 말(AI의 답변과 주변에서 들리는 말)을 헤더에 글리프 띠로 표시합니다. 실험적 기능입니다.",
-    // Startup
-    startupMode: "시작 모드",
-    startupModeDesc: "AAC 세션 시작 시 로드할 맥락의 양을 설정합니다",
-    startupFast: "빠른 시작",
-    startupThorough: "상세 시작",
-    startupFastDesc: "즉시 시작. 메모리에서 메모와 설정을 로드합니다 - AI 준비 없음.",
-    startupThoroughDesc: "상세 시작. 목표, 의료 정보 및 교육 데이터를 미리 로드한 후 AI가 세션 브리핑을 작성합니다.",
     // Eyegaze
     eyegaze: "시선 선택",
     eyegazeDesc: "마우스 또는 외부 시선 추적기를 사용하여 머무름 기반 기호 선택을 활성화합니다",

@@ -1,7 +1,8 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { API_BASE_URL } from "./api-base";
 
-// Read and sanitize the base URL from Vite env
-const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+// API_BASE_URL is resolved per environment (staging/demo/electron/dev) in
+// api-base.ts. An empty string means same-origin.
 
 // Helper to join base + path safely — exported as apiUrl for img src etc.
 export function apiUrl(path: string): string {

@@ -2403,13 +2403,6 @@ export const fr = {
     singleGlyphButtonsDesc: "Limite les boutons générés par l'IA à un seul symbole ou expression. Utile pour les communicateurs débutants.",
     glyphInputTranslation: "Traduction des paroles en symboles",
     glyphInputTranslationDesc: "Affiche les paroles adressées à l'utilisateur (les réponses de l'IA et les paroles entendues) sous forme de bande de symboles dans l'en-tête. Expérimental.",
-    // Startup
-    startupMode: "Mode de démarrage",
-    startupModeDesc: "Combien de contexte charger au démarrage d'une session AAC",
-    startupFast: "Rapide",
-    startupThorough: "Approfondi",
-    startupFastDesc: "Démarrage instantané. Charge les notes et préférences de la mémoire — pas d'appel de préparation IA.",
-    startupThoroughDesc: "Démarrage approfondi. Précharge les objectifs, les informations médicales et les données éducatives, puis demande à l'IA de compiler un briefing de session.",
     // Eyegaze
     eyegaze: "Sélection par suivi du regard",
     eyegazeDesc: "Activer la sélection par temps de fixation avec la souris ou un eye-tracker externe",

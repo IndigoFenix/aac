@@ -2403,13 +2403,6 @@ export const es = {
     singleGlyphButtonsDesc: "Restringe los botones generados por la IA a un solo símbolo o frase. Útil para comunicadores tempranos.",
     glyphInputTranslation: "Traducción del habla a símbolos",
     glyphInputTranslationDesc: "Muestra el habla dirigida al usuario (las respuestas de la IA y el habla escuchada) como una franja de símbolos en el encabezado. Experimental.",
-    // Startup
-    startupMode: "Modo de inicio",
-    startupModeDesc: "Cuánto contexto cargar al iniciar una sesión AAC",
-    startupFast: "Rápido",
-    startupThorough: "Exhaustivo",
-    startupFastDesc: "Inicio instantáneo. Carga notas y preferencias de la memoria — sin llamada de calentamiento de IA.",
-    startupThoroughDesc: "Inicio exhaustivo. Precarga objetivos, información médica y datos educativos, luego pide a la IA que compile un informe de sesión.",
     // Eyegaze
     eyegaze: "Selección por seguimiento ocular",
     eyegazeDesc: "Habilitar selección basada en permanencia usando ratón o rastreador ocular externo",

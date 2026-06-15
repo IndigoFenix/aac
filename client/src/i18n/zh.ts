@@ -2403,13 +2403,6 @@ export const zh = {
     singleGlyphButtonsDesc: "将AI生成的按钮限制为单个符号或短语。适合初学交流者。",
     glyphInputTranslation: "语音符号翻译",
     glyphInputTranslationDesc: "将对用户说的话（AI的回复和听到的话语）以符号条形式显示在顶部。实验性功能。",
-    // Startup
-    startupMode: "启动模式",
-    startupModeDesc: "启动 AAC 会话时加载多少上下文",
-    startupFast: "快速",
-    startupThorough: "全面",
-    startupFastDesc: "即时启动。从记忆中加载笔记和偏好——无需 AI 预热。",
-    startupThoroughDesc: "全面启动。预加载目标、医疗信息和教育数据，然后让 AI 编写会话简报。",
     // Eyegaze
     eyegaze: "眼动选择",
     eyegazeDesc: "使用鼠标或外部眼动追踪器启用基于停留的符号选择",
