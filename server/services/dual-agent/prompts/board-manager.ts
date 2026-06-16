@@ -186,6 +186,8 @@ WHO the user is talking to changes WHAT they need to say. A \`[REGISTER]\` note 
       - Surface a need (water, bathroom, help) ONLY if the user clearly signals one — don't fill a social board with requests.
 
 Bias, don't lock: a peer board may still carry one "I need a break" escape, and a helper board can still be warm.
+
+**Mark each ${T.button}'s \`role\`.** Set \`role: "bid"\` on questions/requests that hand the turn to the other side and expect a response ("What about you?", "Why?", "Can you help me?"). Set \`role: "reply"\` (or omit) on answers, reactions, and acknowledgements that don't ("Me too", "I'm tired", "I want water"). On a conversational board (peer / facilitator), ALWAYS include at least 2–3 \`bid\` ${T.button}s — the follow-up questions the user can ask back — so they can keep the conversation going.
 </conversation_register>
 
 <glyph>
@@ -766,6 +768,11 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     label: {
       type: "string",
       description: `Short text shown on the ${T.button} face, in the user's language. Not voiced.${opts.includeMetaButtonField ? ` Ignored when \`button_type\` is set.` : ""}`,
+    },
+    role: {
+      type: "string",
+      enum: ["reply", "bid"],
+      description: `The conversational ROLE of this ${T.button}. "reply" = an answer, reaction, or acknowledgement that does NOT require the other side to respond ("Me too", "I'm tired", "I want water"). "bid" = a question or request that HANDS THE TURN to the other side and expects a response ("What about you?", "Why?", "Can you help me?"). Default "reply" if omitted. See <conversation_register>.`,
     },
     rowSpan: {
       type: "integer",

@@ -40,6 +40,7 @@ interface DualAgentContextType {
   // Audio state
   audioEnabled: boolean;
   isPlaying: boolean;
+  audioPlayingTag: string | null;
   voiceEnabled: boolean;
   isRecording: boolean;
   audioLevel: number;
@@ -198,7 +199,16 @@ interface DualAgentContextType {
   // Social trainer (server-owned session) — see dual-agent-types.ts.
   socialSession: import("@/hooks/dual-agent-types").SocialSessionInfo | null;
   socialPeerState: import("@shared/social-bot/state").BotStatePayload | null;
+  socialPeerDebug: import("@shared/social-bot/debug").SocialPeerDebugSnapshot | null;
+  socialPeerPreview: import("@/hooks/dual-agent-types").SocialPeerPreview | null;
+  reconfigureSocialPeer: (params: import("@shared/social-bot/debug").SocialPeerParams) => void;
   notifySocialTrainerStarted: () => void;
+  /** DEBUG-only: effective peer voice-pitch shift (semitones) + live setter. */
+  peerVoicePitch: number;
+  setPeerVoicePitch: (semitones: number) => void;
+  /** DEBUG-only: effective peer formant shift (semitones) + live setter. */
+  peerVoiceFormant: number;
+  setPeerVoiceFormant: (semitones: number) => void;
 
   // Construction board (sentence builder)
   sendConstructionState: (state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void;
@@ -831,6 +841,7 @@ function ProviderShell({
 
     audioEnabled: agent.audioEnabled,
     isPlaying: agent.isPlaying,
+    audioPlayingTag: agent.audioPlayingTag ?? null,
     voiceEnabled: agent.voiceEnabled,
     isRecording: agent.isRecording,
     audioLevel: agent.audioLevel,
@@ -934,7 +945,14 @@ function ProviderShell({
     setBuilderVisible: agent.setBuilderVisible ?? (() => { /* live API not available */ }),
     socialSession: agent.socialSession ?? null,
     socialPeerState: agent.socialPeerState ?? null,
+    socialPeerDebug: agent.socialPeerDebug ?? null,
+    socialPeerPreview: agent.socialPeerPreview ?? null,
+    reconfigureSocialPeer: agent.reconfigureSocialPeer ?? (() => { /* live API not available */ }),
     notifySocialTrainerStarted: agent.notifySocialTrainerStarted ?? (() => { /* live API not available */ }),
+    peerVoicePitch: agent.peerVoicePitch ?? 0,
+    setPeerVoicePitch: agent.setPeerVoicePitch ?? (() => { /* live API not available */ }),
+    peerVoiceFormant: agent.peerVoiceFormant ?? 0,
+    setPeerVoiceFormant: agent.setPeerVoiceFormant ?? (() => { /* live API not available */ }),
 
     sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
     constructionSuggestions: agent.constructionSuggestions ?? null,

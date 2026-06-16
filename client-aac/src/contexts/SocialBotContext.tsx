@@ -70,8 +70,8 @@ export function SocialBotProvider({ children }: ProviderProps) {
     socialSession,
     socialPeerState,
     notifySocialTrainerStarted,
-    currentMessage,
     isPlaying,
+    audioPlayingTag,
     emote,
   } = useDualAgentContext();
 
@@ -134,11 +134,13 @@ export function SocialBotProvider({ children }: ProviderProps) {
     };
   }, [launchApp, dismissApp]);
 
-  // Mouth flap while the peer's TTS audio plays. Layered sines give a
-  // speech-like cadence without an audio analyser tap.
+  // Mouth flap while the peer's OWN voice plays. Layered sines give a
+  // speech-like cadence without an audio analyser tap. Gated to the "avatar"
+  // audio tag so the mouth stays still while the STUDENT's button-press
+  // utterance (tag "utterance") plays — the peer isn't speaking then.
   const [speakingLevel, setSpeakingLevel] = useState(0);
   useEffect(() => {
-    if (!active || !isPlaying) {
+    if (!active || !isPlaying || audioPlayingTag !== "avatar") {
       setSpeakingLevel(0);
       return;
     }
@@ -151,7 +153,7 @@ export function SocialBotProvider({ children }: ProviderProps) {
       clearInterval(timer);
       setSpeakingLevel(0);
     };
-  }, [active, isPlaying]);
+  }, [active, isPlaying, audioPlayingTag]);
 
   // Cave click — end the session. dismissApp() clears the local app and
   // sends app_dismissed; the server tears down the peer, restores the
@@ -171,7 +173,9 @@ export function SocialBotProvider({ children }: ProviderProps) {
     expressiveness: socialSession?.expressiveness ?? 0.85,
     legibility: socialSession?.legibility ?? 1,
     speakingLevel,
-    botText: active ? (currentMessage?.content ?? "") : "",
+    // The peer's own line, carried on the per-turn social_peer_state — NOT the
+    // shared currentMessage (which holds the user's input / companion text).
+    botText: active ? (socialPeerState?.text ?? "") : "",
     voiceName: socialSession?.voiceName ?? null,
     characterName: socialSession?.characterName ?? null,
     cancel,

@@ -42,11 +42,14 @@ export default function AppsBoard({ enabledApps, availableCustomApps, onPick, on
   const { t, isRTL } = useLanguage();
 
   const tiles = useMemo<AppTile[]>(() => {
-    const builtIn: AppTile[] = enabledApps.map(a => ({
-      id: a.id,
-      name: a.name,
-      icon: a.icon,
-    }));
+    const builtIn: AppTile[] = enabledApps
+      // social_trainer lives on the home board ("Practice friend"), not here.
+      .filter(a => a.id !== "social_trainer")
+      .map(a => ({
+        id: a.id,
+        name: a.name,
+        icon: a.icon,
+      }));
     const custom: AppTile[] = availableCustomApps.map(a => ({
       id: a.id,
       name: a.name,

@@ -110,13 +110,14 @@ import {
 import type { AACMuteState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
 import { getLanguageName } from "@shared/language-names";
-import { languageLevelFromInt } from "@shared/aac-language-level";
+import { languageLevelFromInt, type LanguageLevel } from "@shared/aac-language-level";
 import type { InterlocutorRegister } from "@shared/interlocutor-register";
+import type { SocialPeerParams } from "@shared/social-bot/debug";
 import { generatePersona, describePersona, buildSlpConfig, type GeneratedPersona } from "../social-bot/persona-generator";
-import { COMPETENCIES, type Archetype, type Competency } from "../social-bot/personality-and-challenge";
+import { COMPETENCIES, type Archetype, type Competency, type SlpConfig } from "../social-bot/personality-and-challenge";
 import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
 import { resolveAppStartupParams, type StartupResolveContext } from "./startup-resolver";
-import { pickVoice as pickSocialPeerVoice } from "../social-bot/voice-pick";
+import { pickVoice as pickSocialPeerVoice, peerVoicePitchSemitones, peerVoiceFormantSemitones } from "../social-bot/voice-pick";
 import {
   buildSocialDebriefDirective,
   runSocialSkillAnalysis,
@@ -263,6 +264,18 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
 
 const DEBOUNCE_CONTEXT_UPDATE_MS = 400;
 const DEBOUNCE_MONITOR_CALL_MS = 30_000;
+
+/** Social trainer: after a REPLY press, how long to hold before the peer takes
+ *  its turn — a window for the user to chain a follow-up BID (which fires the
+ *  combined turn immediately). Tunable per a student's response speed via env. */
+const SOCIAL_REPLY_HOLD_MS = Number(process.env.AAC_SOCIAL_REPLY_HOLD_MS ?? 1800);
+/** Facilitator: after a BID press (the user asked the human something), how long
+ *  to wait for the human to answer before offering the user a fresh board. */
+const FACILITATOR_BID_WAIT_MS = Number(process.env.AAC_FACILITATOR_BID_WAIT_MS ?? 4000);
+/** Delay after a practice session ends before a NEW "Practice friend" face is
+ *  generated + sent. Until it arrives the button shows no face and does nothing
+ *  (a deliberate beat between sessions). */
+const PEER_PREVIEW_REGEN_MS = Number(process.env.AAC_PEER_PREVIEW_REGEN_MS ?? 3000);
 
 /** How long the first frame waits for in-flight face recognition before
  *  building its [PEOPLE PRESENT] block. Short so a slow / absent match never
@@ -459,6 +472,7 @@ function buildBoardFromButtons(
     glyphFallback?: string;
     rowSpan?: number;
     colSpan?: number;
+    role?: "reply" | "bid";
     buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
     suggestionKey?: string;
     narrowDimension?: string;
@@ -478,6 +492,7 @@ function buildBoardFromButtons(
         label: b.label,
         spokenText: b.label,
         ...(b.sentence ? { sentence: b.sentence } : {}),
+        ...(b.role ? { role: b.role } : {}),
         ...(b.buttonType ? { buttonType: b.buttonType } : {}),
         ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
         ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
@@ -637,6 +652,29 @@ export class AgentCoordinator {
   } | null = null;
   /** Single-flight guard for the social start/end Speaker swaps. */
   private socialPeerTransition = false;
+  /** Pre-generated peer identity for the home-board "Practice friend" button.
+   *  The client renders this persona's face on the button; when a session
+   *  starts it is REUSED (consumed) so the session face matches the preview.
+   *  Generated without the AI startup resolver (no per-home-board LLM cost);
+   *  engine tuning (difficulty/scenario/skills) is still resolved at start. */
+  private pendingPeerPersona: { persona: GeneratedPersona; voiceName: string; voice: ResolvedVoice } | null = null;
+  /** Delayed regeneration of the preview face after a session ends. */
+  private peerPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Follow-up turn composition (Phase B) ─────────────────────────────
+  /** Social trainer: buffered reply sentence(s) awaiting either a chained BID
+   *  (commit combined immediately) or the hold timer (commit the reply alone). */
+  private socialReplyBuffer: { sentences: string[]; timer: ReturnType<typeof setTimeout> | null; lastEvent: AgentEvent | null } | null = null;
+  /** Facilitator: pending "no answer from the human → offer a fresh board"
+   *  timer started by a BID press; cancelled by a reply press or the human
+   *  actually answering (USER-targeted speech). */
+  private facilitatorBidTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Timestamp of the last statement directed AT the user (a person answering)
+   *  — lets the facilitator bid timer skip the fresh-board if the human replied. */
+  private lastExternalToUserAt = 0;
+  /** Conversational role of the previous (non-repeat) button press. A press
+   *  right after a BID counts as jumping a handed-over turn (Phase C penalty). */
+  private lastPressRole: "reply" | "bid" | null = null;
 
   // ── Repeated-press guard ──────────────────────────────────────────────
   // Some students perseverate on a button — tapping the same one many times.
@@ -1000,6 +1038,7 @@ export class AgentCoordinator {
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
     if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
     if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
+    if (this.peerPreviewTimer) { clearTimeout(this.peerPreviewTimer); this.peerPreviewTimer = null; }
     this.clearStartupTimers();
     // Record any still-open repeat-press burst before the final Monitor pass
     // (runFinalMonitorPass below) so end-of-session perseveration isn't lost.
@@ -1293,6 +1332,11 @@ export class AgentCoordinator {
         // the server to resolve them first. We reuse the SAME routeAppOpen path
         // as the AI's open_app — the only difference is source: "student".
         void this.handleStudentAppOpen(msg.appId, msg.appData);
+        return;
+      case "social_peer_reconfigure":
+        // DEBUG-only: restart the active social peer with custom parameters
+        // from the client debug dialog. Self-guards on debugMode + active session.
+        void this.applyPeerReconfigure(msg.params);
         return;
       case "social_trainer_started":
         // Client-initiated launch (apps surface / debug helper). The
@@ -1614,7 +1658,7 @@ export class AgentCoordinator {
     //    conversation kick-offs.
     const student = sessionCache?.monitorAgent.getStudent?.();
     const studentLang = student?.primaryLanguage || "en";
-    const homeBoard = buildDefaultHomeBoard(studentLang);
+    const homeBoard = buildDefaultHomeBoard(studentLang, this.isSocialTrainerEnabled());
     this.loadedBoardId = "__home__";
     const homePage = (homeBoard as any).pages?.[0];
     if (homePage?.buttons) {
@@ -1629,6 +1673,8 @@ export class AgentCoordinator {
     runInSessionContext(this.sessionId, this.debugMode, () => {
       logLiveSession("HOME_BOARD_PUSHED", `lang=${studentLang} buttons=[${this.currentBoardLabels.join(", ")}]`);
     });
+    // Prime the "Practice friend" face so the home button shows a peer.
+    this.preparePeerPreview("home_board");
 
     // (Home board is ensured in availableBoards earlier, before prompt build.)
     //
@@ -1935,6 +1981,24 @@ export class AgentCoordinator {
     this.lastPressSignature = signature;
     this.pressRepeatCount = 1;
 
+    // 0c. INTERRUPT (Phase C). A fresh press means the student wants the floor —
+    //     cut off whatever the AI/peer is currently saying so their own voice
+    //     isn't talked over. In a social session this is a turn-taking
+    //     VIOLATION only if the peer had actually started speaking, or the last
+    //     press was a BID (the user handed the turn over, then jumped it). The
+    //     director docks turnTaking + loses rapport on the next turn.
+    const pressRole = this.pressedButtonRole(label);
+    const wasAiSpeaking = this.isAiSpeaking();
+    this.interruptAiSpeech();
+    if (this.socialPeer && (wasAiSpeaking || this.lastPressRole === "bid")) {
+      this.socialPeer.agent.noteUserInterruption();
+      flowNote(
+        "COORDINATOR",
+        `Social turn-taking violation — interrupting press (peerSpeaking=${wasAiSpeaking}, afterBid=${this.lastPressRole === "bid"}).`,
+      );
+    }
+    this.lastPressRole = pressRole;
+
     // 1. Surface the utterance to the client UI immediately (clears
     //    previous text). noAudioClear=false matches the legacy contract.
     //    NOTE: this message is for UI display only — it carries text,
@@ -1965,7 +2029,128 @@ export class AgentCoordinator {
       timestamp: Date.now(),
       label,
       sentence,
+      role: this.pressedButtonRole(label),
     });
+  }
+
+  /** Conversational role of the pressed button, looked up from the current
+   *  board by label. Defaults to "reply" (BoardManager omits it on plain
+   *  answers; only bids are marked). */
+  private pressedButtonRole(label: string): "reply" | "bid" {
+    const b = this.currentBoardButtons.find((x) => x.label === label) as { role?: "reply" | "bid" } | undefined;
+    return b?.role === "bid" ? "bid" : "reply";
+  }
+
+  /** Join composed press sentences into one natural turn (each ends with
+   *  punctuation so the peer reads "Me too. What about you?"). */
+  private static joinPressSentences(sentences: string[]): string {
+    return sentences
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`))
+      .join(" ")
+      .trim();
+  }
+
+  /** SOCIAL TRAINER press (Phase B). A BID fires the peer's turn immediately,
+   *  combining any buffered reply; a REPLY buffers, shows a follow-up board,
+   *  and holds the peer's turn briefly so the user can chain a bid. */
+  private handleSocialTrainerPress(event: ButtonPressedEvent): void {
+    if (event.role === "bid") {
+      this.commitSocialTurn(event.sentence, event);
+      return;
+    }
+    if (!this.socialReplyBuffer) this.socialReplyBuffer = { sentences: [], timer: null, lastEvent: null };
+    const buf = this.socialReplyBuffer;
+    buf.sentences.push(event.sentence);
+    buf.lastEvent = event;
+    if (buf.timer) clearTimeout(buf.timer);
+    buf.timer = setTimeout(() => this.commitSocialTurn(null, null), SOCIAL_REPLY_HOLD_MS);
+    flowNote("COORDINATOR", `Social REPLY buffered ("${event.sentence}") — follow-up board now; peer turn in ${SOCIAL_REPLY_HOLD_MS}ms unless a bid chains.`);
+    this.invokeBoardManager([event]);
+  }
+
+  /** Send the buffered social reply(ies) (+ an optional chained bid) to the
+   *  peer as ONE combined turn, then schedule the response board. */
+  private commitSocialTurn(extraSentence: string | null, extraEvent: ButtonPressedEvent | null): void {
+    const buf = this.socialReplyBuffer;
+    if (buf?.timer) clearTimeout(buf.timer);
+    const sentences = [...(buf?.sentences ?? [])];
+    if (extraSentence) sentences.push(extraSentence);
+    const lastEvent = extraEvent ?? buf?.lastEvent ?? null;
+    this.socialReplyBuffer = null;
+    if (!this.socialPeer) return; // session ended during the hold
+    const combined = AgentCoordinator.joinPressSentences(sentences);
+    if (!combined) return;
+    flowNote("COORDINATOR", `Social peer turn: "${combined}"`);
+    this.speaker?.sendUserTurn(`[USER to YOU] "${combined}"`);
+    this.scheduleDeferredBoardMgr(lastEvent, "social_press");
+  }
+
+  /** FACILITATOR press (Phase B). A REPLY keeps the user elaborating (follow-up
+   *  board now); a BID hands the turn to the human, so wait for them to answer
+   *  before offering a fresh board (cancelled by the next press or their reply). */
+  private handleFacilitatorPress(event: ButtonPressedEvent): void {
+    this.clearFacilitatorBidTimer();
+    if (event.role === "bid") {
+      const bidAt = Date.now();
+      this.facilitatorBidTimer = setTimeout(() => {
+        this.facilitatorBidTimer = null;
+        if (this.lastExternalToUserAt > bidAt) return; // the human answered — board already handled
+        flowNote("COORDINATOR", "Facilitator bid drew no response — offering a fresh board.");
+        this.invokeBoardManager([event]);
+      }, FACILITATOR_BID_WAIT_MS);
+      flowNote("COORDINATOR", `Facilitator BID — holding ${FACILITATOR_BID_WAIT_MS}ms for the other person to answer.`);
+    } else {
+      this.invokeBoardManager([event]);
+    }
+  }
+
+  private clearFacilitatorBidTimer(): void {
+    if (this.facilitatorBidTimer) { clearTimeout(this.facilitatorBidTimer); this.facilitatorBidTimer = null; }
+  }
+
+  /** Whether the social-trainer app is enabled for this student. Drives the
+   *  "Practice friend" home-board button + its persona preview. */
+  private isSocialTrainerEnabled(): boolean {
+    const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+    // appState.enabledApps is a string[] of app IDs (see types.ts).
+    const apps = (cache?.state.appState?.enabledApps || []) as string[];
+    return apps.includes("social_trainer");
+  }
+
+  /** The student's age in whole years from their birthDate, or undefined. */
+  private studentAgeYears(): number | undefined {
+    const student = this.sessionId
+      ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent.getStudent?.()
+      : undefined;
+    const birthDate = (student as { birthDate?: string | Date } | undefined)?.birthDate;
+    if (!birthDate) return undefined;
+    const ms = Date.now() - new Date(birthDate).getTime();
+    if (!Number.isFinite(ms) || ms <= 0) return undefined;
+    return Math.floor(ms / (365.25 * 24 * 60 * 60 * 1000));
+  }
+
+  /** Semitone pitch shift for the social peer's voice so an adult Gemini voice
+   *  reads as roughly the student's age. `AAC_PEER_VOICE_PITCH` overrides for
+   *  tuning across voice timbres. Applied client-side to the peer's audio. */
+  private peerVoicePitch(): number {
+    const override = Number(process.env.AAC_PEER_VOICE_PITCH);
+    if (Number.isFinite(override) && process.env.AAC_PEER_VOICE_PITCH !== undefined && process.env.AAC_PEER_VOICE_PITCH !== "") {
+      return override;
+    }
+    return peerVoicePitchSemitones(this.studentAgeYears());
+  }
+
+  /** Semitone formant (vocal-tract) shift for the social peer — the primary
+   *  "younger" cue (see voice-pick). `AAC_PEER_VOICE_FORMANT` overrides for
+   *  tuning. Applied client-side via the cepstral formant shifter. */
+  private peerVoiceFormant(): number {
+    const override = Number(process.env.AAC_PEER_VOICE_FORMANT);
+    if (Number.isFinite(override) && process.env.AAC_PEER_VOICE_FORMANT !== undefined && process.env.AAC_PEER_VOICE_FORMANT !== "") {
+      return override;
+    }
+    return peerVoiceFormantSemitones(this.studentAgeYears());
   }
 
   /**
@@ -2095,7 +2280,7 @@ export class AgentCoordinator {
       // Reload the home board directly. Notify the AI via context only.
       const cache = dualAgentService.getSessionCache(this.sessionId!);
       const studentLang = cache?.monitorAgent.getStudent?.()?.primaryLanguage || "en";
-      const homeBoard = buildDefaultHomeBoard(studentLang);
+      const homeBoard = buildDefaultHomeBoard(studentLang, this.isSocialTrainerEnabled());
       this.loadedBoardId = "__home__";
       const homePage = (homeBoard as any).pages?.[0];
       if (homePage?.buttons) {
@@ -2110,6 +2295,29 @@ export class AgentCoordinator {
       const homeContext = `[CONTEXT] The user pressed Home. The home ${T.board} is loaded with its native navigation ${T.button}s. Wait for them to press one before changing the board.`;
       this.observer?.sendContextInjection(homeContext);
       this.speaker?.sendContextInjection(homeContext);
+      // Re-send the "Practice friend" face for the freshly-loaded home board.
+      this.preparePeerPreview("home_press");
+      return;
+    }
+
+    // "Practice friend" (social-trainer home button) — toggles the session.
+    // Idle → start (reusing the preview persona so the face matches). Active →
+    // end (mid-session the button shows the peer's face with an X). The client
+    // only fires this when a face is present, so we never start during the
+    // post-session cooldown.
+    if (msg.instruction?.includes("[PRACTICE FRIEND]")) {
+      if (this.socialPeer) void this.endSocialPeerSession("user_exit");
+      else void this.startSocialPeerSession("client_launch");
+      return;
+    }
+
+    // Pressing a "talk" button (Interact = companion, Talk = facilitator) while
+    // a practice session is running ends it immediately. The end flow restores
+    // the companion conversation + debrief; the user can pick a mode again from
+    // the restored home board.
+    if (this.socialPeer && (msg.instruction?.includes("[INTERACT]") || msg.instruction?.includes("[ASSIST]"))) {
+      flowNote("COORDINATOR", `Talk button "${msg.label}" pressed during practice — ending session.`);
+      void this.endSocialPeerSession("user_switched_mode");
       return;
     }
 
@@ -2806,20 +3014,30 @@ export class AgentCoordinator {
               "COORDINATOR",
               `narrowing-press "${event.label}" → Speaker context only (directive drives turn).`,
             );
+          } else if (this.socialPeer) {
+            // SOCIAL TRAINER (Phase B): a BID fires the peer's turn now
+            // (combining any buffered reply); a REPLY shows a follow-up board
+            // and holds the peer's turn briefly so the user can chain a bid.
+            this.handleSocialTrainerPress(event);
           } else {
-            // Press addressed to the AI — Speaker should respond.
+            // COMPANION (unchanged): press addressed to the AI — Speaker
+            // responds; defer the BM (Speaker's reply triggers REPLIES, with
+            // the timer as a fallback).
             this.speaker?.sendUserTurn(speakerRendered);
-            // Defer the BM invocation: Speaker's reply will trigger a
-            // REPLIES rebuild that supersedes FOLLOW-UPS. If Speaker
-            // doesn't reply within DEFERRED_BM_PRESS_MS, the timer fires
-            // FOLLOW-UPS as a fallback.
             this.scheduleDeferredBoardMgr(event, "press");
           }
         } else {
-          // Press addressed to someone else (or USER itself) — Speaker
-          // stays quiet, no REPLIES event coming. Build FOLLOW-UPS now.
+          // Press addressed to someone else (or USER itself) — Speaker stays
+          // quiet, no REPLIES event coming.
           this.speaker?.sendContextInjection(speakerRendered);
-          this.invokeBoardManager([event]);
+          if (this.currentInteractionMode === "facilitator" && !this.socialPeer) {
+            // FACILITATOR (Phase B): a REPLY shows follow-ups now; a BID hands
+            // the turn to the human, so wait before offering a fresh board.
+            this.handleFacilitatorPress(event);
+          } else {
+            // Default (e.g. companion press to USER) — build FOLLOW-UPS now.
+            this.invokeBoardManager([event]);
+          }
         }
         this.appendToConversationLog("user", speakerRendered);
         return;
@@ -3010,7 +3228,14 @@ export class AgentCoordinator {
     // BoardManager rebuilds whenever the USER needs to reply — i.e. the
     // target was USER. DEVICE-targeted speech goes to Speaker; ambient
     // speech doesn't move the board.
-    if (toUser) this.invokeBoardManager([event]);
+    if (toUser) {
+      // An external statement aimed at the user just landed — in facilitator
+      // mode this is the "someone answered the bid" signal, so cancel any
+      // pending no-response board (Phase B).
+      this.lastExternalToUserAt = Date.now();
+      this.clearFacilitatorBidTimer();
+      this.invokeBoardManager([event]);
+    }
   }
 
   private enqueueContextUpdate(event: ContextUpdateEvent): void {
@@ -3860,6 +4085,8 @@ export class AgentCoordinator {
     // (peer → social, helper → needs). Facilitator carries the register; going
     // back to companion (talking to the AI) clears it to a balanced default.
     this.currentInterlocutorRegister = event.mode === "facilitator" ? event.register : undefined;
+    // Leaving facilitator drops any pending bid-wait board (Phase B).
+    if (event.mode !== "facilitator") this.clearFacilitatorBidTimer();
     flowNote(
       "COORDINATOR",
       `Mode change: ${prev} → ${event.mode}${event.register ? ` [${event.register}]` : ""}${event.reason ? ` (${event.reason})` : ""}`,
@@ -3929,11 +4156,17 @@ export class AgentCoordinator {
         id: a.id,
         name: a.name,
         icon: a.icon,
-        // social_trainer has a startup spec but is server-managed (its peer is
-        // resolved inside startSocialPeerSession and launched via the
-        // social_trainer_started message), so it does NOT use the client
-        // request_app_open round-trip — keep its flag false.
-        needsStartupResolution: !!a.startup && a.id !== "social_trainer",
+        // Apps that need the server to assemble their open payload must route a
+        // student tap through the request_app_open round-trip instead of
+        // launching locally:
+        //  - apps with a startup spec → server resolves startup params, EXCEPT
+        //    social_trainer, which is server-managed via its own
+        //    social_trainer_started message (keep its flag false).
+        //  - youtube → server attaches the permitted channels/playlists/videos
+        //    (routeAppOpen). Without the round-trip the client launches with no
+        //    payload and always shows the "unavailable" screen.
+        needsStartupResolution:
+          a.id === "youtube" || (!!a.startup && a.id !== "social_trainer"),
       }));
 
     const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
@@ -4167,6 +4400,200 @@ export class AgentCoordinator {
    * Entry points: Speaker's open_app("social_trainer") tool call, or the
    * client's social_trainer_started message (apps surface / debug).
    */
+  /** Construct (not start) a social peer with the standard coordinator
+   *  callbacks — shared by the normal launch and the debug reconfigure. */
+  private buildPeerAgent(opts: {
+    persona: GeneratedPersona;
+    languageName: string;
+    model: string;
+    difficulty?: number;
+    languageLevel?: LanguageLevel;
+    slpConfig: SlpConfig;
+  }): SocialPeerSpeakerAgent {
+    // Captured for the usage closure — billing must survive teardown races.
+    const usageSessionId = this.sessionId ?? "";
+    const usageStudentId = this.studentId ?? "";
+    const usageUserId = this.userId;
+    return new SocialPeerSpeakerAgent({
+      persona: opts.persona,
+      languageName: opts.languageName,
+      model: opts.model,
+      difficulty: opts.difficulty,
+      languageLevel: opts.languageLevel,
+      slpConfig: opts.slpConfig,
+      callbacks: {
+        onEvent: (e) => this.onSpeakerEvent(e),
+        onSpeakText: (text) => this.onSpeakerSpeakText(text),
+        onState: (state) => this.send({ type: "social_peer_state", data: state }),
+        onUsage: (usage) => {
+          dualAgentService.trackHttpUsage(
+            usageSessionId, usageStudentId, usageUserId, "gemini", opts.model,
+            usage.promptTokens, usage.completionTokens, usage.cachedTokens ?? 0, "social-peer",
+          ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(social peer) failed:", err));
+        },
+        // DEBUG-only: ship the full director internals to the client each turn.
+        onDebug: (snapshot) => { if (this.debugMode) this.send({ type: "social_peer_debug", data: snapshot }); },
+        // The user wound the conversation down — end the session after the
+        // peer's farewell finishes (restores companion + runs the debrief).
+        onConversationEnd: () => this.scheduleNaturalSocialEnd(),
+        onError: (err) => console.error("[AgentCoordinator] Social peer error:", err),
+      },
+    });
+  }
+
+  /** The director flagged the user wants to end — let the farewell play, then
+   *  wind the session down (restore companion + debrief). Single-flight. */
+  private naturalEndPending = false;
+  private scheduleNaturalSocialEnd(): void {
+    if (!this.socialPeer || this.socialPeerTransition || this.naturalEndPending) return;
+    this.naturalEndPending = true;
+    const farewellTts = this.aiTtsChain; // the goodbye TTS just queued
+    flowNote("COORDINATOR", "Natural end requested — winding down after the farewell plays.");
+    void (async () => {
+      try { await farewellTts; } catch { /* farewell TTS failed — end anyway */ }
+      // Grace so the last audio frame plays out on the client before the app closes.
+      await new Promise((r) => setTimeout(r, 1200));
+      this.naturalEndPending = false;
+      void this.endSocialPeerSession("natural_end");
+    })();
+  }
+
+  /** DEBUG-only: restart the active social peer with fully custom parameters
+   *  from the client debug dialog. Bypasses the startup resolver entirely. */
+  private async applyPeerReconfigure(params: SocialPeerParams): Promise<void> {
+    if (!this.debugMode) { flowNote("COORDINATOR", "social_peer_reconfigure ignored — not in debug mode"); return; }
+    if (!this.socialPeer || this.socialPeerTransition) {
+      flowNote("COORDINATOR", "social_peer_reconfigure ignored — no active social session / mid-transition");
+      return;
+    }
+    this.socialPeerTransition = true;
+    try {
+      const sessionCache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+      const student = sessionCache?.monitorAgent.getStudent?.();
+      const language = student?.primaryLanguage || "en";
+      const aac = student?.aacSettings as any;
+
+      // Build a persona directly from the supplied params; keep the previous
+      // appearance so the face stays stable while you tweak personality.
+      const persona: GeneratedPersona = {
+        name: params.name,
+        gender: params.gender,
+        archetype: params.archetype as Archetype,
+        genome: { ...params.genome },
+        identity: { interests: { ...params.interests }, stances: { ...params.stances } },
+        appearance: this.socialPeer.persona.appearance,
+        humorStyle: params.humorStyle as GeneratedPersona["humorStyle"],
+      };
+
+      const voiceName = pickSocialPeerVoice(persona.gender, [
+        this.aiVoice?.geminiVoiceName, this.studentVoice?.geminiVoiceName,
+        aac?.geminiAiVoice, aac?.geminiStudentVoice,
+      ]);
+      const voice: ResolvedVoice = {
+        fallbackType: persona.gender === "female" ? "woman" : "man",
+        customVoice: null, language, geminiVoiceName: voiceName,
+      };
+
+      try { this.speaker?.close(); } catch {}
+      this.speaker = null;
+      this.speakerSpeaking = false;
+
+      const peerModel = params.model || process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+      const peer = this.buildPeerAgent({
+        persona,
+        languageName: getLanguageName(language),
+        model: peerModel,
+        difficulty: params.difficulty,
+        languageLevel: languageLevelFromInt(params.languageLevelInt),
+        slpConfig: buildSlpConfig({
+          targetSkills: params.slp.goalDimensions,
+          lockedSkills: params.slp.lockedDimensions,
+          maxChallengeIntensity: params.slp.maxChallengeIntensity,
+          challengeRatio: params.slp.challengeRatio,
+        }),
+      });
+      await peer.start();
+      this.speaker = peer;
+      this.socialPeer = {
+        persona, agent: peer, voiceName, voice,
+        logStartIndex: this.conversationLog.length, startedAt: Date.now(),
+      };
+
+      flowNote("COORDINATOR", `Social peer reconfigured (debug) → "${persona.name}" ${describePersona(persona)}`);
+      // Re-render the peer face + re-arm the openers board for a fresh start.
+      this.send({
+        type: "social_session",
+        data: {
+          state: "started", characterName: persona.name, voiceName,
+          appearance: persona.appearance, expressiveness: persona.genome.expressiveness, legibility: 1,
+          voicePitch: this.peerVoicePitch(),
+          voiceFormant: this.peerVoiceFormant(),
+        },
+      });
+      this.observer?.sendContextInjection(`[SOCIAL TRAINING RECONFIGURED] The practice peer is now ${persona.name}. The device voice is ${persona.name}, not the companion AI.`);
+      const greetingTrigger: MonitorBroadcastEvent = {
+        type: "monitor_broadcast", source: "monitor", timestamp: Date.now(),
+        contextInjection: `The social-practice peer was just reset to ${persona.name}, waiting for the user to start the conversation. Rebuild the board with generic openers (greetings, simple ice-breakers, a way to introduce themselves).`,
+      };
+      this.recordEvent(greetingTrigger);
+      void this.invokeBoardManager([greetingTrigger]);
+    } catch (err) {
+      console.error("[AgentCoordinator] applyPeerReconfigure failed:", err);
+    } finally {
+      this.socialPeerTransition = false;
+    }
+  }
+
+  /** Build a peer identity (persona + gender-matched voice) from optional
+   *  persona hints. Voice excludes the AAC AI + student voices so the peer is
+   *  distinct. Shared by the live session and the home-board preview. */
+  private makePeerIdentity(
+    personaOpts: { archetype?: Archetype; gender?: "male" | "female"; interestHints?: string[] },
+    language: string,
+    aac: any,
+  ): { persona: GeneratedPersona; voiceName: string; voice: ResolvedVoice } {
+    const persona = generatePersona(personaOpts);
+    const voiceName = pickSocialPeerVoice(persona.gender, [
+      this.aiVoice?.geminiVoiceName,
+      this.studentVoice?.geminiVoiceName,
+      aac?.geminiAiVoice,
+      aac?.geminiStudentVoice,
+    ]);
+    const voice: ResolvedVoice = {
+      fallbackType: persona.gender === "female" ? "woman" : "man",
+      customVoice: null,
+      language,
+      geminiVoiceName: voiceName,
+    };
+    return { persona, voiceName, voice };
+  }
+
+  /** Prepare + push the "Practice friend" preview face. Idempotent: reuses the
+   *  existing pending persona (so navigating home doesn't reshuffle the face);
+   *  generates a fresh one only when none is pending. No-op when the app is
+   *  disabled or a session is active/transitioning. */
+  private preparePeerPreview(reason: string): void {
+    if (!this.isSocialTrainerEnabled()) return;
+    if (this.socialPeer || this.socialPeerTransition) return;
+    if (!this.pendingPeerPersona) {
+      const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+      const student = cache?.monitorAgent.getStudent?.();
+      const language = student?.primaryLanguage || "en";
+      const aac = student?.aacSettings as any;
+      this.pendingPeerPersona = this.makePeerIdentity({}, language, aac);
+      flowNote("COORDINATOR", `Peer preview persona generated (${reason}) → "${this.pendingPeerPersona.persona.name}".`);
+    }
+    const p = this.pendingPeerPersona.persona;
+    this.send({
+      type: "social_peer_preview",
+      data: {
+        appearance: p.appearance,
+        characterName: p.name,
+        expressiveness: p.genome.expressiveness,
+      },
+    });
+  }
+
   private async startSocialPeerSession(origin: string): Promise<void> {
     if (this.state !== "ready" || !this.sessionId) return;
     if (this.socialPeer || this.socialPeerTransition) {
@@ -4236,19 +4663,13 @@ export class AgentCoordinator {
         maxChallengeIntensity: socialCfg.maxChallengeIntensity,
       });
 
-      const persona = generatePersona(personaOpts);
-      const voiceName = pickSocialPeerVoice(persona.gender, [
-        this.aiVoice?.geminiVoiceName,
-        this.studentVoice?.geminiVoiceName,
-        aac?.geminiAiVoice,
-        aac?.geminiStudentVoice,
-      ]);
-      const voice: ResolvedVoice = {
-        fallbackType: persona.gender === "female" ? "woman" : "man",
-        customVoice: null,
-        language,
-        geminiVoiceName: voiceName,
-      };
+      // Reuse the home-board preview identity when present so the session face
+      // matches the button the user pressed (the resolver above still tunes the
+      // ENGINE — difficulty/scenario/skills — which doesn't affect the face).
+      // Generate fresh only when there's no preview (e.g. a pure AI open_app).
+      const identity = this.pendingPeerPersona ?? this.makePeerIdentity(personaOpts, language, aac);
+      this.pendingPeerPersona = null;
+      const { persona, voiceName, voice } = identity;
 
       // Park the companion Speaker. Its context is rebuilt from
       // conversationLog + session summary on restore (primeFreshSpeaker),
@@ -4262,13 +4683,7 @@ export class AgentCoordinator {
       // of the session's general speaker mode. The DirectedSession
       // builds its own prompt; SpeakerStartConfig is not involved.
       const peerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
-      // Captured for the usage closure — billing must survive session
-      // teardown races (the tokens were spent even if the peer closed
-      // while its last turn was in flight).
-      const usageSessionId = this.sessionId;
-      const usageStudentId = this.studentId ?? "";
-      const usageUserId = this.userId;
-      const peer = new SocialPeerSpeakerAgent({
+      const peer = this.buildPeerAgent({
         persona,
         languageName: getLanguageName(language),
         model: peerModel,
@@ -4280,28 +4695,12 @@ export class AgentCoordinator {
         // Goal/locked dimensions + challenge ceiling (clinician defaults
         // narrowed by the AI's optional session focus).
         slpConfig: peerSlp,
-        callbacks: {
-          onEvent: (e) => this.onSpeakerEvent(e),
-          onSpeakText: (text) => this.onSpeakerSpeakText(text),
-          onState: (state) => this.send({ type: "social_peer_state", data: state }),
-          onUsage: (usage) => {
-            dualAgentService.trackHttpUsage(
-              usageSessionId,
-              usageStudentId,
-              usageUserId,
-              "gemini",
-              peerModel,
-              usage.promptTokens,
-              usage.completionTokens,
-              usage.cachedTokens ?? 0,
-              "social-peer",
-            ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(social peer) failed:", err));
-          },
-          onError: (err) => console.error("[AgentCoordinator] Social peer error:", err),
-        },
       });
       await peer.start();
       this.speaker = peer;
+      // Fresh turn-taking history for the new peer (don't carry a pre-session
+      // bid into the first social press — Phase C).
+      this.lastPressRole = null;
       this.socialPeer = {
         persona,
         agent: peer,
@@ -4327,6 +4726,8 @@ export class AgentCoordinator {
           appearance: persona.appearance,
           expressiveness: persona.genome.expressiveness,
           legibility: 1,
+          voicePitch: this.peerVoicePitch(),
+          voiceFormant: this.peerVoiceFormant(),
         },
       });
 
@@ -4392,6 +4793,10 @@ export class AgentCoordinator {
     if (!social || this.socialPeerTransition) return;
     this.socialPeerTransition = true;
     this.socialPeer = null;
+    this.naturalEndPending = false;
+    // Drop any in-flight Phase B press buffers — they belong to the peer.
+    if (this.socialReplyBuffer?.timer) clearTimeout(this.socialReplyBuffer.timer);
+    this.socialReplyBuffer = null;
     const peerName = social.persona.name;
     try {
       flowNote("COORDINATOR", `Social-training session ending (${reason}) — peer "${peerName}".`);
@@ -4478,6 +4883,16 @@ export class AgentCoordinator {
       console.error("[AgentCoordinator] endSocialPeerSession failed:", err);
     } finally {
       this.socialPeerTransition = false;
+      // Regenerate the "Practice friend" face after a deliberate beat. Until it
+      // arrives the client has no preview → the button shows nothing and does
+      // nothing. (The client already cleared the old preview on session end.)
+      if (this.peerPreviewTimer) clearTimeout(this.peerPreviewTimer);
+      if (this.isSocialTrainerEnabled()) {
+        this.peerPreviewTimer = setTimeout(() => {
+          this.peerPreviewTimer = null;
+          this.preparePeerPreview("post_session");
+        }, PEER_PREVIEW_REGEN_MS);
+      }
     }
   }
 
@@ -4619,19 +5034,60 @@ export class AgentCoordinator {
    *  `speak()` path only fires once per turn, so the chain is a no-op
    *  there. */
   private aiTtsChain: Promise<void> = Promise.resolve();
+  /** Abort controller for the in-flight AI/peer TTS chain. Aborted by
+   *  `interruptAiSpeech` so a button press cuts the voice off. */
+  private aiTtsAbortController: AbortController | null = null;
+  /** Count of queued/playing AI-TTS sentences (HTTP/peer path). Combined with
+   *  `speakerSpeaking` (native-audio path) gives "is the AI talking right now". */
+  private aiSpeakPending = 0;
 
   private onSpeakerSpeakText(text: string): void {
     // During a social session the Speaker slot holds the peer persona,
     // which speaks with its own (session-random) voice.
     const voice = this.socialPeer?.voice ?? this.aiVoice;
     if (!voice || !text.trim()) return;
-    const iter = ttsFacade.synthesizeStream(text, voice, undefined, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    if (!this.aiTtsAbortController) this.aiTtsAbortController = new AbortController();
+    const signal = this.aiTtsAbortController.signal;
+    if (signal.aborted) return;
+    const iter = ttsFacade.synthesizeStream(text, voice, signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
     const firstChunk = iter.next();
     const prior = this.aiTtsChain;
+    this.aiSpeakPending++;
     this.aiTtsChain = (async () => {
       await prior;
-      await this.drainTtsToClient({ iter, firstChunk, messageType: "avatar_audio" });
+      try {
+        if (!signal.aborted) await this.drainTtsToClient({ iter, firstChunk, messageType: "avatar_audio", signal });
+      } finally {
+        this.aiSpeakPending = Math.max(0, this.aiSpeakPending - 1);
+      }
     })();
+  }
+
+  /** True while the AI/peer voice is rendering or playing — covers both the
+   *  native-audio Speaker (`speakerSpeaking`) and the HTTP/peer TTS chain. */
+  private isAiSpeaking(): boolean {
+    return this.speakerSpeaking || this.aiSpeakPending > 0;
+  }
+
+  /** Cut off whatever the AI/peer is currently saying: stop client playback of
+   *  the avatar voice, drop native-audio PCM buffered but not yet flushed, and
+   *  abort the in-flight peer TTS chain. Triggered by a fresh button press so
+   *  the student's own voice isn't talked over. */
+  private interruptAiSpeech(): void {
+    // Client: drop the avatar (AI/peer) audio queue. Tag-scoped so the
+    // student's own utterance audio is untouched.
+    this.send({ type: "audio_clear_tag", tag: "avatar" });
+    // Native-audio path: discard buffered PCM not yet flushed.
+    if (this.speakerAudioChunks.length > 0) this.speakerAudioChunks = [];
+    if (this.speakerAudioFlushTimer) {
+      clearTimeout(this.speakerAudioFlushTimer);
+      this.speakerAudioFlushTimer = null;
+    }
+    // Peer/HTTP path: abort in-flight TTS so the server stops emitting chunks.
+    if (this.aiTtsAbortController) {
+      this.aiTtsAbortController.abort();
+      this.aiTtsAbortController = null;
+    }
   }
 
   private async streamStudentTts(text: string, source: string = "?"): Promise<void> {
@@ -5225,7 +5681,7 @@ export class AgentCoordinator {
     let boardData: any;
     if (match.key === HOME_BOARD_KEY) {
       const studentLang = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.()?.primaryLanguage || "en";
-      boardData = buildDefaultHomeBoard(studentLang);
+      boardData = buildDefaultHomeBoard(studentLang, this.isSocialTrainerEnabled());
     } else {
       try {
         const fullBoard = await boardRepository.getBoard(match.id);
@@ -5267,6 +5723,9 @@ export class AgentCoordinator {
       logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${match.name}" id=${match.id}`);
     });
     flowNote("COORDINATOR", `set_board("${boardKey}") — loaded "${match.name}".`);
+    // Re-prime the "Practice friend" face when the home board is (re)loaded
+    // through set_board (e.g. the AI returning the user home).
+    if (match.key === HOME_BOARD_KEY) this.preparePeerPreview("set_board_home");
   }
 
   /**

@@ -700,7 +700,8 @@ export type ClientMessage =
   | { type: "request_app_open"; appId: string; appData?: any }          // student pressed an app that needs server-resolved startup params; server resolves then replies with app_open
   | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
   | { type: "social_trainer_peer_said"; text: string }                  // SocialBot peer just spoke — server composes the per-turn context
-  | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string }; // SocialBot session ended — server composes the debrief
+  | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string } // SocialBot session ended — server composes the debrief
+  | { type: "social_peer_reconfigure"; params: import("@shared/social-bot/debug").SocialPeerParams }; // DEBUG-only: restart the social peer with fully custom parameters
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -753,6 +754,8 @@ export type ServerMessage =
   | { type: "construction_memory_chips"; data: ConstructionMemoryChipsWire }  // AI-curated dynamic chips for one tab on the construction board
   | { type: "social_session"; data: SocialSessionWire }  // three-agent path: server-owned social-training session started/ended (peer face data rides along)
   | { type: "social_peer_state"; data: import("@shared/social-bot/state").BotStatePayload }  // three-agent path: per-turn director state (face target + mode + rapport) while a social session is active
+  | { type: "social_peer_preview"; data: { appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance; characterName: string; expressiveness: number } }  // home-board "Practice friend" button: the peer face shown before a session starts (same persona the session will use)
+  | { type: "social_peer_debug"; data: import("@shared/social-bot/debug").SocialPeerDebugSnapshot }  // DEBUG-only: full director internals + editable params, per turn + at session start
   | { type: "complete"; data?: any };
 
 /** Server-owned social-training session lifecycle (three-agent path).
@@ -767,6 +770,12 @@ export type SocialSessionWire =
       appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance;
       expressiveness: number;
       legibility: number;
+      /** Semitone pitch shift for the peer's voice (adult Gemini voice → the
+       *  student's age range). Applied client-side to the peer's audio tag. */
+      voicePitch?: number;
+      /** Semitone formant (vocal-tract) shift — the primary "younger" cue.
+       *  Applied client-side via the cepstral formant shifter. */
+      voiceFormant?: number;
     }
   | { state: "ended"; reason?: string };
 

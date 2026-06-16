@@ -58,6 +58,10 @@ export interface ButtonPressedEvent extends BaseEvent {
   /** The button's visual GLYPH encoding (for context — Board Manager uses
    *  it when rebuilding so it knows what shape the user just produced). */
   glyph?: string;
+  /** Conversational role of the pressed button ("reply" | "bid"), resolved by
+   *  the Coordinator from the current board. Drives the per-mode press handling
+   *  (facilitator timers, social-trainer reply-hold). Defaults to "reply". */
+  role?: "reply" | "bid";
   /** Who the press is addressed to. Inherited from the loaded board's
    *  target (set by BoardManager on rebuild_board / show_binary_choice).
    *  Defaults to "DEVICE" when no target was set. When DEVICE, the press
@@ -407,6 +411,11 @@ export interface BoardButton {
   glyphFallback?: string;
   rowSpan?: number;
   colSpan?: number;
+  /** Conversational role: "reply" (answer/reaction, no response expected) vs
+   *  "bid" (question/request that hands the turn over). Drives the per-mode
+   *  press handling (companion/facilitator/social) + a client color indicator.
+   *  Defaults to "reply" when the BoardManager omits it. */
+  role?: "reply" | "bid";
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   suggestionKey?: string;
   /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */

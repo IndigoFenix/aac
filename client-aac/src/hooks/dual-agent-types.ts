@@ -176,6 +176,14 @@ export interface ActiveAppData {
   appData?: any;
 }
 
+/** Home-board "Practice friend" preview: the peer face shown on the button
+ *  BEFORE a session starts (the same persona the session will use). */
+export interface SocialPeerPreview {
+  appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance;
+  characterName: string;
+  expressiveness: number;
+}
+
 /** Server-owned social-training session (three-agent path). Mirrors the
  *  `social_session` "started" payload from the server — everything the
  *  client needs to render the peer's procedural face in the header. */
@@ -185,6 +193,13 @@ export interface SocialSessionInfo {
   appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance;
   expressiveness: number;
   legibility: number;
+  /** Semitone pitch shift for the peer's voice so the adult Gemini voice reads
+   *  as roughly the student's age. Applied to the "avatar" audio tag while the
+   *  session is active. */
+  voicePitch?: number;
+  /** Semitone formant (vocal-tract) shift — the primary "younger" cue. Applied
+   *  to the "avatar" tag via the cepstral formant shifter. */
+  voiceFormant?: number;
 }
 
 export interface BoardPatch {
@@ -227,6 +242,8 @@ export interface UseDualAgentReturn {
   // Audio state
   audioEnabled: boolean;
   isPlaying: boolean;
+  /** Tag of the audio currently playing ("avatar"/"utterance"), or null. */
+  audioPlayingTag?: string | null;
   voiceEnabled: boolean;
   isRecording: boolean;
   audioLevel: number;
@@ -388,7 +405,23 @@ export interface UseDualAgentReturn {
   /** Per-turn director state (face target + mode + rapport) while a
    *  social session is active. Null outside sessions. */
   socialPeerState?: import("@shared/social-bot/state").BotStatePayload | null;
+  /** DEBUG-only: full director internals + editable params, refreshed each turn. */
+  socialPeerDebug?: import("@shared/social-bot/debug").SocialPeerDebugSnapshot | null;
+  /** Home-board "Practice friend" preview face (null during a session and the
+   *  brief post-session cooldown). */
+  socialPeerPreview?: SocialPeerPreview | null;
+  /** DEBUG-only: restart the active social peer with fully custom parameters. */
+  reconfigureSocialPeer?: (params: import("@shared/social-bot/debug").SocialPeerParams) => void;
   notifySocialTrainerStarted?: () => void;
+  /** DEBUG-only: effective peer voice-pitch shift (semitones) currently applied. */
+  peerVoicePitch?: number;
+  /** DEBUG-only: live client-side override of the peer's voice-pitch shift. The
+   *  shift is client-side, so this takes effect immediately (no peer restart). */
+  setPeerVoicePitch?: (semitones: number) => void;
+  /** DEBUG-only: effective peer formant shift (semitones) currently applied. */
+  peerVoiceFormant?: number;
+  /** DEBUG-only: live client-side override of the peer's formant shift. */
+  setPeerVoiceFormant?: (semitones: number) => void;
 
   // Construction board (sentence builder)
   /** Push the current construction-board state to the AI so it can populate the AI strip. */

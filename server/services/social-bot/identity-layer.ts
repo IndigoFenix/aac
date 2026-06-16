@@ -65,6 +65,7 @@ export interface ContentFeatures {
   greeting: boolean;               // user opened with a greeting (hi / hello / their name)
   nearClosing: boolean;            // the conversation is at a natural wrap-up point
   closedGracefully: boolean;       // at a wrap-up point, the user closed it (bye / "this was nice")
+  wantsToEnd: boolean;             // user clearly wants to END the conversation (goodbye / "I have to go")
   // social-emotional + register (batch-B competency detection):
   consideredPeerPerspective: boolean; // user referenced/asked about how YOU (the peer) feel or think
   expressedOwnEmotion: boolean;       // user named a feeling of their own ("I'm happy" / "that's scary")

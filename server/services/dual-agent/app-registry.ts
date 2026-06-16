@@ -69,7 +69,10 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "Social Trainer",
     description: "Opens a social training session with a procedurally-generated peer character the user practices conversation with. The peer has its own face and voice and reacts to how the user treats it. While the session is running, you (the AAC AI) are placed in silent/utterance-button mode — the user communicates with the peer by pressing your buttons, and the peer's text replaces yours in the header. Use open_app(\"social_trainer\") when the user wants to practice talking to people, work on social skills, or asks for the social game. When the session ends you will be notified with a debrief — discuss it warmly with the user.",
     icon: "🧑‍🤝‍🧑",
-    enabledByDefault: false,
+    // Enabled by default — surfaced as the "Practice friend" button on the AAC
+    // home board (not the Apps page). Its enable toggle lives in the AAC
+    // Settings social-trainer section.
+    enabledByDefault: true,
     // NOTE: social_trainer is NOT client-rendered — its peer lives server-side
     // (startSocialPeerSession). These params are resolved there, NOT via the
     // client request_app_open round-trip, so its snapshot needsStartupResolution

@@ -48,6 +48,7 @@ import {
   type EngineParams,
   type LearnerProfile,
   type PersonalityGenome,
+  type Probe,
   type SlpConfig,
 } from "./personality-and-challenge";
 import type {
@@ -57,6 +58,7 @@ import type {
 } from "./conversation-director";
 import type { FaceAppearance, FaceTarget } from "@shared/social-bot/ProceduralFace";
 import { type LanguageLevel, languageLevelToInt } from "@shared/aac-language-level";
+import type { SocialPeerLiveState } from "@shared/social-bot/debug";
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -93,11 +95,32 @@ function classifyMode(v: Vector): Mode {
   return "NEUTRAL";
 }
 
+/** Below this askShare, the USER has been making statements/answers without
+ *  asking much back — so the conversation will stall unless the peer hands the
+ *  turn back. That's when the peer should answer AND ask a question of its own. */
+const ASK_BACK_THRESHOLD = 0.4;
+
+/** The reciprocity rhythm for the warm/engaged states: answer the user's point
+ *  AND decide whether to hand the turn back. A natural turn is often a reply +
+ *  a follow-up question; we pick which way to lean from the running balance:
+ *   - user OVER-asking (askShare high) → just disclose (don't interrogate back);
+ *   - user UNDER-asking (askShare low) → answer_then_bid (reply + ask back), so
+ *     the conversation keeps flowing and the peer MODELS the two-part turn;
+ *   - balanced → follow_up.
+ *  At language tier 1 (single words) a reply+question can't fit, so we never
+ *  ask back there — the peer just follows up. */
+export function reciprocityMove(askShare: number, balanceFlipAt: number, languageTier?: number): ResponseDirective["pragmaticMove"] {
+  if (askShare > balanceFlipAt) return "disclose";
+  if (askShare < ASK_BACK_THRESHOLD && (languageTier === undefined || languageTier >= 2)) return "answer_then_bid";
+  return "follow_up";
+}
+
 function deriveBaseDirective(
   v: Vector,
   mode: Mode,
   askShare: number,
   balanceFlipAt: number,
+  languageTier?: number,
 ): ResponseDirective {
   const energy = clamp((v.arousal.x + 1) / 2, 0.1, 1);
   const base: ResponseDirective = {
@@ -116,12 +139,14 @@ function deriveBaseDirective(
     case "PLAYFUL":
       return { ...base, tone: "playful", pragmaticMove: "open_bid" };
     case "OPEN":
-      return { ...base, tone: "warm", pragmaticMove: "follow_up" };
+      // Warm + comfortable: this is where back-and-forth should flow best, so
+      // hand the turn back (answer_then_bid) when the user isn't asking.
+      return { ...base, tone: "warm", pragmaticMove: reciprocityMove(askShare, balanceFlipAt, languageTier) };
     default:
       break;
   }
-  if (askShare > balanceFlipAt) return { ...base, pragmaticMove: "disclose" };
-  return base;
+  // NEUTRAL: same reciprocity rhythm (was: disclose-or-follow_up only — never asked back).
+  return { ...base, pragmaticMove: reciprocityMove(askShare, balanceFlipAt, languageTier) };
 }
 
 // ── Trackers ───────────────────────────────────────────────────────────
@@ -206,6 +231,7 @@ function parseObserved(raw: any): FullTurn & HumorFeatures {
     greeting: !!o.greeting,
     nearClosing: !!o.nearClosing,
     closedGracefully: !!o.closedGracefully,
+    wantsToEnd: !!o.wantsToEnd,
     // social-emotional + register
     consideredPeerPerspective: !!o.consideredPeerPerspective,
     expressedOwnEmotion: !!o.expressedOwnEmotion,
@@ -248,6 +274,9 @@ export interface TurnResult {
   directive: ResponseDirective;
   ext: DirectiveExtensions;
   usage?: TurnUsage;
+  /** The user clearly wants to end the conversation; `reply` is the peer's
+   *  farewell. The caller should wind the session down after it's spoken. */
+  ending: boolean;
 }
 
 export interface SessionConfig {
@@ -279,11 +308,18 @@ export class DirectedSession {
   private profile: LearnerProfile = emptyProfile();
   private params: EngineParams;
   private scaffolding: number;
+  /** Student's language tier (1..5) — gates the two-part answer_then_bid move. */
+  private readonly languageTier: number | undefined;
   private turnIndex = 0;
   /** The probe issued last turn, awaiting the user's response THIS turn so its
    *  outcome can be recorded (feeds the back-off rule). The snapshot lets us
    *  tell whether the target skill was re-sampled and whether it held/rose. */
   private pendingProbe: { dim: Competency; value: number; samples: number } | null = null;
+  // ── Last-turn snapshot (debug tooling) ──
+  private lastChallenge: { probe: Probe; dim: Competency | null; intensity: number } = { probe: "none", dim: null, intensity: 0 };
+  private lastDirective: ResponseDirective;
+  private lastExt: DirectiveExtensions = {};
+  private lastReply = "";
   /** Cacheable system prefix (built once at construction). */
   private readonly sessionPrefix: string;
   /** Conversation log (user turn + bot reply pairs) for the LLM. */
@@ -296,13 +332,15 @@ export class DirectedSession {
     const { params, scaffolding } = deriveParams(cfg.genome, cfg.difficulty);
     this.params = params;
     this.scaffolding = scaffolding;
+    this.languageTier = cfg.languageLevel ? languageLevelToInt(cfg.languageLevel) : undefined;
 
     this.vector = {
       valence: { x: params.baseline.valence, vel: 0 },
       arousal: { x: params.baseline.arousal, vel: 0 },
       rapport: { x: params.baseline.rapport, vel: 0 },
     };
-    this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, params.balanceFlipAt);
+    this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, params.balanceFlipAt, this.languageTier);
+    this.lastDirective = this.directive;
 
     this.sessionPrefix = buildSessionPrefix(cfg.name, cfg.gender, cfg.genome, cfg.identity, cfg.humorStyle, cfg.language, cfg.languageLevel);
 
@@ -445,8 +483,11 @@ export class DirectedSession {
       initiatedBid: parsed.disclosure > 0.4 || (parsed.wasQuestion && parsed.contingency < 0.4),
       engagedCharacterInterest: parsed.topic ? (this.cfg.identity.interests[parsed.topic] ?? 0) > 0.4 : null,
       // batch A — conversation mechanics. Conditional sampling so each EMA only
-      // moves on turns where the skill is actually in play.
-      turnTaking: !parsed.interrupted,
+      // moves on turns where the skill is actually in play. A deterministic
+      // press-interrupt (`signals.interrupted`, set by the coordinator when the
+      // user cut in mid-speech or jumped a handed-over turn) penalizes
+      // turnTaking even when the LLM didn't flag the cut-in itself.
+      turnTaking: !(parsed.interrupted || signals.interrupted),
       topicMaintained: this.turnIndex > 1 ? 1 - parsed.topicShift : null,
       topicShiftedWell: parsed.topicShift > 0.5 ? parsed.topicShiftBridged : null,
       greeted: this.turnIndex <= 2 ? parsed.greeting : null,
@@ -479,7 +520,13 @@ export class DirectedSession {
 
     // 10. Recompute mode + base directive for NEXT turn.
     this.mode = classifyMode(this.vector);
-    this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, this.params.balanceFlipAt);
+    this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, this.params.balanceFlipAt, this.languageTier);
+
+    // Snapshot what drove THIS turn for the debug tool.
+    this.lastChallenge = challenge;
+    this.lastDirective = withIdentity;
+    this.lastExt = ext;
+    this.lastReply = llmReply.reply;
 
     // Engine-state trace — the deterministic decisions BEHIND this turn's reply
     // (the directive + probe the model was given) and the resulting affect
@@ -532,6 +579,34 @@ export class DirectedSession {
       directive: this.directive,
       ext,
       usage: llmReply.usage,
+      ending: parsed.wantsToEnd,
+    };
+  }
+
+  /** Full live engine state for the debug tool (SocialPeerLiveState shape). */
+  debugLive(): SocialPeerLiveState {
+    return {
+      turnIndex: this.turnIndex,
+      mode: this.mode,
+      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
+      velocity: { valence: this.vector.valence.vel, arousal: this.vector.arousal.vel, rapport: this.vector.rapport.vel },
+      directive: {
+        tone: this.lastDirective.tone,
+        energy: this.lastDirective.energy,
+        pragmaticMove: this.lastDirective.pragmaticMove,
+        lengthHint: this.lastDirective.lengthHint,
+        mayDisclose: this.lastDirective.mayDisclose,
+        identityMove: this.lastExt.identityMove ?? null,
+        probe: this.lastExt.probe ?? null,
+      },
+      lastChallenge: { probe: this.lastChallenge.probe, dim: this.lastChallenge.dim, intensity: this.lastChallenge.intensity },
+      scaffolding: this.scaffolding,
+      askShare: this.trackers.askShare,
+      engineParams: this.params as unknown as Record<string, unknown>,
+      skills: Object.entries(this.profile.skills).map(([competency, s]) => ({ competency, value: s.value, samples: s.samples })),
+      userModel: this.userModel as unknown as Record<string, unknown>,
+      moments: this.history.list().map((m) => ({ kind: m.kind, summary: m.summary, weight: m.weight })),
+      lastReply: this.lastReply,
     };
   }
 
@@ -618,15 +693,8 @@ export class DirectedSession {
       | { name?: string; args?: { reply?: string; observed?: unknown } }
       | undefined;
     let usage: TurnUsage | undefined;
-    for await (const chunk of stream) {
-      const parts = chunk.candidates?.[0]?.content?.parts || [];
-      const found = parts.find((p: any) => p.functionCall)?.functionCall as typeof fnCall;
-      if (found) fnCall = found;
-      // usageMetadata typically rides the FINAL chunk, after the tool
-      // call — so we drain the stream instead of breaking on the call.
-      // For a forced single-tool turn the trailing chunks arrive
-      // immediately, so this costs effectively nothing.
-      const um = (chunk as any).usageMetadata;
+    const haveCall = () => !!fnCall && typeof fnCall.args?.reply === "string";
+    const takeUsage = (um: any) => {
       if (um && typeof um.promptTokenCount === "number") {
         usage = {
           promptTokens: um.promptTokenCount,
@@ -635,7 +703,47 @@ export class DirectedSession {
           cachedTokens: um.cachedContentTokenCount || undefined,
         };
       }
+    };
+    const processChunk = (chunk: any) => {
+      const parts = chunk.candidates?.[0]?.content?.parts || [];
+      const found = parts.find((p: any) => p.functionCall)?.functionCall as typeof fnCall;
+      if (found) fnCall = found;
+      takeUsage(chunk.usageMetadata);
+    };
+
+    // LATENCY: a forced single-tool call lands in one (early) chunk, but the
+    // SDK keeps the stream open for a trailing finish chunk carrying
+    // usageMetadata — which in practice can take MANY seconds to arrive
+    // (~11s observed) while nothing useful is produced. So: drain normally
+    // until we have the call, then wait only a short budget for usage before
+    // giving up on it. Usage that rides the same chunk (or arrives promptly,
+    // as in tests) is still captured; the pathological long tail is skipped.
+    const USAGE_DRAIN_BUDGET_MS = 800;
+    const t0 = Date.now();
+    let callArrivedMs = 0;
+    const iterator = (stream as AsyncIterable<any>)[Symbol.asyncIterator]();
+    while (true) {
+      const nextP = iterator.next();
+      let res: IteratorResult<any> | "timeout";
+      if (haveCall() && !usage) {
+        // We have the reply but not usage yet — cap the wait.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<"timeout">((r) => { timer = setTimeout(() => r("timeout"), USAGE_DRAIN_BUDGET_MS); });
+        res = await Promise.race([nextP, timeout]);
+        if (timer) clearTimeout(timer);
+        if (res === "timeout") { nextP.catch(() => {}); break; }
+      } else {
+        res = await nextP;
+      }
+      if ((res as IteratorResult<any>).done) break;
+      processChunk((res as IteratorResult<any>).value);
+      if (!callArrivedMs && haveCall()) callArrivedMs = Date.now() - t0;
+      if (haveCall() && usage) break; // got everything
     }
+    logLiveSession(
+      `SOCIAL BOT TURN ${this.turnIndex} LLM timing`,
+      `call_arrived=${callArrivedMs}ms total=${Date.now() - t0}ms model=${model} usage=${usage ? `${usage.promptTokens}+${usage.completionTokens}(thoughts in completion)` : "n/a"}`,
+    );
     if (!fnCall || fnCall.name !== TURN_TOOL_SCHEMA.name || typeof fnCall.args?.reply !== "string") {
       throw new Error(
         `[DirectedSession] Expected forced 'turn' tool call but got: ${JSON.stringify(fnCall).slice(0, 200)}`,

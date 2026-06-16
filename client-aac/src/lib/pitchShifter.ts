@@ -1,15 +1,55 @@
 // client-aac/src/lib/pitchShifter.ts
-// WSOLA-based pitch shifter for speech audio.
-// Shifts pitch while preserving duration (no chipmunk/slow-motion effect).
+// Voice transposition for speech audio: pitch shift + (optional) formant shift.
 //
-// Pipeline: WSOLA time-stretch → linear resample
-// - WSOLA stretches/compresses audio in time without changing pitch
-// - Resampling then adjusts the sample count to restore original duration,
-//   which shifts the pitch by the inverse of the stretch factor.
+// PITCH (WSOLA time-stretch → linear resample): shifts pitch while preserving
+// duration. Note this stage is a duration-preserving *varispeed* — it moves the
+// formants (spectral envelope) up with the pitch, locked at the original ratio.
+// That's why pitch alone sounds like "the same speaker, higher", not younger.
+//
+// FORMANT (cepstral spectral-envelope warp): independently moves the formants
+// to simulate a different vocal-tract length. A *shorter* tract (factor > 1)
+// pushes formants up → a smaller/younger-sounding speaker. Combining a modest
+// pitch shift with a larger formant shift is what reads as "child", because a
+// child's formant-to-pitch ratio differs from an adult's.
+//
+// `processVoice` composes the two: it runs the pitch stage, then applies a
+// formant correction so the final pitch and formant land on independent
+// targets.
 
 /** Convert semitones to linear pitch factor. +2 → ~1.122, -3 → ~0.841 */
 export function semitonesToFactor(semitones: number): number {
   return Math.pow(2, semitones / 12);
+}
+
+/**
+ * Transpose a voice with independent pitch and formant targets.
+ *
+ * @param samples           PCM samples (-1..1)
+ * @param sampleRate        e.g. 24000
+ * @param pitchSemitones    pitch (F0) shift in semitones
+ * @param formantSemitones  TOTAL formant shift in semitones, relative to the
+ *                          original voice. `undefined` → skip the formant stage
+ *                          entirely (legacy varispeed: formants follow pitch).
+ */
+export function processVoice(
+  samples: Float32Array,
+  sampleRate: number,
+  pitchSemitones: number,
+  formantSemitones?: number,
+): Float32Array {
+  const pf = semitonesToFactor(pitchSemitones || 0);
+  const pitched = Math.abs(pf - 1) > 0.005 ? pitchShift(samples, pf, sampleRate) : samples;
+
+  // No formant control requested → keep the pitch stage's coupled (varispeed)
+  // formants, matching the original behaviour for the companion/student voices.
+  if (formantSemitones == null) return pitched;
+
+  // The pitch stage already moved formants by `pf`; correct by `ff / pf` so the
+  // final formant lands on the requested `ff` while pitch stays at `pf`.
+  const ff = semitonesToFactor(formantSemitones);
+  const correction = ff / pf;
+  if (Math.abs(correction - 1) < 0.01) return pitched;
+  return formantShift(pitched, correction, sampleRate);
 }
 
 /**
@@ -64,7 +104,7 @@ function wsolaStretch(
   const numFrames = Math.max(1, Math.floor((input.length - windowSize) / Ha) + 1);
   const outLen = (numFrames - 1) * Hs + windowSize;
   const output = new Float32Array(outLen);
-  const norm = new Float32Array(outLen); // overlap-add window energy for normalisation
+  const norm = new Float32Array(outLen); // Σ of applied windows, for unity-gain overlap-add
 
   let drift = 0; // accumulated offset from cross-correlation search
 
@@ -98,7 +138,12 @@ function wsolaStretch(
     addWindowed(input, bestPos, output, synthPos, win, norm, windowSize, input.length, outLen);
   }
 
-  // Normalise by overlap-add window energy
+  // Normalise by the sum of applied windows. Each frame's signal is windowed
+  // ONCE (src·w), so dividing by Σw gives a true crossfade (weighted average,
+  // weights w) and exact unity gain at every sample regardless of how the
+  // frames overlap. Dividing by Σw² instead — the classic mistake — leaves a
+  // residual gain ripple at the synthesis-hop rate whenever the overlap
+  // fraction varies (i.e. when pitching up), heard as a buzzy undertone.
   for (let i = 0; i < outLen; i++) {
     if (norm[i] > 1e-6) output[i] /= norm[i];
   }
@@ -117,7 +162,7 @@ function addWindowed(
   for (let i = 0; i < end; i++) {
     const w = win[i];
     dst[dstOff + i] += src[srcOff + i] * w;
-    norm[dstOff + i] += w * w;
+    norm[dstOff + i] += w; // Σw (not Σw²): signal is windowed once → divide by Σw
   }
 }
 
@@ -191,4 +236,130 @@ function buildHann(size: number): Float32Array {
   for (let i = 0; i < size; i++) w[i] = 0.5 * (1 - Math.cos(k * i));
   hannCache.set(size, w);
   return w;
+}
+
+// ---------------------------------------------------------------------------
+// Cepstral formant (spectral-envelope) shifter
+// ---------------------------------------------------------------------------
+//
+// For each STFT frame: estimate the smooth spectral envelope (formants) by
+// cepstral liftering, warp that envelope along frequency by `factor`, and
+// re-apply it while keeping the original fine structure (harmonics) and phase.
+// Pitch is therefore unchanged; only the vocal-tract resonances move.
+
+const FFT_SIZE = 1024;
+const FFT_HOP = 256; // 75% overlap → Hann analysis+synthesis is COLA-constant
+
+/** In-place iterative radix-2 FFT (DIT). Length must be a power of two. */
+function fftInPlace(re: Float32Array, im: Float32Array, inverse: boolean): void {
+  const n = re.length;
+  // Bit-reversal permutation.
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = ((inverse ? 2 : -2) * Math.PI) / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cwr = 1, cwi = 0;
+      for (let k = 0; k < half; k++) {
+        const a = i + k, b = a + half;
+        const xr = re[b] * cwr - im[b] * cwi;
+        const xi = re[b] * cwi + im[b] * cwr;
+        re[b] = re[a] - xr; im[b] = im[a] - xi;
+        re[a] += xr; im[a] += xi;
+        const ncwr = cwr * wr - cwi * wi;
+        cwi = cwr * wi + cwi * wr;
+        cwr = ncwr;
+      }
+    }
+  }
+  if (inverse) {
+    for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+}
+
+/**
+ * Shift the spectral envelope (formants) by `factor` without changing pitch.
+ * factor > 1 → formants up (shorter vocal tract / younger). Duration preserved.
+ */
+export function formantShift(
+  samples: Float32Array,
+  factor: number,
+  sampleRate: number,
+): Float32Array {
+  if (samples.length < FFT_SIZE || Math.abs(factor - 1) < 0.01) return samples;
+
+  const N = FFT_SIZE;
+  const half = N >> 1;
+  const hop = FFT_HOP;
+  const win = buildHann(N);
+  // Liftering cutoff (quefrency): keep coefficients below the pitch period so
+  // the envelope tracks formants, not individual harmonics. ~34 bins at 24 kHz.
+  const lifter = Math.max(8, Math.round(sampleRate / 700));
+  const EPS = 1e-6;
+
+  const out = new Float32Array(samples.length);
+  const norm = new Float32Array(samples.length);
+
+  // Reused per-frame scratch buffers.
+  const re = new Float32Array(N), im = new Float32Array(N);
+  const cre = new Float32Array(N), cim = new Float32Array(N);
+  const logEnv = new Float32Array(N);
+
+  for (let start = 0; start + N <= samples.length; start += hop) {
+    // Analysis window → spectrum.
+    for (let i = 0; i < N; i++) { re[i] = samples[start + i] * win[i]; im[i] = 0; }
+    fftInPlace(re, im, false);
+
+    // Log-magnitude → cepstrum (IFFT of log|X|).
+    for (let k = 0; k < N; k++) {
+      cre[k] = Math.log(Math.hypot(re[k], im[k]) + EPS);
+      cim[k] = 0;
+    }
+    fftInPlace(cre, cim, true);
+
+    // Lifter: keep low quefrency (and its mirror) → smooth log-envelope.
+    for (let q = lifter + 1; q < N - lifter; q++) { cre[q] = 0; cim[q] = 0; }
+    fftInPlace(cre, cim, false);
+    for (let k = 0; k < N; k++) logEnv[k] = cre[k];
+
+    // Warp: new envelope at bin k is the old envelope at k/factor, so a peak at
+    // bin k0 moves up to k0*factor. Apply as a per-bin gain that swaps the old
+    // envelope for the shifted one (fine structure + phase untouched).
+    for (let k = 0; k <= half; k++) {
+      const srcIdx = k / factor;
+      const i0 = Math.floor(srcIdx);
+      let shifted: number;
+      if (i0 >= half) shifted = logEnv[half];
+      else {
+        const frac = srcIdx - i0;
+        shifted = logEnv[i0] * (1 - frac) + logEnv[Math.min(i0 + 1, half)] * frac;
+      }
+      const gain = Math.exp(shifted - logEnv[k]);
+      re[k] *= gain; im[k] *= gain;
+      if (k > 0 && k < half) { re[N - k] *= gain; im[N - k] *= gain; }
+    }
+
+    // Resynthesis: IFFT → synthesis window → overlap-add (÷ Σw², COLA-constant).
+    fftInPlace(re, im, true);
+    for (let i = 0; i < N; i++) {
+      const w = win[i];
+      out[start + i] += re[i] * w;
+      norm[start + i] += w * w;
+    }
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    // Uncovered head/tail (shorter than one frame) → pass the original through.
+    out[i] = norm[i] > 1e-6 ? out[i] / norm[i] : samples[i];
+  }
+  return out;
 }

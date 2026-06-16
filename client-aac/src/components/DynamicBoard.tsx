@@ -9,6 +9,7 @@ import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
 import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
+import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
 export interface BoardPatch {
@@ -46,6 +47,11 @@ interface DynamicBoardProps {
    *  grown (e.g. the glyphInputTranslation strip). Keeps button icon/text sizing
    *  proportional to the shrunken board area. Default 0. */
   extraHeaderOffset?: number;
+  /** Social-trainer peer face for the "Practice friend" home button. Passed as
+   *  props because the home board renders OUTSIDE the DualAgentProvider, so the
+   *  optional context here is null. */
+  socialPeerPreview?: import("@/hooks/dual-agent-types").SocialPeerPreview | null;
+  socialSession?: import("@/hooks/dual-agent-types").SocialSessionInfo | null;
 }
 
 /**
@@ -147,6 +153,8 @@ export default function DynamicBoard({
   suppressLocalSpeech = false,
   iconTextRatio = 3,
   extraHeaderOffset = 0,
+  socialPeerPreview: socialPeerPreviewProp = null,
+  socialSession: socialSessionProp = null,
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
@@ -525,6 +533,71 @@ export default function DynamicBoard({
     const isSuggestionButton = (button as any).buttonType === "suggestion";
     const isWordFinderButton = (button as any).buttonType === "wordfinder";
     const isMoreButton = (button as any).buttonType === "more";
+    const isPracticeFriendButton = (button as any).buttonType === "practice_friend";
+
+    // "Practice friend" (social-trainer home button): renders the peer's live
+    // procedural face. Idle → the preview persona (the one a session will use).
+    // Mid-session → the live session face with an X overlay (click ends it).
+    // Cooldown (just ended, new face not generated yet) → disabled placeholder.
+    if (isPracticeFriendButton) {
+      // Prefer props (the home board renders outside the provider); fall back to
+      // context for any in-provider usage.
+      const session = socialSessionProp ?? dualAgent?.socialSession ?? null;
+      const preview = socialPeerPreviewProp ?? dualAgent?.socialPeerPreview ?? null;
+      const inSession = !!session;
+      const face = session
+        ? { appearance: session.appearance, expressiveness: session.expressiveness }
+        : preview
+          ? { appearance: preview.appearance, expressiveness: preview.expressiveness }
+          : null;
+      const disabled = !face; // post-session beat — no face yet, button inert
+      const labelText = inSession ? (session!.characterName || button.label) : button.label;
+      return (
+        <motion.button
+          {...(disabled ? {} : { "data-dwell": "" })}
+          data-testid="board-practice-friend"
+          key={`btn-practice-${index}`}
+          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
+          animate={{ opacity: disabled ? 0.45 : 1, scale: 1 }}
+          transition={{ duration: isEntering ? 0.3 : 0.15 }}
+          onClick={() => { if (!disabled) handleButtonClick(button); }}
+          disabled={disabled}
+          className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 min-h-0 min-w-0 overflow-hidden relative"
+          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
+          whileHover={disabled ? undefined : { scale: 1.05 }}
+          whileTap={disabled ? undefined : { scale: 0.95 }}
+        >
+          <div className="icon-fill-area">
+            {face ? (
+              <div className="relative" style={{ width: "92cqmin", height: "92cqmin" }}>
+                <ProceduralFace
+                  target={NEUTRAL_FACE}
+                  appearance={face.appearance}
+                  expressiveness={face.expressiveness}
+                  legibility={1}
+                  style={{ width: "100%", height: "100%" }}
+                />
+                {inSession && (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    style={{ color: "#dc2626", fontWeight: 900, fontSize: "72cqmin", lineHeight: 1, textShadow: "0 0 6px rgba(255,255,255,0.95)" }}
+                  >
+                    ✕
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="icon-fill-emoji" style={{ opacity: 0.5 }}>🧑‍🤝‍🧑</span>
+            )}
+          </div>
+          <div className="flex items-center justify-center w-full overflow-hidden shrink-0" style={{ maxHeight: "40%", marginTop: 2 }}>
+            <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
+              {labelText}
+            </span>
+          </div>
+        </motion.button>
+      );
+    }
 
     const borderClass = isGuessButton
       ? "border-amber-400 border-2 ring-2 ring-amber-300/50"

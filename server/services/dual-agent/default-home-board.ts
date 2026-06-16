@@ -30,7 +30,22 @@ interface HomeButtonDef {
    *  client-side routing both match on the bracketed tag and ignore
    *  any trailing text, so this is just the tag — nothing more. */
   tag: string;
+  /** Marker consumed by the client to render this button specially (e.g. the
+   *  social peer's live procedural face for "practice_friend"). */
+  buttonType?: string;
 }
+
+/** "Practice friend" — the social-trainer entry. Replaces the Build-sentence
+ *  slot on the home board when social_trainer is enabled. The client renders a
+ *  live procedural face on it (the peer that will appear when a session starts)
+ *  and an X overlay while a session is active. */
+const PRACTICE_FRIEND_BUTTON: HomeButtonDef = {
+  id: "home_practice_friend",
+  labels: { en: "Practice friend", he: "חבר לתרגול" },
+  icon: "🧑‍🤝‍🧑",
+  tag: "[PRACTICE FRIEND]",
+  buttonType: "practice_friend",
+};
 
 const HOME_BUTTONS: HomeButtonDef[] = [
   {
@@ -105,25 +120,36 @@ const HOME_BUTTONS: HomeButtonDef[] = [
  * Build the default home board for a given language.
  * Returns a ParsedBoardData that can be used as a virtual board in availableBoards.
  */
-export function buildDefaultHomeBoard(language: string): ParsedBoardData {
+export function buildDefaultHomeBoard(
+  language: string,
+  socialTrainerEnabled = false,
+): ParsedBoardData {
   const lang = language.startsWith("he") ? "he" : "en";
   const cols = 4;
   const rows = 2;
 
-  const buttons: BoardButton[] = HOME_BUTTONS.map((def, i) => ({
+  // When social_trainer is enabled, the Build-sentence slot becomes the
+  // "Practice friend" social-trainer entry. (The sentence builder stays
+  // reachable from the QuickActions "Speak" button.)
+  const defs = socialTrainerEnabled
+    ? HOME_BUTTONS.map((d) => (d.id === "home_construct" ? PRACTICE_FRIEND_BUTTON : d))
+    : HOME_BUTTONS;
+
+  const buttons: BoardButton[] = defs.map((def, i) => ({
     id: def.id,
     row: Math.floor(i / cols),
     col: i % cols,
     label: def.labels[lang] || def.labels.en,
     iconRef: def.icon,
     ...(def.staticIcon ? { symbolPath: def.staticIcon } : { imageKey: def.imageKey }),
+    ...(def.buttonType ? { buttonType: def.buttonType } : {}),
     sentence: def.labels[lang] || def.labels.en,
     exitBoard: true,
     action: {
       type: "exit" as const,
       text: def.tag,
     },
-  }));
+  } as BoardButton));
 
   return {
     name: lang === "he" ? "דף הבית" : "Home",

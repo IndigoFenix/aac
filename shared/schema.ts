@@ -1355,6 +1355,12 @@ export interface BoardButton {
    */
   buttonType?: "normal" | "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   /**
+   * Conversational role of this button: "reply" (an answer/reaction that needs
+   * no response) vs "bid" (a question/request that hands the turn over). Drives
+   * a visual indicator and the per-mode press handling. Defaults to "reply".
+   */
+  role?: "reply" | "bid";
+  /**
    * For `buttonType: "suggestion"` only — the full `suggestion:<dim>:<value>`
    * key this button represents. The AAC client parses it on press to update
    * the guessing-mode narrowing state (see shared/guessing-mode).

@@ -135,6 +135,13 @@ function parseStructuredButton(input: unknown): ReturnType<typeof parseBoardButt
   return parseStructuredBoardButton(input);
 }
 
+/** Read the AI's conversational role for a button ("reply"|"bid"); undefined
+ *  (→ defaults to "reply" downstream) for anything else. */
+function extractButtonRole(input: unknown): "reply" | "bid" | undefined {
+  const r = (input as { role?: unknown } | null)?.role;
+  return r === "bid" || r === "reply" ? r : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -479,7 +486,9 @@ function parseToolCall(
         ? arr.flatMap(item => {
             const kind = extractSpecialButtonType(item);
             if (kind) return [buildSpecialButton(kind)];
-            return parseStructuredButtonsExpanding(item);
+            // Carry the AI's conversational role onto each parsed button.
+            const role = extractButtonRole(item);
+            return parseStructuredButtonsExpanding(item).map(b => Object.assign(b, { role }));
           }).filter((b): b is NonNullable<typeof b> => !!b)
         : [];
       const buttons: BoardButton[] = parsed.map(b => ({
@@ -493,6 +502,7 @@ function parseToolCall(
         glyphFallback: b.glyphFallback,
         rowSpan: b.rowSpan,
         colSpan: b.colSpan,
+        role: (b as { role?: "reply" | "bid" }).role,
         buttonType: b.buttonType,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,
@@ -581,6 +591,7 @@ function parseToolCall(
         imageKey: b.imageKey,
         glyph: b.glyph,
         glyphFallback: b.glyphFallback,
+        role: extractButtonRole(args.button),
         buttonType: b.buttonType,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,

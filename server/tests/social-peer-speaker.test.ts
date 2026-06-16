@@ -54,7 +54,10 @@ let buildSocialDebriefDirective: typeof import("../services/social-bot/peer-spea
 let runSocialSkillAnalysis: typeof import("../services/social-bot/peer-speaker-prompt.js").runSocialSkillAnalysis;
 let extractUserUtterance: typeof import("../services/social-bot/peer-speaker-agent.js").extractUserUtterance;
 let pickVoice: typeof import("../services/social-bot/voice-pick.js").pickVoice;
+let peerVoicePitchSemitones: typeof import("../services/social-bot/voice-pick.js").peerVoicePitchSemitones;
+let peerVoiceFormantSemitones: typeof import("../services/social-bot/voice-pick.js").peerVoiceFormantSemitones;
 let DirectedSessionCls: typeof import("../services/social-bot/directed-session.js").DirectedSession;
+let reciprocityMove: typeof import("../services/social-bot/directed-session.js").reciprocityMove;
 let generatePersona: typeof import("../services/social-bot/persona-generator.js").generatePersona;
 let DEFAULT_SLP_CONFIG: typeof import("../services/social-bot/persona-generator.js").DEFAULT_SLP_CONFIG;
 
@@ -64,8 +67,8 @@ beforeAll(async () => {
     runSocialSkillAnalysis,
   } = await import("../services/social-bot/peer-speaker-prompt.js"));
   ({ extractUserUtterance } = await import("../services/social-bot/peer-speaker-agent.js"));
-  ({ pickVoice } = await import("../services/social-bot/voice-pick.js"));
-  ({ DirectedSession: DirectedSessionCls } = await import("../services/social-bot/directed-session.js"));
+  ({ pickVoice, peerVoicePitchSemitones, peerVoiceFormantSemitones } = await import("../services/social-bot/voice-pick.js"));
+  ({ DirectedSession: DirectedSessionCls, reciprocityMove } = await import("../services/social-bot/directed-session.js"));
   ({ generatePersona, DEFAULT_SLP_CONFIG } = await import("../services/social-bot/persona-generator.js"));
 });
 
@@ -90,6 +93,64 @@ describe("pickVoice", () => {
     for (let i = 0; i < 20; i++) {
       expect(["Kore", "Aoede", "Leda"]).not.toContain(pickVoice("male", []));
     }
+  });
+});
+
+describe("peerVoicePitchSemitones", () => {
+  test("raises pitch (modestly) more for younger children, none for adults", () => {
+    expect(peerVoicePitchSemitones(5)).toBe(4);
+    expect(peerVoicePitchSemitones(8)).toBe(4);
+    expect(peerVoicePitchSemitones(11)).toBe(3);
+    expect(peerVoicePitchSemitones(14)).toBe(2);
+    expect(peerVoicePitchSemitones(16)).toBe(1);
+    expect(peerVoicePitchSemitones(30)).toBe(0);
+  });
+
+  test("monotonically non-increasing as age rises", () => {
+    let prev = Infinity;
+    for (let age = 3; age <= 25; age++) {
+      const p = peerVoicePitchSemitones(age);
+      expect(p).toBeLessThanOrEqual(prev);
+      prev = p;
+    }
+  });
+
+  test("unknown age falls back to a modest child shift", () => {
+    expect(peerVoicePitchSemitones(undefined)).toBe(3);
+    expect(peerVoicePitchSemitones(null)).toBe(3);
+    expect(peerVoicePitchSemitones(NaN)).toBe(3);
+  });
+});
+
+describe("peerVoiceFormantSemitones", () => {
+  test("raises formants more for younger children, none for adults", () => {
+    expect(peerVoiceFormantSemitones(5)).toBe(7);
+    expect(peerVoiceFormantSemitones(8)).toBe(6);
+    expect(peerVoiceFormantSemitones(11)).toBe(5);
+    expect(peerVoiceFormantSemitones(14)).toBe(3);
+    expect(peerVoiceFormantSemitones(16)).toBe(2);
+    expect(peerVoiceFormantSemitones(30)).toBe(0);
+  });
+
+  test("monotonically non-increasing as age rises", () => {
+    let prev = Infinity;
+    for (let age = 3; age <= 25; age++) {
+      const f = peerVoiceFormantSemitones(age);
+      expect(f).toBeLessThanOrEqual(prev);
+      prev = f;
+    }
+  });
+
+  test("formant shift is the dominant age cue — at least pitch for any child age", () => {
+    for (let age = 3; age <= 17; age++) {
+      expect(peerVoiceFormantSemitones(age)).toBeGreaterThanOrEqual(peerVoicePitchSemitones(age));
+    }
+  });
+
+  test("unknown age falls back to a moderate child formant shift", () => {
+    expect(peerVoiceFormantSemitones(undefined)).toBe(5);
+    expect(peerVoiceFormantSemitones(null)).toBe(5);
+    expect(peerVoiceFormantSemitones(NaN)).toBe(5);
   });
 });
 
@@ -249,6 +310,45 @@ describe("DirectedSession usage surfacing", () => {
     const result = await session.handleTurn("hi");
     expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5, cachedTokens: undefined });
   });
+
+  test("surfaces ending=true when the user wants to end the conversation", async () => {
+    const farewell = {
+      candidates: [{ content: { parts: [{ functionCall: { name: "turn", args: {
+        reply: "Bye! Talk soon.",
+        observed: { wasQuestion: false, contingency: 0.5, disclosure: 0, userAffect: { valence: 0.3, arousal: 0 }, wantsToEnd: true },
+      } } }] } }],
+    };
+    const result = await makeDirectedSession([farewell]).handleTurn("ok bye, I have to go");
+    expect(result.reply).toBe("Bye! Talk soon.");
+    expect(result.ending).toBe(true);
+  });
+
+  test("ending is false on an ordinary turn", async () => {
+    const result = await makeDirectedSession([turnCallChunk]).handleTurn("hi");
+    expect(result.ending).toBe(false);
+  });
+
+  test("a deterministic interrupt signal docks turnTaking even when the LLM didn't flag it", async () => {
+    // turnCallChunk's `observed` has no `interrupted` field → parsed.interrupted
+    // is false. The coordinator's press-interrupt arrives via signals.interrupted.
+    const session = makeDirectedSession([turnCallChunk]);
+    await session.handleTurn("hi", {
+      eyeContact: false,
+      interrupted: true,
+      responseLatencyMs: 0,
+      backchannel: false,
+    });
+    const tt = session.debugLive().skills.find((s) => s.competency === "turnTaking");
+    expect(tt?.samples).toBe(1);
+    expect(tt?.value).toBeLessThan(0.5);
+  });
+
+  test("turnTaking is NOT docked on a normal (non-interrupting) turn", async () => {
+    const session = makeDirectedSession([turnCallChunk]);
+    await session.handleTurn("hi"); // default signals → interrupted false
+    const tt = session.debugLive().skills.find((s) => s.competency === "turnTaking");
+    expect(tt?.value).toBeGreaterThan(0.5);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -292,5 +392,30 @@ describe("runSocialSkillAnalysis", () => {
     const userMsg = completeChatCalls[0].messages.find(m => m.role === "user");
     expect(String(userMsg?.content)).toContain("Dan");
     expect(String(userMsg?.content)).toContain("Mira");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reciprocity rhythm — answer-then-ask (Part 1)
+// ---------------------------------------------------------------------------
+
+describe("reciprocityMove", () => {
+  // balanceFlipAt ~0.7 (typical). Below ASK_BACK_THRESHOLD (0.4) the user has
+  // been under-asking, so the peer should hand the turn back.
+  test("hands the turn back (answer_then_bid) when the user under-asks", () => {
+    expect(reciprocityMove(0.3, 0.7)).toBe("answer_then_bid");
+  });
+
+  test("discloses (no interrogation back) when the user over-asks", () => {
+    expect(reciprocityMove(0.85, 0.7)).toBe("disclose");
+  });
+
+  test("just follows up when the balance is even", () => {
+    expect(reciprocityMove(0.55, 0.7)).toBe("follow_up");
+  });
+
+  test("never asks back at language tier 1 (single words can't fit reply + question)", () => {
+    expect(reciprocityMove(0.3, 0.7, 1)).toBe("follow_up");
+    expect(reciprocityMove(0.3, 0.7, 2)).toBe("answer_then_bid");
   });
 });

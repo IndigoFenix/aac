@@ -1004,6 +1004,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Enable toggle — surfaces as the "Practice friend" button on the
+                  home board (enabled by default). */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🧑‍🤝‍🧑</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appSocialTrainer')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSocialTrainerDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.social_trainer?.enabled ?? true}
+                  onCheckedChange={(checked) => setSocial({ enabled: checked })}
+                />
+              </div>
+
               {/* Focus skills (default goals) */}
               <div>
                 <Label className="text-sm font-medium">{t('aacSettings.socialTrainerFocus')}</Label>
@@ -2207,22 +2223,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
 
-              {/* Social Trainer */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🧑‍🤝‍🧑</span>
-                  <div>
-                    <Label className="text-sm font-medium">{t('aacSettings.appSocialTrainer')}</Label>
-                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSocialTrainerDesc')}</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={appConfig.social_trainer?.enabled ?? false}
-                  onCheckedChange={(checked) =>
-                    setAppConfig(prev => ({ ...prev, social_trainer: { ...prev.social_trainer, enabled: checked } }))
-                  }
-                />
-              </div>
+              {/* Social Trainer's enable toggle lives in its own customization
+                  section above (it surfaces as "Practice friend" on the home
+                  board, not the Apps page). */}
             </CardContent>
           </Card>
 

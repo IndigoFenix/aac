@@ -25,6 +25,8 @@ import type { GeneratedPersona } from "./persona-generator";
 import type { LanguageLevel } from "@shared/aac-language-level";
 import { DEFAULT_SLP_CONFIG, DEFAULT_DIFFICULTY } from "./persona-generator";
 import type { SlpConfig } from "./personality-and-challenge";
+import type { SocialPeerDebugSnapshot, SocialPeerParams } from "@shared/social-bot/debug";
+import { languageLevelToInt, DEFAULT_LANGUAGE_LEVEL_INT } from "@shared/aac-language-level";
 import type { ISpeakerAgent } from "../dual-agent/speaker-interface";
 import type { SpeakerStartConfig, SpeakerOutputEvent } from "../dual-agent/speaker-agent";
 import type {
@@ -87,6 +89,13 @@ export interface SocialPeerCallbacks {
   /** Per-turn token usage from the director's LLM call. The Coordinator
    *  bills it against the session/student/user via trackHttpUsage. */
   onUsage?: (usage: TurnUsage) => void;
+  /** DEBUG-only: full director internals + editable params, after start and
+   *  every turn. The Coordinator ships it as `social_peer_debug` in debug mode. */
+  onDebug?: (snapshot: SocialPeerDebugSnapshot) => void;
+  /** The user wound the conversation down (said goodbye / asked to stop). The
+   *  peer's farewell has just been queued; the Coordinator should end the
+   *  session after it plays. */
+  onConversationEnd?: () => void;
   onError: (error: Error) => void;
 }
 
@@ -150,6 +159,7 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       mode: this.session.initialMode(),
       rapport: target.r,
     });
+    this.emitDebug();
   }
 
   /** Profile transitions never hit the peer (Coordinator gates rest/sleep
@@ -176,8 +186,12 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       flowNote("SPEAKER", `peer director dropped non-user-utterance turn: "${text.slice(0, 80)}"`);
       return;
     }
+    // Consume any interruption flag the coordinator set for this turn (the
+    // user cut in while the peer was speaking, or jumped a handed-over turn).
+    const interrupted = this.pendingInterrupted;
+    this.pendingInterrupted = false;
     this.turnChain = this.turnChain
-      .then(() => this.runTurn(utterance))
+      .then(() => this.runTurn(utterance, interrupted))
       .catch(err => {
         const e = err instanceof Error ? err : new Error(String(err));
         console.error("[SocialPeerSpeakerAgent] turn failed:", e.message);
@@ -204,11 +218,26 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
   // Turn execution
   // -------------------------------------------------------------------------
 
-  private async runTurn(utterance: string): Promise<void> {
+  /** Set by the coordinator before sendUserTurn when this press interrupted
+   *  the peer mid-speech or jumped a handed-over turn. Consumed (and reset) on
+   *  the next turn so the director can dock turn-taking + lose rapport. */
+  private pendingInterrupted = false;
+
+  /** Mark the upcoming turn as a turn-taking violation (user cut in). */
+  noteUserInterruption(): void {
+    this.pendingInterrupted = true;
+  }
+
+  private async runTurn(utterance: string, interrupted: boolean): Promise<void> {
     if (!this.opened || !this.session) return;
     let result: TurnResult;
     try {
-      result = await this.session.handleTurn(utterance);
+      result = await this.session.handleTurn(utterance, {
+        eyeContact: false,
+        interrupted,
+        responseLatencyMs: 0,
+        backchannel: false,
+      });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       console.error("[SocialPeerSpeakerAgent] director turn failed:", e.message);
@@ -226,6 +255,7 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       `peer engine: mode=${result.mode} r=${result.vector.rapport.toFixed(2)} v=${result.vector.valence.toFixed(2)} ` +
         `tone=${result.directive.tone} move=${result.ext.identityMove ?? "-"} probe=${result.ext.probe ?? "-"}`,
     );
+    this.emitDebug();
 
     // Face first — the client starts lerping while TTS spins up
     // (mirrors the standalone relay's bot_state-before-audio ordering).
@@ -233,6 +263,7 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       target: result.faceTarget,
       mode: result.mode,
       rapport: result.vector.rapport,
+      text: result.reply.trim(),
     });
 
     const reply = result.reply.trim();
@@ -270,6 +301,55 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       target: "USER",
     };
     this.opts.callbacks.onEvent(endEvent);
+
+    // The user wound the conversation down — the farewell is now queued for
+    // TTS. Tell the Coordinator to end the session once it plays out.
+    if (result.ending) {
+      flowNote("SPEAKER", "peer detected end-of-conversation — signaling session wind-down");
+      this.opts.callbacks.onConversationEnd?.();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Debug snapshot
+  // -------------------------------------------------------------------------
+
+  /** The editable parameter set behind this session (debug tool). */
+  private buildParamsSnapshot(): SocialPeerParams {
+    const p = this.opts.persona;
+    const slp = this.opts.slpConfig ?? DEFAULT_SLP_CONFIG;
+    return {
+      name: p.name,
+      gender: p.gender,
+      archetype: p.archetype,
+      genome: { ...p.genome },
+      interests: { ...p.identity.interests },
+      stances: Object.fromEntries(
+        Object.entries(p.identity.stances).map(([k, v]) => [k, { position: v.position, conviction: v.conviction }]),
+      ),
+      humorStyle: p.humorStyle,
+      difficulty: this.opts.difficulty ?? DEFAULT_DIFFICULTY,
+      languageLevelInt: this.opts.languageLevel ? languageLevelToInt(this.opts.languageLevel) : DEFAULT_LANGUAGE_LEVEL_INT,
+      slp: {
+        goalDimensions: [...slp.goalDimensions],
+        lockedDimensions: [...slp.lockedDimensions],
+        maxChallengeIntensity: slp.maxChallengeIntensity,
+        challengeRatio: slp.challengeRatio,
+      },
+      model: this.opts.model,
+    };
+  }
+
+  /** Full debug snapshot (params + live engine state), or null before start. */
+  getDebugSnapshot(): SocialPeerDebugSnapshot | null {
+    if (!this.session) return null;
+    return { params: this.buildParamsSnapshot(), live: this.session.debugLive() };
+  }
+
+  private emitDebug(): void {
+    if (!this.opts.callbacks.onDebug) return;
+    const snap = this.getDebugSnapshot();
+    if (snap) this.opts.callbacks.onDebug(snap);
   }
 
   // -------------------------------------------------------------------------

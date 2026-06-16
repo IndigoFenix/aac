@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CostBreakdownCell } from "./CostBreakdownCell";
-import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2 } from "lucide-react";
+import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2, Download } from "lucide-react";
 import {
   useAACSessionsAdmin,
   useChatSessionsAdmin,
@@ -82,6 +82,74 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
     default:
       return "outline";
   }
+}
+
+/** Trigger a browser download of plain-text content as a .txt file. */
+function downloadTextFile(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** Format a session conversation log (messages + summary) as plain text. */
+function formatSessionLogText(
+  sessionId: string,
+  type: "aac" | "chat",
+  messages: any[],
+  title: string | null,
+  summary: string | null,
+  importance: number | null,
+): string {
+  const lines: string[] = [];
+  lines.push(`Session Log (${type})`);
+  lines.push(`Session ID: ${sessionId}`);
+  lines.push(`Exported: ${new Date().toISOString()}`);
+  lines.push("=".repeat(60));
+  lines.push("");
+  for (const msg of messages) {
+    const role = msg.role || msg.type || "unknown";
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : typeof msg.text === "string"
+          ? msg.text
+          : JSON.stringify(msg.content ?? msg.text ?? msg, null, 2);
+    const ts = msg.timestamp || msg.createdAt;
+    lines.push(`[${role}]${ts ? ` ${new Date(ts).toISOString()}` : ""}`);
+    lines.push(content);
+    lines.push("");
+  }
+  if (title || summary) {
+    lines.push("=".repeat(60));
+    lines.push("SESSION SUMMARY");
+    if (typeof importance === "number") lines.push(`Importance: ${importance}`);
+    if (title) lines.push(`Title: ${title}`);
+    if (summary) lines.push(summary);
+  }
+  return lines.join("\n");
+}
+
+/** Format a session debug trace as plain text. */
+function formatDebugLogText(sessionId: string, entries: DebugLogEntry[]): string {
+  const lines: string[] = [];
+  lines.push("Session Debug Log");
+  lines.push(`Session ID: ${sessionId}`);
+  lines.push(`Exported: ${new Date().toISOString()}`);
+  lines.push(`Entries: ${entries.length}`);
+  lines.push("=".repeat(60));
+  lines.push("");
+  for (const e of entries) {
+    lines.push(`#${e.seq} [${e.section}] ${new Date(e.timestamp).toISOString()}`);
+    lines.push(e.content);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 // ---------- Sub-Components ----------
@@ -234,7 +302,23 @@ function DebugLogDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Session Debug Log</DialogTitle>
+          <div className="flex items-center justify-between gap-3 pe-6">
+            <DialogTitle>Session Debug Log</DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={entries.length === 0}
+              onClick={() =>
+                sessionId &&
+                downloadTextFile(
+                  `debug-log-${sessionId}${section ? `-${section}` : ""}.txt`,
+                  formatDebugLogText(sessionId, entries),
+                )
+              }
+            >
+              <Download className="w-4 h-4 me-2" /> Export
+            </Button>
+          </div>
         </DialogHeader>
         <div className="flex items-center gap-3 pb-2 border-b">
           <span className="text-sm text-muted-foreground">Filter:</span>
@@ -304,7 +388,23 @@ function SessionLogDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Session Log</DialogTitle>
+          <div className="flex items-center justify-between gap-3 pe-6">
+            <DialogTitle>Session Log</DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={messages.length === 0 && !hasSummary}
+              onClick={() =>
+                sessionId &&
+                downloadTextFile(
+                  `session-log-${type}-${sessionId}.txt`,
+                  formatSessionLogText(sessionId, type, messages, title, summary, importance),
+                )
+              }
+            >
+              <Download className="w-4 h-4 me-2" /> Export
+            </Button>
+          </div>
         </DialogHeader>
         {query.isLoading ? (
           <div className="flex items-center justify-center py-12">

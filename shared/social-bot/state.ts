@@ -37,6 +37,9 @@ export interface BotStatePayload {
   mode: "WITHDRAWN" | "GUARDED" | "PLAYFUL" | "OPEN" | "NEUTRAL";
   /** Bot's current rapport with the user (-1..1). Same as target.r; mirrored for debug. */
   rapport: number;
+  /** The peer's spoken line this turn — surfaced in the header caption.
+   *  Omitted at session start (before any turn). */
+  text?: string;
 }
 
 // ── Session report (end of session) ────────────────────────────────────

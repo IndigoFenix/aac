@@ -2,7 +2,7 @@
 // WebSocket-based hook for Gemini Live API sessions.
 // Replaces useDualAgent for Live mode — same return interface, WebSocket transport.
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import type { ParsedBoardData } from "@shared/schema";
 import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
@@ -196,6 +196,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Per-turn director state (face target + mode + rapport) while a social
   // session is active — drives the ProceduralFace.
   const [socialPeerState, setSocialPeerState] = useState<import("@shared/social-bot/state").BotStatePayload | null>(null);
+  // DEBUG-only: full director internals + editable params, refreshed each turn.
+  const [socialPeerDebug, setSocialPeerDebug] = useState<import("@shared/social-bot/debug").SocialPeerDebugSnapshot | null>(null);
+  // Home-board "Practice friend" preview face (the peer that will appear when a
+  // session starts). Null during a session and during the post-session beat.
+  const [socialPeerPreview, setSocialPeerPreview] = useState<import("./dual-agent-types").SocialPeerPreview | null>(null);
+  // DEBUG-only: live client-side override of the peer's voice-pitch shift
+  // (semitones). When set, supersedes the server's age-matched `voicePitch`.
+  // The shift is purely client-side, so the dial takes effect immediately
+  // without restarting the peer. Cleared when the session ends.
+  const [peerVoicePitchOverride, setPeerVoicePitchOverride] = useState<number | null>(null);
+  // DEBUG-only: live client-side override of the peer's formant shift
+  // (semitones). When set, supersedes the server's age-matched `voiceFormant`.
+  const [peerVoiceFormantOverride, setPeerVoiceFormantOverride] = useState<number | null>(null);
 
   // Enabled built-in apps + custom apps assigned to this student.
   // Populated from session_snapshot and consumed by the Apps board overlay.
@@ -291,10 +304,36 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const audioTimeoutCountRef = useRef(0);
   const localTtsActiveRef = useRef(false); // Dynamic override when slow connection detected
 
+  // While a social-training session is active, the peer (which plays on the
+  // "avatar" tag) gets an age-matched pitch shift sent by the server so the
+  // adult Gemini voice reads as a same-age conversation partner. This
+  // overrides the companion AI's configured pitch for the duration.
+  const effectivePitchByTag = useMemo(() => {
+    if (!socialSession) return pitchByTag;
+    const peerPitch = peerVoicePitchOverride ?? socialSession.voicePitch;
+    if (typeof peerPitch === "number" && peerPitch !== 0) {
+      return { ...pitchByTag, avatar: peerPitch };
+    }
+    // An explicit override of 0 must still flatten the avatar pitch.
+    if (peerVoicePitchOverride === 0) return { ...pitchByTag, avatar: 0 };
+    return pitchByTag;
+  }, [pitchByTag, socialSession, peerVoicePitchOverride]);
+
+  // The peer (avatar tag) also gets an age-matched FORMANT shift — the primary
+  // "younger" cue — sent by the server and overridable live in debug. Only the
+  // peer uses formant shifting; the companion/student voices stay unshaped.
+  const effectiveFormantByTag = useMemo(() => {
+    if (!socialSession) return undefined;
+    const peerFormant = peerVoiceFormantOverride ?? socialSession.voiceFormant;
+    if (typeof peerFormant === "number") return { avatar: peerFormant };
+    return undefined;
+  }, [socialSession, peerVoiceFormantOverride]);
+
   // Streaming audio player
   const audioPlayer = useStreamingAudioPlayer({
     autoPlay: autoPlayAudio,
-    pitchByTag,
+    pitchByTag: effectivePitchByTag,
+    formantByTag: effectiveFormantByTag,
     onPlaybackEnd: () => {
       // Show deferred binary-choice overlay after TTS finishes.
       if (pendingAskBinaryChoiceRef.current) {
@@ -795,16 +834,37 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
               appearance: msg.data.appearance,
               expressiveness: msg.data.expressiveness,
               legibility: msg.data.legibility,
+              voicePitch: msg.data.voicePitch,
+              voiceFormant: msg.data.voiceFormant,
             });
+            // The preview persona was just consumed by the session — the button
+            // now shows the live (session) face + X, not the idle preview.
+            setSocialPeerPreview(null);
           } else {
             setSocialSession(null);
             setSocialPeerState(null);
+            setSocialPeerDebug(null);
+            setPeerVoicePitchOverride(null);
+            setPeerVoiceFormantOverride(null);
+            // Clear the preview so the button shows nothing until the server
+            // sends a fresh face after the post-session beat.
+            setSocialPeerPreview(null);
           }
+          break;
+
+        case "social_peer_preview":
+          // Idle "Practice friend" face for the home button.
+          setSocialPeerPreview(msg.data ?? null);
           break;
 
         case "social_peer_state":
           // Director state after each peer turn — the face lerps toward it.
           setSocialPeerState(msg.data ?? null);
+          break;
+
+        case "social_peer_debug":
+          // DEBUG-only: full engine internals + editable params for the dialog.
+          setSocialPeerDebug(msg.data ?? null);
           break;
 
         case "debug":
@@ -1542,7 +1602,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     setActiveApp(null);
     setSocialSession(null);
     setSocialPeerState(null);
+    setSocialPeerDebug(null);
   }, []);
+
+  /** DEBUG-only: restart the active social peer with fully custom parameters. */
+  const reconfigureSocialPeer = useCallback((params: import("@shared/social-bot/debug").SocialPeerParams) => {
+    wsSend({ type: "social_peer_reconfigure", params });
+  }, [wsSend]);
 
   const stopAudio = useCallback(() => {
     audioPlayer.stop();
@@ -1588,6 +1654,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Audio state
     audioEnabled,
     isPlaying: audioPlayer.isPlaying,
+    /** Tag of the audio chunk currently playing ("avatar" = AI/peer voice,
+     *  "utterance" = student voice). Lets the avatar mouth animate only for
+     *  its OWN voice, not the student's button-press playback. */
+    audioPlayingTag: audioPlayer.currentTag,
     voiceEnabled,
     isRecording: audioRecorder.isRecording,
     audioLevel: audioRecorder.audioLevel,
@@ -1687,7 +1757,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Social trainer (server-owned session)
     socialSession,
     socialPeerState,
+    socialPeerDebug,
+    socialPeerPreview,
+    reconfigureSocialPeer,
     notifySocialTrainerStarted,
+    // DEBUG: live peer voice dials (effective value + setter). Effective =
+    // override if set, else the server's age-matched shift, else 0.
+    peerVoicePitch: peerVoicePitchOverride ?? socialSession?.voicePitch ?? 0,
+    setPeerVoicePitch: setPeerVoicePitchOverride,
+    peerVoiceFormant: peerVoiceFormantOverride ?? socialSession?.voiceFormant ?? 0,
+    setPeerVoiceFormant: setPeerVoiceFormantOverride,
 
     // Construction board (sentence builder)
     sendConstructionState,

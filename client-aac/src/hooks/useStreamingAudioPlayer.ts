@@ -2,7 +2,7 @@
 // Hook for playing streaming audio chunks from SSE responses
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { pitchShift, semitonesToFactor } from "@/lib/pitchShifter";
+import { processVoice } from "@/lib/pitchShifter";
 
 export interface AudioChunk {
   chunk: string; // Base64 encoded audio data
@@ -46,6 +46,13 @@ export interface UseStreamingAudioPlayerOptions {
    * Example: { avatar: 3, utterance: -2 }
    */
   pitchByTag?: Record<string, number>;
+  /**
+   * Per-tag formant (vocal-tract) shift in semitones, relative to the original
+   * voice. Moving formants up (positive) simulates a shorter tract → younger.
+   * A tag absent from this map keeps the legacy coupled-formant behaviour.
+   * Example: { avatar: 5 }
+   */
+  formantByTag?: Record<string, number>;
 }
 
 /**
@@ -63,6 +70,7 @@ export function useStreamingAudioPlayer(
     onError,
     autoPlay = true,
     pitchByTag,
+    formantByTag,
   } = options;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -101,6 +109,8 @@ export function useStreamingAudioPlayer(
   // Keep latest pitch map in a ref so playNext doesn't need to re-render
   const pitchByTagRef = useRef(pitchByTag);
   pitchByTagRef.current = pitchByTag;
+  const formantByTagRef = useRef(formantByTag);
+  formantByTagRef.current = formantByTag;
 
   // Initialize audio element + AudioContext analyser
   useEffect(() => {
@@ -200,6 +210,7 @@ export function useStreamingAudioPlayer(
   const playPitchShifted = useCallback(async (
     entry: { buffer: ArrayBuffer; format: string; tag?: string },
     semitones: number,
+    formantSemitones: number | undefined,
     onDone: () => void,
     onFail: (err: any) => void,
   ) => {
@@ -214,8 +225,7 @@ export function useStreamingAudioPlayer(
       // Decode compressed audio → AudioBuffer
       const audioBuffer = await ctx.decodeAudioData(entry.buffer.slice(0)); // slice to avoid detach
 
-      // Apply WSOLA pitch shift to every channel
-      const factor = semitonesToFactor(semitones);
+      // Apply pitch (+ optional formant) shift to every channel.
       const shifted = ctx.createBuffer(
         audioBuffer.numberOfChannels,
         audioBuffer.length,
@@ -223,7 +233,7 @@ export function useStreamingAudioPlayer(
       );
       for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
         const raw = audioBuffer.getChannelData(ch);
-        const processed = pitchShift(raw, factor, audioBuffer.sampleRate);
+        const processed = processVoice(raw, audioBuffer.sampleRate, semitones, formantSemitones);
         shifted.getChannelData(ch).set(processed);
       }
 
@@ -297,9 +307,11 @@ export function useStreamingAudioPlayer(
 
       markPlaying();
       const tagPitch = (entry.tag && pitchByTagRef.current?.[entry.tag]) || 0;
+      const tagFormant = entry.tag ? formantByTagRef.current?.[entry.tag] : undefined;
       playPitchShifted(
         entry as { buffer: ArrayBuffer; format: string; tag?: string },
         tagPitch,
+        tagFormant,
         () => { playingRef.current = false; playNext(); },       // onDone
         (err) => {                                                // onFail
           playingRef.current = false;
@@ -417,8 +429,9 @@ export function useStreamingAudioPlayer(
         }
 
         const tagPitch = chunk.tag && pitchByTagRef.current?.[chunk.tag];
-        if (tagPitch && tagPitch !== 0) {
-          // Pitch-shifted path: store raw ArrayBuffer for decodeAudioData later
+        const tagFormant = chunk.tag && formantByTagRef.current?.[chunk.tag];
+        if ((tagPitch && tagPitch !== 0) || (tagFormant && tagFormant !== 0)) {
+          // Pitch/formant-shifted path: store raw ArrayBuffer for decodeAudioData later
           const buffer = base64ToArrayBuffer(chunk.chunk);
           queueRef.current.push({ buffer, format: chunk.format, tag: chunk.tag });
         } else {

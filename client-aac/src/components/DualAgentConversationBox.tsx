@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Bug,
+  SlidersHorizontal,
   AlertTriangle,
   Sun,
   Moon,
@@ -32,6 +33,7 @@ import {
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useSocialBot } from "@/contexts/SocialBotContext";
+import { SocialDebugDialog } from "@/components/SocialDebugDialog";
 import { ProceduralFace } from "@shared/social-bot/ProceduralFace";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
@@ -146,9 +148,18 @@ export function DualAgentConversationBox({
     setPaused,
     thinkingPulse,
     inputGlyph,
+    socialSession,
+    socialPeerDebug,
+    reconfigureSocialPeer,
+    peerVoicePitch,
+    setPeerVoicePitch,
+    peerVoiceFormant,
+    setPeerVoiceFormant,
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
   const socialBot = useSocialBot();
+  // DEBUG-only: social-trainer parameter/internals inspector dialog.
+  const [showSocialDebug, setShowSocialDebug] = useState(false);
   const { t, isRTL } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
@@ -322,7 +333,10 @@ export function DualAgentConversationBox({
             >
               <AacCave
                 avatar={sprite.avatar}
-                empty={!isAsleep}
+                // During a social-trainer session the companion is silent (the
+                // peer has taken the avatar slot), so show the cave occupied —
+                // the same images it shows in silent/muted mode.
+                empty={!isAsleep && !socialBot.active}
                 eyeState={eyeState}
               />
               {/* Mode-change indicator — flashes briefly when AI changes mode */}
@@ -491,6 +505,19 @@ export function DualAgentConversationBox({
                     </Button>
                   )}
 
+                  {/* Debug: social-trainer parameter / internals inspector */}
+                  {debugMode && socialSession && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowSocialDebug((v) => !v)}
+                      className={`h-7 w-7 p-0 ${showSocialDebug ? 'text-yellow-300 bg-white/20' : 'text-white hover:text-gray-200 hover:bg-white/10'}`}
+                      title="Social Trainer Debug"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                    </Button>
+                  )}
+
                   {/* Debug: fire a fake caretaker alarm to test the overlay + sound */}
                   {debugMode && onTestAlarm && (
                     <>
@@ -584,7 +611,7 @@ export function DualAgentConversationBox({
                 <div className="flex items-center min-h-[2rem]">
                   <div className="text-sm text-white font-medium leading-relaxed flex-1">
                     {socialBot.botText
-                      ? (<><span className="opacity-60 mr-1">{t("social.peer")}</span>{socialBot.botText}</>)
+                      ? socialBot.botText
                       : (<span className="text-white/60 italic">{socialBot.connected ? t("social.waiting") : t("social.connecting")}</span>)
                     }
                   </div>
@@ -724,8 +751,12 @@ export function DualAgentConversationBox({
               sends a fresh translation. */}
           {glyphStripActive && (
             <div
-              className="mt-1 flex items-center justify-center"
-              style={{ height: "4rem" }}
+              // Height MUST equal home.tsx's GLYPH_STRIP_REM (5rem) so the grown
+              // header is exactly `6rem + GLYPH_STRIP_REM` tall — matching the
+              // <main> top padding + board offset, with no gap underneath.
+              // box-sizing: border-box keeps the border/padding inside 5rem.
+              className="flex items-center justify-center border-t border-white/15 pt-1"
+              style={{ height: "5rem" }}
               aria-hidden={!inputGlyph?.glyph}
             >
               {inputGlyph?.glyph ? (
@@ -741,6 +772,18 @@ export function DualAgentConversationBox({
             </div>
           )}
         </div>
+
+      {debugMode && showSocialDebug && socialSession && (
+        <SocialDebugDialog
+          snapshot={socialPeerDebug}
+          onApply={(params) => reconfigureSocialPeer(params)}
+          voicePitch={peerVoicePitch}
+          onVoicePitchChange={setPeerVoicePitch}
+          voiceFormant={peerVoiceFormant}
+          onVoiceFormantChange={setPeerVoiceFormant}
+          onClose={() => setShowSocialDebug(false)}
+        />
+      )}
     </div>
   );
 }

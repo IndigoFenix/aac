@@ -81,7 +81,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -114,8 +114,11 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onSendConstructionStateReady?: (fn: ((state: import("@/hooks/dual-agent-types").ConstructionStateClient) => void) | null) => void;
   onConstructionSuggestionsChange?: (data: import("@/hooks/dual-agent-types").ConstructionSuggestionsClient | null) => void;
   onConstructionMemoryChipsChange?: (data: Partial<Record<import("@/hooks/dual-agent-types").ConstructionStateClient["category"], import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient>>) => void;
+  /** Lift the social-trainer peer face (home-board "Practice friend" button)
+   *  out of the provider so the top-level board (rendered outside it) can show it. */
+  onSocialFaceChange?: (data: { preview: import("@/hooks/dual-agent-types").SocialPeerPreview | null; session: import("@/hooks/dual-agent-types").SocialSessionInfo | null }) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyph, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyph, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -272,6 +275,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   useEffect(() => {
     onConstructionMemoryChipsChange?.(constructionMemoryChips);
   }, [constructionMemoryChips, onConstructionMemoryChipsChange]);
+
+  useEffect(() => {
+    onSocialFaceChange?.({ preview: socialPeerPreview ?? null, session: socialSession ?? null });
+  }, [socialPeerPreview, socialSession, onSocialFaceChange]);
 
   return null;
 }
@@ -430,6 +437,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
+  // Social-trainer peer face for the home-board "Practice friend" button. The
+  // board renders OUTSIDE the DualAgentProvider, so DualAgentBridge lifts this
+  // out of context for us.
+  const [socialFace, setSocialFace] = useState<{ preview: import("@/hooks/dual-agent-types").SocialPeerPreview | null; session: import("@/hooks/dual-agent-types").SocialSessionInfo | null }>({ preview: null, session: null });
 
   // Prebuilt board state — set when AI loads a custom board via set_board
   // When set, the main area shows the prebuilt board and AI board updates go to a side panel
@@ -1857,6 +1868,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 getFaceImage={resolveFaceImage}
                 suppressLocalSpeech={aiSessionActive}
                 extraHeaderOffset={glyphStripActive ? GLYPH_STRIP_REM : 0}
+                socialPeerPreview={socialFace.preview}
+                socialSession={socialFace.session}
               />
             </div>
           ) : (
@@ -2164,6 +2177,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSendConstructionStateReady={(fn) => { sendConstructionStateRef.current = fn; }}
             onConstructionSuggestionsChange={setConstructionSuggestionsState}
             onConstructionMemoryChipsChange={setConstructionMemoryChipsState}
+            onSocialFaceChange={setSocialFace}
           />
           <DualAgentConversationBox
             isVisible={showConversation}

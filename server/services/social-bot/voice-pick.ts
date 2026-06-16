@@ -14,6 +14,45 @@ import { GEMINI_VOICES } from "../voice/gemini-tts-service";
 const MALE_VOICES = ["Puck", "Charon", "Fenrir", "Orus", "Zephyr"];
 const FEMALE_VOICES = ["Kore", "Aoede", "Leda", "Zephyr"];
 
+/**
+ * Pitch (F0) shift in semitones for a social-peer's TTS so an adult Gemini
+ * voice reads as roughly the student's age. Kept MODEST on purpose — pitch
+ * alone reads as "same adult, higher", and a large pitch shift sounds
+ * chipmunky. The dominant "younger" cue is the formant shift below; pitch only
+ * nudges F0 into a child-ish range to complement it.
+ *
+ * Younger → higher; an adult-aged user gets no shift. Unknown age defaults to a
+ * modest child shift since the platform's users are children.
+ */
+export function peerVoicePitchSemitones(ageYears?: number | null): number {
+  if (ageYears == null || !Number.isFinite(ageYears)) return 3;
+  if (ageYears <= 6) return 4;
+  if (ageYears <= 9) return 4;
+  if (ageYears <= 12) return 3;
+  if (ageYears <= 15) return 2;
+  if (ageYears <= 17) return 1;
+  return 0;
+}
+
+/**
+ * Formant (vocal-tract) shift in semitones — the PRIMARY age cue. A child has a
+ * physically shorter vocal tract, so its formants sit higher; shifting the
+ * spectral envelope up simulates that without the chipmunk effect of pitch.
+ * Deliberately larger than the pitch shift so the formant-to-pitch ratio lands
+ * in child/teen territory rather than just "sped-up adult".
+ *
+ * Younger → larger upward shift; adult → none. Unknown → moderate child shift.
+ */
+export function peerVoiceFormantSemitones(ageYears?: number | null): number {
+  if (ageYears == null || !Number.isFinite(ageYears)) return 5;
+  if (ageYears <= 6) return 7;
+  if (ageYears <= 9) return 6;
+  if (ageYears <= 12) return 5;
+  if (ageYears <= 15) return 3;
+  if (ageYears <= 17) return 2;
+  return 0;
+}
+
 export function pickVoice(
   gender: "male" | "female" | null,
   exclude: ReadonlyArray<string | undefined | null>,

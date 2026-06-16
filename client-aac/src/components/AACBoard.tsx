@@ -228,6 +228,10 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   className={`relative flex flex-col items-center justify-center p-3 rounded-2xl shadow-lg transition-all cursor-pointer touch-manipulation ${
                     button.action?.type === "link" ? "border-2 border-blue-400" :
                     button.action?.type === "back" || button.action?.type === "home" ? "border-2 border-amber-400" :
+                    // Conversational role indicator: "bid" buttons (questions /
+                    // requests that hand the turn over) get a violet ring so the
+                    // user can tell them apart from plain replies.
+                    button.role === "bid" ? "border-2 border-violet-400" :
                     ""
                   }`}
                   style={{
