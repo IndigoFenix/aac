@@ -66,28 +66,45 @@ export type SpeakerOutputEvent =
 /** Marker the native-audio model leaks when it VOICES its private-thought
  *  tool instead of calling it. An underscore-joined token like
  *  `private_thought` never occurs in natural speech, so matching it (and
- *  the legacy `private_note`) case-insensitively is false-positive-safe.
- *  The transcript preserves the underscore (confirmed in production logs). */
+ *  the legacy `private_note`) case-insensitively is false-positive-safe
+ *  anywhere in the transcript. */
 const THOUGHT_LEAK_TOKEN_RE = /private_(?:thought|note)/i;
+/** The same marker, but space- or hyphen-separated ("private thought",
+ *  "private-note") — the form the model actually voices most often, since
+ *  the transcriber doesn't always preserve the underscore. The natural
+ *  phrase "private thought" DOES occur in speech ("that was a private
+ *  thought of mine"), so unlike the underscore form this is only treated
+ *  as a leak when it LEADS the utterance (optionally after a leaked
+ *  bracket tag the model also echoed). Mirrors the leading-only rule the
+ *  bracketed-tag stripper uses. */
+const THOUGHT_LEAK_LEADING_RE =
+  /^\s*(?:\[[^\]\n]{1,200}\]\s*)*private[\s_-](?:thought|note)\b/i;
 /** Self-invented bare label the model drifts into once a leak goes
  *  uncaught (observed in production). Case-SENSITIVE all-caps + must LEAD
- *  the utterance, so ordinary "Thought you'd…" / "thought…" speech is safe. */
-const THOUGHT_LEAK_LABEL_RE = /^\s*THOUGHT\b/;
+ *  the utterance, so ordinary "Thought you'd…" / "thought…" speech is safe.
+ *  Tolerates a leaked bracket tag in front of it. */
+const THOUGHT_LEAK_LABEL_RE = /^\s*(?:\[[^\]\n]{1,200}\]\s*)*THOUGHT\b/;
 
 /** True when `transcript` (the accumulated streaming transcript so far)
  *  shows a leaked private-thought prefix. */
 export function isLeakedThought(transcript: string): boolean {
-  return THOUGHT_LEAK_TOKEN_RE.test(transcript) || THOUGHT_LEAK_LABEL_RE.test(transcript);
+  return THOUGHT_LEAK_TOKEN_RE.test(transcript)
+    || THOUGHT_LEAK_LEADING_RE.test(transcript)
+    || THOUGHT_LEAK_LABEL_RE.test(transcript);
 }
 
-/** Strip the leaked marker and everything before it, returning the
- *  reasoning text that followed (to record as a private thought). Falls
- *  back to the trimmed original if nothing follows the marker. */
+/** Strip the leaked marker (and any leaked leading bracket tag before it),
+ *  returning the reasoning text that followed — to record as a private
+ *  thought. Falls back to the trimmed original if nothing follows. */
 export function stripThoughtLeakMarker(transcript: string): string {
-  const m = transcript.match(/private_(?:thought|note)\b[:\-\s]*/i)
-    ?? transcript.match(/^\s*THOUGHT\b[:\-\s]*/);
-  const stripped = m ? transcript.slice((m.index ?? 0) + m[0].length).trim() : "";
-  return stripped || transcript.trim();
+  // Drop any leaked leading bracket tags ("[USER to YOU] …") first.
+  const noTags = transcript.replace(/^(?:\s*\[[^\]\n]{1,200}\]\s*)+/, "");
+  const m =
+    noTags.match(/^\s*private[\s_-](?:thought|note)\b[:\-\s]*/i)
+    ?? noTags.match(/private_(?:thought|note)\b[:\-\s]*/i)
+    ?? noTags.match(/^\s*THOUGHT\b[:\-\s]*/);
+  const stripped = m ? noTags.slice((m.index ?? 0) + m[0].length).trim() : "";
+  return stripped || noTags.trim() || transcript.trim();
 }
 
 export interface SpeakerCallbacks {

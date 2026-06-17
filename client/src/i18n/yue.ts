@@ -195,6 +195,7 @@ export const yue = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "地點",
     main: "CliniAACian",
     home: "返回主頁",
     interpret: "解讀溝通",
@@ -2407,6 +2408,8 @@ export const yue = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "社交訓練",
     socialTrainerDesc: "為呢位學生設定練習夥伴嘅技能目標同挑戰程度。AI 可以喺呢個範圍內，每節收窄重點。",
+    socialTrainerLiveAudioTitle: "即時語音",
+    socialTrainerLiveAudioDesc: "練習夥伴用更自然嘅即時語音講嘢，延遲更低（成本更高）。需要即時語音模型，否則用標準語音。技能練習唔受影響。",
     socialTrainerFocus: "要練習嘅技能",
     socialTrainerFocusHint: "要練習嘅技能（預設目標）。留空就包括所有技能。",
     socialTrainerLocked: "禁區技能",
@@ -3295,7 +3298,25 @@ export const yue = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "地點",
+    new: "新增地點",
+    edit: "編輯地點",
+    titleField: "名稱",
+    address: "地址",
+    findFromAddress: "用地址搵",
+    pickOnMap: "喺地圖揀",
+    latitude: "緯度",
+    longitude: "經度",
+    empty: "仲未有地點。加一個開始啦。",
+    selectInstitute: "揀一個機構嚟管理佢嘅地點。",
+    saveFailed: "儲存地點失敗",
+    deleteFailed: "刪除地點失敗",
+    geocodeFailed: "搵唔到呢個地址",
+  },
   calendar: {
+    locations: "地點",
+    addLocation: "新增地點",
     title: "日曆",
     today: "今日",
     month: "月",

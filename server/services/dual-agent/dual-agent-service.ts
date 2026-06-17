@@ -378,6 +378,7 @@ export class DualAgentService {
     localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
     timezone?: string,
     classroomId?: string,
+    gps?: import("@shared/location-matching").GpsReading,
   ): Promise<DualAgentSessionState> {
     // Consent gate — runs even on resume so a session opened against an
     // active consent stops working once that consent is revoked.
@@ -388,8 +389,9 @@ export class DualAgentService {
     if (existingSessionId && sessionCache.has(existingSessionId)) {
       const cached = sessionCache.get(existingSessionId)!;
       cached.lastAccess = Date.now();
-      // Refresh TZ on resume in case the client moved zones.
+      // Refresh TZ / GPS on resume in case the client moved.
       if (timezone) cached.monitorAgent.setTimezone?.(timezone);
+      if (gps) cached.monitorAgent.setGps?.(gps);
       console.log("[DualAgentService] Resuming cached session:", existingSessionId);
       return cached.state;
     }
@@ -411,7 +413,7 @@ export class DualAgentService {
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, muteState, timezone, classroomId);
+    return this.createNewSession(studentId, userId, muteState, timezone, classroomId, gps);
   }
 
   /**
@@ -423,6 +425,7 @@ export class DualAgentService {
     muteState: AACMuteState = 'unmuted',
     timezone?: string,
     classroomId?: string,
+    gps?: import("@shared/location-matching").GpsReading,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -447,8 +450,10 @@ export class DualAgentService {
       userId,
       newSessionId,
     );
-    // Apply timezone before initializeSession so event-window computation uses it.
+    // Apply timezone + GPS before initializeSession so event-window and
+    // location-context computation in thoroughStartup use them.
     if (timezone) monitorAgent.setTimezone(timezone);
+    if (gps) monitorAgent.setGps(gps);
 
     // Initialize session - Monitor searches memory and creates base prompt
     const defaultApps = getDefaultEnabledApps();

@@ -419,12 +419,17 @@ const NO_CHANGE_ESCAPE = ` (If the current ${T.board} already covers good option
  * default — the model picks from the full tool list as usual.
  */
 export function invocationActionHint(events: AgentEvent[]): string {
+  let hasComposed = false;
   let hasUserInput = false;
   let hasAiSpoke = false;
   let hasContextUpdate = false;
   let hasInterpret = false;
   for (const e of events) {
-    if (e.type === "button_pressed" || e.type === "sentence_composed") hasUserInput = true;
+    // A composed SENTENCE is NOT a normal user input — it must be voiced
+    // via interpret(), not answered with a follow-up board. Keep it out of
+    // hasUserInput so the rebuild_board hint below never wins on this turn.
+    if (e.type === "sentence_composed") hasComposed = true;
+    else if (e.type === "button_pressed") hasUserInput = true;
     // speech_text_finalized is the canonical "AI spoke" trigger (full
     // transcript available, audio possibly still playing). speech_end
     // is also valid as a fallback for code paths that didn't surface
@@ -434,6 +439,13 @@ export function invocationActionHint(events: AgentEvent[]): string {
     if (e.type === "interpret_intent") hasInterpret = true;
   }
 
+  if (hasComposed) {
+    // The user finished composing in the SENTENCE BUILDER and pressed Play.
+    // The ONLY action is interpret() — voice the natural-language meaning in
+    // the user's own voice. Do NOT rebuild the board this turn; the system
+    // re-fires a ${T.tagPress} follow-up afterwards for the reply + board.
+    return `Action: interpret. The USER played a composed ${T.sentence} in the ${T.builder} — call \`interpret(sentence)\` with its natural-language meaning, first-person, in the user's own voice. This is the ONLY action this turn; do NOT rebuild the board. See <sentence_interpretation>.`;
+  }
   if (hasUserInput) {
     return `Action: rebuild_board. The USER just acted — build FOLLOW-UPS that continue or clarify their statement.
   - Think "what might they want to say NEXT?" (not "how would the AI reply").
@@ -496,7 +508,11 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       return `[USER to ${label}${viaGesture}] "${event.sentence}"`;
     }
     case "sentence_composed":
-      return `[USER (composed) to AI] "${event.sentence}"`;
+      // Render with the canonical ${T.tagComposed} tag so it matches the
+      // <sentence_interpretation> instructions + interpret() tool description
+      // the model is keyed on. (Was "[USER (composed) to AI]", which no
+      // instruction referenced — the model couldn't connect it to interpret.)
+      return `${T.tagComposed} "${event.sentence}"`;
     case "mute_toggled":
       return `[MUTE TOGGLED] now ${event.state}`;
     case "builder_opened":

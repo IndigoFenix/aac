@@ -2,13 +2,14 @@
 // Business logic for calendar events
 
 import { calendarRepository } from "../repositories/calendarRepository";
-import { instituteRepository, programRepository } from "../repositories";
+import { instituteRepository, programRepository, locationRepository } from "../repositories";
 import { validateEventDates } from "./calendar-validation";
 import type {
   CalendarEvent,
   InsertCalendarEvent,
   UpdateCalendarEvent,
   CalendarEventAttendee,
+  Location,
 } from "@shared/schema";
 
 type AttendeeInput = {
@@ -27,10 +28,15 @@ class CalendarService {
     data: InsertCalendarEvent,
     userId: string,
     additionalAttendees?: AttendeeInput[],
-  ): Promise<CalendarEvent & { attendees: CalendarEventAttendee[] }> {
+    locationIds?: string[],
+  ): Promise<CalendarEvent & { attendees: CalendarEventAttendee[]; locations: Location[] }> {
     validateEventDates(data);
 
     const event = await calendarRepository.createEvent(data, userId);
+
+    if (locationIds && locationIds.length > 0) {
+      await locationRepository.setEventLocations(event.id, locationIds);
+    }
 
     // Deduplicate as we go (type+id pair)
     const addedKeys = new Set<string>();
@@ -61,7 +67,38 @@ class CalendarService {
       }
     }
 
-    return { ...event, attendees: allAttendees };
+    const locs = await locationRepository.getLocationsForEvents([event.id]);
+    return { ...event, attendees: allAttendees, locations: locs.get(event.id) || [] };
+  }
+
+  /**
+   * Replace an event's assigned locations. The caller must already have edit
+   * rights on the event (verified by updateEvent before this is invoked).
+   */
+  async syncEventLocations(eventId: string, locationIds: string[]): Promise<void> {
+    await locationRepository.setEventLocations(eventId, locationIds);
+  }
+
+  /**
+   * Permission-checked variant for callers that haven't already verified edit
+   * rights (e.g. the AI memory-schema op, where only locations change).
+   * Returns false if the event is missing or the user can't edit it.
+   */
+  async setEventLocations(eventId: string, locationIds: string[], userId: string): Promise<boolean> {
+    const event = await calendarRepository.getEventById(eventId);
+    if (!event) return false;
+    if (!(await this.canUserEditEvent(event, userId))) return false;
+    await this.syncEventLocations(eventId, locationIds);
+    return true;
+  }
+
+  /** Attach the assigned `locations` array to each event in a list. */
+  private async attachLocations<T extends { id: string }>(
+    events: T[],
+  ): Promise<(T & { locations: Location[] })[]> {
+    if (events.length === 0) return [];
+    const byEvent = await locationRepository.getLocationsForEvents(events.map((e) => e.id));
+    return events.map((e) => ({ ...e, locations: byEvent.get(e.id) || [] }));
   }
 
   /**
@@ -104,7 +141,8 @@ class CalendarService {
     if (!canSee) return undefined;
 
     const attendees = await calendarRepository.getAttendeesByEventId(eventId);
-    return { ...event, attendees };
+    const locs = await locationRepository.getLocationsForEvents([eventId]);
+    return { ...event, attendees, locations: locs.get(eventId) || [] };
   }
 
   async updateEvent(eventId: string, updates: UpdateCalendarEvent, userId: string) {
@@ -236,9 +274,10 @@ class CalendarService {
     startDate: Date,
     endDate: Date,
     opts: { selectedStudentId?: string; selectedInstituteId?: string } = {},
-  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[]; locations: Location[] })[]> {
     const criteria = await this.buildVisibilityCriteria(userId, opts);
-    return calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+    const events = await calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+    return this.attachLocations(events);
   }
 
   /**
@@ -408,9 +447,10 @@ class CalendarService {
     studentId: string,
     startDate: Date,
     endDate: Date,
-  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[]; locations: Location[] })[]> {
     const criteria = await this.buildStudentVisibilityCriteria(studentId);
-    return calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+    const events = await calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+    return this.attachLocations(events);
   }
 
   /**

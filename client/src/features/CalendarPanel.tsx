@@ -38,13 +38,13 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-import type { CalendarEvent, CalendarEventAttendee } from '@shared/schema';
+import type { CalendarEvent, CalendarEventAttendee, Location } from '@shared/schema';
 
 interface CalendarPanelProps {
   isOpen?: boolean;
 }
 
-type EventWithAttendees = CalendarEvent & { attendees: CalendarEventAttendee[]; reducedView?: boolean };
+type EventWithAttendees = CalendarEvent & { attendees: CalendarEventAttendee[]; locations?: Location[]; reducedView?: boolean };
 
 interface AttendeeEntry {
   attendeeType: 'user' | 'student' | 'classroom' | 'institute';
@@ -67,6 +67,7 @@ interface EventFormData {
   repeatEndDate: string;
   serviceId: string;
   attendees: AttendeeEntry[];
+  locationIds: string[];
 }
 
 const defaultFormData: EventFormData = {
@@ -82,6 +83,7 @@ const defaultFormData: EventFormData = {
   repeatEndDate: '',
   serviceId: '',
   attendees: [],
+  locationIds: [],
 };
 
 function toLocalDateTimeString(date: Date): string {
@@ -167,6 +169,18 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   });
 
   const classrooms = classroomsData || [];
+
+  // Fetch institute locations (for assigning to events)
+  const { data: locationsData } = useQuery({
+    queryKey: ['/api/locations', currentInstitute?.id],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/locations?instituteId=${encodeURIComponent(currentInstitute!.id)}`);
+      const json = await res.json();
+      return json.locations as Location[];
+    },
+    enabled: !!currentInstitute,
+  });
+  const instituteLocations = locationsData || [];
 
   // Fetch services visible to the user across their students' current programs,
   // for the "For service" dropdown on the event editor. We collect programs
@@ -444,6 +458,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       repeatEndDate: ev.repeatEndDate ? toLocalDateString(new Date(ev.repeatEndDate)) : '',
       serviceId: (ev as any).serviceId || '',
       attendees: existingAttendees,
+      locationIds: (ev.locations || []).map((l) => l.id),
     });
     setEditingEvent(ev);
     setShowEventDialog(true);
@@ -492,6 +507,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       attendees: formData.attendees
         .filter((a) => a.attendeeType !== 'user' || a.attendeeId !== user?.id) // creator is auto-added
         .map(({ attendeeType, attendeeId }) => ({ attendeeType, attendeeId })),
+      locationIds: formData.locationIds,
     };
 
     if (editingEvent) {
@@ -1097,6 +1113,59 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                 </DropdownMenu>
               )}
             </div>
+
+            {/* Locations */}
+            {instituteLocations.length > 0 && (
+              <div className="space-y-2">
+                <Label>{t('calendar.locations')}</Label>
+                {formData.locationIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {formData.locationIds.map((id) => {
+                      const loc = instituteLocations.find((l) => l.id === id);
+                      if (!loc) return null;
+                      return (
+                        <Badge key={id} variant="secondary" className="gap-1 pe-1">
+                          {loc.title}
+                          <button
+                            type="button"
+                            className="ms-1 rounded-full hover:bg-destructive/20 p-0.5"
+                            onClick={() =>
+                              setFormData((prev) => ({ ...prev, locationIds: prev.locationIds.filter((x) => x !== id) }))
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+                {instituteLocations.some((l) => !formData.locationIds.includes(l.id)) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-start gap-1.5">
+                        <Plus className="w-3.5 h-3.5" />
+                        {t('calendar.addLocation')}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-[280px]">
+                      {instituteLocations
+                        .filter((l) => !formData.locationIds.includes(l.id))
+                        .map((loc) => (
+                          <DropdownMenuItem
+                            key={loc.id}
+                            onClick={() =>
+                              setFormData((prev) => ({ ...prev, locationIds: [...prev.locationIds, loc.id] }))
+                            }
+                          >
+                            {loc.title}
+                          </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowEventDialog(false); resetForm(); }}>

@@ -195,6 +195,7 @@ export const pt = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "Localizações",
     main: "CliniAACian",
     home: "Ir para a página inicial",
     interpret: "Interpretar comunicação",
@@ -2407,6 +2408,8 @@ export const pt = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "Treinador social",
     socialTrainerDesc: "Defina os objetivos de habilidades e o nível de desafio do colega de prática para este aluno. A IA pode estreitar o foco a cada sessão dentro destes limites.",
+    socialTrainerLiveAudioTitle: "Voz de áudio ao vivo",
+    socialTrainerLiveAudioDesc: "O colega de prática fala com uma voz ao vivo mais natural e com menos atraso (custo maior). Requer um modelo de voz ao vivo; caso contrário, usa-se a voz padrão. A prática de habilidades não muda.",
     socialTrainerFocus: "Habilidades a trabalhar",
     socialTrainerFocusHint: "Habilidades a praticar (objetivos padrão). Deixe vazio para incluir todas.",
     socialTrainerLocked: "Habilidades vetadas",
@@ -3295,7 +3298,25 @@ export const pt = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "Localizações",
+    new: "Nova localização",
+    edit: "Editar localização",
+    titleField: "Título",
+    address: "Endereço",
+    findFromAddress: "Buscar pelo endereço",
+    pickOnMap: "Escolher no mapa",
+    latitude: "Latitude",
+    longitude: "Longitude",
+    empty: "Ainda não há localizações. Adicione uma para começar.",
+    selectInstitute: "Selecione uma organização para gerenciar suas localizações.",
+    saveFailed: "Falha ao salvar a localização",
+    deleteFailed: "Falha ao excluir a localização",
+    geocodeFailed: "Não foi possível encontrar esse endereço",
+  },
   calendar: {
+    locations: "Localizações",
+    addLocation: "Adicionar localização",
     title: "Calendário",
     today: "Hoje",
     month: "Mês",

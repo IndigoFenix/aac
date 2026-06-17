@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Image,
   CalendarDays,
+  MapPin,
   MessageCircleQuestion,
   MessagesSquare,
   Gamepad2,
@@ -110,6 +111,13 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.calendar',
       feature: 'calendar' as FeatureType,
       testId: 'nav-calendar',
+      badge: undefined as string | undefined,
+    }] : []),
+    ...(hasInstitute ? [{
+      icon: MapPin,
+      labelKey: 'nav.locations',
+      feature: 'locations' as FeatureType,
+      testId: 'nav-locations',
       badge: undefined as string | undefined,
     }] : []),
     ...(hasInstitute ? [{

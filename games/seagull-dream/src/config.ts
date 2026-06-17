@@ -648,7 +648,24 @@ export const GFX = {
    *  live re-creates each body's cloud system. See
    *  instructions/clouds-renderer-v3-plan.md. */
   cloudRenderer: 0,
+
+  // ── Debug isolation toggles (1 = on) — for bisecting rendering issues ──
+  dbgHidePlanet: 0,       // hide terrain/ocean/atmosphere (keep clouds)
+  dbgHideSky: 0,          // black background, no fog, no starfield
+  dbgNoFloatingOrigin: 0, // stop the per-frame origin rebase
+  dbgNoBloom: 0,          // skip post-processing (direct render, no bloom)
+  dbgHideClouds: 0,       // hide the cloud system entirely
+  dbgCloudNoDepthTest: 0, // clouds ignore the depth buffer (always draw on top)
+  dbgCloudNoDepthWrite: 0,// clouds don't write depth
+  dbgBloomOff: 0,         // disable ONLY the bloom pass (composer/output stay on)
+  dbgFreezeSim: 0,        // freeze sim time: weather clock + planet motion
+  dbgFreezePlayer: 0,     // freeze the player's movement (camera held still)
 };
+
+/** Shared sim clock (seconds). Advances by dt each frame unless paused/frozen.
+ *  The cloud weather reads this instead of wall-clock performance.now(), so it
+ *  freezes with the sim (and stops drifting while paused). */
+export const simClock = { t: 0 };
 
 /** Display names for GFX.cloudRenderer (the index is the array position). */
 export const CLOUD_RENDERER_NAMES = [

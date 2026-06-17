@@ -1711,7 +1711,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                   // Ignore further taps while a startup-resolution round-trip
                   // is already in flight.
                   if (appOpenPending) return;
-                  const needsResolution = enabledApps.find((a) => a.id === appId)?.needsStartupResolution;
+                  // Custom apps are identified only by their UUID here — the
+                  // client has no definition to render. They MUST go through the
+                  // server (request_app_open → routeAppOpen), which fetches and
+                  // validates the definition and replies with the renderable
+                  // { appId: "custom_app", appData: { id, definition } } payload.
+                  // Built-in apps only need the round-trip when they declare
+                  // startup params (needsStartupResolution).
+                  const isCustomApp = availableCustomApps.some((a) => a.id === appId);
+                  const needsResolution =
+                    isCustomApp || enabledApps.find((a) => a.id === appId)?.needsStartupResolution;
                   if (needsResolution && requestAppOpenFnRef.current) {
                     // Defer to the server: it resolves startup params, then
                     // replies with app_open (which sets activeApp and closes

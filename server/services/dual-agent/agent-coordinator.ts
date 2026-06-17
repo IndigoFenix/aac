@@ -123,6 +123,7 @@ import {
   runSocialSkillAnalysis,
 } from "../social-bot/peer-speaker-prompt";
 import { SocialPeerSpeakerAgent } from "../social-bot/peer-speaker-agent";
+import { LiveSocialPeerSpeakerAgent } from "../social-bot/live-peer-speaker-agent";
 import { authenticateUpgrade } from "../realtime/ws-auth";
 import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
@@ -640,8 +641,9 @@ export class AgentCoordinator {
   private socialPeer: {
     persona: GeneratedPersona;
     /** Concrete handle (this.speaker holds it as ISpeakerAgent) — used to
-     *  pull the director's SessionReport at session end. */
-    agent: SocialPeerSpeakerAgent;
+     *  pull the director's SessionReport at session end. Either the HTTP
+     *  text→TTS peer or the decoupled live-audio peer (per-student setting). */
+    agent: SocialPeerSpeakerAgent | LiveSocialPeerSpeakerAgent;
     voiceName: string;
     /** TTS voice for the peer's replies (onSpeakerSpeakText). */
     voice: ResolvedVoice;
@@ -1217,6 +1219,11 @@ export class AgentCoordinator {
           logLiveSession("CLIENT → set_paused", `paused=${msg.paused}`);
         });
         return;
+      case "gps_update":
+        // Periodic device-location refresh. Update the Monitor's reading and,
+        // if the matched place/event changed, inject fresh location context.
+        await this.handleGpsUpdate(msg.gps);
+        return;
       case "unknown_face_descriptors":
         // Server-side biometric matching, scoped to this student's known
         // people. Fire-and-forget, but keep the promise so the first-frame
@@ -1310,10 +1317,26 @@ export class AgentCoordinator {
       case "set_mute_state":
         this.handleMuteToggled(msg.muteState);
         return;
-      case "user_message":
-        // Treat as a transcribed user statement directed at the device.
-        this.speaker?.sendUserTurn(`[TRANSCRIPT] user → device: "${msg.text}"`);
+      case "user_message": {
+        // Treat as a transcribed user statement directed at the device. This is
+        // also the channel embedded games use to narrate events ("[GAME] Goal
+        // done…", etc.). A game message is real engagement: note it so the rest
+        // timer doesn't expire mid-activity, and wake from the resting profile
+        // before routing. Without the wake, resting has already torn down the
+        // Speaker, so `this.speaker?` short-circuits and the message is silently
+        // dropped — the AI never responds and the text is left stranded in the
+        // client UI. (The fully-asleep case is already covered by the
+        // SLEEP_WAKING_MSG_TYPES wake-gate at the top of this method.)
+        this.noteEngagementActivity();
+        const directive = `[TRANSCRIPT] user → device: "${msg.text}"`;
+        if (this.sessionProfile === "resting") {
+          flowNote("COORDINATOR", "user_message arrived while resting — waking before routing.");
+          void this.transitionToProfile("awake").then(() => this.speaker?.sendUserTurn(directive));
+          return;
+        }
+        this.speaker?.sendUserTurn(directive);
         return;
+      }
       case "app_dismissed":
         // User closed the active app surface. For a social-training
         // session this is the user-initiated exit (cave click / back);
@@ -1357,6 +1380,31 @@ export class AgentCoordinator {
   // Initialization
   // -------------------------------------------------------------------------
 
+  /**
+   * Periodic device-location refresh from the client. Updates the Monitor's
+   * stored GPS reading; if the matched place/event has meaningfully changed
+   * since the last report, broadcasts fresh location context to the live
+   * agents. Satisfies the "re-check during monitor checks" requirement
+   * (movement over time / GPS precision improvement).
+   */
+  private async handleGpsUpdate(gps: import("@shared/location-matching").GpsReading): Promise<void> {
+    if (!this.sessionId || !gps) return;
+    const monitor = dualAgentService.getSessionCache(this.sessionId)?.monitorAgent;
+    if (!monitor?.setGps) return;
+    monitor.setGps(gps);
+    try {
+      const update = await monitor.checkLocationContext?.();
+      if (update) {
+        this.broadcastMonitorContext(update);
+        runInSessionContext(this.sessionId, this.debugMode, () => {
+          logLiveSession("LOCATION_UPDATE", update);
+        });
+      }
+    } catch (err) {
+      console.warn("[AgentCoordinator] handleGpsUpdate failed:", err);
+    }
+  }
+
   private async handleInitialize(msg: Extract<ClientMessage, { type: "initialize" }>): Promise<void> {
     if (this.state !== "initializing") {
       this.sendError("already initialized");
@@ -1376,6 +1424,7 @@ export class AgentCoordinator {
       undefined,
       msg.timezone,
       msg.classroomId,
+      msg.gps,
     );
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
@@ -4130,11 +4179,30 @@ export class AgentCoordinator {
     // Inject OWN_SPEECH (tagged as student-voice) so Observer doesn't
     // transcribe the device speakers as a fresh user statement.
     this.observer?.sendContextInjection(`[OWN_SPEECH] (student voice) ${event.sentence}`);
+    this.appendToConversationLog("user", `[${T.tagPress}] "${event.sentence}"`);
+
+    if (this.socialPeer) {
+      // SOCIAL TRAINER: the composed SENTENCE is the user's contribution to
+      // the conversation — drive the peer's turn through the SAME bid path a
+      // normal board press uses (proper turn timing + deferred follow-up
+      // board). Routing it via speaker.sendUserTurn directly would bypass the
+      // bid/reply buffering in handleSocialTrainerPress and desync the turn.
+      this.handleSocialTrainerPress({
+        type: "button_pressed",
+        source: "client",
+        timestamp: Date.now(),
+        label: event.sentence,
+        sentence: event.sentence,
+        target: "DEVICE",
+        role: "bid",
+      });
+      return;
+    }
+
     // Echo back to Speaker.
     this.speaker?.sendContextInjection(`[INTERPRET] (you voiced for the user) ${event.sentence}`);
     // Re-deliver as a [BUTTON PRESS] so Speaker can respond on a later turn.
     this.speaker?.sendUserTurn(`[${T.tagPress}] "${event.sentence}"`);
-    this.appendToConversationLog("user", `[${T.tagPress}] "${event.sentence}"`);
     // Trigger Board Manager rebuild for the follow-up surface.
     this.invokeBoardManager([event]);
   }
@@ -4441,6 +4509,57 @@ export class AgentCoordinator {
     });
   }
 
+  /** Construct (not start) a LIVE-AUDIO social peer: the director engine runs
+   *  the HTTP analysis while a native-audio live session voices the replies.
+   *  Audio/transcription/event callbacks route to the SAME coordinator handlers
+   *  the companion live Speaker uses, so PCM lands as `avatar_audio`, board
+   *  rebuilds fire off the peer's transcript, and barge-in works unchanged. */
+  private buildLivePeerAgent(opts: {
+    persona: GeneratedPersona;
+    languageName: string;
+    analysisModel: string;
+    liveModel: string;
+    voiceName: string;
+    difficulty?: number;
+    languageLevel?: LanguageLevel;
+    slpConfig: SlpConfig;
+  }): LiveSocialPeerSpeakerAgent {
+    const usageSessionId = this.sessionId ?? "";
+    const usageStudentId = this.studentId ?? "";
+    const usageUserId = this.userId;
+    return new LiveSocialPeerSpeakerAgent({
+      persona: opts.persona,
+      languageName: opts.languageName,
+      analysisModel: opts.analysisModel,
+      liveModel: opts.liveModel,
+      voiceName: opts.voiceName,
+      useVertex: this.useVertex,
+      difficulty: opts.difficulty,
+      languageLevel: opts.languageLevel,
+      slpConfig: opts.slpConfig,
+      compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
+      compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+      callbacks: {
+        onEvent: (e) => this.onSpeakerEvent(e),
+        onAudioChunk: (d) => this.onSpeakerAudioChunk(d),
+        onSuppressAudio: () => this.onSpeakerSuppressAudio(),
+        onState: (state) => this.send({ type: "social_peer_state", data: state }),
+        // Speaking session (native audio) — billed as live usage.
+        onLiveUsage: (usage) => this.trackLiveUsage("speaker", "gemini", opts.liveModel, usage),
+        // Director analysis (HTTP forced-tool) — billed as HTTP usage.
+        onAnalysisUsage: (usage) => {
+          dualAgentService.trackHttpUsage(
+            usageSessionId, usageStudentId, usageUserId, "gemini", opts.analysisModel,
+            usage.promptTokens, usage.completionTokens, usage.cachedTokens ?? 0, "social-peer-analysis",
+          ).catch(err => console.error("[AgentCoordinator] trackHttpUsage(live social peer) failed:", err));
+        },
+        onDebug: (snapshot) => { if (this.debugMode) this.send({ type: "social_peer_debug", data: snapshot }); },
+        onConversationEnd: () => this.scheduleNaturalSocialEnd(),
+        onError: (err) => console.error("[AgentCoordinator] Live social peer error:", err),
+      },
+    });
+  }
+
   /** The director flagged the user wants to end — let the farewell play, then
    *  wind the session down (restore companion + debrief). Single-flight. */
   private naturalEndPending = false;
@@ -4678,24 +4797,52 @@ export class AgentCoordinator {
       this.speaker = null;
       this.speakerSpeaking = false;
 
-      // Director-driven peer — ALWAYS the HTTP forced-tool path (the
-      // deterministic engine needs the chat-completion API), regardless
-      // of the session's general speaker mode. The DirectedSession
-      // builds its own prompt; SpeakerStartConfig is not involved.
+      // The director's analysis (forced-tool classification) ALWAYS runs on the
+      // HTTP chat-completion path. Reply AUTHORING is either:
+      //   - HTTP text → server TTS (default), or
+      //   - a live native-audio session (decoupled live-audio peer) when the
+      //     clinician enabled it AND a live-capable aac_chat model is configured.
       const peerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
-      const peer = this.buildPeerAgent({
-        persona,
-        languageName: getLanguageName(language),
-        model: peerModel,
-        difficulty: peerDifficulty,
-        // Inherit the student's general AAC language level (sentence
-        // length/complexity) so the peer talks at the same register as the
-        // companion. Default tier emits no constraint.
-        languageLevel: languageLevelFromInt(aac?.languageLevel),
-        // Goal/locked dimensions + challenge ceiling (clinician defaults
-        // narrowed by the AI's optional session focus).
-        slpConfig: peerSlp,
-      });
+      // Inherit the student's general AAC language level (sentence length/
+      // complexity) so the peer talks at the same register as the companion.
+      const peerLanguageLevel = languageLevelFromInt(aac?.languageLevel);
+      const peerLanguageName = getLanguageName(language);
+
+      // Resolve whether to use the live-audio peer.
+      const socialLiveRequested = !!((aac?.appConfig as Record<string, any> | undefined)?.social_trainer?.liveAudio);
+      let liveModel = "";
+      let useLivePeer = false;
+      if (socialLiveRequested) {
+        const aacChat = await settingsRepository.getLLMConfig("aac_chat");
+        liveModel = process.env.AAC_SPEAKER_MODEL || aacChat.model;
+        useLivePeer = aacChat.provider === "gemini"
+          && (liveModel.includes("native-audio") || liveModel.includes("live"));
+        if (!useLivePeer) {
+          flowNote("COORDINATOR", `Live social peer requested but model "${liveModel}" (provider=${aacChat.provider}) isn't live-capable — using HTTP peer.`);
+        }
+      }
+
+      const peer: SocialPeerSpeakerAgent | LiveSocialPeerSpeakerAgent = useLivePeer
+        ? this.buildLivePeerAgent({
+            persona,
+            languageName: peerLanguageName,
+            analysisModel: peerModel,
+            liveModel,
+            voiceName,
+            difficulty: peerDifficulty,
+            languageLevel: peerLanguageLevel,
+            slpConfig: peerSlp,
+          })
+        : this.buildPeerAgent({
+            persona,
+            languageName: peerLanguageName,
+            model: peerModel,
+            difficulty: peerDifficulty,
+            languageLevel: peerLanguageLevel,
+            // Goal/locked dimensions + challenge ceiling (clinician defaults
+            // narrowed by the AI's optional session focus).
+            slpConfig: peerSlp,
+          });
       await peer.start();
       this.speaker = peer;
       // Fresh turn-taking history for the new peer (don't carry a pre-session
@@ -4711,11 +4858,13 @@ export class AgentCoordinator {
       };
 
       runInSessionContext(this.sessionId, this.debugMode, () => {
-        logLiveSession("SOCIAL PEER START", `${origin}: model=${peerModel} voice=${voiceName} ${describePersona(persona)}`);
+        logLiveSession("SOCIAL PEER START", `${origin}: path=${useLivePeer ? `live(${liveModel})` : "http"} analysis=${peerModel} voice=${voiceName} ${describePersona(persona)}`);
       });
-      flowNote("COORDINATOR", `Social-training session started (${origin}) — director peer "${persona.name}" replaces Speaker (HTTP).`);
+      flowNote("COORDINATOR", `Social-training session started (${origin}) — director peer "${persona.name}" replaces Speaker (${useLivePeer ? "LIVE audio" : "HTTP text→TTS"}).`);
 
       // Client: open the (header-only) app surface and ship the face data.
+      // The live peer speaks via native audio, so the TTS pitch/formant age
+      // shaping doesn't apply — send neutral (0) shifts in that case.
       this.send({ type: "app_open", data: { appId: "social_trainer" } });
       this.send({
         type: "social_session",
@@ -4726,8 +4875,8 @@ export class AgentCoordinator {
           appearance: persona.appearance,
           expressiveness: persona.genome.expressiveness,
           legibility: 1,
-          voicePitch: this.peerVoicePitch(),
-          voiceFormant: this.peerVoiceFormant(),
+          voicePitch: useLivePeer ? 0 : this.peerVoicePitch(),
+          voiceFormant: useLivePeer ? 0 : this.peerVoiceFormant(),
         },
       });
 
@@ -5263,8 +5412,18 @@ export class AgentCoordinator {
       // Compose from cached parts: base is always sent; the builder / guessing
       // blocks ride along ONLY while that mode is active (saves ~2.9k tok on a
       // normal turn). The stable base stays cacheable.
+      //
+      // The builder block also carries <sentence_interpretation> — the
+      // procedure for interpret(). The builder closes the instant the user
+      // presses Play, so builderState is usually already null by the time the
+      // (deferred) sentence_composed invocation runs. Include the block on a
+      // composed turn too, or the model loses the interpret() instructions and
+      // falls back to rebuilding the board (the sentence is never voiced).
+      const hasComposedTrigger = triggeringEvents.some(
+        (e) => e.type === "sentence_composed",
+      );
       const composedPrompt = this.boardManagerPromptBase
-        + (this.builderState ? `\n\n${this.boardManagerBuilderBlock}` : "")
+        + (this.builderState || hasComposedTrigger ? `\n\n${this.boardManagerBuilderBlock}` : "")
         + (this.guessingState ? `\n\n${this.boardManagerGuessingBlock}` : "");
       // Read the home-press directive (set by routeHomeTopicPressInner).
       // Don't clear here — if BM MALFORMEDs or no_changes the first

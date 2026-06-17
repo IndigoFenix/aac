@@ -36,7 +36,7 @@ import { resolveModelId, getModelOption } from "@shared/llm-options";
 import { creditsForModelUsage } from "./chat/cost-helpers";
 import { chargeCreditsToLedger } from "./credit-ledger";
 import { getAnthropicClient } from "./providers/anthropic-client";
-import { buildMemoryTool } from "./chat/memory-system";
+import { buildMemoryTool, processMemoryToolResponse } from "./chat/memory-system";
 import { processMemoryToolWithDB, createDBContext, createMemoryLoadState } from "./chat/memory-db-bridge";
 import type { MemoryState, MemoryLoadState } from "./chat/memory-types";
 import { MASTER_MEMORY_FIELDS } from "./sessionService";
@@ -463,10 +463,7 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
                 // The original in-memory processor is applied internally by the DB bridge; we're
                 // here only as the glue that the bridge hands control back to. The bridge calls
                 // this function to run memory-system's processMemoryToolResponse.
-                // We defer the import to avoid a cycle.
-                // eslint-disable-next-line @typescript-eslint/no-var-requires
-                const mem = require("./chat/memory-system");
-                return mem.processMemoryToolResponse(ff, vv, ss, input);
+                return processMemoryToolResponse(ff, vv, ss, input);
               }
             );
             Object.assign(memoryValues, result.updatedMemoryValues);

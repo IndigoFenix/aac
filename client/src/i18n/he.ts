@@ -195,6 +195,7 @@ export const he = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "מיקומים",
     main: "קליניאאקיאן",
     home: "עבור לבית",
     interpret: "פרש תקשורת",
@@ -2407,6 +2408,8 @@ export const he = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "מאמן חברתי",
     socialTrainerDesc: "הגדירו את יעדי המיומנויות ורמת האתגר של בן-הזוג לתרגול עבור תלמיד זה. ה-AI יכול למקד את הדגש בכל מפגש בתוך גבולות אלה.",
+    socialTrainerLiveAudioTitle: "קול שמע חי",
+    socialTrainerLiveAudioDesc: "בן-הזוג לתרגול מדבר בקול חי וטבעי יותר עם פחות השהיה (עלות גבוהה יותר). דורש מודל קול חי; אחרת נעשה שימוש בקול הרגיל. תרגול המיומנויות אינו משתנה.",
     socialTrainerFocus: "מיומנויות לתרגול",
     socialTrainerFocusHint: "מיומנויות לעבוד עליהן (יעדי ברירת מחדל). השאירו ריק כדי לכלול את כולן.",
     socialTrainerLocked: "מיומנויות חסומות",
@@ -3295,7 +3298,25 @@ export const he = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "מיקומים",
+    new: "מיקום חדש",
+    edit: "עריכת מיקום",
+    titleField: "כותרת",
+    address: "כתובת",
+    findFromAddress: "חיפוש לפי כתובת",
+    pickOnMap: "בחירה במפה",
+    latitude: "קו רוחב",
+    longitude: "קו אורך",
+    empty: "עדיין אין מיקומים. הוסיפו אחד כדי להתחיל.",
+    selectInstitute: "בחרו ארגון כדי לנהל את המיקומים שלו.",
+    saveFailed: "שמירת המיקום נכשלה",
+    deleteFailed: "מחיקת המיקום נכשלה",
+    geocodeFailed: "הכתובת לא נמצאה",
+  },
   calendar: {
+    locations: "מיקומים",
+    addLocation: "הוספת מיקום",
     title: "לוח שנה",
     today: "היום",
     month: "חודש",

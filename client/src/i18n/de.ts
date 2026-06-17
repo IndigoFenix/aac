@@ -195,6 +195,7 @@ export const de = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "Standorte",
     main: "CliniAACian",
     home: "Zur Startseite",
     interpret: "Kommunikation interpretieren",
@@ -2407,6 +2408,8 @@ export const de = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "Sozialtrainer",
     socialTrainerDesc: "Lege die Kompetenzziele und den Herausforderungsgrad des Übungspartners für diesen Schüler fest. Die KI darf den Fokus pro Sitzung innerhalb dieser Grenzen eingrenzen.",
+    socialTrainerLiveAudioTitle: "Live-Audio-Stimme",
+    socialTrainerLiveAudioDesc: "Der Übungspartner spricht mit einer natürlicheren Live-Stimme und weniger Verzögerung (höhere Kosten). Erfordert ein Live-Sprachmodell; andernfalls wird die Standardstimme verwendet. Das Kompetenztraining bleibt unverändert.",
     socialTrainerFocus: "Zu übende Kompetenzen",
     socialTrainerFocusHint: "Kompetenzen zum Üben (Standardziele). Leer lassen, um alle einzubeziehen.",
     socialTrainerLocked: "Gesperrte Kompetenzen",
@@ -3295,7 +3298,25 @@ export const de = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "Standorte",
+    new: "Neuer Standort",
+    edit: "Standort bearbeiten",
+    titleField: "Titel",
+    address: "Adresse",
+    findFromAddress: "Aus Adresse suchen",
+    pickOnMap: "Auf Karte auswählen",
+    latitude: "Breitengrad",
+    longitude: "Längengrad",
+    empty: "Noch keine Standorte. Fügen Sie einen hinzu, um zu beginnen.",
+    selectInstitute: "Wählen Sie eine Organisation, um ihre Standorte zu verwalten.",
+    saveFailed: "Standort konnte nicht gespeichert werden",
+    deleteFailed: "Standort konnte nicht gelöscht werden",
+    geocodeFailed: "Diese Adresse wurde nicht gefunden",
+  },
   calendar: {
+    locations: "Standorte",
+    addLocation: "Standort hinzufügen",
     title: "Kalender",
     today: "Heute",
     month: "Monat",

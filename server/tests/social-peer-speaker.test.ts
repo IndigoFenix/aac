@@ -352,6 +352,137 @@ describe("DirectedSession usage surfacing", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Analyze/author split (live-audio peer path)
+// ---------------------------------------------------------------------------
+
+describe("DirectedSession analyze/author split", () => {
+  // Like makeDirectedSession above, but captures each LLM request so we can
+  // assert what the analysis call saw in its conversation history.
+  function makeSession(chunks: any[], captured?: any[]) {
+    let seed = 7;
+    const rng = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const persona = generatePersona({ gender: "female", rng });
+    const fakeAi = {
+      models: {
+        generateContentStream: async (req: unknown) => {
+          captured?.push(req);
+          return (async function* () {
+            for (const c of chunks) yield c;
+          })();
+        },
+      },
+    };
+    return new DirectedSessionCls(fakeAi as any, {
+      name: persona.name,
+      gender: persona.gender,
+      genome: persona.genome,
+      identity: persona.identity,
+      appearance: persona.appearance,
+      humorStyle: persona.humorStyle,
+      slp: DEFAULT_SLP_CONFIG,
+      difficulty: 0.4,
+      language: "English",
+    });
+  }
+
+  const sameObserved = {
+    wasQuestion: false,
+    contingency: 0.5,
+    disclosure: 0,
+    userAffect: { valence: 0, arousal: 0 },
+  };
+  // Full path: reply + observed (the `turn` tool).
+  const fullChunk = {
+    candidates: [{ content: { parts: [{ functionCall: {
+      name: "turn", args: { reply: "Hi there!", observed: sameObserved },
+    } }] } }],
+  };
+  // Analysis-only path: observed under the `report` tool, no reply.
+  const analysisChunk = {
+    candidates: [{ content: { parts: [{ functionCall: {
+      name: "report", args: { observed: sameObserved },
+    } }] } }],
+  };
+
+  test("analyzeTurn returns engine state + guidance but no authored reply", async () => {
+    const session = makeSession([analysisChunk]);
+    session.prepareNextDirective(); // mirror the agent priming turn-1 directive
+    const result = await session.analyzeTurn("hi");
+    expect(result).not.toHaveProperty("reply");
+    expect(typeof result.guidance).toBe("string");
+    expect(result.guidance).toContain("# HOW TO RESPOND NOW");
+    expect(result.ending).toBe(false);
+    expect(result.vector).toBeDefined();
+    expect(session.debugLive().turnIndex).toBe(1);
+  });
+
+  test("the analysis call forces the observed-only `report` tool (no reply field)", async () => {
+    const captured: any[] = [];
+    const session = makeSession([analysisChunk], captured);
+    await session.analyzeTurn("hi");
+    const cfg = captured[0].config;
+    const decl = cfg.tools[0].functionDeclarations[0];
+    expect(decl.name).toBe("report");
+    expect(decl.parametersJsonSchema.properties).not.toHaveProperty("reply");
+    expect(cfg.toolConfig.functionCallingConfig.allowedFunctionNames).toEqual(["report"]);
+  });
+
+  test("recordPeerReply feeds the live reply into the next analysis history", async () => {
+    const captured: any[] = [];
+    const session = makeSession([analysisChunk], captured);
+    await session.analyzeTurn("first");          // pushes user "first"
+    session.recordPeerReply("Nice to meet you!"); // pushes model reply
+    await session.analyzeTurn("second");
+    // The 2nd analysis request's prior contents must include the peer's spoken
+    // line as a model turn (so contingency/addressedBid can be judged).
+    const contents = captured[1].contents as Array<{ role: string; parts: { text: string }[] }>;
+    const modelTurns = contents.filter(c => c.role === "model").map(c => c.parts[0].text);
+    expect(modelTurns).toContain("Nice to meet you!");
+  });
+
+  test("analyzeTurn surfaces ending=true from observed.wantsToEnd", async () => {
+    const endChunk = {
+      candidates: [{ content: { parts: [{ functionCall: {
+        name: "report", args: { observed: { ...sameObserved, wantsToEnd: true } },
+      } }] } }],
+    };
+    const session = makeSession([endChunk]);
+    const result = await session.analyzeTurn("ok bye, I have to go");
+    expect(result.ending).toBe(true);
+  });
+
+  test("matches handleTurn's engine transition for identical observed (single directive draw)", async () => {
+    // Pin Math.random so augmentDirective/selectChallenge draw identically in
+    // both paths — then identical `observed` must yield identical springs/skills.
+    const spy = jest.spyOn(Math, "random").mockReturnValue(0.42);
+    try {
+      const full = makeSession([fullChunk]);
+      await full.handleTurn("hi");
+
+      const split = makeSession([analysisChunk]);
+      split.prepareNextDirective();
+      await split.analyzeTurn("hi");
+
+      const round4 = (v: { valence: number; arousal: number; rapport: number }) => ({
+        valence: Number(v.valence.toFixed(4)),
+        arousal: Number(v.arousal.toFixed(4)),
+        rapport: Number(v.rapport.toFixed(4)),
+      });
+      const skills = (s: ReturnType<typeof full.debugLive>) =>
+        s.skills.map(k => ({ competency: k.competency, value: Number(k.value.toFixed(4)), samples: k.samples }));
+
+      expect(round4(split.debugLive().vector)).toEqual(round4(full.debugLive().vector));
+      expect(skills(split.debugLive())).toEqual(skills(full.debugLive()));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Social-skill analysis
 // ---------------------------------------------------------------------------
 

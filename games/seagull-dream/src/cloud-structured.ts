@@ -36,12 +36,10 @@ export function createStructuredCloudSystem(opts: CloudSystemOpts): CloudSystem 
   // reads the same map (no bake, no shell of its own).
   let map: WeatherMap = buildWeatherMap(field, timeSeconds);
 
+  // v3: one deck — an opaque off-white stratocumulus base wearing white-topped
+  // bubble-cluster bumps (cloud-deck owns the bumps + shell + bake).
   let base = createDeckCloudSystem({
     field, timeSeconds, sharedMap: map, deckMode: "base",
-  });
-  let mound = createDeckCloudSystem({
-    field, timeSeconds, sharedMap: map, deckMode: "mound",
-    externallyBaked: true, noShell: true,
   });
 
   let opacity = 0;
@@ -50,64 +48,47 @@ export function createStructuredCloudSystem(opts: CloudSystemOpts): CloudSystem 
   const group = new THREE.Group();
   group.name = "cloud_structured_system";
   group.add(base.group);
-  group.add(mound.group);
 
   function update(
     cameraLocalPos: THREE.Vector3,
     t: number,
     cameraLocalForward?: THREE.Vector3,
   ): void {
-    // Base first — it advances the shared map's bake — then the mound reads it.
     base.update(cameraLocalPos, t, cameraLocalForward);
-    mound.update(cameraLocalPos, t, cameraLocalForward);
   }
 
   function setOpacity(o: number): void {
     opacity = o;
     base.setOpacity(o);
-    mound.setOpacity(o);
   }
   function setRuntimeOpts(o: CloudSystemRuntimeOpts): void {
     Object.assign(runtime, o);
     base.setRuntimeOpts(o);
-    mound.setRuntimeOpts(o);
     if (o.opacity !== undefined) opacity = o.opacity;
   }
   function setSunWorldPos(pos: THREE.Vector3 | null): void {
     base.setSunWorldPos(pos);
-    mound.setSunWorldPos(pos);
   }
   function setProjection(p: number, v: number): void {
     base.setProjection(p, v);
-    mound.setProjection(p, v);
   }
   function fogContribution(
     cameraLocalPos: THREE.Vector3, out: { density: number; color: THREE.Color },
   ): void {
-    // Both sample the same field → identical fog; the base's is sufficient.
     base.fogContribution(cameraLocalPos, out);
   }
   function setField(f: CloudFieldParams): void {
-    // Field change → rebuild the shared map and re-create both sub-systems
-    // against it (simplest correct path; setField is a debug live-edit only).
     field = f;
     base.dispose();
-    mound.dispose();
     group.remove(base.group);
-    group.remove(mound.group);
     map = buildWeatherMap(field, 0);
     base = createDeckCloudSystem({ field, sharedMap: map, deckMode: "base" });
-    mound = createDeckCloudSystem({
-      field, sharedMap: map, deckMode: "mound", externallyBaked: true, noShell: true,
-    });
     group.add(base.group);
-    group.add(mound.group);
     setRuntimeOpts(runtime);
     setOpacity(opacity);
   }
   function dispose(): void {
     base.dispose();
-    mound.dispose();
   }
 
   return {

@@ -27,6 +27,7 @@ const createEventSchema = z.object({
       }),
     )
     .optional(),
+  locationIds: z.array(z.string()).optional(),
 });
 
 const updateEventSchema = z.object({
@@ -60,6 +61,7 @@ const updateEventSchema = z.object({
       }),
     )
     .optional(),
+  locationIds: z.array(z.string()).optional(),
 });
 
 const addAttendeeSchema = z.object({
@@ -135,9 +137,9 @@ class CalendarController {
         return;
       }
 
-      const { attendees, timezone: _tz, ...eventData } = parsed.data;
+      const { attendees, locationIds, timezone: _tz, ...eventData } = parsed.data;
 
-      const created = await calendarService.createEvent(eventData as any, user.id, attendees);
+      const created = await calendarService.createEvent(eventData as any, user.id, attendees, locationIds);
 
       res.status(201).json({ success: true, event: created });
     } catch (error: any) {
@@ -160,7 +162,7 @@ class CalendarController {
         return;
       }
 
-      const { attendees, timezone: _tz, ...eventData } = parsed.data;
+      const { attendees, locationIds, timezone: _tz, ...eventData } = parsed.data;
 
       const updated = await calendarService.updateEvent(req.params.id, eventData as any, user.id);
       if (!updated) {
@@ -171,6 +173,11 @@ class CalendarController {
       // Sync attendees if provided
       if (attendees !== undefined) {
         await calendarService.syncAttendees(req.params.id, attendees, user.id);
+      }
+
+      // Sync locations if provided (updateEvent already verified edit rights)
+      if (locationIds !== undefined) {
+        await calendarService.syncEventLocations(req.params.id, locationIds);
       }
 
       // Re-fetch with attendees

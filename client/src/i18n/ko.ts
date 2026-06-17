@@ -195,6 +195,7 @@ export const ko = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "위치",
     main: "CliniAACian",
     home: "홈으로 이동",
     interpret: "의사소통 해석",
@@ -2407,6 +2408,8 @@ export const ko = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "사회성 훈련",
     socialTrainerDesc: "이 학생을 위한 연습 친구의 기술 목표와 도전 수준을 설정합니다. AI는 이 범위 안에서 매 세션 초점을 좁힐 수 있습니다.",
+    socialTrainerLiveAudioTitle: "실시간 음성",
+    socialTrainerLiveAudioDesc: "연습 친구가 더 자연스러운 실시간 음성으로 지연 없이 말합니다(비용 증가). 실시간 음성 모델이 필요하며, 없으면 기본 음성을 사용합니다. 기술 연습은 그대로입니다.",
     socialTrainerFocus: "연습할 기술",
     socialTrainerFocusHint: "연습할 기술(기본 목표). 비워 두면 모든 기술을 포함합니다.",
     socialTrainerLocked: "제외할 기술",
@@ -3295,7 +3298,25 @@ export const ko = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "위치",
+    new: "새 위치",
+    edit: "위치 편집",
+    titleField: "제목",
+    address: "주소",
+    findFromAddress: "주소로 찾기",
+    pickOnMap: "지도에서 선택",
+    latitude: "위도",
+    longitude: "경도",
+    empty: "아직 위치가 없습니다. 추가하여 시작하세요.",
+    selectInstitute: "위치를 관리할 기관을 선택하세요.",
+    saveFailed: "위치 저장에 실패했습니다",
+    deleteFailed: "위치 삭제에 실패했습니다",
+    geocodeFailed: "해당 주소를 찾을 수 없습니다",
+  },
   calendar: {
+    locations: "위치",
+    addLocation: "위치 추가",
     title: "캘린더",
     today: "오늘",
     month: "월",

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, doublePrecision, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql, relations } from "drizzle-orm";
 import { z } from "zod";
@@ -1055,7 +1055,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat' | 'deepAnalysis' | 'shares' | 'insuranceBridge';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'deepAnalysis' | 'shares' | 'insuranceBridge';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
@@ -2147,6 +2147,58 @@ export const calendarEventAttendees = pgTable("calendar_event_attendees", {
   index("idx_event_attendees_type_id").on(table.attendeeType, table.attendeeId),
 ]);
 
+// Physical locations (GPS points) registered against an institute. Calendar
+// events may be assigned one or more locations via calendarEventLocations.
+export const locations = pgTable("locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id").references(() => institutes.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  address: text("address"),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_locations_institute_id").on(table.instituteId),
+  index("idx_locations_lat_lng").on(table.latitude, table.longitude),
+]);
+
+// Join table: a calendar event ⇄ one or more locations.
+export const calendarEventLocations = pgTable("calendar_event_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: varchar("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
+  locationId: varchar("location_id").references(() => locations.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_event_locations_event_location").on(table.eventId, table.locationId),
+  index("idx_event_locations_event_id").on(table.eventId),
+  index("idx_event_locations_location_id").on(table.locationId),
+]);
+
+// Location insert/update schemas
+export const insertLocationSchema = createInsertSchema(locations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  createdByUserId: true, // set by server
+});
+
+export const updateLocationSchema = createInsertSchema(locations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  createdByUserId: true,
+  instituteId: true, // a location does not move between institutes
+}).partial();
+
+// Location types
+export type Location = typeof locations.$inferSelect;
+export type InsertLocation = z.infer<typeof insertLocationSchema>;
+export type UpdateLocation = z.infer<typeof updateLocationSchema>;
+export type CalendarEventLocation = typeof calendarEventLocations.$inferSelect;
+
 // Calendar insert/update schemas
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({
   id: true,
@@ -2191,12 +2243,32 @@ export const calendarEventsRelations = relations(calendarEvents, ({ one, many })
     references: [services.id],
   }),
   attendees: many(calendarEventAttendees),
+  locations: many(calendarEventLocations),
 }));
 
 export const calendarEventAttendeesRelations = relations(calendarEventAttendees, ({ one }) => ({
   event: one(calendarEvents, {
     fields: [calendarEventAttendees.eventId],
     references: [calendarEvents.id],
+  }),
+}));
+
+export const locationsRelations = relations(locations, ({ one, many }) => ({
+  institute: one(institutes, {
+    fields: [locations.instituteId],
+    references: [institutes.id],
+  }),
+  events: many(calendarEventLocations),
+}));
+
+export const calendarEventLocationsRelations = relations(calendarEventLocations, ({ one }) => ({
+  event: one(calendarEvents, {
+    fields: [calendarEventLocations.eventId],
+    references: [calendarEvents.id],
+  }),
+  location: one(locations, {
+    fields: [calendarEventLocations.locationId],
+    references: [locations.id],
   }),
 }));
 

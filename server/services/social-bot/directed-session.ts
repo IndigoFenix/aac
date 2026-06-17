@@ -19,7 +19,9 @@ import { logLiveSession } from "../dual-agent/dual-agent-logger";
 import {
   buildSessionPrefix,
   buildTurnTail,
+  renderDirectiveGuidance,
   TURN_TOOL_SCHEMA,
+  ANALYSIS_TOOL_SCHEMA,
   type DirectiveExtensions,
   type TurnTailInputs,
 } from "./prompt-assembly";
@@ -279,6 +281,21 @@ export interface TurnResult {
   ending: boolean;
 }
 
+/** Result of the analyze-only path (live-audio peer): everything `handleTurn`
+ *  returns EXCEPT the authored reply (a live session speaks that), PLUS the
+ *  rendered standing guidance for the live peer's NEXT reply. */
+export interface AnalysisResult {
+  faceTarget: FaceTarget;
+  mode: Mode;
+  vector: { valence: number; arousal: number; rapport: number };
+  directive: ResponseDirective;
+  ext: DirectiveExtensions;
+  /** Mood + command blocks for the NEXT reply, to inject into the live session. */
+  guidance: string;
+  ending: boolean;
+  usage?: TurnUsage;
+}
+
 export interface SessionConfig {
   name: string;
   /** Drives gendered language conjugation in the identity prose. */
@@ -315,6 +332,13 @@ export class DirectedSession {
    *  outcome can be recorded (feeds the back-off rule). The snapshot lets us
    *  tell whether the target skill was re-sampled and whether it held/rose. */
   private pendingProbe: { dim: Competency; value: number; samples: number } | null = null;
+  /** Live-audio path only: the directive (single random draw) prepared for the
+   *  peer's NEXT spoken reply. Reused by the next `analyzeTurn` so the probe is
+   *  armed against the directive the live peer actually followed — preserving
+   *  `handleTurn`'s one-draw-per-turn semantics. */
+  private pendingDirective:
+    | { withIdentity: ReturnType<typeof augmentDirective>; ext: DirectiveExtensions; challenge: ReturnType<typeof selectChallenge> }
+    | null = null;
   // ── Last-turn snapshot (debug tooling) ──
   private lastChallenge: { probe: Probe; dim: Competency | null; intensity: number } = { probe: "none", dim: null, intensity: 0 };
   private lastDirective: ResponseDirective;
@@ -374,31 +398,8 @@ export class DirectedSession {
   ): Promise<TurnResult> {
     this.turnIndex += 1;
 
-    // 1. Decide directive extensions (identity moves + challenge probes) for THIS turn.
-    const baseDir = this.directive;
-    const withIdentity = augmentDirective(
-      baseDir,
-      this.cfg.identity,
-      this.userModel,
-      this.vector.rapport.x,
-      this.turnIndex,
-    );
-
-    const challenge = selectChallenge(this.profile, this.cfg.slp, this.turnIndex, {
-      languageLevelTier: this.cfg.languageLevel ? languageLevelToInt(this.cfg.languageLevel) : undefined,
-    });
-
-    const ext: DirectiveExtensions = {
-      identityMove: withIdentity.identityMove,
-      topicHint: withIdentity.topicHint,
-      stanceHint: withIdentity.stanceHint,
-      probe: challenge.probe === "none" ? undefined : challenge.probe,
-      probeHint: challenge.dim === "interestEngagement"
-        ? Object.entries(this.cfg.identity.interests).sort((a, b) => b[1] - a[1])[0]?.[0]
-        : challenge.dim === "assertiveness"
-          ? Object.keys(this.cfg.identity.stances)[0]
-          : undefined,
-    };
+    // 1. Decide the directive (identity moves + challenge probe) for THIS turn.
+    const { withIdentity, ext, challenge } = this.computeDirective(this.turnIndex);
 
     // 2. Build the volatile tail.
     const tail: TurnTailInputs = {
@@ -431,8 +432,175 @@ export class DirectedSession {
       `reply="${llmReply.reply}"\nobserved=${JSON.stringify(llmReply.observed, null, 2)}`,
     );
 
+    // 4-10. Consume the observed classification, step the springs/trackers/
+    // profile/probe, recompute mode + base directive, and snapshot debug state.
+    // Shared verbatim with the live-audio analyze path via applyObserved().
+    const parsed = this.applyObserved(transcript, signals, withIdentity, ext, challenge, llmReply.observed);
+    this.lastReply = llmReply.reply;
+
+    // 11. Persist into conversation log so the LLM sees its own prior reply.
+    this.conversation.push({ role: "user", text: transcript });
+    this.conversation.push({ role: "model", text: llmReply.reply });
+    // Cap log length to keep prompt size sane.
+    if (this.conversation.length > 30) this.conversation = this.conversation.slice(-30);
+
+    return {
+      reply: llmReply.reply,
+      faceTarget: this.snapshotFaceTarget(),
+      mode: this.mode,
+      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
+      directive: this.directive,
+      ext,
+      usage: llmReply.usage,
+      ending: parsed.wantsToEnd,
+    };
+  }
+
+  /**
+   * Analyze a single user turn WITHOUT authoring the peer's reply (live-audio
+   * path). A live (Gemini Live) session speaks the reply; this only runs the
+   * engine: classify the user's turn, step the springs/profile/probe, recompute
+   * mode + directive, and prepare + render the directive for the NEXT reply.
+   *
+   * Semantics match handleTurn exactly: the directive guiding the reply to THIS
+   * turn was drawn ONCE (at session start / prior turn's prepareNextDirective)
+   * and stored in `pendingDirective`; we reuse it so the probe is armed against
+   * the directive the live peer actually followed. The peer's spoken reply is
+   * fed back in via recordPeerReply() so the next analysis sees what it said.
+   */
+  async analyzeTurn(
+    transcript: string,
+    signals: ClientSignals = { eyeContact: false, interrupted: false, responseLatencyMs: 0, backchannel: false },
+  ): Promise<AnalysisResult> {
+    this.turnIndex += 1;
+
+    // Reuse the single directive draw prepared for this reply (see above).
+    const { withIdentity, ext, challenge } = this.pendingDirective ?? this.computeDirective(this.turnIndex);
+
+    const tail = buildTurnTail({
+      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
+      mode: this.mode,
+      directive: withIdentity,
+      ext,
+      moments: this.history.list(),
+      transcript,
+      interrupted: signals.interrupted,
+    });
+    logLiveSession(
+      `SOCIAL BOT TURN ${this.turnIndex} → LLM (analysis)`,
+      `length=${tail.length} chars\n${tail}`,
+    );
+
+    const llm = await this.callLLM(tail, "analysis");
+    logLiveSession(
+      `SOCIAL BOT TURN ${this.turnIndex} ← LLM (analysis)`,
+      `observed=${JSON.stringify(llm.observed, null, 2)}`,
+    );
+
+    const parsed = this.applyObserved(transcript, signals, withIdentity, ext, challenge, llm.observed);
+
+    // Persist the user turn now; the peer's spoken reply is appended later via
+    // recordPeerReply() when the live session finalizes it — keeping the
+    // conversation log in [user, model] order for the next analysis.
+    this.conversation.push({ role: "user", text: transcript });
+    if (this.conversation.length > 30) this.conversation = this.conversation.slice(-30);
+
+    // Prepare (single draw) + render the directive for the NEXT spoken reply.
+    const guidance = this.prepareNextDirective();
+
+    return {
+      faceTarget: this.snapshotFaceTarget(),
+      mode: this.mode,
+      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
+      directive: this.directive,
+      ext,
+      guidance,
+      ending: parsed.wantsToEnd,
+      usage: llm.usage,
+    };
+  }
+
+  /**
+   * Append the live peer's actually-spoken reply as the model turn, so the next
+   * analysis has the real prior line (needed for contingency / addressedBid).
+   * Live-audio path only — the HTTP path pushes the model turn inside handleTurn.
+   */
+  recordPeerReply(text: string): void {
+    const t = text.trim();
+    if (!t) return;
+    this.conversation.push({ role: "model", text: t });
+    if (this.conversation.length > 30) this.conversation = this.conversation.slice(-30);
+    this.lastReply = t;
+  }
+
+  /**
+   * Compute (single random draw) and store the directive for the NEXT spoken
+   * reply, returning it rendered as standing guidance for the live session.
+   * Called once at session start and once at the end of each analyzeTurn.
+   */
+  prepareNextDirective(): string {
+    const d = this.computeDirective(this.turnIndex + 1);
+    this.pendingDirective = d;
+    return renderDirectiveGuidance({
+      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
+      mode: this.mode,
+      directive: d.withIdentity,
+      ext: d.ext,
+    });
+  }
+
+  /**
+   * Step 1 of the turn loop: derive this turn's directive (identity moves +
+   * challenge probe) from the PRIOR state. Uses Math.random (augmentDirective /
+   * selectChallenge), so it must be called exactly ONCE per turn — handleTurn
+   * calls it inline; the live path calls it via prepareNextDirective and reuses
+   * the stored result.
+   */
+  private computeDirective(turnIndex: number): {
+    withIdentity: ReturnType<typeof augmentDirective>;
+    ext: DirectiveExtensions;
+    challenge: ReturnType<typeof selectChallenge>;
+  } {
+    const withIdentity = augmentDirective(
+      this.directive,
+      this.cfg.identity,
+      this.userModel,
+      this.vector.rapport.x,
+      turnIndex,
+    );
+    const challenge = selectChallenge(this.profile, this.cfg.slp, turnIndex, {
+      languageLevelTier: this.languageTier,
+    });
+    const ext: DirectiveExtensions = {
+      identityMove: withIdentity.identityMove,
+      topicHint: withIdentity.topicHint,
+      stanceHint: withIdentity.stanceHint,
+      probe: challenge.probe === "none" ? undefined : challenge.probe,
+      probeHint: challenge.dim === "interestEngagement"
+        ? Object.entries(this.cfg.identity.interests).sort((a, b) => b[1] - a[1])[0]?.[0]
+        : challenge.dim === "assertiveness"
+          ? Object.keys(this.cfg.identity.stances)[0]
+          : undefined,
+    };
+    return { withIdentity, ext, challenge };
+  }
+
+  /**
+   * Steps 4-10 of the turn loop (shared by handleTurn and analyzeTurn): consume
+   * the `observed` classification, step the springs/trackers/profile/probe,
+   * recompute mode + base directive, and snapshot debug state. Does NOT touch
+   * the conversation log or lastReply — the caller owns those.
+   */
+  private applyObserved(
+    transcript: string,
+    signals: ClientSignals,
+    withIdentity: ReturnType<typeof augmentDirective>,
+    ext: DirectiveExtensions,
+    challenge: ReturnType<typeof selectChallenge>,
+    observed: unknown,
+  ): ReturnType<typeof parseObserved> {
     // 4. Validate observed.
-    const parsed = parseObserved(llmReply.observed);
+    const parsed = parseObserved(observed);
 
     // 5. Compute impulses.
     const ci = contextualImpulse(parsed, signals, this.trackers, this.params);
@@ -457,8 +625,8 @@ export class DirectedSession {
     this.trackers.recentMoves = [...this.trackers.recentMoves, ci.moveKey].slice(-6);
 
     // 8. Record any nominated moment for shared history.
-    if ((llmReply.observed as any)?.newMoment) {
-      const nm = (llmReply.observed as any).newMoment;
+    if ((observed as any)?.newMoment) {
+      const nm = (observed as any).newMoment;
       if (nm.kind && nm.summary) {
         this.history.record({
           kind: nm.kind,
@@ -526,7 +694,6 @@ export class DirectedSession {
     this.lastChallenge = challenge;
     this.lastDirective = withIdentity;
     this.lastExt = ext;
-    this.lastReply = llmReply.reply;
 
     // Engine-state trace — the deterministic decisions BEHIND this turn's reply
     // (the directive + probe the model was given) and the resulting affect
@@ -565,22 +732,7 @@ export class DirectedSession {
       }, null, 2),
     );
 
-    // 11. Persist into conversation log so the LLM sees its own prior reply.
-    this.conversation.push({ role: "user", text: transcript });
-    this.conversation.push({ role: "model", text: llmReply.reply });
-    // Cap log length to keep prompt size sane.
-    if (this.conversation.length > 30) this.conversation = this.conversation.slice(-30);
-
-    return {
-      reply: llmReply.reply,
-      faceTarget: this.snapshotFaceTarget(),
-      mode: this.mode,
-      vector: { valence: this.vector.valence.x, arousal: this.vector.arousal.x, rapport: this.vector.rapport.x },
-      directive: this.directive,
-      ext,
-      usage: llmReply.usage,
-      ending: parsed.wantsToEnd,
-    };
+    return parsed;
   }
 
   /** Full live engine state for the debug tool (SocialPeerLiveState shape). */
@@ -639,8 +791,14 @@ export class DirectedSession {
     };
   }
 
-  private async callLLM(turnTail: string): Promise<{ reply: string; observed: unknown; usage?: TurnUsage }> {
+  private async callLLM(
+    turnTail: string,
+    callMode: "full" | "analysis" = "full",
+  ): Promise<{ reply: string; observed: unknown; usage?: TurnUsage }> {
     const model = this.cfg.model || DIRECTED_SESSION_DEFAULT_MODEL;
+    // "full" authors the reply + classifies (HTTP peer); "analysis" only
+    // classifies (live peer — a live session authors the spoken reply).
+    const schema = callMode === "analysis" ? ANALYSIS_TOOL_SCHEMA : TURN_TOOL_SCHEMA;
 
     // Build contents: prior conversation + the volatile tail as the current user turn.
     const priorContents = this.conversation.map((m) => ({
@@ -672,9 +830,9 @@ export class DirectedSession {
           {
             functionDeclarations: [
               {
-                name: TURN_TOOL_SCHEMA.name,
-                description: TURN_TOOL_SCHEMA.description,
-                parametersJsonSchema: TURN_TOOL_SCHEMA.parametersJsonSchema,
+                name: schema.name,
+                description: schema.description,
+                parametersJsonSchema: schema.parametersJsonSchema,
               },
             ],
           },
@@ -683,7 +841,7 @@ export class DirectedSession {
           functionCallingConfig: {
             // ANY = force a tool call; ALLOWED limits to our single tool.
             mode: "ANY" as any,
-            allowedFunctionNames: [TURN_TOOL_SCHEMA.name],
+            allowedFunctionNames: [schema.name],
           },
         },
       },
@@ -693,7 +851,11 @@ export class DirectedSession {
       | { name?: string; args?: { reply?: string; observed?: unknown } }
       | undefined;
     let usage: TurnUsage | undefined;
-    const haveCall = () => !!fnCall && typeof fnCall.args?.reply === "string";
+    // In analysis mode there is no `reply`; the forced tool call is "complete"
+    // once the `observed` block has arrived.
+    const haveCall = () => !!fnCall && (
+      callMode === "analysis" ? fnCall.args?.observed != null : typeof fnCall.args?.reply === "string"
+    );
     const takeUsage = (um: any) => {
       if (um && typeof um.promptTokenCount === "number") {
         usage = {
@@ -744,14 +906,17 @@ export class DirectedSession {
       `SOCIAL BOT TURN ${this.turnIndex} LLM timing`,
       `call_arrived=${callArrivedMs}ms total=${Date.now() - t0}ms model=${model} usage=${usage ? `${usage.promptTokens}+${usage.completionTokens}(thoughts in completion)` : "n/a"}`,
     );
-    if (!fnCall || fnCall.name !== TURN_TOOL_SCHEMA.name || typeof fnCall.args?.reply !== "string") {
+    const malformed = !fnCall || fnCall.name !== schema.name || (
+      callMode === "analysis" ? fnCall.args?.observed == null : typeof fnCall.args?.reply !== "string"
+    );
+    if (malformed) {
       throw new Error(
-        `[DirectedSession] Expected forced 'turn' tool call but got: ${JSON.stringify(fnCall).slice(0, 200)}`,
+        `[DirectedSession] Expected forced '${schema.name}' tool call but got: ${JSON.stringify(fnCall).slice(0, 200)}`,
       );
     }
     return {
-      reply: fnCall.args.reply,
-      observed: fnCall.args.observed,
+      reply: callMode === "analysis" ? "" : (fnCall!.args!.reply as string),
+      observed: fnCall!.args?.observed,
       usage,
     };
   }

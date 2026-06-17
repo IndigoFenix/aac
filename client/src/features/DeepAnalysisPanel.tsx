@@ -131,14 +131,14 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
 
   if (!student) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground p-8">
+      <div className="h-full flex items-center justify-center text-muted-foreground p-8">
         {t("deepAnalysis.selectStudent")}
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex min-h-0 overflow-hidden">
+    <div className="h-full flex min-h-0 overflow-hidden">
       {/* History sidebar */}
       <aside className="w-64 shrink-0 border-e overflow-y-auto">
         <div className="p-3 border-b">
@@ -227,7 +227,7 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {!selectedId && (
             <div className="text-sm text-muted-foreground">{t("deepAnalysis.selectOrGenerate")}</div>
           )}

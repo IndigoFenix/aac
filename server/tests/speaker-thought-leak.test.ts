@@ -54,6 +54,15 @@ describe("isLeakedThought", () => {
   test("matches the legacy underscore name", () => {
     expect(isLeakedThought("private_note The user is happy")).toBe(true);
   });
+  test("matches a LEADING space-separated 'private thought' (transcriber dropped the underscore)", () => {
+    expect(isLeakedThought("private thought the user wants a hug")).toBe(true);
+    expect(isLeakedThought("Private Thought: she is sad")).toBe(true);
+    expect(isLeakedThought("private-note the user is happy")).toBe(true);
+  });
+  test("matches a leaked marker that follows an echoed bracket tag", () => {
+    expect(isLeakedThought("[USER to YOU] private thought the user is sad")).toBe(true);
+    expect(isLeakedThought("[MODE companion] THOUGHT the user said no")).toBe(true);
+  });
   test("is case-insensitive for the underscore token", () => {
     expect(isLeakedThought("Private_Thought ...")).toBe(true);
     expect(isLeakedThought("PRIVATE_NOTE ...")).toBe(true);
@@ -95,6 +104,16 @@ describe("stripThoughtLeakMarker", () => {
   });
   test("strips a bare ALL-CAPS THOUGHT label", () => {
     expect(stripThoughtLeakMarker("THOUGHT The user said no")).toBe("The user said no");
+  });
+  test("strips a space-separated leading marker", () => {
+    expect(stripThoughtLeakMarker("private thought The user wants a hug")).toBe(
+      "The user wants a hug",
+    );
+  });
+  test("strips a leaked bracket tag together with the marker", () => {
+    expect(stripThoughtLeakMarker("[USER to YOU] private thought The user is happy")).toBe(
+      "The user is happy",
+    );
   });
   test("falls back to the trimmed original when nothing follows the marker", () => {
     // No real reasoning after the marker — keep something for the supervisor log.

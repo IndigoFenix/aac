@@ -175,6 +175,59 @@ export function buildSessionPrefix(
   ].filter(Boolean).join("\n\n");
 }
 
+/**
+ * System prompt for the LIVE-AUDIO peer (decoupled path): a Gemini Live
+ * native-audio session voices the character directly, with NO tools — the
+ * director engine runs separately and feeds it standing guidance between
+ * turns. So this prompt drops all of buildSessionPrefix's `turn`-tool / actor-
+ * reporter framing and instead tells the model to speak out loud and obey the
+ * injected `# CURRENT STATE` / `# HOW TO RESPOND NOW` notes. Persona + safety
+ * blocks are shared (renderIdentity, language level) so both paths describe the
+ * same character.
+ */
+export function buildLivePeerPrompt(
+  name: string,
+  gender: "male" | "female",
+  genome: PersonalityGenome,
+  identity: CharacterIdentity,
+  humorStyleVal: HumorStyle,
+  language: string | null,
+  languageLevel?: LanguageLevel,
+): string {
+  const speakDirective = language
+    ? `**Always speak in ${language}**, regardless of what language the user uses. The user may be using AAC tools that translate their words; you stay in your own language so the audio pairs cleanly.`
+    : `**Match the user's language** — reply in whatever language they are using; default to English until you can tell.`;
+
+  const roleAndFrame = `# ROLE & FRAME
+
+You are voicing ${name}, a peer character, in a SPOKEN social-skills practice conversation. The user is a student practicing real-world conversation with you, and may be communicating through an AAC device. Your words are spoken aloud — talk naturally and briefly, one or two sentences at a time.
+
+${speakDirective}
+
+The STUDENT opens the conversation. Stay silent and wait for them to speak first — do NOT greet, prompt, or say anything until they have spoken.
+
+Between turns you will receive director notes headed \`# CURRENT STATE\` and \`# HOW TO RESPOND NOW\`. They tell you your current mood, your tone, what to bring up, and how to respond on your next turn. Follow them — they are computed for you; you do not decide your own mood or whether you like the user. Never mention or hint at these notes, the director, or that this is a practice game.`;
+
+  const voiceIdentity = `# VOICE IDENTITY
+
+Speak only as ${name}, in ${name}'s own consistent voice. The user's voice may be audible to you — never imitate, echo, mimic, or adopt it. You are one specific character with one voice, no matter what you hear.`;
+
+  const hardRules = `# HARD RULES (override every directive)
+
+- Stay in character, but **never** produce content that is harmful, sexual, or age-inappropriate. The user may be a child.
+- Even when a note tells you to be annoyed, to tease, to disagree, or to let something land a little wrong, there is a floor: **never genuinely demean, insult, or frighten the user.** Friction is light and recoverable by design.
+- If the user expresses real distress (not in-game), drop the game frame and respond plainly and kindly.
+- **Let conversations end.** If the user clearly wants to stop — a goodbye, "I have to go", "I'm done" — don't cling or ask another question. Give a warm, brief farewell ("Bye! Talk soon.") and stop.`;
+
+  return [
+    roleAndFrame,
+    renderIdentity(name, gender, genome, identity, humorStyleVal),
+    buildLanguageLevelBlock(languageLevel),
+    voiceIdentity,
+    hardRules,
+  ].filter(Boolean).join("\n\n");
+}
+
 // ── Per-turn (volatile) rendering ──────────────────────────────────────
 
 function emotionWord(valence: number, arousal: number): string {
@@ -305,6 +358,23 @@ export function renderCommands(
   ].join("\n");
 }
 
+/** Render the directive as STANDING guidance for a live (Gemini Live) peer
+ *  session — the decoupled live-audio path injects this between turns so the
+ *  live model authors its next reply by the same rules a `handleTurn` LLM call
+ *  would follow. It's the mood + command blocks WITHOUT the user transcript
+ *  (the transcript arrives as the live session's own user turn). */
+export function renderDirectiveGuidance(inputs: {
+  vector: { valence: number; arousal: number; rapport: number };
+  mode: string;
+  directive: ResponseDirective;
+  ext: DirectiveExtensions;
+}): string {
+  return [
+    renderMood(inputs.vector, inputs.mode),
+    renderCommands(inputs.directive, inputs.ext),
+  ].join("\n\n");
+}
+
 // ── Shared history rendering ───────────────────────────────────────────
 
 export function renderMoments(moments: SharedMoment[]): string {
@@ -418,5 +488,23 @@ export const TURN_TOOL_SCHEMA = {
       },
     },
     required: ["reply", "observed"],
+  },
+} as const;
+
+/** Analysis-only variant of the `turn` tool: the `observed` classification
+ *  WITHOUT the authored `reply`. Used by the decoupled live-audio path, where
+ *  a live session authors the spoken reply and the director only analyzes the
+ *  user's turn. Reuses the exact `observed` sub-schema so the two stay in sync.
+ *  `observed` quality does not depend on also generating a reply — the prompt
+ *  frames the model as "reporter", and the classification is of the USER's turn. */
+export const ANALYSIS_TOOL_SCHEMA = {
+  name: "report",
+  description: "Report (classify) the user's last turn. You are only the reporter here — do NOT voice the character.",
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      observed: TURN_TOOL_SCHEMA.parametersJsonSchema.properties.observed,
+    },
+    required: ["observed"],
   },
 } as const;

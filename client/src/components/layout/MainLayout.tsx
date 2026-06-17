@@ -26,6 +26,7 @@ import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
 import { CalendarPanel } from '@/features/CalendarPanel';
+import { LocationsPanel } from '@/features/LocationsPanel';
 import { UserChatPanel } from '@/features/userChat/UserChatPanel';
 import { DeepAnalysisPanel } from '@/features/DeepAnalysisPanel';
 import { SharesPanel } from '@/features/SharesPanel';
@@ -181,6 +182,8 @@ export function MainLayout() {
         return <SymbolsPanel isOpen={isPanelOpen} />;
       case 'calendar':
         return <CalendarPanel isOpen={isPanelOpen} />;
+      case 'locations':
+        return <LocationsPanel isOpen={isPanelOpen} />;
       case 'userchat':
         return <UserChatPanel isOpen={isPanelOpen} />;
       case 'deepAnalysis':

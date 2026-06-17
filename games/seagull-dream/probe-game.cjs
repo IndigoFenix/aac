@@ -5,7 +5,7 @@ const path = require("path");
   const p = await b.newPage();
   await p.setViewport({ width: 960, height: 560 });
   p.on("pageerror", (e) => console.log("PAGEERROR:", e.message));
-  await p.goto("http://localhost:5184/", { waitUntil: "networkidle0", timeout: 60000 });
+  await p.goto("http://localhost:5185/", { waitUntil: "networkidle0", timeout: 60000 });
   await new Promise((r) => setTimeout(r, 25000));
   await p.screenshot({ path: path.join(__dirname, "caps-clouds", "game_fixed_a.png") });
   // pan the view: walk-mode steering follows the mouse; sweep right then left

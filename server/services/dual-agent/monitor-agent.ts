@@ -9,8 +9,14 @@ import type {
   PendingMessage,
   DualAgentConfig,
 } from "./types";
-import { studentRepository, calendarRepository, settingsRepository } from "../../repositories";
+import { studentRepository, calendarRepository, settingsRepository, locationRepository, instituteRepository } from "../../repositories";
 import { calendarService } from "../calendarService";
+import {
+  matchStudentLocation,
+  type GpsReading,
+  type EventOccurrence,
+  type LocationMatch,
+} from "@shared/location-matching";
 import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACMuteState, AACAppDefinition } from "./types";
 import {
@@ -93,6 +99,10 @@ export class MonitorAgent {
   };
   /** Client-reported IANA timezone for this session (for TZ-aware event windows and prompt context). */
   private timezone?: string;
+  /** Most recent client-reported GPS reading (transient session context — not persisted). */
+  private lastGps?: GpsReading;
+  /** Dedup key of the last location match reported to the live agents, so re-checks only inject on change. */
+  private lastReportedLocationKey?: string;
 
   constructor(
     studentId: string,
@@ -109,6 +119,137 @@ export class MonitorAgent {
   /** Set the client-reported IANA timezone. Relay calls this after init. */
   setTimezone(tz: string | undefined): void {
     this.timezone = tz;
+  }
+
+  /** Set the latest client-reported GPS reading. Coordinator calls this on init and on gps_update. */
+  setGps(gps: GpsReading | undefined): void {
+    this.lastGps = gps;
+  }
+
+  getGps(): GpsReading | undefined {
+    return this.lastGps;
+  }
+
+  /**
+   * Resolve the student's current GPS against locations registered to their
+   * institutes, cross-referenced with events scheduled around `now`. Returns
+   * ranked matches (at_event first), or [] when there's no GPS / no nearby
+   * location. Self-contained so it can run at startup AND on monitor re-checks.
+   */
+  private async resolveLocationMatches(now: Date): Promise<LocationMatch[]> {
+    if (!this.lastGps || !this.studentId) return [];
+
+    try {
+      const studentInstitutes = await instituteRepository.getInstitutesByStudentId(this.studentId);
+      const instituteIds = studentInstitutes.map((r) => r.institute.id);
+      if (instituteIds.length === 0) return [];
+
+      const candidateLocations = (await locationRepository.listByInstitutes(instituteIds)).map((l) => ({
+        id: l.id,
+        title: l.title,
+        address: l.address,
+        latitude: l.latitude,
+        longitude: l.longitude,
+      }));
+      if (candidateLocations.length === 0) return [];
+
+      // Events around now (±3h covers the ±2h match window plus slack for
+      // recurrence expansion at day boundaries).
+      const windowStart = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      const windowEnd = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+      const rawEvents = await calendarService.getEventsForStudent(this.studentId, windowStart, windowEnd);
+      const expanded = calendarRepository.expandRecurringEvents(rawEvents, windowStart, windowEnd);
+      const locsByEvent = await locationRepository.getLocationsForEvents([...new Set(rawEvents.map((e) => e.id))]);
+
+      const occurrences: EventOccurrence[] = expanded.map(({ event, date }) => {
+        const occStart = new Date(date);
+        const evStart = new Date(event.startTime);
+        occStart.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        const durationMs = Math.max(0, new Date(event.endTime).getTime() - evStart.getTime());
+        return {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          startTime: occStart,
+          endTime: new Date(occStart.getTime() + durationMs),
+          locationIds: (locsByEvent.get(event.id) || []).map((l) => l.id),
+        };
+      });
+
+      return matchStudentLocation({ gps: this.lastGps, candidateLocations, events: occurrences, now });
+    } catch (err) {
+      console.warn("[MonitorAgent] resolveLocationMatches failed:", err);
+      return [];
+    }
+  }
+
+  /** Human-readable "when" for an event occurrence, in the session timezone. */
+  private formatEventWhen(start: Date): string {
+    return this.timezone
+      ? formatLocalDateTime(start, this.timezone)
+      : `${start.toLocaleDateString()} ${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  /**
+   * A prompt section describing the student's likely location, for the startup
+   * enhancer. Title/address are clinician-entered free text, so they're defanged
+   * before landing in the system prompt. Returns "" when there's no signal.
+   */
+  private async buildLocationContextSection(now: Date): Promise<string> {
+    const matches = await this.resolveLocationMatches(now);
+    const top0 = matches[0];
+    // Seed the re-check dedup key so the first gps_update doesn't re-announce
+    // the location the startup prompt already described.
+    this.lastReportedLocationKey = top0 ? `${top0.location.id}:${top0.confidence}` : "none";
+    if (matches.length === 0) return "";
+
+    const top = matches[0];
+    const title = defangSectionContent(top.location.title);
+    const addr = top.location.address ? ` (${defangSectionContent(top.location.address)})` : "";
+    const dist = Math.round(top.distanceM);
+
+    const lines: string[] = [];
+    if (top.confidence === "at_event" && top.nearbyEvents.length > 0) {
+      const ev = top.nearbyEvents[0];
+      lines.push(
+        `The user's device GPS places them at **${title}**${addr}, about ${dist}m away. The event "${defangSectionContent(ev.title)}" is scheduled there around ${this.formatEventWhen(ev.startTime)} — the user is very likely attending it right now. Build the session around being at this place and activity.`,
+      );
+    } else {
+      lines.push(
+        `The user's device GPS places them at or near **${title}**${addr}, about ${dist}m away. Nothing is scheduled there at this time, but the setting is a strong clue to where they are.`,
+      );
+    }
+    if (matches.length > 1) {
+      const others = matches.slice(1, 3).map((m) => defangSectionContent(m.location.title)).join(", ");
+      lines.push(`Other nearby registered places: ${others}.`);
+    }
+
+    return `\n\n## Current Location (from device GPS)\n${lines.join("\n")}`;
+  }
+
+  /**
+   * Re-evaluate the student's location (e.g. after a gps_update or on a monitor
+   * cycle). Returns a context-injection string to broadcast to the live agents
+   * IF the match has meaningfully changed since the last report; otherwise null.
+   */
+  async checkLocationContext(now: Date = new Date()): Promise<string | null> {
+    const matches = await this.resolveLocationMatches(now);
+    const top = matches[0];
+    const key = top ? `${top.location.id}:${top.confidence}` : "none";
+    if (key === this.lastReportedLocationKey) return null;
+
+    // Skip the very first "none" — startup already covered the initial state.
+    const firstReport = this.lastReportedLocationKey === undefined;
+    this.lastReportedLocationKey = key;
+    if (!top) return firstReport ? null : `[LOCATION] The user no longer appears to be at a registered place.`;
+
+    const title = top.location.title;
+    const dist = Math.round(top.distanceM);
+    if (top.confidence === "at_event" && top.nearbyEvents.length > 0) {
+      const ev = top.nearbyEvents[0];
+      return `[LOCATION] The user now appears to be at ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. They are likely at this event.`;
+    }
+    return `[LOCATION] The user now appears to be at or near ${title} (~${dist}m away).`;
   }
 
   /**
@@ -444,6 +585,12 @@ This user's spoken/comprehension level is "${languageLevel.replace(/_/g, " ")}".
       } catch (err) {
         console.warn("[MonitorAgent] Failed to load calendar events for startup:", err);
       }
+
+      // ── Current location context (from device GPS, if available) ──
+      // A confirmed location — especially one with a concurrent event — is a
+      // far stronger situational signal than inferring location from the
+      // calendar alone. Empty string when there's no GPS / no nearby place.
+      const locationSection = await this.buildLocationContextSection(new Date());
 
       // ── Time context (used by both prompt and session_goals reasoning) ──
       const nowLocal = this.timezone
@@ -855,6 +1002,7 @@ ${tzLine}
 ## Student Data
 ${studentDataParts.join('\n')}
 ${eventsSection}
+${locationSection}
 
 ## Clinician-Written Persona Prompt
 ${userPromptBlock}

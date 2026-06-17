@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { makePlanetNoise } from "./noise";
 import { buildChunkGeometry } from "./chunk";
-import { CHUNKS, PLANET, GFX } from "./config";
+import { CHUNKS, PLANET, GFX, simClock } from "./config";
 import type {
   CelestialBody,
   BodyOrbit,
@@ -956,7 +956,7 @@ function buildRockyBody(
         if (cameraForwardWorld) {
           fwd = _cloudCamFwd.copy(cameraForwardWorld).applyQuaternion(this.inverseOrientation);
         }
-        cloudSystem.update(_cloudCamLocal, performance.now() * 0.001, fwd);
+        cloudSystem.update(_cloudCamLocal, simClock.t, fwd);
       }
       // TODO(features): volcano emission, life biosignatures (city
       // lights on night side for intelligent stage), tectonic crack

@@ -571,7 +571,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Social Trainer per-app config (appConfig.social_trainer). Edited directly
   // through appConfig, which is already in the dirty-check + save payload.
   const social = (appConfig.social_trainer ?? {}) as {
-    targetSkills?: string[]; lockedSkills?: string[]; maxChallengeIntensity?: number;
+    targetSkills?: string[]; lockedSkills?: string[]; maxChallengeIntensity?: number; liveAudio?: boolean;
   };
   const socialTargets = social.targetSkills ?? [];
   const socialLocked = social.lockedSkills ?? [];
@@ -1017,6 +1017,22 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Switch
                   checked={appConfig.social_trainer?.enabled ?? true}
                   onCheckedChange={(checked) => setSocial({ enabled: checked })}
+                />
+              </div>
+
+              {/* Live audio — when on (and a live model is configured), the
+                  practice friend speaks via Gemini Live native audio: lower
+                  latency (no TTS warm-up), more natural voice, higher cost.
+                  The skills engine runs unchanged. */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{t('aacSettings.socialTrainerLiveAudioTitle')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('aacSettings.socialTrainerLiveAudioDesc')}</p>
+                </div>
+                <Switch
+                  checked={social.liveAudio ?? false}
+                  onCheckedChange={(checked) => setSocial({ liveAudio: checked })}
+                  data-testid="social-live-audio"
                 />
               </div>
 

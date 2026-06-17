@@ -195,6 +195,7 @@ export const zh = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "地点",
     main: "CliniAACian",
     home: "前往首页",
     interpret: "解读沟通",
@@ -2407,6 +2408,8 @@ export const zh = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "社交训练",
     socialTrainerDesc: "为这位学生设定练习伙伴的技能目标和挑战程度。AI 可在此范围内，每节收窄重点。",
+    socialTrainerLiveAudioTitle: "实时语音",
+    socialTrainerLiveAudioDesc: "练习伙伴以更自然的实时语音说话，延迟更低（成本更高）。需要实时语音模型，否则使用标准语音。技能练习不受影响。",
     socialTrainerFocus: "要练习的技能",
     socialTrainerFocusHint: "要练习的技能（默认目标）。留空则包括所有技能。",
     socialTrainerLocked: "禁区技能",
@@ -3295,7 +3298,25 @@ export const zh = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "地点",
+    new: "新建地点",
+    edit: "编辑地点",
+    titleField: "名称",
+    address: "地址",
+    findFromAddress: "按地址查找",
+    pickOnMap: "在地图上选择",
+    latitude: "纬度",
+    longitude: "经度",
+    empty: "暂无地点。添加一个以开始。",
+    selectInstitute: "选择一个机构以管理其地点。",
+    saveFailed: "保存地点失败",
+    deleteFailed: "删除地点失败",
+    geocodeFailed: "找不到该地址",
+  },
   calendar: {
+    locations: "地点",
+    addLocation: "添加地点",
     title: "日历",
     today: "今天",
     month: "月",

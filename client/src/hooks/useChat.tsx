@@ -161,6 +161,11 @@ export interface ChatResponseActions {
   // Calendar updates - trigger CalendarPanel reload
   calendarUpdated?: boolean;
 
+  // Location context data - extracted from Context_Locations memory field
+  locations?: any;
+  // Location updates - trigger LocationsPanel + calendar location-picker reload
+  locationsUpdated?: boolean;
+
   // AAC settings - extracted from Context_AACSettings / Context_AACPrompt / Context_AACAutoPrompt memory fields
   aacsettings?: any;
   aacprompt?: any;
@@ -722,6 +727,15 @@ export const ChatProvider = ({
     if (contextData.calendar || contextData.calendarUpdated) {
       console.log('[ChatProvider] Calendar data updated by AI, invalidating queries');
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
+    }
+
+    // Handle location updates - triggers LocationsPanel reload AND the calendar
+    // event dialog's location picker (both read /api/locations). A prefix-match
+    // invalidation covers the institute-scoped keys (['/api/locations', id]).
+    if (contextData.locations || contextData.locationsUpdated) {
+      console.log('[ChatProvider] Locations data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('locations'));
+      queryClient.invalidateQueries({ queryKey: ['/api/locations'] });
     }
 
     // Handle AAC settings updates - triggers AACSettingsPanel reload

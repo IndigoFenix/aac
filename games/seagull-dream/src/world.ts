@@ -185,6 +185,7 @@ export function createWorld(
   // Mutable frame state. Initial mode is STAR with the home system
   // materialized — the player spawns on the home planet.
   let frameMode: FrameMode = "STAR";
+  let dbgVisWasOn = false; // debug-isolation visibility was active last frame (restore-once)
   let sceneAnchorGalactic: THREE.Vector3 = universe.homeStar.galacticPosition.clone();
   let activeStar: StarRecord | null = universe.homeStar;
   let activeSystem: SolarSystem | null = generateSolarSystem({
@@ -454,6 +455,12 @@ export function createWorld(
     // Cloud uniforms / runtime opts are computed once per frame and
     // pushed into every body's CloudSystem inside the body loop below.
     const cloudPixelsPerUnit = computeCloudPixelsPerUnit(camera, screenHeightPx);
+    // Debug isolation: apply per-child visibility this frame if a toggle is on,
+    // OR for one frame after it turns off (to restore what we hid; terrain
+    // chunks then re-correct via their own LOD).
+    const dbgVisActive = !!(GFX.dbgHidePlanet || GFX.dbgHideClouds);
+    const dbgVisApply = dbgVisActive || dbgVisWasOn;
+    dbgVisWasOn = dbgVisActive;
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i];
 
@@ -484,6 +491,17 @@ export function createWorld(
         // Sun shading — clouds darken through the terminator and light
         // up on the day side. No active star (deep space) = unlit.
         b.cloudSystem.setSunWorldPos(sysStar ? sysStar.worldPosition : null);
+
+        // Debug isolation: hide the planet's terrain/ocean/atmosphere (every
+        // child EXCEPT the cloud group) or the clouds themselves, so we can see
+        // whether the cloud flicker is independent of what's drawn behind it.
+        if (dbgVisApply) {
+          const cg = b.cloudSystem.group;
+          for (const child of b.group.children) {
+            if (child === cg) child.visible = !GFX.dbgHideClouds;
+            else child.visible = !GFX.dbgHidePlanet;
+          }
+        }
       }
 
       // Trigger heavy construction (sphere meshes, materials, ocean,
@@ -972,8 +990,8 @@ export function createWorld(
       // Continuous floating-origin rebase: collapse player back to scene
       // origin after the materialize logic settles. Keeps Float32 precision
       // tight at galactic scales (player.state.position never grows
-      // unbounded during interstellar warp).
-      applyFloatingOrigin(playerPosition);
+      // unbounded during interstellar warp). Debug-toggleable.
+      if (!GFX.dbgNoFloatingOrigin) applyFloatingOrigin(playerPosition);
       return result;
     },
     regenerateUniverse(seed: number, params?: GalaxyParams): void {
@@ -1436,6 +1454,14 @@ export function createSky(scene: THREE.Scene): Sky {
       ambient.intensity = THREE.MathUtils.lerp(AMBIENT_NIGHT, AMBIENT_DAY, dayT) * GFX.ambientMult;
       _ambientColor.copy(ambientNightColor).lerp(ambientDayColor, dayT);
       ambient.color.copy(_ambientColor);
+
+      // Debug isolation: blank the sky (black background, no fog, no stars) so we
+      // can see whether the cloud flicker involves the sky/background/fog.
+      if (GFX.dbgHideSky) {
+        (scene.background as THREE.Color).setRGB(0, 0, 0);
+        galaxyMat.uniforms.uOpacity.value = 0;
+        if (scene.fog instanceof THREE.FogExp2) scene.fog.density = 0;
+      }
 
       // Strobe watchdog — see declaration block above.
       const fogDensity = scene.fog instanceof THREE.FogExp2 ? scene.fog.density : 0;

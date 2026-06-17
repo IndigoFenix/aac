@@ -85,6 +85,11 @@ export default function MusicalMicrobesApp() {
 
   const stateRef = useRef<GameState>(createState(1, 1));
   const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
+  // Whether the platform has a dwell control enabled (the student's eyegaze /
+  // cursor-control SETTINGS), encoded by the host in the gaze `mode`. 'off' means
+  // plain mouse/touch — no dwell-to-select; placement is by click. 'eyegaze' or
+  // 'mouse' (cursor-control) enables dwell. Gates the palette dwell loop below.
+  const controlModeRef = useRef<'off' | 'eyegaze' | 'mouse'>('off');
   const historyRef = useRef<Snapshot[]>([]);
   // Dwell time (ms) to commit a gaze placement — overridden by the platform's
   // eyegaze setting via `init` when embedded.
@@ -172,7 +177,20 @@ export default function MusicalMicrobesApp() {
     sendToParent({ type: 'ready', gameId: GAME_ID, version: '0.1.0' });
     const off = onPlatformMessage(msg => {
       if (msg.type === 'gaze') {
-        gazeRef.current = { x: msg.x, y: msg.y, mode: msg.mode };
+        // `mode` reflects the student's eyegaze/cursor-control SETTINGS: 'off' =
+        // disabled (plain mouse/touch — placement by click, no dwell), 'eyegaze'
+        // or 'mouse' = a dwell control is on. Track it as the dwell gate.
+        controlModeRef.current = msg.mode;
+        // Eyegaze position can ONLY come from the platform (the iframe can't
+        // sense a camera / hardware tracker). Cursor-control position is read
+        // from our own window pointer below — the platform's forwarded position
+        // freezes once the cursor is over the iframe. When disabled, clear so
+        // nothing acts on hover.
+        if (msg.mode === 'eyegaze') {
+          gazeRef.current = { x: msg.x, y: msg.y, mode: 'eyegaze' };
+        } else if (msg.mode === 'off') {
+          gazeRef.current = { x: -1, y: -1, mode: 'off' };
+        }
       } else if (msg.type === 'init') {
         // Honour the platform's configured dwell time for eyegaze placement.
         if (typeof msg.dwellMs === 'number' && msg.dwellMs > 0) dwellMsRef.current = msg.dwellMs;
@@ -248,9 +266,12 @@ export default function MusicalMicrobesApp() {
       const lightTarget = lightsOnRef.current ? 1 : 0;
       lightLevelRef.current += (lightTarget - lightLevelRef.current) * (1 - Math.exp(-dt / LIGHT_FADE_TAU));
 
-      // ── Dwell-to-act for eye gaze ──
-      // Mouse/touch act via pointerdown; only a real eye tracker dwells, so an
-      // incidental cursor resting on the canvas never drops an organism.
+      // ── Dwell-to-act for gaze / cursor-control ──
+      // Plain mouse/touch act via pointerdown — they report mode 'off' here (the
+      // platform only feeds a non-off gaze mode when an eyegaze/cursor-control
+      // dwell control is enabled), so an incidental cursor resting on the canvas
+      // never drops an organism. Eyegaze AND cursor-control (both dwell paradigms)
+      // place by dwelling.
       const gaze = gazeRef.current;
       let dwellProgress = 0;
       const rect = canvas.getBoundingClientRect();
@@ -259,7 +280,7 @@ export default function MusicalMicrobesApp() {
       const gazeOnCanvas =
         gaze.x >= 0 && localGazeX >= 0 && localGazeY >= 0 && localGazeX <= state.width && localGazeY <= state.height;
 
-      if (gaze.mode === 'eyegaze' && !observingRef.current && gazeOnCanvas) {
+      if (gaze.mode !== 'off' && !observingRef.current && gazeOnCanvas) {
         const moved = Math.hypot(localGazeX - dwellAnchorX, localGazeY - dwellAnchorY);
         if (moved <= DWELL_RADIUS_PX) {
           if (!committed) {
@@ -328,18 +349,60 @@ export default function MusicalMicrobesApp() {
     [activateAt],
   );
 
-  // Feed the local mouse into the gaze channel so the ghost preview follows the
-  // cursor when running standalone. Defers to a real eye tracker if one is live.
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType !== 'mouse') return;
-    if (gazeRef.current.mode === 'eyegaze') return;
-    gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
+  // Cursor-control pointer feed (window-level, inside this iframe so it covers the
+  // WHOLE game incl. the side palette — a canvas-scoped listener froze gazeRef the
+  // moment the cursor moved onto the palette). Only active when the platform has
+  // CURSOR-CONTROL dwell enabled ('mouse'); with eyegaze the platform owns the
+  // position, and with controls off we leave gazeRef cleared so a plain mouse user
+  // gets no hover-dwell (they place by click). The platform's own forwarded mouse
+  // position is unusable here — it freezes once the cursor is over the iframe.
+  useEffect(() => {
+    const onMove = (e: PointerEvent | MouseEvent) => {
+      if (controlModeRef.current !== 'mouse') return;
+      gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
+    };
+    const onLeave = () => {
+      if (controlModeRef.current === 'mouse') gazeRef.current = { x: -1, y: -1, mode: 'off' };
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('mousemove', onMove, { passive: true });
+    document.addEventListener('mouseleave', onLeave);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseleave', onLeave);
+    };
   }, []);
 
-  const handlePointerLeave = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType !== 'mouse') return;
-    if (gazeRef.current.mode === 'eyegaze') return;
-    gazeRef.current = { x: -1, y: -1, mode: 'off' };
+  // Dwell-to-click for the side palette / control buttons. The canvas has its own
+  // dwell-to-place loop above, but the [data-dwell] buttons had none — and the
+  // platform's host dwell engine can't reach buttons inside this iframe
+  // (document.elementsFromPoint stops at the iframe boundary). So run a small
+  // dwell here over our own [data-dwell] elements — but ONLY when a dwell control
+  // is enabled (controlMode !== 'off'); with a plain mouse the buttons use real
+  // onClick. elementFromPoint uses iframe-local coords — exactly what gazeRef
+  // holds (window pointer in cursor-control, bridge-converted in eyegaze). The
+  // canvas isn't [data-dwell], so this never competes with canvas placement.
+  useEffect(() => {
+    let raf = 0;
+    let hoverEl: HTMLElement | null = null;
+    let hoverStart = 0;
+    let fired = false;
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      const gaze = gazeRef.current;
+      if (controlModeRef.current === 'off' || gaze.mode === 'off' || gaze.x < 0) { hoverEl = null; fired = false; return; }
+      const hit = document.elementFromPoint(gaze.x, gaze.y) as HTMLElement | null;
+      const dwellEl = hit ? (hit.closest('[data-dwell]') as HTMLElement | null) : null;
+      if (dwellEl !== hoverEl) { hoverEl = dwellEl; hoverStart = now; fired = false; }
+      if (!dwellEl) return;
+      if (!fired && now - hoverStart >= dwellMsRef.current) {
+        fired = true;
+        dwellEl.click();
+      }
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const toolBtn = (id: Tool, label: string, node: React.ReactNode) => (
@@ -460,8 +523,6 @@ export default function MusicalMicrobesApp() {
           ref={canvasRef}
           className="absolute inset-0 touch-none"
           onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerLeave={handlePointerLeave}
         />
         <div className="pointer-events-none absolute top-2 left-3 text-xs text-slate-400/80 tabular-nums">
           {count} {count === 1 ? 'microbe' : 'microbes'}

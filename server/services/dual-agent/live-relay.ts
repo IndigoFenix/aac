@@ -662,7 +662,8 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 
 /** Messages from client → server */
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string; gps?: import("@shared/location-matching").GpsReading }
+  | { type: "gps_update"; gps: import("@shared/location-matching").GpsReading }  // periodic device-location refresh (movement / accuracy improvement)
   | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini

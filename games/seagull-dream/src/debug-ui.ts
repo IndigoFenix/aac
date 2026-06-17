@@ -234,6 +234,22 @@ function tuningSections(): Section[] {
       ],
     },
     {
+      title: "Debug isolation",
+      open: true,
+      sliders: [
+        { label: "hide planet", target: G, field: "dbgHidePlanet", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "hide sky", target: G, field: "dbgHideSky", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "no float origin", target: G, field: "dbgNoFloatingOrigin", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "no bloom/post", target: G, field: "dbgNoBloom", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "hide clouds", target: G, field: "dbgHideClouds", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "cloud no depth-test", target: G, field: "dbgCloudNoDepthTest", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "cloud no depth-write", target: G, field: "dbgCloudNoDepthWrite", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "bloom off (keep post)", target: G, field: "dbgBloomOff", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "freeze sim (weather+planets)", target: G, field: "dbgFreezeSim", min: 0, max: 1, step: 1, format: fmtInt },
+        { label: "freeze player", target: G, field: "dbgFreezePlayer", min: 0, max: 1, step: 1, format: fmtInt },
+      ],
+    },
+    {
       title: "Galaxy aggregate",
       sliders: [
         { label: "cluster glow", target: A, field: "aggregateBrightness", min: 0, max: 0.5, step: 0.005, format: fmt3 },

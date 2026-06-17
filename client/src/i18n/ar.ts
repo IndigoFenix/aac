@@ -195,6 +195,7 @@ export const ar = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "المواقع",
     main: "CliniAACian",
     home: "الذهاب إلى الصفحة الرئيسية",
     interpret: "تفسير التواصل",
@@ -2407,6 +2408,8 @@ export const ar = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "مدرّب اجتماعي",
     socialTrainerDesc: "حدّد أهداف المهارات ومستوى التحدّي لرفيق التدريب لهذا الطالب. يمكن للذكاء الاصطناعي تضييق التركيز في كل جلسة ضمن هذه الحدود.",
+    socialTrainerLiveAudioTitle: "صوت مباشر",
+    socialTrainerLiveAudioDesc: "يتحدّث رفيق التدريب بصوت مباشر أكثر طبيعية وبتأخير أقل (تكلفة أعلى). يتطلّب نموذج صوت مباشر؛ وإلا يُستخدم الصوت العادي. لا يتغيّر تدريب المهارات.",
     socialTrainerFocus: "مهارات للعمل عليها",
     socialTrainerFocusHint: "مهارات للتدرّب عليها (الأهداف الافتراضية). اتركها فارغة لتشمل الجميع.",
     socialTrainerLocked: "مهارات محظورة",
@@ -3295,7 +3298,25 @@ export const ar = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "المواقع",
+    new: "موقع جديد",
+    edit: "تعديل الموقع",
+    titleField: "العنوان",
+    address: "العنوان البريدي",
+    findFromAddress: "البحث حسب العنوان",
+    pickOnMap: "التحديد على الخريطة",
+    latitude: "خط العرض",
+    longitude: "خط الطول",
+    empty: "لا توجد مواقع بعد. أضف موقعًا للبدء.",
+    selectInstitute: "اختر مؤسسة لإدارة مواقعها.",
+    saveFailed: "فشل حفظ الموقع",
+    deleteFailed: "فشل حذف الموقع",
+    geocodeFailed: "تعذر العثور على هذا العنوان",
+  },
   calendar: {
+    locations: "المواقع",
+    addLocation: "إضافة موقع",
     title: "التقويم",
     today: "اليوم",
     month: "شهر",

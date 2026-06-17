@@ -257,6 +257,7 @@ function Router() {
       <Route path="/institute" component={ProtectedDashboard} />
       <Route path="/reports" component={ProtectedDashboard} />
       <Route path="/calendar" component={ProtectedDashboard} />
+      <Route path="/locations" component={ProtectedDashboard} />
       <Route path="/userchat" component={ProtectedDashboard} />
       <Route path="/deep-analysis" component={ProtectedDashboard} />
       <Route path="/shares" component={ProtectedDashboard} />

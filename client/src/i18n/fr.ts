@@ -195,6 +195,7 @@ export const fr = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "Lieux",
     main: "CliniAACian",
     home: "Aller à l'accueil",
     interpret: "Interpréter la communication",
@@ -2407,6 +2408,8 @@ export const fr = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "Entraîneur social",
     socialTrainerDesc: "Définissez les objectifs de compétences et le niveau de défi du pair d'entraînement pour cet élève. L'IA peut resserrer le focus à chaque séance dans ces limites.",
+    socialTrainerLiveAudioTitle: "Voix audio en direct",
+    socialTrainerLiveAudioDesc: "Le partenaire d'entraînement parle avec une voix en direct plus naturelle et moins de latence (coût plus élevé). Nécessite un modèle vocal en direct ; sinon, la voix standard est utilisée. L'entraînement aux compétences est inchangé.",
     socialTrainerFocus: "Compétences à travailler",
     socialTrainerFocusHint: "Compétences à pratiquer (objectifs par défaut). Laissez vide pour toutes les inclure.",
     socialTrainerLocked: "Compétences exclues",
@@ -3295,7 +3298,25 @@ export const fr = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "Lieux",
+    new: "Nouveau lieu",
+    edit: "Modifier le lieu",
+    titleField: "Titre",
+    address: "Adresse",
+    findFromAddress: "Rechercher par adresse",
+    pickOnMap: "Choisir sur la carte",
+    latitude: "Latitude",
+    longitude: "Longitude",
+    empty: "Aucun lieu pour l'instant. Ajoutez-en un pour commencer.",
+    selectInstitute: "Sélectionnez une organisation pour gérer ses lieux.",
+    saveFailed: "Échec de l'enregistrement du lieu",
+    deleteFailed: "Échec de la suppression du lieu",
+    geocodeFailed: "Adresse introuvable",
+  },
   calendar: {
+    locations: "Lieux",
+    addLocation: "Ajouter un lieu",
     title: "Calendrier",
     today: "Aujourd'hui",
     month: "Mois",

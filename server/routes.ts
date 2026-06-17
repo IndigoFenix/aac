@@ -69,6 +69,7 @@ import { contactController } from "./controllers/contactController";
 import { licenseController } from "./controllers/licenseController";
 import { studentDeviceController } from "./controllers/studentDeviceController";
 import { calendarController } from "./controllers/calendarController";
+import { locationController } from "./controllers/locationController";
 import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { activityLogService } from "./services/activityLogService";
@@ -1654,6 +1655,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/calendar/events/:id/rsvp", requireAuth, (req, res) =>
     calendarController.setRsvp(req, res)
+  );
+
+  // ============= LOCATION ROUTES =============
+  app.get("/api/locations", requireAuth, (req, res) =>
+    locationController.list(req, res)
+  );
+  app.post("/api/locations/geocode", requireAuth, (req, res) =>
+    locationController.geocode(req, res)
+  );
+  app.get("/api/locations/:id", requireAuth, (req, res) =>
+    locationController.get(req, res)
+  );
+  app.post("/api/locations", requireAuth, (req, res) =>
+    locationController.create(req, res)
+  );
+  app.patch("/api/locations/:id", requireAuth, (req, res) =>
+    locationController.update(req, res)
+  );
+  app.delete("/api/locations/:id", requireAuth, (req, res) =>
+    locationController.remove(req, res)
   );
 
   // ============= INCIDENT ROUTES =============

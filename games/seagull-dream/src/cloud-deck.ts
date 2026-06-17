@@ -12,6 +12,7 @@ import type {
   CloudSystemOpts,
   CloudSystemRuntimeOpts,
 } from "./cloud-system";
+import { GFX } from "./config"; // debug-isolation depth toggles
 
 // ── Cloud Renderer v3, Phase 1: the DECK HEIGHTMAP ─────────────────────────
 //
@@ -68,7 +69,7 @@ const DECK_EARLY_OUT_TOP_MULT = 1.5;
 // Billow: high-frequency world-anchored noise added to the top altitude so the
 // deck isn't a smooth sheet. Gated by coverage (clear sky stays flat). Same
 // noise family as surfacenets so the two renderers agree on relief scale.
-const DECK_BILLOW_AMP_M = 260;
+const DECK_CELL_AMP_M = 350; // amplitude of the deck's cell-scale (terrain-like) lumpiness
 const DECK_BILLOW_W1 = 2400;
 const DECK_BILLOW_W2 = 1500;
 
@@ -98,25 +99,48 @@ function billow3(wx: number, wy: number, wz: number): number {
   return (n1 * 0.6 + n2 * 0.4 - 0.5) * 2.0;
 }
 
-// ── Edge blobs (mound mode) ────────────────────────────────────────────────
-// The hill mesh is single-valued and can't overhang; cumulus cauliflower IS
-// overhang. So we skin the mound's STEEP FLANKS (high heightmap gradient) with
-// instanced icosphere blobs — the one job worth spending blobs on, and only
-// there (flat deck gets none). Positions snap to a WORLD lattice so the blobs
-// don't swim as the camera-relative grid slides underfoot.
-const MAX_EDGE_BLOBS = 9000;
-const EDGE_TOWER_MIN_M = 250;      // mound rise above the base deck to count as a tower
-const EDGE_LATTICE_MIN_M = 1100;   // world snap lattice floor — coarse → big balls
-// The blobs ARE the visible cloud (the hill is just a depth mask). They want to
-// be LARGE and IRREGULAR, not a uniform bumpy skin — so the radius is ~1× the
-// spacing (heavy overlap → one solid mass) and per-blob hashed randoms jitter
-// position, size and height so the silhouette reads random, not gridded.
-const EDGE_BLOB_RADIUS_FRAC = 1.4;  // > spacing → heavy overlap, no gaps
-const EDGE_SIZE_MIN = 0.7;          // random size range (× base radius)
-const EDGE_SIZE_MAX = 1.6;
-const EDGE_JITTER_FRAC = 0.4;       // tangential position jitter (× lattice)
-const EDGE_VJITTER_FRAC = 0.4;      // vertical position jitter (× lattice)
-const EDGE_BILLOW = 0.4;            // cauliflower displacement amplitude
+// ── Bubble clusters (stratocumulus bumps) ──────────────────────────────────
+// The universal cloud-surface decorator: a small cluster of intersecting opaque
+// spheres at a CONSISTENT world scale + frequency, sitting on the deck surface.
+// On a flat deck this reads as stratocumulus (white bump tops, off-white
+// valleys); the SAME primitive will later skin large cumulus spheres as their
+// surface sub-structure. World-anchored (lattice-snapped) so they don't swim;
+// LOD-dropped past a render radius so distant deck is carried by the shell.
+const MAX_EDGE_BLOBS = 14000;
+const BUBBLE_LATTICE_M = 2000;     // SPARSE — sub-structure detail, not a covering
+const BUBBLE_PER_CELL = 3;         // spheres per cluster → irregular lump
+const BUBBLE_RADIUS_M = 90;        // REAL bump radius (fine sub-structure scale)
+const BUBBLE_SIZE_MIN = 0.6;       // per-sphere random size (× base radius)
+const BUBBLE_SIZE_MAX = 1.5;
+// LOD: a bump is drawn only once it's bigger than this on screen. Below it the
+// bump would be sub-pixel, so culling it is imperceptible (NO shrink — real size
+// always). The lattice walk is bounded to where the biggest bump goes sub-pixel
+// so the walk-edge cull and the per-bump cull coincide (no pop), capped for cost.
+const BUBBLE_MIN_PX = 1.2;
+const BUBBLE_WALK_MAX_M = 40000;
+const BUBBLE_JITTER_FRAC = 0.5;    // cluster spread within the cell (× lattice)
+const BUBBLE_RISE_M = 40;          // mostly EMBEDDED in the surface (texture, not floating)
+const EDGE_BILLOW = 0.35;          // surface billow on each sphere
+// Albedo gradient — off-white at the base/undersides, white at the bump tops.
+const CLOUD_BASE_ALBEDO = 0.82;
+
+// ── Towers / cumulus clumps ────────────────────────────────────────────────
+// Occasional ~6-sphere clumps that protrude from the deck (and stand alone as
+// cumulus where there's no deck). Coarse lattice → sparse; gated by the field's
+// convective development (cumuliformity) + a hash so not every cell towers.
+// REAL size + apparent-size LOD like the bumps (invisible from orbit, appear at
+// individual visibility), reusing the same instanced-sphere mesh + shader.
+const TOWER_LATTICE_M = 4500;
+const TOWER_SPHERES = 6;
+const TOWER_RADIUS_M = 520;        // base sphere radius
+const TOWER_HEIGHT_M = 1050;       // vertical extent — kept low so clumps read WIDE, not tall
+const TOWER_CUM_MIN = 0.5;         // cumuliformity gate (developed cells only)
+const TOWER_PROB = 0.5;            // fraction of qualifying cells that tower
+const TOWER_WALK_MAX_M = 60000;    // cap on the lattice walk (cost vs pop at edge)
+
+// TEMP toggles while the system is in flux:
+const SHELL_ENABLED = false;       // shell off — "white splotches", being reworked
+const BUBBLES_ENABLED = false;     // fine sub-detail bumps off — read as stray single spheres
 
 /** Deterministic 0..1 hash of an integer key + salt (world-stable per-blob
  *  randoms — same lattice cell always gets the same jitter/size). */
@@ -189,6 +213,7 @@ varying vec3 vNormal;
 varying float vCamDist;
 varying float vCoverage;
 varying vec3 vColor;
+float dither(vec2 fc){ return fract(sin(dot(fc, vec2(12.9898,78.233)))*43758.5453); }
 
 void main() {
   #include <logdepthbuf_fragment>
@@ -197,32 +222,30 @@ void main() {
   vec3 N = normalize(vNormal);
   if (dot(N, viewDir) < 0.0) N = -N;
 
-  // Banded toon off the REAL heightmap normal — world-anchored shading.
+  // Banded toon off the heightmap normal.
   float band = clamp(floor((dot(N, uSunDirW) * 0.5 + 0.5) * 3.0) / 3.0 + 0.16, 0.0, 1.0);
   float dayT = smoothstep(-0.15, 0.2, dot(uUpW, uSunDirW));
   float floorLit = mix(${NIGHT_AMBIENT.toFixed(2)}, 0.62, dayT);
   float lit = mix(1.0, mix(floorLit, 1.0, band), uHasSun);
-  vec3 col = vColor * lit;
+  // SAME albedo gradient as the bubbles (off-white base/valleys → white bump
+  // tops). This is what makes the cell lumpiness read as form: the gentle
+  // heightmap normals stay inside one toon band, but the smooth dot(N,up) ramp
+  // shows the bulges (white) against the valleys (off-white). Keyed on planet-up.
+  float topness = smoothstep(-0.4, 0.9, dot(N, uUpW));
+  vec3 col = vColor * mix(${CLOUD_BASE_ALBEDO.toFixed(2)}, 1.0, topness) * lit;
 
-  // Coverage gate → broken deck with clear gaps (holes are coverage 0; the
-  // soft 0→1 interpolation across edge quads feathers cloud boundaries). The
-  // gap fraction tracks the cover-thresh slider, exactly like the blob walk.
-  float cov = smoothstep(uCoverThresh, uCoverThresh + 0.12, vCoverage);
-
-  // Patch-edge fade by HORIZONTAL distance from the camera column (the patch is
-  // centered under the camera) — hands to the shell at the boundary. + near-
-  // plane dissolve (cloud entry). The deck is a CONNECTED manifold (a
-  // heightmap, near depth-sorted from any angle), so unlike a blob swarm it can
-  // ALPHA-BLEND for smooth edges without a per-fragment sort — depthWrite off,
-  // depthTest on (terrain still occludes it correctly).
+  // Coverage gate → broken deck with clear gaps. OPAQUE with a hashed-alpha
+  // discard (hard outlines, depth-writing) so the bubble bumps occlude
+  // correctly against it — clouds from space have hard boundaries, not haze.
+  float cov = smoothstep(uCoverThresh, uCoverThresh + 0.10, vCoverage);
   vec3 toFrag = vWorldPos - cameraPosition;
   float horiz = length(toFrag - uUpW * dot(toFrag, uUpW));
   float edge = 1.0 - smoothstep(uReach * 0.82, uReach, horiz);
   float near = smoothstep(0.0, uNearFade, vCamDist);
   float a = cov * edge * near * uOpacity;
-  if (a < 0.004) discard;
+  if (a < dither(gl_FragCoord.xy)) discard;
 
-  gl_FragColor = vec4(col, a);
+  gl_FragColor = vec4(col, 1.0);
   #include <fog_fragment>
 }
 `;
@@ -242,9 +265,8 @@ attribute vec3 iColor;
 attribute float iRadius;
 attribute float iSeed;
 varying vec3 vColor;
-varying vec3 vWorldPos;
 varying vec3 vNormalW;
-varying float vCamDist;
+varying vec3 vUp;
 float h31(vec3 p){ p = fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
 float vn(vec3 p){
   vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -256,15 +278,18 @@ void main() {
   vec3 dir = normalize(position);
   float n = vn(dir*2.3 + iSeed) + 0.5*vn(dir*5.1 + iSeed*1.7);
   n = (n/1.5 - 0.5);
+  // REAL size (no distance shrink). FLOATING-ORIGIN PRECISION: combine model+view
+  // on the CPU (modelViewMatrix) so the huge planet-scale world coordinate never
+  // exists in float32 — forming it (modelMatrix*center then viewMatrix) and
+  // subtracting the camera loses precision and JITTERS the whole sphere under
+  // fast motion. Offset added in view space.
   vec3 localOffset = dir * iRadius * (1.0 + uBillow*n);
-  vec4 centerW = modelMatrix * vec4(iCenter, 1.0);
-  vec3 worldOffset = mat3(modelMatrix) * localOffset;
-  vec3 worldPos = centerW.xyz + worldOffset;
+  vec4 mvCenter = modelViewMatrix * vec4(iCenter, 1.0);
+  vec3 viewOffset = mat3(viewMatrix) * (mat3(modelMatrix) * localOffset);
+  vec4 mvPosition = vec4(mvCenter.xyz + viewOffset, 1.0);
   vColor = iColor;
-  vWorldPos = worldPos;
   vNormalW = normalize(mat3(modelMatrix) * dir);
-  vCamDist = distance(cameraPosition, worldPos);
-  vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
+  vUp = normalize(mat3(modelMatrix) * iUp);
   gl_Position = projectionMatrix * mvPosition;
   #include <logdepthbuf_vertex>
   #include <fog_vertex>
@@ -279,30 +304,24 @@ uniform vec3 uSunDirW;
 uniform float uHasSun;
 uniform float uOpacity;
 uniform vec3 uUpW;
-uniform float uReach;
-uniform float uNearFade;
 varying vec3 vColor;
-varying vec3 vWorldPos;
 varying vec3 vNormalW;
-varying float vCamDist;
-float dither(vec2 fc){ return fract(sin(dot(fc, vec2(12.9898,78.233)))*43758.5453); }
+varying vec3 vUp;
 void main() {
   #include <logdepthbuf_fragment>
   vec3 N = normalize(vNormalW);
-  // SAME ramp as the deck → blobs and hill match.
+  // Sun-driven banded toon.
   float band = clamp(floor((dot(N, uSunDirW) * 0.5 + 0.5) * 3.0) / 3.0 + 0.16, 0.0, 1.0);
   float dayT = smoothstep(-0.15, 0.2, dot(uUpW, uSunDirW));
   float floorLit = mix(${NIGHT_AMBIENT.toFixed(2)}, 0.62, dayT);
   float lit = mix(1.0, mix(floorLit, 1.0, band), uHasSun);
-  vec3 col = vColor * lit;
-  // Patch-edge + near-plane fade, folded into a dithered discard (opaque, no
-  // sort). The blobs are sparse so the grain is far less visible than a swarm.
-  vec3 toFrag = vWorldPos - cameraPosition;
-  float horiz = length(toFrag - uUpW * dot(toFrag, uUpW));
-  float edge = 1.0 - smoothstep(uReach * 0.82, uReach, horiz);
-  float near = smoothstep(0.0, uNearFade, vCamDist);
-  float a = edge * near * uOpacity;
-  if (a < dither(gl_FragCoord.xy)) discard;
+  // Albedo gradient: off-white on undersides/sides, WHITE on the bump tops
+  // (the ice-bright cumulus/anvil top look). Keyed on the sphere's own up so
+  // it's world-stable, not view-dependent. Opaque — LOD is done by SHRINKING
+  // in the vertex shader (no dither grain).
+  float topness = smoothstep(-0.35, 0.85, dot(N, vUp));
+  vec3 albedo = vColor * mix(${CLOUD_BASE_ALBEDO.toFixed(2)}, 1.0, topness);
+  vec3 col = albedo * lit;
   gl_FragColor = vec4(col, 1.0);
   #include <fog_fragment>
 }
@@ -458,6 +477,7 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
   let shellDetailMult = 1;
   let opacity = 0;
   let sunWorldPos: THREE.Vector3 | null = null;
+  let pixelsPerUnit = 800; // projection scale (px per world-unit at dist 1) for the bubble LOD
 
   // ── Heightmap grid (fixed dimensions → static index buffer). The patch
   // half-extent `reach` and grid spacing `gridM` are recomputed per frame from
@@ -522,29 +542,26 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
     },
     vertexShader: DECK_VERT,
     fragmentShader: DECK_FRAG,
-    // "mound" mode = an INVISIBLE DEPTH MASK: it writes depth (so it occludes
-    // the far-side / interior edge blobs and kills see-through) but draws no
-    // colour — the blobs ARE the visible cloud. "base" mode = the visible flat
-    // base, alpha-blended for clean edges.
-    transparent: deckMode !== "mound",
+    // OPAQUE base deck (the off-white stratocumulus base/valleys) — writes depth
+    // so the bubble bumps occlude correctly against it; hard outlines, no haze.
+    transparent: false,
     depthTest: true,
-    depthWrite: deckMode === "mound",
-    colorWrite: deckMode !== "mound",
-    blending: THREE.NormalBlending,
+    depthWrite: true,
     side: THREE.DoubleSide,
     fog: true,
   });
   const deckMesh = new THREE.Mesh(geom, material);
-  deckMesh.name = deckMode === "mound" ? "cloud_hill_mask" : "cloud_deck";
+  deckMesh.name = "cloud_deck";
   deckMesh.frustumCulled = false;
-  deckMesh.renderOrder = deckMode === "mound" ? 1 : 2; // mask before blobs
+  deckMesh.renderOrder = 2;
 
   const group = new THREE.Group();
   group.name = "cloud_deck_system";
   group.add(deckMesh);
 
-  // ── Edge blobs (mound mode only): instanced icosphere skinning the flanks ──
-  const edgeEnabled = deckMode === "mound";
+  // ── Bubble clusters: instanced icospheres decorating the deck surface ──────
+  const edgeEnabled = true; // stratocumulus bumps on every deck
+  void deckMode;
   const eCenter = new Float32Array(MAX_EDGE_BLOBS * 3);
   const eUp = new Float32Array(MAX_EDGE_BLOBS * 3);
   const eColor = new Float32Array(MAX_EDGE_BLOBS * 3);
@@ -574,12 +591,12 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
         uSunDirW: { value: new THREE.Vector3(0, 1, 0) },
         uHasSun: { value: 0 }, uOpacity: { value: 0 },
         uUpW: { value: new THREE.Vector3(0, 1, 0) },
-        uReach: { value: DECK_REACH_MIN_M }, uNearFade: { value: 80 },
         uBillow: { value: EDGE_BILLOW },
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       },
       vertexShader: EDGE_VERT, fragmentShader: EDGE_FRAG,
       transparent: false, depthTest: true, depthWrite: true, fog: true,
+      side: THREE.DoubleSide, // flying INTO a clump shows cloud interior, not nothing
     });
     edgeMesh = new THREE.Mesh(edgeGeom, edgeMaterial);
     edgeMesh.name = "cloud_deck_edge_blobs";
@@ -652,7 +669,7 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
       shells.push({ material: shellMat, mesh: shellMesh });
     }
   }
-  if (!noShell) buildShells();
+  if (!noShell && SHELL_ENABLED) buildShells();
 
   // ── Bake pacing (copied) ──────────────────────────────────────────────────
   let initialSweepDone = false;
@@ -753,10 +770,10 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
     const altBase = Math.max(0, L0.baseAltitudeM - DECK_VERT_MARGIN_M);
     const altTop = deckTopCap + DECK_VERT_MARGIN_M;
     const altStep = (altTop - altBase) / DECK_TOP_SEARCH_STEPS;
-    // Reference height of the thin BASE deck — edge blobs skin a column only
-    // where the mound rises above this (i.e. where it genuinely towers).
-    const baseDeckTop = L0.baseAltitudeM
-      + Math.min(L0.topAltitudeM - L0.baseAltitudeM, DECK_MAX_THICK_M);
+    // Deck-mid altitude — the reference height for the cell-scale lumpy surface
+    // and the sub-detail bumps (both sample the same billow at this altitude).
+    const smoothBase = L0.baseAltitudeM
+      + Math.min(L0.topAltitudeM - L0.baseAltitudeM, DECK_MAX_THICK_M) * 0.5;
 
     const ex = _east.x, ey = _east.y, ez = _east.z;
     const nx = _north.x, ny = _north.y, nz = _north.z;
@@ -778,15 +795,15 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
         const wbz = gz + ez * ou + nz * offv + uz * altBase;
         const found = columnTop(wbx, wby, wbz, timeSeconds, altBase, altStep, gridM, colRes);
         samples += DECK_TOP_SEARCH_STEPS + 1;
-        let alt = colRes.alt;
-        let cov = colRes.cov;
-        if (found) {
-          // Billow the top for cauliflower relief, gated by coverage.
-          const tx = wbx + ux * (alt - altBase);
-          const ty = wby + uy * (alt - altBase);
-          const tz = wbz + uz * (alt - altBase);
-          alt += billow3(tx, ty, tz) * DECK_BILLOW_AMP_M * cov;
-        }
+        const cov = colRes.cov;
+        // Surface = a smooth, cell-scale LUMPY sheet (terrain-like), NOT the
+        // quantized search top (which terraces into ridges). Flat base + billow
+        // undulation, gated by cover. Evaluated at the deck-MID altitude so the
+        // sub-detail bumps (which sample the same billow) sit on this surface.
+        const wmx = gx + ex * ou + nx * offv + ux * smoothBase;
+        const wmy = gy + ey * ou + ny * offv + uy * smoothBase;
+        const wmz = gz + ez * ou + nz * offv + uz * smoothBase;
+        const alt = smoothBase + (found ? billow3(wmx, wmy, wmz) * DECK_CELL_AMP_M * cov : 0);
         const vi = iu + iv * NU;
         colAlt[vi] = alt;
         colCov[vi] = cov;
@@ -821,16 +838,7 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
 
     // ── 2. Build vertex positions (relative to the ground anchor) + heightmap
     // normals (finite difference of neighbour altitudes) + coverage attribute.
-    // In mound mode, where the flank is steep we ALSO drop edge blobs (the
-    // cauliflower the single-valued hill can't represent), world-lattice-snapped.
     let drawn = 0;
-    let edgeCount = 0;
-    if (edgeEnabled) edgeSeen.clear();
-    // Blob spacing tracks the grid spacing (≥ a floor) so the skin stays
-    // continuous from any distance.
-    const latticeM = Math.max(EDGE_LATTICE_MIN_M, gridM);
-    const invLat = 1 / latticeM;
-    const edgeRadius = latticeM * EDGE_BLOB_RADIUS_FRAC;
     for (let iv = 0; iv < NV; iv++) {
       const offv = iv * gridM - reach;
       for (let iu = 0; iu < NU; iu++) {
@@ -864,48 +872,144 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
 
         coverage[vi] = colCov[vi];
         if (colCov[vi] > 0) drawn++;
+      }
+    }
 
-        // Edge blob where the mound TOWERS above the thin base deck — that
-        // robustly identifies cumulus regardless of grid spacing (gradient alone
-        // gets smoothed away at coarse spacing). Snap the blob's PLANET-LOCAL
-        // position to a world lattice + dedupe so it doesn't swim as the
-        // camera-relative grid slides. Gradient just modulates the blob size
-        // (steeper flank → bigger cauliflower lobe).
-        if (edgeEnabled && colCov[vi] > 0 && edgeCount < MAX_EDGE_BLOBS) {
-          const towerH = alt - baseDeckTop;
-          if (towerH > EDGE_TOWER_MIN_M) {
-            const grad = Math.sqrt(dhu * dhu + dhv * dhv);
-            const lx = gx + px, ly = gy + py, lz = gz + pz; // planet-local center
-            const sx = Math.round(lx * invLat);
-            const sy = Math.round(ly * invLat);
-            const sz = Math.round(lz * invLat);
-            // Pack the lattice cell into one number for the dedupe set.
-            const key = (((sx & 0x3ff) << 20) ^ ((sy & 0x3ff) << 10) ^ (sz & 0x3ff)) >>> 0;
-            if (!edgeSeen.has(key)) {
-              edgeSeen.add(key);
-              void grad;
-              // Snapped lattice point, then per-blob hashed randoms (world-stable)
-              // jitter it into an irregular, non-gridded cluster.
-              const upx0 = (gx + px), upy0 = (gy + py), upz0 = (gz + pz);
-              const ul0 = Math.sqrt(upx0 * upx0 + upy0 * upy0 + upz0 * upz0) || 1;
-              const upx = upx0 / ul0, upy = upy0 / ul0, upz = upz0 / ul0;
-              const jt = (keyRand(key, 0x11) - 0.5) * 2 * EDGE_JITTER_FRAC * latticeM;
-              const js = (keyRand(key, 0x22) - 0.5) * 2 * EDGE_JITTER_FRAC * latticeM;
-              const jv = (keyRand(key, 0x33) - 0.5) * 2 * EDGE_VJITTER_FRAC * latticeM;
-              const rad = edgeRadius
-                * (EDGE_SIZE_MIN + (EDGE_SIZE_MAX - EDGE_SIZE_MIN) * keyRand(key, 0x44));
-              const bx = sx * latticeM + ex * jt + nx * js + upx * jv;
-              const by = sy * latticeM + ey * jt + ny * js + upy * jv;
-              const bz = sz * latticeM + ez * jt + nz * js + upz * jv;
-              const e3 = edgeCount * 3;
-              // iCenter relative to the ground anchor (the edge mesh shares it).
-              eCenter[e3] = bx - gx; eCenter[e3 + 1] = by - gy; eCenter[e3 + 2] = bz - gz;
-              eUp[e3] = upx; eUp[e3 + 1] = upy; eUp[e3 + 2] = upz;
-              eColor[e3] = colors[vi * 3]; eColor[e3 + 1] = colors[vi * 3 + 1]; eColor[e3 + 2] = colors[vi * 3 + 2];
-              eRadius[edgeCount] = rad;
-              eSeed[edgeCount] = (key & 0xffff) * 0.001;
-              edgeCount++;
-            }
+    // ── 3. Bubble clusters — iterate the WORLD lattice DIRECTLY (not the deck
+    // grid). The deck grid is camera-relative and coarsens with altitude, so
+    // piggybacking on it under-samples the lattice up high and bubbles POP in/out
+    // as the grid slides. A dedicated lattice walk visits every cell in range
+    // each frame → world-stable, no popping; the per-fragment LOD fade handles
+    // the smooth appear/disappear at the render radius.
+    let edgeCount = 0;
+    edgeSeen.clear();
+    if (edgeEnabled && BUBBLES_ENABLED) {
+      const L = BUBBLE_LATTICE_M, invLat = 1 / L;
+      const deckAlt = L0.baseAltitudeM
+        + Math.min(L0.topAltitudeM - L0.baseAltitudeM, DECK_MAX_THICK_M) * 0.5;
+      const cax = cameraLocalPos.x, cay = cameraLocalPos.y, caz = cameraLocalPos.z;
+      // Walk out to where the BIGGEST bump goes sub-pixel (so the walk edge and
+      // the per-bump apparent-size cull coincide → no pop), capped for cost.
+      const maxRad = BUBBLE_RADIUS_M * BUBBLE_SIZE_MAX;
+      const walkBound = Math.min(BUBBLE_WALK_MAX_M, maxRad * pixelsPerUnit / BUBBLE_MIN_PX);
+      const minApparentDen = BUBBLE_MIN_PX / pixelsPerUnit; // rad/dist must exceed this
+      const reachCells = Math.ceil(walkBound / L) + 1;
+      const wb2 = walkBound * walkBound;
+      for (let dv = -reachCells; dv <= reachCells; dv++) {
+        if (edgeCount + BUBBLE_PER_CELL > MAX_EDGE_BLOBS) break;
+        const ov = dv * L;
+        for (let du = -reachCells; du <= reachCells; du++) {
+          if (edgeCount + BUBBLE_PER_CELL > MAX_EDGE_BLOBS) break;
+          const ou = du * L;
+          if (ou * ou + ov * ov > wb2) continue;
+          // Tangent point at the deck altitude, snapped to the planet-local
+          // lattice for a world-stable position + dedupe.
+          const wx = gx + ex * ou + nx * ov + ux * deckAlt;
+          const wy = gy + ey * ou + ny * ov + uy * deckAlt;
+          const wz = gz + ez * ou + nz * ov + uz * deckAlt;
+          const sx = Math.round(wx * invLat), sy = Math.round(wy * invLat), sz = Math.round(wz * invLat);
+          const key = (((sx & 0x3ff) << 20) ^ ((sy & 0x3ff) << 10) ^ (sz & 0x3ff)) >>> 0;
+          if (edgeSeen.has(key)) continue;
+          // Coverage gate — same field/layer as the deck so bubbles sit on cloud.
+          _samplePos.set(wx, wy, wz);
+          cloudDensityAt(field, map, _samplePos, timeSeconds, sampleOpts, _sampleOut, L, 1);
+          if (_sampleOut.density < minDensity) continue;
+          edgeSeen.add(key);
+          const ul0r = Math.sqrt(sx * sx + sy * sy + sz * sz) * L || 1;
+          const upx = sx * L / ul0r, upy = sy * L / ul0r, upz = sz * L / ul0r;
+          // Lift the cluster onto the lumpy deck SURFACE — same billow the deck
+          // mesh uses, so the bumps sit ON the surface, not floating above a haze.
+          const surfRise = billow3(sx * L, sy * L, sz * L) * DECK_CELL_AMP_M;
+          const ccx = sx * L + upx * surfRise, ccy = sy * L + upy * surfRise, ccz = sz * L + upz * surfRise;
+          const cr = _sampleOut.color.r, cg = _sampleOut.color.g, cb = _sampleOut.color.b;
+          for (let k = 0; k < BUBBLE_PER_CELL; k++) {
+            const skk = (key ^ (k * 0x9e37)) >>> 0;
+            const jt = (keyRand(skk, 0x11) - 0.5) * 2 * BUBBLE_JITTER_FRAC * L;
+            const js = (keyRand(skk, 0x22) - 0.5) * 2 * BUBBLE_JITTER_FRAC * L;
+            const rise = BUBBLE_RISE_M * (0.35 + 0.65 * keyRand(skk, 0x33));
+            const rad = BUBBLE_RADIUS_M
+              * (BUBBLE_SIZE_MIN + (BUBBLE_SIZE_MAX - BUBBLE_SIZE_MIN) * keyRand(skk, 0x44));
+            const bx = ccx + ex * jt + nx * js + upx * rise;
+            const by = ccy + ey * jt + ny * js + upy * rise;
+            const bz = ccz + ez * jt + nz * js + upz * rise;
+            // Apparent-size cull (REAL size, no shrink): drop bumps that would be
+            // sub-pixel (imperceptible to add/remove); skip if camera is inside.
+            const ddx = bx - cax, ddy = by - cay, ddz = bz - caz;
+            const dist = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+            if (rad / dist < minApparentDen) continue; // apparent-size cull only (no inside-cull → flying into a clump shows cloud, not a blink)
+            const e3 = edgeCount * 3;
+            eCenter[e3] = bx - gx; eCenter[e3 + 1] = by - gy; eCenter[e3 + 2] = bz - gz;
+            eUp[e3] = upx; eUp[e3 + 1] = upy; eUp[e3 + 2] = upz;
+            eColor[e3] = cr; eColor[e3 + 1] = cg; eColor[e3 + 2] = cb;
+            eRadius[edgeCount] = rad;
+            eSeed[edgeCount] = (skk & 0xffff) * 0.001;
+            edgeCount++;
+          }
+        }
+      }
+    }
+
+    // ── 3b. Towers / cumulus clumps — occasional ~6-sphere clusters where the
+    // field is convectively developed, on a COARSE lattice (sparse). Same sphere
+    // buffer + apparent-LOD; bigger spheres so they're visible from much farther
+    // (a cumulus is "invisible from orbit, appears at individual visibility").
+    if (edgeEnabled) {
+      const TL = TOWER_LATTICE_M, invTL = 1 / TL;
+      const cax = cameraLocalPos.x, cay = cameraLocalPos.y, caz = cameraLocalPos.z;
+      const minApparentDen = BUBBLE_MIN_PX / pixelsPerUnit;
+      const towWalk = Math.min(TOWER_WALK_MAX_M, TOWER_RADIUS_M * pixelsPerUnit / BUBBLE_MIN_PX);
+      const towCells = Math.ceil(towWalk / TL) + 1;
+      const tw2 = towWalk * towWalk;
+      for (let dv = -towCells; dv <= towCells; dv++) {
+        if (edgeCount + TOWER_SPHERES > MAX_EDGE_BLOBS) break;
+        const ov = dv * TL;
+        for (let du = -towCells; du <= towCells; du++) {
+          if (edgeCount + TOWER_SPHERES > MAX_EDGE_BLOBS) break;
+          const ou = du * TL;
+          if (ou * ou + ov * ov > tw2) continue;
+          const wx = gx + ex * ou + nx * ov + ux * smoothBase;
+          const wy = gy + ey * ou + ny * ov + uy * smoothBase;
+          const wz = gz + ez * ou + nz * ov + uz * smoothBase;
+          const sx = Math.round(wx * invTL), sy = Math.round(wy * invTL), sz = Math.round(wz * invTL);
+          const key = (((sx & 0x3ff) << 20) ^ ((sy & 0x3ff) << 10) ^ (sz & 0x3ff)) >>> 0;
+          if (edgeSeen.has(key)) continue;
+          _samplePos.set(wx, wy, wz);
+          cloudDensityAt(field, map, _samplePos, timeSeconds, sampleOpts, _sampleOut, TL, 1);
+          if (_sampleOut.density < minDensity || _sampleOut.cumuliformity < TOWER_CUM_MIN) continue;
+          if (keyRand(key, 0x77) > TOWER_PROB) continue; // occasional, not every cell
+          edgeSeen.add(key);
+          const ccx0 = sx * TL, ccy0 = sy * TL, ccz0 = sz * TL;
+          const ul0 = Math.sqrt(ccx0 * ccx0 + ccy0 * ccy0 + ccz0 * ccz0) || 1;
+          const upx = ccx0 / ul0, upy = ccy0 / ul0, upz = ccz0 / ul0;
+          // Base on the lumpy deck surface (same billow); develop upward.
+          const surfRise = billow3(ccx0, ccy0, ccz0) * DECK_CELL_AMP_M;
+          const baseX = ccx0 + upx * surfRise, baseY = ccy0 + upy * surfRise, baseZ = ccz0 + upz * surfRise;
+          const cr = _sampleOut.color.r, cg = _sampleOut.color.g, cb = _sampleOut.color.b;
+          const devH = TOWER_HEIGHT_M * Math.min(1, _sampleOut.cumuliformity);
+          for (let k = 0; k < TOWER_SPHERES; k++) {
+            const skk = (key ^ (k * 0x51ed)) >>> 0;
+            // Cauliflower form, HORIZONTALLY biased: most spheres spread wide near
+            // the base, only a few rise. h^1.6 packs the cluster low; wide spread.
+            const hl = TOWER_SPHERES > 1 ? k / (TOWER_SPHERES - 1) : 0;
+            const h = Math.pow(hl, 1.6);            // 0 base → 1 top, weighted low
+            const up = h * devH;
+            const spread = TOWER_RADIUS_M * (2.1 - 1.1 * h);
+            const jt = (keyRand(skk, 0x11) - 0.5) * 2 * spread;
+            const js = (keyRand(skk, 0x22) - 0.5) * 2 * spread;
+            const rad = TOWER_RADIUS_M * (0.7 + 0.5 * keyRand(skk, 0x44)) * (1.0 - 0.2 * h);
+            const bx = baseX + ex * jt + nx * js + upx * up;
+            const by = baseY + ey * jt + ny * js + upy * up;
+            const bz = baseZ + ez * jt + nz * js + upz * up;
+            const ddx = bx - cax, ddy = by - cay, ddz = bz - caz;
+            const dist = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+            if (rad / dist < minApparentDen) continue; // apparent-size cull only (no inside-cull → flying into a clump shows cloud, not a blink)
+            const e3 = edgeCount * 3;
+            eCenter[e3] = bx - gx; eCenter[e3 + 1] = by - gy; eCenter[e3 + 2] = bz - gz;
+            eUp[e3] = upx; eUp[e3 + 1] = upy; eUp[e3 + 2] = upz;
+            eColor[e3] = cr; eColor[e3 + 1] = cg; eColor[e3 + 2] = cb;
+            eRadius[edgeCount] = rad;
+            eSeed[edgeCount] = (skk & 0xffff) * 0.001;
+            edgeCount++;
           }
         }
       }
@@ -936,6 +1040,12 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
     cameraLocalPos: THREE.Vector3, timeSeconds: number, _fwd?: THREE.Vector3,
   ): void {
     lastTimeSeconds = timeSeconds;
+    // Debug-isolation depth toggles — flip the cloud materials' depth behaviour
+    // live so we can tell whether the clump flicker is the depth TEST failing
+    // (no-depth-test should stop it) or the depth WRITE conflicting.
+    const dTest = !GFX.dbgCloudNoDepthTest, dWrite = !GFX.dbgCloudNoDepthWrite;
+    material.depthTest = dTest; material.depthWrite = dWrite;
+    if (edgeMaterial) { edgeMaterial.depthTest = dTest; edgeMaterial.depthWrite = dWrite; }
     if (field.layers.length === 0) {
       geom.setDrawRange(0, 0); cloudDeckStats.sprites = 0;
       if (edgeGeom) edgeGeom.instanceCount = 0;
@@ -973,7 +1083,6 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
       Math.min(DECK_REACH_MAX_M, DECK_REACH_MIN_M + altitude * DECK_REACH_ALT_K));
     const gridM = (2 * reach) / (NU - 1);
     material.uniforms.uReach.value = reach;
-    if (edgeMaterial) edgeMaterial.uniforms.uReach.value = reach;
     const maxReachM = reach / SHELL_FADE_NEAR_FRAC;
 
     // Shell uniforms (every frame for smooth drift).
@@ -1041,7 +1150,7 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
     if (pos === null) sunWorldPos = null;
     else { if (!sunWorldPos) sunWorldPos = new THREE.Vector3(); sunWorldPos.copy(pos); }
   }
-  function setProjection(_p: number, _v: number): void { /* unit-agnostic */ }
+  function setProjection(p: number, _v: number): void { pixelsPerUnit = p; }
   function setField(f: CloudFieldParams): void {
     field = f;
     if (!usingSharedMap) {
@@ -1050,7 +1159,7 @@ export function createDeckCloudSystem(opts: CloudSystemOpts): CloudSystem {
       mapTexture = makeMapTexture(map);
       rowsSinceUpload = 0; initialSweepDone = false;
     }
-    if (!noShell) buildShells();
+    if (!noShell && SHELL_ENABLED) buildShells();
     setOpacity(opacity);
   }
   function dispose(): void {

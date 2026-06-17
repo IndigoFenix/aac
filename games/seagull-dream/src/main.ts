@@ -8,7 +8,7 @@ import { onPlatformMessage, sendToParent, type PlatformMessage } from "@shared/g
 import { createWorld, createSky } from "./world";
 import { createPlayer, type Input } from "./player";
 import { createCameraRig } from "./camera";
-import { PLAYER, GALAXY, GFX, PLANET, CHUNKS, SPEED, READOUT } from "./config";
+import { PLAYER, GALAXY, GFX, PLANET, CHUNKS, SPEED, READOUT, simClock } from "./config";
 import { DEFAULT_GALAXY_PARAMS } from "./galaxy";
 import { setupDebugUI } from "./debug-ui";
 import { createObjectReadout } from "./object-readout";
@@ -94,10 +94,14 @@ player.sync();
 // each body's group — so the post-process pipeline no longer needs the
 // extra scene render target. A standard RenderPass kicks off the chain.
 
+// MSAA on the HDR target. Without it, routing through the composer loses the
+// canvas's antialiasing entirely, and the clouds — all high-frequency edges
+// (billboard borders, sphere silhouettes, dithered cutouts) — shimmer/crawl
+// under motion (the flicker seen in EVERY cloud renderer when post is on).
 const hdrTarget = new THREE.WebGLRenderTarget(
   canvas.clientWidth,
   canvas.clientHeight,
-  { type: THREE.HalfFloatType },
+  { type: THREE.HalfFloatType, samples: 4 },
 );
 const composer = new EffectComposer(renderer, hdrTarget);
 
@@ -349,7 +353,12 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - prev) / 1000);
   prev = now;
   if (!paused) {
-    world.update(rig.camera, canvas.clientHeight, dt);
+    // Debug freeze toggles: sim-dt freezes the weather clock + planet motion;
+    // player-dt freezes the camera. They isolate which rebuild input drives the
+    // cloud flicker.
+    const simDt = GFX.dbgFreezeSim ? 0 : dt;
+    simClock.t += simDt;
+    world.update(rig.camera, canvas.clientHeight, simDt);
     // Eyegaze override: if the readout popup is open and the user's
     // gaze sits on it, feed the player a SYNTHETIC cursor at the
     // target body's projected screen position instead of the real
@@ -361,7 +370,7 @@ function frame(now: number) {
       input.mouseX = THREE.MathUtils.clamp(cursorOverride.x / canvas.clientWidth, 0, 1);
       input.mouseY = THREE.MathUtils.clamp(cursorOverride.y / canvas.clientHeight, 0, 1);
     }
-    player.update(input, dt);
+    if (!GFX.dbgFreezePlayer) player.update(input, dt);
     world.checkActiveSystem(player.state.position);
     world.gravityAt(player.state.position, player.state.gravity);
     player.sync();
@@ -432,12 +441,15 @@ function frame(now: number) {
   bloomPass.threshold = GFX.bloomThreshold;
   bloomPass.strength = GFX.bloomStrength;
   bloomPass.radius = GFX.bloomRadius;
+  bloomPass.enabled = !GFX.dbgBloomOff; // debug: isolate bloom from the rest of post
   renderer.toneMappingExposure = GFX.exposure;
 
   // Clouds now render inside the scene as a child of each body's group,
   // driven by the cloud-system module — no post-process integration needed.
   // composer.render() walks RenderPass → bloom → warp → output in order.
-  composer.render();
+  // Debug: bypass post-processing entirely (direct render, no bloom/tonemap).
+  if (GFX.dbgNoBloom) renderer.render(scene, rig.camera);
+  else composer.render();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

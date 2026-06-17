@@ -195,6 +195,7 @@ export const en = {
   // NAVIGATION
   // ============================================================================
   nav: {
+    locations: "Locations",
     main: "CliniAACian",
     home: "Go to home",
     interpret: "Interpret Communication",
@@ -2407,6 +2408,8 @@ export const en = {
     // Social Trainer (peer practice config)
     socialTrainerTitle: "Social Trainer",
     socialTrainerDesc: "Set the practice peer's skill goals and challenge level for this student. The AI may narrow the focus each session within these bounds.",
+    socialTrainerLiveAudioTitle: "Live audio voice",
+    socialTrainerLiveAudioDesc: "The practice friend speaks with a live, more natural voice and less delay (higher cost). Requires a live voice model — otherwise the standard voice is used. Skills practice is unchanged.",
     socialTrainerFocus: "Focus skills",
     socialTrainerFocusHint: "Skills to work on (default session goals). Leave empty to include all skills.",
     socialTrainerLocked: "Off-limits skills",
@@ -3295,7 +3298,25 @@ export const en = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  locations: {
+    title: "Locations",
+    new: "New Location",
+    edit: "Edit Location",
+    titleField: "Title",
+    address: "Address",
+    findFromAddress: "Find from address",
+    pickOnMap: "Pick on map",
+    latitude: "Latitude",
+    longitude: "Longitude",
+    empty: "No locations yet. Add one to get started.",
+    selectInstitute: "Select an organization to manage its locations.",
+    saveFailed: "Failed to save location",
+    deleteFailed: "Failed to delete location",
+    geocodeFailed: "Could not find that address",
+  },
   calendar: {
+    locations: "Locations",
+    addLocation: "Add location",
     title: "Calendar",
     today: "Today",
     month: "Month",

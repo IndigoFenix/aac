@@ -50,6 +50,7 @@ import {
   import { licenseRepository } from "../../repositories/licenseRepository";
   import { calendarRepository } from "../../repositories/calendarRepository";
   import { calendarService } from "../calendarService";
+  import { locationService } from "../locationService";
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
@@ -2083,6 +2084,138 @@ import {
   };
   
   // ============================================================================
+  // DATABASE OPERATIONS - LOCATIONS
+  // ============================================================================
+
+  const locationOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const selected = ctx.all.instituteId as string | undefined;
+
+      // Scope to the selected institute when present; otherwise gather across
+      // every institute the user belongs to.
+      let locs: any[] = [];
+      if (selected) {
+        locs = (await locationService.listForInstitute(selected, userId)) ?? [];
+      } else {
+        const institutes = await instituteRepository.getInstitutesByUserId(userId);
+        for (const inst of institutes) {
+          const l = await locationService.listForInstitute(inst.id, userId);
+          if (l) locs.push(...l);
+        }
+      }
+
+      const paged = locs.slice(offset, offset + limit);
+      return {
+        items: paged.map((l) => toMemoryValue(l)),
+        total: locs.length,
+        keys: paged.map((l) => l.id),
+      };
+    },
+
+    get: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const loc = await locationService.get(String(key), userId);
+      return loc ? toMemoryValue(loc) : undefined;
+    },
+
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = value.instituteId ?? (ctx.all.instituteId as string | undefined);
+      if (!instituteId) {
+        throw new Error("instituteId is required — use the currently selected organization or specify one from Context_Institutes.");
+      }
+      if (!value.title) throw new Error("A location needs a title.");
+
+      // Auto-geocode: if the AI gave an address but no explicit coordinates,
+      // look the coordinates up from the address.
+      let { latitude, longitude } = value;
+      if ((latitude == null || longitude == null) && value.address) {
+        const geo = await locationService.geocodeAddress(value.address);
+        if (!geo) {
+          throw new Error(`Could not find GPS coordinates for the address "${value.address}". Provide a clearer/more complete address, or set latitude and longitude explicitly.`);
+        }
+        latitude = geo.lat;
+        longitude = geo.lng;
+      }
+      if (latitude == null || longitude == null) {
+        throw new Error("A location needs either an address (which is geocoded automatically) or explicit latitude and longitude.");
+      }
+
+      const created = await locationService.create(
+        { instituteId, title: value.title, address: value.address ?? null, latitude, longitude },
+        userId,
+      );
+      if (!created) throw new Error("Not permitted to add a location to this organization (you must be a member).");
+      return toMemoryValue(created);
+    },
+
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const id = String(key);
+
+      const updates: Record<string, any> = {};
+      if (value.title !== undefined) updates.title = value.title;
+      if (value.address !== undefined) updates.address = value.address;
+      if (value.isActive !== undefined) updates.isActive = value.isActive;
+
+      // Re-geocode when the address changes and no explicit coordinates were
+      // supplied alongside it.
+      if (value.address !== undefined && value.address && value.latitude === undefined && value.longitude === undefined) {
+        const geo = await locationService.geocodeAddress(value.address);
+        if (!geo) {
+          throw new Error(`Could not find GPS coordinates for the address "${value.address}". Provide a clearer address, or set latitude and longitude explicitly.`);
+        }
+        updates.latitude = geo.lat;
+        updates.longitude = geo.lng;
+      }
+      if (value.latitude !== undefined) updates.latitude = value.latitude;
+      if (value.longitude !== undefined) updates.longitude = value.longitude;
+
+      const updated = await locationService.update(id, updates, userId);
+      if (!updated) throw new Error("Location not found or you are not permitted to edit it.");
+      return toMemoryValue(updated);
+    },
+
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const ok = await locationService.remove(String(key), userId);
+      if (!ok) throw new Error("Location not found or you are not permitted to delete it.");
+    },
+
+    fromDB: (record) => toMemoryValue(record),
+    getDBKey: (value) => value?.id,
+  };
+
+  const locationSchema: AgentMemoryFieldObjectWithDB = {
+    id: "location",
+    type: "object",
+    properties: {
+      id: { id: "id", type: "string" },
+      title: { id: "title", type: "string", description: "Display name of the place (e.g. 'Downtown Clinic', 'Lincoln Elementary', 'Music Therapy Room')." },
+      address: { id: "address", type: "string", description: "Street address. When you set or change this, the server AUTOMATICALLY looks up the GPS coordinates — you do NOT need to provide latitude/longitude yourself." },
+      latitude: { id: "latitude", type: "number", description: "GPS latitude. Normally filled in automatically from the address; only set it manually to override the lookup." },
+      longitude: { id: "longitude", type: "number", description: "GPS longitude. Normally filled in automatically from the address; only set it manually to override the lookup." },
+      instituteId: { id: "instituteId", type: "string", description: "The organization this place belongs to (from Context_Institutes). Defaults to the currently selected organization." },
+    },
+    required: ["title"],
+  };
+
+  export const INSTITUTE_LOCATIONS_FIELD: AgentMemoryFieldMapWithDB = {
+    id: "Context_Locations",
+    type: "map",
+    title: "Locations",
+    description:
+      "Physical places (GPS points) registered to your organizations — clinics, schools, therapy rooms, etc. " +
+      "To add a place, give it a title and an address; the server geocodes the address into GPS coordinates automatically (editing the address re-geocodes it). " +
+      "Assign places to calendar events via the event's locationIds field — this lets the system tell when a student is physically at an event.",
+    opened: true,
+    displayKey: "title",
+    values: locationSchema,
+    db: locationOps,
+  };
+
+  // ============================================================================
   // DATABASE OPERATIONS - CALENDAR EVENTS
   // ============================================================================
 
@@ -2123,6 +2256,7 @@ import {
           myInviteStatus: (event as any).attendees?.find(
             (a: any) => a.attendeeType === "user" && a.attendeeId === userId,
           )?.inviteStatus ?? null,
+          locationIds: ((event as any).locations ?? []).map((l: any) => l.id),
           reducedView: reducedById.get(event.id) === true || undefined,
         })),
         total: expanded.length,
@@ -2140,6 +2274,7 @@ import {
         myInviteStatus:
           full.attendees.find((a) => a.attendeeType === "user" && a.attendeeId === userId)
             ?.inviteStatus ?? null,
+        locationIds: (full.locations ?? []).map((l) => l.id),
       };
     },
 
@@ -2184,9 +2319,10 @@ import {
               .filter((a: any) => a?.attendeeType && a?.attendeeId)
               .map((a: any) => ({ attendeeType: a.attendeeType, attendeeId: a.attendeeId }))
           : undefined,
+        Array.isArray(value.locationIds) ? value.locationIds.map(String) : undefined,
       );
 
-      return toMemoryValue(created);
+      return { ...toMemoryValue(created), locationIds: (created.locations ?? []).map((l) => l.id) };
     },
 
     update: async (ctx, key, value) => {
@@ -2211,14 +2347,24 @@ import {
       if (value.repeatMonthWeek !== undefined) updates.repeatMonthWeek = value.repeatMonthWeek;
       if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? parseLocalOrIsoInTimezone(value.repeatEndDate, tz) : null;
 
-      // Skip the event-field update when only RSVP changed.
+      // Skip the event-field update when only RSVP / locations changed.
       if (Object.keys(updates).length > 0) {
         const event = await calendarService.updateEvent(eventId, updates, userId);
         if (!event) throw new Error("Event not found or edit not permitted (creator or institute admin required)");
       }
 
-      const fresh = await calendarRepository.getEventById(eventId);
-      return fresh ? toMemoryValue(fresh) : undefined;
+      // Replace the event's assigned locations when provided (permission-checked).
+      if (value.locationIds !== undefined) {
+        const ok = await calendarService.setEventLocations(
+          eventId,
+          Array.isArray(value.locationIds) ? value.locationIds.map(String) : [],
+          userId,
+        );
+        if (!ok) throw new Error("Not permitted to change this event's locations (creator or institute admin required).");
+      }
+
+      const fresh = await calendarService.getEvent(eventId, userId);
+      return fresh ? { ...toMemoryValue(fresh), locationIds: (fresh.locations ?? []).map((l) => l.id) } : undefined;
     },
 
     delete: async (ctx, key) => {
@@ -2251,6 +2397,7 @@ import {
       classroomId: { id: "classroomId", type: "string", description: "If set, this is a classroom event. Only classroom members can create events with this set." },
       serviceId: { id: "serviceId", type: "string", description: "If set, links the event to a service in a student's program (therapy session, tutoring, etc.)." },
       myInviteStatus: { id: "myInviteStatus", type: "string", enum: ["pending", "accepted", "declined"], description: "The current user's RSVP status on this event. Updating this only changes the user's own attendee status, not the event itself." },
+      locationIds: { id: "locationIds", type: "array", items: { id: "locationId", type: "string" }, description: "IDs of registered places (from Context_Locations) where this event happens. Set this to attach one or more locations; it lets the system detect when a student is physically at the event. Replaces the full set on update." },
     },
     required: ["title", "startTime", "endTime"],
   };
@@ -2320,6 +2467,7 @@ import {
       ...masterFields,
       INSTITUTE_INSTITUTES_FIELD,
       INSTITUTE_STUDENTS_FIELD,
+      INSTITUTE_LOCATIONS_FIELD,
       ...(includeCalendar ? [INSTITUTE_CALENDAR_FIELD] : []),
     ];
   }

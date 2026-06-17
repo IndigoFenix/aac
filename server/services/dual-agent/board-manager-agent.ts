@@ -396,7 +396,18 @@ function renderInvocationContext(input: BoardManagerInvocationInput): string {
   //   2. builder / guessing state — those modes constrain the tool surface.
   //   3. Per-trigger default.
   let hint = "";
-  if (input.forceRebuildDirective) {
+  const hasComposed = input.triggeringEvents.some(
+    (e) => e.type === "sentence_composed",
+  );
+  if (hasComposed) {
+    // A composed SENTENCE is terminal: it must be voiced via interpret(),
+    // regardless of any leftover builder/guessing state. The builder closes
+    // the instant Play is pressed, so builderState is often already null by
+    // the time this deferred invocation runs — without this branch the hint
+    // falls through to BUILDER_HINT (suggest buttons) or the per-trigger
+    // rebuild_board default, and interpret() never fires.
+    hint = invocationActionHint(input.triggeringEvents);
+  } else if (input.forceRebuildDirective) {
     // Home-press topic switch. MUST rebuild — no_change is not an option
     // here. The directive carries the palette description; the model
     // turns that into concrete buttons. Existing-board overlap is

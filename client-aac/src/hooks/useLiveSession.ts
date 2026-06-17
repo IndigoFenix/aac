@@ -11,6 +11,7 @@ import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
 import { API_BASE_URL } from "@/lib/api-base";
+import { getCurrentGps, metersBetween, type GpsReading } from "@/lib/geolocation";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
 /** Context passed when guessing is launched from the sentence builder for a slot.
@@ -125,6 +126,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Periodic GPS refresh (location context). Re-queried on the monitor cadence;
+  // only re-sent when the device has moved meaningfully.
+  const gpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastGpsSentRef = useRef<GpsReading | null>(null);
 
   // Debug state
   const [debugData, setDebugData] = useState<Record<string, any>>({});
@@ -1066,6 +1071,34 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [audioEnabled, audioPlayer]);
 
   // -------------------------------------------------------------------------
+  // Periodic GPS refresh — re-query location on the monitor cadence and push a
+  // gps_update only when the device has moved meaningfully (saves bandwidth and
+  // avoids spamming the AI with identical-location injections).
+  // -------------------------------------------------------------------------
+
+  const stopGpsWatch = useCallback(() => {
+    if (gpsTimerRef.current) {
+      clearInterval(gpsTimerRef.current);
+      gpsTimerRef.current = null;
+    }
+  }, []);
+
+  const startGpsWatch = useCallback(() => {
+    stopGpsWatch();
+    const GPS_REFRESH_MS = 120_000;       // ~ monitor cadence
+    const GPS_MOVE_THRESHOLD_M = 40;      // ignore sub-40m jitter
+    gpsTimerRef.current = setInterval(async () => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      const gps = await getCurrentGps();
+      if (!gps) return;
+      const last = lastGpsSentRef.current;
+      if (last && metersBetween(last, gps) < GPS_MOVE_THRESHOLD_M) return;
+      lastGpsSentRef.current = gps;
+      wsSend({ type: "gps_update", gps });
+    }, GPS_REFRESH_MS);
+  }, [wsSend, stopGpsWatch]);
+
+  // -------------------------------------------------------------------------
   // Initialize — open WebSocket and send initialize message
   // -------------------------------------------------------------------------
 
@@ -1139,6 +1172,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             console.warn("[useLiveSession] Failed to load local state:", err);
           }
 
+          // Best-effort device location (null if unsupported/denied/timeout).
+          const gps = await getCurrentGps();
+          if (gps) lastGpsSentRef.current = gps;
+
           wsSend({
             type: "initialize",
             studentId,
@@ -1149,7 +1186,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             ...(classroomId ? { classroomId } : {}),
             ...(initialFrameBase64 ? { initialFrame: initialFrameBase64 } : {}),
+            ...(gps ? { gps } : {}),
           });
+
+          // Start periodic location refresh (movement / accuracy improvement).
+          startGpsWatch();
         };
 
         // If auth already loaded, send immediately
@@ -1182,6 +1223,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           `[useLiveSession] WebSocket closed: code=${event.code} reason=${event.reason} intentional=${wasIntentional} isInitialized=${isInitializedRef.current}`,
         );
         wsRef.current = null;
+        // Stop the GPS refresh timer; a reconnect's initialize() restarts it.
+        stopGpsWatch();
         // Always clear the "waking up" spinner on disconnect — initialize() will
         // re-set it if we auto-reconnect, but we never want to leave the UI
         // stuck on "waking up" with no live session behind it.
@@ -1219,7 +1262,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       setError("error:CONNECTION_ERROR");
       setIsLoading(false);
     }
-  }, [studentId, muteState, responseMode, debugMode, isInitialized, wsSend, handleServerMessage]);
+  }, [studentId, muteState, responseMode, debugMode, isInitialized, wsSend, handleServerMessage, startGpsWatch, stopGpsWatch]);
 
   // -------------------------------------------------------------------------
   // Actions — send messages over WebSocket
