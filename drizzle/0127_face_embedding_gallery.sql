@@ -10,4 +10,4 @@
 -- (and the entry eventually evicted) when a match it produced is corrected as a
 -- misidentification. The enrolled `face_embedding` anchor is never evicted.
 -- Back-compatible: NULL means "anchor only", which matches the old behavior.
-ALTER TABLE "biometric_data" ADD COLUMN "face_embeddings" jsonb;
+ALTER TABLE "biometric_data" ADD COLUMN IF NOT EXISTS "face_embeddings" jsonb;

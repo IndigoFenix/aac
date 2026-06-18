@@ -6,4 +6,4 @@
 -- identical; live text rates are higher, so this trades cost for latency.
 -- Cost is billed accurately under the "board-manager" bucket at the live
 -- model's rates. Off by default. See server/services/dual-agent/live-board-manager-agent.ts.
-ALTER TABLE "aac_settings" ADD COLUMN "board_manager_live_model" boolean DEFAULT false NOT NULL;
+ALTER TABLE "aac_settings" ADD COLUMN IF NOT EXISTS "board_manager_live_model" boolean DEFAULT false NOT NULL;
