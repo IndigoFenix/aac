@@ -359,6 +359,8 @@ export interface UseDualAgentReturn {
   /** Push already-computed unknown face descriptors out-of-band (not on a frame).
    *  Used at session start so the server can match before the first frame. */
   sendFaceDescriptors?: (descriptors: UnknownFaceDescriptor[]) => void;
+  /** Report a wrong face match so the server penalizes the offending embedding. */
+  sendIdentityCorrection?: (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => void;
   /** Capture a fresh frame now and send it as the first frame_grid — used the
    *  moment the session is ready so the startup scene uses a current snapshot. */
   sendFreshStartupFrame?: () => Promise<void>;

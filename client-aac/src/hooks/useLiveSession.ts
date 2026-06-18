@@ -1536,6 +1536,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend]);
 
   /**
+   * Report that a recent face match was wrong. The server penalizes the stored
+   * embedding that mis-fired (and evicts it if it keeps causing confusion), then
+   * drops the bad identity from the active people list.
+   */
+  const sendIdentityCorrection = useCallback(
+    (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => {
+      if (!entityId) return;
+      wsSend({ type: "correct_identity", entityType, entityId, reason });
+    },
+    [wsSend],
+  );
+
+  /**
    * Capture a FRESH single frame and send it as the first frame_grid the moment
    * the session is ready, so the Observer's startup scene description uses a
    * current snapshot — not the ~10s-stale frame captured at connect time.
@@ -1792,6 +1805,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Live API only
     sendPcmAudio,
     sendFaceDescriptors,
+    sendIdentityCorrection,
     sendFreshStartupFrame,
     isBusyRef: audioPlayer.isBusyRef,
 

@@ -363,6 +363,7 @@ export const ko: Translations = {
   },
 
   aac: {
+    voiceLive: "듣는 중",
     glyph: {
       i_me: "나",
       you: "너",

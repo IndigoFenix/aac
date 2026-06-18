@@ -22,6 +22,7 @@ import {
   creditPackageController,
   paddleController,
   interpretationController,
+  videoCaptionController,
   boardController,
   customAppController,
   deepAnalysisController,
@@ -1084,6 +1085,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/interpretations/:id", requireAuth, (req, res) =>
     interpretationController.deleteInterpretation(req, res)
+  );
+
+  // ============= VIDEO CAPTION STUDIO ROUTES =============
+  app.post("/api/video-caption/glyphs", requireAuth, (req, res) =>
+    videoCaptionController.convertGlyphs(req, res)
   );
 
   // ============= SLP CLINICAL DATA ROUTES =============

@@ -214,6 +214,7 @@ export const pt = {
     progress: "Progresso",
     reports: "Fichas",
     deepAnalysis: "Análise profunda",
+    videoCaption: "Legendas de vídeo",
     shares: "Shares",
     insuranceBridge: "Ponte de seguro",
     symbols: "Biblioteca de símbolos AAC",
@@ -2378,6 +2379,8 @@ export const pt = {
     liveAudioSpeakerDesc: "A IA fala diretamente pelo áudio nativo do Gemini Live (entonação mais natural, custo maior). Desativa o ElevenLabs na voz da IA.",
     fullAttentionMode: "Modo de atenção total",
     fullAttentionModeDesc: "Transmite a câmera e o microfone continuamente para a IA para máxima capacidade de resposta. Quando desativado (padrão), o vídeo é enviado apenas com movimento e o áudio apenas com fala, o que reduz o custo da IA ao vivo.",
+    boardManagerLiveModel: "Modelo ao vivo do gerenciador de pranchas (experimental)",
+    boardManagerLiveModelDesc: "Executa o agente de criação de pranchas em um modelo ao vivo (tempo real) para testar a latência de geração de pranchas. O comportamento não muda, mas modelos ao vivo custam mais por prancha — deixe desativado a menos que esteja testando a capacidade de resposta.",
     elevenlabsTitle: "Voz ElevenLabs",
     elevenlabsDesc: "Insira sua própria chave API do ElevenLabs e IDs de voz para TTS de alta qualidade. Substitui todas as outras configurações de voz quando definido.",
     elevenlabsApiKey: "Chave API do ElevenLabs",
@@ -3139,6 +3142,7 @@ export const pt = {
       dashboardLevel: "Nível do painel",
       expertAgents: "Agentes especialistas",
       deepAnalysisEnabled: "Análise profunda",
+      videoCaptionEnabled: "Legendas de vídeo",
       complianceRegimes: "Regimes de conformidade",
       complianceRegimesHint: "Selecione os marcos regulatórios (HIPAA, GDPR, Ministério da Educação de Israel, etc.) que se aplicam a esta instituição. Cada escolha define por quanto tempo os registros de auditoria são mantidos, o prazo para notificar uma violação de dados, o padrão de acessibilidade que o aplicativo declara e o provedor de identidade de login esperado. Quando vários se aplicam, prevalece a regra mais rigorosa.",
       insuranceBridgeEnabled: "Ponte de seguros",
@@ -3303,6 +3307,23 @@ export const pt = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "Estúdio de legendas de vídeo",
+    description: "Envie um vídeo e um arquivo de legendas para transformar as legendas em sobreposições de glifos.",
+    uploadVideo: "Enviar vídeo",
+    uploadCaptions: "Enviar legendas",
+    noVideo: "Envie um vídeo para visualizá-lo aqui.",
+    segments: "Segmentos de legenda",
+    segmentCount: "{count} segmentos",
+    noCaptions: "Envie um arquivo de legendas SRT ou VTT para ver seus segmentos.",
+    parseFailed: "Não foi possível ler o arquivo de legendas",
+    generateGlyphs: "Gerar símbolos",
+    glyphsFailed: "Não foi possível gerar os símbolos",
+    export: "Exportar vídeo",
+    exportFailed: "Não foi possível exportar o vídeo",
+    exportNoGlyphs: "Gere os símbolos antes de exportar.",
+    exportUnsupported: "A exportação de vídeo requer um navegador baseado em Chromium (Chrome ou Edge).",
+  },
   locations: {
     title: "Localizações",
     new: "Nova localização",

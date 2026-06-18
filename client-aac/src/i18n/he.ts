@@ -363,6 +363,7 @@ export const he: Translations = {
   },
 
   aac: {
+    voiceLive: "מקשיב",
     glyph: {
       i_me: "אני",
       you: "אתה",

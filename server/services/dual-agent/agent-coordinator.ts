@@ -33,6 +33,9 @@ import {
   type BoardManagerOutputEvent,
   type BoardManagerInvocationInput,
 } from "./board-manager-agent";
+import type { IBoardManagerAgent } from "./board-manager-interface";
+import { LiveBoardManagerAgent } from "./live-board-manager-agent";
+import { getModelOption } from "@shared/llm-options";
 import {
   buildObserverPrompt,
   buildSpeakerPrompt,
@@ -100,7 +103,7 @@ import {
 
 import type { ClientMessage, ServerMessage, IdentifiedFaceWire } from "./live-relay";
 import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
-import { findMatchingFace, recordContactSighting, type FaceMatchResult } from "../biometric/recognition-service";
+import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, type FaceMatchResult, type EntityType } from "../biometric/recognition-service";
 import {
   resolveStartupMode,
   resolveStudentIsActiveUser,
@@ -165,6 +168,7 @@ import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import { smartMergeButtons, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
+import { resolvePressRouting } from "./press-target";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -173,6 +177,18 @@ import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 
 const BOARD_MANAGER_DEFAULT_PROVIDER = "gemini" as const;
 const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
+// Live model used when the per-student `boardManagerLiveModel` AAC setting
+// (or the AAC_BOARD_MANAGER_MODE=live env override) is on.
+//
+// Must be `gemini-3.1-flash-live-preview`: it's the only Live model that
+// reliably emits the Board Manager's nested array-of-objects tool arguments.
+// The GA `gemini-live-2.5-flash-native-audio` mangles them into degenerate
+// strings (see live-board-manager-agent.ts). 3.1 is PUBLIC-API only (not on
+// Vertex), so the Board Manager runs against the public Gemini API
+// (GEMINI_API_KEY) even though Observer/Speaker use Vertex — see
+// createBoardManager(). Override via env for tuning.
+const LIVE_BOARD_MANAGER_MODEL =
+  process.env.AAC_BOARD_MANAGER_MODEL || "gemini-3.1-flash-live-preview";
 
 // ---------------------------------------------------------------------------
 // Home-board navigation intents — behavior hints attached to each home
@@ -587,7 +603,7 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
   private observer: ObserverAgent | null = null;
   private speaker: ISpeakerAgent | null = null;
-  private boardManager: BoardManagerAgent | null = null;
+  private boardManager: IBoardManagerAgent | null = null;
   /** Selected Speaker implementation. Driven by the per-student
    *  `liveAudioSpeaker` AAC setting (default false → "http"). The
    *  AAC_SPEAKER_MODE env var, if set to "http" or "live", overrides
@@ -785,6 +801,12 @@ export class AgentCoordinator {
   private currentIdentifiedFacesAt = 0;
   /** Per-contact rate limit for `recordContactSighting()` — keyed by contact id. */
   private lastSightingBumpAt: Map<string, number> = new Map();
+  /** Per-entity rate limit for passive gallery growth — keyed by entityId. */
+  private lastGalleryGrowAt: Map<string, number> = new Map();
+  /** Last descriptor that matched each entity, so a later misidentification
+   *  correction can target the exact embedding that mis-fired. Keyed by
+   *  `${entityType}:${entityId}`. */
+  private recentMatchedDescriptors: Map<string, { descriptor: number[]; at: number }> = new Map();
   /** In-flight face-recognition promise. The first-frame startup path awaits
    *  this (briefly) so the startup scene description has face results. */
   private faceRecognitionInFlight: Promise<void> | null = null;
@@ -792,6 +814,13 @@ export class AgentCoordinator {
   private static readonly IDENTIFIED_FACES_TTL_MS = 30_000;
   /** Minimum gap between sighting bumps for the same contact. */
   private static readonly SIGHTING_BUMP_INTERVAL_MS = 60_000;
+  /** Minimum gap between gallery-growth attempts for the same entity (bounds DB reads). */
+  private static readonly GALLERY_GROW_INTERVAL_MS = 8_000;
+  /** A recent matched descriptor older than this is no longer a valid correction target. */
+  private static readonly RECENT_MATCH_TTL_MS = 120_000;
+  /** Matches below this confidence are "borderline": the AI is asked to verify
+   *  the identity against the on-file physical description rather than trust it. */
+  private static readonly BORDERLINE_CONFIDENCE = 0.6;
 
   // -------------------------------------------------------------------------
   // Startup mode (CONTEXTUAL / MENU). Resolved from context at init; consumed
@@ -1085,6 +1114,7 @@ export class AgentCoordinator {
     // Close agents
     try { this.observer?.close(); } catch {}
     try { this.speaker?.close(); } catch {}
+    try { this.boardManager?.close?.(); } catch {}
     this.observer = null;
     this.speaker = null;
     this.boardManager = null;
@@ -1263,6 +1293,16 @@ export class AgentCoordinator {
         this.faceRecognitionInFlight = this.recognizeFaces(msg.data).catch(err => {
           runInSessionContext(this.sessionId || "?", this.debugMode, () => {
             logLiveSession("FACE_RECOGNITION_ERROR", (err as Error).message);
+          });
+        });
+        return;
+      case "correct_identity":
+        // A recent face match was wrong — penalize the embedding that mis-fired
+        // so the same confusion stops recurring.
+        if (!this.studentId) return;
+        this.correctMisidentification(msg.entityType, msg.entityId, msg.reason).catch(err => {
+          runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+            logLiveSession("IDENTITY_CORRECTION_ERROR", (err as Error).message);
           });
         });
         return;
@@ -1608,7 +1648,22 @@ export class AgentCoordinator {
     // 6. Construct agent handles.
     this.observer = this.createObserverAgent();
     this.speaker = this.createSpeakerAgent();
-    this.boardManager = new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER);
+    // Board Manager backend selection (mirrors the Speaker live/http pattern):
+    //  - Per-student `boardManagerLiveModel` AAC setting (default false → HTTP).
+    //  - AAC_BOARD_MANAGER_MODE env var ("http"|"live") OVERRIDES the per-student
+    //    setting deployment-wide for dev/debug. Any other value is ignored.
+    const liveBoardMgrStudent = !!(studentRowAac as any)?.boardManagerLiveModel;
+    const bmEnvOverrideRaw = process.env.AAC_BOARD_MANAGER_MODE?.toLowerCase();
+    let boardMgrMode: "http" | "live" = liveBoardMgrStudent ? "live" : "http";
+    if (bmEnvOverrideRaw === "http" || bmEnvOverrideRaw === "live") {
+      boardMgrMode = bmEnvOverrideRaw;
+    } else if (bmEnvOverrideRaw) {
+      console.warn(`[AgentCoordinator] Unknown AAC_BOARD_MANAGER_MODE="${bmEnvOverrideRaw}" — ignoring; using per-student setting`);
+    }
+    this.boardManager = this.createBoardManager(boardMgrMode);
+    // Open the Live session ahead of the first invoke so the first board
+    // build doesn't pay connect latency (no-op on the HTTP path).
+    this.boardManager.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
 
     // 7. Connect Observer + Speaker in parallel. If either fails, tear down.
     try {
@@ -1649,6 +1704,8 @@ export class AgentCoordinator {
     //     this session_debug_logs row.
     this.observer.setDebugSessionContext(this.sessionId, this.debugMode);
     this.speaker.setDebugSessionContext(this.sessionId, this.debugMode);
+    // Live Board Manager attributes its provider-side logs too (no-op on HTTP).
+    this.boardManager?.setDebugSessionContext?.(this.sessionId, this.debugMode, "BOARD_MGR");
 
     // 7c. Prime Speaker with the initial interaction mode. Without this,
     //     Speaker has no signal about which mode it's in until Observer
@@ -1688,7 +1745,7 @@ export class AgentCoordinator {
         `Student: ${this.studentId}`,
         `Observer: ${aacChat.provider}/${this.observerModel}`,
         `Speaker:  ${aacChat.provider}/${this.speakerModel} (mode=${this.speakerMode})`,
-        `BoardMgr: ${BOARD_MANAGER_DEFAULT_PROVIDER}/${BOARD_MANAGER_DEFAULT_MODEL}`,
+        `BoardMgr: ${BOARD_MANAGER_DEFAULT_PROVIDER}/${boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : BOARD_MANAGER_DEFAULT_MODEL} (mode=${boardMgrMode})`,
         `Mute: ${this.muteState}`,
         `DirectAudio: ${this.useDirectAudio}`,
       ].join("\n"));
@@ -1703,7 +1760,7 @@ export class AgentCoordinator {
         studentName: studentRow?.firstName || studentRow?.name?.split(" ")[0],
         observerModel: this.observerModel,
         speakerModel: this.speakerModel,
-        boardMgrModel: BOARD_MANAGER_DEFAULT_MODEL,
+        boardMgrModel: boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : BOARD_MANAGER_DEFAULT_MODEL,
         useDirectAudio: this.useDirectAudio,
       });
       flowSystemPrompt("OBSERVER", observerPrompt);
@@ -3046,11 +3103,17 @@ export class AgentCoordinator {
         // User just acted — this is conversation engagement. Reset the
         // rest debounce window and cancel any pending rest request.
         this.noteEngagementActivity();
-        // Target comes from the loaded board's target if the event
-        // didn't carry one (synthetic home presses set their own).
-        const target = event.target ?? this.currentBoardTarget ?? PARTY_DEVICE;
-        const toDevice = isDeviceTarget(target, this.aiName);
-        const targetLabel = toDevice ? "YOU" : target;
+        // Target comes from the loaded board's target if the event didn't
+        // carry one (synthetic home presses set their own). In facilitator mode
+        // a target-less press is an aside to the person nearby — the Speaker
+        // stays quiet rather than replying as if addressed. See press-target.ts.
+        const { toDevice, targetLabel } = resolvePressRouting({
+          eventTarget: event.target,
+          boardTarget: this.currentBoardTarget,
+          mode: this.currentInteractionMode,
+          socialPeer: !!this.socialPeer,
+          aiNames: [this.aiName],
+        });
 
         // A button press is functionally a USER statement — the press
         // is just the mechanism. Speaker and BoardManager see it as
@@ -3697,6 +3760,9 @@ export class AgentCoordinator {
     this.speakerSpeaking = false;
     try { this.observer?.close(); } catch {}
     try { this.speaker?.close(); } catch {}
+    // Close the Live Board Manager session too (no invokes while asleep); it
+    // lazily reconnects on the first invoke after wake. No-op on HTTP.
+    try { this.boardManager?.close?.(); } catch {}
     this.observer = null;
     this.speaker = null;
     this.asleep = true;
@@ -3778,6 +3844,11 @@ export class AgentCoordinator {
           console.warn("[AgentCoordinator] Speaker close failed on transition to resting:", err);
         }
         this.speaker = null;
+        // Close the Live Board Manager session too — it isn't invoked while
+        // resting (invokeBoardManager gates on profile), so an open session
+        // would only churn idle reconnects. It lazily reconnects on the next
+        // invoke after wake. No-op on the HTTP path.
+        try { this.boardManager?.close?.(); } catch { /* ignore */ }
       } else {
         // target === "awake" — bring Speaker back online. Already running
         // means we're recovering from a partial transition — leave it alone.
@@ -3805,7 +3876,12 @@ export class AgentCoordinator {
       // pick up the conversation (recent dialogue, rolling summary, mode,
       // active guessing). Observer doesn't need this — its Live session was
       // preserved via reconnectWithConfig.
-      if (target === "awake") this.primeFreshSpeaker();
+      if (target === "awake") {
+        this.primeFreshSpeaker();
+        // Re-open the Live Board Manager session (closed on the resting
+        // transition) ahead of the first post-wake board build. No-op on HTTP.
+        this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
+      }
     } catch (err) {
       console.error(`[AgentCoordinator] transitionToProfile(${target}) failed:`, err);
       runInSessionContext(this.sessionId!, this.debugMode, () => {
@@ -3919,6 +3995,9 @@ export class AgentCoordinator {
     });
 
     this.primeFreshSpeaker();
+    // Re-open the Live Board Manager session (closed on sleep) so the first
+    // post-wake board build doesn't pay connect latency. No-op on HTTP.
+    this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
   }
 
   /** Build a fresh ObserverAgent with the standard callback bundle. Used by
@@ -3967,6 +4046,41 @@ export class AgentCoordinator {
       onClose: () => console.log("[AgentCoordinator] Speaker closed"),
       onUsage: (usage) => this.trackLiveUsage("speaker", aacChatProvider, speakerModel, usage),
     });
+  }
+
+  /** Build the Board Manager backend — HTTP (stateless completions) or Live
+   *  (warm Gemini Live session, TEXT modality + function calling). Both honor
+   *  IBoardManagerAgent so the invocation path is identical. Live usage is
+   *  billed via the onUsage callback at the live model's rates, attributed to
+   *  the "board-manager" bucket — `invoke()` returns no `usage`, so the
+   *  Coordinator's own result.usage charge is skipped (no double billing). */
+  private createBoardManager(mode: "http" | "live"): IBoardManagerAgent {
+    if (mode === "live") {
+      // 3.1 (the only model with usable structured FC) is PUBLIC-API only.
+      // Use Vertex only when the chosen model is actually published there;
+      // otherwise fall to the public Gemini API (GEMINI_API_KEY), independent
+      // of the Observer/Speaker Vertex setting.
+      const bmModelOpt = getModelOption(BOARD_MANAGER_DEFAULT_PROVIDER, LIVE_BOARD_MANAGER_MODEL);
+      const bmUseVertex = bmModelOpt
+        ? (this.useVertex && bmModelOpt.availableOnVertex === true)
+        : this.useVertex;
+      flowNote("COORDINATOR", `Board Manager mode=live (Gemini Live, model=${LIVE_BOARD_MANAGER_MODEL}, vertex=${bmUseVertex})`);
+      if (!bmUseVertex && !process.env.GEMINI_API_KEY) {
+        console.warn(`[AgentCoordinator] Live Board Manager wants the public Gemini API (model ${LIVE_BOARD_MANAGER_MODEL} not on Vertex) but GEMINI_API_KEY is unset — connection will fail.`);
+      }
+      return new LiveBoardManagerAgent({
+        providerKey: BOARD_MANAGER_DEFAULT_PROVIDER,
+        model: LIVE_BOARD_MANAGER_MODEL,
+        useVertex: bmUseVertex,
+        // Mirror Observer: native-audio model wants a voice in AUDIO modality
+        // even though the Board Manager never plays audio.
+        voiceName: this.aiVoiceName,
+        onUsage: (usage) =>
+          this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, LIVE_BOARD_MANAGER_MODEL, usage),
+      });
+    }
+    flowNote("COORDINATOR", `Board Manager mode=http (${BOARD_MANAGER_DEFAULT_PROVIDER}/${BOARD_MANAGER_DEFAULT_MODEL})`);
+    return new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER);
   }
 
   private routeFocusRequest(event: FocusRequestEvent): void {
@@ -6574,6 +6688,7 @@ export class AgentCoordinator {
       boundingBox?: { x: number; y: number; w: number; h: number };
       cameraRole?: "user" | "environment" | "unknown";
       cameraLabel?: string;
+      quality?: number;
     }>,
   ): Promise<void> {
     if (!this.studentId) return;
@@ -6606,6 +6721,10 @@ export class AgentCoordinator {
           boundingBox: d.boundingBox,
           cameraRole: d.cameraRole,
           cameraLabel: d.cameraLabel,
+          description: m.description,
+          // Below this confidence the match is ambiguous — ask the AI to verify
+          // against the description instead of trusting the name outright.
+          borderline: m.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE,
         };
       }
       unknownCounter += 1;
@@ -6637,10 +6756,74 @@ export class AgentCoordinator {
       });
     }
 
+    // Record the descriptor behind each match (for later correction targeting)
+    // and passively grow the person's multi-angle gallery from good, novel poses.
+    for (let i = 0; i < wire.length; i++) {
+      const f = wire[i];
+      const d = descriptors[i];
+      if (!f.matched || !f.entityId || !f.entityType || !d) continue;
+      const key = `${f.entityType}:${f.entityId}`;
+      this.recentMatchedDescriptors.set(key, { descriptor: d.descriptor, at: now });
+
+      // Gallery growth: only with a quality signal, rate-limited per entity.
+      // growFaceGalleryForEntity itself decides if the pose is novel enough.
+      if (typeof d.quality !== "number") continue;
+      const lastGrow = this.lastGalleryGrowAt.get(f.entityId) ?? 0;
+      if (now - lastGrow < AgentCoordinator.GALLERY_GROW_INTERVAL_MS) continue;
+      this.lastGalleryGrowAt.set(f.entityId, now);
+      growFaceGalleryForEntity(
+        { type: f.entityType as EntityType, id: f.entityId },
+        d.descriptor,
+        d.quality,
+      ).catch(err => {
+        logLiveSession("GALLERY_GROW_ERROR", `${key}: ${(err as Error).message}`);
+      });
+    }
+
     // First identification of the active user arms the startup greeting (which
     // then waits for scene context before firing). set_person_as_user is
     // finicky, so we don't wait for it.
     this.maybeArmStartupGreet();
+  }
+
+  /**
+   * Apply a misidentification correction: the entity was recently matched to a
+   * face that turned out NOT to be them, so penalize the stored embedding that
+   * produced the bad match. Uses the descriptor remembered from the most recent
+   * match (see `recentMatchedDescriptors`); a stale or missing descriptor is a
+   * no-op. Also drops the entity from the current identified-faces list so the
+   * AI stops acting on the wrong name immediately.
+   */
+  private async correctMisidentification(
+    entityType: EntityType,
+    entityId: string,
+    reason?: string,
+  ): Promise<void> {
+    const key = `${entityType}:${entityId}`;
+    const recent = this.recentMatchedDescriptors.get(key);
+    if (!recent || Date.now() - recent.at > AgentCoordinator.RECENT_MATCH_TTL_MS) {
+      logLiveSession("IDENTITY_CORRECTION", `No fresh match descriptor for ${key} — nothing to penalize.`);
+      return;
+    }
+
+    const result = await penalizeFaceMatch({ type: entityType, id: entityId }, recent.descriptor);
+    this.recentMatchedDescriptors.delete(key);
+
+    // Stop acting on the corrected identity right away.
+    const before = this.currentIdentifiedFaces.length;
+    this.currentIdentifiedFaces = this.currentIdentifiedFaces.filter(
+      f => !(f.matched && f.entityType === entityType && f.entityId === entityId),
+    );
+    if (this.currentIdentifiedFaces.length !== before) {
+      this.currentIdentifiedFacesAt = Date.now();
+      this.send({ type: "people_identified", data: this.currentIdentifiedFaces });
+    }
+
+    logLiveSession(
+      "IDENTITY_CORRECTION",
+      `${key} corrected${reason ? ` (${reason})` : ""}: penalized ${result.penalized}` +
+        `${result.evicted ? " (evicted)" : ""}, gallery size ${result.size}.`,
+    );
   }
 
   /**
@@ -6657,18 +6840,30 @@ export class AgentCoordinator {
       if (role === "environment") return " — environment camera";
       return "";
     };
+    let anyBorderline = false;
     const lines = this.currentIdentifiedFaces.map(f => {
       const where = cameraSuffix(f.cameraRole);
       if (!f.matched) return `- ${f.name} (no database match)${where}`;
       const conf = (f.confidence * 100).toFixed(0);
       const rel = f.relationship ? `, ${f.relationship}` : "";
       const tag = f.entityType === "student" ? " [THE STUDENT]" : "";
+      // On a borderline (low-confidence) match, surface the on-file description
+      // and a UNCERTAIN flag so the AI cross-checks against what it actually
+      // sees before addressing the person by name.
+      if (f.borderline) {
+        anyBorderline = true;
+        const desc = f.description ? ` On file: ${f.description}.` : "";
+        return `- ${f.name}${rel} — ${conf}% confidence (UNCERTAIN — verify before using the name)${where}${tag}.${desc}`;
+      }
       return `- ${f.name}${rel} — ${conf}% confidence${where}${tag}`;
     });
+    const borderlineLine = anyBorderline
+      ? `\n(NOTE: an UNCERTAIN match means the face only loosely resembles the named person. Compare the on-file description to what you see. If it doesn't fit, treat them as unidentified rather than greeting the wrong person.)`
+      : "";
     const presenceLine = this.sawStudentFace()
       ? ""
       : `\n(NOTE: the user is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
-    return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}`;
+    return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}${borderlineLine}`;
   }
 
   /** True when a fresh, positively-matched student face is on file. */

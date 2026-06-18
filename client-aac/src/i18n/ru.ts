@@ -363,6 +363,7 @@ export const ru: Translations = {
   },
 
   aac: {
+    voiceLive: "Слушает",
     glyph: {
       i_me: "\u042f",
       you: "\u0422\u044b",

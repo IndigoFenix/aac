@@ -24,6 +24,7 @@ import { InstitutePanel } from '@/features/InstitutePanel';
 import { ReportsPanel } from '@/features/ReportsPanel';
 import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
+import { VideoCaptionPanel } from '@/features/VideoCaptionPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
 import { CalendarPanel } from '@/features/CalendarPanel';
 import { LocationsPanel } from '@/features/LocationsPanel';
@@ -192,6 +193,8 @@ export function MainLayout() {
         return <SharesPanel isOpen={isPanelOpen} />;
       case 'insuranceBridge':
         return <InsuranceBridgePanel isOpen={isPanelOpen} />;
+      case 'videoCaption':
+        return <VideoCaptionPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

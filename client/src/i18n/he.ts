@@ -214,6 +214,7 @@ export const he = {
     progress: "התקדמות",
     reports: "תיקים",
     deepAnalysis: "ניתוח מעמיק",
+    videoCaption: "כתוביות וידאו",
     shares: "Shares",
     insuranceBridge: "גשר ביטוח",
     symbols: "ספריית סמלים לתת״ח",
@@ -2378,6 +2379,8 @@ export const he = {
     liveAudioSpeakerDesc: "ה-AI מדבר ישירות דרך השמע המקורי של Gemini Live (אינטונציה טבעית יותר, עלות גבוהה יותר). משבית את ElevenLabs בקול ה-AI.",
     fullAttentionMode: "מצב תשומת לב מלאה",
     fullAttentionModeDesc: "הזרמת מצלמה ומיקרופון רציפה ל-AI לתגובתיות מרבית. כשכבוי (ברירת המחדל), וידאו נשלח רק בתנועה ואודיו רק בדיבור, מה שמפחית את עלות ה-AI החי.",
+    boardManagerLiveModel: "מודל חי למנהל הלוח (ניסיוני)",
+    boardManagerLiveModelDesc: "הפעלת סוכן בניית הלוח על מודל חי (זמן אמת) כדי לבדוק את זמן ההשהיה ביצירת הלוח. ההתנהגות זהה, אך מודלים חיים יקרים יותר לכל לוח — השאר כבוי אלא אם אתה בודק תגובתיות.",
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsApiKey: "מפתח API של ElevenLabs",
@@ -3139,6 +3142,7 @@ export const he = {
       dashboardLevel: "רמת לוח מחוונים",
       expertAgents: "סוכנים מומחים",
       deepAnalysisEnabled: "ניתוח מעמיק",
+      videoCaptionEnabled: "כתוביות וידאו",
       complianceRegimes: "מסגרות ציות",
       complianceRegimesHint: "בחר את מסגרות הרגולציה (HIPAA, GDPR, משרד החינוך הישראלי וכו') החלות על מוסד זה. כל בחירה קובעת למשך כמה זמן נשמרים יומני הביקורת, את מועד הדיווח על אירוע אבטחה, את תקן הנגישות שהמערכת מצהירה עליו, ואת ספק הזהות הצפוי להתחברות. כאשר חלות כמה מסגרות, הכלל המחמיר ביותר גובר.",
       insuranceBridgeEnabled: "גשר ביטוח",
@@ -3303,6 +3307,23 @@ export const he = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "סטודיו כתוביות וידאו",
+    description: "העלו סרטון וקובץ כתוביות כדי להפוך את הכתוביות לשכבות סמלים.",
+    uploadVideo: "העלאת סרטון",
+    uploadCaptions: "העלאת כתוביות",
+    noVideo: "העלו סרטון כדי לצפות בו כאן בתצוגה מקדימה.",
+    segments: "מקטעי כתוביות",
+    segmentCount: "{count} מקטעים",
+    noCaptions: "העלו קובץ כתוביות בפורמט SRT או VTT כדי לראות את המקטעים שלו.",
+    parseFailed: "לא ניתן היה לקרוא את קובץ הכתוביות",
+    generateGlyphs: "צור סמלים",
+    glyphsFailed: "לא ניתן היה ליצור סמלים",
+    export: "ייצוא וידאו",
+    exportFailed: "לא ניתן היה לייצא את הווידאו",
+    exportNoGlyphs: "צור את הסמלים לפני הייצוא.",
+    exportUnsupported: "ייצוא וידאו דורש דפדפן מבוסס Chromium (Chrome או Edge).",
+  },
   locations: {
     title: "מיקומים",
     new: "מיקום חדש",

@@ -363,6 +363,7 @@ export const es: Translations = {
   },
 
   aac: {
+    voiceLive: "Escuchando",
     glyph: {
       i_me: "Yo",
       you: "Tú",

@@ -172,7 +172,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
     provider: "gemini",
     modelId: "gemini-live-2.5-flash-native-audio",
     displayName: "Gemini 2.5 Flash Live (GA)",
-    description: "GA native-audio live model. Stable, supports function calling + TEXT modality. Runs on Vertex AI.",
+    description: "GA native-audio live model. Stable, supports function calling. AUDIO output only — rejects TEXT modality on Vertex (1007). Runs on Vertex AI.",
     tier: "economy",
     inputCostPer1M: 0.50,       // text input
     outputCostPer1M: 2.00,      // text output

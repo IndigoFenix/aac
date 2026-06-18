@@ -262,6 +262,7 @@ function Router() {
       <Route path="/deep-analysis" component={ProtectedDashboard} />
       <Route path="/shares" component={ProtectedDashboard} />
       <Route path="/insurance-bridge" component={ProtectedDashboard} />
+      <Route path="/video-caption" component={ProtectedDashboard} />
 
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />

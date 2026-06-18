@@ -21,6 +21,20 @@ import type { ParsedBoardData } from "@shared/schema";
  *  frame ring buffer to fill and the eager identification pass to run. */
 const STARTUP_DETECTION_DELAY_MS = 600;
 
+/** VAD gate tuning for `pcmMode === "vad-gated"` (Full Attention Mode off).
+ *  PCM_PREROLL_MS of recent mic chunks are kept buffered so that when the gate
+ *  opens we can replay the utterance onset captured BEFORE the voice signal
+ *  ramped past threshold — otherwise the first ~0.5s of every gated utterance
+ *  is dropped, which is what made gated dialogue feel clipped. The gate is also
+ *  held open for VAD_HANGOVER_MS after the last voice/noise so brief inter-word
+ *  pauses don't re-clip mid-sentence. */
+const PCM_PREROLL_MS = 600;
+const VAD_GATE_THRESHOLD = 0.05;
+const VAD_HANGOVER_MS = 1000;
+
+/** Current VAD gate state, surfaced to the debug panel. */
+export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous";
+
 interface DualAgentContextType {
   // Session state
   studentId: string;
@@ -108,6 +122,8 @@ interface DualAgentContextType {
   audioClipCache: CachedAudioClip[];
   /** Latest server-side face matching results — empty array when no faces or no descriptors recently sent. */
   identifiedFaces: IdentifiedFace[];
+  /** Report that a face match was wrong so the server penalizes the bad embedding. */
+  correctIdentity: (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => void;
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -233,6 +249,14 @@ interface DualAgentContextType {
     sentCount: number;
     /** Total PCM chunks blocked by gate */
     gatedCount: number;
+    /** Live VAD gate state — whether mic audio is currently flowing or blocked */
+    gateState: PcmGateState;
+    /** Current voice engagement contribution (0..1) feeding the VAD gate */
+    voiceLevel: number;
+    /** Current noise engagement contribution (0..1) feeding the VAD gate */
+    noiseLevel: number;
+    /** Pre-roll chunks replayed on gate-open (recovered utterance onsets) */
+    recoveredCount: number;
   };
 }
 
@@ -519,7 +543,29 @@ function DualAgentProviderInner({
   // PCM debug counters (refs for perf, polled into state below)
   const pcmSentCountRef = useRef(0);
   const pcmGatedCountRef = useRef(0);
-  const [pcmDebug, setPcmDebug] = useState({ audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 });
+  const pcmRecoveredCountRef = useRef(0);
+  const [pcmDebug, setPcmDebug] = useState<NonNullable<ProviderShellProps["pcmDebug"]>>({
+    audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0,
+    gateState: "continuous", voiceLevel: 0, noiseLevel: 0, recoveredCount: 0,
+  });
+
+  // VAD gate state (vad-gated mode). pcmPrerollRef holds the most recent chunks
+  // so the onset captured before the gate opens can be replayed; the other refs
+  // track the live gate decision for the indicator + hangover.
+  const pcmPrerollRef = useRef<{ data: string; t: number }[]>([]);
+  const vadGateOpenRef = useRef(false);
+  const lastVadActiveAtRef = useRef(0);
+  const gateStateRef = useRef<PcmGateState>("continuous");
+  const vadVoiceLevelRef = useRef(0);
+  const vadNoiseLevelRef = useRef(0);
+  // Paced replay. When the gate opens we DON'T burst the buffered pre-roll —
+  // bursting delivers audio faster than real time, which Gemini's automatic VAD
+  // mis-segments (garbled / partial transcription). Instead every chunk is sent
+  // time-shifted by a fixed lag (≈ the pre-roll span) so it arrives at the same
+  // cadence it was captured. Pending sends live in this timer set so they can be
+  // cancelled on mode change / unmount. Cost: ~lag latency while the gate is open.
+  const pcmPacedTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const pcmLagMsRef = useRef(0);
 
   // Sleep system data-flow gating for PCM (and downstream consumers).
   // Refs are updated on every state/score change; handlePcmChunk reads them
@@ -539,35 +585,111 @@ function DualAgentProviderInner({
 
   const handlePcmChunk = useCallback((int16Base64: string) => {
     if (liveAgent.paused) return;
-
+    const now = Date.now();
     const flow = flowRef.current;
+
+    // Always retain a short rolling pre-roll of recent chunks so that, when the
+    // VAD gate opens, the audio captured BEFORE detection crossed threshold can
+    // be replayed. Without this the onset of every gated utterance (while the
+    // voice signal is still ramping past threshold) is lost.
+    pcmPrerollRef.current.push({ data: int16Base64, t: now });
+    while (pcmPrerollRef.current.length > 0 && now - pcmPrerollRef.current[0].t > PCM_PREROLL_MS) {
+      pcmPrerollRef.current.shift();
+    }
+
+    // Send one chunk, applying the count-only echo gate (mic is still streamed
+    // while TTS plays — this only tallies the overlap for diagnostics).
+    const emit = (data: string) => {
+      if (liveAgent.isBusyRef?.current) pcmGatedCountRef.current++;
+      else pcmSentCountRef.current++;
+      sendPcmAudioRef.current?.(data);
+    };
+    // Cancel any in-flight paced sends — used when leaving vad-gated mode so a
+    // burst of buffered gated audio can't bleed into a continuous/off stream.
+    const clearPaced = () => {
+      for (const id of pcmPacedTimersRef.current) clearTimeout(id);
+      pcmPacedTimersRef.current.clear();
+    };
+
     if (flow.pcmMode === "off") {
-      // Asleep / Hibernation — drop. (Asleep buffer is added in T12.)
+      // Asleep / Hibernation — drop.
       pcmGatedCountRef.current++;
+      gateStateRef.current = "off";
+      vadGateOpenRef.current = false;
+      clearPaced();
       return;
     }
-    if (flow.pcmMode === "vad-gated") {
-      // Resting — only forward when the audio is interesting: human speech
-      // (voice contribution) OR a sudden loud sound (noise contribution).
-      // Everything else (ambient hum, silence) is dropped so a quiet resting
-      // session streams almost no audio. A door slam or someone addressing
-      // the device still gets through and can wake the session.
-      const voice = contributionsRef.current.voice ?? 0;
-      const noise = contributionsRef.current.noise ?? 0;
-      if (voice < 0.05 && noise < 0.05) {
-        pcmGatedCountRef.current++;
-        return;
-      }
+
+    if (flow.pcmMode === "continuous") {
+      // Full Attention Mode — no VAD gate, always stream. Clear the pre-roll so
+      // a later switch to vad-gated can't replay stale audio.
+      pcmPrerollRef.current.length = 0;
+      gateStateRef.current = "continuous";
+      vadGateOpenRef.current = true;
+      clearPaced();
+      emit(int16Base64);
+      return;
     }
 
-    // continuous: existing behavior — count-only echo gate, always send.
-    if (liveAgent.isBusyRef?.current) {
+    // vad-gated — only forward interesting audio: human speech (voice) OR a
+    // sudden loud sound (noise). Everything else (ambient hum, silence) is
+    // dropped so a quiet session streams almost nothing, but the gate is held
+    // open for a short hangover after the last activity so brief inter-word
+    // pauses don't re-clip mid-sentence.
+    const voice = contributionsRef.current.voice ?? 0;
+    const noise = contributionsRef.current.noise ?? 0;
+    vadVoiceLevelRef.current = voice;
+    vadNoiseLevelRef.current = noise;
+    const active = voice >= VAD_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+    if (active) lastVadActiveAtRef.current = now;
+    const open = active || now - lastVadActiveAtRef.current < VAD_HANGOVER_MS;
+
+    if (!open) {
       pcmGatedCountRef.current++;
-    } else {
-      pcmSentCountRef.current++;
+      gateStateRef.current = "vad-blocked";
+      vadGateOpenRef.current = false;
+      return;
     }
-    sendPcmAudioRef.current?.(int16Base64);
+
+    // Gate is open. Replay buffered audio (and the ongoing live stream) TIME-
+    // SHIFTED at the original capture cadence instead of bursting it: each chunk
+    // is sent at `chunk.t + lag`, where `lag` is how far back the oldest buffered
+    // chunk sits (≈ the pre-roll span). This preserves real-time spacing so
+    // Gemini's automatic VAD can still segment/transcribe the audio; the only
+    // cost is a fixed ~lag delay on the audio while the gate stays open.
+    const emitPaced = (data: string, delayMs: number) => {
+      const id = setTimeout(() => {
+        pcmPacedTimersRef.current.delete(id);
+        emit(data);
+      }, Math.max(0, delayMs));
+      pcmPacedTimersRef.current.add(id);
+    };
+
+    const buffered = pcmPrerollRef.current;
+    if (!vadGateOpenRef.current) {
+      // Rising edge — lock in the replay lag from the oldest buffered chunk and
+      // schedule the whole pre-roll (its last element is the current chunk).
+      // Each chunk's delay is `chunk.t + lag - now`: the oldest fires at ~0, the
+      // newest at ~lag, so the onset is replayed at its true spacing.
+      const oldest = buffered.length > 0 ? buffered[0].t : now;
+      pcmLagMsRef.current = Math.min(Math.max(now - oldest, 0), PCM_PREROLL_MS);
+      if (buffered.length > 1) pcmRecoveredCountRef.current += buffered.length - 1;
+      for (const entry of buffered) emitPaced(entry.data, entry.t + pcmLagMsRef.current - now);
+      vadGateOpenRef.current = true;
+    } else {
+      // Steady open — the current chunk just landed; send it after the same
+      // fixed lag so the live cadence (and Gemini's perceived timing) holds.
+      emitPaced(int16Base64, pcmLagMsRef.current);
+    }
+    buffered.length = 0;
+    gateStateRef.current = "open";
   }, [liveAgent.isBusyRef, liveAgent.paused]);
+
+  // Cancel any pending paced PCM sends on unmount.
+  useEffect(() => {
+    const timers = pcmPacedTimersRef.current;
+    return () => { for (const id of timers) clearTimeout(id); timers.clear(); };
+  }, []);
 
   // Poll isBusyRef + counters into state every 200ms for the debug panel
   useEffect(() => {
@@ -577,6 +699,10 @@ function DualAgentProviderInner({
         isPlaying: liveAgent.isPlaying,
         sentCount: pcmSentCountRef.current,
         gatedCount: pcmGatedCountRef.current,
+        gateState: gateStateRef.current,
+        voiceLevel: vadVoiceLevelRef.current,
+        noiseLevel: vadNoiseLevelRef.current,
+        recoveredCount: pcmRecoveredCountRef.current,
       });
     }, 200);
     return () => clearInterval(id);
@@ -812,6 +938,10 @@ interface ProviderShellProps {
     isPlaying: boolean;
     sentCount: number;
     gatedCount: number;
+    gateState: PcmGateState;
+    voiceLevel: number;
+    noiseLevel: number;
+    recoveredCount: number;
   };
   micActive: boolean;
 }
@@ -905,6 +1035,8 @@ function ProviderShell({
     requestCache: agent.requestCache,
     audioClipCache: agent.audioClipCache,
     identifiedFaces: agent.identifiedFaces,
+    correctIdentity: (entityType, entityId, reason) =>
+      agent.sendIdentityCorrection?.(entityType, entityId, reason),
 
     activeApp: agent.activeApp,
     dismissApp: agent.dismissApp,
@@ -975,7 +1107,10 @@ function ProviderShell({
     constructionSuggestions: agent.constructionSuggestions ?? null,
     constructionMemoryChips: agent.constructionMemoryChips ?? {},
 
-    pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
+    pcmDebug: pcmDebugProp ?? {
+      audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0,
+      gateState: "continuous", voiceLevel: 0, noiseLevel: 0, recoveredCount: 0,
+    },
   };
 
   return (

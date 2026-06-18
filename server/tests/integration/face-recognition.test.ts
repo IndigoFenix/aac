@@ -18,6 +18,10 @@ import {
   recordContactSighting,
   getKnownPeopleForStudent,
   getPeopleDirectoryForStudent,
+  growFaceGalleryForEntity,
+  penalizeFaceMatch,
+  updateBiometricData,
+  type FaceGalleryEntry,
 } from '../../services/biometric/recognition-service.js';
 import { studentContacts } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -31,6 +35,33 @@ function makeEmbedding(seed: number, jitter = 0): number[] {
     out[i] = v + (jitter ? jitter * Math.sin(i * 1.7 + seed) : 0);
   }
   return out;
+}
+
+/** A zero vector — a clean base for building embeddings at exact distances. */
+function zeroVec(): number[] {
+  return new Array(EMBEDDING_DIM).fill(0);
+}
+
+/**
+ * Return a copy of `from` at an EXACT euclidean distance `dist`, by perturbing
+ * `k` dimensions starting at `offsetDim`. Using disjoint dimension ranges for
+ * different poses makes their mutual distances predictable (orthogonal), which
+ * lets the tests assert which stored face a probe is closest to.
+ */
+function atDistance(from: number[], dist: number, offsetDim: number, k = 16): number[] {
+  const out = from.slice();
+  const per = dist / Math.sqrt(k);
+  for (let i = 0; i < k; i++) out[offsetDim + i] += per;
+  return out;
+}
+
+/** Read a contact's biometric_data id so a test can seed its gallery directly. */
+async function bdIdForContact(contactId: string): Promise<string> {
+  const [c] = await db
+    .select({ bd: studentContacts.biometricDataId })
+    .from(studentContacts)
+    .where(eq(studentContacts.id, contactId));
+  return c.bd!;
 }
 
 describe('Face recognition pipeline', () => {
@@ -134,6 +165,111 @@ describe('Face recognition pipeline', () => {
     expect(ids).toContain(studentId);
     // No photo uploaded → hasPhoto is false.
     expect(directory.find(p => p.id === noFace.id)!.hasPhoto).toBe(false);
+  });
+
+  it('matches a pose far from the enrolled anchor via the multi-angle gallery', async () => {
+    // The anchor only captures one frontal pose. A side/under-lit frame sits
+    // beyond the 0.6 match threshold from it and would be REJECTED if matching
+    // used the anchor alone — but it matches because the gallery holds that pose.
+    const anchor = zeroVec();
+    const contact = await createContact({
+      studentId, name: 'Mom', relationship: 'mother',
+    } as any);
+    await enrollContactFace(contact.id, anchor);
+
+    // A profile pose 0.8 away from the anchor (beyond threshold) seeded directly.
+    const profilePose = atDistance(anchor, 0.8, /*offsetDim*/ 0);
+    const gallery: FaceGalleryEntry[] = [
+      { embedding: profilePose, quality: 0.9, capturedAt: new Date().toISOString(), weight: 1 },
+    ];
+    await updateBiometricData(await bdIdForContact(contact.id), { faceEmbeddings: gallery });
+
+    // A probe very close to the profile pose (0.1) but ~0.8 from the anchor.
+    const probe = atDistance(profilePose, 0.1, /*offsetDim*/ 32);
+
+    // Sanity: anchor alone would reject (distance ~0.81 > 0.6 threshold).
+    const anchorOnly = await findMatchingFace(probe, studentId);
+    // With the gallery present it must match Mom via the profile pose.
+    expect(anchorOnly).not.toBeNull();
+    expect(anchorOnly!.entityId).toBe(contact.id);
+    expect(anchorOnly!.distance).toBeLessThan(0.2);
+  });
+
+  it('ignores a gallery pose whose weight has fallen below the floor', async () => {
+    const anchor = zeroVec();
+    const contact = await createContact({
+      studentId, name: 'Mom', relationship: 'mother',
+    } as any);
+    await enrollContactFace(contact.id, anchor);
+
+    // A far pose at weight 0.2 (below the 0.25 floor) — must NOT be used to match.
+    const farPose = atDistance(anchor, 0.8, 0);
+    await updateBiometricData(await bdIdForContact(contact.id), {
+      faceEmbeddings: [{ embedding: farPose, quality: 0.9, capturedAt: new Date().toISOString(), weight: 0.2 }],
+    });
+
+    const probe = atDistance(farPose, 0.1, 32); // close to the dead pose, far from anchor
+    const match = await findMatchingFace(probe, studentId);
+    expect(match).toBeNull(); // dead pose ignored, anchor too far → no match
+  });
+
+  it('grows the gallery only for good-quality, genuinely-novel poses', async () => {
+    const anchor = zeroVec();
+    const contact = await createContact({
+      studentId, name: 'Mom', relationship: 'mother',
+    } as any);
+    await enrollContactFace(contact.id, anchor);
+    const target = { type: 'contact' as const, id: contact.id };
+
+    // A novel pose 0.4 from the anchor (inside the [0.32, 0.5] band) → added.
+    const novel = atDistance(anchor, 0.4, 0);
+    expect((await growFaceGalleryForEntity(target, novel, 0.9)).reason).toBe('added');
+
+    // Near-identical to the anchor (0.2) → redundant, not added.
+    const redundant = atDistance(anchor, 0.2, 0);
+    expect((await growFaceGalleryForEntity(target, redundant, 0.9)).reason).toBe('redundant');
+
+    // Far from everything (0.9, orthogonal dims) → too risky to trust, refused.
+    const tooFar = atDistance(anchor, 0.9, 48);
+    expect((await growFaceGalleryForEntity(target, tooFar, 0.9)).reason).toBe('too-far');
+
+    // Novel distance but poor quality → rejected by the quality gate.
+    const novel2 = atDistance(anchor, 0.4, 64);
+    expect((await growFaceGalleryForEntity(target, novel2, 0.1)).reason).toBe('low-quality');
+
+    const known = await getKnownPeopleForStudent(studentId);
+    expect(known.find(p => p.id === contact.id)!.faceGallery).toHaveLength(1);
+  });
+
+  it('penalizes and eventually evicts the gallery pose behind a misidentification', async () => {
+    const anchor = zeroVec();
+    const contact = await createContact({
+      studentId, name: 'Mom', relationship: 'mother',
+    } as any);
+    await enrollContactFace(contact.id, anchor);
+    const bdId = await bdIdForContact(contact.id);
+
+    const badPose = atDistance(anchor, 0.8, 0);
+    await updateBiometricData(bdId, {
+      faceEmbeddings: [{ embedding: badPose, quality: 0.9, capturedAt: new Date().toISOString(), weight: 1 }],
+    });
+    const target = { type: 'contact' as const, id: contact.id };
+
+    // The descriptor that wrongly matched is near the bad pose (and far from anchor),
+    // so the penalty targets the gallery entry, not the curated anchor.
+    const wrongDescriptor = atDistance(badPose, 0.1, 32);
+
+    const first = await penalizeFaceMatch(target, wrongDescriptor);
+    expect(first.penalized).toBe('gallery');
+    expect(first.evicted).toBe(false); // weight 1 → 0.5
+
+    const second = await penalizeFaceMatch(target, wrongDescriptor);
+    expect(second.penalized).toBe('gallery');
+    expect(second.evicted).toBe(true); // weight 0.5 → 0.25 ≤ floor → removed
+    expect(second.size).toBe(0);
+
+    const known = await getKnownPeopleForStudent(studentId);
+    expect(known.find(p => p.id === contact.id)!.faceGallery).toHaveLength(0);
   });
 
   it('bumps timesIdentified when recordContactSighting fires', async () => {

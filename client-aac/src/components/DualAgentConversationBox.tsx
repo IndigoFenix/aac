@@ -122,6 +122,7 @@ export function DualAgentConversationBox({
     audioLevel,
     recordingDuration,
     micActive,
+    pcmDebug,
     transcription,
     muteState,
     setMuteState,
@@ -179,6 +180,14 @@ export function DualAgentConversationBox({
   // The live mic only comes up once the session is initialized; before that
   // it's intentionally idle, so don't flag it as off/broken during startup.
   const micOff = isInitialized && !micActive;
+
+  // Voice "live" light next to the avatar: lit while the mic is actually being
+  // streamed to the model. In Full Attention mode that's continuous; with the
+  // resting input filter (Full Attention off) the VAD gate opens it only when
+  // the user speaks, so the light blinks on with speech. See pcmDebug.gateState.
+  const voiceFlowing =
+    voiceEnabled && micActive &&
+    (pcmDebug.gateState === "open" || pcmDebug.gateState === "continuous");
 
   // Stable refs — prevents re-send loops when callback identities change across renders
   const sendMessageRef = useRef(sendMessage);
@@ -437,6 +446,23 @@ export function DualAgentConversationBox({
                       >
                         ?
                       </motion.div>
+                    )}
+                  </AnimatePresence>
+                  {/* Voice "live" light — lit while the mic is actually being
+                      streamed to the AI (continuous in Full Attention mode, or
+                      gated-open on speech when the resting filter is active). */}
+                  <AnimatePresence>
+                    {voiceFlowing && (
+                      <motion.span
+                        key="voice-live"
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        transition={{ duration: 0.18 }}
+                        className="pointer-events-none absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-green-400 ring-2 ring-white dark:ring-gray-900 shadow-[0_0_8px_2px_rgba(74,222,128,0.7)] animate-pulse"
+                        aria-label={t('aac.voiceLive') || 'Listening'}
+                        title={t('aac.voiceLive') || 'Listening'}
+                      />
                     )}
                   </AnimatePresence>
                 </button>

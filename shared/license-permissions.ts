@@ -27,6 +27,10 @@ export interface LicensePermissions {
   dashboardLevel: 0 | 1 | 2 | -1; // 0=none, 1=basic, 2=advanced, -1=full
   expertAgentsCount: number;
   deepAnalysisEnabled: boolean;
+  // Video Caption Studio — upload a video + caption file, convert captions to
+  // timestamped glyph overlays, preview and export. Optional so payloads/rows
+  // predating the field stay valid; resolvePermissions fills the default.
+  videoCaptionEnabled?: boolean;
   // Compliance regime slugs that apply to this license. Free-form strings
   // resolved against shared/regime/regimes.ts. Stored as data so adding a
   // new regime is a registry update, not a migration.
@@ -49,6 +53,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   dashboardLevel: 0,
   expertAgentsCount: 0,
   deepAnalysisEnabled: false,
+  videoCaptionEnabled: false,
   complianceRegimes: [],
   insuranceBridgeEnabled: false,
   billingRegime: "none",
@@ -66,6 +71,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   dashboardLevel: -1,
   expertAgentsCount: -1, // -1 = unlimited
   deepAnalysisEnabled: true,
+  videoCaptionEnabled: true,
   complianceRegimes: [],
   insuranceBridgeEnabled: true,
   billingRegime: "us_cpt",
@@ -83,6 +89,7 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   dashboardLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(-1)]),
   expertAgentsCount: z.number().int(),
   deepAnalysisEnabled: z.boolean(),
+  videoCaptionEnabled: z.boolean().optional(),
   complianceRegimes: z.array(z.string()).optional(),
   insuranceBridgeEnabled: z.boolean(),
   billingRegime: z.enum(["none", "us_cpt"]),

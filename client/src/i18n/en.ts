@@ -214,6 +214,7 @@ export const en = {
     progress: "Progress",
     reports: "Files",
     deepAnalysis: "Deep Analysis",
+    videoCaption: "Video Captions",
     shares: "Shares",
     insuranceBridge: "Insurance Bridge",
     symbols: "AAC Symbol Library",
@@ -2378,6 +2379,8 @@ export const en = {
     liveAudioSpeakerDesc: "Have the AI speak directly via Gemini Live native audio (more natural intonation, higher cost). Disables ElevenLabs on AI voice.",
     fullAttentionMode: "Full Attention Mode",
     fullAttentionModeDesc: "Continuously stream the camera and microphone to the AI for maximum responsiveness. When off (the default), video is sent only on motion and audio only on speech, which lowers live-AI cost.",
+    boardManagerLiveModel: "Board Manager Live Model (experimental)",
+    boardManagerLiveModelDesc: "Run the board-building agent on a live (real-time) model to test board-generation latency. Behavior is unchanged, but live models cost more per board — leave this off unless you're testing responsiveness.",
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsApiKey: "ElevenLabs API Key",
@@ -3139,6 +3142,7 @@ export const en = {
       dashboardLevel: "Dashboard Level",
       expertAgents: "Expert Agents",
       deepAnalysisEnabled: "Deep Analysis",
+      videoCaptionEnabled: "Video Captions",
       complianceRegimes: "Compliance regimes",
       complianceRegimesHint: "Select the regulatory frameworks (HIPAA, GDPR, Israeli Ministry of Education, etc.) that apply to this institute. Each choice sets how long audit logs are kept, the deadline for reporting a data breach, the accessibility standard the app claims, and the expected sign-in identity provider. When several apply, the strictest rule wins.",
       insuranceBridgeEnabled: "Insurance Bridge",
@@ -3303,6 +3307,23 @@ export const en = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "Video Caption Studio",
+    description: "Upload a video and a caption file to turn the captions into glyph overlays.",
+    uploadVideo: "Upload Video",
+    uploadCaptions: "Upload Captions",
+    noVideo: "Upload a video to preview it here.",
+    segments: "Caption Segments",
+    segmentCount: "{count} segments",
+    noCaptions: "Upload an SRT or VTT caption file to see its segments.",
+    parseFailed: "Couldn't read caption file",
+    generateGlyphs: "Generate Glyphs",
+    glyphsFailed: "Couldn't generate glyphs",
+    export: "Export Video",
+    exportFailed: "Couldn't export the video",
+    exportNoGlyphs: "Generate glyphs before exporting.",
+    exportUnsupported: "Video export needs a Chromium-based browser (Chrome or Edge).",
+  },
   locations: {
     title: "Locations",
     new: "New Location",

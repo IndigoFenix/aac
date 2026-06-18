@@ -109,6 +109,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [expertAgentsCount, setExpertAgentsCount] = useState(0);
   const [expertAgentsUnlimited, setExpertAgentsUnlimited] = useState(false);
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
+  const [videoCaptionEnabled, setVideoCaptionEnabled] = useState(false);
   // Compliance regimes — controls per-regime audit retention, breach window,
   // accessibility-statement variant, identity-provider hint. Stored on
   // licensePermissions.complianceRegimes JSONB. See shared/regime/regimes.ts.
@@ -146,6 +147,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           setExpertAgentsCount(perms.expertAgentsCount === -1 ? 0 : (perms.expertAgentsCount ?? 0));
           setExpertAgentsUnlimited(perms.expertAgentsCount === -1);
           setDeepAnalysisEnabled(perms.deepAnalysisEnabled ?? false);
+          setVideoCaptionEnabled(perms.videoCaptionEnabled ?? false);
           setComplianceRegimes(
             (perms.complianceRegimes ?? []).filter((s): s is RegimeSlug =>
               (KNOWN_REGIMES as readonly string[]).includes(s),
@@ -229,6 +231,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         dashboardLevel: -1 as -1,
         expertAgentsCount: -1,
         deepAnalysisEnabled: true,
+        videoCaptionEnabled: true,
         complianceRegimes,
         insuranceBridgeEnabled,
         billingRegime,
@@ -246,6 +249,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       dashboardLevel: Number(dashboardLevel) as 0 | 1 | 2 | -1,
       expertAgentsCount: expertAgentsUnlimited ? -1 : expertAgentsCount,
       deepAnalysisEnabled,
+      videoCaptionEnabled,
       complianceRegimes,
       insuranceBridgeEnabled,
       billingRegime,
@@ -712,6 +716,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <Label className="text-sm">{t('admin.licenses.deepAnalysisEnabled')}</Label>
                     <Switch checked={deepAnalysisEnabled} onCheckedChange={setDeepAnalysisEnabled} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <Label className="text-sm">{t('admin.licenses.videoCaptionEnabled')}</Label>
+                    <Switch checked={videoCaptionEnabled} onCheckedChange={setVideoCaptionEnabled} />
                   </div>
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <Label className="text-sm">{t('admin.licenses.insuranceBridgeEnabled')}</Label>

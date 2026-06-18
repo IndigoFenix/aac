@@ -361,6 +361,7 @@ export const en = {
   },
 
   aac: {
+    voiceLive: "Listening",
     glyph: {
       i_me: "I",
       you: "You",

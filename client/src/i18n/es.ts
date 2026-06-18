@@ -214,6 +214,7 @@ export const es = {
     progress: "Progreso",
     reports: "Expedientes",
     deepAnalysis: "Análisis profundo",
+    videoCaption: "Subtítulos de video",
     shares: "Shares",
     insuranceBridge: "Puente de seguros",
     symbols: "Biblioteca de símbolos AAC",
@@ -2378,6 +2379,8 @@ export const es = {
     liveAudioSpeakerDesc: "La IA habla directamente a través del audio nativo de Gemini Live (entonación más natural, coste mayor). Desactiva ElevenLabs en la voz de la IA.",
     fullAttentionMode: "Modo de atención total",
     fullAttentionModeDesc: "Transmite la cámara y el micrófono de forma continua a la IA para una máxima capacidad de respuesta. Cuando está desactivado (predeterminado), el vídeo solo se envía con movimiento y el audio solo con voz, lo que reduce el coste de la IA en vivo.",
+    boardManagerLiveModel: "Modelo en vivo del gestor de tableros (experimental)",
+    boardManagerLiveModelDesc: "Ejecuta el agente de creación de tableros en un modelo en vivo (en tiempo real) para probar la latencia de generación de tableros. El comportamiento no cambia, pero los modelos en vivo cuestan más por tablero: déjalo desactivado salvo que estés probando la capacidad de respuesta.",
     elevenlabsTitle: "Voz ElevenLabs",
     elevenlabsDesc: "Ingrese su propia clave API de ElevenLabs e IDs de voz para TTS de alta calidad. Anula todas las demás configuraciones de voz cuando se establece.",
     elevenlabsApiKey: "Clave API de ElevenLabs",
@@ -3139,6 +3142,7 @@ export const es = {
       dashboardLevel: "Nivel de panel",
       expertAgents: "Agentes expertos",
       deepAnalysisEnabled: "Análisis profundo",
+      videoCaptionEnabled: "Subtítulos de video",
       complianceRegimes: "Marcos normativos",
       complianceRegimesHint: "Selecciona los marcos normativos (HIPAA, GDPR, Ministerio de Educación de Israel, etc.) que se aplican a esta institución. Cada elección define cuánto tiempo se conservan los registros de auditoría, el plazo para notificar una violación de datos, el estándar de accesibilidad que declara la aplicación y el proveedor de identidad de inicio de sesión esperado. Cuando se aplican varios, prevalece la regla más estricta.",
       insuranceBridgeEnabled: "Puente de seguros",
@@ -3303,6 +3307,23 @@ export const es = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "Estudio de subtítulos de video",
+    description: "Sube un video y un archivo de subtítulos para convertir los subtítulos en superposiciones de glifos.",
+    uploadVideo: "Subir video",
+    uploadCaptions: "Subir subtítulos",
+    noVideo: "Sube un video para previsualizarlo aquí.",
+    segments: "Segmentos de subtítulos",
+    segmentCount: "{count} segmentos",
+    noCaptions: "Sube un archivo de subtítulos SRT o VTT para ver sus segmentos.",
+    parseFailed: "No se pudo leer el archivo de subtítulos",
+    generateGlyphs: "Generar símbolos",
+    glyphsFailed: "No se pudieron generar los símbolos",
+    export: "Exportar vídeo",
+    exportFailed: "No se pudo exportar el vídeo",
+    exportNoGlyphs: "Genera los símbolos antes de exportar.",
+    exportUnsupported: "La exportación de vídeo necesita un navegador basado en Chromium (Chrome o Edge).",
+  },
   locations: {
     title: "Ubicaciones",
     new: "Nueva ubicación",

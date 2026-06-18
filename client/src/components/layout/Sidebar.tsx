@@ -38,6 +38,7 @@ import {
   UserCircle,
   Share2,
   Receipt,
+  Captions,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
@@ -135,7 +136,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const boardsEnabled = !!perms?.boardMakerEnabled;
   const aacEnabled = !!perms?.aacEnabled;
   const customAppsEnabled = !!perms?.customAppsEnabled;
-  const showAacSection = boardsEnabled || aacEnabled || customAppsEnabled;
+  const videoCaptionEnabled = !!perms?.videoCaptionEnabled;
+  const showAacSection = boardsEnabled || aacEnabled || customAppsEnabled || videoCaptionEnabled;
 
   const aacBoardItems = [
     // Generate AAC Boards — requires boardMakerEnabled
@@ -169,6 +171,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       feature: 'aacsettings' as FeatureType,
       testId: 'nav-aacsettings',
       disabled: !student,
+      badge: undefined as string | undefined,
+    }] : []),
+    // Video Caption Studio — gated on videoCaptionEnabled license permission
+    ...(videoCaptionEnabled ? [{
+      icon: Captions,
+      labelKey: 'nav.videoCaption',
+      feature: 'videoCaption' as FeatureType,
+      testId: 'nav-video-caption',
       badge: undefined as string | undefined,
     }] : []),
   ];

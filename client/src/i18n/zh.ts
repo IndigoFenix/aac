@@ -214,6 +214,7 @@ export const zh = {
     progress: "进度",
     reports: "档案",
     deepAnalysis: "深度分析",
+    videoCaption: "视频字幕",
     shares: "Shares",
     insuranceBridge: "保险桥接",
     symbols: "AAC 符号库",
@@ -2378,6 +2379,8 @@ export const zh = {
     liveAudioSpeakerDesc: "AI 通过 Gemini Live 原生音频直接说话（语调更自然，成本更高）。在 AI 语音上停用 ElevenLabs。",
     fullAttentionMode: "全神贯注模式",
     fullAttentionModeDesc: "持续向 AI 传输摄像头和麦克风，以获得最高响应速度。关闭时（默认），仅在有动作时发送视频、有语音时发送音频，从而降低实时 AI 成本。",
+    boardManagerLiveModel: "板面管理器实时模型（实验性）",
+    boardManagerLiveModelDesc: "在实时模型上运行板面构建代理，以测试板面生成延迟。行为不变，但实时模型每个板面成本更高——除非你在测试响应速度，否则请保持关闭。",
     elevenlabsTitle: "ElevenLabs 语音",
     elevenlabsDesc: "输入您自己的 ElevenLabs API 密钥和语音 ID 以获得高质量 TTS。设置后将覆盖所有其他语音设置。",
     elevenlabsApiKey: "ElevenLabs API 密钥",
@@ -3139,6 +3142,7 @@ export const zh = {
       dashboardLevel: "仪表板级别",
       expertAgents: "专家代理",
       deepAnalysisEnabled: "深度分析",
+      videoCaptionEnabled: "视频字幕",
       complianceRegimes: "合规制度",
       complianceRegimesHint: "选择适用于本机构的监管框架（如 HIPAA、GDPR、以色列教育部等）。每项选择都会决定审计日志的保留时长、数据泄露的上报期限、应用所声明的无障碍标准，以及登录所需的身份提供方。当多项同时适用时，以最严格的规则为准。",
       insuranceBridgeEnabled: "保险桥接",
@@ -3303,6 +3307,23 @@ export const zh = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "视频字幕工作室",
+    description: "上传视频和字幕文件，将字幕转换为符号叠加层。",
+    uploadVideo: "上传视频",
+    uploadCaptions: "上传字幕",
+    noVideo: "上传视频即可在此预览。",
+    segments: "字幕分段",
+    segmentCount: "{count} 个分段",
+    noCaptions: "上传 SRT 或 VTT 字幕文件即可查看其分段。",
+    parseFailed: "无法读取字幕文件",
+    generateGlyphs: "生成符号",
+    glyphsFailed: "无法生成符号",
+    export: "导出视频",
+    exportFailed: "无法导出视频",
+    exportNoGlyphs: "导出前请先生成符号。",
+    exportUnsupported: "导出视频需要基于 Chromium 的浏览器（Chrome 或 Edge）。",
+  },
   locations: {
     title: "地点",
     new: "新建地点",

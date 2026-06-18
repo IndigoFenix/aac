@@ -585,6 +585,13 @@ export const aacSettings = pgTable("aac_settings", {
   // as the inverse `clientConfig.awakeDataSaver` flag.
   fullAttentionMode: boolean("full_attention_mode").default(false).notNull(),
 
+  // Experimental: run the Board Manager agent on a Gemini Live session
+  // (warm, TEXT modality + function calling) instead of stateless HTTP
+  // completions, to test board-generation latency. Behavior is identical;
+  // live text rates are higher, so this trades cost for latency. Off by
+  // default. See live-board-manager-agent.ts.
+  boardManagerLiveModel: boolean("board_manager_live_model").default(false).notNull(),
+
   // Auto-generated symbol settings
   generateSymbols: boolean("generate_symbols").default(true).notNull(), // Generate symbol images on-the-fly via Gemini
   useApprovedSymbols: boolean("use_approved_symbols").default(true).notNull(), // Show approved generated symbols on buttons
@@ -675,6 +682,12 @@ export const biometricData = pgTable("biometric_data", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
 
   faceEmbedding: jsonb("face_embedding"),
+  // Multi-angle gallery: array of { embedding:number[], quality:number,
+  // capturedAt:string, weight:number }. Complements the single `faceEmbedding`
+  // anchor so a person is recognised across pose/lighting/expression. Grows
+  // passively from confident novel-pose sightings; entries lose weight (and are
+  // evicted) when a match they produced is corrected. See recognition-service.
+  faceEmbeddings: jsonb("face_embeddings"),
   voiceEmbedding: jsonb("voice_embedding"),
   faceImageUrl: text("face_image_url"),
   faceImageQuality: real("face_image_quality"),

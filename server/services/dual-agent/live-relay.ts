@@ -677,7 +677,8 @@ export type ClientMessage =
   | { type: "set_mute_state"; muteState: AACMuteState }
   | { type: "set_response_mode"; mode: AACResponseMode }
   | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
-  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string }> }
+  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number }> }
+  | { type: "correct_identity"; entityType: "student" | "user" | "contact"; entityId: string; reason?: string }  // a recent face match was wrong — penalize the embedding that mis-fired
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
@@ -885,6 +886,11 @@ export interface IdentifiedFaceWire {
   cameraRole?: "user" | "environment" | "unknown";
   /** Human-readable camera label (for debug). */
   cameraLabel?: string;
+  /** On-file physical description of the matched person — surfaced to the AI on
+   *  borderline matches so it can sanity-check the identity against what it sees. */
+  description?: string;
+  /** True when confidence sits in the ambiguous band — the AI is asked to verify. */
+  borderline?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -6062,6 +6068,7 @@ When creating or referencing calendar events, interpret and speak in this local 
       boundingBox?: { x: number; y: number; w: number; h: number };
       cameraRole?: "user" | "environment" | "unknown";
       cameraLabel?: string;
+      quality?: number;
     }>,
   ): Promise<void> {
     if (!this.studentId) return;

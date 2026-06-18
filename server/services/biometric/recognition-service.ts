@@ -34,6 +34,21 @@ export type VoiceEmbedding = number[];
 
 export type EntityType = "user" | "student" | "contact";
 
+/**
+ * One captured face angle in a person's multi-angle gallery. The gallery
+ * complements the single `faceEmbedding` anchor so a person is recognised
+ * across pose/lighting/expression rather than only the enrolled frame.
+ * `weight` starts at 1 and is reduced by corrections (misidentifications);
+ * an entry whose weight falls to/under the floor is ignored when matching and
+ * eventually evicted.
+ */
+export interface FaceGalleryEntry {
+  embedding: number[];
+  quality: number; // 0..1 frontality/size/detection score at capture time
+  capturedAt: string; // ISO timestamp
+  weight: number; // 1 = trusted; reduced on correction; evicted at/under floor
+}
+
 export interface FaceMatchResult {
   matched: boolean;
   entityType: EntityType;
@@ -64,6 +79,8 @@ export interface KnownPerson {
   name: string;
   relationship?: string;
   faceEmbedding: number[] | null;
+  /** Multi-angle gallery (additional poses); null/empty = anchor only. */
+  faceGallery: FaceGalleryEntry[] | null;
   voiceEmbedding: number[] | null;
   description?: string;
   contextNotes?: string;
@@ -75,6 +92,25 @@ export interface KnownPerson {
 
 const FACE_MATCH_THRESHOLD = 0.6;
 const VOICE_MATCH_THRESHOLD = 0.75;
+
+// ---- Multi-angle gallery tuning -------------------------------------------
+/** Max gallery entries kept per person (anchor is separate, always kept). */
+const FACE_GALLERY_MAX = 10;
+/** Entries with weight at/under this are ignored when matching and evicted. */
+const FACE_GALLERY_WEIGHT_FLOOR = 0.25;
+/** Each correction multiplies the offending entry's weight by this. */
+const FACE_PENALTY_FACTOR = 0.5;
+/**
+ * A candidate frame is only worth adding as a NEW pose when its distance to the
+ * existing anchor+gallery sits in this band: far enough to add information
+ * (below MIN it's redundant with a pose we already have), but comfortably under
+ * the match threshold (above MAX it's too close to a stranger to trust as the
+ * same person and could poison the gallery).
+ */
+const FACE_GALLERY_NOVELTY_MIN = 0.32;
+const FACE_GALLERY_NOVELTY_MAX = 0.5;
+/** Only frames at/above this quality are enrolled into the gallery. */
+const FACE_GALLERY_QUALITY_MIN = 0.35;
 
 // ============================================================================
 // Embedding math
@@ -106,6 +142,50 @@ function cosineSimilarity(a: number[], b: number[]): number {
   const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
   if (magnitude === 0) return 0;
   return dotProduct / magnitude;
+}
+
+/**
+ * Smallest distance between a probe embedding and a person's known faces — the
+ * enrolled `anchor` plus every above-floor gallery entry. This is what lets a
+ * side/under-lit frame still match a person enrolled only frontally: it just
+ * has to be close to ONE stored pose. Gallery entries below the weight floor
+ * (corrected as bad) are skipped. Returns Infinity if the person has no usable
+ * face data.
+ */
+function bestFaceDistance(
+  probe: number[],
+  anchor: number[] | null,
+  gallery: FaceGalleryEntry[] | null,
+): number {
+  let best = Infinity;
+  if (anchor && anchor.length === probe.length) {
+    best = euclideanDistance(probe, anchor);
+  }
+  if (gallery) {
+    for (const g of gallery) {
+      if (!g?.embedding || g.embedding.length !== probe.length) continue;
+      if ((g.weight ?? 1) <= FACE_GALLERY_WEIGHT_FLOOR) continue;
+      const d = euclideanDistance(probe, g.embedding);
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+/** Coerce a stored jsonb value into a clean FaceGalleryEntry[] (defensive). */
+function normalizeGallery(raw: unknown): FaceGalleryEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FaceGalleryEntry[] = [];
+  for (const e of raw) {
+    if (!e || !Array.isArray((e as any).embedding)) continue;
+    out.push({
+      embedding: (e as any).embedding as number[],
+      quality: typeof (e as any).quality === "number" ? (e as any).quality : 0,
+      capturedAt: typeof (e as any).capturedAt === "string" ? (e as any).capturedAt : new Date().toISOString(),
+      weight: typeof (e as any).weight === "number" ? (e as any).weight : 1,
+    });
+  }
+  return out;
 }
 
 // ============================================================================
@@ -350,8 +430,9 @@ export async function findMatchingFace(
   const people = await getKnownPeopleForStudent(studentId);
 
   for (const p of people) {
-    if (!p.faceEmbedding) continue;
-    const distance = euclideanDistance(embedding, p.faceEmbedding as FaceEmbedding);
+    if (!p.faceEmbedding && !(p.faceGallery && p.faceGallery.length)) continue;
+    // Min distance across the enrolled anchor AND every above-floor gallery pose.
+    const distance = bestFaceDistance(embedding, p.faceEmbedding as number[] | null, p.faceGallery);
     if (distance < bestDistance) {
       bestDistance = distance;
       bestMatch = {
@@ -369,6 +450,161 @@ export async function findMatchingFace(
   }
 
   return bestMatch;
+}
+
+// ============================================================================
+// Gallery growth (positive feedback) + correction (negative feedback)
+// ============================================================================
+
+export interface GalleryGrowthResult {
+  added: boolean;
+  reason: "added" | "redundant" | "too-far" | "low-quality" | "no-record";
+  size: number;
+}
+
+/**
+ * Consider adding a freshly-seen face frame to a person's multi-angle gallery.
+ * Only confident, good-quality, genuinely-novel poses are kept — see the
+ * NOVELTY/QUALITY constants. Caps the gallery and evicts the weakest entry
+ * (lowest weight, then lowest quality) when full. The enrolled `faceEmbedding`
+ * anchor is never touched. Idempotent-ish: a redundant pose is a no-op.
+ *
+ * `target` is the matched entity ({ type, id }) — for contacts this resolves to
+ * the shared (possibly linked) biometric record, so growth benefits every
+ * relationship that real person appears in.
+ */
+export async function growFaceGalleryForEntity(
+  target: { type: EntityType; id: string },
+  embedding: FaceEmbedding,
+  quality: number,
+): Promise<GalleryGrowthResult> {
+  const bdId = await getBiometricDataIdFor(target);
+  if (!bdId) return { added: false, reason: "no-record", size: 0 };
+
+  const row = await getBiometricData(bdId);
+  if (!row) return { added: false, reason: "no-record", size: 0 };
+
+  const gallery = normalizeGallery(row.faceEmbeddings);
+
+  if (quality < FACE_GALLERY_QUALITY_MIN) {
+    return { added: false, reason: "low-quality", size: gallery.length };
+  }
+
+  // Distance to everything we already know about this person (anchor + gallery).
+  const dist = bestFaceDistance(embedding, row.faceEmbedding as number[] | null, gallery);
+
+  // Below MIN: we already have a near-identical pose — adds no information.
+  if (dist < FACE_GALLERY_NOVELTY_MIN) {
+    return { added: false, reason: "redundant", size: gallery.length };
+  }
+  // Above MAX: too far to trust as the same person — refuse, don't poison.
+  if (dist > FACE_GALLERY_NOVELTY_MAX) {
+    return { added: false, reason: "too-far", size: gallery.length };
+  }
+
+  gallery.push({
+    embedding,
+    quality,
+    capturedAt: new Date().toISOString(),
+    weight: 1,
+  });
+
+  // Cap: drop the weakest entry (lowest weight, tie-broken by lowest quality).
+  if (gallery.length > FACE_GALLERY_MAX) {
+    let worst = 0;
+    for (let i = 1; i < gallery.length; i++) {
+      const a = gallery[i];
+      const b = gallery[worst];
+      if (a.weight < b.weight || (a.weight === b.weight && a.quality < b.quality)) {
+        worst = i;
+      }
+    }
+    gallery.splice(worst, 1);
+  }
+
+  await updateBiometricData(bdId, { faceEmbeddings: gallery });
+  console.log(
+    `[Recognition] Grew face gallery for ${target.type}:${target.id} ` +
+      `(d=${dist.toFixed(3)}, q=${quality.toFixed(2)}, size=${gallery.length})`,
+  );
+  return { added: true, reason: "added", size: gallery.length };
+}
+
+export interface GalleryPenaltyResult {
+  penalized: "gallery" | "anchor" | "none";
+  evicted: boolean;
+  size: number;
+}
+
+/**
+ * Negative feedback for a misidentification. Given the descriptor that was
+ * WRONGLY matched to this person, find the stored face (anchor or gallery entry)
+ * that produced the bad match and reduce its trust. Gallery entries lose weight
+ * and are evicted once they fall to/under the floor; the enrolled anchor is
+ * never deleted (it's the curated photo) but the mismatch is logged so a human
+ * can re-enroll it. Repeated corrections steadily purge the bad pose that keeps
+ * causing the confusion.
+ */
+export async function penalizeFaceMatch(
+  target: { type: EntityType; id: string },
+  wrongDescriptor: FaceEmbedding,
+): Promise<GalleryPenaltyResult> {
+  const bdId = await getBiometricDataIdFor(target);
+  if (!bdId) return { penalized: "none", evicted: false, size: 0 };
+
+  const row = await getBiometricData(bdId);
+  if (!row) return { penalized: "none", evicted: false, size: 0 };
+
+  const gallery = normalizeGallery(row.faceEmbeddings);
+  const anchor = row.faceEmbedding as number[] | null;
+
+  // Which stored face is closest to the descriptor that mis-fired? That's the
+  // culprit. Compare the anchor against the best gallery entry.
+  let anchorDist = Infinity;
+  if (anchor && anchor.length === wrongDescriptor.length) {
+    anchorDist = euclideanDistance(wrongDescriptor, anchor);
+  }
+  let galleryIdx = -1;
+  let galleryDist = Infinity;
+  for (let i = 0; i < gallery.length; i++) {
+    const g = gallery[i];
+    if (!g.embedding || g.embedding.length !== wrongDescriptor.length) continue;
+    const d = euclideanDistance(wrongDescriptor, g.embedding);
+    if (d < galleryDist) {
+      galleryDist = d;
+      galleryIdx = i;
+    }
+  }
+
+  // Prefer penalizing a gallery entry (evictable) over the curated anchor.
+  if (galleryIdx >= 0 && galleryDist <= anchorDist) {
+    const entry = gallery[galleryIdx];
+    entry.weight = (entry.weight ?? 1) * FACE_PENALTY_FACTOR;
+    let evicted = false;
+    if (entry.weight <= FACE_GALLERY_WEIGHT_FLOOR) {
+      gallery.splice(galleryIdx, 1);
+      evicted = true;
+    }
+    await updateBiometricData(bdId, { faceEmbeddings: gallery });
+    console.log(
+      `[Recognition] Penalized gallery pose for ${target.type}:${target.id} ` +
+        `(d=${galleryDist.toFixed(3)}, ${evicted ? "evicted" : `weight=${entry.weight.toFixed(2)}`}, size=${gallery.length})`,
+    );
+    return { penalized: "gallery", evicted, size: gallery.length };
+  }
+
+  if (anchor && anchorDist < Infinity) {
+    // The enrolled anchor itself caused the bad match — we don't delete it, but
+    // flag it loudly so the curated photo can be re-enrolled.
+    console.warn(
+      `[Recognition] Misidentification traced to the ENROLLED ANCHOR for ` +
+        `${target.type}:${target.id} (d=${anchorDist.toFixed(3)}). The enrolled ` +
+        `face photo may be poor or mismatched — recommend re-enrollment.`,
+    );
+    return { penalized: "anchor", evicted: false, size: gallery.length };
+  }
+
+  return { penalized: "none", evicted: false, size: gallery.length };
 }
 
 // ============================================================================
@@ -478,6 +714,7 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       name: students.name,
       bdId: students.biometricDataId,
       faceEmbedding: biometricData.faceEmbedding,
+      faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
     })
     .from(students)
@@ -492,6 +729,7 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       name: student.name,
       relationship: "student",
       faceEmbedding: (student.faceEmbedding as number[] | null) ?? null,
+      faceGallery: normalizeGallery(student.faceEmbeddings),
       voiceEmbedding: (student.voiceEmbedding as number[] | null) ?? null,
     });
   }
@@ -506,6 +744,7 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       fullName: users.fullName,
       bdId: users.biometricDataId,
       faceEmbedding: biometricData.faceEmbedding,
+      faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
     })
     .from(userStudents)
@@ -523,6 +762,7 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       name,
       relationship: u.role || "caregiver",
       faceEmbedding: (u.faceEmbedding as number[] | null) ?? null,
+      faceGallery: normalizeGallery(u.faceEmbeddings),
       voiceEmbedding: (u.voiceEmbedding as number[] | null) ?? null,
     });
   }
@@ -538,6 +778,7 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       linkedUserId: studentContacts.linkedUserId,
       linkedStudentId: studentContacts.linkedStudentId,
       faceEmbedding: biometricData.faceEmbedding,
+      faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
       physicalDescription: biometricData.physicalDescription,
     })
@@ -555,15 +796,16 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       name: c.name,
       relationship: c.relationship || undefined,
       faceEmbedding: (c.faceEmbedding as number[] | null) ?? null,
+      faceGallery: normalizeGallery(c.faceEmbeddings),
       voiceEmbedding: (c.voiceEmbedding as number[] | null) ?? null,
       description: c.physicalDescription || undefined,
       contextNotes: c.contextNotes || undefined,
     });
   }
 
-  // Filter to only people with at least one embedding
+  // Filter to only people with at least one embedding (anchor, gallery, or voice)
   const peopleWithEmbeddings = Array.from(peopleById.values()).filter(
-    (p) => p.faceEmbedding !== null || p.voiceEmbedding !== null,
+    (p) => p.faceEmbedding !== null || (p.faceGallery && p.faceGallery.length > 0) || p.voiceEmbedding !== null,
   );
 
   console.log(
@@ -751,6 +993,7 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       fullName: users.fullName,
       bdId: users.biometricDataId,
       faceEmbedding: biometricData.faceEmbedding,
+      faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
     })
     .from(users)
@@ -766,6 +1009,7 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       name,
       relationship: "self",
       faceEmbedding: (user.faceEmbedding as number[] | null) ?? null,
+      faceGallery: normalizeGallery(user.faceEmbeddings),
       voiceEmbedding: (user.voiceEmbedding as number[] | null) ?? null,
     });
   }
@@ -777,6 +1021,7 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       name: students.name,
       bdId: students.biometricDataId,
       faceEmbedding: biometricData.faceEmbedding,
+      faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
     })
     .from(userStudents)
@@ -791,11 +1036,14 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       name: s.name,
       relationship: "student",
       faceEmbedding: (s.faceEmbedding as number[] | null) ?? null,
+      faceGallery: normalizeGallery(s.faceEmbeddings),
       voiceEmbedding: (s.voiceEmbedding as number[] | null) ?? null,
     });
   }
 
-  return people.filter((p) => p.faceEmbedding !== null || p.voiceEmbedding !== null);
+  return people.filter(
+    (p) => p.faceEmbedding !== null || (p.faceGallery && p.faceGallery.length > 0) || p.voiceEmbedding !== null,
+  );
 }
 
 // ============================================================================

@@ -1,0 +1,13 @@
+-- Migration 0127: biometric_data.face_embeddings (multi-angle face gallery)
+--
+-- Adds a per-person gallery of face embeddings alongside the legacy single
+-- `face_embedding` anchor. Each entry is { embedding:number[], quality:number,
+-- capturedAt:string, weight:number }. Matching takes the MIN distance across the
+-- anchor plus every gallery entry whose weight is above the floor, so a person
+-- is recognised across head pose / lighting / expression instead of only the one
+-- enrolled angle. The gallery grows passively from confident, good-quality,
+-- novel-pose sightings during live sessions, and an entry's weight is reduced
+-- (and the entry eventually evicted) when a match it produced is corrected as a
+-- misidentification. The enrolled `face_embedding` anchor is never evicted.
+-- Back-compatible: NULL means "anchor only", which matches the old behavior.
+ALTER TABLE "biometric_data" ADD COLUMN "face_embeddings" jsonb;

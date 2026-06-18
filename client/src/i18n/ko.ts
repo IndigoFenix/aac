@@ -214,6 +214,7 @@ export const ko = {
     progress: "진행 상황",
     reports: "파일",
     deepAnalysis: "심층 분석",
+    videoCaption: "동영상 자막",
     shares: "Shares",
     insuranceBridge: "보험 브리지",
     symbols: "AAC 기호 라이브러리",
@@ -2378,6 +2379,8 @@ export const ko = {
     liveAudioSpeakerDesc: "AI가 Gemini Live 네이티브 오디오를 통해 직접 말합니다(더 자연스러운 억양, 더 높은 비용). AI 음성에서 ElevenLabs를 비활성화합니다.",
     fullAttentionMode: "완전 주의 모드",
     fullAttentionModeDesc: "최대 반응성을 위해 카메라와 마이크를 AI로 계속 스트리밍합니다. 꺼져 있으면(기본값) 동작이 있을 때만 영상을, 말할 때만 오디오를 전송하여 실시간 AI 비용을 낮춥니다.",
+    boardManagerLiveModel: "보드 매니저 라이브 모델 (실험적)",
+    boardManagerLiveModelDesc: "보드 생성 지연 시간을 테스트하기 위해 보드 생성 에이전트를 라이브(실시간) 모델에서 실행합니다. 동작은 동일하지만 라이브 모델은 보드당 비용이 더 듭니다. 반응성을 테스트하는 경우가 아니면 꺼 두세요.",
     elevenlabsTitle: "ElevenLabs 음성",
     elevenlabsDesc: "고품질 TTS를 위해 자체 ElevenLabs API 키와 음성 ID를 입력하세요. 설정 시 다른 모든 음성 설정을 대체합니다.",
     elevenlabsApiKey: "ElevenLabs API 키",
@@ -3139,6 +3142,7 @@ export const ko = {
       dashboardLevel: "대시보드 수준",
       expertAgents: "전문가 에이전트",
       deepAnalysisEnabled: "심층 분석",
+      videoCaptionEnabled: "동영상 자막",
       complianceRegimes: "규정 준수 체계",
       complianceRegimesHint: "이 기관에 적용되는 규제 체계(HIPAA, GDPR, 이스라엘 교육부 등)를 선택하세요. 각 선택은 감사 로그 보관 기간, 데이터 유출 신고 기한, 앱이 표방하는 접근성 표준, 로그인에 예상되는 ID 공급자를 결정합니다. 여러 체계가 적용될 경우 가장 엄격한 규칙이 우선합니다.",
       insuranceBridgeEnabled: "보험 브리지",
@@ -3303,6 +3307,23 @@ export const ko = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "동영상 자막 스튜디오",
+    description: "동영상과 자막 파일을 업로드하여 자막을 글리프 오버레이로 변환하세요.",
+    uploadVideo: "동영상 업로드",
+    uploadCaptions: "자막 업로드",
+    noVideo: "여기에서 미리 보려면 동영상을 업로드하세요.",
+    segments: "자막 구간",
+    segmentCount: "{count}개 구간",
+    noCaptions: "구간을 보려면 SRT 또는 VTT 자막 파일을 업로드하세요.",
+    parseFailed: "자막 파일을 읽을 수 없습니다",
+    generateGlyphs: "기호 생성",
+    glyphsFailed: "기호를 생성할 수 없습니다",
+    export: "동영상 내보내기",
+    exportFailed: "동영상을 내보낼 수 없습니다",
+    exportNoGlyphs: "내보내기 전에 기호를 생성하세요.",
+    exportUnsupported: "동영상 내보내기에는 Chromium 기반 브라우저(Chrome 또는 Edge)가 필요합니다.",
+  },
   locations: {
     title: "위치",
     new: "새 위치",

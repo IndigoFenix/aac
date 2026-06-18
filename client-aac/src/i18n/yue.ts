@@ -363,6 +363,7 @@ export const yue: Translations = {
   },
 
   aac: {
+    voiceLive: "聆聽緊",
     glyph: {
       i_me: "我",
       you: "你",

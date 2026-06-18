@@ -19,7 +19,7 @@
 //   - MuteToggled
 //   - Monitor broadcast (re-render after memory update)
 
-import type { FunctionDeclaration } from "@google/genai";
+import type { FunctionDeclaration, Tool } from "@google/genai";
 import type { LLMProviderKey } from "@shared/llm-options";
 import type { InterlocutorRegister } from "@shared/interlocutor-register";
 import { getChatProvider } from "../providers/provider-factory";
@@ -267,6 +267,30 @@ export interface BoardManagerInvocationResult {
 }
 
 // ---------------------------------------------------------------------------
+// Shared tooling builder — used by BOTH the HTTP path (BoardManagerAgent)
+// and the Live path (LiveBoardManagerAgent), so the two surfaces declare the
+// exact same tools and share one fusion map. The HTTP path converts the
+// Gemini declarations to ChatTool via toChatTool(); the Live path passes the
+// Gemini declarations straight through to the provider.
+// ---------------------------------------------------------------------------
+
+export interface BoardManagerTooling {
+  /** Gemini-format declarations — what the Live provider consumes directly. */
+  declarations: Tool[];
+  /** Flattened FunctionDeclarations, for the fusion map + ChatTool conversion. */
+  flatDecls: FunctionDeclaration[];
+  /** Fusion map (built once per tool set) for mergeFusedToolCalls/parseToolCall. */
+  fusionMap: ReturnType<typeof buildFusionMap>;
+}
+
+export function buildBoardManagerTooling(config: BoardManagerToolConfig): BoardManagerTooling {
+  const declarations = buildBoardManagerToolDeclarations(config);
+  const flatDecls = declarations.flatMap(t => t.functionDeclarations ?? []);
+  const fusionMap = buildFusionMap(flatDecls);
+  return { declarations, flatDecls, fusionMap };
+}
+
+// ---------------------------------------------------------------------------
 // FunctionDeclaration → ChatTool adapter
 // ---------------------------------------------------------------------------
 
@@ -288,8 +312,9 @@ function toChatTool(decl: FunctionDeclaration): ChatTool {
 // ---------------------------------------------------------------------------
 
 /** Render the recent events + state snapshot as a single user-role
- *  message that gives the model "what's happening right now." */
-function renderInvocationContext(input: BoardManagerInvocationInput): string {
+ *  message that gives the model "what's happening right now." Exported so
+ *  the Live Board Manager renders the SAME context message as the HTTP path. */
+export function renderInvocationContext(input: BoardManagerInvocationInput): string {
   const lines: string[] = [];
 
   // Who the user is talking to → shapes the palette (see <conversation_register>).
@@ -818,12 +843,8 @@ export class BoardManagerAgent {
       : this.defaultProvider;
 
     // Build tool list from the per-invocation config.
-    const declarations = buildBoardManagerToolDeclarations(input.toolConfig);
-    const flatDecls = declarations.flatMap(t => t.functionDeclarations ?? []);
+    const { flatDecls, fusionMap } = buildBoardManagerTooling(input.toolConfig);
     const tools: ChatTool[] = flatDecls.map(toChatTool);
-    // Pre-compute the fusion map once. Cheap (a few entries per tool) and
-    // saves rebuilding per tool call below.
-    const fusionMap = buildFusionMap(flatDecls);
 
     // Render the user-role context message.
     const contextMessage = renderInvocationContext(input);
@@ -882,78 +903,112 @@ export class BoardManagerAgent {
       };
     }
 
-    // Pre-pass: collapse parallel fused calls that target the same
-    // (tool, arrayParam). The model sometimes emits one fused call per
-    // intended item (e.g. six `RebuildBoardButtons` calls for a single
-    // intended 6-button rebuild); without merging, each gets rewritten
-    // to a single-item rebuild_board and the per-call dispatch
-    // downgrades them to add_board_button — replacing the intended bulk
-    // rebuild with six sequential adds. See tool-fusion-normalizer.
-    const mergedToolCalls = mergeFusedToolCalls(result.toolCalls, fusionMap);
-    if (mergedToolCalls.length !== result.toolCalls.length) {
-      flowNote(
-        "BOARD_MGR",
-        `Merged ${result.toolCalls.length} fused tool calls → ${mergedToolCalls.length} after array-param coalescing`,
-      );
-    }
-
-    // Parse each tool call into a typed event. Collect any fusion
-    // detections so the Coordinator can issue a corrective retry turn.
-    const now = Date.now();
-    const events: BoardManagerOutputEvent[] = [];
-    const fusionFeedback: NonNullable<BoardManagerInvocationResult["fusionFeedback"]> = [];
-    for (const call of mergedToolCalls) {
-      flowTool("BOARD_MGR", call.name || "?", call.arguments);
-      // Detect fusion BEFORE parseToolCall mutates `call.name`, so the
-      // Coordinator can queue a corrective retry telling the model the
-      // right tool name.
-      const fusedEntry = call.name ? fusionMap.get(call.name) : undefined;
-      if (fusedEntry) {
-        fusionFeedback.push({
-          fusedName: call.name,
-          toolName: fusedEntry.toolName,
-          paramName: fusedEntry.paramName,
-        });
-        // Fall through — DON'T suppress the call. parseToolCall handles
-        // the fusion rewrite (RebuildBoardButtons → rebuild_board) and
-        // the single-button downgrade (rebuild_board with one button →
-        // add_board_button so the existing board isn't wiped). The
-        // user's intent ("add a button" — the model emits these
-        // one-per-call) gets honored AND the fusion feedback queued so
-        // the model is told its tool name was wrong. Earlier suppression
-        // here meant we dropped the model's intent entirely and waited
-        // for a retry that never adopted the corrected name — net
-        // effect: the board never updated.
-      }
-      const event = parseToolCall(call, now, fusionMap);
-      if (event) events.push(event);
-    }
-
-    // Defensive default: if the model produced no tool calls (e.g.
-    // safety block, empty response, MALFORMED_FUNCTION_CALL), treat as
-    // no_change rather than leaving the surface in an ambiguous state.
-    if (events.length === 0 && result.toolCalls.length === 0) {
-      const reason = result.finishReason ? `no tool calls (finish: ${result.finishReason})` : "no tool calls";
-      console.warn(`[BoardManagerAgent] empty response — ${reason}. usage=${JSON.stringify(result.usage)}`);
-      // Surface in the flow log so silent failures are visible. Without
-      // this, the Coordinator simply does nothing and the board on the
-      // client stays stale — the user-visible "first home press doesn't
-      // work" symptom.
-      flowNote("BOARD_MGR", `Empty response: ${reason}`);
-      events.push({
-        type: "board_no_change",
-        source: "board-manager",
-        timestamp: now,
-        reason,
-      });
-    }
-
-    return {
-      events,
-      rawToolCalls: result.toolCalls,
-      usage: result.usage,
-      finishReason: result.finishReason,
-      fusionFeedback: fusionFeedback.length > 0 ? fusionFeedback : undefined,
-    };
+    return finalizeBoardManagerToolCalls(
+      result.toolCalls,
+      fusionMap,
+      result.usage,
+      result.finishReason,
+    );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared tool-call → result finalizer
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn raw tool calls (from EITHER the HTTP completion or a Live turn) into a
+ * fully-formed BoardManagerInvocationResult: fusion-merge, parse each call to
+ * a typed event, queue fusion feedback, and supply the `board_no_change`
+ * fallback when the model emitted nothing usable.
+ *
+ * Both the HTTP `BoardManagerAgent.invoke()` and the Live
+ * `LiveBoardManagerAgent.invoke()` funnel through here, so the two paths
+ * produce byte-identical events for the same tool calls. The only per-path
+ * difference is how `usage` is shaped/billed — the Live path bills via the
+ * provider's onUsage callback and passes `undefined` here so the Coordinator's
+ * `result.usage` charge is skipped (no double billing).
+ *
+ * `rawToolCalls` carries the provider's `{ name, arguments: <json string> }`
+ * shape — the Live agent stringifies its object args to match before calling.
+ */
+export function finalizeBoardManagerToolCalls(
+  rawToolCalls: Array<{ name: string; arguments: string }>,
+  fusionMap: Map<string, FusionEntry>,
+  usage: BoardManagerInvocationResult["usage"] | undefined,
+  finishReason: string | undefined,
+): BoardManagerInvocationResult {
+  // Pre-pass: collapse parallel fused calls that target the same
+  // (tool, arrayParam). The model sometimes emits one fused call per
+  // intended item (e.g. six `RebuildBoardButtons` calls for a single
+  // intended 6-button rebuild); without merging, each gets rewritten
+  // to a single-item rebuild_board and the per-call dispatch
+  // downgrades them to add_board_button — replacing the intended bulk
+  // rebuild with six sequential adds. See tool-fusion-normalizer.
+  const mergedToolCalls = mergeFusedToolCalls(rawToolCalls, fusionMap);
+  if (mergedToolCalls.length !== rawToolCalls.length) {
+    flowNote(
+      "BOARD_MGR",
+      `Merged ${rawToolCalls.length} fused tool calls → ${mergedToolCalls.length} after array-param coalescing`,
+    );
+  }
+
+  // Parse each tool call into a typed event. Collect any fusion
+  // detections so the Coordinator can issue a corrective retry turn.
+  const now = Date.now();
+  const events: BoardManagerOutputEvent[] = [];
+  const fusionFeedback: NonNullable<BoardManagerInvocationResult["fusionFeedback"]> = [];
+  for (const call of mergedToolCalls) {
+    flowTool("BOARD_MGR", call.name || "?", call.arguments);
+    // Detect fusion BEFORE parseToolCall mutates `call.name`, so the
+    // Coordinator can queue a corrective retry telling the model the
+    // right tool name.
+    const fusedEntry = call.name ? fusionMap.get(call.name) : undefined;
+    if (fusedEntry) {
+      fusionFeedback.push({
+        fusedName: call.name,
+        toolName: fusedEntry.toolName,
+        paramName: fusedEntry.paramName,
+      });
+      // Fall through — DON'T suppress the call. parseToolCall handles
+      // the fusion rewrite (RebuildBoardButtons → rebuild_board) and
+      // the single-button downgrade (rebuild_board with one button →
+      // add_board_button so the existing board isn't wiped). The
+      // user's intent ("add a button" — the model emits these
+      // one-per-call) gets honored AND the fusion feedback queued so
+      // the model is told its tool name was wrong. Earlier suppression
+      // here meant we dropped the model's intent entirely and waited
+      // for a retry that never adopted the corrected name — net
+      // effect: the board never updated.
+    }
+    const event = parseToolCall(call, now, fusionMap);
+    if (event) events.push(event);
+  }
+
+  // Defensive default: if the model produced no tool calls (e.g.
+  // safety block, empty response, MALFORMED_FUNCTION_CALL), treat as
+  // no_change rather than leaving the surface in an ambiguous state.
+  if (events.length === 0 && rawToolCalls.length === 0) {
+    const reason = finishReason ? `no tool calls (finish: ${finishReason})` : "no tool calls";
+    console.warn(`[BoardManagerAgent] empty response — ${reason}. usage=${JSON.stringify(usage)}`);
+    // Surface in the flow log so silent failures are visible. Without
+    // this, the Coordinator simply does nothing and the board on the
+    // client stays stale — the user-visible "first home press doesn't
+    // work" symptom.
+    flowNote("BOARD_MGR", `Empty response: ${reason}`);
+    events.push({
+      type: "board_no_change",
+      source: "board-manager",
+      timestamp: now,
+      reason,
+    });
+  }
+
+  return {
+    events,
+    rawToolCalls,
+    usage,
+    finishReason,
+    fusionFeedback: fusionFeedback.length > 0 ? fusionFeedback : undefined,
+  };
 }

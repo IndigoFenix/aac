@@ -556,13 +556,33 @@ export default function UnifiedDebugPanel({
                 <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1.5">
                   <div className="text-[10px] font-medium text-gray-500">PCM Mic → Gemini</div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* Gate indicator */}
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    {/* VAD gate indicator — whether mic audio is flowing right now */}
+                    {(() => {
+                      const gs = ctx.pcmDebug.gateState;
+                      const flowing = gs === 'open' || gs === 'continuous';
+                      const label = gs === 'open' ? 'OPEN'
+                        : gs === 'continuous' ? 'STREAMING'
+                        : gs === 'vad-blocked' ? 'BLOCKED'
+                        : 'OFF';
+                      return (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                          flowing
+                            ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200'
+                            : gs === 'vad-blocked'
+                              ? 'bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200 animate-pulse'
+                              : 'bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          GATE: {label}
+                        </span>
+                      );
+                    })()}
+                    {/* Echo indicator (count-only; mic still streams while TTS plays) */}
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
                       ctx.pcmDebug.audioBusy
-                        ? 'bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200 animate-pulse'
-                        : 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200'
+                        ? 'bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                     }`}>
-                      {ctx.pcmDebug.audioBusy ? 'MUTED' : 'OPEN'}
+                      {ctx.pcmDebug.audioBusy ? 'Echo' : 'No echo'}
                     </span>
                     {/* isPlaying indicator */}
                     <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
@@ -572,12 +592,27 @@ export default function UnifiedDebugPanel({
                     }`}>
                       {ctx.pcmDebug.isPlaying ? 'Playing' : 'Idle'}
                     </span>
-                    {/* Counters */}
+                  </div>
+                  {/* Live VAD levels vs threshold (0.05) — shows why the gate is open/blocked */}
+                  <div className="flex items-center gap-2 flex-wrap text-[10px] text-gray-500 dark:text-gray-400">
+                    <span className={ctx.pcmDebug.voiceLevel >= 0.05 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>
+                      voice {ctx.pcmDebug.voiceLevel.toFixed(2)}
+                    </span>
+                    <span className={ctx.pcmDebug.noiseLevel >= 0.05 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>
+                      noise {ctx.pcmDebug.noiseLevel.toFixed(2)}
+                    </span>
+                    <span className="text-gray-400">thr 0.05</span>
+                  </div>
+                  {/* Counters */}
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] text-green-600 dark:text-green-400">
                       Sent: {ctx.pcmDebug.sentCount}
                     </span>
                     <span className="text-[10px] text-red-500 dark:text-red-400">
                       Gated: {ctx.pcmDebug.gatedCount}
+                    </span>
+                    <span className="text-[10px] text-blue-500 dark:text-blue-400">
+                      Onset recovered: {ctx.pcmDebug.recoveredCount}
                     </span>
                     {ctx.pcmDebug.sentCount + ctx.pcmDebug.gatedCount > 0 && (
                       <span className="text-[10px] text-gray-400">
@@ -734,6 +769,16 @@ export default function UnifiedDebugPanel({
                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${confColor}`}>
                           {face.matched ? `${conf}%` : "no match"}
                         </span>
+                        {face.matched && face.entityType && face.entityId && (
+                          <button
+                            type="button"
+                            onClick={() => ctx.correctIdentity(face.entityType!, face.entityId!, "debug-panel correction")}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300"
+                            title="Not this person — penalize the matching face data"
+                          >
+                            Not them
+                          </button>
+                        )}
                       </div>
                     );
                   })

@@ -45,6 +45,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/deep-analysis': 'deepAnalysis',
   '/shares': 'shares',
   '/insurance-bridge': 'insuranceBridge',
+  '/video-caption': 'videoCaption',
 };
 
 // Feature to URL path mapping
@@ -71,6 +72,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   deepAnalysis: '/deep-analysis',
   shares: '/shares',
   insuranceBridge: '/insurance-bridge',
+  videoCaption: '/video-caption',
 };
 
 // Feature configurations
@@ -257,6 +259,14 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 100,
     isFullScreen: false,
     path: '/insurance-bridge',
+  },
+  videoCaption: {
+    id: 'videoCaption',
+    defaultSize: 100,
+    minSize: 100,
+    maxSize: 100,
+    isFullScreen: false,
+    path: '/video-caption',
   },
 };
 

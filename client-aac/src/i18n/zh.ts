@@ -363,6 +363,7 @@ export const zh: Translations = {
   },
 
   aac: {
+    voiceLive: "正在聆听",
     glyph: {
       i_me: "我",
       you: "你",

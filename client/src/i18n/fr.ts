@@ -214,6 +214,7 @@ export const fr = {
     progress: "Progrès",
     reports: "Dossiers",
     deepAnalysis: "Analyse approfondie",
+    videoCaption: "Sous-titres vidéo",
     shares: "Shares",
     insuranceBridge: "Pont d'assurance",
     symbols: "Bibliothèque de symboles AAC",
@@ -2378,6 +2379,8 @@ export const fr = {
     liveAudioSpeakerDesc: "Laisse l'IA parler directement via l'audio natif Gemini Live (intonation plus naturelle, coût plus élevé). Désactive ElevenLabs sur la voix de l'IA.",
     fullAttentionMode: "Mode attention totale",
     fullAttentionModeDesc: "Diffuse en continu la caméra et le microphone vers l'IA pour une réactivité maximale. Désactivé (par défaut), la vidéo n'est envoyée qu'en cas de mouvement et l'audio qu'en cas de parole, ce qui réduit le coût de l'IA en direct.",
+    boardManagerLiveModel: "Modèle en direct du gestionnaire de tableau (expérimental)",
+    boardManagerLiveModelDesc: "Exécute l'agent de création de tableau sur un modèle en direct (temps réel) pour tester la latence de génération des tableaux. Le comportement est inchangé, mais les modèles en direct coûtent plus cher par tableau — laissez désactivé sauf si vous testez la réactivité.",
     elevenlabsTitle: "Voix ElevenLabs",
     elevenlabsDesc: "Entrez votre propre clé API ElevenLabs et vos ID de voix pour un TTS de haute qualité. Remplace tous les autres paramètres vocaux quand défini.",
     elevenlabsApiKey: "Clé API ElevenLabs",
@@ -3139,6 +3142,7 @@ export const fr = {
       dashboardLevel: "Niveau du tableau de bord",
       expertAgents: "Agents experts",
       deepAnalysisEnabled: "Analyse approfondie",
+      videoCaptionEnabled: "Sous-titres vidéo",
       complianceRegimes: "Cadres de conformité",
       complianceRegimesHint: "Sélectionnez les cadres réglementaires (HIPAA, RGPD, ministère israélien de l'Éducation, etc.) qui s'appliquent à cet établissement. Chaque choix définit la durée de conservation des journaux d'audit, le délai de notification d'une violation de données, la norme d'accessibilité revendiquée par l'application et le fournisseur d'identité de connexion attendu. Lorsque plusieurs s'appliquent, la règle la plus stricte l'emporte.",
       insuranceBridgeEnabled: "Passerelle d'assurance",
@@ -3303,6 +3307,23 @@ export const fr = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "Studio de sous-titres vidéo",
+    description: "Téléversez une vidéo et un fichier de sous-titres pour transformer les sous-titres en superpositions de glyphes.",
+    uploadVideo: "Téléverser une vidéo",
+    uploadCaptions: "Téléverser les sous-titres",
+    noVideo: "Téléversez une vidéo pour l'afficher ici en aperçu.",
+    segments: "Segments de sous-titres",
+    segmentCount: "{count} segments",
+    noCaptions: "Téléversez un fichier de sous-titres SRT ou VTT pour voir ses segments.",
+    parseFailed: "Impossible de lire le fichier de sous-titres",
+    generateGlyphs: "Générer les symboles",
+    glyphsFailed: "Impossible de générer les symboles",
+    export: "Exporter la vidéo",
+    exportFailed: "Impossible d'exporter la vidéo",
+    exportNoGlyphs: "Générez les symboles avant d'exporter.",
+    exportUnsupported: "L'export vidéo nécessite un navigateur basé sur Chromium (Chrome ou Edge).",
+  },
   locations: {
     title: "Lieux",
     new: "Nouveau lieu",

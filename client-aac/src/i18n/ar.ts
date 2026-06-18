@@ -363,6 +363,7 @@ export const ar: Translations = {
   },
 
   aac: {
+    voiceLive: "يستمع",
     glyph: {
       i_me: "\u0623\u0646\u0627",
       you: "\u0623\u0646\u062a",

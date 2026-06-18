@@ -214,6 +214,7 @@ export const de = {
     progress: "Fortschritt",
     reports: "Akten",
     deepAnalysis: "Tiefenanalyse",
+    videoCaption: "Video-Untertitel",
     shares: "Shares",
     insuranceBridge: "Versicherungsbrücke",
     symbols: "AAC-Symbolbibliothek",
@@ -2378,6 +2379,8 @@ export const de = {
     liveAudioSpeakerDesc: "Die KI spricht direkt über Gemini Live Native-Audio (natürlichere Intonation, höhere Kosten). Deaktiviert ElevenLabs für die KI-Stimme.",
     fullAttentionMode: "Modus volle Aufmerksamkeit",
     fullAttentionModeDesc: "Überträgt Kamera und Mikrofon kontinuierlich an die KI für maximale Reaktionsfähigkeit. Wenn aus (Standard), wird Video nur bei Bewegung und Audio nur bei Sprache gesendet, was die Live-KI-Kosten senkt.",
+    boardManagerLiveModel: "Board-Manager-Live-Modell (experimentell)",
+    boardManagerLiveModelDesc: "Führt den Board-Erstellungs-Agenten auf einem Live-Modell (Echtzeit) aus, um die Latenz der Board-Erstellung zu testen. Das Verhalten bleibt gleich, aber Live-Modelle kosten pro Board mehr — lassen Sie dies aus, außer Sie testen die Reaktionsfähigkeit.",
     elevenlabsTitle: "ElevenLabs-Stimme",
     elevenlabsDesc: "Geben Sie Ihren eigenen ElevenLabs-API-Schlüssel und Stimm-IDs für hochwertige TTS ein. Überschreibt alle anderen Stimmeinstellungen wenn gesetzt.",
     elevenlabsApiKey: "ElevenLabs-API-Schlüssel",
@@ -3139,6 +3142,7 @@ export const de = {
       dashboardLevel: "Dashboard-Stufe",
       expertAgents: "Experten-Agenten",
       deepAnalysisEnabled: "Tiefenanalyse",
+      videoCaptionEnabled: "Video-Untertitel",
       complianceRegimes: "Compliance-Vorgaben",
       complianceRegimesHint: "Wählen Sie die rechtlichen Rahmenwerke (HIPAA, DSGVO, israelisches Bildungsministerium usw.), die für diese Einrichtung gelten. Jede Auswahl legt fest, wie lange Audit-Protokolle aufbewahrt werden, die Frist zur Meldung einer Datenpanne, den von der App angegebenen Barrierefreiheitsstandard und den erwarteten Identitätsanbieter für die Anmeldung. Gelten mehrere, hat die strengste Regel Vorrang.",
       insuranceBridgeEnabled: "Versicherungs-Bridge",
@@ -3303,6 +3307,23 @@ export const de = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "Video-Untertitel-Studio",
+    description: "Lade ein Video und eine Untertiteldatei hoch, um die Untertitel in Glyphen-Overlays umzuwandeln.",
+    uploadVideo: "Video hochladen",
+    uploadCaptions: "Untertitel hochladen",
+    noVideo: "Lade ein Video hoch, um es hier in der Vorschau zu sehen.",
+    segments: "Untertitelsegmente",
+    segmentCount: "{count} Segmente",
+    noCaptions: "Lade eine SRT- oder VTT-Untertiteldatei hoch, um ihre Segmente zu sehen.",
+    parseFailed: "Untertiteldatei konnte nicht gelesen werden",
+    generateGlyphs: "Symbole erstellen",
+    glyphsFailed: "Symbole konnten nicht erstellt werden",
+    export: "Video exportieren",
+    exportFailed: "Das Video konnte nicht exportiert werden",
+    exportNoGlyphs: "Erstelle die Symbole vor dem Exportieren.",
+    exportUnsupported: "Der Videoexport benötigt einen Chromium-basierten Browser (Chrome oder Edge).",
+  },
   locations: {
     title: "Standorte",
     new: "Neuer Standort",

@@ -35,6 +35,9 @@ export interface UnknownFaceDescriptor {
   boundingBox?: { x: number; y: number; w: number; h: number };
   cameraRole?: "user" | "environment" | "unknown";
   cameraLabel?: string;
+  /** Frontality/size/detection score (0..1). Used server-side to gate which
+   *  frames are worth enrolling into a person's multi-angle gallery. */
+  quality?: number;
 }
 
 export interface IdentifySourceOptions {
@@ -484,6 +487,13 @@ export function usePersonIdentification(
           setCurrentIdentification(result);
         }
 
+        // Frame quality (frontality/size/score) — sent with the descriptor so
+        // the server can decide whether this pose is worth adding to the
+        // person's gallery. Cheap; computed for every detection.
+        const elementW = element instanceof HTMLVideoElement ? element.videoWidth : element.width;
+        const elementH = element instanceof HTMLVideoElement ? element.videoHeight : element.height;
+        const quality = assessFaceQuality(detection, elementW, elementH);
+
         // Always surface the detected descriptor so the server can run its own
         // (authoritative) database match. The local match above is kept only
         // for client-side face-image caching; the server is the source of
@@ -494,15 +504,13 @@ export function usePersonIdentification(
           boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
           cameraRole,
           cameraLabel,
+          quality,
         });
 
         if (updateCurrent && result.identified) {
           // Auto-capture face image for contacts (client-side cache only)
           if (result.person?.type === "contact") {
             const contactId = result.person.id;
-            const elementW = element instanceof HTMLVideoElement ? element.videoWidth : element.width;
-            const elementH = element instanceof HTMLVideoElement ? element.videoHeight : element.height;
-            const quality = assessFaceQuality(detection, elementW, elementH);
             const cachedQuality = faceImageQualityRef.current.get(contactId);
             const shouldCache = !cachedQuality || quality > cachedQuality;
 

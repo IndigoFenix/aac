@@ -224,6 +224,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [autoAacPrompt, setAutoAacPrompt] = useState<string[]>([]);
   const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(false);
   const [fullAttentionMode, setFullAttentionMode] = useState(false);
+  const [boardManagerLiveModel, setBoardManagerLiveModel] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
@@ -334,6 +335,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
+      setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -380,6 +382,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAutoPrompt = toRuleArray(aac?.autoAacPrompt);
       const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? false;
       const originalFullAttentionMode = aac?.fullAttentionMode ?? false;
+      const originalBoardManagerLiveModel = aac?.boardManagerLiveModel ?? false;
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
@@ -418,6 +421,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(autoAacPrompt) !== JSON.stringify(originalAutoPrompt) ||
         liveAudioSpeaker !== originalLiveAudioSpeaker ||
         fullAttentionMode !== originalFullAttentionMode ||
+        boardManagerLiveModel !== originalBoardManagerLiveModel ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
@@ -451,7 +455,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, boardManagerLiveModel, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -461,6 +465,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt: string[];
       liveAudioSpeaker?: boolean;
       fullAttentionMode?: boolean;
+      boardManagerLiveModel?: boolean;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
@@ -520,6 +525,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt,
       liveAudioSpeaker,
       fullAttentionMode,
+      boardManagerLiveModel,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -565,6 +571,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
+      setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -933,6 +940,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   checked={fullAttentionMode}
                   onCheckedChange={setFullAttentionMode}
                   data-testid="switch-full-attention-mode"
+                />
+              </div>
+
+              {/* Board Manager live model — experimental. Runs the board-building
+                  agent on a warm Gemini Live session to test generation latency.
+                  Costs more per turn (live text rates); off by default. */}
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.boardManagerLiveModel')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.boardManagerLiveModelDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={boardManagerLiveModel}
+                  onCheckedChange={setBoardManagerLiveModel}
+                  data-testid="switch-board-manager-live-model"
                 />
               </div>
 

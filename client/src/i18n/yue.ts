@@ -214,6 +214,7 @@ export const yue = {
     progress: "進度",
     reports: "檔案",
     deepAnalysis: "深度分析",
+    videoCaption: "影片字幕",
     shares: "Shares",
     insuranceBridge: "保險橋接",
     symbols: "AAC 符號庫",
@@ -2378,6 +2379,8 @@ export const yue = {
     liveAudioSpeakerDesc: "AI 直接用 Gemini Live 原生語音講嘢（語調更自然、成本較高）。喺 AI 語音上停用 ElevenLabs。",
     fullAttentionMode: "全神貫注模式",
     fullAttentionModeDesc: "持續將鏡頭同麥克風串流畀 AI，反應最快。熄咗（預設）嘅時候，淨係郁動先傳影片、講嘢先傳聲音，慳返即時 AI 成本。",
+    boardManagerLiveModel: "版面管理員即時模型（實驗性）",
+    boardManagerLiveModelDesc: "用即時模型行版面建立代理，測試版面生成嘅延遲。行為冇變，不過即時模型每塊版面貴啲——除非你想測試反應速度，否則熄住佢。",
     elevenlabsTitle: "ElevenLabs 語音",
     elevenlabsDesc: "輸入你自己嘅 ElevenLabs API 密鑰同語音 ID 嚟攞到高質素 TTS。設定後會覆蓋所有其他語音設定。",
     elevenlabsApiKey: "ElevenLabs API 密鑰",
@@ -3139,6 +3142,7 @@ export const yue = {
       dashboardLevel: "儀表板級別",
       expertAgents: "專家代理",
       deepAnalysisEnabled: "深度分析",
+      videoCaptionEnabled: "影片字幕",
       complianceRegimes: "合規制度",
       complianceRegimesHint: "揀選適用於呢間機構嘅監管框架（例如 HIPAA、GDPR、以色列教育部等）。每項揀選都會決定審計日誌嘅保留時間、數據外洩嘅通報期限、應用程式所聲明嘅無障礙標準，以及登入所需嘅身份提供方。若果同時適用多項，以最嚴格嘅規則為準。",
       insuranceBridgeEnabled: "保險橋接",
@@ -3303,6 +3307,23 @@ export const yue = {
   // ============================================================================
   // CALENDAR
   // ============================================================================
+  videoCaption: {
+    title: "影片字幕工作室",
+    description: "上載影片同字幕檔，將字幕轉做符號疊加層。",
+    uploadVideo: "上載影片",
+    uploadCaptions: "上載字幕",
+    noVideo: "上載影片就可以喺度預覽。",
+    segments: "字幕段落",
+    segmentCount: "{count} 個段落",
+    noCaptions: "上載 SRT 或 VTT 字幕檔就可以睇到佢嘅段落。",
+    parseFailed: "讀取唔到字幕檔",
+    generateGlyphs: "生成符號",
+    glyphsFailed: "生成唔到符號",
+    export: "匯出影片",
+    exportFailed: "匯出唔到影片",
+    exportNoGlyphs: "匯出之前請先生成符號。",
+    exportUnsupported: "匯出影片需要以 Chromium 為基礎嘅瀏覽器（Chrome 或 Edge）。",
+  },
   locations: {
     title: "地點",
     new: "新增地點",
