@@ -2354,6 +2354,9 @@ export const ko = {
     aiName: "AI 이름",
     aiNameDesc: "{{STUDENT}}가 사용할 수 있는 AI 어시스턴트 이름을 지정하세요",
     aiNamePlaceholder: "예: 친구, 도우미, 알렉스",
+    aiAssistant: "AI 어시스턴트",
+    accessibilityVisibility: "표시",
+    otherApps: "기타 앱",
     // Voice
     voiceSettings: "음성 설정",
     voiceSettingsDesc: "{{STUDENT}}와 AI 어시스턴트의 개별 음성을 구성합니다",
@@ -2373,6 +2376,8 @@ export const ko = {
     localTtsDesc: "서버 생성 오디오 대신 브라우저 내장 음성 합성을 사용합니다. 느린 연결에 유용합니다.",
     liveAudioSpeakerTitle: "라이브 오디오 AI",
     liveAudioSpeakerDesc: "AI가 Gemini Live 네이티브 오디오를 통해 직접 말합니다(더 자연스러운 억양, 더 높은 비용). AI 음성에서 ElevenLabs를 비활성화합니다.",
+    fullAttentionMode: "완전 주의 모드",
+    fullAttentionModeDesc: "최대 반응성을 위해 카메라와 마이크를 AI로 계속 스트리밍합니다. 꺼져 있으면(기본값) 동작이 있을 때만 영상을, 말할 때만 오디오를 전송하여 실시간 AI 비용을 낮춥니다.",
     elevenlabsTitle: "ElevenLabs 음성",
     elevenlabsDesc: "고품질 TTS를 위해 자체 ElevenLabs API 키와 음성 ID를 입력하세요. 설정 시 다른 모든 음성 설정을 대체합니다.",
     elevenlabsApiKey: "ElevenLabs API 키",

@@ -2354,6 +2354,9 @@ export const zh = {
     aiName: "AI 名称",
     aiNameDesc: "为 AI 助手取一个{{STUDENT}}可以使用的名字",
     aiNamePlaceholder: "例如：小伙伴、小明、小助手",
+    aiAssistant: "AI 助手",
+    accessibilityVisibility: "显示",
+    otherApps: "其他应用",
     // Voice
     voiceSettings: "语音设置",
     voiceSettingsDesc: "为{{STUDENT}}和 AI 助手配置不同的语音",
@@ -2373,6 +2376,8 @@ export const zh = {
     localTtsDesc: "使用浏览器内置的语音合成替代服务器生成的音频。适用于网络较慢的情况。",
     liveAudioSpeakerTitle: "实时音频 AI",
     liveAudioSpeakerDesc: "AI 通过 Gemini Live 原生音频直接说话（语调更自然，成本更高）。在 AI 语音上停用 ElevenLabs。",
+    fullAttentionMode: "全神贯注模式",
+    fullAttentionModeDesc: "持续向 AI 传输摄像头和麦克风，以获得最高响应速度。关闭时（默认），仅在有动作时发送视频、有语音时发送音频，从而降低实时 AI 成本。",
     elevenlabsTitle: "ElevenLabs 语音",
     elevenlabsDesc: "输入您自己的 ElevenLabs API 密钥和语音 ID 以获得高质量 TTS。设置后将覆盖所有其他语音设置。",
     elevenlabsApiKey: "ElevenLabs API 密钥",

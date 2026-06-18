@@ -673,6 +673,8 @@ export const en = {
 
   status: {
     cameraBlocked: "Camera Blocked",
+    cameraOff: "Camera Off",
+    microphoneOff: "Microphone Off",
     noOnePresent: "No One Present",
     userNotPresent: "User Not Present",
     standbyMode: "Standby Mode",

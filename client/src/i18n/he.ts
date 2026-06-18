@@ -2354,6 +2354,9 @@ export const he = {
     aiName: "שם הבינה המלאכותית",
     aiNameDesc: "תן לעוזר ה-AI שם שה{{STUDENT}} יוכל להשתמש בו",
     aiNamePlaceholder: "לדוגמה: באדי, סם, אלכס",
+    aiAssistant: "עוזר ה-AI",
+    accessibilityVisibility: "תצוגה",
+    otherApps: "אפליקציות נוספות",
     // Voice
     voiceSettings: "הגדרות קול",
     voiceSettingsDesc: "הגדר קולות נפרדים ל{{STUDENT}} ולעוזר הבינה המלאכותית",
@@ -2373,6 +2376,8 @@ export const he = {
     localTtsDesc: "שימוש בסינתזת דיבור מובנית בדפדפן במקום שמע מהשרת. שימושי עבור חיבורים איטיים.",
     liveAudioSpeakerTitle: "AI עם שמע חי",
     liveAudioSpeakerDesc: "ה-AI מדבר ישירות דרך השמע המקורי של Gemini Live (אינטונציה טבעית יותר, עלות גבוהה יותר). משבית את ElevenLabs בקול ה-AI.",
+    fullAttentionMode: "מצב תשומת לב מלאה",
+    fullAttentionModeDesc: "הזרמת מצלמה ומיקרופון רציפה ל-AI לתגובתיות מרבית. כשכבוי (ברירת המחדל), וידאו נשלח רק בתנועה ואודיו רק בדיבור, מה שמפחית את עלות ה-AI החי.",
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsApiKey: "מפתח API של ElevenLabs",

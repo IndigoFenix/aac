@@ -92,7 +92,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
-  onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyph: { glyph: string; fallback?: string } | null, dismiss: () => void) => void;
+  onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyphs: Array<{ glyph: string; fallback?: string }> | null, dismiss: () => void) => void;
   onAlarmChange?: (alarm: { level: "alert" | "emergency"; reason: string } | null, cancel: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
@@ -118,7 +118,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
    *  out of the provider so the top-level board (rendered outside it) can show it. */
   onSocialFaceChange?: (data: { preview: import("@/hooks/dual-agent-types").SocialPeerPreview | null; session: import("@/hooks/dual-agent-types").SocialSessionInfo | null }) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyph, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -217,8 +217,8 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   }, [isInitialized, onInitializedChange]);
 
   useEffect(() => {
-    onBinaryChoiceChange?.(binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyph, dismissBinaryChoice);
-  }, [binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyph, dismissBinaryChoice, onBinaryChoiceChange]);
+    onBinaryChoiceChange?.(binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice);
+  }, [binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, onBinaryChoiceChange]);
 
   useEffect(() => {
     onAlarmChange?.(activeAlarm, cancelAlarm);
@@ -546,7 +546,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
   // Experiment (glyphInputTranslation): glyph translation of the incoming
   // speech, rendered above the overlay buttons. Null when inactive.
-  const [binaryChoiceInputGlyph, setBinaryChoiceInputGlyph] = useState<{ glyph: string; fallback?: string } | null>(null);
+  const [binaryChoiceInputGlyphs, setBinaryChoiceInputGlyphs] = useState<Array<{ glyph: string; fallback?: string }> | null>(null);
   const dismissBinaryChoiceRef = useRef<(() => void) | null>(null);
 
   // Caretaker alarm state (bridged from DualAgentContext). Set by the
@@ -1660,12 +1660,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <BinaryChoiceOverlay
             options={binaryChoiceOptions}
             escapeKind={binaryChoiceEscapeKind}
-            inputGlyph={binaryChoiceInputGlyph}
+            inputGlyphs={binaryChoiceInputGlyphs}
             onSelect={(option) => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
               setBinaryChoiceEscapeKind(null);
-              setBinaryChoiceInputGlyph(null);
+              setBinaryChoiceInputGlyphs(null);
               // Prefer the AI-supplied sentence; fall back to label.
               const spoken = (option.sentence?.trim() || option.label).trim();
               if (!spoken) return;
@@ -1679,13 +1679,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
               setBinaryChoiceEscapeKind(null);
-              setBinaryChoiceInputGlyph(null);
+              setBinaryChoiceInputGlyphs(null);
             }}
             onDismiss={() => {
               dismissBinaryChoiceRef.current?.();
               setBinaryChoiceOptions(null);
               setBinaryChoiceEscapeKind(null);
-              setBinaryChoiceInputGlyph(null);
+              setBinaryChoiceInputGlyphs(null);
             }}
           />
 
@@ -2174,7 +2174,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSetBuilderVisibleReady={(fn) => { setBuilderVisibleRef.current = fn; }}
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
-            onBinaryChoiceChange={(options, escapeKind, inputGlyph, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyph(inputGlyph); dismissBinaryChoiceRef.current = dismiss; }}
+            onBinaryChoiceChange={(options, escapeKind, inputGlyphs, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyphs(inputGlyphs); dismissBinaryChoiceRef.current = dismiss; }}
             onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}

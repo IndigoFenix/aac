@@ -13,7 +13,7 @@
 //      (WRITABLE_COLUMNS + AAC_SETTINGS_FIELD.properties).
 // Settings nested inside `appConfig` (e.g. socialTrainer) DON'T need step 2 —
 // `appConfig` is already whitelisted; only brand-new top-level columns do.
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
@@ -30,6 +30,7 @@ import { COMPETENCY_LABEL } from '@shared/social-bot/state';
 const SOCIAL_SKILLS = Object.keys(COMPETENCY_LABEL);
 const DEFAULT_SOCIAL_CEILING = 0.4;
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,6 +69,7 @@ import {
   Video,
   ListVideo,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -98,6 +100,110 @@ function toRuleArray(value: unknown): string[] {
   return [];
 }
 
+/**
+ * A settings Card whose header doubles as a collapse toggle. The header (icon +
+ * title + optional description) stays visible at all times; clicking it shows or
+ * hides the body. Pass the existing `<CardContent>` as children so each section
+ * keeps its own padding/spacing. Defaults to collapsed so the long panel reads
+ * as a scannable list of section titles.
+ */
+function CollapsibleSection({
+  icon,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button type="button" className="w-full text-start">
+            <CardHeader
+              className={cn(
+                'cursor-pointer transition-colors hover:bg-muted/40',
+                open ? 'rounded-t-lg' : 'rounded-lg',
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  {icon}
+                  {title}
+                </CardTitle>
+                <ChevronDown
+                  className={cn(
+                    'w-5 h-5 shrink-0 text-muted-foreground transition-transform',
+                    open && 'rotate-180',
+                  )}
+                />
+              </div>
+              {description && <CardDescription>{description}</CardDescription>}
+            </CardHeader>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>{children}</CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+}
+
+/**
+ * A nested collapsible group used INSIDE a CollapsibleSection's content (e.g. the
+ * "Visibility" group under Accessibility, or "YouTube" / "Websites" under Apps).
+ * Visually a bordered box with a clickable header; pass the existing
+ * `<CardContent>` as children so the body keeps its own padding/spacing.
+ */
+function CollapsibleSubSection({
+  icon,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border bg-card">
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button type="button" className="w-full text-start">
+            <div className="flex items-center justify-between gap-2 px-6 py-4 transition-colors hover:bg-muted/40">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-semibold leading-none">
+                  {icon}
+                  {title}
+                </div>
+                {description && (
+                  <p className="text-sm text-muted-foreground">{description}</p>
+                )}
+              </div>
+              <ChevronDown
+                className={cn(
+                  'w-4 h-4 shrink-0 text-muted-foreground transition-transform',
+                  open && 'rotate-180',
+                )}
+              />
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>{children}</CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
@@ -117,6 +223,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // maintains them as it learns).
   const [autoAacPrompt, setAutoAacPrompt] = useState<string[]>([]);
   const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(false);
+  const [fullAttentionMode, setFullAttentionMode] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
@@ -226,6 +333,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
+      setFullAttentionMode(aac?.fullAttentionMode ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -271,6 +379,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalPrompt = toRuleArray(aac?.chatAgentPrompt);
       const originalAutoPrompt = toRuleArray(aac?.autoAacPrompt);
       const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? false;
+      const originalFullAttentionMode = aac?.fullAttentionMode ?? false;
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
@@ -308,6 +417,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(chatAgentPrompt) !== JSON.stringify(originalPrompt) ||
         JSON.stringify(autoAacPrompt) !== JSON.stringify(originalAutoPrompt) ||
         liveAudioSpeaker !== originalLiveAudioSpeaker ||
+        fullAttentionMode !== originalFullAttentionMode ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
@@ -341,7 +451,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -350,6 +460,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       chatAgentPrompt: string[];
       autoAacPrompt: string[];
       liveAudioSpeaker?: boolean;
+      fullAttentionMode?: boolean;
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
@@ -408,6 +519,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       chatAgentPrompt,
       autoAacPrompt,
       liveAudioSpeaker,
+      fullAttentionMode,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -452,6 +564,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
+      setFullAttentionMode(aac?.fullAttentionMode ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -627,38 +740,172 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardContent>
           </Card>
 
-          {/* AI Name */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="w-5 h-5" />
-                {t('aacSettings.aiName')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.aiNameDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Input
-                value={aiName}
-                onChange={(e) => setAiName(e.target.value)}
-                placeholder={t('aacSettings.aiNamePlaceholder')}
-                className="max-w-sm"
-              />
+          {/* AI Assistant — name, language level, and chat behavior */}
+          <CollapsibleSection
+            icon={<MessageSquare className="w-5 h-5" />}
+            title={t('aacSettings.aiAssistant')}
+            description={t('aacSettings.chatBehaviorDesc')}
+            defaultOpen
+          >
+            <CardContent className="space-y-6">
+              {/* AI Name */}
+              <div className="space-y-2">
+                <Label className="text-base font-medium">{t('aacSettings.aiName')}</Label>
+                <p className="text-xs text-muted-foreground">{t('aacSettings.aiNameDesc')}</p>
+                <Input
+                  value={aiName}
+                  onChange={(e) => setAiName(e.target.value)}
+                  placeholder={t('aacSettings.aiNamePlaceholder')}
+                  className="max-w-sm"
+                />
+              </div>
+
+              {/* Language Level */}
+              <div className="space-y-2 border-t pt-4">
+                <Label className="text-base font-medium">{t('aacSettings.languageLevel')}</Label>
+                <p className="text-xs text-muted-foreground">{t('aacSettings.languageLevelDesc')}</p>
+                <Select
+                  value={String(languageLevel)}
+                  onValueChange={(v) => setLanguageLevel(Number(v))}
+                >
+                  <SelectTrigger data-testid="select-language-level">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_LEVELS.map((key, i) => (
+                      <SelectItem key={key} value={String(i + 1)}>
+                        {t(`aacSettings.languageLevel_${key}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {t(`aacSettings.languageLevel_${LANGUAGE_LEVELS[languageLevel - 1] ?? 'full_sentences'}_desc`)}
+                </p>
+              </div>
+
+              {/* Chat behavior — custom prompt rules + AI-owned auto notes */}
+              <div className="space-y-4 border-t pt-4">
+                {/* Custom prompt — a LIST of caretaker-requested rules, one row
+                    each. Clinicians add/edit/remove individual rules rather than
+                    rewriting one block of text, so the AI never clobbers the set. */}
+                <div className="space-y-2">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.systemPrompt')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('aacSettings.systemPromptHint')}
+                  </p>
+                  {chatAgentPrompt.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic py-2">
+                      {t('aacSettings.promptRulesEmpty')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {chatAgentPrompt.map((rule, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <Textarea
+                            value={rule}
+                            onChange={(e) => updateChatRule(i, e.target.value)}
+                            placeholder={t('aacSettings.promptRulePlaceholder')}
+                            rows={1}
+                            className="min-h-[44px] text-sm flex-1"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeChatRule(i)}
+                            aria-label={t('aacSettings.removeRule')}
+                            className="shrink-0 mt-1 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={addChatRule}
+                      className="text-xs"
+                    >
+                      <Plus className="w-3 h-3 me-1" />
+                      {t('aacSettings.addRule')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetToDefault}
+                      className="text-xs"
+                    >
+                      <RotateCcw className="w-3 h-3 me-1" />
+                      {t('aacSettings.resetToDefault')}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Auto-generated notes — AI-owned list, shown read-only. The
+                    assistant maintains these as it learns about the student;
+                    clinicians can delete individual notes. */}
+                <div className="space-y-2 border-t pt-4">
+                  <Label className="text-base font-medium flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    {t('aacSettings.autoPromptLabel')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('aacSettings.autoPromptHint')}
+                  </p>
+                  {autoAacPrompt.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic py-2">
+                      {t('aacSettings.autoPromptEmpty')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {autoAacPrompt.map((note, i) => (
+                        <div
+                          key={i}
+                          className="flex items-start gap-2 rounded-md border bg-muted/50 p-2"
+                        >
+                          <p className="text-sm flex-1 whitespace-pre-wrap break-words">
+                            {note}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeAutoNote(i)}
+                            aria-label={t('aacSettings.removeNote')}
+                            className="shrink-0 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {autoAacPrompt.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAutoAacPrompt([])}
+                      className="text-xs"
+                    >
+                      <Trash2 className="w-3 h-3 me-1" />
+                      {t('aacSettings.clearAutoPrompt')}
+                    </Button>
+                  )}
+                </div>
+              </div>
             </CardContent>
-          </Card>
+          </CollapsibleSection>
 
           {/* Voice Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Volume2 className="w-5 h-5" />
-                {t('aacSettings.voiceSettings')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.voiceSettingsDesc')}
-              </CardDescription>
-            </CardHeader>
+          <CollapsibleSection
+            icon={<Volume2 className="w-5 h-5" />}
+            title={t('aacSettings.voiceSettings')}
+            description={t('aacSettings.voiceSettingsDesc')}
+          >
             <CardContent className="space-y-6">
               {/* Live Audio Speaker — when on, AI voice comes from Gemini Live
                   native audio and the ElevenLabs section is hidden. */}
@@ -670,6 +917,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
                 <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
+              </div>
+
+              {/* Full attention mode — when off (default), the AAC applies the
+                  resting input filter even while awake (no heartbeat frames,
+                  VAD-gated mic) to cut live-API cost; on = continuous streaming. */}
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.fullAttentionMode')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.fullAttentionModeDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={fullAttentionMode}
+                  onCheckedChange={setFullAttentionMode}
+                  data-testid="switch-full-attention-mode"
+                />
               </div>
 
               {/* Gemini Voice Settings */}
@@ -957,52 +1221,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
               </div>
             </CardContent>
-          </Card>
-
-          {/* Language Level */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                {t('aacSettings.languageLevel')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.languageLevelDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Select
-                value={String(languageLevel)}
-                onValueChange={(v) => setLanguageLevel(Number(v))}
-              >
-                <SelectTrigger data-testid="select-language-level">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGE_LEVELS.map((key, i) => (
-                    <SelectItem key={key} value={String(i + 1)}>
-                      {t(`aacSettings.languageLevel_${key}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t(`aacSettings.languageLevel_${LANGUAGE_LEVELS[languageLevel - 1] ?? 'full_sentences'}_desc`)}
-              </p>
-            </CardContent>
-          </Card>
+          </CollapsibleSection>
 
           {/* Social Trainer */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                {t('aacSettings.socialTrainerTitle')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.socialTrainerDesc')}
-              </CardDescription>
-            </CardHeader>
+          <CollapsibleSection
+            icon={<MessageSquare className="w-5 h-5" />}
+            title={t('aacSettings.socialTrainerTitle')}
+            description={t('aacSettings.socialTrainerDesc')}
+          >
             <CardContent className="space-y-6">
               {/* Enable toggle — surfaces as the "Practice friend" button on the
                   home board (enabled by default). */}
@@ -1119,307 +1345,222 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
               </div>
             </CardContent>
-          </Card>
+          </CollapsibleSection>
 
-          {/* Icon-Text Ratio */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LayoutGrid className="w-5 h-5" />
-                {t('aacSettings.buttonSize')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.buttonSizeDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 md:gap-3 justify-center">
-                {([1, 2, 3, 4, 5] as const).map((lvl) => {
-                  const isActive = iconTextRatio === lvl;
-                  // Preview sizing: icon flex vs text flex
-                  const iconFlex = [9, 4, 3, 2, 1][lvl - 1];
-                  const textFlex = [1, 1, 1, 1, 2][lvl - 1];
-                  const emojiSize = ['text-2xl', 'text-xl', 'text-lg', 'text-base', 'text-sm'][lvl - 1];
-                  const labelSize = ['text-[6px]', 'text-[7px]', 'text-[8px]', 'text-[9px]', 'text-xs'][lvl - 1];
-                  return (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => setIconTextRatio(lvl)}
-                      className={cn(
-                        "flex flex-col items-center justify-center flex-1 min-w-0 max-w-16 h-20 rounded-lg border-2 transition-all",
-                        isActive
-                          ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                          : "border-border hover:border-primary/50 bg-card"
-                      )}
-                    >
-                      <div className="flex items-center justify-center w-full" style={{ flex: iconFlex }}>
-                        <span className={`${emojiSize} leading-none`}>😊</span>
-                      </div>
-                      <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: textFlex }}>
-                        <span className={`${labelSize} font-medium text-center leading-tight text-foreground`}>Hello</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                {iconTextRatio === 1 && t('aacSettings.buttonSizeXlIcon')}
-                {iconTextRatio === 2 && t('aacSettings.buttonSizeLgIcon')}
-                {iconTextRatio === 3 && t('aacSettings.buttonSizeBalanced')}
-                {iconTextRatio === 4 && t('aacSettings.buttonSizeSmIcon')}
-                {iconTextRatio === 5 && t('aacSettings.buttonSizeMinIcon')}
-              </p>
-              <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                <div className="flex-1 pr-4">
-                  <Label htmlFor="single-glyph-buttons" className="text-sm font-medium">
-                    {t('aacSettings.singleGlyphButtons')}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('aacSettings.singleGlyphButtonsDesc')}
-                  </p>
-                </div>
-                <Switch
-                  id="single-glyph-buttons"
-                  checked={singleGlyphButtons}
-                  onCheckedChange={setSingleGlyphButtons}
-                  data-testid="switch-single-glyph-buttons"
-                />
-              </div>
-              <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                <div className="flex-1 pr-4">
-                  <Label htmlFor="glyph-input-translation" className="text-sm font-medium">
-                    {t('aacSettings.glyphInputTranslation')}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('aacSettings.glyphInputTranslationDesc')}
-                  </p>
-                </div>
-                <Switch
-                  id="glyph-input-translation"
-                  checked={glyphInputTranslation}
-                  onCheckedChange={setGlyphInputTranslation}
-                  data-testid="switch-glyph-input-translation"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Eyegaze / Dwell Selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Crosshair className="w-5 h-5" />
-                {t('aacSettings.eyegaze')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.eyegazeDesc')}
-              </CardDescription>
-            </CardHeader>
+          {/* Accessibility — visibility & eyegaze subsections */}
+          <CollapsibleSection
+            icon={<Accessibility className="w-5 h-5" />}
+            title={t('settings.accessibility')}
+            description={t('settings.accessibilityDesc')}
+          >
             <CardContent className="space-y-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.enableEyegaze')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.enableEyegazeDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={eyegazeEnabled}
-                  onCheckedChange={setEyegazeEnabled}
-                />
-              </div>
-              {eyegazeEnabled && (
-                <div className="space-y-4">
+              {/* Visibility — display preferences + button sizing */}
+              <CollapsibleSubSection
+                icon={<LayoutGrid className="w-5 h-5" />}
+                title={t('aacSettings.accessibilityVisibility')}
+              >
+                <CardContent className="space-y-4">
+                  {/* Font Size */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">
-                      {t('aacSettings.inputSource')}
-                    </Label>
-                    <Select value={eyegazeProvider} onValueChange={setEyegazeProvider}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="mouse">{t('aacSettings.inputSourceCursor')}</SelectItem>
-                        <SelectItem value="tobii">{t('aacSettings.inputSourceTobii')}</SelectItem>
-                        <SelectItem value="eyetech">{t('aacSettings.inputSourceEyetech')}</SelectItem>
-                        <SelectItem value="lctech">{t('aacSettings.inputSourceLctech')}</SelectItem>
-                        <SelectItem value="gazepoint">{t('aacSettings.inputSourceGazepoint')}</SelectItem>
-                        <SelectItem value="webhid">{t('aacSettings.inputSourceWebhid')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {t('aacSettings.inputSourceHint')}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm font-medium">
-                        {t('aacSettings.selectionTimeout')}
-                      </Label>
-                      <span className="text-sm text-muted-foreground">{eyegazeTimeout / 1000}s</span>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base font-medium">{t('settings.fontSize')}</Label>
+                      <span className="text-sm text-muted-foreground">{accessFontSize}%</span>
                     </div>
                     <Slider
-                      min={1000}
-                      max={10000}
-                      step={500}
-                      value={[eyegazeTimeout]}
-                      onValueChange={(v) => setEyegazeTimeout(v[0])}
+                      min={75}
+                      max={200}
+                      step={25}
+                      value={[accessFontSize]}
+                      onValueChange={(v) => setAccessFontSize(v[0])}
+                      className="w-full"
                     />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>1s</span>
-                      <span>2s</span>
-                      <span>5s</span>
-                      <span>10s</span>
-                    </div>
+                    <p className="text-sm text-muted-foreground">{t('settings.fontSizeDesc')}</p>
                   </div>
-                </div>
-              )}
+
+                  {/* High Contrast */}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('settings.contrastMode')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('settings.contrastModeDesc')}</p>
+                    </div>
+                    <Switch checked={accessHighContrast} onCheckedChange={setAccessHighContrast} />
+                  </div>
+
+                  {/* Reduce Animations */}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('settings.reduceAnimations')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('settings.reduceAnimationsDesc')}</p>
+                    </div>
+                    <Switch checked={accessReduceAnimations} onCheckedChange={setAccessReduceAnimations} />
+                  </div>
+
+                  {/* Enhanced Focus Indicator */}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('settings.enhancedFocus')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('settings.enhancedFocusDesc')}</p>
+                    </div>
+                    <Switch checked={accessEnhancedFocus} onCheckedChange={setAccessEnhancedFocus} />
+                  </div>
+
+                  {/* Button size (icon-to-text ratio) */}
+                  <div className="border-t pt-4 space-y-3">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('aacSettings.buttonSize')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('aacSettings.buttonSizeDesc')}</p>
+                    </div>
+                    <div className="flex gap-2 md:gap-3 justify-center">
+                      {([1, 2, 3, 4, 5] as const).map((lvl) => {
+                        const isActive = iconTextRatio === lvl;
+                        // Preview sizing: icon flex vs text flex
+                        const iconFlex = [9, 4, 3, 2, 1][lvl - 1];
+                        const textFlex = [1, 1, 1, 1, 2][lvl - 1];
+                        const emojiSize = ['text-2xl', 'text-xl', 'text-lg', 'text-base', 'text-sm'][lvl - 1];
+                        const labelSize = ['text-[6px]', 'text-[7px]', 'text-[8px]', 'text-[9px]', 'text-xs'][lvl - 1];
+                        return (
+                          <button
+                            key={lvl}
+                            type="button"
+                            onClick={() => setIconTextRatio(lvl)}
+                            className={cn(
+                              "flex flex-col items-center justify-center flex-1 min-w-0 max-w-16 h-20 rounded-lg border-2 transition-all",
+                              isActive
+                                ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                                : "border-border hover:border-primary/50 bg-card"
+                            )}
+                          >
+                            <div className="flex items-center justify-center w-full" style={{ flex: iconFlex }}>
+                              <span className={`${emojiSize} leading-none`}>😊</span>
+                            </div>
+                            <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: textFlex }}>
+                              <span className={`${labelSize} font-medium text-center leading-tight text-foreground`}>Hello</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center mt-3">
+                      {iconTextRatio === 1 && t('aacSettings.buttonSizeXlIcon')}
+                      {iconTextRatio === 2 && t('aacSettings.buttonSizeLgIcon')}
+                      {iconTextRatio === 3 && t('aacSettings.buttonSizeBalanced')}
+                      {iconTextRatio === 4 && t('aacSettings.buttonSizeSmIcon')}
+                      {iconTextRatio === 5 && t('aacSettings.buttonSizeMinIcon')}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="flex-1 pr-4">
+                      <Label htmlFor="single-glyph-buttons" className="text-sm font-medium">
+                        {t('aacSettings.singleGlyphButtons')}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t('aacSettings.singleGlyphButtonsDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      id="single-glyph-buttons"
+                      checked={singleGlyphButtons}
+                      onCheckedChange={setSingleGlyphButtons}
+                      data-testid="switch-single-glyph-buttons"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="flex-1 pr-4">
+                      <Label htmlFor="glyph-input-translation" className="text-sm font-medium">
+                        {t('aacSettings.glyphInputTranslation')}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t('aacSettings.glyphInputTranslationDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      id="glyph-input-translation"
+                      checked={glyphInputTranslation}
+                      onCheckedChange={setGlyphInputTranslation}
+                      data-testid="switch-glyph-input-translation"
+                    />
+                  </div>
+                </CardContent>
+              </CollapsibleSubSection>
+
+              {/* Eyegaze / Dwell Selection */}
+              <CollapsibleSubSection
+                icon={<Crosshair className="w-5 h-5" />}
+                title={t('aacSettings.eyegaze')}
+                description={t('aacSettings.eyegazeDesc')}
+              >
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">
+                        {t('aacSettings.enableEyegaze')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.enableEyegazeDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={eyegazeEnabled}
+                      onCheckedChange={setEyegazeEnabled}
+                    />
+                  </div>
+                  {eyegazeEnabled && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">
+                          {t('aacSettings.inputSource')}
+                        </Label>
+                        <Select value={eyegazeProvider} onValueChange={setEyegazeProvider}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="mouse">{t('aacSettings.inputSourceCursor')}</SelectItem>
+                            <SelectItem value="tobii">{t('aacSettings.inputSourceTobii')}</SelectItem>
+                            <SelectItem value="eyetech">{t('aacSettings.inputSourceEyetech')}</SelectItem>
+                            <SelectItem value="lctech">{t('aacSettings.inputSourceLctech')}</SelectItem>
+                            <SelectItem value="gazepoint">{t('aacSettings.inputSourceGazepoint')}</SelectItem>
+                            <SelectItem value="webhid">{t('aacSettings.inputSourceWebhid')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.inputSourceHint')}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.selectionTimeout')}
+                          </Label>
+                          <span className="text-sm text-muted-foreground">{eyegazeTimeout / 1000}s</span>
+                        </div>
+                        <Slider
+                          min={1000}
+                          max={10000}
+                          step={500}
+                          value={[eyegazeTimeout]}
+                          onValueChange={(v) => setEyegazeTimeout(v[0])}
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>1s</span>
+                          <span>2s</span>
+                          <span>5s</span>
+                          <span>10s</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </CollapsibleSubSection>
             </CardContent>
-          </Card>
-
-          {/* Accessibility */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Accessibility className="w-5 h-5" />
-                {t('settings.accessibility')}
-              </CardTitle>
-              <CardDescription>
-                {t('settings.accessibilityDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Font Size */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">{t('settings.fontSize')}</Label>
-                  <span className="text-sm text-muted-foreground">{accessFontSize}%</span>
-                </div>
-                <Slider
-                  min={75}
-                  max={200}
-                  step={25}
-                  value={[accessFontSize]}
-                  onValueChange={(v) => setAccessFontSize(v[0])}
-                  className="w-full"
-                />
-                <p className="text-sm text-muted-foreground">{t('settings.fontSizeDesc')}</p>
-              </div>
-
-              {/* High Contrast */}
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('settings.contrastMode')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('settings.contrastModeDesc')}</p>
-                </div>
-                <Switch checked={accessHighContrast} onCheckedChange={setAccessHighContrast} />
-              </div>
-
-              {/* Reduce Animations */}
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('settings.reduceAnimations')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('settings.reduceAnimationsDesc')}</p>
-                </div>
-                <Switch checked={accessReduceAnimations} onCheckedChange={setAccessReduceAnimations} />
-              </div>
-
-              {/* Enhanced Focus Indicator */}
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('settings.enhancedFocus')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('settings.enhancedFocusDesc')}</p>
-                </div>
-                <Switch checked={accessEnhancedFocus} onCheckedChange={setAccessEnhancedFocus} />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Privacy */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="w-5 h-5" />
-                {t('aacSettings.privacy')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.privacyDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.allowReadProgress')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.allowReadProgressDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={allowReadProgress}
-                  onCheckedChange={setAllowReadProgress}
-                />
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.allowReadReports')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.allowReadReportsDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={allowReadReports}
-                  onCheckedChange={setAllowReadReports}
-                />
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.allowNotes')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.allowNotesDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={allowNotes}
-                  onCheckedChange={setAllowNotes}
-                />
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.shareMonitorNotesWithInstitute')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.shareMonitorNotesWithInstituteDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={shareMonitorNotesWithInstitute}
-                  onCheckedChange={setShareMonitorNotesWithInstitute}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          </CollapsibleSection>
 
           {/* Symbol Generation Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ImageIcon className="w-5 h-5" />
-                {t('aacSettings.symbolGeneration')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.symbolGenerationDesc')}
-              </CardDescription>
-            </CardHeader>
+          <CollapsibleSection
+            icon={<ImageIcon className="w-5 h-5" />}
+            title={t('aacSettings.symbolGeneration')}
+            description={t('aacSettings.symbolGenerationDesc')}
+          >
             <CardContent className="space-y-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-0.5">
@@ -1464,19 +1605,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
             </CardContent>
-          </Card>
-
-          {/* Custom Apps (Games) Assignment */}
-          {student?.id && <AACSettingsCustomApps studentId={student.id} />}
+          </CollapsibleSection>
 
           {/* Dynamic Boards */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t('aacSettings.dynamicBoards') || 'Dynamic Boards'}</CardTitle>
-              <CardDescription>
-                {t('aacSettings.dynamicBoardsDesc') || 'Allow the AI to create and edit AAC boards based on the situation.'}
-              </CardDescription>
-            </CardHeader>
+          <CollapsibleSection
+            title={t('aacSettings.dynamicBoards') || 'Dynamic Boards'}
+            description={t('aacSettings.dynamicBoardsDesc') || 'Allow the AI to create and edit AAC boards based on the situation.'}
+          >
             <CardContent>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-0.5">
@@ -1493,142 +1628,106 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
             </CardContent>
-          </Card>
+          </CollapsibleSection>
 
-          {/* Chat Agent Prompt */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                {t('aacSettings.chatBehavior')}
-              </CardTitle>
-              <CardDescription>
-                {t('aacSettings.chatBehaviorDesc')}
-              </CardDescription>
-            </CardHeader>
+          {/* Defined Gestures */}
+          <CollapsibleSection
+            icon={<Hand className="w-5 h-5" />}
+            title={t('aacSettings.definedGesturesTitle')}
+            description={t('aacSettings.definedGesturesDescription')}
+          >
             <CardContent className="space-y-4">
-              {/* Custom prompt — a LIST of caretaker-requested rules, one row
-                  each. Clinicians add/edit/remove individual rules rather than
-                  rewriting one block of text, so the AI never clobbers the set. */}
-              <div className="space-y-2">
-                <Label className="text-base font-medium">
-                  {t('aacSettings.systemPrompt')}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t('aacSettings.systemPromptHint')}
-                </p>
-                {chatAgentPrompt.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic py-2">
-                    {t('aacSettings.promptRulesEmpty')}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {chatAgentPrompt.map((rule, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <Textarea
-                          value={rule}
-                          onChange={(e) => updateChatRule(i, e.target.value)}
-                          placeholder={t('aacSettings.promptRulePlaceholder')}
-                          rows={1}
-                          className="min-h-[44px] text-sm flex-1"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeChatRule(i)}
-                          aria-label={t('aacSettings.removeRule')}
-                          className="shrink-0 mt-1 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
+              {definedGestures.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.definedGesturesEmpty')}</p>
+              )}
+              {definedGestures.map((gesture, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.definedGesturesName')}</Label>
+                      <Input
+                        value={gesture.name}
+                        onChange={(e) =>
+                          setDefinedGestures((prev) =>
+                            prev.map((g, i) => (i === idx ? { ...g, name: e.target.value } : g)),
+                          )
+                        }
+                        placeholder={t('aacSettings.definedGesturesNamePlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.definedGesturesMeaning')}</Label>
+                      <Input
+                        value={gesture.meaning}
+                        onChange={(e) =>
+                          setDefinedGestures((prev) =>
+                            prev.map((g, i) => (i === idx ? { ...g, meaning: e.target.value } : g)),
+                          )
+                        }
+                        placeholder={t('aacSettings.definedGesturesMeaningPlaceholder')}
+                      />
+                    </div>
                   </div>
-                )}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={addChatRule}
-                    className="text-xs"
-                  >
-                    <Plus className="w-3 h-3 me-1" />
-                    {t('aacSettings.addRule')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleResetToDefault}
-                    className="text-xs"
-                  >
-                    <RotateCcw className="w-3 h-3 me-1" />
-                    {t('aacSettings.resetToDefault')}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Auto-generated notes — AI-owned list, shown read-only. The
-                  assistant maintains these as it learns about the student;
-                  clinicians can delete individual notes. */}
-              <div className="space-y-2 border-t pt-4">
-                <Label className="text-base font-medium flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  {t('aacSettings.autoPromptLabel')}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t('aacSettings.autoPromptHint')}
-                </p>
-                {autoAacPrompt.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic py-2">
-                    {t('aacSettings.autoPromptEmpty')}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {autoAacPrompt.map((note, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-2 rounded-md border bg-muted/50 p-2"
-                      >
-                        <p className="text-sm flex-1 whitespace-pre-wrap break-words">
-                          {note}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeAutoNote(i)}
-                          aria-label={t('aacSettings.removeNote')}
-                          className="shrink-0 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.definedGesturesDescriptionField')}</Label>
+                    <Input
+                      value={gesture.description || ''}
+                      onChange={(e) =>
+                        setDefinedGestures((prev) =>
+                          prev.map((g, i) => (i === idx ? { ...g, description: e.target.value } : g)),
+                        )
+                      }
+                      placeholder={t('aacSettings.definedGesturesDescriptionPlaceholder')}
+                    />
                   </div>
-                )}
-                {autoAacPrompt.length > 0 && (
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    onClick={() => setAutoAacPrompt([])}
-                    className="text-xs"
+                    onClick={() =>
+                      setDefinedGestures((prev) => prev.filter((_, i) => i !== idx))
+                    }
                   >
                     <Trash2 className="w-3 h-3 me-1" />
-                    {t('aacSettings.clearAutoPrompt')}
+                    {t('aacSettings.definedGesturesRemove')}
                   </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              ))}
 
-          {/* Permitted YouTube Content (channels, playlists, videos) */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="text-xl">▶️</span>
-                {t('aacSettings.permittedYoutubeContentTitle')}
-              </CardTitle>
-              <CardDescription>{t('aacSettings.permittedYoutubeContentDescription')}</CardDescription>
-            </CardHeader>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setDefinedGestures((prev) => [...prev, { name: '', meaning: '' }])
+                }
+              >
+                <Plus className="w-4 h-4 me-2" />
+                {t('aacSettings.definedGesturesAdd')}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {t('aacSettings.definedGesturesHint')}
+              </p>
+            </CardContent>
+          </CollapsibleSection>
+
+          {/* Apps (content, games, add-ons) */}
+          <CollapsibleSection
+            icon={<AppWindow className="w-5 h-5" />}
+            title={t('aacSettings.apps')}
+            description={t('aacSettings.appsDescription')}
+          >
+            <CardContent className="space-y-4">
+
+              {/* Permitted YouTube Content (channels, playlists, videos) */}
+              <CollapsibleSubSection
+                icon={<span className="text-xl">▶️</span>}
+                title={t('aacSettings.permittedYoutubeContentTitle')}
+                description={t('aacSettings.permittedYoutubeContentDescription')}
+              >
             <CardContent className="space-y-4">
               {permittedYoutubeItems.length === 0 && (
                 <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeContentEmpty')}</p>
@@ -1754,17 +1853,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 {t('aacSettings.permittedYoutubeContentHint')}
               </p>
             </CardContent>
-          </Card>
+              </CollapsibleSubSection>
 
-          {/* Permitted Websites */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="w-5 h-5" />
-                {t('aacSettings.permittedWebsitesTitle')}
-              </CardTitle>
-              <CardDescription>{t('aacSettings.permittedWebsitesDescription')}</CardDescription>
-            </CardHeader>
+              {/* Permitted Websites */}
+              <CollapsibleSubSection
+                icon={<Globe className="w-5 h-5" />}
+                title={t('aacSettings.permittedWebsitesTitle')}
+                description={t('aacSettings.permittedWebsitesDescription')}
+              >
             <CardContent className="space-y-4">
               {permittedWebsites.length === 0 && (
                 <p className="text-sm text-muted-foreground">{t('aacSettings.permittedWebsitesEmpty')}</p>
@@ -1947,104 +2043,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 {t('aacSettings.permittedWebsitesAddWebsite')}
               </Button>
             </CardContent>
-          </Card>
+              </CollapsibleSubSection>
 
-          {/* Defined Gestures */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Hand className="w-5 h-5" />
-                {t('aacSettings.definedGesturesTitle')}
-              </CardTitle>
-              <CardDescription>{t('aacSettings.definedGesturesDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {definedGestures.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t('aacSettings.definedGesturesEmpty')}</p>
-              )}
-              {definedGestures.map((gesture, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "rounded-lg border p-3 space-y-2",
-                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
-                  )}
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t('aacSettings.definedGesturesName')}</Label>
-                      <Input
-                        value={gesture.name}
-                        onChange={(e) =>
-                          setDefinedGestures((prev) =>
-                            prev.map((g, i) => (i === idx ? { ...g, name: e.target.value } : g)),
-                          )
-                        }
-                        placeholder={t('aacSettings.definedGesturesNamePlaceholder')}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{t('aacSettings.definedGesturesMeaning')}</Label>
-                      <Input
-                        value={gesture.meaning}
-                        onChange={(e) =>
-                          setDefinedGestures((prev) =>
-                            prev.map((g, i) => (i === idx ? { ...g, meaning: e.target.value } : g)),
-                          )
-                        }
-                        placeholder={t('aacSettings.definedGesturesMeaningPlaceholder')}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('aacSettings.definedGesturesDescriptionField')}</Label>
-                    <Input
-                      value={gesture.description || ''}
-                      onChange={(e) =>
-                        setDefinedGestures((prev) =>
-                          prev.map((g, i) => (i === idx ? { ...g, description: e.target.value } : g)),
-                        )
-                      }
-                      placeholder={t('aacSettings.definedGesturesDescriptionPlaceholder')}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setDefinedGestures((prev) => prev.filter((_, i) => i !== idx))
-                    }
-                  >
-                    <Trash2 className="w-3 h-3 me-1" />
-                    {t('aacSettings.definedGesturesRemove')}
-                  </Button>
-                </div>
-              ))}
+              {/* Custom Apps (Games) subsection */}
+              {student?.id && <AACSettingsCustomApps studentId={student.id} />}
 
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setDefinedGestures((prev) => [...prev, { name: '', meaning: '' }])
-                }
+              {/* Other Apps subsection */}
+              <CollapsibleSubSection
+                icon={<AppWindow className="w-5 h-5" />}
+                title={t('aacSettings.otherApps')}
+                description={t('aacSettings.appsDescription')}
               >
-                <Plus className="w-4 h-4 me-2" />
-                {t('aacSettings.definedGesturesAdd')}
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                {t('aacSettings.definedGesturesHint')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Apps */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AppWindow className="w-5 h-5" />
-                {t('aacSettings.apps')}
-              </CardTitle>
-              <CardDescription>{t('aacSettings.appsDescription')}</CardDescription>
-            </CardHeader>
             <CardContent className="space-y-4">
               {/* YouTube */}
               <div className="flex items-center justify-between">
@@ -2243,7 +2252,75 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   section above (it surfaces as "Practice friend" on the home
                   board, not the Apps page). */}
             </CardContent>
-          </Card>
+              </CollapsibleSubSection>
+            </CardContent>
+          </CollapsibleSection>
+
+          {/* Privacy */}
+          <CollapsibleSection
+            icon={<Shield className="w-5 h-5" />}
+            title={t('aacSettings.privacy')}
+            description={t('aacSettings.privacyDesc')}
+          >
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowReadProgress')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowReadProgressDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowReadProgress}
+                  onCheckedChange={setAllowReadProgress}
+                />
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowReadReports')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowReadReportsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowReadReports}
+                  onCheckedChange={setAllowReadReports}
+                />
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowNotes')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowNotesDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowNotes}
+                  onCheckedChange={setAllowNotes}
+                />
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.shareMonitorNotesWithInstitute')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.shareMonitorNotesWithInstituteDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={shareMonitorNotesWithInstitute}
+                  onCheckedChange={setShareMonitorNotesWithInstitute}
+                />
+              </div>
+            </CardContent>
+          </CollapsibleSection>
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-2">

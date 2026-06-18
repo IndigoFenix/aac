@@ -2354,6 +2354,9 @@ export const yue = {
     aiName: "AI 名稱",
     aiNameDesc: "幫 AI 助手改個{{STUDENT}}可以用嘅名",
     aiNamePlaceholder: "例如：朋友仔、小明、小助手",
+    aiAssistant: "AI 助手",
+    accessibilityVisibility: "顯示",
+    otherApps: "其他應用程式",
     // Voice
     voiceSettings: "語音設定",
     voiceSettingsDesc: "為{{STUDENT}}同 AI 助手設定唔同嘅語音",
@@ -2373,6 +2376,8 @@ export const yue = {
     localTtsDesc: "用瀏覽器內置嘅語音合成嚟代替伺服器生成嘅音訊。適合網路比較慢嘅情況。",
     liveAudioSpeakerTitle: "即時語音 AI",
     liveAudioSpeakerDesc: "AI 直接用 Gemini Live 原生語音講嘢（語調更自然、成本較高）。喺 AI 語音上停用 ElevenLabs。",
+    fullAttentionMode: "全神貫注模式",
+    fullAttentionModeDesc: "持續將鏡頭同麥克風串流畀 AI，反應最快。熄咗（預設）嘅時候，淨係郁動先傳影片、講嘢先傳聲音，慳返即時 AI 成本。",
     elevenlabsTitle: "ElevenLabs 語音",
     elevenlabsDesc: "輸入你自己嘅 ElevenLabs API 密鑰同語音 ID 嚟攞到高質素 TTS。設定後會覆蓋所有其他語音設定。",
     elevenlabsApiKey: "ElevenLabs API 密鑰",

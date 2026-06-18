@@ -675,6 +675,8 @@ export const fr: Translations = {
 
   status: {
     cameraBlocked: "Cam\u00e9ra bloqu\u00e9e",
+    cameraOff: "Caméra désactivée",
+    microphoneOff: "Microphone désactivé",
     noOnePresent: "Personne pr\u00e9sent",
     userNotPresent: "Utilisateur non pr\u00e9sent",
     standbyMode: "Mode veille",

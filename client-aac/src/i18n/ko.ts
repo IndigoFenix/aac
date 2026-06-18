@@ -675,6 +675,8 @@ export const ko: Translations = {
 
   status: {
     cameraBlocked: "카메라 차단됨",
+    cameraOff: "카메라 꺼짐",
+    microphoneOff: "마이크 꺼짐",
     noOnePresent: "아무도 없음",
     userNotPresent: "사용자 부재",
     standbyMode: "대기 모드",

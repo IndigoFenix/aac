@@ -876,6 +876,13 @@
       "when": 1781692869570,
       "tag": "0124_shallow_red_wolf",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1781779269570,
+      "tag": "0125_aac_full_attention_mode",
+      "breakpoints": true
     }
   ]
 }

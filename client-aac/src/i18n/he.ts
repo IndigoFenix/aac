@@ -675,6 +675,8 @@ export const he: Translations = {
 
   status: {
     cameraBlocked: "המצלמה חסומה",
+    cameraOff: "המצלמה כבויה",
+    microphoneOff: "המיקרופון כבוי",
     noOnePresent: "אף אחד לא נוכח",
     userNotPresent: "המשתמש לא נוכח",
     standbyMode: "מצב המתנה",

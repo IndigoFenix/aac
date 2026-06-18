@@ -45,14 +45,18 @@ interface DualAgentContextType {
   isRecording: boolean;
   audioLevel: number;
   recordingDuration: number;
+  /** True when a live microphone stream is actually acquired. False means the
+   *  mic is off (voice disabled) OR not working (acquisition failed) — both map
+   *  to the "microphone off" indicator. */
+  micActive: boolean;
 
   // Board state
   currentBoard: ParsedBoardData | null;
   contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>;
-  /** Experiment (glyphInputTranslation): glyph-string translation of the
-   *  speech last directed at the user, for the header strip. Sticky — only
-   *  replaced when new incoming speech is translated. */
-  inputGlyph: { glyph: string; fallback?: string } | null;
+  /** Experiment (glyphInputTranslation): per-sentence glyph-string translation
+   *  of the speech last directed at the user, for the header strip. Sticky —
+   *  only replaced when new incoming speech is translated. */
+  inputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
 
   // User-controlled mute state (cave click — AI cannot toggle this)
   muteState: 'unmuted' | 'muted';
@@ -136,9 +140,10 @@ interface DualAgentContextType {
    *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
    *  overlay is active. */
   binaryChoiceEscapeKind: "maybe" | "neither" | null;
-  /** Experiment (glyphInputTranslation): glyph translation of the speech this
-   *  choice replies to, shown above the overlay buttons. Null when inactive. */
-  binaryChoiceInputGlyph: { glyph: string; fallback?: string } | null;
+  /** Experiment (glyphInputTranslation): per-sentence glyph translation of the
+   *  speech this choice replies to, shown above the overlay buttons. Null when
+   *  inactive. */
+  binaryChoiceInputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
   dismissBinaryChoice: () => void;
 
   // Caretaker alarm raised by the Observer agent. "alert" = short
@@ -286,7 +291,7 @@ function DualAgentProviderInner({
   // Context sidebar: queue of buttons, last 4 visible. New buttons push oldest out.
   const [contextButtons, setContextButtons] = React.useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>>([]);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
-  const [inputGlyph, setInputGlyph] = React.useState<{ glyph: string; fallback?: string } | null>(null);
+  const [inputGlyphs, setInputGlyphs] = React.useState<Array<{ glyph: string; fallback?: string }> | null>(null);
   const [symbolUpdate, setSymbolUpdate] = React.useState<{ buttonLabel: string; symbolPath: string } | null>(null);
   const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
@@ -361,8 +366,8 @@ function DualAgentProviderInner({
   // Experiment (glyphInputTranslation): the server only sends a translation
   // when there's fresh incoming speech, so storing it as-is keeps the strip's
   // last value across button-press follow-ups.
-  const handleInputGlyphs = useCallback((data: { glyph: string; fallback?: string }) => {
-    setInputGlyph(data);
+  const handleInputGlyphs = useCallback((data: Array<{ glyph: string; fallback?: string }>) => {
+    setInputGlyphs(data);
   }, []);
 
   const handleBoardPatch = useCallback((patch: BoardPatch) => {
@@ -462,13 +467,17 @@ function DualAgentProviderInner({
     await runDetectionWithGridRef.current(grid, audioClip, unknownDescriptors, triggerReason);
   }, []);
 
-  // Mic stream lifecycle
+  // Mic stream lifecycle. Each activate/deactivate transition is reported to the
+  // server (sendMicState) purely for diagnostics — the server logs it to the
+  // session history without injecting it into any live agent, so it never
+  // triggers a spoken reaction.
   useEffect(() => {
     if (!liveAgent.voiceEnabled || !liveAgent.isInitialized || !liveAgent.sessionId) {
       if (micStreamRef.current) {
         micStreamRef.current.getTracks().forEach(t => t.stop());
         micStreamRef.current = null;
         setMicStream(null);
+        liveAgent.sendMicState(false);
       }
       return;
     }
@@ -482,8 +491,10 @@ function DualAgentProviderInner({
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         micStreamRef.current = stream;
         setMicStream(stream);
+        liveAgent.sendMicState(true);
       } catch {
         console.warn("[DualAgentContext] Mic not available");
+        liveAgent.sendMicState(false, "acquisition failed");
       }
     })();
     return () => {
@@ -492,6 +503,7 @@ function DualAgentProviderInner({
         micStreamRef.current.getTracks().forEach(t => t.stop());
         micStreamRef.current = null;
         setMicStream(null);
+        liveAgent.sendMicState(false);
       }
     };
   }, [liveAgent.voiceEnabled, liveAgent.isInitialized, liveAgent.sessionId]);
@@ -520,9 +532,10 @@ function DualAgentProviderInner({
     flowRef.current = dataFlowForState(
       attentiveness.sleepState,
       attentiveness.engagementScore.value,
+      liveAgent.clientConfig?.awakeDataSaver ?? false,
     );
     contributionsRef.current = attentiveness.engagementScore.contributions;
-  }, [attentiveness, attentiveness?.sleepState, attentiveness?.engagementScore]);
+  }, [attentiveness, attentiveness?.sleepState, attentiveness?.engagementScore, liveAgent.clientConfig?.awakeDataSaver]);
 
   const handlePcmChunk = useCallback((int16Base64: string) => {
     if (liveAgent.paused) return;
@@ -737,7 +750,7 @@ function DualAgentProviderInner({
       agent={liveAgent}
       currentBoard={currentBoard}
       contextButtons={contextButtons}
-      inputGlyph={inputGlyph}
+      inputGlyphs={inputGlyphs}
       setCurrentBoard={setCurrentBoard}
       boardPatch={boardPatch}
       symbolUpdate={symbolUpdate}
@@ -754,6 +767,7 @@ function DualAgentProviderInner({
       getFaceImage={getFaceImageProp ?? (() => null)}
       activityMonitor={activityMonitor}
       pcmDebug={pcmDebug}
+      micActive={micStream !== null}
     >
       {children}
     </ProviderShell>
@@ -770,7 +784,7 @@ interface ProviderShellProps {
   agent: UseDualAgentReturn;
   currentBoard: ParsedBoardData | null;
   contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>;
-  inputGlyph: { glyph: string; fallback?: string } | null;
+  inputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   boardPatch: BoardPatch | null;
   symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
@@ -799,6 +813,7 @@ interface ProviderShellProps {
     sentCount: number;
     gatedCount: number;
   };
+  micActive: boolean;
 }
 
 function ProviderShell({
@@ -807,7 +822,7 @@ function ProviderShell({
   agent,
   currentBoard,
   contextButtons,
-  inputGlyph,
+  inputGlyphs,
   setCurrentBoard,
   boardPatch,
   symbolUpdate,
@@ -824,6 +839,7 @@ function ProviderShell({
   getFaceImage,
   activityMonitor,
   pcmDebug: pcmDebugProp,
+  micActive,
 }: ProviderShellProps) {
   const value: DualAgentContextType = {
     studentId,
@@ -846,10 +862,11 @@ function ProviderShell({
     isRecording: agent.isRecording,
     audioLevel: agent.audioLevel,
     recordingDuration: agent.recordingDuration,
+    micActive,
 
     currentBoard,
     contextButtons,
-    inputGlyph,
+    inputGlyphs,
 
     muteState: agent.muteState,
     setMuteState: agent.setMuteState,
@@ -904,7 +921,7 @@ function ProviderShell({
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,
-    binaryChoiceInputGlyph: (agent as any).binaryChoiceInputGlyph ?? null,
+    binaryChoiceInputGlyphs: (agent as any).binaryChoiceInputGlyphs ?? null,
     dismissBinaryChoice: agent.dismissBinaryChoice,
 
     activeAlarm: agent.activeAlarm,

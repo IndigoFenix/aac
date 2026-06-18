@@ -676,6 +676,7 @@ export type ClientMessage =
   | { type: "board_state"; data: any }
   | { type: "set_mute_state"; muteState: AACMuteState }
   | { type: "set_response_mode"; mode: AACResponseMode }
+  | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string }> }
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
@@ -712,7 +713,7 @@ export type ServerMessage =
   | { type: "utterance"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
-  | { type: "input_glyphs"; data: { glyph: string; fallback?: string } }  // experiment (glyphInputTranslation): glyph translation of incoming speech for the header strip
+  | { type: "input_glyphs"; data: Array<{ glyph: string; fallback?: string }> }  // experiment (glyphInputTranslation): glyph translation of incoming speech for the header strip — one entry per sentence
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
@@ -731,7 +732,7 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "audio_clear_tag"; tag: string }             // Clear queued client audio for a specific tag (e.g. "utterance")
-  | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither"; inputGlyph?: { glyph: string; fallback?: string } } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection. `inputGlyph` (experiment glyphInputTranslation) is a glyph translation of the incoming speech, shown above the buttons.
+  | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither"; inputGlyphs?: Array<{ glyph: string; fallback?: string }> } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection. `inputGlyphs` (experiment glyphInputTranslation) is a per-sentence glyph translation of the incoming speech, shown above the buttons.
   | { type: "ask_binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }

@@ -80,6 +80,20 @@ export interface ClientConfig {
   activityMonitor?: ActivityMonitorConfig;
   sleep?: SleepEngineConfig;
   gestureSerializer?: GestureSerializerConfig;
+  /**
+   * Cost-saving toggle. When true, the client applies the resting session's
+   * input filter while AWAKE too: no periodic heartbeat frames and VAD-gated
+   * mic audio (only speech / sudden sound streams), instead of continuous
+   * audio + a heartbeat frame every 15s. Motion-triggered frames and spoken
+   * audio still reach the model, so the session stays responsive — it just
+   * stops paying for continuous streaming during conversational lulls.
+   *
+   * Driven by the `AAC_AWAKE_DATA_SAVER=1` server env var so it can be
+   * flipped without a client rebuild. The server session profile is
+   * unaffected (still full awake Speaker + prompt); this only thins the
+   * client→model I/O.
+   */
+  awakeDataSaver?: boolean;
 }
 
 /**
@@ -88,7 +102,9 @@ export interface ClientConfig {
  * the move to server-driven config is non-breaking by construction.
  * Future per-student overrides layer on top of this.
  */
-export function buildDefaultClientConfig(): ClientConfig {
+export function buildDefaultClientConfig(
+  overrides?: Pick<ClientConfig, "awakeDataSaver">,
+): ClientConfig {
   return {
     activityMonitor: {
       frameCaptureRate: 4,
@@ -115,5 +131,9 @@ export function buildDefaultClientConfig(): ClientConfig {
     gestureSerializer: {
       windowMs: 10000,
     },
+    // Authoritative value comes from the per-student `fullAttentionMode`
+    // setting (passed in by the caller as the inverse). The env var is a
+    // global fallback for callers that don't supply a student override.
+    awakeDataSaver: overrides?.awakeDataSaver ?? (process.env.AAC_AWAKE_DATA_SAVER === "1"),
   };
 }

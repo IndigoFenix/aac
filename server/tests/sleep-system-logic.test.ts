@@ -246,6 +246,38 @@ describe("dataFlowForState — Resting (single tier)", () => {
   });
 });
 
+describe("dataFlowForState — awakeDataSaver (cost-saving override)", () => {
+  // With the flag set, Awake/Waking stream like a resting session: no
+  // heartbeat frames, VAD-gated mic — but motion frames stay on and the
+  // session stays active, so the model stays responsive.
+  it("Awake adopts the resting input filter when the flag is set", () => {
+    const saver = dataFlowForState("awake", 0.8, true);
+    const resting = dataFlowForState("resting", 0.2);
+    expect(saver).toEqual(resting);
+    expect(saver.heartbeatMs).toBeNull();
+    expect(saver.heartbeatAudioMs).toBe(0);
+    expect(saver.pcmMode).toBe("vad-gated");
+    expect(saver.motionTriggerEnabled).toBe(true);
+    expect(saver.sessionActive).toBe(true);
+  });
+
+  it("Waking also adopts the resting input filter", () => {
+    expect(dataFlowForState("waking", 0.5, true)).toEqual(dataFlowForState("resting", 0.5));
+  });
+
+  it("defaults off — omitting the flag keeps continuous Awake streaming", () => {
+    const flow = dataFlowForState("awake", 0.8);
+    expect(flow.heartbeatMs).toBe(15000);
+    expect(flow.pcmMode).toBe("continuous");
+  });
+
+  it("does not alter non-awake states (resting/asleep/hibernation unchanged)", () => {
+    expect(dataFlowForState("resting", 0.2, true)).toEqual(dataFlowForState("resting", 0.2));
+    expect(dataFlowForState("asleep", 0.05, true)).toEqual(dataFlowForState("asleep", 0.05));
+    expect(dataFlowForState("hibernation", 0, true)).toEqual(dataFlowForState("hibernation", 0));
+  });
+});
+
 describe("dataFlowForState — Asleep", () => {
   it("disables sends but keeps session and capture (buffer locally)", () => {
     const flow = dataFlowForState("asleep", 0.05);

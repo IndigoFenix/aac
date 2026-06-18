@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { SentenceButton, type SentenceButtonInput } from "@/components/SentenceButton";
 import { Glyph } from "@/components/Glyph";
+import { glyphStripWidth } from "@/lib/glyph-layout";
 import type { BinaryChoiceOption } from "@/hooks/dual-agent-types";
 
 interface BinaryChoiceOverlayProps {
@@ -28,18 +29,19 @@ interface BinaryChoiceOverlayProps {
    *  rule. Null falls back to "neither" for the rare case of an older
    *  server build that didn't ship the field. */
   escapeKind?: "maybe" | "neither" | null;
-  /** Experiment (glyphInputTranslation): a glyph-string translation of the
-   *  speech this choice replies to. When present, it renders as a strip ABOVE
-   *  the two option buttons so the user sees what was just said to them.
-   *  Null/absent when the setting is off or the choice isn't a reply. */
-  inputGlyph?: { glyph: string; fallback?: string } | null;
+  /** Experiment (glyphInputTranslation): per-sentence glyph-string translation
+   *  of the speech this choice replies to. When present, each sentence renders
+   *  as a pill stacked ABOVE the two option buttons so the user sees what was
+   *  just said to them. Null/empty when the setting is off or the choice isn't
+   *  a reply. */
+  inputGlyphs?: Array<{ glyph: string; fallback?: string }> | null;
   onSelect: (option: BinaryChoiceOption) => void;
   /** Dismiss without voicing anything (the small Cancel button + 30s timeout). */
   onCancel: () => void;
   onDismiss: () => void;
 }
 
-export default function BinaryChoiceOverlay({ options, escapeKind, inputGlyph, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
+export default function BinaryChoiceOverlay({ options, escapeKind, inputGlyphs, onSelect, onCancel, onDismiss }: BinaryChoiceOverlayProps) {
   const { t } = useLanguage();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -59,6 +61,8 @@ export default function BinaryChoiceOverlay({ options, escapeKind, inputGlyph, o
 
   // Shrunk dimensions so three equal buttons fit across the row.
   const overlaySize = { button: "min(28vw, 240px)", icon: "min(17vw, 150px)" };
+
+  const hasInputGlyphs = !!inputGlyphs && inputGlyphs.length > 0;
 
   useEffect(() => {
     if (active) {
@@ -86,19 +90,27 @@ export default function BinaryChoiceOverlay({ options, escapeKind, inputGlyph, o
           <div className="flex flex-col items-center gap-3">
             {/* Experiment (glyphInputTranslation): glyph translation of the
                 speech this choice replies to, shown above the buttons so the
-                user sees what was just said to them. Only rendered when the
-                server supplied a translation. */}
-            {inputGlyph?.glyph && (
-              <motion.div
-                className="flex items-center justify-center rounded-2xl bg-white/85 px-5 py-3 shadow-lg"
-                style={{ height: "5rem" }}
-                initial={{ opacity: 0, y: -16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Glyph glyph={inputGlyph.glyph} fallback={inputGlyph.fallback} height="100%" noBackground />
-              </motion.div>
+                user sees what was just said to them — one pill per SENTENCE,
+                stacked. Each pill needs an explicit width: <Glyph> renders an
+                absolutely-positioned SVG whose `width:100%` collapses to 0 in a
+                shrink-to-fit column item, so we size each pill to its glyph's
+                slot-count aspect ratio (capped at 90vw). */}
+            {hasInputGlyphs && (
+              <div className="flex flex-col items-center gap-2">
+                {inputGlyphs!.map((g, i) => (
+                  <motion.div
+                    key={i}
+                    className="flex items-center justify-center rounded-2xl bg-white/85 px-5 py-3 shadow-lg"
+                    style={{ height: "5rem", width: glyphStripWidth(g.glyph) }}
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -16 }}
+                    transition={{ duration: 0.15, delay: i * 0.04 }}
+                  >
+                    <Glyph glyph={g.glyph} fallback={g.fallback} height="100%" noBackground />
+                  </motion.div>
+                ))}
+              </div>
             )}
 
             {/* Two options plus the equally-sized escape button, all rendered

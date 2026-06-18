@@ -2354,6 +2354,9 @@ export const de = {
     aiName: "KI-Name",
     aiNameDesc: "Geben Sie dem KI-Assistenten einen Namen, den der {{STUDENT}} verwenden kann",
     aiNamePlaceholder: "z.B. Buddy, Sam, Alex",
+    aiAssistant: "KI-Assistent",
+    accessibilityVisibility: "Sichtbarkeit",
+    otherApps: "Weitere Apps",
     // Voice
     voiceSettings: "Stimmeinstellungen",
     voiceSettingsDesc: "Separate Stimmen für den {{STUDENT}} und den KI-Assistenten konfigurieren",
@@ -2373,6 +2376,8 @@ export const de = {
     localTtsDesc: "Die eingebaute Sprachsynthese des Browsers anstelle von servergeneriertem Audio verwenden. Nützlich bei langsamen Verbindungen.",
     liveAudioSpeakerTitle: "Live-Audio-KI",
     liveAudioSpeakerDesc: "Die KI spricht direkt über Gemini Live Native-Audio (natürlichere Intonation, höhere Kosten). Deaktiviert ElevenLabs für die KI-Stimme.",
+    fullAttentionMode: "Modus volle Aufmerksamkeit",
+    fullAttentionModeDesc: "Überträgt Kamera und Mikrofon kontinuierlich an die KI für maximale Reaktionsfähigkeit. Wenn aus (Standard), wird Video nur bei Bewegung und Audio nur bei Sprache gesendet, was die Live-KI-Kosten senkt.",
     elevenlabsTitle: "ElevenLabs-Stimme",
     elevenlabsDesc: "Geben Sie Ihren eigenen ElevenLabs-API-Schlüssel und Stimm-IDs für hochwertige TTS ein. Überschreibt alle anderen Stimmeinstellungen wenn gesetzt.",
     elevenlabsApiKey: "ElevenLabs-API-Schlüssel",

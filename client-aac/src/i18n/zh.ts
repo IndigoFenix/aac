@@ -675,6 +675,8 @@ export const zh: Translations = {
 
   status: {
     cameraBlocked: "摄像头被阻止",
+    cameraOff: "摄像头已关闭",
+    microphoneOff: "麦克风已关闭",
     noOnePresent: "无人在场",
     userNotPresent: "用户不在场",
     standbyMode: "待机模式",

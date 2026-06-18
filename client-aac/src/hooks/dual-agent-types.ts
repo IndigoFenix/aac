@@ -54,6 +54,12 @@ export interface ClientConfig {
   activityMonitor?: ClientConfigActivityMonitor;
   sleep?: ClientConfigSleep;
   gestureSerializer?: ClientConfigGestureSerializer;
+  /**
+   * When true, apply the resting input filter (no heartbeat frames, VAD-gated
+   * mic) while awake to cut live-API I/O cost. Server-driven via the
+   * `AAC_AWAKE_DATA_SAVER` env var. Consumed in `dataFlowForState`.
+   */
+  awakeDataSaver?: boolean;
 }
 
 /** Identified person from biometric recognition */
@@ -307,6 +313,8 @@ export interface UseDualAgentReturn {
   initialize: () => Promise<void>;
   sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  /** Diagnostics: report mic activate/deactivate to the server (logged to chat history, not sent to any live agent). */
+  sendMicState: (active: boolean, reason?: string) => void;
   /** Send a board exit message (exit/exitBoard button pressed on loaded board) */
   sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
@@ -339,10 +347,10 @@ export interface UseDualAgentReturn {
    *  forms a yes/no; "neither" (red, no-symbol) otherwise. Null when no
    *  overlay is active. The display layer doesn't decide the kind. */
   binaryChoiceEscapeKind: "maybe" | "neither" | null;
-  /** Experiment (glyphInputTranslation): glyph translation of the speech this
-   *  choice replies to, shown above the two overlay buttons. Null when off or
-   *  the choice isn't a reply to incoming speech. */
-  binaryChoiceInputGlyph: { glyph: string; fallback?: string } | null;
+  /** Experiment (glyphInputTranslation): per-sentence glyph translation of the
+   *  speech this choice replies to, shown above the two overlay buttons. Null
+   *  when off or the choice isn't a reply to incoming speech. */
+  binaryChoiceInputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
   dismissBinaryChoice: () => void;
 
   // Live API only — raw PCM audio streaming

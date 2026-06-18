@@ -2354,6 +2354,9 @@ export const pt = {
     aiName: "Nome da IA",
     aiNameDesc: "Dê um nome ao assistente de IA que o {{STUDENT}} possa usar",
     aiNamePlaceholder: "ex. Buddy, Sam, Alex",
+    aiAssistant: "Assistente de IA",
+    accessibilityVisibility: "Visibilidade",
+    otherApps: "Outros aplicativos",
     // Voice
     voiceSettings: "Configurações de voz",
     voiceSettingsDesc: "Configurar vozes separadas para o {{STUDENT}} e o assistente de IA",
@@ -2373,6 +2376,8 @@ export const pt = {
     localTtsDesc: "Usar a síntese de voz integrada do navegador em vez de áudio gerado no servidor. Útil para conexões lentas.",
     liveAudioSpeakerTitle: "IA com áudio ao vivo",
     liveAudioSpeakerDesc: "A IA fala diretamente pelo áudio nativo do Gemini Live (entonação mais natural, custo maior). Desativa o ElevenLabs na voz da IA.",
+    fullAttentionMode: "Modo de atenção total",
+    fullAttentionModeDesc: "Transmite a câmera e o microfone continuamente para a IA para máxima capacidade de resposta. Quando desativado (padrão), o vídeo é enviado apenas com movimento e o áudio apenas com fala, o que reduz o custo da IA ao vivo.",
     elevenlabsTitle: "Voz ElevenLabs",
     elevenlabsDesc: "Insira sua própria chave API do ElevenLabs e IDs de voz para TTS de alta qualidade. Substitui todas as outras configurações de voz quando definido.",
     elevenlabsApiKey: "Chave API do ElevenLabs",

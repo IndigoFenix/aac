@@ -55,6 +55,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
   "geminiAiVoice", "geminiStudentVoice", "aiVoicePitch", "studentVoicePitch",
   "useLocalTts", "iconTextRatio", "languageLevel", "singleGlyphButtons", "glyphInputTranslation",
+  "fullAttentionMode",
   "usePcsSymbols", "signLanguage", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",

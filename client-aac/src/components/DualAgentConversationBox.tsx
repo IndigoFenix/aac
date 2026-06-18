@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Mic,
   MicOff,
+  CameraOff,
   Brain,
   Eye,
   EyeOff,
@@ -40,11 +41,13 @@ import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Glyph } from "@/components/Glyph";
+import { glyphStripWidth } from "@/lib/glyph-layout";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { FaceMirror } from "@/components/FaceMirror";
+import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { IdentificationBadge } from "@/components/IdentificationBadge";
 import type { IdentificationResult } from "@/hooks/usePersonIdentification";
 
@@ -118,6 +121,7 @@ export function DualAgentConversationBox({
     isRecording,
     audioLevel,
     recordingDuration,
+    micActive,
     transcription,
     muteState,
     setMuteState,
@@ -147,7 +151,7 @@ export function DualAgentConversationBox({
     paused,
     setPaused,
     thinkingPulse,
-    inputGlyph,
+    inputGlyphs,
     socialSession,
     socialPeerDebug,
     reconfigureSocialPeer,
@@ -163,6 +167,18 @@ export function DualAgentConversationBox({
   const { t, isRTL } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
+
+  // Camera / microphone "off or not working" detection — drives the indicators
+  // that replace the face mirror. The shared user-camera <video> readiness
+  // (userVideoReady) is the authoritative signal that frames are actually
+  // flowing; globalError flags a hardware/permission failure. Video capture
+  // being toggled off also counts as "off". `micActive` is true only while a
+  // live mic stream is acquired (false = disabled or acquisition failed).
+  const { userVideoReady, globalError: cameraError } = useMultiCamera();
+  const cameraOff = !videoCaptureEnabled || !userVideoReady || !!cameraError;
+  // The live mic only comes up once the session is initialized; before that
+  // it's intentionally idle, so don't flag it as off/broken during startup.
+  const micOff = isInitialized && !micActive;
 
   // Stable refs — prevents re-send loops when callback identities change across renders
   const sendMessageRef = useRef(sendMessage);
@@ -661,6 +677,17 @@ export function DualAgentConversationBox({
                         {t('common.reset')}
                       </Button>
                     </div>
+                  ) : transcription ? (
+                    /* Someone spoke to the user (Observer transcript that
+                       triggers the Board Manager) — show it in yellow to
+                       distinguish it from the AI's own words (white). */
+                    <div className="flex items-center justify-between w-full">
+                      <div
+                        className="text-sm text-yellow-300 font-medium leading-relaxed flex-1 mr-3"
+                      >
+                        {transcription}
+                      </div>
+                    </div>
                   ) : currentMessage ? (
                     <div className="flex items-center justify-between w-full">
                       <div
@@ -729,20 +756,45 @@ export function DualAgentConversationBox({
               )}
             </div>
 
-            {/* Face Mirror — always reserves space; click/dwell to toggle pause */}
+            {/* Face Mirror — always reserves space; click/dwell to toggle pause.
+                When the camera is off or not working, a camera-off icon takes
+                the mirror's place in the same slot. */}
             <button type="button"
               data-dwell
               onClick={() => setPaused(!paused)}
               className={`shrink-0 self-center rounded-lg cursor-pointer transition-opacity ${paused ? 'ring-2 ring-red-400 opacity-80' : 'hover:opacity-90'}`}
-              title={paused ? t('pause.resume') : t('pause.pause')}
+              title={cameraOff ? t('status.cameraOff') : paused ? t('pause.resume') : t('pause.pause')}
               style={{ width: 80, height: 80 }}
             >
-              <FaceMirror
-                faces={rawFaces ?? []}
-                hands={rawHands ?? []}
-                size={80}
-              />
+              {cameraOff ? (
+                <div
+                  className="w-full h-full flex items-center justify-center rounded-lg bg-white/5 text-white/40"
+                  aria-label={t('status.cameraOff')}
+                >
+                  <CameraOff className="w-8 h-8" />
+                </div>
+              ) : (
+                <FaceMirror
+                  faces={rawFaces ?? []}
+                  hands={rawHands ?? []}
+                  size={80}
+                />
+              )}
             </button>
+
+            {/* Microphone-off indicator — sits next to the mirror (to the right,
+                or left in RTL via the header row's text direction). Shown only
+                when the mic is off or not working. */}
+            {micOff && (
+              <div
+                className="shrink-0 self-center flex items-center justify-center text-white/40"
+                style={{ width: 40, height: 80 }}
+                title={t('status.microphoneOff')}
+                aria-label={t('status.microphoneOff')}
+              >
+                <MicOff className="w-6 h-6" />
+              </div>
+            )}
           </div>
 
           {/* Experiment (glyphInputTranslation): glyph translation of the
@@ -755,17 +807,23 @@ export function DualAgentConversationBox({
               // header is exactly `6rem + GLYPH_STRIP_REM` tall — matching the
               // <main> top padding + board offset, with no gap underneath.
               // box-sizing: border-box keeps the border/padding inside 5rem.
-              className="flex items-center justify-center border-t border-white/15 pt-1"
+              // Multiple sentences lay out left→right within this fixed height;
+              // overflow is clipped (input glyphs are short gists). Each block
+              // gets an explicit width because <Glyph>'s `width:100%` would
+              // collapse to 0 in this auto-width row.
+              className="flex items-center justify-center gap-3 overflow-hidden border-t border-white/15 pt-1"
               style={{ height: "5rem" }}
-              aria-hidden={!inputGlyph?.glyph}
+              aria-hidden={!inputGlyphs || inputGlyphs.length === 0}
             >
-              {inputGlyph?.glyph ? (
-                <Glyph
-                  glyph={inputGlyph.glyph}
-                  fallback={inputGlyph.fallback}
-                  height="100%"
-                  noBackground
-                />
+              {inputGlyphs && inputGlyphs.length > 0 ? (
+                inputGlyphs.map((g, i) => (
+                  <div key={i} className="flex h-full items-center">
+                    {i > 0 && <div className="mr-3 h-3/5 w-px shrink-0 bg-white/25" />}
+                    <div className="h-full shrink-0" style={{ width: glyphStripWidth(g.glyph) }}>
+                      <Glyph glyph={g.glyph} fallback={g.fallback} height="100%" noBackground />
+                    </div>
+                  </div>
+                ))
               ) : (
                 <span className="text-white/30 text-2xl tracking-widest select-none">···</span>
               )}

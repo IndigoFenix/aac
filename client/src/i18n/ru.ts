@@ -2354,6 +2354,9 @@ export const ru = {
     aiName: "Имя ИИ",
     aiNameDesc: "Дайте ИИ-помощнику имя, которое {{STUDENT}} может использовать",
     aiNamePlaceholder: "напр. Друг, Саша, Алекс",
+    aiAssistant: "ИИ-ассистент",
+    accessibilityVisibility: "Видимость",
+    otherApps: "Другие приложения",
     // Voice
     voiceSettings: "Настройки голоса",
     voiceSettingsDesc: "Настройте отдельные голоса для {{STUDENT}} и ИИ-помощника",
@@ -2373,6 +2376,8 @@ export const ru = {
     localTtsDesc: "Использовать встроенный синтез речи браузера вместо серверного аудио. Полезно при медленном соединении.",
     liveAudioSpeakerTitle: "ИИ с прямым аудио",
     liveAudioSpeakerDesc: "ИИ говорит напрямую через нативное аудио Gemini Live (более естественная интонация, выше стоимость). Отключает ElevenLabs для голоса ИИ.",
+    fullAttentionMode: "Режим полного внимания",
+    fullAttentionModeDesc: "Непрерывно передаёт камеру и микрофон ИИ для максимальной отзывчивости. Когда выключено (по умолчанию), видео отправляется только при движении, а звук — только при речи, что снижает стоимость живого ИИ.",
     elevenlabsTitle: "Голос ElevenLabs",
     elevenlabsDesc: "Введите свой ключ API ElevenLabs и ID голосов для высококачественного TTS. При установке переопределяет все другие настройки голоса.",
     elevenlabsApiKey: "Ключ API ElevenLabs",

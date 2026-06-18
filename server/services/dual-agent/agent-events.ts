@@ -433,11 +433,13 @@ export interface BoardRebuiltEvent extends BaseEvent {
   /** Who the buttons are addressed to. Carried over into button-press
    *  events when the user picks one. Defaults to "DEVICE". */
   target?: SpeechParty;
-  /** Experiment (glyphInputTranslation): a glyph-string translation of the
-   *  incoming speech this board replies to, for the header glyph strip.
-   *  Serialized from rebuild_board's `input_glyphs` array via serializeGlyph.
-   *  Absent on follow-up rebuilds (the strip then keeps its last value). */
-  inputGlyph?: { glyph: string; fallback?: string };
+  /** Experiment (glyphInputTranslation): glyph-string translation of the
+   *  incoming speech this board replies to, for the header glyph strip — one
+   *  entry per SENTENCE (a multi-sentence utterance yields several). Each is
+   *  serialized from one sentence of rebuild_board's `input_glyphs` array via
+   *  serializeGlyph. Absent on follow-up rebuilds (the strip keeps its last
+   *  value). */
+  inputGlyphs?: Array<{ glyph: string; fallback?: string }>;
 }
 
 export interface ContextButtonAddedEvent extends BaseEvent {
@@ -462,12 +464,13 @@ export interface BinaryChoiceShownEvent extends BaseEvent {
   option1: BoardButton;
   option2: BoardButton;
   target?: SpeechParty;
-  /** Experiment (glyphInputTranslation): a glyph-string translation of the
+  /** Experiment (glyphInputTranslation): glyph-string translation of the
    *  incoming speech this choice replies to, shown above the two overlay
-   *  buttons so the user sees what was just said to them. Serialized from
-   *  show_binary_choice's `input_glyphs` array via serializeGlyph. Absent
-   *  when the setting is off or the choice isn't a reply to incoming speech. */
-  inputGlyph?: { glyph: string; fallback?: string };
+   *  buttons so the user sees what was just said to them — one entry per
+   *  SENTENCE. Each is serialized from one sentence of show_binary_choice's
+   *  `input_glyphs` array via serializeGlyph. Absent when the setting is off
+   *  or the choice isn't a reply to incoming speech. */
+  inputGlyphs?: Array<{ glyph: string; fallback?: string }>;
 }
 
 export interface BuilderSuggestedEvent extends BaseEvent {

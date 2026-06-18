@@ -907,7 +907,12 @@ export default function UnifiedDebugPanel({
                       <div className="text-[10px]">
                         <span className="text-gray-500">Transcript</span>{" "}
                         <span className="text-[9px] text-gray-400">{formatRelativeTime(lastTranscript.timestamp)}</span>
-                        <div className="text-gray-700 dark:text-gray-300">
+                        {lastTranscript.discarded && (
+                          <Badge className="bg-red-500 text-white text-[8px] px-1 ml-1 align-middle">
+                            discarded{lastTranscript.reason ? `: ${lastTranscript.reason}` : ""}
+                          </Badge>
+                        )}
+                        <div className={`${lastTranscript.discarded ? "text-gray-400 line-through" : "text-gray-700 dark:text-gray-300"}`}>
                           {lastTranscript.speaker && <strong>[{lastTranscript.speaker}]</strong>} {lastTranscript.text}
                         </div>
                       </div>

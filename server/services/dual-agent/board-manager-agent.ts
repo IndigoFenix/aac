@@ -56,7 +56,7 @@ import {
   GUESSING_HINT_COLD,
   BUILDER_HINT,
 } from "./prompts/board-manager";
-import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson, serializeGlyph } from "./interactive-agent";
+import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson, serializeInputGlyphs } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
@@ -225,6 +225,14 @@ export interface BoardManagerInvocationInput {
   /** Abort signal so the Coordinator can cancel in-flight invocations
    *  (e.g. when a newer event supersedes this one). */
   signal?: AbortSignal;
+
+  /** Sampling temperature override. Defaults to 0.2 (near-deterministic,
+   *  the right setting for structured-precision turns). The Coordinator
+   *  raises it on home-press topic switches so repeated presses on a
+   *  fresh conversation — where the input is nearly identical each time —
+   *  produce a VARIED set of conversation starters instead of the same
+   *  board every press. */
+  temperature?: number;
 
   /** Register of the person the user is currently talking to (peer vs helper),
    *  resolved by the Coordinator — biases the palette per <conversation_register>.
@@ -537,25 +545,17 @@ function parseToolCall(
         return event;
       }
       // Experiment (glyphInputTranslation): serialize the optional
-      // `input_glyphs` array into a glyph string for the header strip. The
-      // schema only exposes this param when the setting is on, so args carry
-      // it solely in that case.
-      let inputGlyph: { glyph: string; fallback?: string } | undefined;
-      if (Array.isArray(args.input_glyphs) && args.input_glyphs.length > 0) {
-        const ser = serializeGlyph(args.input_glyphs);
-        if (ser.sentence) {
-          inputGlyph = ser.fallback
-            ? { glyph: ser.sentence, fallback: ser.fallback }
-            : { glyph: ser.sentence };
-        }
-      }
+      // `input_glyphs` (array of SENTENCES) into one glyph string per sentence
+      // for the header strip. The schema only exposes this param when the
+      // setting is on, so args carry it solely in that case.
+      const inputGlyphs = serializeInputGlyphs(args.input_glyphs);
       const event: BoardRebuiltEvent = {
         type: "board_rebuilt",
         source: "board-manager",
         timestamp: now,
         buttons,
         target: typeof args.target === "string" ? args.target : undefined,
-        ...(inputGlyph ? { inputGlyph } : {}),
+        ...(inputGlyphs.length ? { inputGlyphs } : {}),
       };
       return event;
     }
@@ -665,18 +665,10 @@ function parseToolCall(
         glyphFallback: b.glyphFallback,
       });
       // Experiment (glyphInputTranslation): serialize the optional
-      // `input_glyphs` array into a glyph string for display above the two
-      // overlay buttons. Same handling as rebuild_board — the schema only
-      // exposes this param when the setting is on.
-      let inputGlyph: { glyph: string; fallback?: string } | undefined;
-      if (Array.isArray(args.input_glyphs) && args.input_glyphs.length > 0) {
-        const ser = serializeGlyph(args.input_glyphs);
-        if (ser.sentence) {
-          inputGlyph = ser.fallback
-            ? { glyph: ser.sentence, fallback: ser.fallback }
-            : { glyph: ser.sentence };
-        }
-      }
+      // `input_glyphs` (array of SENTENCES) into one glyph string per sentence
+      // for display above the two overlay buttons. Same handling as
+      // rebuild_board — the schema only exposes this param when the setting is on.
+      const inputGlyphs = serializeInputGlyphs(args.input_glyphs);
       const event: BinaryChoiceShownEvent = {
         type: "binary_choice_shown",
         source: "board-manager",
@@ -684,7 +676,7 @@ function parseToolCall(
         option1: toEventButton(o1),
         option2: toEventButton(o2),
         target: typeof args.target === "string" ? args.target : undefined,
-        ...(inputGlyph ? { inputGlyph } : {}),
+        ...(inputGlyphs.length ? { inputGlyphs } : {}),
       };
       return event;
     }
@@ -867,8 +859,11 @@ export class BoardManagerAgent {
         // valid call.
         toolChoice: "required",
         // Board Manager output is structured tool calls — temperature 0.2
-        // keeps it close to deterministic without making it brittle.
-        temperature: 0.2,
+        // keeps it close to deterministic without making it brittle. The
+        // Coordinator raises it for home-press topic switches so repeated
+        // presses yield varied conversation starters (see `temperature` on
+        // BoardManagerInvocationInput).
+        temperature: input.temperature ?? 0.2,
         // A rebuild_board call carries 6–8 button strings joined into one
         // pipe-encoded `user_response_buttons` argument; each is ~80–120
         // tokens once speech / sentence / fallback / label are populated.

@@ -161,7 +161,21 @@ export const RESTING_DEEP_BOUNDARY = 0.30;
  * with the lightweight resting session profile (small prompt, 4 tools, tight
  * compression) — see LiveRelay.switchSessionProfile.
  */
-export function dataFlowForState(state: SleepState, _score: number): DataFlowConfig {
+export function dataFlowForState(
+  state: SleepState,
+  _score: number,
+  awakeDataSaver = false,
+): DataFlowConfig {
+  // Cost-saving override: while awake (or waking), stream like a resting
+  // session — no periodic heartbeat frames, VAD-gated mic — instead of
+  // continuous audio + a heartbeat every 15s. Motion frames and spoken audio
+  // still get through, so the session stays responsive; it just stops paying
+  // for continuous streaming during conversational lulls. The server session
+  // profile is unaffected (still full awake Speaker + prompt). Server-driven
+  // via the AAC_AWAKE_DATA_SAVER env var → clientConfig.awakeDataSaver.
+  if (awakeDataSaver && (state === "awake" || state === "waking")) {
+    state = "resting";
+  }
   switch (state) {
     case "hibernation":
       return {

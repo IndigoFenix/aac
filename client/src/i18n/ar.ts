@@ -2354,6 +2354,9 @@ export const ar = {
     aiName: "اسم الذكاء الاصطناعي",
     aiNameDesc: "أعطِ مساعد الذكاء الاصطناعي اسماً يمكن لـ {{STUDENT}} استخدامه",
     aiNamePlaceholder: "مثال: صديقي، سام، أليكس",
+    aiAssistant: "مساعد الذكاء الاصطناعي",
+    accessibilityVisibility: "الرؤية",
+    otherApps: "تطبيقات أخرى",
     // Voice
     voiceSettings: "إعدادات الصوت",
     voiceSettingsDesc: "تكوين أصوات منفصلة لـ {{STUDENT}} ومساعد الذكاء الاصطناعي",
@@ -2373,6 +2376,8 @@ export const ar = {
     localTtsDesc: "استخدم تركيب الكلام المدمج في المتصفح بدلاً من الصوت المُنشأ بالخادم. مفيد للاتصالات البطيئة.",
     liveAudioSpeakerTitle: "ذكاء اصطناعي بصوت مباشر",
     liveAudioSpeakerDesc: "اجعل الذكاء الاصطناعي يتكلم مباشرة عبر صوت Gemini Live الأصلي (نغمات أكثر طبيعية، تكلفة أعلى). يعطّل ElevenLabs على صوت الذكاء الاصطناعي.",
+    fullAttentionMode: "وضع الانتباه الكامل",
+    fullAttentionModeDesc: "بث الكاميرا والميكروفون باستمرار إلى الذكاء الاصطناعي لأقصى استجابة. عند الإيقاف (الافتراضي)، يُرسَل الفيديو عند الحركة فقط والصوت عند الكلام فقط، مما يقلّل تكلفة الذكاء الاصطناعي المباشر.",
     elevenlabsTitle: "صوت ElevenLabs",
     elevenlabsDesc: "أدخل مفتاح API ومعرفات الصوت الخاصة بـ ElevenLabs لجودة TTS عالية. يتجاوز جميع إعدادات الصوت الأخرى عند التعيين.",
     elevenlabsApiKey: "مفتاح API لـ ElevenLabs",

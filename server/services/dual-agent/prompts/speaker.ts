@@ -90,7 +90,7 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
 
   const languageName = getLanguageName(language);
   const descriptor = studentDescriptor(config);
-  const aiIdentity = aiName ? `You are [${aiName}], a companion AI` : `You are a companion AI`;
+  const aiIdentity = aiName ? `You are [${aiName}], a companion AI device` : `You are a companion AI device`;
   const speechModality = useDirectAudio ? "spoken dialogue" : "speak() text";
   const isMuted = muteState === "muted";
   // Gemini Live native-audio + non-muted: buildSpeakerToolDeclarations

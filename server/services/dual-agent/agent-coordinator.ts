@@ -235,7 +235,7 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     speakerCompanion: "The user is now talking to someone else, not you. Stay quiet.",
     speakerFacilitator: "The user is talking to someone else. Stay quiet.",
     silent: true,
-    boardManager: "Palette: conversation starters and replies for the user to say to a person in their environment. Mix GENERIC openers (greetings, 'how are you?', 'I want to tell you something', 'what's up?', 'can I ask you a question?') with CONTEXT-SPECIFIC starters derived from <recent_events> (people present, objects observed, ongoing activities, recent transcripts). Lead with the context-specific ones when there's clear context to build on — they're more useful than generic phrases. The user is initiating a conversation with someone real in the room; pick buttons that help them OPEN that exchange.",
+    boardManager: "The user just turned to talk to a real person nearby and is starting that conversation. Rebuild the board with a varied set of conversation openers the user can press. Spread across kinds, each a concrete phrase: a greeting ('Hi', 'Hello'), asking about the other person ('How are you?', 'What are you doing?'), sharing their own news ('I want to tell you something', 'Guess what'), suggesting doing something together, commenting on what's around them, or naming something they want. Pull concrete, personal openers from the user's known interests and recent topics in memory so they feel personal, not generic. If there is a clear ongoing conversation that gives context (who's present, what's happening, recent speech), LEAD with openers tied to it — they beat generic phrases. With NO context yet (a fresh conversation), variety matters most.",
   },
   "MY DAY": {
     topic: "my day",
@@ -273,6 +273,13 @@ const SOCIAL_REPLY_HOLD_MS = Number(process.env.AAC_SOCIAL_REPLY_HOLD_MS ?? 1800
 /** Facilitator: after a BID press (the user asked the human something), how long
  *  to wait for the human to answer before offering the user a fresh board. */
 const FACILITATOR_BID_WAIT_MS = Number(process.env.AAC_FACILITATOR_BID_WAIT_MS ?? 4000);
+/** Sampling temperature for the Board Manager on a home-press topic switch
+ *  (a `forceRebuildDirective` turn). Higher than the structured-precision
+ *  default (0.2) so repeated presses on a fresh conversation produce a VARIED
+ *  set of conversation starters instead of the same near-deterministic board.
+ *  Kept moderate to avoid the MALFORMED_FUNCTION_CALL brittleness a high temp
+ *  brings to Gemini Flash structured output; env-tunable for fine-tuning. */
+const HOME_PRESS_REBUILD_TEMPERATURE = Number(process.env.AAC_HOME_PRESS_REBUILD_TEMPERATURE ?? 0.6);
 /** Delay after a practice session ends before a NEW "Practice friend" face is
  *  generated + sent. Until it arrives the button shows no face and does nothing
  *  (a deliberate beat between sessions). */
@@ -313,19 +320,26 @@ const RESTING_COMPRESSION_TARGET = 6_000;
  *  and send to the client. Mirrors LiveRelay.AUDIO_FLUSH_INTERVAL_MS. */
 const AUDIO_FLUSH_INTERVAL_MS = 250;
 
+/** Observer hallucination guard. The Observer fabricates speech transcripts
+ *  when it has no audio to work with (mic off / muted / not streaming). If no
+ *  client audio has been consumed within this window when a transcript arrives,
+ *  the transcript is discarded (surfaced in the debug feed only). Env-tunable.
+ *  NOTE: the client gates mic PCM while AI TTS plays (echo prevention), so keep
+ *  this comfortably larger than a typical utterance to avoid discarding a real
+ *  transcript that lands just as the AI starts talking. */
+const OBSERVER_TRANSCRIPT_AUDIO_GATE_MS = Number(process.env.AAC_OBSERVER_AUDIO_GATE_MS ?? 8000);
+
 /** Corrective injected into the native-audio Speaker after it leaks its
  *  reasoning into spoken output. Framed as a system correction: reassure
  *  the model the user did NOT hear it (so it doesn't try to "take it back"
- *  aloud), name the exact failure, and point it back to the silent tool.
- *  Also forbids the bare-"THOUGHT" label the model drifts into. English,
- *  matching every other meta-injection ([MODE], [CONTEXT], …). */
+ *  aloud), name the exact failure, and point it back to the silent tool. */
 const THOUGHT_LEAK_CORRECTION =
   `[SYSTEM CORRECTION] Your last turn began by voicing your private reasoning ` +
   `(it started with "private_thought" or a similar label). That audio was caught and ` +
   `suppressed — the user did NOT hear it, so do NOT apologize for it or refer to it. ` +
   `Reminder: a private thought is SILENT. To record reasoning, call the private_thought ` +
-  `function — never speak or write it. Never prefix what you say with "private_thought", ` +
-  `"THOUGHT", or any similar marker; everything you voice reaches the user. ` +
+  `FUNCTION — never speak or write it. Never prefix what you say with "private_thought" ` +
+  `or any similar marker; everything you voice reaches the user. ` +
   `Continue the conversation naturally on your next turn.`;
 
 /** Corrective injected after the Speaker prefixes its spoken reply with a
@@ -444,6 +458,8 @@ function clientMsgSummary(msg: ClientMessage): string {
       return `mute=${msg.muteState}`;
     case "set_paused":
       return `paused=${msg.paused}`;
+    case "mic_state":
+      return `active=${msg.active}${msg.reason ? ` reason="${msg.reason}"` : ""}`;
     case "user_message":
       return `text="${msg.text.slice(0, 80)}${msg.text.length > 80 ? "…" : ""}"`;
     case "context_injection":
@@ -755,6 +771,10 @@ export class AgentCoordinator {
   /** Counters for periodic flow-confirmation logging. */
   private frameCount = 0;
   private pcmCount = 0;
+  /** Timestamp (ms) of the last PCM audio chunk consumed from the client.
+   *  Drives the Observer hallucination guard — see
+   *  OBSERVER_TRANSCRIPT_AUDIO_GATE_MS. 0 means no audio yet this session. */
+  private lastAudioInputAt = 0;
 
   // -------------------------------------------------------------------------
   // Face recognition (ported from the legacy LiveRelay path). Populated when
@@ -1198,6 +1218,7 @@ export class AgentCoordinator {
       case "pcm_audio":
         if (this.paused) return;
         this.observer?.sendAudio(msg.data, "audio/pcm;rate=16000");
+        this.lastAudioInputAt = Date.now();
         this.pcmCount += 1;
         if (this.pcmCount === 1 || this.pcmCount % 500 === 0) {
           runInSessionContext(this.sessionId || "?", this.debugMode, () => {
@@ -1219,6 +1240,16 @@ export class AgentCoordinator {
           logLiveSession("CLIENT → set_paused", `paused=${msg.paused}`);
         });
         return;
+      case "mic_state": {
+        // Diagnostics only. Record mic activate/deactivate in the session log via
+        // the supervisor channel: it reaches the DB history + Monitor's batch
+        // queue but NOT the live agents' conversationLog — so it is never injected
+        // as a live turn and can't trigger an immediate spoken reaction like
+        // "I can hear you now". Purely to help identify mic problems after the fact.
+        const micContent = `[MIC ${msg.active ? "ACTIVATED" : "DEACTIVATED"}]${msg.reason ? ` — ${msg.reason}` : ""}`;
+        this.writeSupervisorOnly(micContent);
+        return;
+      }
       case "gps_update":
         // Periodic device-location refresh. Update the Monitor's reading and,
         // if the matched place/event changed, inject fresh location context.
@@ -1687,9 +1718,12 @@ export class AgentCoordinator {
       sessionId: this.sessionId,
       // Ship the tunable client-side constants (activity monitor cadence,
       // sleep thresholds, gesture window) from the server so they can
-      // change without a client rebuild. Future: read per-student
-      // overrides from settings and merge here.
-      clientConfig: buildDefaultClientConfig(),
+      // change without a client rebuild. Full-attention mode (per-student)
+      // governs awake-while-streaming cost: OFF → apply the resting input
+      // filter while awake (awakeDataSaver), ON → continuous streaming.
+      clientConfig: buildDefaultClientConfig({
+        awakeDataSaver: !((studentRow?.aacSettings as any)?.fullAttentionMode),
+      }),
     });
 
     // Deliver the apps lists to the client. The client populates its Apps
@@ -3149,6 +3183,17 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
 
   private onObserverEvent(event: ObserverOutputEvent): void {
+    // Observer hallucination guard: discard speech transcripts that arrive with
+    // no audio consumed recently (mic off / muted / not streaming). A fabricated
+    // transcript must never reach the event bus, any agent, the caption, or the
+    // board — but we DO surface it in the debug feed so the hallucination stays
+    // visible while diagnosing. Gate BEFORE recordEvent so it doesn't pollute
+    // recentEvents (which the Board Manager and session snapshot consume).
+    if (event.type === "transcribed" && this.isTranscriptAudioStale()) {
+      this.discardHallucinatedTranscript(event);
+      return;
+    }
+
     this.recordEvent(event);
     this.logEvent("OBSERVER", event);
 
@@ -3187,6 +3232,37 @@ export class AgentCoordinator {
         // Per user feedback: echo back is fine; agent retains action log.
         this.observer?.sendContextInjection(`[PRIVATE NOTE] (you noted) ${event.note}`);
         return;
+    }
+  }
+
+  /** True when no client audio has been consumed within the hallucination-guard
+   *  window — i.e. the Observer is effectively "hearing" nothing, so any
+   *  transcript it emits is fabricated. */
+  private isTranscriptAudioStale(): boolean {
+    return Date.now() - this.lastAudioInputAt > OBSERVER_TRANSCRIPT_AUDIO_GATE_MS;
+  }
+
+  /** A transcript arrived without recently-consumed audio — drop it from all
+   *  routing (no agent, caption, or board) and surface it in the client debug
+   *  feed + admin log instead. */
+  private discardHallucinatedTranscript(event: TranscribedEvent): void {
+    const sinceAudio = this.lastAudioInputAt === 0 ? null : Date.now() - this.lastAudioInputAt;
+    const ago = sinceAudio === null ? "no audio this session" : `${sinceAudio}ms since last audio`;
+    flowNote("COORDINATOR", `Discarded Observer transcript (${ago}): [${event.speaker}] "${event.text}"`);
+    this.logEvent("OBSERVER(discarded)", event);
+    if (this.debugMode) {
+      this.send({
+        type: "debug",
+        data: {
+          last_transcript: {
+            speaker: event.speaker,
+            text: event.text,
+            timestamp: Date.now(),
+            discarded: true,
+            reason: "no recent audio",
+          },
+        },
+      });
     }
   }
 
@@ -3278,6 +3354,17 @@ export class AgentCoordinator {
     // target was USER. DEVICE-targeted speech goes to Speaker; ambient
     // speech doesn't move the board.
     if (toUser) {
+      // Surface the heard statement on the client caption (rendered in yellow,
+      // distinct from the AI's own words) so the user can see what they're
+      // being asked to respond to while the BoardManager rebuilds reply
+      // options below.
+      this.send({
+        type: "transcript",
+        data: event.text,
+        speaker: event.speaker,
+        confidence: event.confidence,
+      });
+
       // An external statement aimed at the user just landed — in facilitator
       // mode this is the "someone answered the bid" signal, so cancel any
       // pending no-response board (Phase B).
@@ -5457,6 +5544,13 @@ export class AgentCoordinator {
         signal: controller.signal,
         forceRebuildDirective: forceRebuildDirective ?? undefined,
         interlocutorRegister: this.resolveInterlocutorRegister(),
+        // Home-press topic switches want VARIETY across repeated presses —
+        // especially the "I'm talking" → facilitator opener on a fresh
+        // conversation, where the input barely changes press-to-press. Raise
+        // the sampling temperature so the model produces a different set of
+        // conversation starters each time instead of the same near-
+        // deterministic board. Normal turns keep the precise 0.2 default.
+        temperature: forceRebuildDirective ? HOME_PRESS_REBUILD_TEMPERATURE : undefined,
       };
       if (forceRebuildDirective) {
         flowNote(
@@ -5563,13 +5657,30 @@ export class AgentCoordinator {
         && !hadFusion
         && onlyNoChange
         && !isMalformedOrEmpty;
+      // A home-press force-rebuild directive explicitly forbids no_change
+      // (buildForceRebuildHint: "Do NOT call no_change on this turn"). The
+      // SILENT home presses (e.g. the "I'm talking" → facilitator button)
+      // invoke BM with EMPTY triggers, so beatGotNoChange — which keys off
+      // triggerDemandsRebuild — never catches a no_change here. This bites
+      // hardest when the user RE-presses the same mode button: the existing
+      // board already resembles the requested palette, so the model
+      // no_changes it and the surface never refreshes. Treat an outstanding
+      // directive + no_change as a beat that needed a rebuild and retry.
+      const directiveGotNoChange = !!forceRebuildDirective
+        && !producedRebuild
+        && !producedBuilderSuggestions
+        && !hadFusion
+        && onlyNoChange
+        && !isMalformedOrEmpty;
 
-      if ((isMalformedOrEmpty && !hadFusion) || beatGotNoChange || stateRequiresOutput) {
+      if ((isMalformedOrEmpty && !hadFusion) || beatGotNoChange || stateRequiresOutput || directiveGotNoChange) {
         const why = isMalformedOrEmpty
           ? `malformed/empty (finish: ${result.finishReason ?? "unknown"})`
           : beatGotNoChange
             ? `no_change on a beat that needed rebuild (${triggeringEvents.map(e => e.type).join("+")})`
-            : "state-triggered no-output";
+            : directiveGotNoChange
+              ? "no_change on a mandatory home-press rebuild"
+              : "state-triggered no-output";
         flowNote("BOARD_MGR", `Queueing retry — ${why}.`);
         this.queueBoardMgrEmptyResponseRetry();
       }
@@ -5811,8 +5922,12 @@ export class AgentCoordinator {
     // into the header glyph strip. Only sent when BoardManager supplied
     // `input_glyphs` (replies to incoming speech) — on follow-ups it's absent
     // and the client keeps the strip's last value.
-    if (event.inputGlyph?.glyph) {
-      this.send({ type: "input_glyphs", data: event.inputGlyph });
+    if (event.inputGlyphs?.length) {
+      this.send({ type: "input_glyphs", data: event.inputGlyphs });
+      // Input glyphs can carry `generate:` parts too — feed every sentence
+      // through the same symbol pipeline so the generated image swaps in over
+      // its `fb`.
+      void this.generateGlyphPartSymbols(event.inputGlyphs.map(g => g.glyph));
     }
     void this.applySymbolPipeline(merged as any);
   }
@@ -6018,6 +6133,11 @@ export class AgentCoordinator {
     this.boardMgrPendingFeedback = buildEmptyResponseRetryFeedback({
       inGuessingMode: this.guessingState !== null,
       inBuilderMode: this.builderState !== null,
+      // An outstanding home-press directive means the model either produced
+      // nothing or no_changed a mandatory topic switch — tailor the feedback
+      // to re-demand the fresh palette rather than the generic "no tool
+      // calls" message (which is inaccurate when it DID call no_change).
+      forceRebuildDirective: this.pendingForceRebuildDirective ?? undefined,
     });
     // Pair the original triggers with the feedback. invokeBoardManager
     // drains this into the NEXT invocation's effective triggers as long
@@ -6065,11 +6185,18 @@ export class AgentCoordinator {
         options: [event.option1, event.option2],
         escapeKind,
         // Experiment (glyphInputTranslation): glyph translation of the
-        // incoming speech, shown above the overlay buttons. Only present
-        // when BoardManager supplied `input_glyphs`.
-        ...(event.inputGlyph?.glyph ? { inputGlyph: event.inputGlyph } : {}),
+        // incoming speech (one entry per sentence), shown above the overlay
+        // buttons. Only present when BoardManager supplied `input_glyphs`.
+        ...(event.inputGlyphs?.length ? { inputGlyphs: event.inputGlyphs } : {}),
       },
     });
+    // The overlay options are full SENTENCE BUTTONs and the input glyphs can
+    // carry `generate:` parts — run the same symbol pipeline so their
+    // generated images swap in over the fallbacks, exactly like board buttons.
+    void this.applySymbolPipeline([event.option1, event.option2]);
+    if (event.inputGlyphs?.length) {
+      void this.generateGlyphPartSymbols(event.inputGlyphs.map(g => g.glyph));
+    }
   }
 
   private applyBuilderSuggested(event: BuilderSuggestedEvent): void {
@@ -6318,13 +6445,30 @@ export class AgentCoordinator {
     }
 
     // ── Multi-slot glyph parts ───────────────────────────────────────────
-    // Collect every distinct imageKey referenced inside a multi-glyph
-    // SENTENCE. Resolved ones broadcast as `construction_symbol_ready`
-    // right away; unresolved ones go through the generation queue and
-    // broadcast the same event when they land.
+    // Resolve/queue every in-glyph imageKey referenced across these buttons.
+    await this.generateGlyphPartSymbols(buttons.map(b => b.glyph));
+  }
+
+  /**
+   * Resolve + queue generation for the in-glyph `generate:` parts of any
+   * glyph strings (board-button SENTENCEs OR the input-glyph translation
+   * strip). Resolved keys broadcast `construction_symbol_ready` right away;
+   * unresolved ones queue and broadcast the same event when they land. The
+   * client's Glyph swaps from each part's `fb` fallback to the generated
+   * image as the events arrive — identical to how button glyphs upgrade.
+   *
+   * Keyed by imageKey (not button label) so it's button-agnostic: the input
+   * glyph isn't a button, it's just a glyph string. Fire-and-forget.
+   */
+  private async generateGlyphPartSymbols(
+    glyphStrings: Array<string | undefined>,
+  ): Promise<void> {
+    const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    if (!generateSymbols && !useApprovedSymbols && !useUnapprovedSymbols) return;
+
     const partKeys = new Set<string>();
-    for (const b of buttons) {
-      if (b.glyph) collectGlyphImageKeys(b.glyph, partKeys);
+    for (const g of glyphStrings) {
+      if (g) collectGlyphImageKeys(g, partKeys);
     }
     if (partKeys.size === 0) return;
 

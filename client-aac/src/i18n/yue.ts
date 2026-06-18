@@ -675,6 +675,8 @@ export const yue: Translations = {
 
   status: {
     cameraBlocked: "鏡頭被封鎖",
+    cameraOff: "鏡頭已關閉",
+    microphoneOff: "咪高峰已關閉",
     noOnePresent: "冇人喺度",
     userNotPresent: "用戶唔喺度",
     standbyMode: "待機模式",

@@ -136,13 +136,15 @@ describe("glyphInputTranslation — input_glyphs gating on rebuild_board", () =>
     expect(getRebuildProps({ ...baseConfig, glyphInputTranslation: false })).not.toHaveProperty("input_glyphs");
   });
 
-  test("input_glyphs is present (and an array of glyph objects) when enabled", () => {
+  test("input_glyphs is present (an array of SENTENCES, each an array of glyph objects) when enabled", () => {
     const props = getRebuildProps({ ...baseConfig, glyphInputTranslation: true });
     expect(props).toHaveProperty("input_glyphs");
+    // Outer array = sentences; each item is itself an array of GLYPHs.
     expect(props.input_glyphs.type).toBe("array");
-    // Same per-glyph shape as a button glyph (sym/gen/mods/fb).
-    expect(props.input_glyphs.items.properties).toHaveProperty("sym");
-    expect(props.input_glyphs.items.properties).toHaveProperty("mods");
+    expect(props.input_glyphs.items.type).toBe("array");
+    // Same per-glyph shape as a button glyph (sym/gen/mods/fb) one level deeper.
+    expect(props.input_glyphs.items.items.properties).toHaveProperty("sym");
+    expect(props.input_glyphs.items.items.properties).toHaveProperty("mods");
   });
 
   test("input_glyphs never appears on add_board_button / sidebar even when enabled", () => {
@@ -162,9 +164,11 @@ describe("glyphInputTranslation — input_glyphs gating on rebuild_board", () =>
       .find(d => d.name === "show_binary_choice")!;
     const props = (on.parametersJsonSchema as any).properties;
     expect(props).toHaveProperty("input_glyphs");
+    // Outer array = sentences; each item is itself an array of GLYPHs.
     expect(props.input_glyphs.type).toBe("array");
-    // Same per-glyph shape as a button glyph (sym/mods).
-    expect(props.input_glyphs.items.properties).toHaveProperty("sym");
-    expect(props.input_glyphs.items.properties).toHaveProperty("mods");
+    expect(props.input_glyphs.items.type).toBe("array");
+    // Same per-glyph shape as a button glyph (sym/mods) one level deeper.
+    expect(props.input_glyphs.items.items.properties).toHaveProperty("sym");
+    expect(props.input_glyphs.items.items.properties).toHaveProperty("mods");
   });
 });

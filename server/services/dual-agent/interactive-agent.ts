@@ -189,6 +189,33 @@ export function serializeGlyph(
   return { sentence, fallback };
 }
 
+/**
+ * Experiment (glyphInputTranslation): turn a tool call's `input_glyphs` arg
+ * into one `{glyph, fallback}` entry per SENTENCE for the translation strip.
+ *
+ * The shape is an ARRAY OF SENTENCES, each sentence an array of GLYPH objects:
+ * `[[{sym:"want"},{sym:"go"}], [{sym:"ok"},{sym:"❓"}]]`. For backward
+ * tolerance, a FLAT array of GLYPH objects (the original single-sentence shape)
+ * is accepted as one sentence. Empty sentences are dropped; non-array input
+ * yields `[]`.
+ */
+export function serializeInputGlyphs(raw: unknown): Array<{ glyph: string; fallback?: string }> {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  // Detect shape: array-of-sentences (first element is itself an array) vs a
+  // flat single sentence (elements are GLYPH objects). Mixed/odd input falls
+  // back to treating the whole thing as one sentence.
+  const sentences: unknown[][] = Array.isArray(raw[0])
+    ? (raw as unknown[][]).filter((s) => Array.isArray(s) && s.length > 0)
+    : [raw];
+  const out: Array<{ glyph: string; fallback?: string }> = [];
+  for (const sentence of sentences) {
+    const ser = serializeGlyph(sentence);
+    if (!ser.sentence) continue;
+    out.push(ser.fallback ? { glyph: ser.sentence, fallback: ser.fallback } : { glyph: ser.sentence });
+  }
+  return out;
+}
+
 function parseSlot(slot: string): { head: string; mods?: string[] } {
   // `(`-payload (composable host glyph) is preserved on the head verbatim.
   const dot = slot.indexOf(".");

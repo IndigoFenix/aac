@@ -2354,6 +2354,9 @@ export const en = {
     aiName: "AI Name",
     aiNameDesc: "Give the AI assistant a name the {{STUDENT}} can use",
     aiNamePlaceholder: "e.g. Buddy, Sam, Alex",
+    aiAssistant: "AI Assistant",
+    accessibilityVisibility: "Visibility",
+    otherApps: "Other Apps",
     // Voice
     voiceSettings: "Voice Settings",
     voiceSettingsDesc: "Configure separate voices for the {{STUDENT}} and the AI assistant",
@@ -2373,6 +2376,8 @@ export const en = {
     localTtsDesc: "Use the browser's built-in speech synthesis instead of server-generated audio. Useful for slow connections.",
     liveAudioSpeakerTitle: "Live Audio AI",
     liveAudioSpeakerDesc: "Have the AI speak directly via Gemini Live native audio (more natural intonation, higher cost). Disables ElevenLabs on AI voice.",
+    fullAttentionMode: "Full Attention Mode",
+    fullAttentionModeDesc: "Continuously stream the camera and microphone to the AI for maximum responsiveness. When off (the default), video is sent only on motion and audio only on speech, which lowers live-AI cost.",
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsApiKey: "ElevenLabs API Key",

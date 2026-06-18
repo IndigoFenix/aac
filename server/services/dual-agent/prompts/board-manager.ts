@@ -237,10 +237,12 @@ Two META button kinds — set \`button_type\` on a rebuild_board / add_board_but
 </board_rules>${glyphInputTranslation ? `
 
 <input_glyphs>
-The device shows the user a glyph translation of what was just said TO them. On EVERY \`rebuild_board\` (header strip) or \`show_binary_choice\` (above the two overlay ${T.button}s) that REPLIES to incoming speech (\`target = USER\` — an [AI to USER] line or a person speaking to the user), also set \`input_glyphs\`: an ARRAY of GLYPHs (same shape as button \`glyph\`) depicting THAT incoming sentence — not the reply buttons.
-  - It represents what the user HEARD, so build it from the speaker's words (e.g. AI asked "Do you want to go outside?" → \`[{sym:"want"},{sym:"go"},{sym:"🌳"},{sym:"❓"}]\`).
-  - No length cap, but SIMPLIFY to the core meaning when a faithful translation would be long — favour the few GLYPHs that carry the gist.
-  - Use existing SYMBOLs/emoji only (the preference order in <glyph>). Do NOT use \`gen\` here — there is no time to generate images.
+The device shows the user a glyph translation of what was just said TO them. On EVERY \`rebuild_board\` (header strip) or \`show_binary_choice\` (above the two overlay ${T.button}s) that REPLIES to incoming speech (\`target = USER\` — an [AI to USER] line or a person speaking to the user), also set \`input_glyphs\`: an ARRAY OF SENTENCES depicting THAT incoming speech — not the reply buttons. Each SENTENCE is itself an array of GLYPHs (same shape as button \`glyph\`).
+  - ONE sentence → an array with one inner array: \`[[{sym:"want"},{sym:"go"},{sym:"🌳"},{sym:"❓"}]]\` for "Do you want to go outside?".
+  - SEVERAL sentences in the incoming speech → one inner array PER sentence, in order: \`[[{sym:"👋"},{sym:"hello"}],[{sym:"how"},{sym:"you"},{sym:"❓"}]]\` for "Hi! How are you?". They render left→right (header) or stacked (overlay) as distinct sentences.
+  - It represents what the user HEARD, so build each sentence from the speaker's words.
+  - No length cap, but SIMPLIFY to the core meaning when a faithful translation would be long — favour the few GLYPHs that carry the gist, and split into multiple sentences only when the speech really was multiple sentences.
+  - Build it with the SAME head-SYMBOL preference order as a button \`glyph\` (see <glyph>): existing SYMBOLs/emoji first, and \`gen\` (ALWAYS paired with an \`fb\` fallback) when no existing SYMBOL fits. The \`fb\` shows immediately and the generated image swaps in once ready — exactly as on a button.
   - Omit \`input_glyphs\` on FOLLOW-UP rebuilds (the user just acted; nothing new was said to them) — the header keeps its last translation.
 </input_glyphs>` : ""}
 
@@ -652,12 +654,29 @@ export const BUILDER_HINT =
 // here.
 
 /** Builder for the "empty response" retry feedback the Coordinator queues
- *  when BM produced no tool calls on a user-input trigger that demanded a
- *  rebuild. State-aware: word-finder mode, builder mode, and default. */
+ *  when BM produced no tool calls (or no_changed a mandatory rebuild) on a
+ *  trigger that demanded a rebuild. State-aware: home-press directive,
+ *  word-finder mode, builder mode, and default. */
 export function buildEmptyResponseRetryFeedback(args: {
   inGuessingMode: boolean;
   inBuilderMode: boolean;
+  /** Set when a home-press topic switch is still outstanding — the model
+   *  either returned nothing or no_changed a MANDATORY rebuild. Takes
+   *  priority over the mode-based directives below and re-demands the fresh
+   *  palette by name. */
+  forceRebuildDirective?: string;
 }): string {
+  // A home-press topic switch is mandatory — no_change is never valid here,
+  // so the retry must re-state the directive rather than the generic
+  // "no tool calls" copy (the model may well have CALLED no_change).
+  if (args.forceRebuildDirective) {
+    return `[rebuild required]
+The user pressed a home-board navigation button to switch context — the ${T.board} MUST be replaced with a fresh palette, even if the current buttons look related. no_change is NOT valid on this turn.
+
+${args.forceRebuildDirective}
+
+Call \`rebuild_board(buttons=[...])\` now with a wide, varied set of ${T.button}s.`;
+  }
   let directive: string;
   if (args.inGuessingMode) {
     directive = `The user is in word-finder mode. Call \`rebuild_board(buttons=[...])\` using the \`suggestion:dim:value\` keys from the latest [GUESSING STATE] as the ${T.button}s' \`label\` fields.`;
@@ -887,8 +906,8 @@ The \`target\` field declares who the user's button replies are addressed to:
           ? {
               input_glyphs: {
                 type: "array",
-                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this board), shown in the header so the user sees what was just said to them. Same GLYPH shape as a button \`glyph\` — see <input_glyphs>. Simplify to the gist; existing SYMBOLs/emoji only (no \`gen\`). Omit on follow-ups to the user's own action.`,
-                items: glyphItemSchema(),
+                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this board), shown in the header so the user sees what was just said to them. ARRAY OF SENTENCES — each item is one sentence's GLYPH array (same GLYPH shape as a button \`glyph\`, incl. \`gen\`+\`fb\`). One inner array per sentence. See <input_glyphs>. Simplify to the gist. Omit on follow-ups to the user's own action.`,
+                items: { type: "array", items: glyphItemSchema() },
               },
             }
           : {}),
@@ -1035,8 +1054,8 @@ function buildShowBinaryChoiceTool(config: BoardManagerToolConfig): FunctionDecl
           ? {
               input_glyphs: {
                 type: "array",
-                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this choice), shown ABOVE the two overlay ${T.button}s so the user sees what was just said to them. Same GLYPH shape as a button \`glyph\` — see <input_glyphs>. Simplify to the gist; existing SYMBOLs/emoji only (no \`gen\`). Omit when the choice isn't a reply to incoming speech.`,
-                items: glyphItemSchema(),
+                description: `Glyph translation of the speech you are REPLYING to (the [AI to USER] / person-to-user line that triggered this choice), shown ABOVE the two overlay ${T.button}s so the user sees what was just said to them. ARRAY OF SENTENCES — each item is one sentence's GLYPH array (same GLYPH shape as a button \`glyph\`, incl. \`gen\`+\`fb\`). One inner array per sentence. See <input_glyphs>. Simplify to the gist. Omit when the choice isn't a reply to incoming speech.`,
+                items: { type: "array", items: glyphItemSchema() },
               },
             }
           : {}),

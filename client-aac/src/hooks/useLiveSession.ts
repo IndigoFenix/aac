@@ -58,9 +58,9 @@ export interface UseLiveSessionOptions {
   classroomId?: string | null;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
-  /** Experiment (glyphInputTranslation): glyph-string translation of the
-   *  speech just directed at the user, for the header glyph strip. */
-  onInputGlyphs?: (data: { glyph: string; fallback?: string }) => void;
+  /** Experiment (glyphInputTranslation): per-sentence glyph-string translation
+   *  of the speech just directed at the user, for the header glyph strip. */
+  onInputGlyphs?: (data: Array<{ glyph: string; fallback?: string }>) => void;
   onContextBoardUpdate?: (board: ParsedBoardData) => void;
   onContextBoardRemove?: (label: string) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
@@ -263,14 +263,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // otherwise. The display layer doesn't need to know the rule — it just
   // renders the kind it's told.
   const [binaryChoiceEscapeKind, setBinaryChoiceEscapeKind] = useState<"maybe" | "neither" | null>(null);
-  // Experiment (glyphInputTranslation): glyph translation of the speech this
-  // choice replies to, shown above the two overlay buttons. Null when off or
-  // the choice isn't a reply to incoming speech.
-  const [binaryChoiceInputGlyph, setBinaryChoiceInputGlyph] = useState<{ glyph: string; fallback?: string } | null>(null);
+  // Experiment (glyphInputTranslation): per-sentence glyph translation of the
+  // speech this choice replies to, shown above the two overlay buttons. Null
+  // when off or the choice isn't a reply to incoming speech.
+  const [binaryChoiceInputGlyphs, setBinaryChoiceInputGlyphs] = useState<Array<{ glyph: string; fallback?: string }> | null>(null);
   const dismissBinaryChoice = useCallback(() => {
     setBinaryChoiceOptions(null);
     setBinaryChoiceEscapeKind(null);
-    setBinaryChoiceInputGlyph(null);
+    setBinaryChoiceInputGlyphs(null);
   }, []);
 
   // Caretaker alarm raised by the Observer agent. "alert" = a short
@@ -286,7 +286,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Deferred ask_binary_choice: same pattern — buffered options until TTS ends
   const pendingAskBinaryChoiceRef = useRef<BinaryChoiceOption[] | null>(null);
   const pendingAskBinaryChoiceEscapeKindRef = useRef<"maybe" | "neither" | null>(null);
-  const pendingAskBinaryChoiceInputGlyphRef = useRef<{ glyph: string; fallback?: string } | null>(null);
+  const pendingAskBinaryChoiceInputGlyphsRef = useRef<Array<{ glyph: string; fallback?: string }> | null>(null);
 
   // Local storage config (from server) — stored as ref to avoid re-renders
   const localStorageConfigRef = useRef<AacLocalStorageConfig | null>(null);
@@ -344,13 +344,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       if (pendingAskBinaryChoiceRef.current) {
         const opts = pendingAskBinaryChoiceRef.current;
         const kind = pendingAskBinaryChoiceEscapeKindRef.current;
-        const glyph = pendingAskBinaryChoiceInputGlyphRef.current;
+        const glyphs = pendingAskBinaryChoiceInputGlyphsRef.current;
         pendingAskBinaryChoiceRef.current = null;
         pendingAskBinaryChoiceEscapeKindRef.current = null;
-        pendingAskBinaryChoiceInputGlyphRef.current = null;
+        pendingAskBinaryChoiceInputGlyphsRef.current = null;
         setBinaryChoiceOptions(opts);
         setBinaryChoiceEscapeKind(kind);
-        setBinaryChoiceInputGlyph(glyph);
+        setBinaryChoiceInputGlyphs(glyphs);
       }
     },
   });
@@ -533,6 +533,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             break;
           }
           textAccumRef.current += cleaned;
+          // The AI is now speaking — drop any lingering "spoken to the user"
+          // caption (yellow) so it doesn't overlap the AI's white words.
+          setTranscription(null);
           setCurrentMessage(prev => ({
             id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
             role: "assistant",
@@ -543,6 +546,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         }
 
         case "utterance":
+          // The user is responding — clear the "spoken to the user" caption
+          // (yellow) now that they're voicing their reply.
+          setTranscription(null);
           setUtteranceText(prev => (prev || "") + (msg.text || ""));
           if (msg.confidence) setUtteranceConfidence(msg.confidence);
           break;
@@ -578,7 +584,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "input_glyphs":
-          if (msg.data?.glyph) onInputGlyphsRef.current?.(msg.data);
+          if (Array.isArray(msg.data) && msg.data.length > 0) onInputGlyphsRef.current?.(msg.data);
           break;
 
         case "context_button_add":
@@ -771,11 +777,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "binary_choice": {
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
           const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
-          const inputGlyph = (msg.data as any)?.inputGlyph as { glyph: string; fallback?: string } | undefined;
+          const inputGlyphs = (msg.data as any)?.inputGlyphs as Array<{ glyph: string; fallback?: string }> | undefined;
           if (opts.length >= 2) {
             setBinaryChoiceOptions(opts.slice(0, 2));
             setBinaryChoiceEscapeKind(escapeKind ?? null);
-            setBinaryChoiceInputGlyph(inputGlyph?.glyph ? inputGlyph : null);
+            setBinaryChoiceInputGlyphs(inputGlyphs?.length ? inputGlyphs : null);
           }
           break;
         }
@@ -784,11 +790,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Deferred binary-choice — show overlay after TTS playback completes
           const opts = Array.isArray(msg.data?.options) ? msg.data.options : [];
           const escapeKind = (msg.data as any)?.escapeKind as "maybe" | "neither" | undefined;
-          const inputGlyph = (msg.data as any)?.inputGlyph as { glyph: string; fallback?: string } | undefined;
+          const inputGlyphs = (msg.data as any)?.inputGlyphs as Array<{ glyph: string; fallback?: string }> | undefined;
           if (opts.length >= 2) {
             pendingAskBinaryChoiceRef.current = opts.slice(0, 2);
             pendingAskBinaryChoiceEscapeKindRef.current = escapeKind ?? null;
-            pendingAskBinaryChoiceInputGlyphRef.current = inputGlyph?.glyph ? inputGlyph : null;
+            pendingAskBinaryChoiceInputGlyphsRef.current = inputGlyphs?.length ? inputGlyphs : null;
           }
           break;
         }
@@ -1055,13 +1061,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           if (pendingAskBinaryChoiceRef.current && !audioPlayer.isPlaying) {
             const opts = pendingAskBinaryChoiceRef.current;
             const kind = pendingAskBinaryChoiceEscapeKindRef.current;
-            const glyph = pendingAskBinaryChoiceInputGlyphRef.current;
+            const glyphs = pendingAskBinaryChoiceInputGlyphsRef.current;
             pendingAskBinaryChoiceRef.current = null;
             pendingAskBinaryChoiceEscapeKindRef.current = null;
-            pendingAskBinaryChoiceInputGlyphRef.current = null;
+            pendingAskBinaryChoiceInputGlyphsRef.current = null;
             setBinaryChoiceOptions(opts);
             setBinaryChoiceEscapeKind(kind);
-            setBinaryChoiceInputGlyph(glyph);
+            setBinaryChoiceInputGlyphs(glyphs);
           }
           break;
       }
@@ -1290,6 +1296,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   /** Inject context into the AI without triggering a response turn */
   const sendContextOnly = useCallback((text: string) => {
     wsSend({ type: "context_injection", text });
+  }, [wsSend]);
+
+  // Diagnostics: tell the server when the mic activates/deactivates. The server
+  // only logs this to the session history (never injects it into a live agent),
+  // so it's safe to call on every transition. No-ops if the socket isn't open.
+  const sendMicState = useCallback((active: boolean, reason?: string) => {
+    wsSend({ type: "mic_state", active, reason });
   }, [wsSend]);
 
   /** Push construction-board state to the AI; relay formats as context injection. */
@@ -1749,7 +1762,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Binary-choice overlay (yes/no now routed through this same surface)
     binaryChoiceOptions,
     binaryChoiceEscapeKind,
-    binaryChoiceInputGlyph,
+    binaryChoiceInputGlyphs,
     dismissBinaryChoice,
 
     // Caretaker alarm raised by the Observer agent
@@ -1763,6 +1776,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     initialize,
     sendMessage,
     sendContextOnly,
+    sendMicState,
     sendBoardExit,
     sendVoice,
     voiceButtons,

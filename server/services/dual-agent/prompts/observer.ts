@@ -425,8 +425,10 @@ const SET_INTERACTION_MODE: FunctionDeclaration = {
   - **facilitator** — Speaker stays quiet; the board does the talking. The user is engaging ANOTHER PERSON in the room.
 
 Use when you observe a real shift:
-  - Someone walks in and starts talking with the user → facilitator.
-  - The other person leaves, or the user turns back to the screen alone → companion.
+  - Someone is talking with or interacting with the user → facilitator.
+  - The other person stops interacting with the user → companion.
+
+You should also use context to switch. If a helper tells you to be quiet and let them talk, switch to facilitator. If the user is clearly addressing the AI again after talking with someone else, switch back to companion.
 
 When switching to **facilitator**, also set \`register\` to say WHAT KIND of person the user is talking to — this shapes the buttons the board offers them:
   - **peer** — a friend or another child: a back-and-forth conversation. The board should lean social (reactions, questions back, sharing), not requests.
