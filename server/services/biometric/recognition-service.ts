@@ -56,6 +56,11 @@ export interface FaceMatchResult {
   name: string;
   distance: number;
   confidence: number;
+  /** How many reference faces backed this match (enrolled anchor + above-floor
+   *  gallery poses). A low score off ONE sample is weak-but-expected; the same
+   *  score off many samples is far more meaningful. Lets callers express the
+   *  CERTAINTY of the judgement, not just the raw score. */
+  sampleCount: number;
   description?: string;
   contextNotes?: string;
   relationship?: string;
@@ -170,6 +175,17 @@ function bestFaceDistance(
     }
   }
   return best;
+}
+
+/** Count the reference faces actually usable for matching a person — the
+ *  enrolled anchor (if any) plus every above-floor gallery pose. Drives the
+ *  CERTAINTY of a match: more samples → a given score is more trustworthy. */
+function usableSampleCount(anchor: number[] | null, gallery: FaceGalleryEntry[] | null): number {
+  let n = anchor && anchor.length ? 1 : 0;
+  if (gallery) for (const g of gallery) {
+    if (g?.embedding?.length && (g.weight ?? 1) > FACE_GALLERY_WEIGHT_FLOOR) n++;
+  }
+  return n;
 }
 
 /** Coerce a stored jsonb value into a clean FaceGalleryEntry[] (defensive). */
@@ -442,6 +458,7 @@ export async function findMatchingFace(
         name: p.name,
         distance,
         confidence: Math.max(0, 1 - distance / FACE_MATCH_THRESHOLD),
+        sampleCount: usableSampleCount(p.faceEmbedding as number[] | null, p.faceGallery),
         description: p.description,
         contextNotes: p.contextNotes,
         relationship: p.relationship,

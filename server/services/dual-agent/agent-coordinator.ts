@@ -6722,6 +6722,7 @@ export class AgentCoordinator {
           cameraRole: d.cameraRole,
           cameraLabel: d.cameraLabel,
           description: m.description,
+          sampleCount: m.sampleCount,
           // Below this confidence the match is ambiguous — ask the AI to verify
           // against the description instead of trusting the name outright.
           borderline: m.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE,
@@ -6840,29 +6841,56 @@ export class AgentCoordinator {
       if (role === "environment") return " — environment camera";
       return "";
     };
-    let anyBorderline = false;
+    let anyBorderline = false; // a NON-student known person matched only weakly
+    let confidentOther = false; // a non-student known person matched confidently
     const lines = this.currentIdentifiedFaces.map(f => {
       const where = cameraSuffix(f.cameraRole);
       if (!f.matched) return `- ${f.name} (no database match)${where}`;
       const conf = (f.confidence * 100).toFixed(0);
       const rel = f.relationship ? `, ${f.relationship}` : "";
-      const tag = f.entityType === "student" ? " [THE STUDENT]" : "";
-      // On a borderline (low-confidence) match, surface the on-file description
-      // and a UNCERTAIN flag so the AI cross-checks against what it actually
-      // sees before addressing the person by name.
-      if (f.borderline) {
+      const isStudent = f.entityType === "student";
+      // Certainty depends on how much reference data backs the match, not just
+      // the score. A weak score off 0–1 samples is EXPECTED (we've barely seen
+      // this face) and shouldn't be read as evidence against identity; a weak
+      // score off many samples is genuinely meaningful.
+      const samples = f.sampleCount ?? 0;
+      const sparseData = samples <= 1;
+      const dataNote = samples > 0
+        ? ` [${samples} reference${samples === 1 ? "" : "s"} on file${sparseData ? " — limited data, so a low score is expected" : ""}]`
+        : "";
+      // Err toward the student: a student match is taken as the student even at
+      // low confidence — the student is the device's default occupant, so we do
+      // NOT hedge their identity. The UNCERTAIN caution exists only to stop us
+      // greeting a stranger as a NAMED relative/caregiver, so it applies to
+      // non-student known people — AND only when we have enough data to trust a
+      // low score (with sparse data a weak match isn't real evidence either way).
+      if (!isStudent && f.borderline && !sparseData) {
         anyBorderline = true;
         const desc = f.description ? ` On file: ${f.description}.` : "";
-        return `- ${f.name}${rel} — ${conf}% confidence (UNCERTAIN — verify before using the name)${where}${tag}.${desc}`;
+        return `- ${f.name}${rel} — ${conf}% confidence (UNCERTAIN — verify before using the name)${where}${dataNote}.${desc}`;
       }
-      return `- ${f.name}${rel} — ${conf}% confidence${where}${tag}`;
+      if (isStudent) {
+        const hedge = f.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE
+          ? " (low-confidence match, but assume this IS the student)"
+          : "";
+        return `- ${f.name}${rel} — ${conf}% confidence${hedge}${where} [THE STUDENT]${dataNote}`;
+      }
+      if (!f.borderline) confidentOther = true;
+      return `- ${f.name}${rel} — ${conf}% confidence${where}${dataNote}`;
     });
     const borderlineLine = anyBorderline
       ? `\n(NOTE: an UNCERTAIN match means the face only loosely resembles the named person. Compare the on-file description to what you see. If it doesn't fit, treat them as unidentified rather than greeting the wrong person.)`
       : "";
-    const presenceLine = this.sawStudentFace()
-      ? ""
-      : `\n(NOTE: the user is NOT among the identified faces. The visible person, if any, is someone else — likely a caregiver, family member, or visitor.)`;
+    // Identity default: assume the person at the device is the student unless
+    // there is positive evidence otherwise — the student matched (handled
+    // above), OR a DIFFERENT known person matched confidently. Nobody matched →
+    // still default to the student, not "a stranger".
+    let presenceLine = "";
+    if (!this.sawStudentFace()) {
+      presenceLine = confidentOther
+        ? `\n(NOTE: a non-student known person is identified above and the student is not among the faces — the active user is that person, not the student.)`
+        : `\n(NOTE: no face is confidently identified. DEFAULT to treating the person at the device as the student unless you have clear evidence otherwise — do not call set_person_as_user for a non-student on weak grounds.)`;
+    }
     return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}${borderlineLine}`;
   }
 

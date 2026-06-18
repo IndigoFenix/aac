@@ -94,6 +94,7 @@ describe('Face recognition pipeline', () => {
     expect(match!.name).toBe('Mother');
     expect(match!.relationship).toBe('mother');
     expect(match!.confidence).toBeGreaterThan(0.9);
+    expect(match!.sampleCount).toBe(1); // anchor only, no gallery yet
   });
 
   it('returns null when the descriptor is far from every known embedding', async () => {
@@ -193,6 +194,7 @@ describe('Face recognition pipeline', () => {
     expect(anchorOnly).not.toBeNull();
     expect(anchorOnly!.entityId).toBe(contact.id);
     expect(anchorOnly!.distance).toBeLessThan(0.2);
+    expect(anchorOnly!.sampleCount).toBe(2); // anchor + 1 gallery pose
   });
 
   it('ignores a gallery pose whose weight has fallen below the floor', async () => {

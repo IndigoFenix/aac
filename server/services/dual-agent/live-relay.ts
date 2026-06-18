@@ -891,6 +891,10 @@ export interface IdentifiedFaceWire {
   description?: string;
   /** True when confidence sits in the ambiguous band — the AI is asked to verify. */
   borderline?: boolean;
+  /** Reference faces backing this match (anchor + above-floor gallery poses).
+   *  Calibrates certainty: a weak score off few samples is expected, off many
+   *  is meaningful. */
+  sampleCount?: number;
 }
 
 // ---------------------------------------------------------------------------

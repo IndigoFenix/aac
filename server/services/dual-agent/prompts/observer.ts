@@ -96,7 +96,7 @@ ${transcriptionRulesText(studentName, T.button, T.tagPress)}
 A visible face beats a voice match. If [${studentName}]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.
 
 The active user and the DEVICE:
-  - **The active user** — normally [${studentName}]; if [${studentName}] isn't present, it's whoever is clearly at the device. Refer to them by their REAL name in speaker/target (don't flatten it to a generic word), and set \`targetIsUser: true\` on the transcript whenever speech is directed at them. The name keeps the Speaker from confusing them with others; the flag is what surfaces reply options.
+  - **The active user** — assume it is [${studentName}] by default (their own device, expected user). Only treat the active user as someone else when another person is positively identified at the device. Refer to them by their REAL name in speaker/target (don't flatten it to a generic word), and set \`targetIsUser: true\` on the transcript whenever speech is directed at them. The name keeps the Speaker from confusing them with others; the flag is what surfaces reply options.
   - **DEVICE** — the AI itself${aiName ? ` (called [${aiName}])` : ""}.
     - Speech targets DEVICE when someone looks at the screen, uses the AI's name, or is replying to the AI's last utterance.
 
@@ -222,7 +222,7 @@ export const OBSERVER_STARTUP_PROMPT =
   - The setting / location (log a new_location).
   - Every person present and what they are doing.
   - The current activity (a lesson, a therapy session, a meal, play, free time) — log it so the rest of the system can stay on-topic.
-  - Whether the active USER is the student. Use [PEOPLE PRESENT] and the [THE STUDENT] tag to confirm identity rather than guessing; if the student is NOT among the identified faces, say so (set_person_as_user for whoever is actually at the device).`;
+  - Whether the active USER is the student. DEFAULT to assuming the person at the device IS the student — this is the student's own device and they are the expected user. A [THE STUDENT] tag in [PEOPLE PRESENT] confirms it (even a low-confidence one — lean toward the student). Only call set_person_as_user for someone else when you have POSITIVE evidence: a different known person is confidently identified, or a clear, unmistakable mismatch. Do NOT override the student identity on weak grounds (a not-yet-loaded face match, an "uncertain" tag, or a hunch about age/appearance).`;
 
 // ===========================================================================
 // TOOL DECLARATIONS
