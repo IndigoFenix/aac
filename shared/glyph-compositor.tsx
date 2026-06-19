@@ -85,6 +85,15 @@ export interface GlyphCompositorProps {
    * modified glyphs are unaffected — they still need the surrounding room.
    */
   fillSlot?: boolean;
+  /**
+   * Show the "empty payload" art for composable hosts (e.g. an open container
+   * with a blank slot) when their payload is unfilled. This is the construction
+   * affordance — it tells the user "drop something here" — so it's opt-in and
+   * ONLY the sentence builder sets it. Everywhere else (boards, captions, the
+   * AI strip) an unfilled host renders its normal full image, with no visible
+   * blank spot. Default false.
+   */
+  showEmptyHostSlot?: boolean;
 }
 
 export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement {
@@ -101,6 +110,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     onImageError,
     renderAnimatedSymbol,
     fillSlot = false,
+    showEmptyHostSlot = false,
   } = props;
 
   const parsed: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
@@ -188,6 +198,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
             onImageError={onImageError}
             renderAnimatedSymbol={renderAnimatedSymbol}
             fillBoost={fillBoost}
+            showEmptyHostSlot={showEmptyHostSlot}
           />
         );
       })}
@@ -231,10 +242,12 @@ interface SlotGroupProps {
   renderAnimatedSymbol?: (facet: AnimatedSpriteFacet, key: string) => React.ReactNode;
   /** Render this (single, unmodified) symbol nearly full-bleed — see fillSlot. */
   fillBoost?: boolean;
+  /** Show empty-payload host art (construction affordance) — see GlyphCompositor. */
+  showEmptyHostSlot?: boolean;
 }
 
 function SlotGroup(props: SlotGroupProps): React.ReactElement {
-  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol, fillBoost } = props;
+  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol, fillBoost, showEmptyHostSlot } = props;
   // Resolve the slot's vocabulary item. For a snake_case/canonical key
   // that's a direct registry lookup. For a raw-emoji key, fall back to
   // the reverse-emoji map so non-exposed items with bundled artwork
@@ -286,8 +299,12 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // slot is unfilled, point the resolver at the empty-state image
   // (e.g. play-empty) instead of the regular host art. This lets a
   // container item render visibly distinct full / empty states.
+  // Only the sentence builder shows the empty-payload "drop here" art; every
+  // other surface renders the host's normal image so there's no visible blank
+  // spot on an unfilled host.
   const useEmptyImage =
-    !!item?.composable?.emptyImagePath
+    showEmptyHostSlot
+    && !!item?.composable?.emptyImagePath
     && !!slot
     && !slot.payload;
   const resolverItem = useEmptyImage
@@ -455,6 +472,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           rtl={rtl}
           resolveImage={resolveImage}
           onImageError={onImageError}
+          showEmptyHostSlot={showEmptyHostSlot}
         />
       )}
 
@@ -532,10 +550,12 @@ interface PayloadOverlayProps {
   rtl: boolean;
   resolveImage?: ImageResolver;
   onImageError?: (url: string) => void;
+  /** Show the empty-payload affordance (dashed ring) — construction only. */
+  showEmptyHostSlot?: boolean;
 }
 
 function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
-  const { slot, host, layout, rtl, resolveImage, onImageError } = props;
+  const { slot, host, layout, rtl, resolveImage, onImageError, showEmptyHostSlot } = props;
   const composable = host.composable;
   if (!composable) return null;
 
@@ -574,7 +594,11 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
   //     itself.
   //   - Otherwise, render the dashed placeholder ring so the user
   //     sees the slot is fillable.
+  // The empty-payload affordance (dashed ring) is a CONSTRUCTION cue — outside
+  // the sentence builder an unfilled host just shows its plain art, no blank
+  // spot. (The emptyImagePath swap is likewise gated in SlotGroup.)
   if (!slot.payload) {
+    if (!showEmptyHostSlot) return null;
     if (composable.emptyImagePath) return null;
     return (
       <g aria-hidden>

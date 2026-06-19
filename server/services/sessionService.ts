@@ -2016,6 +2016,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onThinkingUpdate,
     onNavigate: !isAACFeature ? onNavigate : undefined,
     onSelectStudent: !isAACFeature ? onSelectStudent : undefined,
+    // License-gated: only offer the video-captioning tool when the institute's
+    // license includes it (and not in the AAC student-facing path).
+    captionVideoEnabled: !isAACFeature && !!licensePerms?.videoCaptionEnabled,
     onCreateQuestGame,
     onValidateQuestGame,
     onFilesNeeded,
@@ -2451,6 +2454,7 @@ export type SessionMdStreamEvent =
   | { type: "thinking"; text: string }
   | { type: "navigate"; feature: string }
   | { type: "select_student"; studentId: string }
+  | { type: "caption_video"; customInstructions?: string }
   | { type: "file_extracted"; filename: string; extractedText: string }
   | {
       type: "complete";

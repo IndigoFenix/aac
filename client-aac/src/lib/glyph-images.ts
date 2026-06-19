@@ -13,6 +13,7 @@ import { getVocabularyItemByEmoji } from "@shared/glyph-registry";
 import type { ImageResolver } from "@shared/glyph-compositor";
 import { canResolveGlyph } from "@shared/glyph-compositor";
 import { isEmoji } from "@shared/emoji-registry";
+import { flagEmojiToIso } from "@shared/flag-emoji";
 import { apiUrl } from "@/lib/queryClient";
 
 // Vite glob: { "/abs/path/to/icons/people/me.png": "/built-url/me-hash.png", ... }
@@ -190,6 +191,12 @@ export function useDisplayGlyph(glyph?: string, fallback?: string): string | und
 export const defaultImageResolver: ImageResolver = ({ item, key }) => {
   if (item?.imagePath) {
     const url = resolveIconPath(item.imagePath);
+    if (url && !FAILED_SYMBOL_URLS.has(url)) return url;
+  }
+  // Country-flag emoji → bundled flag SVG (Windows/Chrome have no flag glyphs).
+  const iso = flagEmojiToIso(key);
+  if (iso) {
+    const url = resolveIconPath(`flags/${iso}`);
     if (url && !FAILED_SYMBOL_URLS.has(url)) return url;
   }
   // Reverse-emoji lookup: when the AI emits a slot key that's a raw

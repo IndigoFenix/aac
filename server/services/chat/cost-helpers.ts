@@ -200,6 +200,16 @@ export const creditsForTtsUsage = (
     return ChargeToCredits((ratePer1k / 1000) * characters);
 };
 
+// Google Cloud Speech-to-Text v1 standard model, ~$0.024/min. Charged by audio
+// duration (the only metric STT bills on).
+const STT_USD_PER_MINUTE = 0.024;
+
+/** Credits for a speech-to-text run, by audio duration in seconds. */
+export const creditsForSttUsage = (seconds: number): number => {
+    if (seconds <= 0) return 0;
+    return ChargeToCredits((STT_USD_PER_MINUTE / 60) * seconds);
+};
+
 // number of credits to charge for ONE web_search_preview tool call
 export const CreditsPerSearchByIntelligence = (
     intelligence: 0|1|2|3,           // 0 = mini, 1 = mini, 2 = 4o, 3 = o3-pro

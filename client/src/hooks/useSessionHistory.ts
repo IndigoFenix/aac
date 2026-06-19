@@ -35,6 +35,23 @@ export interface ChatSessionSummary {
   lastUpdate: string;
 }
 
+export interface CaptionProjectSummary {
+  id: string;
+  videoName: string | null;
+  language: string | null;
+  creditsUsed: number;
+  costBreakdown?: SessionCostBreakdown | null;
+  segmentCount: number;
+  userId: string | null;
+  userName: string | null;
+  studentId: string | null;
+  studentName: string | null;
+  instituteId: string | null;
+  instituteName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PaginationInfo {
   total: number;
   limit: number;
@@ -87,6 +104,17 @@ export function useAACSessionsAdmin(filters: SessionFilters) {
     queryKey: ["/api/admin/sessions/aac", qs],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/admin/sessions/aac?${qs}`);
+      return res.json();
+    },
+  });
+}
+
+export function useCaptionProjectsAdmin(filters: SessionFilters) {
+  const qs = buildParams(filters);
+  return useQuery<PaginatedResponse<CaptionProjectSummary>>({
+    queryKey: ["/api/admin/caption-projects", qs],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/admin/caption-projects?${qs}`);
       return res.json();
     },
   });

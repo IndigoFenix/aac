@@ -241,6 +241,7 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
   const encoder = new VideoEncoder({
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
     error: (e) => {
+      console.error('[videoExport] VideoEncoder error:', e);
       encoderError = e instanceof Error ? e : new Error(String(e));
     },
   });
@@ -256,6 +257,10 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
   let lastKeyframeUs = -Infinity;
   const KEYFRAME_INTERVAL_US = 2_000_000; // a keyframe at least every 2s
 
+  // Errors thrown inside the decoder's output callback are swallowed by
+  // WebCodecs, so capture them here and surface after the run.
+  let frameError: Error | null = null;
+
   // Compose one decoded frame and hand it to the encoder.
   const onFrame = (frame: VideoFrame) => {
     try {
@@ -266,15 +271,23 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
       const glyph = activeGlyphAt(sortedCues, ms);
       const bmp = glyph ? glyphBitmaps.get(glyph) : undefined;
       if (bmp) {
-        const ow = Math.round((overlayHeight * bmp.width) / bmp.height);
+        // Scale to overlayHeight, then shrink to fit the frame width so a
+        // narrow/portrait video never clips a wide (multi-glyph) sentence.
+        let oh = overlayHeight;
+        let ow = Math.round((oh * bmp.width) / bmp.height);
+        const maxW = width - margin * 2;
+        if (ow > maxW) {
+          oh = Math.round((oh * maxW) / ow);
+          ow = maxW;
+        }
         const ox = Math.round((width - ow) / 2);
-        const oy = height - overlayHeight - margin;
+        const oy = height - oh - margin;
         // Legibility band behind the glyph.
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        const pad = Math.round(overlayHeight * 0.12);
-        roundRect(ctx, ox - pad, oy - pad, ow + pad * 2, overlayHeight + pad * 2, pad);
+        const pad = Math.round(oh * 0.12);
+        roundRect(ctx, ox - pad, oy - pad, ow + pad * 2, oh + pad * 2, pad);
         ctx.fill();
-        ctx.drawImage(bmp, ox, oy, ow, overlayHeight);
+        ctx.drawImage(bmp, ox, oy, ow, oh);
       }
 
       const keyFrame = frame.timestamp - lastKeyframeUs >= KEYFRAME_INTERVAL_US;
@@ -286,6 +299,11 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
       });
       encoder.encode(outFrame, { keyFrame });
       outFrame.close();
+    } catch (e) {
+      if (!frameError) {
+        console.error('[videoExport] frame compositing/encode error:', e);
+        frameError = e instanceof Error ? e : new Error(String(e));
+      }
     } finally {
       frame.close();
       processed++;
@@ -297,16 +315,20 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
   const decoder = new VideoDecoder({
     output: onFrame,
     error: (e) => {
+      console.error('[videoExport] VideoDecoder error:', e, 'codec:', track.codec);
       decoderError = e instanceof Error ? e : new Error(String(e));
     },
   });
   decoder.configure({ codec: track.codec, codedWidth: width, codedHeight: height, description });
 
   // Feed samples with light backpressure so we don't buffer the whole video.
+  if (samples.length === 0) throw new Error('No video frames found in the file.');
+
   for (const s of samples) {
     ensureNotAborted(signal);
     if (encoderError) throw encoderError;
     if (decoderError) throw decoderError;
+    if (frameError) throw frameError;
     decoder.decode(
       new EncodedVideoChunk({
         type: s.is_sync ? 'key' : 'delta',
@@ -325,6 +347,7 @@ export async function exportCaptionedVideo(opts: ExportOptions): Promise<Blob> {
   await encoder.flush();
   if (decoderError) throw decoderError;
   if (encoderError) throw encoderError;
+  if (frameError) throw frameError;
 
   decoder.close();
   encoder.close();

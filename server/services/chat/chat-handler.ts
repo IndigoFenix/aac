@@ -134,6 +134,8 @@ import {
       onNavigate?: (feature: string) => void;
       onSelectStudent?: (studentId: string) => void;
       onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
+      /** Whether the captionVideo tool is offered (license-gated upstream). */
+      captionVideoEnabled?: boolean;
       onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>;
       onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>;
       loopDetectionConfig?: LoopDetectionConfig;
@@ -174,6 +176,7 @@ import {
           onNavigate?: (feature: string) => void,
           onSelectStudent?: (studentId: string) => void,
           onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void,
+          captionVideoEnabled?: boolean,
           onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>,
           onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>,
           memoryProcessor?: MemoryProcessor,
@@ -210,6 +213,7 @@ import {
           this.onNavigate = settings.onNavigate;
           this.onSelectStudent = settings.onSelectStudent;
           this.onFilesNeeded = settings.onFilesNeeded;
+          this.captionVideoEnabled = settings.captionVideoEnabled ?? false;
           this.onCreateQuestGame = settings.onCreateQuestGame;
           this.onValidateQuestGame = settings.onValidateQuestGame;
           this.loopDetectionConfig = settings.loopDetectionConfig;
@@ -861,6 +865,7 @@ import {
               describeActions: this.onThinkingUpdate !== undefined,
               navigateEnabled: this.onNavigate !== undefined,
               selectStudentEnabled: this.onSelectStudent !== undefined,
+              captionVideoEnabled: this.captionVideoEnabled,
               questGameEnabled: this.onCreateQuestGame !== undefined,
               replyType: params?.replyType || 'text',
               timezone: this.requestTimezone,
@@ -1489,6 +1494,14 @@ import {
                               }
                           } catch {}
                       }
+                      if (tc.name === 'captionVideo' && this.captionVideoEnabled) {
+                          try {
+                              const args = JSON.parse(tc.arguments);
+                              yield { type: 'caption_video', customInstructions: args.customInstructions };
+                          } catch {
+                              yield { type: 'caption_video' };
+                          }
+                      }
                   }
 
                   // Let in-flight tool calls finish and save their results
@@ -1578,6 +1591,7 @@ import {
       | { type: "thinking"; text: string }
       | { type: "navigate"; feature: string }
       | { type: "select_student"; studentId: string }
+      | { type: "caption_video"; customInstructions?: string }
       | { type: "complete"; message: ChatMessage; creditsUsed: number };
 
   export { ChatMessageManager }

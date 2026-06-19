@@ -33,10 +33,19 @@ export interface GlyphProps {
   ariaLabel?: string;
   onSlotPress?: (slotIndex: number | null) => void;
   activeSlot?: number | null;
+  /**
+   * Override the right-to-left rendering. Defaults to the UI language's
+   * direction; pass explicitly when the glyph's content language differs from
+   * the UI (e.g. captioning a Hebrew video while the UI is English).
+   */
+  rtl?: boolean;
+  /** Show empty-payload host art (sentence-builder affordance only). */
+  showEmptyHostSlot?: boolean;
 }
 
 export function Glyph(props: GlyphProps) {
   const { isRTL } = useLanguage();
+  const rtl = props.rtl ?? isRTL;
   const primaryString = typeof props.glyph === "string" ? props.glyph : undefined;
   const swapped = useDisplayGlyph(primaryString, props.fallback);
 
@@ -50,7 +59,7 @@ export function Glyph(props: GlyphProps) {
   return (
     <GlyphCompositor
       glyph={finalGlyph}
-      rtl={isRTL}
+      rtl={rtl}
       resolveImage={defaultImageResolver}
       noBackground={props.noBackground}
       width={props.width}
@@ -58,6 +67,7 @@ export function Glyph(props: GlyphProps) {
       ariaLabel={props.ariaLabel}
       onSlotPress={props.onSlotPress}
       activeSlot={props.activeSlot}
+      showEmptyHostSlot={props.showEmptyHostSlot}
     />
   );
 }

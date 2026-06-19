@@ -132,10 +132,32 @@ export async function rasterizeGlyph(
   const standalone = await glyphToStandaloneSvg(glyph, heightPx, rtl);
   if (!standalone) return null;
 
+  // Rasterize via an <img> + canvas rather than createImageBitmap(svgBlob):
+  // the latter throws "The source image could not be decoded" in Chrome for
+  // SVGs that embed images (our inlined icons/flags). An <img> decodes SVG
+  // reliably (data-URI sub-images included), and createImageBitmap(canvas) on
+  // the drawn result always succeeds.
   const blob = new Blob([standalone.svg], { type: 'image/svg+xml;charset=utf-8' });
-  const bitmap = await createImageBitmap(blob);
-  bitmapCache.set(key, bitmap);
-  return bitmap;
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image(standalone.width, standalone.height);
+    img.decoding = 'async';
+    img.src = url;
+    await img.decode();
+    const canvas = new OffscreenCanvas(standalone.width, standalone.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, standalone.width, standalone.height);
+    const bitmap = await createImageBitmap(canvas);
+    bitmapCache.set(key, bitmap);
+    return bitmap;
+  } catch (err) {
+    // A single bad glyph shouldn't abort the whole export — log and skip it.
+    console.warn('[glyphRaster] failed to rasterize glyph:', glyph, err);
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** Drop cached bitmaps (e.g. on unmount) to free GPU/CPU memory. */

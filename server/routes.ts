@@ -1091,6 +1091,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/video-caption/glyphs", requireAuth, (req, res) =>
     videoCaptionController.convertGlyphs(req, res)
   );
+  app.post("/api/video-caption/ideas", requireAuth, (req, res) =>
+    videoCaptionController.extractIdeas(req, res)
+  );
+  // Audio (LINEAR16 WAV, extracted client-side) → timestamped caption segments.
+  app.post("/api/video-caption/transcribe", requireAuth, aacUpload.single("audio"), (req, res) =>
+    videoCaptionController.transcribe(req as any, res)
+  );
+  // Short audio sample → detected spoken language (STT auto-detect pre-flight).
+  app.post("/api/video-caption/detect-language", requireAuth, aacUpload.single("audio"), (req, res) =>
+    videoCaptionController.detectLanguage(req as any, res)
+  );
+  // Caption projects — keyed by the video content hash, scoped to the user.
+  app.get("/api/caption-projects/:hash", requireAuth, (req, res) =>
+    videoCaptionController.getProject(req, res)
+  );
+  // Admin: list caption projects + their costs.
+  app.get("/api/admin/caption-projects", requireAuth, requireAdminSection("sessions"), (req, res) =>
+    videoCaptionController.listProjectsAdmin(req, res)
+  );
+  app.put("/api/caption-projects/:hash", requireAuth, (req, res) =>
+    videoCaptionController.saveProject(req, res)
+  );
 
   // ============= SLP CLINICAL DATA ROUTES =============
   app.get("/api/slp/clinical-log", requireSLPPlan, (req, res) =>

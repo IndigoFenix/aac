@@ -936,6 +936,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               activeSlot={activeSlot}
               ariaLabel={t("construction.glyphPreviewLabel")}
               onSlotPress={handleSlotPress}
+              showEmptyHostSlot
             />
           </div>
 

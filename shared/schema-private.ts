@@ -3060,3 +3060,51 @@ export type UserChat = typeof userChats.$inferSelect;
 export type InsertUserChat = typeof userChats.$inferInsert;
 export type UserChatPushToken = typeof userChatPushTokens.$inferSelect;
 export type InsertUserChatPushToken = typeof userChatPushTokens.$inferInsert;
+
+// =============================================================================
+// VIDEO CAPTION STUDIO — caption projects
+// User-owned, keyed by a content hash of the source video. The video itself is
+// NEVER stored; we persist only the hash + the derived caption segments (text
+// + glyph) + language, so re-uploading the same file reloads the saved work.
+// =============================================================================
+
+/** One persisted caption segment: a timed span, its text, and its glyph SENTENCE. */
+export interface CaptionProjectSegment {
+  startMs: number;
+  endMs: number;
+  text: string;
+  glyph?: string;
+  /** Immediate stand-in glyph for a `generate:` sentence (shown until ready). */
+  fallback?: string;
+}
+
+export const captionProjects = pgTable("caption_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Owner — projects are private to the clinician who created them.
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // SHA-256 (hex) of the source video bytes — the lookup key on re-upload.
+  videoHash: varchar("video_hash").notNull(),
+  videoName: text("video_name"),
+  // Caption / spoken language (BCP-47-ish, e.g. "en", "he") — drives STT, glyph
+  // generation, and RTL.
+  language: varchar("language"),
+  // Cost-attribution context: the institute/student the captioning was done
+  // for (set when known). Not FK-enforced (mirrors chatSessions.instituteId).
+  instituteId: varchar("institute_id"),
+  studentId: varchar("student_id"),
+  segments: jsonb("segments").$type<CaptionProjectSegment[]>().default([]).notNull(),
+  // Accumulated cost of this project's AI work (transcription + ideas + glyphs
+  // + symbol generation), mirroring chatSessions.creditsUsed/costBreakdown.
+  creditsUsed: real("credits_used").notNull().default(0),
+  costBreakdown: jsonb("cost_breakdown").$type<Record<string, number>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // One project per (owner, video) — the upsert target on save.
+  uniqueIndex("idx_caption_projects_user_hash").on(table.userId, table.videoHash),
+  index("idx_caption_projects_user_id").on(table.userId),
+  index("idx_caption_projects_institute_id").on(table.instituteId),
+]);
+
+export type CaptionProject = typeof captionProjects.$inferSelect;
+export type InsertCaptionProject = typeof captionProjects.$inferInsert;

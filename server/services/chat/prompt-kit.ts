@@ -61,6 +61,7 @@ export interface NlpSchema {
     describeActions?: boolean;
     navigateEnabled?: boolean;
     selectStudentEnabled?: boolean;
+    captionVideoEnabled?: boolean;
     questGameEnabled?: boolean;
     replyType?: 'text' | 'html' | 'md';
     /** IANA timezone of the requesting user; injected into the prompt so the AI reasons in local time. */
@@ -569,6 +570,28 @@ export interface NlpSchema {
                 }
             }
         });
+    }
+
+    if (ctx.captionVideoEnabled) {
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'captionVideo',
+                description: 'Add glyph (AAC picture-symbol) captions to a video the user has uploaded. Call this when the user uploads a video and asks to caption it / add picture captions / make it AAC-accessible. It opens the Video Caption Studio and runs the captioning automatically on the uploaded video. Pass any specific requests the user made (audience, simplicity, focus, language) in customInstructions.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        customInstructions: {
+                            type: 'string',
+                            description: "Any specific caption requests from the user, in their own words (e.g. 'keep it very simple for a young child', 'focus on the feelings', 'the video is in Hebrew'). Omit if none.",
+                        },
+                    },
+                    required: [],
+                    additionalProperties: false,
+                },
+            },
+        });
+        endPrompt += `\n\nVideo Captioning: When the user uploads a video and wants glyph/picture captions added to it, call captionVideo (with any specific requests in customInstructions). This opens the Video Caption Studio and processes the uploaded video automatically.`;
     }
 
     if (ctx.questGameEnabled) {

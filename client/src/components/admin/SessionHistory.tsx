@@ -29,11 +29,13 @@ import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2, Download } f
 import {
   useAACSessionsAdmin,
   useChatSessionsAdmin,
+  useCaptionProjectsAdmin,
   useAACSessionLog,
   useChatSessionLog,
   useSessionDebugLog,
   useDeleteSessionDebugLogsBefore,
   type AACSessionSummary,
+  type CaptionProjectSummary,
   type ChatSessionSummary,
   type DebugLogEntry,
   type SessionFilters,
@@ -740,6 +742,87 @@ function DebugLogPurge() {
 
 // ---------- Main Component ----------
 
+function CaptionProjectsTab() {
+  const [filters, setFilters] = useState<SessionFilters>({ limit: 25, offset: 0 });
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const queryFilters = useMemo(
+    () => ({ ...filters, startDate: startDate || undefined, endDate: endDate || undefined }),
+    [filters, startDate, endDate],
+  );
+
+  const { data, isLoading } = useCaptionProjectsAdmin(queryFilters);
+  const projects = data?.data ?? [];
+  const pagination = data?.pagination ?? { total: 0, limit: 25, offset: 0, hasMore: false };
+
+  return (
+    <>
+      <FilterBar
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={(v) => { setStartDate(v); setFilters((f) => ({ ...f, offset: 0 })); }}
+        onEndDateChange={(v) => { setEndDate(v); setFilters((f) => ({ ...f, offset: 0 })); }}
+      />
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : (
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Video</TableHead>
+                <TableHead>Lang</TableHead>
+                <TableHead>Clinician</TableHead>
+                <TableHead>Student</TableHead>
+                <TableHead>Institute</TableHead>
+                <TableHead className="text-right">Captions</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {projects.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    No caption projects found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                projects.map((p: CaptionProjectSummary) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-medium max-w-[16rem] truncate" title={p.videoName ?? undefined}>
+                      {p.videoName ?? "(untitled)"}
+                    </TableCell>
+                    <TableCell>{p.language ?? "—"}</TableCell>
+                    <TableCell>{p.userName ?? "—"}</TableCell>
+                    <TableCell>{p.studentName ?? "—"}</TableCell>
+                    <TableCell>{p.instituteName ?? "—"}</TableCell>
+                    <TableCell className="text-right">{p.segmentCount ?? 0}</TableCell>
+                    <TableCell>{formatDate(p.updatedAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <CostBreakdownCell credits={p.creditsUsed} breakdown={p.costBreakdown} />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+          <PaginationBar
+            total={pagination.total}
+            limit={filters.limit}
+            offset={filters.offset}
+            onOffsetChange={(o) => setFilters((f) => ({ ...f, offset: o }))}
+            onLimitChange={(l) => setFilters((f) => ({ ...f, limit: l, offset: 0 }))}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
 export function SessionHistory() {
   return (
     <div>
@@ -751,12 +834,16 @@ export function SessionHistory() {
         <TabsList>
           <TabsTrigger value="aac">AAC Sessions</TabsTrigger>
           <TabsTrigger value="chat">Chat Sessions</TabsTrigger>
+          <TabsTrigger value="captions">Caption Projects</TabsTrigger>
         </TabsList>
         <TabsContent value="aac" className="mt-4">
           <AACTab />
         </TabsContent>
         <TabsContent value="chat" className="mt-4">
           <ChatTab />
+        </TabsContent>
+        <TabsContent value="captions" className="mt-4">
+          <CaptionProjectsTab />
         </TabsContent>
       </Tabs>
     </div>

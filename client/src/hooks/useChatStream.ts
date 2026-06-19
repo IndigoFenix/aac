@@ -20,7 +20,7 @@ function withBase(path: string): string {
 /**
  * SSE event types sent by the server
  */
-export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'text_delta' | 'file_extracted' | 'files_needed' | 'complete' | 'error' | 'close';
+export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'caption_video' | 'text_delta' | 'file_extracted' | 'files_needed' | 'complete' | 'error' | 'close';
 
 /**
  * Thinking event data
@@ -38,6 +38,7 @@ export interface StreamCallbacks {
   onThinking: (text: string) => void;
   /** Called when AI navigates to a panel feature */
   onNavigate?: (feature: string) => void;
+  onCaptionVideo?: (customInstructions?: string) => void;
   /** Called when AI selects a different student */
   onSelectStudent?: (studentId: string) => void;
   /** Called when a text token is received (md streaming mode) */
@@ -205,6 +206,10 @@ export function useChatStream(): UseChatStreamResult {
 
               case 'select_student':
                 callbacks.onSelectStudent?.(parsed.studentId);
+                break;
+
+              case 'caption_video':
+                callbacks.onCaptionVideo?.(parsed.customInstructions);
                 break;
 
               case 'file_extracted':

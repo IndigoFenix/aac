@@ -69,6 +69,7 @@ export interface ToolRegistry {
   pruneMessages: (args: { forget: number[]; summary: string; closePaths?: string[] }) => Promise<any>;
   navigateToFeature: (args: { feature: string }) => Promise<any>;
   selectStudent: (args: { studentId: string }) => Promise<any>;
+  captionVideo: (args: { customInstructions?: string }) => Promise<any>;
   analyzeMedia: (args: { instruction: string; context?: string; files: string[] }) => Promise<any>;
   extractVideoFrame: (args: { fileId: string; timestampSeconds: number }) => Promise<any>;
   generateImage: (args: { instruction: string; referenceImageFileId?: string }) => Promise<any>;
@@ -340,6 +341,12 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         return { success: true, selectedStudentId: studentId };
       }
       return { success: false, reason: 'Student selection not available' };
+    },
+    captionVideo: async () => {
+      // The frontend opens the Video Caption panel and runs the pipeline on the
+      // uploaded video (driven by the streamed `caption_video` event); the tool
+      // result just confirms the hand-off so the model continues naturally.
+      return { success: true, opened: true };
     },
     analyzeMedia: async ({ instruction, context, files }) => {
       const result = await analyzeMedia({ instruction, context, files });
@@ -993,6 +1000,10 @@ export async function makeToolCalls(
                 break;
               case "selectStudent":
                 response = await registry.selectStudent(args as { studentId: string });
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "captionVideo":
+                response = await registry.captionVideo(args as { customInstructions?: string });
                 insertToolCallResponse(toolCall, response);
                 break;
               case "analyzeMedia":

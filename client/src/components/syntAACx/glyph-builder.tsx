@@ -175,7 +175,7 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
         {/* Live preview + composed slots */}
         <div className={cn("rounded-lg border p-3 flex items-center gap-3", isDark ? "border-slate-800 bg-slate-800/40" : "border-gray-200 bg-gray-50")}>
           <div className="w-24 h-24 shrink-0">
-            <Glyph glyph={parsed} activeSlot={activeSlot} onSlotPress={setActiveSlot} />
+            <Glyph glyph={parsed} activeSlot={activeSlot} onSlotPress={setActiveSlot} showEmptyHostSlot />
           </div>
           <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 self-stretch content-start">
             {parsed.slots.length === 0 && (

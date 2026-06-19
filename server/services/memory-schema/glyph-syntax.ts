@@ -23,9 +23,9 @@ import { T } from "./canonical-terms";
  * Parameterized by single-glyph mode (single GLYPH per button vs up-to-3 joined
  * with `+`). Append getBundledIconsBlock() after this for the canonical vocab.
  */
-export function buildGlyphSyntax({ singleGlyphButtons }: { singleGlyphButtons: boolean }): string {
+export function buildGlyphSyntax({ singleGlyphButtons, allowGenerate = true }: { singleGlyphButtons: boolean; allowGenerate?: boolean }): string {
   return `<grammar>
-  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. Choose them in this STRICT preference order — generation is a last resort:
+  SYMBOL: one word. Every SENTENCE is built out of SYMBOLs. Choose them in this STRICT preference order${allowGenerate ? " — generation is a last resort" : ""}:
 
     1. \`symbol:ID\` / \`face:ID\` — a custom SYMBOL or face stored for this user. FIRST CHOICE.
     2. **EMOJI + canonical modifier** — your DEFAULT. Almost any concrete-noun-with-a-quality can be expressed as an emoji HEAD with one or more canonical MODIFIERs from <bundled_icons>:
@@ -35,8 +35,7 @@ export function buildGlyphSyntax({ singleGlyphButtons }: { singleGlyphButtons: b
          • "two cookies" → \`🍪.two\`           (NOT \`generate:two_cookies\`)
        This is BY FAR the most common case.
     3. A canonical registry key from <bundled_icons> — for pronouns, abstract verbs, time concepts, deictics, and ALL modifier SYMBOLs.
-    4. A raw emoji (🍎, 🤗, 🎮, …) — for concrete nouns not covered by a custom symbol.
-    5. \`generate:<key>\` — LAST RESORT. See <generation_rules>.
+    4. A raw emoji (🍎, 🤗, 🎮, …) — for concrete nouns not covered by a custom symbol.${allowGenerate ? "\n    5. `generate:<key>` — LAST RESORT. See <generation_rules>." : ""}
 
   NEVER emit a bare snake_case word that isn't in <bundled_icons>. Bare unknown snake_case renders as ❓.
 
@@ -60,7 +59,7 @@ ${singleGlyphButtons
 
   OPERATOR: sentence-level tag via \`#\` — \`#past\`, \`#future\`, \`#question\`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate \`speech\` accordingly.`}
 </grammar>
-
+${allowGenerate ? `
 <generation_rules>
 \`generate:<key>\` triggers async image generation — takes ~5 seconds and may fail. LAST RESORT.
 
@@ -81,7 +80,7 @@ Valid \`generate:\` (fallback is a deliberately weaker approximation):
 WHEN NOT to generate (almost always):
   - Color, size, quantity, possession, intensity qualities — canonical modifiers (\`.color_purple\`, \`.big\`, \`.two\`, \`.my\`, \`.very\`) already exist. Compose emoji+modifier; never \`generate:color_noun\`, \`generate:big_noun\`, etc.
   - Phrases or abstractions (\`generate:my_day\`, \`generate:something_new\`) — image generator can't draw an idea.
-  - Anything already a normal emoji (including 🦛 hippo, 🦒 giraffe, 🦘 kangaroo, 🦔 hedgehog, 🦥 sloth, 🦦 otter, 🦨 skunk, 🦝 raccoon, 🦡 badger, 🦃 turkey, 🦚 peacock, 🦜 parrot, 🦅 eagle, 🦆 duck, 🦉 owl, 🦩 flamingo — check the bundled icons before assuming an animal is missing).
+  - Anything that is already covered by a normal emoji (most common animals, emotions, objects).
 
 WHEN to generate (rarely):
   - Specific scientific objects (\`generate:planet_mars\`, \`generate:black_hole\`).
@@ -95,7 +94,97 @@ Fallback for a generated SENTENCE — ALWAYS REQUIRED, NEVER contains \`generate
   - The fallback is shown immediately while generation is in progress (and permanently if generation fails).
   - May only use: emojis, canonical registry keys, \`symbol:ID\` / \`face:ID\`, canonical modifiers.
   - Mirror the SHAPE of the \`sentence\` field. The fallback should be deliberately LESS specific than the generated image will be — that's how you know \`generate:\` is warranted.
-</generation_rules>`;
+</generation_rules>` : `
+<no_generation>
+Image generation is NOT available here. NEVER emit \`generate:\` — it renders as a blank tile. When no \`symbol:ID\`/\`face:ID\`, emoji, emoji+modifier, or canonical key fits a concept, pick the closest emoji or drop that detail. Never output a bare snake_case key.
+</no_generation>`}`;
+}
+
+/**
+ * JSON-idiom counterpart of buildGlyphSyntax. Describes the STRUCTURED glyph
+ * shape the live BoardManager authors (`{ sym | gen, mods?, fb? }` GLYPH objects,
+ * a SENTENCE being an array of them) rather than the `+`/`.`/`#` string DSL.
+ *
+ * Consumers that let the model emit a structured `glyph` array (and serialize it
+ * back to the canonical string via serializeGlyph) use THIS block, so the model
+ * never hand-writes the brittle string form. Append getBundledIconsBlock() after
+ * it for the canonical vocabulary, same as buildGlyphSyntax.
+ */
+export function buildGlyphSyntaxJson({ singleGlyphButtons, allowGenerate = true }: { singleGlyphButtons: boolean; allowGenerate?: boolean }): string {
+  return `<glyph_syntax>
+A GLYPH is one small picture, encoded as a JSON object: \`{ sym, mods? }\`${allowGenerate ? ` or \`{ gen, fb, mods? }\`` : ""}.
+A SENTENCE is ${singleGlyphButtons ? "a SINGLE GLYPH object" : "an ARRAY of 1–3 GLYPH objects, rendered left→right"}.
+
+**Choose each GLYPH's head in this STRICT preference order**${allowGenerate ? " — generation is a LAST RESORT" : ""}:
+  1. \`{ sym: "symbol:ID" }\` / \`{ sym: "face:ID" }\` — a custom SYMBOL or face stored for this user. FIRST choice when one fits.
+  2. \`{ sym: "🍎", mods: ["color_red"] }\` — an emoji HEAD + canonical MODIFIER(s) from <bundled_icons>. Your DEFAULT for a concrete-noun-with-a-quality:
+       • "big book"    → \`{ sym: "📖", mods: ["big"] }\`
+       • "two cookies" → \`{ sym: "🍪", mods: ["two"] }\`
+       • "my dog"      → \`{ sym: "🐕", mods: ["my"] }\`
+  3. \`{ sym: "<key>" }\` — a canonical registry key from <bundled_icons> (pronouns, abstract verbs, times, deictics, and ALL modifier SYMBOLs).
+  4. \`{ sym: "🤗" }\` — a raw emoji for a concrete noun not covered above.${allowGenerate ? `\n  5. \`{ gen: "planet_mars", fb: { sym: "🌑", mods: ["color_red"] } }\` — LAST RESORT image generation. See <generation_rules>.` : ""}
+
+\`sym\` is EITHER an emoji, a canonical <bundled_icons> key, \`symbol:ID\`, or \`face:ID\` — NEVER a bare snake_case word that isn't in <bundled_icons> (it renders as ❓).
+
+**MODIFIERs** (\`mods\`) come ONLY from <bundled_icons>, or are emojis. Invented modifiers ("new", "sad", "scary") render as a meaningless dot — use an emoji that encodes the quality (😢 sad, 👴 old, 😨 scary) instead${singleGlyphButtons ? "" : ", and never add a GLYPH just to attach an adjective"}.
+
+**OPERATOR** — an optional \`op\` of "past" / "future" / "question" tags the WHOLE SENTENCE. It never adds a GLYPH; the visual is unchanged.
+</glyph_syntax>${allowGenerate ? `
+
+<generation_rules>
+\`gen\` triggers async image generation — it takes ~5 seconds and may fail, so it is a LAST RESORT. A \`gen\` GLYPH ALWAYS carries an \`fb\` (fallback) GLYPH, shown immediately while the image generates and permanently if it fails.
+
+**Self-check before EVERY \`gen\`:** would the \`fb\` you'd write already be a COMPLETE expression of the concept on its own? If YES — drop \`gen\` and use that \`fb\` as the GLYPH directly.
+  - \`{ gen: "red_apple", fb: { sym: "🍎", mods: ["color_red"] } }\` ✗ — \`{ sym: "🍎", mods: ["color_red"] }\` IS a red apple. Use it directly, no \`gen\`.
+  - \`{ gen: "big_dog", fb: { sym: "🐕", mods: ["big"] } }\` ✗ — use \`{ sym: "🐕", mods: ["big"] }\`.
+  - \`{ gen: "hippopotamus", fb: { sym: "🦛" } }\` ✗ — the hippo emoji exists. Use \`{ sym: "🦛" }\`.
+
+\`gen\` is warranted ONLY when the \`fb\` is a deliberately WEAKER approximation than a real picture would be:
+  - \`{ gen: "planet_mars", fb: { sym: "🌑", mods: ["color_red"] } }\` ✓ — a reddish circle approximates Mars; the generated image actually depicts it.
+  - \`{ gen: "cello", fb: { sym: "🎻" } }\` ✓ — a violin emoji stands in for a cello (no cello emoji).
+  - \`{ gen: "seagull", fb: { sym: "🐦" } }\` ✓ — a generic bird stands in for a seagull.
+
+NEVER \`gen\` a quality an emoji+modifier already covers (color/size/quantity/possession), an abstraction (\`my_day\`, \`something_new\`), or anything that is already a normal emoji. Generation key format: lowercase_snake_case English concrete noun, with category disambiguators (\`planet_mars\` not \`mars\`).
+</generation_rules>` : `
+
+<no_generation>
+Image generation is NOT available here. NEVER emit \`gen\`. When no \`symbol:ID\`/\`face:ID\`, emoji, emoji+modifier, or canonical key fits a concept, pick the closest emoji or drop that detail.
+</no_generation>`}`;
+}
+
+/**
+ * JSON Schema for ONE structured GLYPH object (`{ sym | gen, mods?, fb? }`),
+ * matching buildGlyphSyntaxJson. Use as the `items` of a structured `glyph`
+ * array parameter. `allowGenerate: false` omits the `gen`/`fb` branch.
+ */
+export function glyphItemJsonSchema(opts: { allowGenerate?: boolean } = {}): Record<string, unknown> {
+  const allowGenerate = opts.allowGenerate ?? true;
+  const properties: Record<string, unknown> = {
+    sym: {
+      type: "string",
+      description: `Head SYMBOL — an emoji, a canonical key from <bundled_icons>, or \`symbol:ID\`/\`face:ID\`. See <glyph_syntax> for the preference order.${allowGenerate ? " Provide EITHER `sym` OR `gen`." : ""}`,
+    },
+    mods: {
+      type: "array",
+      items: { type: "string" },
+      description: `MODIFIER keys from <bundled_icons> only (e.g. "color_red", "big", "two", "my"). NEVER invent modifiers — they render as a dot.`,
+    },
+  };
+  if (allowGenerate) {
+    properties.gen = {
+      type: "string",
+      description: `LAST RESORT — generate an image for a concrete object the vocabulary can't express (lowercase_snake_case, NO \`generate:\` prefix). Requires \`fb\`.`,
+    };
+    properties.fb = {
+      type: "object",
+      description: `Fallback for a \`gen\` GLYPH — shown while the image generates and if it fails. Same shape as a normal GLYPH but NEVER \`gen\`.`,
+      properties: {
+        sym: { type: "string" },
+        mods: { type: "array", items: { type: "string" } },
+      },
+    };
+  }
+  return { type: "object", properties };
 }
 
 /** A custom SYMBOL available to a student (subset of the repository's ResolvedSymbol). */

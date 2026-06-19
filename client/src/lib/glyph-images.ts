@@ -13,6 +13,7 @@ import type { VocabularyItem } from "@shared/glyph-registry";
 import type { ImageResolver } from "@shared/glyph-compositor";
 import { canResolveGlyph } from "@shared/glyph-compositor";
 import { apiUrl } from "@/lib/queryClient";
+import { flagEmojiToIso } from "@shared/flag-emoji";
 
 // Vite root for the clinician client is `client/`, so we walk up two
 // levels to reach `attached_assets/aac-icons/` at the repo root.
@@ -93,6 +94,12 @@ export function registerStudentFace(contactId: string, photoUrl: string): void {
 export const defaultImageResolver: ImageResolver = ({ item, key }) => {
   if (item?.imagePath) {
     const url = resolveIconPath(item.imagePath);
+    if (url) return url;
+  }
+  // Country-flag emoji → bundled flag SVG (Windows/Chrome have no flag glyphs).
+  const iso = flagEmojiToIso(key);
+  if (iso) {
+    const url = resolveIconPath(`flags/${iso}`);
     if (url) return url;
   }
   // Custom-symbol slot (`symbol:<id>`) → the stored image. Used by the clinician

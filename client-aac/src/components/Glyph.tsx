@@ -55,10 +55,15 @@ export interface GlyphProps {
    * the conservative rim padding. See GlyphCompositor.fillSlot.
    */
   fillSlot?: boolean;
+  /** Override RTL (defaults to the UI language direction). */
+  rtl?: boolean;
+  /** Show empty-payload host art (sentence-builder affordance only). */
+  showEmptyHostSlot?: boolean;
 }
 
 export function Glyph(props: GlyphProps) {
   const { isRTL } = useLanguage();
+  const rtl = props.rtl ?? isRTL;
   // Always run the hook (Rules of Hooks). When glyph is a string, the
   // hook picks between glyph and fallback based on per-slot resolution
   // and re-subscribes to symbol generations so the result reactively
@@ -76,7 +81,7 @@ export function Glyph(props: GlyphProps) {
   return (
     <GlyphCompositor
       glyph={finalGlyph}
-      rtl={isRTL}
+      rtl={rtl}
       resolveImage={defaultImageResolver}
       noBackground={props.noBackground}
       width={props.width}
@@ -87,6 +92,7 @@ export function Glyph(props: GlyphProps) {
       onImageError={markSymbolUrlFailed}
       renderAnimatedSymbol={renderAnimatedSymbolAac}
       fillSlot={props.fillSlot ?? true}
+      showEmptyHostSlot={props.showEmptyHostSlot}
     />
   );
 }

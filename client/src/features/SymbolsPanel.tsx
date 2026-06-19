@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudent } from '@/hooks/useStudent';
+import { useInstitute } from '@/hooks/useInstitute';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon, ChevronDown, UserPlus } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon, ChevronDown, UserPlus, Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -44,7 +45,7 @@ interface SymbolData {
 
 const PAGE_SIZE = 24;
 
-function SymbolCard({ symbol, onEdit, onDelete, onAddToStudent, addToStudentLabel, alreadyOnStudent, addPending }: {
+function SymbolCard({ symbol, onEdit, onDelete, onAddToStudent, addToStudentLabel, alreadyOnStudent, addPending, onAddToInstitute, addToInstituteLabel, alreadyOnInstitute, addInstitutePending }: {
   symbol: SymbolData;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -52,6 +53,10 @@ function SymbolCard({ symbol, onEdit, onDelete, onAddToStudent, addToStudentLabe
   addToStudentLabel?: string;
   alreadyOnStudent?: boolean;
   addPending?: boolean;
+  onAddToInstitute?: () => void;
+  addToInstituteLabel?: string;
+  alreadyOnInstitute?: boolean;
+  addInstitutePending?: boolean;
 }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
@@ -99,6 +104,19 @@ function SymbolCard({ symbol, onEdit, onDelete, onAddToStudent, addToStudentLabe
             {addPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
           </Button>
         )}
+        {onAddToInstitute && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddToInstitute}
+            disabled={alreadyOnInstitute || addInstitutePending}
+            aria-label={addToInstituteLabel || t('symbols.addInstitute')}
+            title={alreadyOnInstitute ? t('symbols.alreadyAdded') : (addToInstituteLabel || t('symbols.addInstitute'))}
+            className={alreadyOnInstitute ? "text-green-600" : ""}
+          >
+            {addInstitutePending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Building2 className="w-3 h-3" />}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -118,6 +136,7 @@ function filterSymbols(symbols: SymbolData[], query: string): SymbolData[] {
 
 export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const { student } = useStudent();
+  const { currentInstitute } = useInstitute();
   const { t } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -130,12 +149,14 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   // Pagination state per tab
   const [myPage, setMyPage] = useState(1);
   const [studentPage, setStudentPage] = useState(1);
+  const [institutePage, setInstitutePage] = useState(1);
 
   // Reset pagination when search changes
   const handleSearchChange = (q: string) => {
     setSearchQuery(q);
     setMyPage(1);
     setStudentPage(1);
+    setInstitutePage(1);
   };
 
   // Queries
@@ -151,12 +172,20 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     enabled: isOpen && !!student,
   });
 
+  const { data: instituteSymbols = [] } = useQuery<SymbolData[]>({
+    queryKey: ['custom-symbols', 'institute', currentInstitute?.id],
+    queryFn: () => apiRequest('GET', `/api/custom-symbols/institute/${currentInstitute!.id}`).then(r => r.json()),
+    enabled: isOpen && !!currentInstitute,
+  });
+
   // Filtered + paginated lists
   const filteredMy = useMemo(() => filterSymbols(mySymbols, searchQuery), [mySymbols, searchQuery]);
   const filteredStudent = useMemo(() => filterSymbols(studentSymbols, searchQuery), [studentSymbols, searchQuery]);
+  const filteredInstitute = useMemo(() => filterSymbols(instituteSymbols, searchQuery), [instituteSymbols, searchQuery]);
 
   const paginatedMy = filteredMy.slice(0, myPage * PAGE_SIZE);
   const paginatedStudent = filteredStudent.slice(0, studentPage * PAGE_SIZE);
+  const paginatedInstitute = filteredInstitute.slice(0, institutePage * PAGE_SIZE);
 
   const deleteAssocMutation = useMutation({
     mutationFn: ({ assocId, type }: { assocId: string; type: string }) =>
@@ -183,11 +212,25 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
   });
 
+  const addToInstituteMutation = useMutation({
+    mutationFn: ({ symbol }: { symbol: SymbolData }) =>
+      apiRequest('POST', `/api/custom-symbols/${symbol.id}/institute-associate`, {
+        instituteId: currentInstitute!.id,
+        key: symbol.assocKey || symbol.key || null,
+        description: symbol.assocDescription || symbol.description || null,
+      }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
+  });
+
   // Symbol IDs already associated with the current student — used to disable the
   // "Add to student" button on My Symbols cards once the link exists.
   const studentSymbolIds = useMemo(
     () => new Set(studentSymbols.map(s => s.id)),
     [studentSymbols],
+  );
+  const instituteSymbolIds = useMemo(
+    () => new Set(instituteSymbols.map(s => s.id)),
+    [instituteSymbols],
   );
 
   if (!isOpen) return null;
@@ -199,6 +242,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     addToStudentLabel?: string;
     isAlreadyOnStudent?: (s: SymbolData) => boolean;
     addPendingId?: string;
+    onAddToInstitute?: (s: SymbolData) => void;
+    addToInstituteLabel?: string;
+    isAlreadyOnInstitute?: (s: SymbolData) => boolean;
+    addInstitutePendingId?: string;
     emptyMessage: string;
     total: number;
     page: number;
@@ -219,6 +266,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               addToStudentLabel={opts.addToStudentLabel}
               alreadyOnStudent={opts.isAlreadyOnStudent?.(s)}
               addPending={opts.addPendingId === s.id}
+              onAddToInstitute={opts.onAddToInstitute ? () => opts.onAddToInstitute!(s) : undefined}
+              addToInstituteLabel={opts.addToInstituteLabel}
+              alreadyOnInstitute={opts.isAlreadyOnInstitute?.(s)}
+              addInstitutePending={opts.addInstitutePendingId === s.id}
             />
           ))}
         </div>
@@ -250,6 +301,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="my">{t('symbols.mySymbols')}</TabsTrigger>
           {student && <TabsTrigger value="student">{t('symbols.student')}</TabsTrigger>}
+          {currentInstitute && <TabsTrigger value="institute">{t('symbols.institute')}</TabsTrigger>}
         </TabsList>
 
         {/* Search bar */}
@@ -275,6 +327,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               addToStudentLabel: student ? t('symbols.addStudent').replace('{{STUDENT}}', student.name || t('symbols.student')) : undefined,
               isAlreadyOnStudent: student ? (s) => studentSymbolIds.has(s.id) : undefined,
               addPendingId: addToStudentMutation.isPending ? (addToStudentMutation.variables?.symbol.id) : undefined,
+              onAddToInstitute: currentInstitute ? (s) => addToInstituteMutation.mutate({ symbol: s }) : undefined,
+              addToInstituteLabel: currentInstitute ? t('symbols.addInstitute') : undefined,
+              isAlreadyOnInstitute: currentInstitute ? (s) => instituteSymbolIds.has(s.id) : undefined,
+              addInstitutePendingId: addToInstituteMutation.isPending ? (addToInstituteMutation.variables?.symbol.id) : undefined,
               emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noSymbols'),
               total: filteredMy.length,
               page: myPage,
@@ -292,6 +348,17 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               onLoadMore: () => setStudentPage(p => p + 1),
             })}
           </TabsContent>
+
+          <TabsContent value="institute" className="p-4 mt-0">
+            {renderGrid(paginatedInstitute, {
+              onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'institute', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
+              onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'institute' }),
+              emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noInstituteSymbols').replace('{name}', currentInstitute?.name || ''),
+              total: filteredInstitute.length,
+              page: institutePage,
+              onLoadMore: () => setInstitutePage(p => p + 1),
+            })}
+          </TabsContent>
         </div>
       </Tabs>
 
@@ -300,6 +367,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         studentId={student?.id}
+        instituteId={activeTab === 'institute' ? currentInstitute?.id : undefined}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
           setShowCreate(false);
@@ -346,10 +414,11 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   );
 }
 
-function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
+function CreateSymbolDialog({ open, onClose, studentId, instituteId, onCreated }: {
   open: boolean;
   onClose: () => void;
   studentId?: string;
+  instituteId?: string;
   onCreated: () => void;
 }) {
   const { t } = useLanguage();
@@ -431,6 +500,10 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
 
       if (studentId) {
         await apiRequest('POST', `/api/custom-symbols/${symbol.id}/student-associate`, { studentId, key: key || null, description: description || null });
+      }
+
+      if (instituteId) {
+        await apiRequest('POST', `/api/custom-symbols/${symbol.id}/institute-associate`, { instituteId, key: key || null, description: description || null });
       }
 
       reset();

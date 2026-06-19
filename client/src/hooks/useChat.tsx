@@ -7,6 +7,7 @@ import { useStudent } from './useStudent';
 import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
+import { openUI } from '@/lib/uiEvents';
 import { useBoardStore } from '@/store/board-store';
 import { useCustomAppStore } from '@/store/custom-app-store';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
@@ -331,7 +332,8 @@ export const ChatProvider = ({
 
   // Refs
   const currentStudentIdRef = useRef<string | null>(null);
-  
+  const lastVideoFileRef = useRef<File | null>(null);
+
   // External hooks
   const { student, selectStudent } = useStudent();
   const { currentInstitute, selectInstitute } = useInstitute();
@@ -439,6 +441,9 @@ export const ChatProvider = ({
   const uploadFile = useCallback(async (file: File): Promise<AttachedFile | null> => {
     setIsUploadingFile(true);
     setError(null);
+    // Remember the most-recently-uploaded video so the captionVideo chat tool
+    // can hand the actual File to the Video Caption panel.
+    if (file.type?.startsWith('video/')) lastVideoFileRef.current = file;
 
     try {
       const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -998,6 +1003,17 @@ export const ChatProvider = ({
         onNavigate: (feature) => {
           console.log('[useChat] AI navigating to:', feature);
           setActiveFeature(feature as any);
+        },
+        onCaptionVideo: (customInstructions) => {
+          console.log('[useChat] AI captioning video; instructions:', customInstructions);
+          // Open the Video Caption panel and hand it the uploaded video to
+          // auto-run on (the pipeline lives client-side).
+          setActiveFeature('videoCaption' as any);
+          openUI('videoCaption', {
+            customInstructions,
+            file: lastVideoFileRef.current,
+            sessionId: session?.id,
+          });
         },
         onSelectStudent: (studentId) => {
           console.log('[useChat] AI selecting student:', studentId);
