@@ -4052,10 +4052,15 @@ export class AgentCoordinator {
   }
 
   /** Abort any open streaming-STT sessions (on sleep / session close) so a
-   *  stream that never got its stt_stream_end can't leak a gRPC connection. */
+   *  stream that never got its stt_stream_end can't leak a gRPC connection.
+   *  Bill the audio already streamed first — Google charges for it regardless. */
   private abortSttStreams(): void {
-    for (const { session } of this.sttStreams.values()) {
-      try { session.abort(); } catch { /* noop */ }
+    for (const s of this.sttStreams.values()) {
+      const seconds = s.bytes / 2 / 16000;
+      if (this.sessionId && this.studentId && seconds > 0.2) {
+        void dualAgentService.trackSttUsage(this.sessionId, this.studentId, this.userId, seconds);
+      }
+      try { s.session.abort(); } catch { /* noop */ }
     }
     this.sttStreams.clear();
   }
