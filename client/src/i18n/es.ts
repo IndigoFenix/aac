@@ -3270,6 +3270,7 @@ export const es = {
       voices: "Voces",
       models: "Modelos de IA",
       sessions: "Sesiones",
+      "cost-usage": "Costos y uso",
       contacts: "Contactos",
       licenses: "Licencias",
       "identity-providers": "Proveedores de identidad",

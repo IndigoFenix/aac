@@ -3270,6 +3270,7 @@ export const ko = {
       voices: "음성",
       models: "AI 모델",
       sessions: "세션",
+      "cost-usage": "비용 및 사용량",
       contacts: "문의",
       licenses: "라이선스",
       "identity-providers": "ID 제공자",

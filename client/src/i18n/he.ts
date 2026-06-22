@@ -3270,6 +3270,7 @@ export const he = {
       voices: "קולות",
       models: "מודלים של בינה מלאכותית",
       sessions: "מפגשים",
+      "cost-usage": "עלות ושימוש",
       contacts: "אנשי קשר",
       licenses: "רישיונות",
       "identity-providers": "ספקי זהות",

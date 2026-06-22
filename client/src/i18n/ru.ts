@@ -3270,6 +3270,7 @@ export const ru = {
       voices: "Голоса",
       models: "Модели ИИ",
       sessions: "Сессии",
+      "cost-usage": "Затраты и использование",
       contacts: "Контакты",
       licenses: "Лицензии",
       "identity-providers": "Поставщики идентификации",

@@ -3270,6 +3270,7 @@ export const ar = {
       voices: "الأصوات",
       models: "نماذج الذكاء الاصطناعي",
       sessions: "الجلسات",
+      "cost-usage": "التكلفة والاستخدام",
       contacts: "جهات الاتصال",
       licenses: "التراخيص",
       "identity-providers": "موفّرو الهوية",

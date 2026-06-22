@@ -19,6 +19,7 @@ export { reportController, ReportController } from "./reportController";
 export { voiceController, VoiceController } from "./voiceController";
 export { voiceRecordController, VoiceRecordController } from "./voiceRecordController";
 export { sessionHistoryController } from "./sessionHistoryController";
+export { costUsageController } from "./costUsageController";
 export { licenseController } from "./licenseController";
 export { calendarController } from "./calendarController";
 export { deepAnalysisController, DeepAnalysisController } from "./deepAnalysisController";

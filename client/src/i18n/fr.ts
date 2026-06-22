@@ -3270,6 +3270,7 @@ export const fr = {
       voices: "Voix",
       models: "Modèles d'IA",
       sessions: "Sessions",
+      "cost-usage": "Coûts et utilisation",
       contacts: "Contacts",
       licenses: "Licences",
       "identity-providers": "Fournisseurs d'identité",

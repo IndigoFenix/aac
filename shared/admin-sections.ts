@@ -16,6 +16,7 @@ export const ADMIN_SECTIONS = [
   "voices",
   "models",
   "sessions",
+  "cost-usage",
   "contacts",
   "licenses",
   "identity-providers",

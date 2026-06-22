@@ -32,6 +32,7 @@ import {
   instituteController,
   classroomController,
   sessionHistoryController,
+  costUsageController,
   shareInviteController,
   consentController,
   crmChatController,
@@ -1897,6 +1898,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk-prune debug logs older than a given date. Body: { before: ISO date }.
   app.delete("/api/admin/sessions/debug-logs", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.deleteSessionDebugLogsBefore(req, res)
+  );
+
+  // Cost & usage analytics dashboard (admins with the "cost-usage" section
+  // permission). Aggregated from existing chat_sessions data — no new tables.
+  app.get("/api/admin/cost-usage", requireAuth, requireAdminSection("cost-usage"), (req, res) =>
+    costUsageController.getAnalytics(req, res)
   );
 
   // Activity logs (admins with the "activity-log" section permission)

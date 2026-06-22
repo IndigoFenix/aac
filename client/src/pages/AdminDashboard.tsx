@@ -10,6 +10,7 @@ import { TopicView } from '@/components/admin/TopicView';
 import { VoiceList } from '@/components/admin/VoiceList';
 import { ModelSettings } from '@/components/admin/ModelSettings';
 import { SessionHistory } from '@/components/admin/SessionHistory';
+import { CostUsageDashboard } from '@/components/admin/CostUsageDashboard';
 import { ContactInquiries } from '@/components/admin/ContactInquiries';
 import { LicenseList } from '@/components/admin/LicenseList';
 import { ActivityLog } from '@/components/admin/ActivityLog';
@@ -53,6 +54,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/voices')) return 'voices';
     if (location.startsWith('/admin/models')) return 'models';
     if (location.startsWith('/admin/sessions')) return 'sessions';
+    if (location.startsWith('/admin/cost-usage')) return 'cost-usage';
     if (location.startsWith('/admin/contacts')) return 'contacts';
     if (location.startsWith('/admin/licenses')) return 'licenses';
     if (location.startsWith('/admin/identity-providers')) return 'identity-providers';
@@ -99,6 +101,8 @@ export function AdminDashboard() {
       navigate('/admin/models');
     } else if (section === 'sessions') {
       navigate('/admin/sessions');
+    } else if (section === 'cost-usage') {
+      navigate('/admin/cost-usage');
     } else if (section === 'contacts') {
       navigate('/admin/contacts');
     } else if (section === 'licenses') {
@@ -143,6 +147,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'sessions') {
       return <SessionHistory />;
+    }
+
+    if (activeSection === 'cost-usage') {
+      return <CostUsageDashboard />;
     }
 
     if (activeSection === 'contacts') {

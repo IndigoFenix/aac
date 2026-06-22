@@ -3270,6 +3270,7 @@ export const zh = {
       voices: "声音",
       models: "AI 模型",
       sessions: "会话",
+      "cost-usage": "成本与使用",
       contacts: "联系人",
       licenses: "许可证",
       "identity-providers": "身份提供商",

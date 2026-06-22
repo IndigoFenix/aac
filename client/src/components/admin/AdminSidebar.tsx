@@ -11,6 +11,7 @@ import {
   Volume2,
   Cpu,
   History,
+  DollarSign,
   Moon,
   Sun,
   Mail,
@@ -78,6 +79,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: t('admin.sections.sessions'),
       section: 'sessions' as AdminSection,
       testId: 'admin-nav-sessions',
+    },
+    {
+      icon: DollarSign,
+      label: t('admin.sections.cost-usage'),
+      section: 'cost-usage' as AdminSection,
+      testId: 'admin-nav-cost-usage',
     },
     {
       icon: Sparkles,

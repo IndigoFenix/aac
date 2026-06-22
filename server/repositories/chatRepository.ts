@@ -9,6 +9,7 @@ import {
   chatSessions,
   users,
   students,
+  institutes,
   sessionDebugLogs,
   type ChatSession,
   type InsertChatSession,
@@ -31,6 +32,14 @@ export interface ChatAdminSessionFilters {
   endDate?: string;
   limit: number;
   offset: number;
+}
+
+/** Headline cost/usage totals for one session type (AAC or non-AAC chat). */
+export interface CostUsageKpiSet {
+  sessionCount: number;
+  totalSpend: number;
+  totalSeconds: number;
+  ghostCount: number;
 }
 
 export class ChatRepository {
@@ -512,6 +521,121 @@ export class ChatRepository {
       .from(chatSessions)
       .where(and(...conditions));
     return result?.total ?? 0;
+  }
+
+  /**
+   * Aggregated cost & usage analytics for the admin Cost & Usage dashboard.
+   *
+   * Covers every real (non-CRM, non-deleted) chat session — both AAC student
+   * sessions (chatMode = "aac") and clinician chat sessions. Returns two things:
+   *
+   *  - `points`: one lightweight row per session in the range (capped). The
+   *    client derives ALL charts from these (cost-vs-duration scatter, length
+   *    histogram, day/hour density, daily spend, cost/min trend, and the
+   *    per-student / per-user / per-institute rollups). Duration is computed as
+   *    lastUpdate − started (clamped at 0).
+   *  - `kpis`: exact aggregate totals computed in SQL over the FULL range, so
+   *    headline numbers stay correct even if `points` is truncated by the cap.
+   *
+   * No new tables/columns: everything comes from existing chat_sessions fields.
+   */
+  async getCostUsageAnalytics(opts: { startDate?: string; endDate?: string }): Promise<{
+    points: Array<{
+      id: string;
+      source: "aac" | "chat";
+      started: Date;
+      durationSec: number;
+      cost: number;
+      studentName: string | null;
+      userName: string | null;
+      instituteName: string | null;
+    }>;
+    kpis: {
+      aac: CostUsageKpiSet;
+      chat: CostUsageKpiSet;
+    };
+    truncated: boolean;
+  }> {
+    // Cap on per-session points returned. The product's session volume is tiny
+    // today; the cap is a safety backstop. KPIs are computed separately in SQL
+    // so they remain exact even if points are truncated.
+    const POINTS_CAP = 20000;
+
+    const conditions = [isNull(chatSessions.deletedAt), isNull(chatSessions.crmPotentialCustomerId)];
+    if (opts.startDate) {
+      conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
+    }
+    if (opts.endDate) {
+      const end = new Date(opts.endDate);
+      end.setDate(end.getDate() + 1);
+      conditions.push(lte(chatSessions.started, end));
+    }
+
+    const durationExpr = sql<number>`GREATEST(0, EXTRACT(EPOCH FROM (${chatSessions.lastUpdate} - ${chatSessions.started})))`;
+    // AAC vs non-AAC bucket — KPIs are reported separately per session type
+    // because the two are not comparable on the same charts.
+    const isAacExpr = sql<boolean>`(${chatSessions.chatMode} = 'aac')`;
+
+    const [rows, kpiRows] = await Promise.all([
+      db
+        .select({
+          id: chatSessions.id,
+          chatMode: chatSessions.chatMode,
+          started: chatSessions.started,
+          durationSec: durationExpr,
+          cost: chatSessions.creditsUsed,
+          studentName: students.name,
+          userName: users.fullName,
+          instituteName: institutes.name,
+        })
+        .from(chatSessions)
+        .leftJoin(users, eq(chatSessions.userId, users.id))
+        .leftJoin(students, eq(chatSessions.studentId, students.id))
+        .leftJoin(institutes, eq(chatSessions.instituteId, institutes.id))
+        .where(and(...conditions))
+        .orderBy(desc(chatSessions.started))
+        .limit(POINTS_CAP + 1),
+      db
+        .select({
+          isAac: isAacExpr,
+          sessionCount: count(),
+          totalSpend: sql<number>`COALESCE(SUM(${chatSessions.creditsUsed}), 0)`,
+          totalSeconds: sql<number>`COALESCE(SUM(${durationExpr}), 0)`,
+          ghostCount: sql<number>`COUNT(*) FILTER (WHERE ${durationExpr} <= 60)`,
+        })
+        .from(chatSessions)
+        .where(and(...conditions))
+        .groupBy(isAacExpr),
+    ]);
+
+    const truncated = rows.length > POINTS_CAP;
+    const points = (truncated ? rows.slice(0, POINTS_CAP) : rows).map((r) => ({
+      id: r.id,
+      source: (r.chatMode === "aac" ? "aac" : "chat") as "aac" | "chat",
+      started: r.started,
+      durationSec: Number(r.durationSec) || 0,
+      cost: Number(r.cost) || 0,
+      studentName: r.studentName,
+      userName: r.userName,
+      instituteName: r.instituteName,
+    }));
+
+    const emptyKpi = (): CostUsageKpiSet => ({
+      sessionCount: 0,
+      totalSpend: 0,
+      totalSeconds: 0,
+      ghostCount: 0,
+    });
+    const kpis = { aac: emptyKpi(), chat: emptyKpi() };
+    for (const r of kpiRows) {
+      const target = r.isAac ? kpis.aac : kpis.chat;
+      target.sessionCount = Number(r.sessionCount) || 0;
+      target.totalSpend = Number(r.totalSpend) || 0;
+      target.totalSeconds = Number(r.totalSeconds) || 0;
+      target.ghostCount = Number(r.ghostCount) || 0;
+    }
+
+    return { points, kpis, truncated };
   }
 
   async getSessionLog(id: string): Promise<

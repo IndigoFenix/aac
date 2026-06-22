@@ -3270,6 +3270,7 @@ export const de = {
       voices: "Stimmen",
       models: "KI-Modelle",
       sessions: "Sitzungen",
+      "cost-usage": "Kosten & Nutzung",
       contacts: "Kontakte",
       licenses: "Lizenzen",
       "identity-providers": "Identitätsanbieter",

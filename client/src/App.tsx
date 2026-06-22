@@ -313,6 +313,11 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/cost-usage">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin/contacts">
         <SystemAdminRoute>
           <AdminDashboard />

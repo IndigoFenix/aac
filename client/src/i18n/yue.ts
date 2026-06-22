@@ -3270,6 +3270,7 @@ export const yue = {
       voices: "聲音",
       models: "AI 模型",
       sessions: "對話",
+      "cost-usage": "成本同使用",
       contacts: "聯絡人",
       licenses: "授權",
       "identity-providers": "身份提供者",
