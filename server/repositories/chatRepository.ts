@@ -554,6 +554,13 @@ export class ChatRepository {
       aac: CostUsageKpiSet;
       chat: CostUsageKpiSet;
     };
+    // Per-source rollup of chat_sessions.cost_breakdown (category -> credits),
+    // summed across all sessions in range (exact, not capped). The client maps
+    // these categories to providers (Google / Anthropic / OpenAI) for display.
+    categoryBreakdown: {
+      aac: Record<string, number>;
+      chat: Record<string, number>;
+    };
     truncated: boolean;
   }> {
     // Cap on per-session points returned. The product's session volume is tiny
@@ -576,7 +583,7 @@ export class ChatRepository {
     // because the two are not comparable on the same charts.
     const isAacExpr = sql<boolean>`(${chatSessions.chatMode} = 'aac')`;
 
-    const [rows, kpiRows] = await Promise.all([
+    const [rows, kpiRows, breakdownRows] = await Promise.all([
       db
         .select({
           id: chatSessions.id,
@@ -606,6 +613,11 @@ export class ChatRepository {
         .from(chatSessions)
         .where(and(...conditions))
         .groupBy(isAacExpr),
+      // Just the two columns needed to sum cost_breakdown by category per source.
+      db
+        .select({ chatMode: chatSessions.chatMode, costBreakdown: chatSessions.costBreakdown })
+        .from(chatSessions)
+        .where(and(...conditions)),
     ]);
 
     const truncated = rows.length > POINTS_CAP;
@@ -635,7 +647,21 @@ export class ChatRepository {
       target.ghostCount = Number(r.ghostCount) || 0;
     }
 
-    return { points, kpis, truncated };
+    const categoryBreakdown = {
+      aac: {} as Record<string, number>,
+      chat: {} as Record<string, number>,
+    };
+    for (const r of breakdownRows) {
+      const bucket = r.chatMode === "aac" ? categoryBreakdown.aac : categoryBreakdown.chat;
+      const cb = (r.costBreakdown ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(cb)) {
+        const amount = Number(v);
+        if (!Number.isFinite(amount)) continue;
+        bucket[k] = (bucket[k] ?? 0) + amount;
+      }
+    }
+
+    return { points, kpis, categoryBreakdown, truncated };
   }
 
   async getSessionLog(id: string): Promise<

@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 import { FeatureType } from '@shared/schema';
 import { FeedbackDialog } from '@/components/FeedbackDialog';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
-import { useUserChat } from '@/features/userChat/UserChatContext';
+import { usePersonChat } from '@/features/personChat/PersonChatContext';
 import { ReviewTimeIndicator } from '@/components/insurance/ReviewTimeIndicator';
 
 type SidebarProps = {
@@ -79,8 +79,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const perms = currentPermissions;
   const hasInstitute = institutes.length > 0;
   const maxStudents = perms?.maxStudents ?? 0;
-  const { totalUnread } = useUserChat();
-  const userChatUnreadBadge = totalUnread > 0 ? String(totalUnread) : undefined;
+  const { totalUnread } = usePersonChat();
+  const personChatUnreadBadge = totalUnread > 0 ? String(totalUnread) : undefined;
   const hasStudentAccess = maxStudents === -1 || maxStudents > 0;
 
   // ── Section 1: Workspace ──
@@ -123,10 +123,10 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
     }] : []),
     ...(hasInstitute ? [{
       icon: MessagesSquare,
-      labelKey: 'nav.userChat',
+      labelKey: 'nav.personChat',
       feature: 'userchat' as FeatureType,
       testId: 'nav-userchat',
-      badge: userChatUnreadBadge,
+      badge: personChatUnreadBadge,
     }] : []),
   ];
   // Hide Workspace entirely if user has no institutes AND maxStudents=0

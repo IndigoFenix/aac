@@ -33,15 +33,29 @@ describe('cost & usage admin analytics', () => {
 
   it('aggregates KPIs and points across AAC + chat, excluding CRM and deleted', async () => {
     // 10-minute AAC session.
-    const aacId = await insertSession({ chatMode: 'aac', creditsUsed: 0.5, ...span(600) });
+    const aacId = await insertSession({
+      chatMode: 'aac',
+      creditsUsed: 0.5,
+      costBreakdown: { observer: 0.3, monitor: 0.15, tts: 0.05 },
+      ...span(600),
+    });
     // 30-second chat session (a "ghost" — <= 1 min).
-    const chatId = await insertSession({ chatMode: 'chat', creditsUsed: 0.02, ...span(30) });
+    const chatId = await insertSession({
+      chatMode: 'chat',
+      creditsUsed: 0.02,
+      costBreakdown: { chat: 0.015, 'tool:generate_image': 0.005 },
+      ...span(30),
+    });
     // CRM landing-page session — must be excluded.
     await insertSession({ chatMode: 'chat', creditsUsed: 9, crmPotentialCustomerId: 'crm-1', ...span(600) });
     // Soft-deleted session — must be excluded.
     await insertSession({ chatMode: 'aac', creditsUsed: 9, deletedAt: new Date(), ...span(600) });
 
-    const { points, kpis } = await chatRepository.getCostUsageAnalytics({});
+    const { points, kpis, categoryBreakdown } = await chatRepository.getCostUsageAnalytics({});
+
+    // Cost breakdown is summed by category, per source.
+    expect(categoryBreakdown.aac).toEqual({ observer: 0.3, monitor: 0.15, tts: 0.05 });
+    expect(categoryBreakdown.chat).toEqual({ chat: 0.015, 'tool:generate_image': 0.005 });
 
     // KPIs are reported separately per session type.
     expect(kpis.aac.sessionCount).toBe(1);

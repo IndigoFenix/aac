@@ -20,6 +20,7 @@ class CostUsageController {
         success: true,
         points: result.points,
         kpis: result.kpis,
+        categoryBreakdown: result.categoryBreakdown,
         truncated: result.truncated,
       });
     } catch (error: any) {

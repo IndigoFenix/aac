@@ -225,7 +225,7 @@ export const yue = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "未揀{{STUDENT}}",
     calendar: "日曆",
-    userChat: "訊息",
+    personChat: "訊息",
   },
 
   // ============================================================================
@@ -3460,7 +3460,7 @@ export const yue = {
     },
   },
 
-  userChat: {
+  personChat: {
     title: "訊息",
     newChat: "新對話",
     noRooms: "仲未有對話",

@@ -225,7 +225,7 @@ export const zh = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "未选择{{STUDENT}}",
     calendar: "日历",
-    userChat: "消息",
+    personChat: "消息",
   },
 
   // ============================================================================
@@ -3460,7 +3460,7 @@ export const zh = {
     },
   },
 
-  userChat: {
+  personChat: {
     title: "消息",
     newChat: "新对话",
     noRooms: "暂无对话",

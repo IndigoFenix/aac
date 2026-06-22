@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -10,10 +9,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { MessagesSquare, Plus, Users as UsersIcon, Send, Loader2, AlertCircle, Check } from "lucide-react";
-import { useUserChat, type ClientUserChatMessage } from "./UserChatContext";
-import { fetchContacts, type UserChatContact, type UserChatRoomListEntry } from "./api";
+import { usePersonChat, type ClientPersonChatMessage } from "./PersonChatContext";
+import { fetchContacts, type PersonChatContact, type PersonChatRoomListEntry } from "./api";
 
-interface UserChatPanelProps {
+interface PersonChatPanelProps {
   isOpen?: boolean;
 }
 
@@ -22,9 +21,9 @@ function displayNameFor(p: { firstName: string | null; lastName: string | null; 
   return full || p.email;
 }
 
-function roomTitle(entry: UserChatRoomListEntry, currentUserId: string | undefined): string {
+function roomTitle(entry: PersonChatRoomListEntry, selfPersonId: string | null): string {
   if (entry.room.name) return entry.room.name;
-  const others = entry.participants.filter((p) => p.userId !== currentUserId);
+  const others = entry.participants.filter((p) => p.personId !== selfPersonId);
   if (others.length === 0) return entry.participants.map(displayNameFor).join(", ");
   return others.map(displayNameFor).join(", ");
 }
@@ -38,12 +37,12 @@ function formatTime(iso: string): string {
     : d.toLocaleDateString();
 }
 
-export function UserChatPanel({ isOpen }: UserChatPanelProps) {
-  const { user } = useAuth();
+export function PersonChatPanel({ isOpen }: PersonChatPanelProps) {
   const { t, isRTL } = useLanguage();
   const { institutes, currentInstitute } = useInstitute();
   const {
     rooms,
+    selfPersonId,
     activeRoomId,
     messagesByRoom,
     hasMoreByRoom,
@@ -54,7 +53,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
     send,
     createDirect,
     createGroup,
-  } = useUserChat();
+  } = usePersonChat();
 
   const [newChatOpen, setNewChatOpen] = useState(false);
 
@@ -74,15 +73,15 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
         <div className="p-3 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MessagesSquare className="w-4 h-4" />
-            <span className="font-semibold">{t("userChat.title")}</span>
+            <span className="font-semibold">{t("personChat.title")}</span>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setNewChatOpen(true)} data-testid="user-chat-new">
-            <Plus className="w-4 h-4 mr-1" /> {t("userChat.newChat")}
+          <Button size="sm" variant="outline" onClick={() => setNewChatOpen(true)} data-testid="person-chat-new">
+            <Plus className="w-4 h-4 mr-1" /> {t("personChat.newChat")}
           </Button>
         </div>
         <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
           {rooms.length === 0 && (
-            <div className="p-4 text-sm text-muted-foreground">{t("userChat.noRooms")}</div>
+            <div className="p-4 text-sm text-muted-foreground">{t("personChat.noRooms")}</div>
           )}
           {rooms.map((entry) => (
             <button type="button"
@@ -94,7 +93,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
               )}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium truncate">{roomTitle(entry, user?.id)}</span>
+                <span className="font-medium truncate">{roomTitle(entry, selfPersonId)}</span>
                 {entry.unreadCount > 0 && (
                   <span className="ml-2 text-xs px-2 py-0.5 bg-primary text-primary-foreground rounded-full">
                     {entry.unreadCount}
@@ -116,7 +115,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
         {activeEntry ? (
           <RoomView
             entry={activeEntry}
-            currentUserId={user?.id}
+            selfPersonId={selfPersonId}
             messages={messagesByRoom[activeEntry.room.id] ?? []}
             hasMore={hasMoreByRoom[activeEntry.room.id] ?? false}
             loadingMore={!!loadingMoreByRoom[activeEntry.room.id]}
@@ -125,7 +124,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            {t("userChat.selectRoomHint")}
+            {t("personChat.selectRoomHint")}
           </div>
         )}
       </div>
@@ -134,8 +133,8 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
         open={newChatOpen}
         onClose={() => setNewChatOpen(false)}
         currentInstituteId={currentInstitute?.id ?? institutes[0]?.id ?? null}
-        onCreateDirect={async (instituteId, otherUserId) => {
-          const id = await createDirect(instituteId, otherUserId);
+        onCreateDirect={async (instituteId, otherPersonId) => {
+          const id = await createDirect(instituteId, otherPersonId);
           await openRoom(id);
         }}
         onCreateGroup={async (instituteId, participantIds, name) => {
@@ -148,23 +147,23 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
 }
 
 function RoomView(props: {
-  entry: UserChatRoomListEntry;
-  currentUserId: string | undefined;
-  messages: ClientUserChatMessage[];
+  entry: PersonChatRoomListEntry;
+  selfPersonId: string | null;
+  messages: ClientPersonChatMessage[];
   hasMore: boolean;
   loadingMore: boolean;
   onLoadOlder: () => void;
   onSend: (body: string) => Promise<void>;
 }) {
   const { t } = useLanguage();
-  const { entry, currentUserId, messages, hasMore, loadingMore, onLoadOlder, onSend } = props;
+  const { entry, selfPersonId, messages, hasMore, loadingMore, onLoadOlder, onSend } = props;
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastLengthRef = useRef(messages.length);
 
   const participantsById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const p of entry.participants) map.set(p.userId, displayNameFor(p));
+    for (const p of entry.participants) map.set(p.personId, displayNameFor(p));
     return map;
   }, [entry.participants]);
 
@@ -208,19 +207,19 @@ function RoomView(props: {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-4 py-3 border-b border-border">
-        <div className="font-semibold">{entry.room.name || entry.participants.filter((p) => p.userId !== currentUserId).map(displayNameFor).join(", ")}</div>
+        <div className="font-semibold">{entry.room.name || entry.participants.filter((p) => p.personId !== selfPersonId).map(displayNameFor).join(", ")}</div>
         <div className="text-xs text-muted-foreground flex items-center gap-1">
-          <UsersIcon className="w-3 h-3" /> {entry.participants.length} {t("userChat.participants")}
+          <UsersIcon className="w-3 h-3" /> {entry.participants.length} {t("personChat.participants")}
         </div>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {hasMore && (
           <div ref={sentinelRef} className="text-center text-xs text-muted-foreground py-2">
-            {loadingMore ? t("userChat.loadingOlder") : t("userChat.scrollForOlder")}
+            {loadingMore ? t("personChat.loadingOlder") : t("personChat.scrollForOlder")}
           </div>
         )}
         {messages.map((m) => {
-          const isMe = m.senderId === currentUserId;
+          const isMe = m.senderPersonId === selfPersonId;
           return (
             <div key={m.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
               <div className={cn(
@@ -231,20 +230,20 @@ function RoomView(props: {
               )}>
                 {!isMe && (
                   <div className="text-xs font-medium mb-0.5">
-                    {participantsById.get(m.senderId) ?? t("userChat.unknownUser")}
+                    {participantsById.get(m.senderPersonId) ?? t("personChat.unknownUser")}
                   </div>
                 )}
                 <div className="whitespace-pre-wrap break-words">{m.body}</div>
                 <div className={cn("text-[10px] mt-1 opacity-70 flex items-center gap-1", isMe ? "justify-end" : "")}>
                   <span>{formatTime(m.createdAt)}</span>
                   {isMe && m.status === "sending" && (
-                    <Loader2 className="w-3 h-3 animate-spin" aria-label={t("userChat.statusSending")} />
+                    <Loader2 className="w-3 h-3 animate-spin" aria-label={t("personChat.statusSending")} />
                   )}
                   {isMe && m.status === "sent" && (
-                    <Check className="w-3 h-3" aria-label={t("userChat.statusSent")} />
+                    <Check className="w-3 h-3" aria-label={t("personChat.statusSent")} />
                   )}
                   {isMe && m.status === "failed" && (
-                    <AlertCircle className="w-3 h-3 text-destructive" aria-label={t("userChat.statusFailed")} />
+                    <AlertCircle className="w-3 h-3 text-destructive" aria-label={t("personChat.statusFailed")} />
                   )}
                 </div>
               </div>
@@ -262,10 +261,10 @@ function RoomView(props: {
               handleSend();
             }
           }}
-          placeholder={t("userChat.composerPlaceholder")}
-          data-testid="user-chat-composer"
+          placeholder={t("personChat.composerPlaceholder")}
+          data-testid="person-chat-composer"
         />
-        <Button onClick={handleSend} disabled={!draft.trim()} data-testid="user-chat-send" aria-label={t('userChat.send') || 'Send'}>
+        <Button onClick={handleSend} disabled={!draft.trim()} data-testid="person-chat-send" aria-label={t('personChat.send') || 'Send'}>
           <Send className="w-4 h-4" />
         </Button>
       </div>
@@ -277,12 +276,12 @@ function NewChatDialog(props: {
   open: boolean;
   onClose: () => void;
   currentInstituteId: string | null;
-  onCreateDirect: (instituteId: string, otherUserId: string) => Promise<void>;
+  onCreateDirect: (instituteId: string, otherPersonId: string) => Promise<void>;
   onCreateGroup: (instituteId: string, participantIds: string[], name: string) => Promise<void>;
 }) {
   const { t, isRTL } = useLanguage();
   const { open, onClose, currentInstituteId, onCreateDirect, onCreateGroup } = props;
-  const [contacts, setContacts] = useState<UserChatContact[]>([]);
+  const [contacts, setContacts] = useState<PersonChatContact[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -295,7 +294,7 @@ function NewChatDialog(props: {
     setSearch("");
     if (currentInstituteId) {
       fetchContacts(currentInstituteId).then(setContacts).catch((err) => {
-        console.error("[userChat] fetchContacts:", err);
+        console.error("[personChat] fetchContacts:", err);
         setContacts([]);
       });
     } else {
@@ -334,7 +333,7 @@ function NewChatDialog(props: {
       }
       onClose();
     } catch (err) {
-      console.error("[userChat] create room:", err);
+      console.error("[personChat] create room:", err);
     } finally {
       setSubmitting(false);
     }
@@ -344,25 +343,25 @@ function NewChatDialog(props: {
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("userChat.newChat")}</DialogTitle>
+          <DialogTitle>{t("personChat.newChat")}</DialogTitle>
         </DialogHeader>
         <DialogBody className="space-y-3">
           {!currentInstituteId && (
-            <div className="text-sm text-muted-foreground">{t("userChat.noInstitute")}</div>
+            <div className="text-sm text-muted-foreground">{t("personChat.noInstitute")}</div>
           )}
           {currentInstituteId && (
             <>
               <Input
-                placeholder={t("userChat.searchContacts")}
+                placeholder={t("personChat.searchContacts")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-64 border rounded-md">
                 {filtered.length === 0 && (
-                  <div className="p-3 text-sm text-muted-foreground">{t("userChat.noContacts")}</div>
+                  <div className="p-3 text-sm text-muted-foreground">{t("personChat.noContacts")}</div>
                 )}
                 {filtered.map((c) => {
-                  const cbId = `user-chat-contact-${c.id}`;
+                  const cbId = `person-chat-contact-${c.id}`;
                   const labelId = `${cbId}-label`;
                   return (
                     <div
@@ -389,12 +388,12 @@ function NewChatDialog(props: {
               </ScrollArea>
               {selected.size > 1 && (
                 <div>
-                  <Label htmlFor="user-chat-group-name">{t("userChat.groupName")}</Label>
+                  <Label htmlFor="person-chat-group-name">{t("personChat.groupName")}</Label>
                   <Input
-                    id="user-chat-group-name"
+                    id="person-chat-group-name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder={t("userChat.groupNamePlaceholder")}
+                    placeholder={t("personChat.groupNamePlaceholder")}
                   />
                 </div>
               )}
@@ -404,7 +403,7 @@ function NewChatDialog(props: {
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
           <Button disabled={!canSubmit || submitting} onClick={submit}>
-            {t("userChat.create")}
+            {t("personChat.create")}
           </Button>
         </DialogFooter>
       </DialogContent>

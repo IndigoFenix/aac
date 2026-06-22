@@ -1995,57 +1995,79 @@ export const deepAnalyses = pgTable("deep_analyses", {
 ]);
 
 // =============================================================================
-// USER CHAT — Clinician-to-clinician messaging scoped to a shared institute.
-// instituteId stored as varchar (no FK) to avoid circular import with schema.ts;
-// app-level authorization enforces the same-institute predicate.
+// PERSONS — Canonical "human" abstraction layer above users and students.
+// A person may carry a user facet, a student facet, or (future) both. Scoped to
+// the chat/call membership system for now; other systems converge onto it later.
+// Institute-agnostic — scope derives from the facet rows. Both FKs are nullable
+// and UNIQUE (Postgres treats NULLs as distinct, so many facet-less rows are
+// fine, but a given user/student maps to at most one person).
 // =============================================================================
 
-export const userChatRooms = pgTable("user_chat_rooms", {
+export const persons = pgTable("persons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),       // login / caregiver facet
+  studentId: varchar("student_id").references(() => students.id), // AAC-learner facet
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_persons_user_id").on(table.userId),
+  uniqueIndex("idx_persons_student_id").on(table.studentId),
+]);
+
+// =============================================================================
+// PERSON CHAT — Messaging between persons (user and/or student facets), scoped
+// to a shared institute. instituteId stored as varchar (no FK) to avoid circular
+// import with schema.ts; app-level authorization enforces the predicate.
+// =============================================================================
+
+export const personChatRooms = pgTable("person_chat_rooms", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   instituteId: varchar("institute_id").notNull(),
   name: text("name"),
   isDirect: boolean("is_direct").default(false).notNull(),
-  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdByPersonId: varchar("created_by_person_id").references(() => persons.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_user_chat_rooms_institute_id").on(table.instituteId),
-  index("idx_user_chat_rooms_last_message_at").on(table.lastMessageAt),
+  index("idx_person_chat_rooms_institute_id").on(table.instituteId),
+  index("idx_person_chat_rooms_last_message_at").on(table.lastMessageAt),
 ]);
 
-export const userChatRoomParticipants = pgTable("user_chat_room_participants", {
+export const personChatRoomParticipants = pgTable("person_chat_room_participants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  roomId: varchar("room_id").references(() => userChatRooms.id, { onDelete: "cascade" }).notNull(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+  roomId: varchar("room_id").references(() => personChatRooms.id, { onDelete: "cascade" }).notNull(),
+  personId: varchar("person_id").references(() => persons.id).notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
   lastReadAt: timestamp("last_read_at"),
   leftAt: timestamp("left_at"),
 }, (table) => [
-  uniqueIndex("idx_user_chat_room_participants_room_user").on(table.roomId, table.userId),
-  index("idx_user_chat_room_participants_user_id").on(table.userId),
+  uniqueIndex("idx_person_chat_room_participants_room_person").on(table.roomId, table.personId),
+  index("idx_person_chat_room_participants_person_id").on(table.personId),
 ]);
 
-export const userChats = pgTable("user_chats", {
+export const personChats = pgTable("person_chats", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  roomId: varchar("room_id").references(() => userChatRooms.id, { onDelete: "cascade" }).notNull(),
-  senderId: varchar("sender_id").references(() => users.id).notNull(),
+  roomId: varchar("room_id").references(() => personChatRooms.id, { onDelete: "cascade" }).notNull(),
+  senderPersonId: varchar("sender_person_id").references(() => persons.id).notNull(),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   editedAt: timestamp("edited_at"),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  index("idx_user_chats_room_created").on(table.roomId, table.createdAt),
-  index("idx_user_chats_sender_id").on(table.senderId),
+  index("idx_person_chats_room_created").on(table.roomId, table.createdAt),
+  index("idx_person_chats_sender_person_id").on(table.senderPersonId),
 ]);
 
-export const userChatPushTokens = pgTable("user_chat_push_tokens", {
+// Push tokens stay keyed on the USER (the device owner): a token is a device
+// delivery target, and a student-person has no device — delivery to a student
+// routes through whichever user is fronting it.
+export const personChatPushTokens = pgTable("person_chat_push_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
   token: text("token").notNull(),
   platform: text("platform").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("idx_user_chat_push_tokens_user_token").on(table.userId, table.token),
+  uniqueIndex("idx_person_chat_push_tokens_user_token").on(table.userId, table.token),
 ]);
 
 export const boards = pgTable("boards", {
@@ -3066,15 +3088,19 @@ export type ActivitySubjectType = (typeof activitySubjectTypeEnum.enumValues)[nu
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = typeof activityLogs.$inferInsert;
 
-// User chat types
-export type UserChatRoom = typeof userChatRooms.$inferSelect;
-export type InsertUserChatRoom = typeof userChatRooms.$inferInsert;
-export type UserChatRoomParticipant = typeof userChatRoomParticipants.$inferSelect;
-export type InsertUserChatRoomParticipant = typeof userChatRoomParticipants.$inferInsert;
-export type UserChat = typeof userChats.$inferSelect;
-export type InsertUserChat = typeof userChats.$inferInsert;
-export type UserChatPushToken = typeof userChatPushTokens.$inferSelect;
-export type InsertUserChatPushToken = typeof userChatPushTokens.$inferInsert;
+// Person abstraction
+export type Person = typeof persons.$inferSelect;
+export type InsertPerson = typeof persons.$inferInsert;
+
+// Person chat types
+export type PersonChatRoom = typeof personChatRooms.$inferSelect;
+export type InsertPersonChatRoom = typeof personChatRooms.$inferInsert;
+export type PersonChatRoomParticipant = typeof personChatRoomParticipants.$inferSelect;
+export type InsertPersonChatRoomParticipant = typeof personChatRoomParticipants.$inferInsert;
+export type PersonChat = typeof personChats.$inferSelect;
+export type InsertPersonChat = typeof personChats.$inferInsert;
+export type PersonChatPushToken = typeof personChatPushTokens.$inferSelect;
+export type InsertPersonChatPushToken = typeof personChatPushTokens.$inferInsert;
 
 // =============================================================================
 // VIDEO CAPTION STUDIO — caption projects

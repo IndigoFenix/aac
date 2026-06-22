@@ -74,6 +74,35 @@ function groupByTitle(by: GroupBy): string {
   return by === "student" ? "Student" : by === "user" ? "User" : "Institute";
 }
 
+// ---------- Provider attribution ----------
+//
+// Maps a cost_breakdown category to the LLM provider that billed it. This is a
+// business rule (not stored), kept here so it's easy to tweak:
+//  - AAC sessions run on Google, EXCEPT the Monitor agent (Claude) and image
+//    generation (OpenAI).
+//  - Clinician chat runs on Claude, EXCEPT image generation (OpenAI).
+type Provider = "Google" | "Anthropic (Claude)" | "OpenAI";
+
+const PROVIDER_COLORS: Record<Provider, string> = {
+  Google: "#4285f4",
+  "Anthropic (Claude)": "#d97757",
+  OpenAI: "#10a37f",
+};
+
+function categoryProvider(source: "aac" | "chat", category: string): Provider {
+  const c = category.toLowerCase();
+  if (c.includes("image")) return "OpenAI";
+  if (source === "chat") return "Anthropic (Claude)";
+  if (c.includes("monitor")) return "Anthropic (Claude)";
+  return "Google";
+}
+
+/** "board-manager" -> "Board Manager", "tool:generate_image" -> "Tool: Generate Image". */
+function prettyCategory(cat: string): string {
+  const t = cat.replace(/^tool:/, "tool: ").replace(/[-_]/g, " ");
+  return t.replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 /** Local YYYY-MM-DD for a Date (matches the <input type="date"> format). */
 function localIsoDay(d: Date): string {
   const y = d.getFullYear();
@@ -173,16 +202,20 @@ function DensityHeatmap({ points, accent }: { points: CostUsagePoint[]; accent: 
 // ---------- Per session-type panel ----------
 
 function SessionTypePanel({
+  source,
   points,
   kpis,
+  categoryBreakdown,
   groupOptions,
   defaultGroup,
   accent,
   emptyLabel,
   showGhost,
 }: {
+  source: "aac" | "chat";
   points: CostUsagePoint[];
   kpis: CostUsageKpiSet;
+  categoryBreakdown: Record<string, number>;
   groupOptions: GroupBy[];
   defaultGroup: GroupBy;
   accent: string;
@@ -192,6 +225,32 @@ function SessionTypePanel({
   showGhost: boolean;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroup);
+
+  // Cost split by provider (Google / Anthropic / OpenAI) and by category.
+  const providerData = useMemo(() => {
+    const totals = new Map<Provider, number>();
+    for (const [cat, amt] of Object.entries(categoryBreakdown)) {
+      const p = categoryProvider(source, cat);
+      totals.set(p, (totals.get(p) ?? 0) + amt);
+    }
+    return Array.from(totals.entries())
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({ name, value: +value.toFixed(4) }))
+      .sort((a, b) => b.value - a.value);
+  }, [categoryBreakdown, source]);
+
+  const categoryData = useMemo(
+    () =>
+      Object.entries(categoryBreakdown)
+        .filter(([, v]) => v > 0)
+        .map(([cat, value]) => ({
+          name: prettyCategory(cat),
+          provider: categoryProvider(source, cat),
+          value: +value.toFixed(4),
+        }))
+        .sort((a, b) => b.value - a.value),
+    [categoryBreakdown, source],
+  );
 
   const scatter = useMemo(
     () => points.map((p) => ({ x: +(p.durationSec / 60).toFixed(2), y: +p.cost.toFixed(4) })),
@@ -353,6 +412,57 @@ function SessionTypePanel({
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* Cost breakdown by provider + category */}
+      {providerData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cost by Provider</CardTitle>
+              <CardDescription>
+                {source === "aac"
+                  ? "AAC runs on Google; Monitor on Claude; image generation on OpenAI."
+                  : "Chat runs on Claude; image generation on OpenAI."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={providerData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={(e: any) => e.name}>
+                    {providerData.map((d) => (
+                      <Cell key={d.name} fill={PROVIDER_COLORS[d.name as Provider]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => fmtMoney(v, 4)} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Cost by Category</CardTitle>
+              <CardDescription>Per-agent / per-function cost, colored by provider.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={Math.max(280, categoryData.length * 28 + 40)}>
+                <BarChart data={categoryData} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" fontSize={12} />
+                  <YAxis type="category" dataKey="name" width={130} fontSize={11} />
+                  <Tooltip formatter={(v: number) => fmtMoney(v, 4)} />
+                  <Bar dataKey="value" name="Cost">
+                    {categoryData.map((d) => (
+                      <Cell key={d.name} fill={PROVIDER_COLORS[d.provider]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Usage row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -573,8 +683,10 @@ export function CostUsageDashboard() {
           </TabsList>
           <TabsContent value="aac" className="mt-4">
             <SessionTypePanel
+              source="aac"
               points={aacPoints}
               kpis={data?.kpis?.aac ?? emptyKpi}
+              categoryBreakdown={data?.categoryBreakdown?.aac ?? {}}
               groupOptions={["student", "institute"]}
               defaultGroup="student"
               accent="#2563eb"
@@ -584,8 +696,10 @@ export function CostUsageDashboard() {
           </TabsContent>
           <TabsContent value="chat" className="mt-4">
             <SessionTypePanel
+              source="chat"
               points={chatPoints}
               kpis={data?.kpis?.chat ?? emptyKpi}
+              categoryBreakdown={data?.categoryBreakdown?.chat ?? {}}
               groupOptions={["user", "institute"]}
               defaultGroup="user"
               accent="#16a34a"

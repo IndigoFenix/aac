@@ -27,6 +27,9 @@ export interface CostUsageResponse {
   // KPIs are reported separately per session type — AAC and non-AAC chat
   // sessions are too different to combine.
   kpis: { aac: CostUsageKpiSet; chat: CostUsageKpiSet };
+  // Per-source rollup of cost_breakdown (category -> credits) across all
+  // sessions in range. The client maps categories to providers for display.
+  categoryBreakdown: { aac: Record<string, number>; chat: Record<string, number> };
   truncated: boolean;
 }
 

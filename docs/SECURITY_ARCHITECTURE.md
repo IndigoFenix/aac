@@ -35,7 +35,7 @@ The PHI/PII tables in `shared/schema-private.ts` (55 tables total) include:
 - **Students & care team:** `students`, `aacSettings`, `biometricData`, `studentContacts`, `userStudents`, `instituteStudents`, `studentClassrooms`
 - **Health & education:** `medicalRecords`, `functionalReports`, `educationalReports`, `programs`, `profileDomains`, `baselineMeasurements`, `assessmentSources`, `goals`, `objectives`, `userGoals`, `userObjectives`, `services`, `serviceGoals`, `serviceUsers`, `accommodations`, `progressReports`, `goalProgressEntries`, `dataPoints`, `incidents`, `transitionPlans`, `transitionGoals`, `programContacts`, `meetings`
 - **Consent & verification:** `consentForms`, `studentConsentRecords`, `consentInvitations`, `phoneOtpCodes`
-- **AI & memory:** `chatSessions`, `deepAnalyses`, `userChatRooms`, `userChatRoomParticipants`, `userChats`, `userChatPushTokens`, `boards`, `customApps`, `customAppAssignments`
+- **AI & memory:** `chatSessions`, `deepAnalyses`, `persons`, `personChatRooms`, `personChatRoomParticipants`, `personChats`, `personChatPushTokens`, `boards`, `customApps`, `customAppAssignments`
 - **Files & integrations:** `dropboxConnections`, `dropboxBackups`
 - **Sharing & invites:** `inviteCodes`, `inviteCodeRedemptions`, `studentShareInvites`, `objectShares`, `standingShares`, `studentSymbolAssociations`
 - **Auth & ops:** `users`, `passwordResetTokens`, `mfaRecoveryTokens`, `activityLogs`

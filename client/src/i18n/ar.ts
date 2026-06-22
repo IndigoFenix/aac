@@ -225,7 +225,7 @@ export const ar = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "لم يتم اختيار {{STUDENT}}",
     calendar: "التقويم",
-    userChat: "رسائل",
+    personChat: "رسائل",
   },
 
   // ============================================================================
@@ -3460,7 +3460,7 @@ export const ar = {
     },
   },
 
-  userChat: {
+  personChat: {
     title: "رسائل",
     newChat: "محادثة جديدة",
     noRooms: "لا توجد محادثات بعد",

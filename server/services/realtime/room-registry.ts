@@ -8,6 +8,10 @@ type Subscribers = Map<WebSocket, Set<string>>; // socket → topics it subscrib
 const socketTopics: Subscribers = new Map();
 const topicSockets: Map<string, Set<WebSocket>> = new Map();
 const userSockets: Map<string, Set<WebSocket>> = new Map();
+// person → sockets currently representing that person. A student-person has no
+// socket of its own; it is reachable through whichever user is fronting it, so
+// one socket may register several persons. Presence is derived from this map.
+const personSockets: Map<string, Set<WebSocket>> = new Map();
 
 export function registerUserSocket(userId: string, socket: WebSocket): void {
   if (!userSockets.has(userId)) userSockets.set(userId, new Set());
@@ -21,6 +25,24 @@ export function socketsForUser(userId: string): WebSocket[] {
 
 export function subscribeUserToTopic(userId: string, topic: string): void {
   for (const socket of socketsForUser(userId)) {
+    subscribe(socket, topic);
+  }
+}
+
+export function registerPersonSocket(personId: string, socket: WebSocket): void {
+  if (!personSockets.has(personId)) personSockets.set(personId, new Set());
+  personSockets.get(personId)!.add(socket);
+  const ids: Set<string> = (socket as any).__personIds ?? new Set<string>();
+  ids.add(personId);
+  (socket as any).__personIds = ids;
+}
+
+export function socketsForPerson(personId: string): WebSocket[] {
+  return Array.from(personSockets.get(personId) ?? []);
+}
+
+export function subscribePersonToTopic(personId: string, topic: string): void {
+  for (const socket of socketsForPerson(personId)) {
     subscribe(socket, topic);
   }
 }
@@ -51,6 +73,13 @@ export function removeSocket(socket: WebSocket): void {
   if (userId) {
     userSockets.get(userId)?.delete(socket);
     if (userSockets.get(userId)?.size === 0) userSockets.delete(userId);
+  }
+  const personIds: Set<string> | undefined = (socket as any).__personIds;
+  if (personIds) {
+    for (const personId of personIds) {
+      personSockets.get(personId)?.delete(socket);
+      if (personSockets.get(personId)?.size === 0) personSockets.delete(personId);
+    }
   }
 }
 

@@ -31,7 +31,7 @@ import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
-import { UserChatProvider } from "./features/userChat/UserChatContext";
+import { PersonChatProvider } from "./features/personChat/PersonChatContext";
 import { IdentityVerificationDialog } from "./components/IdentityVerificationDialog";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
@@ -398,7 +398,7 @@ function App() {
                 <IdentityVerificationDialog />
                 <StudentLabelSync />
                 <StudentProvider>
-                  <UserChatProvider>
+                  <PersonChatProvider>
                   <FeaturePanelProvider>
                     <ChatProvider>
                       <ThemeProvider defaultTheme="dark">
@@ -412,7 +412,7 @@ function App() {
                       </ThemeProvider>
                     </ChatProvider>
                   </FeaturePanelProvider>
-                  </UserChatProvider>
+                  </PersonChatProvider>
                 </StudentProvider>
               </InstituteProvider>
             </AuthProvider>

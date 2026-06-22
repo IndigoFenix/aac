@@ -6,11 +6,12 @@ import { stringify } from "csv-stringify";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
 import { setupSocialBotWebSocket } from "./services/social-bot/social-bot-relay";
 import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
-import { subscribe } from "./services/realtime/room-registry";
+import { subscribe, registerPersonSocket } from "./services/realtime/room-registry";
 import { initBus } from "./services/realtime/bus-factory";
-import { initUserChatFanout } from "./services/userChat/userChatFanout";
-import { userChatController } from "./controllers/userChatController";
-import { userChatService } from "./services/userChat/userChatService";
+import { initPersonChatFanout } from "./services/personChat/personChatFanout";
+import { personChatController } from "./controllers/personChatController";
+import { personChatService } from "./services/personChat/personChatService";
+import { personRepository } from "./repositories/personRepository";
 
 import {
   authController,
@@ -1720,27 +1721,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     incidentController.delete(req, res),
   );
 
-  // ============= USER CHAT ROUTES =============
-  app.get("/api/user-chat/contacts", requireAuth, (req, res) =>
-    userChatController.getContacts(req, res),
+  // ============= PERSON CHAT ROUTES =============
+  app.get("/api/person-chat/contacts", requireAuth, (req, res) =>
+    personChatController.getContacts(req, res),
   );
-  app.get("/api/user-chat/rooms", requireAuth, (req, res) =>
-    userChatController.getRooms(req, res),
+  app.get("/api/person-chat/rooms", requireAuth, (req, res) =>
+    personChatController.getRooms(req, res),
   );
-  app.post("/api/user-chat/rooms", requireAuth, (req, res) =>
-    userChatController.createRoom(req, res),
+  app.post("/api/person-chat/rooms", requireAuth, (req, res) =>
+    personChatController.createRoom(req, res),
   );
-  app.get("/api/user-chat/rooms/:id/messages", requireAuth, (req, res) =>
-    userChatController.getMessages(req, res),
+  app.get("/api/person-chat/rooms/:id/messages", requireAuth, (req, res) =>
+    personChatController.getMessages(req, res),
   );
-  app.post("/api/user-chat/rooms/:id/messages", requireAuth, (req, res) =>
-    userChatController.sendMessage(req, res),
+  app.post("/api/person-chat/rooms/:id/messages", requireAuth, (req, res) =>
+    personChatController.sendMessage(req, res),
   );
-  app.post("/api/user-chat/rooms/:id/read", requireAuth, (req, res) =>
-    userChatController.markRead(req, res),
+  app.post("/api/person-chat/rooms/:id/read", requireAuth, (req, res) =>
+    personChatController.markRead(req, res),
   );
-  app.post("/api/user-chat/push-register", requireAuth, (req, res) =>
-    userChatController.registerPush(req, res),
+  app.post("/api/person-chat/push-register", requireAuth, (req, res) =>
+    personChatController.registerPush(req, res),
   );
 
   // ============= ADMIN ROUTES =============
@@ -2087,17 +2088,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set up generic realtime server (path-based routing) and register handlers.
   setupRealtimeServer(httpServer);
 
-  // Initialize the cross-instance fanout bus and wire the user-chat dispatcher
+  // Initialize the cross-instance fanout bus and wire the person-chat dispatcher
   // into it. Selection (memory / postgres / redis) is via REALTIME_BUS env var.
   await initBus();
-  initUserChatFanout();
+  initPersonChatFanout();
 
   registerRealtimeHandler({
-    path: "/ws/user-chat",
+    path: "/ws/person-chat",
     onConnect: async (socket, user) => {
-      const topics = await userChatService.initialTopicsForUser(user.id);
+      // The connected user acts as its own person here (acting-as-a-student is
+      // deferred to the call/AAC client). Register the socket under that person
+      // so room subscriptions can target it, then subscribe + announce.
+      const person = await personRepository.getOrCreateForUser(user.id);
+      registerPersonSocket(person.id, socket);
+      const topics = await personChatService.initialTopicsForPerson(person.id);
       for (const topic of topics) subscribe(socket, topic);
-      socket.send(JSON.stringify({ type: "userChat:ready", topics }));
+      socket.send(JSON.stringify({ type: "personChat:ready", topics, selfPersonId: person.id }));
     },
   });
 

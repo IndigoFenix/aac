@@ -14,27 +14,28 @@ import {
   fetchRooms as apiFetchRooms,
   markRoomRead as apiMarkRoomRead,
   sendMessage as apiSendMessage,
-  type UserChatMessageDTO,
-  type UserChatRoomListEntry,
+  type PersonChatMessageDTO,
+  type PersonChatRoomListEntry,
 } from "./api";
 
-export type UserChatMessageStatus = "sending" | "sent" | "failed";
+export type PersonChatMessageStatus = "sending" | "sent" | "failed";
 
-export interface ClientUserChatMessage extends UserChatMessageDTO {
+export interface ClientPersonChatMessage extends PersonChatMessageDTO {
   clientId?: string;
-  status?: UserChatMessageStatus;
+  status?: PersonChatMessageStatus;
 }
-import { useUserChatSocket } from "./useUserChatSocket";
+import { usePersonChatSocket } from "./usePersonChatSocket";
 import { useAuth } from "@/hooks/useAuth";
 
 const PAGE_SIZE = 50;
 
-interface UserChatContextValue {
-  rooms: UserChatRoomListEntry[];
+interface PersonChatContextValue {
+  rooms: PersonChatRoomListEntry[];
   totalUnread: number;
+  selfPersonId: string | null;
   activeRoomId: string | null;
   setActiveRoomId: (id: string | null) => void;
-  messagesByRoom: Record<string, ClientUserChatMessage[]>;
+  messagesByRoom: Record<string, ClientPersonChatMessage[]>;
   hasMoreByRoom: Record<string, boolean>;
   loadingMoreByRoom: Record<string, boolean>;
 
@@ -43,19 +44,20 @@ interface UserChatContextValue {
   loadOlder: (roomId: string) => Promise<void>;
   send: (roomId: string, body: string) => Promise<void>;
   markRead: (roomId: string) => Promise<void>;
-  createDirect: (instituteId: string, otherUserId: string) => Promise<string>;
+  createDirect: (instituteId: string, otherPersonId: string) => Promise<string>;
   createGroup: (instituteId: string, participantIds: string[], name: string) => Promise<string>;
 }
 
-const UserChatContext = createContext<UserChatContextValue | null>(null);
+const PersonChatContext = createContext<PersonChatContextValue | null>(null);
 
-export function UserChatProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, user } = useAuth();
-  const currentUserIdRef = useRef<string | null>(null);
-  currentUserIdRef.current = user?.id ?? null;
-  const [rooms, setRooms] = useState<UserChatRoomListEntry[]>([]);
+export function PersonChatProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  const [selfPersonId, setSelfPersonId] = useState<string | null>(null);
+  const selfPersonIdRef = useRef<string | null>(null);
+  selfPersonIdRef.current = selfPersonId;
+  const [rooms, setRooms] = useState<PersonChatRoomListEntry[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, ClientUserChatMessage[]>>({});
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, ClientPersonChatMessage[]>>({});
   const [hasMoreByRoom, setHasMoreByRoom] = useState<Record<string, boolean>>({});
   const [loadingMoreByRoom, setLoadingMoreByRoom] = useState<Record<string, boolean>>({});
   const activeRoomRef = useRef<string | null>(null);
@@ -63,10 +65,11 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
 
   const refreshRooms = useCallback(async () => {
     try {
-      const list = await apiFetchRooms();
+      const { rooms: list, selfPersonId: self } = await apiFetchRooms();
       setRooms(list);
+      if (self) setSelfPersonId(self);
     } catch (err) {
-      console.error("[userChat] refreshRooms error:", err);
+      console.error("[personChat] refreshRooms error:", err);
     }
   }, []);
 
@@ -86,7 +89,7 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
       setHasMoreByRoom((prev) => ({ ...prev, [roomId]: page.length === PAGE_SIZE }));
       await apiMarkRoomRead(roomId);
     } catch (err) {
-      console.error("[userChat] openRoom error:", err);
+      console.error("[personChat] openRoom error:", err);
     }
   }, [messagesByRoom]);
 
@@ -102,23 +105,23 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
       setMessagesByRoom((prev) => ({ ...prev, [roomId]: [...page.reverse(), ...current] }));
       setHasMoreByRoom((prev) => ({ ...prev, [roomId]: page.length === PAGE_SIZE }));
     } catch (err) {
-      console.error("[userChat] loadOlder error:", err);
+      console.error("[personChat] loadOlder error:", err);
     } finally {
       setLoadingMoreByRoom((prev) => ({ ...prev, [roomId]: false }));
     }
   }, [messagesByRoom, hasMoreByRoom, loadingMoreByRoom]);
 
   const send = useCallback(async (roomId: string, body: string) => {
-    const senderId = currentUserIdRef.current ?? "";
+    const senderPersonId = selfPersonIdRef.current ?? "";
     const clientId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `opt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const optimistic: ClientUserChatMessage = {
+    const optimistic: ClientPersonChatMessage = {
       id: clientId,
       clientId,
       roomId,
-      senderId,
+      senderPersonId,
       body,
       createdAt: new Date().toISOString(),
       editedAt: null,
@@ -148,7 +151,7 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
       });
       refreshRooms();
     } catch (err) {
-      console.error("[userChat] send error:", err);
+      console.error("[personChat] send error:", err);
       setMessagesByRoom((prev) => {
         const list = prev[roomId];
         if (!list) return prev;
@@ -167,8 +170,8 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
     await apiMarkRoomRead(roomId);
   }, []);
 
-  const createDirect = useCallback(async (instituteId: string, otherUserId: string) => {
-    const room = await apiCreateRoom({ instituteId, participantIds: [otherUserId] });
+  const createDirect = useCallback(async (instituteId: string, otherPersonId: string) => {
+    const room = await apiCreateRoom({ instituteId, participantIds: [otherPersonId] });
     await refreshRooms();
     return room.id;
   }, [refreshRooms]);
@@ -179,10 +182,13 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
     return room.id;
   }, [refreshRooms]);
 
-  useUserChatSocket(
+  usePersonChatSocket(
     useCallback(async (event) => {
-      if (event.type === "userChat:message") {
-        const payload = event.payload as UserChatMessageDTO & { clientId?: string };
+      if (event.type === "personChat:ready") {
+        const self = event.payload?.selfPersonId as string | undefined;
+        if (self) setSelfPersonId(self);
+      } else if (event.type === "personChat:message") {
+        const payload = event.payload as PersonChatMessageDTO & { clientId?: string };
         setMessagesByRoom((prev) => {
           const existing = prev[payload.roomId];
           // Only append if we've opened this room (history loaded)
@@ -206,7 +212,7 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
           apiMarkRoomRead(payload.roomId).catch(() => {});
         }
         refreshRooms();
-      } else if (event.type === "userChat:unread") {
+      } else if (event.type === "personChat:unread") {
         const { roomId, unreadCount } = event.payload;
         let knownRoom = false;
         setRooms((prev) => {
@@ -217,7 +223,7 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
           );
         });
         if (!knownRoom) refreshRooms();
-      } else if (event.type === "userChat:roomCreated") {
+      } else if (event.type === "personChat:roomCreated") {
         refreshRooms();
       }
     }, [refreshRooms]),
@@ -229,9 +235,10 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
     [rooms],
   );
 
-  const value: UserChatContextValue = {
+  const value: PersonChatContextValue = {
     rooms,
     totalUnread,
+    selfPersonId,
     activeRoomId,
     setActiveRoomId,
     messagesByRoom,
@@ -246,11 +253,11 @@ export function UserChatProvider({ children }: { children: ReactNode }) {
     createGroup,
   };
 
-  return <UserChatContext.Provider value={value}>{children}</UserChatContext.Provider>;
+  return <PersonChatContext.Provider value={value}>{children}</PersonChatContext.Provider>;
 }
 
-export function useUserChat(): UserChatContextValue {
-  const ctx = useContext(UserChatContext);
-  if (!ctx) throw new Error("useUserChat must be used within UserChatProvider");
+export function usePersonChat(): PersonChatContextValue {
+  const ctx = useContext(PersonChatContext);
+  if (!ctx) throw new Error("usePersonChat must be used within PersonChatProvider");
   return ctx;
 }

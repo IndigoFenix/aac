@@ -225,7 +225,7 @@ export const en = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "No {{STUDENT}} Selected",
     calendar: "Calendar",
-    userChat: "Messages",
+    personChat: "Messages",
   },
 
   // ============================================================================
@@ -3460,7 +3460,7 @@ export const en = {
     },
   },
 
-  userChat: {
+  personChat: {
     title: "Messages",
     newChat: "New chat",
     noRooms: "No conversations yet",

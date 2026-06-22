@@ -124,7 +124,7 @@ resource "aws_ecs_task_definition" "main" {
           },
           {
             # Realtime fanout selection. With Redis on, ID-only payloads cross
-            # the bus (see server/services/userChat/userChatFanout.ts); without
+            # the bus (see server/services/personChat/personChatFanout.ts); without
             # it, falls back to Postgres LISTEN/NOTIFY.
             name  = "REALTIME_BUS"
             value = var.enable_redis ? "redis" : "postgres"

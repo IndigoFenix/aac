@@ -225,7 +225,7 @@ export const ko = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "{{STUDENT}} 미선택",
     calendar: "캘린더",
-    userChat: "메시지",
+    personChat: "메시지",
   },
 
   // ============================================================================
@@ -3460,7 +3460,7 @@ export const ko = {
     },
   },
 
-  userChat: {
+  personChat: {
     title: "메시지",
     newChat: "새 채팅",
     noRooms: "아직 대화가 없습니다",

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export interface UserChatSocketEvent {
+export interface PersonChatSocketEvent {
   type: string;
   topic?: string;
   payload?: any;
@@ -18,8 +18,8 @@ function resolveWsUrl(path: string): string {
   return `${proto}//${window.location.host}${path}`;
 }
 
-export function useUserChatSocket(
-  onEvent: (event: UserChatSocketEvent) => void,
+export function usePersonChatSocket(
+  onEvent: (event: PersonChatSocketEvent) => void,
   enabled: boolean,
 ): void {
   const onEventRef = useRef(onEvent);
@@ -35,7 +35,7 @@ export function useUserChatSocket(
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(resolveWsUrl("/ws/user-chat"));
+      ws = new WebSocket(resolveWsUrl("/ws/person-chat"));
 
       ws.onopen = () => {
         backoffMs = 1000;

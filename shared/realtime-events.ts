@@ -8,34 +8,34 @@ export interface RealtimeEventEnvelope<T = unknown> {
   payload: T;
 }
 
-// User chat events
-export type UserChatEvent =
-  | { type: "userChat:message"; topic: string; payload: UserChatMessagePayload }
-  | { type: "userChat:roomUpdated"; topic: string; payload: UserChatRoomUpdatedPayload }
-  | { type: "userChat:unread"; topic: string; payload: UserChatUnreadPayload }
-  | { type: "userChat:roomCreated"; topic: string; payload: UserChatRoomCreatedPayload };
+// Person chat events
+export type PersonChatEvent =
+  | { type: "personChat:message"; topic: string; payload: PersonChatMessagePayload }
+  | { type: "personChat:roomUpdated"; topic: string; payload: PersonChatRoomUpdatedPayload }
+  | { type: "personChat:unread"; topic: string; payload: PersonChatUnreadPayload }
+  | { type: "personChat:roomCreated"; topic: string; payload: PersonChatRoomCreatedPayload };
 
-export interface UserChatMessagePayload {
+export interface PersonChatMessagePayload {
   id: string;
   roomId: string;
-  senderId: string;
+  senderPersonId: string;
   body: string;
   createdAt: string;
   clientId?: string;
 }
 
-export interface UserChatRoomUpdatedPayload {
+export interface PersonChatRoomUpdatedPayload {
   roomId: string;
   lastMessageAt: string;
   lastMessagePreview?: string;
 }
 
-export interface UserChatUnreadPayload {
+export interface PersonChatUnreadPayload {
   roomId: string;
   unreadCount: number;
 }
 
-export interface UserChatRoomCreatedPayload {
+export interface PersonChatRoomCreatedPayload {
   roomId: string;
 }
 
