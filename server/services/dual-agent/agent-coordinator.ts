@@ -90,6 +90,7 @@ import type {
   BoardLoadRequestedEvent,
   MonitorBroadcastEvent,
   FocusRequestEvent,
+  AudioRequestEvent,
   AlarmRaisedEvent,
   GestureRecognizedEvent,
   ThoughtLeakEvent,
@@ -101,9 +102,40 @@ import {
   type DefinedGesture,
 } from "./defined-gestures";
 
-import type { ClientMessage, ServerMessage, IdentifiedFaceWire } from "./live-relay";
+import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities } from "./live-relay";
+import { isCapabilityActive } from "./capability-gate";
+import { buildHeardSpeechTurn } from "./speech-text";
+import { transcribeSegments } from "../voice/google-stt-service";
+import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
+import { renderSceneForObserver, type SceneSnapshot, type IdentifiedForScene } from "@shared/aac/scene-state";
+import { matchPitch, describeVoiceCharacter } from "@shared/aac/voice-pitch";
+
+/** Rough speech duration (seconds) of a 16-bit PCM WAV, for STT billing. Reads
+ *  sampleRate + channels from the header; estimates are fine (STT is cheap). */
+function estimateWavSeconds(buf: Buffer): number {
+  if (buf.length < 44) return 0;
+  try {
+    const channels = buf.readUInt16LE(22) || 1;
+    const sampleRate = buf.readUInt32LE(24) || 16000;
+    const bytesPerSample = (buf.readUInt16LE(34) || 16) / 8;
+    const dataBytes = Math.max(0, buf.length - 44);
+    const denom = sampleRate * channels * bytesPerSample;
+    return denom > 0 ? dataBytes / denom : 0;
+  } catch {
+    return 0;
+  }
+}
+import {
+  initEnergy,
+  applyCharge,
+  energyPercent,
+  energyBand,
+  type EnergyState,
+  type EnergyConfig,
+  type EnergyBand,
+} from "@shared/aac/energy-meter";
 import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
-import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, type FaceMatchResult, type EntityType } from "../biometric/recognition-service";
+import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, findMatchingVoice, growVoiceGalleryForEntity, penalizeVoiceMatch, getKnownPeopleForStudent, getVoicePitchProfiles, type FaceMatchResult, type VoiceMatchResult, type KnownPerson, type EntityType, type VoicePitchProfile } from "../biometric/recognition-service";
 import {
   resolveStartupMode,
   resolveStudentIsActiveUser,
@@ -169,6 +201,7 @@ import { smartMergeButtons, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
+import { decideIdleTransition } from "./idle-watchdog";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -331,6 +364,13 @@ const AWAKE_COMPRESSION_TRIGGER = 30_000;
 const AWAKE_COMPRESSION_TARGET = 15_000;
 const RESTING_COMPRESSION_TRIGGER = 12_000;
 const RESTING_COMPRESSION_TARGET = 6_000;
+// Economize-awake tier (Phase 5.1): when full-attention is OFF, bound the
+// Observer's short-term memory tighter than full awake — between awake and
+// resting. Live re-bills the whole window every turn, so a smaller window is a
+// direct, continuous per-turn saving on top of the audio/image→text work.
+// Repurposes resting's memory constraint for the awake-but-economizing state.
+const AWAKE_ECONOMIZE_COMPRESSION_TRIGGER = 18_000;
+const AWAKE_ECONOMIZE_COMPRESSION_TARGET = 9_000;
 
 /** How often to batch buffered Speaker PCM chunks into a single WAV
  *  and send to the client. Mirrors LiveRelay.AUDIO_FLUSH_INTERVAL_MS. */
@@ -584,6 +624,20 @@ interface GuessingState {
 
 type CoordinatorState = "initializing" | "ready" | "closing" | "closed";
 
+/** Cheap acoustic fingerprint of a speech clip (fast-tier voice read). */
+interface Acoustic { pitchHz: number | null; voiced: number; formantDispersion?: number | null }
+
+/** Per-clip speech sync state (see AgentCoordinator.pendingSpeech). */
+interface PendingSpeechEntry {
+  text?: string;
+  voice?: { embedding: number[]; quality?: number };
+  lipActivity?: LipFace[];
+  acoustic?: Acoustic;
+  fastDone?: boolean;
+  slowDone?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 export class AgentCoordinator {
   // -------------------------------------------------------------------------
   // Connection lifecycle
@@ -747,6 +801,79 @@ export class AgentCoordinator {
    *  forward frames/audio to Observer. */
   private paused = false;
 
+  // -------------------------------------------------------------------------
+  // Cost-saving / adaptive-fidelity gating (see planning-docs/aac-cost-saving*)
+  // -------------------------------------------------------------------------
+  /** Per-student master switch. When fullAttentionMode is ON, the AAC streams
+   *  raw frames + audio at full fidelity and ALL cost-saving substitutions are
+   *  disabled. When OFF (the default), the system may economize: text-first
+   *  steady state, client STT, scene_state, energy throttling. Read from
+   *  studentRow.aacSettings at init. `economize` is the inverse. */
+  private fullAttentionMode = false;
+  /** What offloading the connected client advertised at `initialize`. Empty
+   *  ({}) for older clients — they get the raw-streaming path regardless of
+   *  fullAttentionMode. */
+  private clientCapabilities: ClientCapabilities = {};
+
+  /** Phase 1b audio backlog pull: the clipId of the most recent speech_text
+   *  (what the Observer would want to re-hear), and the clipId we've asked the
+   *  client for and are waiting on. */
+  private lastSpeechClipId: string | null = null;
+  private pendingAudioPullClipId: string | null = null;
+
+  /** Per-clip speech state, keyed by clipId. Two tiers run INDEPENDENTLY: the
+   *  FAST read fires on the STT text + pitch + lip (no waiting), the SLOW read on
+   *  the parallel voice embedding (background). `fastDone`/`slowDone` keep each
+   *  from firing twice; the entry is reaped once both are done or on a timer. */
+  private pendingSpeech = new Map<string, PendingSpeechEntry>();
+  /** Reap window for a half-arrived clip (STT error, or embedding never sent) so
+   *  the map can't leak. Tiers no longer block each other, so this is just GC. */
+  private static readonly SPEECH_SYNC_TIMEOUT_MS = 600;
+  /** Cached per-person pitch profiles for the FAST voice read; refreshed lazily. */
+  private pitchProfiles: VoicePitchProfile[] | null = null;
+  private pitchProfilesAt = 0;
+  private static readonly PITCH_PROFILE_TTL_MS = 60_000;
+  /** Known-people name phrases for STT speech adaptation, cached per session. */
+  private knownNamePhrases: string[] | null = null;
+  private knownNamePhrasesAt = 0;
+
+  /** Phase 4 energy meter: a regenerating drain fed by live-agent charges, used
+   *  to give the Observer a cost-aware signal. Reset at session init. */
+  private energy: EnergyState = { drain: 0, asOf: 0 };
+  private lastEnergyBand: EnergyBand | null = null;
+  private readonly energyConfig: EnergyConfig = {
+    ceiling: Number(process.env.AAC_ENERGY_CEILING) || 3,
+    perHour: Number(process.env.AAC_ENERGY_PER_HOUR) || 3,
+  };
+  /** Energy governance is active whenever economizing. */
+  private get energyMeterEnabled(): boolean {
+    return this.economize;
+  }
+
+  /** The Observer's AWAKE compression window. Economize sessions use a tighter
+   *  tier (Phase 5.1) to cut the per-turn re-billing of the running context.
+   *  Used at initial connect, profile transitions, and wake-from-sleep. */
+  private observerAwakeCompression(): { trigger: number; target: number } {
+    return this.economize
+      ? { trigger: AWAKE_ECONOMIZE_COMPRESSION_TRIGGER, target: AWAKE_ECONOMIZE_COMPRESSION_TARGET }
+      : { trigger: AWAKE_COMPRESSION_TRIGGER, target: AWAKE_COMPRESSION_TARGET };
+  }
+
+  /** True when cost-saving substitutions are allowed (full-attention OFF). */
+  private get economize(): boolean {
+    return !this.fullAttentionMode;
+  }
+
+  /** A capability is ACTIVE when (a) we may economize (full-attention OFF) and
+   *  (b) the client advertised it. Cost saving is the default for an
+   *  economizing session with an updated client. */
+  private capable(cap: keyof ClientCapabilities): boolean {
+    return isCapabilityActive({
+      fullAttentionMode: this.fullAttentionMode,
+      advertised: !!this.clientCapabilities?.[cap],
+    });
+  }
+
   /** Coordinator-owned interaction mode. Speaker emits the change via
    *  set_interaction_mode, but the source of truth lives here so it
    *  survives profile transitions (awake ↔ resting reconnect both Live
@@ -801,12 +928,16 @@ export class AgentCoordinator {
   private currentIdentifiedFacesAt = 0;
   /** Per-contact rate limit for `recordContactSighting()` — keyed by contact id. */
   private lastSightingBumpAt: Map<string, number> = new Map();
-  /** Per-entity rate limit for passive gallery growth — keyed by entityId. */
-  private lastGalleryGrowAt: Map<string, number> = new Map();
-  /** Last descriptor that matched each entity, so a later misidentification
-   *  correction can target the exact embedding that mis-fired. Keyed by
-   *  `${entityType}:${entityId}`. */
-  private recentMatchedDescriptors: Map<string, { descriptor: number[]; at: number }> = new Map();
+  /** Last descriptor that matched each entity, with its quality. Held as a
+   *  PENDING sample: gallery growth is gated behind the Observer confirming the
+   *  identity (person_identified / set_person_as_user → seedFaceFromObserver), so
+   *  embeddings never self-reinforce without verification. Also the target for a
+   *  later misidentification correction. Keyed by `${entityType}:${entityId}`. */
+  private recentMatchedDescriptors: Map<string, { descriptor: number[]; quality?: number; at: number }> = new Map();
+  /** Most-recent face descriptor we could NOT confidently attribute. Held so the
+   *  Observer NAMING an unknown face (person_identified) can seed a brand-new
+   *  identity — the face mirror of `recentUnattributedVoice`. */
+  private recentUnattributedFace: { descriptor: number[]; quality: number; at: number } | null = null;
   /** In-flight face-recognition promise. The first-frame startup path awaits
    *  this (briefly) so the startup scene description has face results. */
   private faceRecognitionInFlight: Promise<void> | null = null;
@@ -814,13 +945,41 @@ export class AgentCoordinator {
   private static readonly IDENTIFIED_FACES_TTL_MS = 30_000;
   /** Minimum gap between sighting bumps for the same contact. */
   private static readonly SIGHTING_BUMP_INTERVAL_MS = 60_000;
-  /** Minimum gap between gallery-growth attempts for the same entity (bounds DB reads). */
-  private static readonly GALLERY_GROW_INTERVAL_MS = 8_000;
-  /** A recent matched descriptor older than this is no longer a valid correction target. */
+  /** A recent matched descriptor older than this is no longer a valid correction
+   *  target / pending-growth sample. */
   private static readonly RECENT_MATCH_TTL_MS = 120_000;
   /** Matches below this confidence are "borderline": the AI is asked to verify
    *  the identity against the on-file physical description rather than trust it. */
   private static readonly BORDERLINE_CONFIDENCE = 0.6;
+  /** Minimum quality for a face sample to be worth stashing / growing from. */
+  private static readonly FACE_SAMPLE_QUALITY_MIN = 0.4;
+
+  // -------------------------------------------------------------------------
+  // Voice recognition. Populated when the client sends `voice_descriptors`
+  // (speaker embeddings computed from heard speech). Feeds a `[VOICES HEARD]`
+  // block appended after `[PEOPLE PRESENT]` and the `voices_identified` debug
+  // echo. Unlike faces, a voice cannot self-attribute a NEW identity — the
+  // gallery bootstraps when the Observer NAMES an unknown voice
+  // (update_context: voice_identified), which seeds the most-recent
+  // unattributed embedding into that person's gallery.
+  // -------------------------------------------------------------------------
+  private currentIdentifiedVoices: IdentifiedVoiceWire[] = [];
+  private currentIdentifiedVoicesAt = 0;
+  /** Last voice embedding that matched each entity, with its quality. Held as a
+   *  PENDING sample (growth gated behind Observer verification) and the target
+   *  for a later misidentification correction. Keyed by `${entityType}:${entityId}`. */
+  private recentMatchedVoiceEmbeddings: Map<string, { embedding: number[]; quality?: number; pitch?: number; dispersion?: number; at: number }> = new Map();
+  /** Most-recent voice embedding we could NOT confidently attribute. Held so the
+   *  Observer naming an unknown voice can seed the right person's gallery — the
+   *  only way a brand-new voice identity bootstraps. Carries the clip's pitch +
+   *  formant dispersion so the fast tier can use them once the person is named. */
+  private recentUnattributedVoice: { embedding: number[]; quality: number; pitch?: number; dispersion?: number; at: number } | null = null;
+  /** TTL after which the identified-voices list is considered stale. Longer than
+   *  faces: people are intermittently silent, so a voice ID stays relevant
+   *  through pauses in speech. */
+  private static readonly IDENTIFIED_VOICES_TTL_MS = 60_000;
+  /** Minimum quality for a voice sample to be worth stashing / growing from. */
+  private static readonly VOICE_SAMPLE_QUALITY_MIN = 0.35;
 
   // -------------------------------------------------------------------------
   // Startup mode (CONTEXTUAL / MENU). Resolved from context at init; consumed
@@ -873,6 +1032,27 @@ export class AgentCoordinator {
    *  to "none" once consumed (after interpret runs) so a duplicate
    *  interpret on the same composed turn is also blocked. */
   private lastUserInputType: "button_pressed" | "sentence_composed" | "transcribed" | "none" = "none";
+
+  // WebSocket keepalive. Without application-level traffic, an idle live
+  // session (resting/asleep) generates nothing on the wire, so the hosting
+  // proxy (Render/ALB/API-Gateway) closes the socket at its ~20-min idle
+  // timeout — which recycles into a fresh empty session and burns a Monitor
+  // summary each cycle. A periodic ws.ping() keeps the connection warm.
+  // Mirrors legacy LiveRelay.startPingTimer.
+  private static readonly PING_INTERVAL_MS = 30_000;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pongReceived = true;
+
+  // Server-side idle watchdog. The Observer AI is supposed to call rest()/
+  // sleep() when the user disengages, but it does so unreliably — so we force
+  // the downward transitions purely on elapsed idle time. After IDLE_REST_MS
+  // with no real engagement we drop awake→resting; after IDLE_SLEEP_MS we go
+  // fully asleep (tearing down ALL Live agents — zero Gemini cost), keeping the
+  // WS open so the next user action rebuilds via wakeFromSleep.
+  private static readonly IDLE_REST_MS = 90_000;
+  private static readonly IDLE_SLEEP_MS = 300_000;
+  private static readonly IDLE_WATCHDOG_INTERVAL_MS = 15_000;
+  private idleWatchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   // Debouncing
   private contextUpdateBuffer: ContextUpdateEvent[] = [];
@@ -1063,6 +1243,9 @@ export class AgentCoordinator {
       console.error("[AgentCoordinator] WS error:", err);
       this.cleanup("ws error");
     });
+    ws.on("pong", () => { this.pongReceived = true; });
+    this.startPingTimer();
+    this.startIdleWatchdog();
 
     if (initialMessage) {
       // Re-deliver via the normal client-message dispatch path so we don't
@@ -1084,6 +1267,8 @@ export class AgentCoordinator {
     this.state = "closing";
 
     // Clear timers
+    this.stopPingTimer();
+    this.stopIdleWatchdog();
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     if (this.monitorCallDedupTimer) clearTimeout(this.monitorCallDedupTimer);
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
@@ -1147,6 +1332,20 @@ export class AgentCoordinator {
       return;
     }
 
+    // Empty-session guard. A live session that gets recycled by the host's
+    // idle timeout (or one a student opened but never used) has no
+    // conversational turns AND no queued observations — running the Monitor
+    // summary + generateSessionSummary on it just burns tokens to produce an
+    // "(empty session)" record. Skip when nothing happened. We check
+    // pendingMessages too because supervisor-only writes (recorded incidents,
+    // private notes) land there WITHOUT a conversationLog entry and DO deserve
+    // a final pass. The [SESSION_CLOSED] directive is added below, after this.
+    const pendingCount = cache?.state?.pendingMessages?.length ?? 0;
+    if (this.conversationLog.length === 0 && pendingCount === 0) {
+      flowNote("MONITOR", "Final pass skipped — empty session (no turns, no pending observations).");
+      return;
+    }
+
     flowNote("MONITOR", "Session closed — queueing final directive and forcing Monitor.");
     await dualAgentService.addPendingMessage(this.sessionId, {
       role: "user",
@@ -1172,6 +1371,91 @@ export class AgentCoordinator {
       await generateSessionSummary(sessionId);
     } catch (err) {
       console.warn("[AgentCoordinator] session summary generation failed:", (err as Error).message);
+    }
+  }
+
+  /**
+   * Periodic WebSocket-level ping so an idle live session keeps the hosting
+   * proxy's connection warm (see PING_INTERVAL_MS). If a ping goes
+   * unanswered for a full interval the socket is considered dead and
+   * terminated — that fires cleanup, which (post empty-session guard) skips
+   * the summary when nothing happened. Mirrors LiveRelay.startPingTimer.
+   */
+  private startPingTimer(): void {
+    this.stopPingTimer();
+    this.pongReceived = true;
+    this.pingTimer = setInterval(() => {
+      if (!this.pongReceived) {
+        console.warn("[AgentCoordinator] WS failed health check (no pong) — terminating");
+        this.ws.terminate();
+        return;
+      }
+      this.pongReceived = false;
+      try {
+        this.ws.ping();
+      } catch {
+        // ws already closed
+      }
+    }, AgentCoordinator.PING_INTERVAL_MS);
+  }
+
+  private stopPingTimer(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private startIdleWatchdog(): void {
+    this.stopIdleWatchdog();
+    this.idleWatchdogTimer = setInterval(
+      () => this.maybeIdleTransition(),
+      AgentCoordinator.IDLE_WATCHDOG_INTERVAL_MS,
+    );
+  }
+
+  private stopIdleWatchdog(): void {
+    if (this.idleWatchdogTimer) {
+      clearInterval(this.idleWatchdogTimer);
+      this.idleWatchdogTimer = null;
+    }
+  }
+
+  /**
+   * Force the awake→resting→asleep transitions on elapsed idle time, so a
+   * disengaged session stops billing a Live connection even when the Observer
+   * never calls rest()/sleep() itself. "Idle" = time since the last real
+   * engagement (noteEngagementActivity: a press, board change, or AI speech).
+   * Ambient frames/audio don't reset it, so a quiet room sleeps even while the
+   * camera keeps streaming. A mid-turn session always has recent activity (AI
+   * speech stamps it), so this never cuts into an active response.
+   */
+  private maybeIdleTransition(): void {
+    const idleMs = Date.now() - this.lastEngagementActivityAt;
+    const decision = decideIdleTransition({
+      idleMs,
+      sessionProfile: this.sessionProfile,
+      ready: this.state === "ready",
+      paused: this.paused,
+      asleep: this.asleep,
+      inSocialSession: Boolean(this.socialPeer || this.socialPeerTransition),
+      restAfterMs: AgentCoordinator.IDLE_REST_MS,
+      sleepAfterMs: AgentCoordinator.IDLE_SLEEP_MS,
+    });
+
+    if (decision === "sleep") {
+      flowNote(
+        "COORDINATOR",
+        `Idle watchdog: ${Math.round(idleMs / 1000)}s idle — entering full sleep (Live disconnect).`,
+      );
+      this.send({ type: "sleep_state_change", data: { state: "asleep", source: "system" } });
+      this.enterSleep();
+    } else if (decision === "rest") {
+      flowNote(
+        "COORDINATOR",
+        `Idle watchdog: ${Math.round(idleMs / 1000)}s idle — dropping to resting.`,
+      );
+      void this.transitionToProfile("resting");
     }
   }
 
@@ -1243,10 +1527,18 @@ export class AgentCoordinator {
         return;
       case "frame_grid":
         if (this.paused) return;
-        await this.forwardFrameToObserver(msg.data);
+        // triggerReason carries the escalation reason (Phase 2: new_face,
+        // left_frame, safety, …); gestureContext is the client's serialized
+        // face/hand summary (previously dropped on this path).
+        await this.forwardFrameToObserver(msg.data, msg.triggerReason, msg.gestureContext);
         return;
       case "pcm_audio":
         if (this.paused) return;
+        // Cost saving (Phase 1): when STT is active the client sends VAD speech
+        // CLIPS (speech_audio → server Google STT) and suppresses continuous PCM,
+        // so none should arrive. Drop any that does — otherwise it would re-bill
+        // as audio in the Gemini context, defeating the whole point.
+        if (this.capable("clientStt")) return;
         this.observer?.sendAudio(msg.data, "audio/pcm;rate=16000");
         this.lastAudioInputAt = Date.now();
         this.pcmCount += 1;
@@ -1296,9 +1588,45 @@ export class AgentCoordinator {
           });
         });
         return;
+      case "voice_descriptors":
+        // Server-side speaker matching, scoped to this student's known people.
+        // Fire-and-forget (no startup await — voice arrives mid-session, not at
+        // the first frame the way faces do).
+        if (!this.studentId) return;
+        // Tagged with a clipId → it's the parallel voice for a speech clip; feed
+        // the sync registry so attribution waits for it.
+        if (msg.clipId && msg.data[0]) this.recordVoiceForClip(msg.clipId, msg.data[0]);
+        this.recognizeVoices(msg.data).catch(err => {
+          runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+            logLiveSession("VOICE_RECOGNITION_ERROR", (err as Error).message);
+          });
+        });
+        return;
+      case "speech_text":
+        // Cost saving (Phase 1, Whisper path — plumbing kept): on-device
+        // transcript. Only honored when STT is active for this session.
+        if (!this.capable("clientStt")) return;
+        this.handleSpeechText(msg);
+        return;
+      case "speech_audio":
+        // Cost saving (Phase 1, ACTIVE path): VAD speech clip → server-side
+        // Google STT → [HEARD SPEECH]. Only honored when STT is active.
+        if (!this.capable("clientStt")) return;
+        if (this.paused) return;
+        void this.handleSpeechAudio(msg);
+        return;
+      case "scene_state":
+        // Cost saving (Phase 2): compact text scene description in place of a
+        // frame while the scene is stable. Inject as ambient [SCENE] context
+        // (non-turn) so the Observer stays aware without burning a turn —
+        // escalation frames are what drive its turns.
+        if (!this.capable("sceneState")) return;
+        if (this.paused) return;
+        this.observer?.sendContextInjection(`[SCENE] ${this.renderScene(msg.scene)}`);
+        return;
       case "correct_identity":
-        // A recent face match was wrong — penalize the embedding that mis-fired
-        // so the same confusion stops recurring.
+        // A recent face/voice match was wrong — penalize the embedding(s) that
+        // mis-fired so the same confusion stops recurring.
         if (!this.studentId) return;
         this.correctMisidentification(msg.entityType, msg.entityId, msg.reason).catch(err => {
           runInSessionContext(this.sessionId || "?", this.debugMode, () => {
@@ -1307,8 +1635,20 @@ export class AgentCoordinator {
         });
         return;
       case "audio_clip":
+        // Phase 1b: a backlog clip the Observer asked for (request_audio). Only
+        // honor it if it matches the pending pull — otherwise it's a legacy /
+        // unsolicited clip and we ignore it (the audio path is text via STT).
+        if (msg.clipId && msg.clipId === this.pendingAudioPullClipId) {
+          this.pendingAudioPullClipId = null;
+          this.observer?.sendAudioClipTurn(
+            msg.data,
+            msg.mimeType || "audio/wav",
+            `[REQUESTED AUDIO] You asked to hear this — it's the clip behind the recent [HEARD SPEECH]. Listen, then re-attribute / re-judge and route via transcript() if it's directed speech.`,
+          );
+        }
+        return;
       case "voice_audio":
-        // Legacy non-PCM paths — ignore in live mode.
+        // Legacy non-PCM path — ignore in live mode.
         return;
       case "button_press":
         await this.handleButtonPress(msg);
@@ -1503,6 +1843,10 @@ export class AgentCoordinator {
     this.classroomId = state.classroomId ?? null;
     this.muteState = state.muteState;
     this.debugMode = !!msg.debugMode;
+    // Record what offloading this client can do. Capabilities only take effect
+    // when fullAttentionMode is OFF (resolved below from aacSettings) and the
+    // matching per-phase env flag is set — see `capable()`.
+    this.clientCapabilities = msg.capabilities ?? {};
 
     // Startup behavior is decided from context (no clinician toggle):
     // shared / classroom devices get MENU (board-first, AI waits); a personal
@@ -1678,8 +2022,8 @@ export class AgentCoordinator {
           // client (no audio sink), but the native-audio model expects
           // a voice configured in AUDIO modality.
           voiceName: this.aiVoiceName,
-          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
-          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+          compressionTriggerTokens: this.observerAwakeCompression().trigger,
+          compressionTargetTokens: this.observerAwakeCompression().target,
         }),
         this.speaker.start({
           systemPrompt: speakerPrompt,
@@ -1738,6 +2082,13 @@ export class AgentCoordinator {
     //     under "?" and never show for the real session. (logLiveSession is
     //     file-only, so its wrap only fixes the file tag.)
     const studentRow = sessionCache?.monitorAgent.getStudent?.();
+    // Per-student master gate for the whole cost-saving system. OFF (default) →
+    // economize (text-first, client STT, scene_state, energy throttling, all
+    // capability-gated). ON → raw full-fidelity streaming, no substitutions.
+    this.fullAttentionMode = !!((studentRow?.aacSettings as any)?.fullAttentionMode);
+    // Start the energy meter full as of session start (Phase 4).
+    this.energy = initEnergy(Date.now());
+    this.lastEnergyBand = "high";
     runInSessionContext(this.sessionId, this.debugMode, () => {
       logLiveSession("SESSION START", [
         `Path: three-agent (AgentCoordinator)`,
@@ -1779,7 +2130,13 @@ export class AgentCoordinator {
       // governs awake-while-streaming cost: OFF → apply the resting input
       // filter while awake (awakeDataSaver), ON → continuous streaming.
       clientConfig: buildDefaultClientConfig({
-        awakeDataSaver: !((studentRow?.aacSettings as any)?.fullAttentionMode),
+        awakeDataSaver: this.economize,
+        // When active, the client transcribes speech on-device and sends
+        // `speech_text` instead of streaming raw audio (Phase 1 cost saving).
+        sttActive: this.capable("clientStt"),
+        // When active, the client sends compact `scene_state` text in place of
+        // idle frames, sending real frames only on escalation (Phase 2).
+        sceneStateActive: this.capable("sceneState"),
       }),
     });
 
@@ -3273,6 +3630,9 @@ export class AgentCoordinator {
       case "focus_request":
         this.routeFocusRequest(event);
         return;
+      case "audio_request":
+        this.routeAudioRequest(event);
+        return;
       case "gesture_recognized":
         void this.handleGestureRecognized(event);
         return;
@@ -3327,6 +3687,387 @@ export class AgentCoordinator {
         },
       });
     }
+  }
+
+  /**
+   * Cost saving (Phase 1): handle an on-device transcript of a heard speech
+   * segment. Instead of the Observer transcribing streamed audio, the client
+   * did it locally; we feed the text as a turn-completing message so the
+   * Observer still makes its who/whom judgment and routes via transcript() —
+   * at text cost, and without audio re-billing in the context window.
+   * See planning-docs/aac-cost-saving-spec.md §1.
+   */
+  private handleSpeechText(msg: Extract<ClientMessage, { type: "speech_text" }>): void {
+    // Whisper path (on-device transcript). Kept as plumbing; the active engine
+    // is server-side Google STT (handleSpeechAudio). See aac-cost-saving-spec §1.
+    this.injectHeardSpeech(msg.text, msg.confidence, msg.voiceDescriptor, msg.clipId, "speech_text");
+  }
+
+  /**
+   * Active STT path: the client sends a VAD-gated speech CLIP, we transcribe it
+   * server-side via Google Cloud STT (accurate + low latency, no device freeze),
+   * then inject it like any heard speech. Far cheaper than the Gemini-Live audio
+   * re-billing it replaces. Language comes from the client (student's locale).
+   */
+  private async handleSpeechAudio(msg: Extract<ClientMessage, { type: "speech_audio" }>): Promise<void> {
+    if (!msg.data) return;
+    const buf = Buffer.from(msg.data, "base64");
+    const seconds = estimateWavSeconds(buf);
+    // Record EVERY clip that arrives for STT in the flow log — even when STT
+    // returns nothing — so "did the audio reach the server?" is answerable.
+    flowInput("CLIENT", "speech_audio", `→STT ${seconds.toFixed(1)}s ${(buf.length / 1024).toFixed(0)}KB lang=${msg.language ?? "?"}${msg.lipActivity?.length ? ` lips=${msg.lipActivity.length}` : ""}`);
+    let text = "";
+    try {
+      // Inject session context (known names + on-screen vocab) as phrase hints so
+      // STT biases toward the words actually likely here — the proper nouns and
+      // AAC vocab it otherwise mis-hears without Gemini's contextual fill-in.
+      const speechContexts = await this.buildSpeechContexts().catch(() => undefined);
+      const { segments } = await transcribeSegments(buf, { languageHint: msg.language, speechContexts });
+      text = segments.map(s => s.text).join(" ").replace(/\s+/g, " ").trim();
+      // Bill the actual speech duration (cheap — only the clip, not wall-clock).
+      if (this.sessionId && this.studentId && seconds > 0) {
+        void dualAgentService.trackSttUsage(this.sessionId, this.studentId, this.userId, seconds);
+      }
+      flowNote("COORDINATOR", text ? `STT transcribed: "${text.slice(0, 160)}"` : `STT empty — no speech recognized in ${seconds.toFixed(1)}s clip`);
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("SPEECH_AUDIO → STT", `lang=${msg.language ?? "?"} ${seconds.toFixed(1)}s → "${text.slice(0, 120)}"`);
+      });
+    } catch (err) {
+      flowNote("COORDINATOR", `STT ERROR: ${(err as Error).message}`);
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("STT_ERROR", (err as Error).message);
+      });
+      return;
+    }
+    // Two-tier attribution. FAST: the cheap pitch fingerprint rode WITH this clip
+    // (msg.acoustic), so combined with lip-sync we give the Observer an instant
+    // read now. SLOW: the full voice embedding arrives separately (parallel, same
+    // clipId) and updates [VOICES HEARD] + learning in the BACKGROUND. Neither
+    // blocks the other. With no clipId, do both inline from this message.
+    if (!msg.clipId) {
+      this.doFastSpeechRead(text, msg.acoustic, msg.lipActivity, undefined);
+      if (msg.voiceDescriptor) await this.doSlowSpeechRead(msg.voiceDescriptor, msg.acoustic, msg.lipActivity);
+      return;
+    }
+    this.recordSpeechText(msg.clipId, text, msg.lipActivity, msg.acoustic, msg.voiceDescriptor);
+  }
+
+  /** A clip's STT text (+ pitch + lip) arrived — fire the FAST read immediately;
+   *  also run the SLOW read if its embedding is already in. The entry persists so
+   *  a later embedding can still do the slow pass. */
+  private recordSpeechText(
+    clipId: string,
+    text: string,
+    lipActivity: LipFace[] | undefined,
+    acoustic: Acoustic | undefined,
+    inlineVoice?: { embedding: number[]; quality?: number },
+  ): void {
+    const e = this.pendingSpeech.get(clipId) ?? {};
+    e.text = text;
+    e.lipActivity = lipActivity;
+    e.acoustic = acoustic;
+    if (inlineVoice) e.voice = inlineVoice;
+    this.pendingSpeech.set(clipId, e);
+    if (text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(text, e.acoustic, e.lipActivity, clipId); }
+    if (e.voice && !e.slowDone) { e.slowDone = true; void this.doSlowSpeechRead(e.voice, e.acoustic, e.lipActivity); }
+    this.cleanupOrReap(clipId, e);
+  }
+
+  /** A clip's parallel voice embedding arrived — run the SLOW (background) read.
+   *  If the text is in but the fast read somehow didn't fire, fire it. */
+  private recordVoiceForClip(clipId: string, voice: { embedding: number[]; quality?: number }): void {
+    const e = this.pendingSpeech.get(clipId) ?? {};
+    e.voice = voice;
+    this.pendingSpeech.set(clipId, e);
+    if (e.text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(e.text, e.acoustic, e.lipActivity, clipId); }
+    if (!e.slowDone) { e.slowDone = true; void this.doSlowSpeechRead(voice, e.acoustic, e.lipActivity); }
+    this.cleanupOrReap(clipId, e);
+  }
+
+  /** Clear the entry once both tiers fire; otherwise arm a reap timer so a
+   *  half-arrived clip can't leak the map. */
+  private cleanupOrReap(clipId: string, e: PendingSpeechEntry): void {
+    if (e.fastDone && e.slowDone) {
+      if (e.timer) clearTimeout(e.timer);
+      this.pendingSpeech.delete(clipId);
+      return;
+    }
+    if (!e.timer) {
+      e.timer = setTimeout(() => this.pendingSpeech.delete(clipId), AgentCoordinator.SPEECH_SYNC_TIMEOUT_MS * 8);
+    }
+  }
+
+  /** FAST tier: inject the [HEARD SPEECH] turn with an immediate, provisional
+   *  [SPEAKER LIKELIHOOD] from pitch + lip-sync — no embedding required. */
+  private doFastSpeechRead(
+    text: string,
+    acoustic: Acoustic | undefined,
+    lipActivity: LipFace[] | undefined,
+    clipId: string | undefined,
+  ): void {
+    if (!text) return;
+    // Build the provisional line (pitch profiles are cached, so this is quick),
+    // then inject. Always inject even if the line is empty/failed.
+    void this.buildFastSpeakerLikelihood(acoustic, lipActivity)
+      .catch(() => "")
+      .then(line => this.injectHeardSpeech(text, 0.9, undefined, clipId, "speech_audio", line || undefined));
+  }
+
+  /** SLOW tier (background): the full voice embedding. Refresh [VOICES HEARD] +
+   *  stash the pending sample (with pitch) for Observer-gated learning, and apply
+   *  the lip-sync correction. Does NOT re-inject a turn — it firms up attribution
+   *  for subsequent turns and accumulates confidence over time. */
+  private async doSlowSpeechRead(
+    voice: { embedding: number[]; quality?: number },
+    acoustic: Acoustic | undefined,
+    lipActivity: LipFace[] | undefined,
+  ): Promise<void> {
+    if (!voice?.embedding || !this.studentId) return;
+    await this.recognizeVoices([{ embedding: voice.embedding, quality: voice.quality }], acoustic?.pitchHz ?? undefined, acoustic?.formantDispersion ?? undefined)
+      .catch(err => runInSessionContext(this.sessionId || "?", this.debugMode, () => logLiveSession("VOICE_RECOGNITION_ERROR", (err as Error).message)));
+    try {
+      const fused = await this.buildSpeakerLikelihood(voice, lipActivity);
+      this.applyLipConfirmedVoiceFeedback(fused.voiceMatch, fused.ranked, voice);
+    } catch { /* attribution correction is non-critical */ }
+  }
+
+  /**
+   * FAST [SPEAKER LIKELIHOOD]: match the heard pitch to each known person's pitch
+   * profile, fuse with lip-sync, render as a PROVISIONAL line. This is the
+   * pre-embedding read — cheap and immediate. Returns "" when there's nothing to
+   * say (no lip evidence and no pitch candidate). See shared/aac/voice-pitch.ts.
+   */
+  private async buildFastSpeakerLikelihood(
+    acoustic: Acoustic | undefined,
+    lipActivity: LipFace[] | undefined,
+  ): Promise<string> {
+    if (!this.studentId) return "";
+    const lipFaces = lipActivity ?? [];
+    const profiles = await this.getCachedPitchProfiles();
+    const voiceCandidates = matchPitch(acoustic?.pitchHz ?? null, profiles, acoustic?.formantDispersion ?? null);
+    const character = describeVoiceCharacter(acoustic?.pitchHz ?? null, acoustic?.formantDispersion ?? null);
+    if (!lipFaces.length && !voiceCandidates.length && !character) return "";
+    const identifiedFaces: IdentifiedFaceLite[] = this.currentIdentifiedFaces
+      .filter(f => f.matched && f.boundingBox)
+      .map(f => ({ entityId: f.entityId, name: f.name, bbox: f.boundingBox! }));
+    const ranked = fuseSpeakerLikelihood({ voiceCandidates, identifiedFaces, lipFaces });
+    let line = renderSpeakerLikelihood(ranked, true);
+    // Append the coarse age/gender hint ONLY when no one is confidently named —
+    // it's for GUESSING an unidentified speaker, redundant for a known one.
+    const confidentlyNamed = ranked.some(r =>
+      r.name !== "unidentified visible speaker" && !r.ruledOut && r.likelihood >= 0.6);
+    if (character && !confidentlyNamed) {
+      const note = `voice sounds like ${character}`;
+      line = line ? `${line} | ${note}` : `[SPEAKER LIKELIHOOD: provisional] ${note}`;
+    }
+    return line;
+  }
+
+  /** Per-person pitch profiles for the fast read, cached per session. */
+  private async getCachedPitchProfiles(): Promise<VoicePitchProfile[]> {
+    if (!this.studentId) return [];
+    if (this.pitchProfiles && Date.now() - this.pitchProfilesAt < AgentCoordinator.PITCH_PROFILE_TTL_MS) {
+      return this.pitchProfiles;
+    }
+    this.pitchProfiles = await getVoicePitchProfiles(this.studentId).catch(() => []);
+    this.pitchProfilesAt = Date.now();
+    return this.pitchProfiles;
+  }
+
+  /** Names of known people (+ relationships) as STT phrase hints. Proper nouns
+   *  are exactly what STT mis-hears with no context, so this is the highest-value
+   *  hint. Cached per session (DB read). */
+  private async getKnownNamePhrases(): Promise<string[]> {
+    if (!this.studentId) return [];
+    if (this.knownNamePhrases && Date.now() - this.knownNamePhrasesAt < AgentCoordinator.PITCH_PROFILE_TTL_MS) {
+      return this.knownNamePhrases;
+    }
+    const out: string[] = [];
+    try {
+      for (const p of await getKnownPeopleForStudent(this.studentId)) {
+        if (p.name) out.push(p.name);
+        if (p.relationship) out.push(p.relationship);
+      }
+    } catch { /* names are best-effort */ }
+    this.knownNamePhrases = out;
+    this.knownNamePhrasesAt = Date.now();
+    return out;
+  }
+
+  /** Names of people identified RIGHT NOW (fresh face or voice match) — the
+   *  people most likely to actually be spoken about/to. */
+  private presentIdentifiedNames(): string[] {
+    const out: string[] = [];
+    const now = Date.now();
+    if (now - this.currentIdentifiedFacesAt <= AgentCoordinator.IDENTIFIED_FACES_TTL_MS) {
+      for (const f of this.currentIdentifiedFaces) if (f.matched && f.name) out.push(f.name);
+    }
+    if (now - this.currentIdentifiedVoicesAt <= AgentCoordinator.IDENTIFIED_VOICES_TTL_MS) {
+      for (const v of this.currentIdentifiedVoices) if (v.matched && v.name) out.push(v.name);
+    }
+    return out;
+  }
+
+  /**
+   * Build STT speech-adaptation hints from session context, boosted by how
+   * likely each word is HERE, now. Tiers (highest first; a name only appears in
+   * its highest tier):
+   *   1. The active user — the student (always, identified or not) + the AI's
+   *      name. These are near-certain to come up. (boost 20)
+   *   2. People identified present right now (face/voice match). (boost 17)
+   *   3. The rest of the known-people roster + relationships. (boost 12)
+   *   4. On-screen board vocabulary. (boost 9)
+   * Bounded + de-duped (across tiers) so we bias toward the relevant words.
+   */
+  private async buildSpeechContexts(): Promise<Array<{ phrases: string[]; boost?: number }>> {
+    const hasLetter = (s: string) => /\p{L}/u.test(s);
+    const used = new Set<string>(); // lowercase dedup — keeps each name in its highest tier
+    const out: Array<{ phrases: string[]; boost?: number }> = [];
+    const addGroup = (vals: Iterable<string>, boost: number, max: number) => {
+      const phrases: string[] = [];
+      for (const raw of vals) {
+        const v = raw.trim();
+        if (v.length < 2 || v.length > 80 || !hasLetter(v)) continue;
+        const k = v.toLowerCase();
+        if (used.has(k)) continue;
+        used.add(k);
+        phrases.push(v);
+        if (phrases.length >= max) break;
+      }
+      if (phrases.length) out.push({ phrases, boost });
+    };
+
+    // 1. The active user (student, always) + the AI's name.
+    const top: string[] = [];
+    if (this.currentStudentName && this.currentStudentName !== "the user") top.push(this.currentStudentName);
+    if (this.aiName) top.push(this.aiName);
+    addGroup(top, 20, 8);
+
+    // 2. People present right now.
+    addGroup(this.presentIdentifiedNames(), 17, 20);
+
+    // 3. The rest of the known roster.
+    addGroup(await this.getKnownNamePhrases(), 12, 120);
+
+    // 4. On-screen vocabulary.
+    addGroup(this.currentBoardLabels, 9, 60);
+
+    return out;
+  }
+
+  /**
+   * Correlate the voice match (embedding) with lip-sync (which visible faces'
+   * mouths were moving) → a ranked [SPEAKER LIKELIHOOD] line. Returns "" when
+   * there's nothing to say. See shared/aac/speaker-fusion.ts.
+   */
+  private async buildSpeakerLikelihood(
+    voiceDescriptor: { embedding: number[]; quality?: number } | undefined,
+    lipActivity: LipFace[] | undefined,
+  ): Promise<{ line: string; ranked: SpeakerLikelihood[]; voiceMatch: VoiceMatchResult | null }> {
+    const empty = { line: "", ranked: [] as SpeakerLikelihood[], voiceMatch: null };
+    if (!this.studentId) return empty;
+    const lipFaces = lipActivity ?? [];
+    // No visual evidence and no voice → nothing to fuse.
+    if (!lipFaces.length && !voiceDescriptor) return empty;
+
+    const voiceCandidates: VoiceCandidate[] = [];
+    let voiceMatch: VoiceMatchResult | null = null;
+    if (voiceDescriptor?.embedding) {
+      voiceMatch = await findMatchingVoice(voiceDescriptor.embedding, this.studentId).catch(() => null);
+      if (voiceMatch && voiceMatch.matched) {
+        voiceCandidates.push({ entityId: voiceMatch.entityId, name: voiceMatch.name, similarity: voiceMatch.similarity ?? voiceMatch.confidence });
+      }
+    }
+
+    // Identified faces we currently see (with boxes), for IoU correlation.
+    const identifiedFaces: IdentifiedFaceLite[] = this.currentIdentifiedFaces
+      .filter(f => f.matched && f.boundingBox)
+      .map(f => ({ entityId: f.entityId, name: f.name, bbox: f.boundingBox! }));
+
+    const ranked = fuseSpeakerLikelihood({ voiceCandidates, identifiedFaces, lipFaces });
+    return { line: renderSpeakerLikelihood(ranked), ranked, voiceMatch };
+  }
+
+  /**
+   * Lip-sync → voice-gallery feedback (CORRECTIVE only). Growth is gated behind
+   * Observer verification, so a moving mouth no longer auto-enrolls the sample —
+   * the lip verdict instead feeds the Observer via [SPEAKER LIKELIHOOD], and the
+   * Observer's confirmation is what commits learning. But CONTRADICTION is still
+   * acted on immediately: when the voice "matched" a person whose mouth was
+   * visibly NOT moving, the gallery entry that fired is suspect, so we penalize
+   * it (gradual; evicts only at the floor). Penalizing a wrong sample doesn't
+   * self-reinforce — it corrects — so it stays automatic. No-op when STT is off.
+   */
+  private applyLipConfirmedVoiceFeedback(
+    voiceMatch: VoiceMatchResult | null,
+    ranked: SpeakerLikelihood[],
+    voiceDescriptor: { embedding: number[]; quality?: number } | undefined,
+  ): void {
+    if (!voiceMatch || !voiceMatch.matched || !voiceMatch.entityId || !voiceDescriptor?.embedding) return;
+    const entity = { type: voiceMatch.entityType as EntityType, id: voiceMatch.entityId };
+    const verdict = ranked.find(r => r.entityId === voiceMatch!.entityId)?.mouth;
+    const key = `${entity.type}:${entity.id}`;
+
+    if (verdict === "still") {
+      void penalizeVoiceMatch(entity, voiceDescriptor.embedding)
+        .then(res => logLiveSession("VOICE_GALLERY_PENALIZE", `${key}: lip-contradicted — penalized ${res.penalized}${res.evicted ? " (evicted)" : ""}`))
+        .catch(err => logLiveSession("VOICE_GALLERY_PENALIZE_ERROR", `${key}: ${(err as Error).message}`));
+    }
+    // "moving" → corroborates, but learning waits for the Observer to confirm.
+    // "hidden" → no visual evidence either way. Neither grows the gallery.
+  }
+
+  /**
+   * Shared tail for both STT engines: record the heard speech and feed it to the
+   * Observer as a turn-completing [HEARD SPEECH] message so it attributes the
+   * speaker and routes via transcript() — at text cost, no audio in the Gemini
+   * context. See aac-cost-saving-spec §1.
+   */
+  private injectHeardSpeech(
+    rawText: string | undefined,
+    confidence: number | undefined,
+    voiceDescriptor: { embedding: number[]; quality?: number } | undefined,
+    clipId: string | undefined,
+    source: string,
+    extraContext?: string,
+  ): void {
+    const text = (rawText || "").trim();
+    if (!text) return;
+    this.noteEngagementActivity();
+    // Heard speech counts as audio input for the Observer hallucination guard
+    // (which keys on lastAudioInputAt — normally bumped by raw PCM, suppressed
+    // under STT). Without this, the guard would discard the very transcripts STT
+    // is meant to produce.
+    this.lastAudioInputAt = Date.now();
+    // Remember which clip backs this transcript so the Observer can pull it
+    // (request_audio) if the text isn't enough. Clears any stale pending pull.
+    this.lastSpeechClipId = clipId ?? null;
+    this.pendingAudioPullClipId = null;
+
+    // Refresh speaker attribution from this segment's voice embedding so the
+    // next [VOICES HEARD] block — and the Observer's judgment — is current.
+    if (voiceDescriptor && this.studentId) {
+      this.recognizeVoices([voiceDescriptor]).catch(err => {
+        runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+          logLiveSession("VOICE_RECOGNITION_ERROR", (err as Error).message);
+        });
+      });
+    }
+
+    const baseTurn = buildHeardSpeechTurn(text, confidence);
+    if (!baseTurn) return;
+    // Append the audio-visual speaker likelihood so the Observer attributes from
+    // voice + lip-sync together (a visible-but-still mouth rules a person out).
+    const turn = extraContext ? `${baseTurn}\n${extraContext}` : baseTurn;
+
+    // Wake from resting on heard speech, mirroring routeTranscribed's gate —
+    // otherwise the lightweight resting Observer won't act on it.
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `${source} arrived while resting — waking before routing.`);
+      void this.transitionToProfile("awake").then(() => this.observer?.sendUserTurn(turn));
+      return;
+    }
+    this.observer?.sendUserTurn(turn);
   }
 
   private routeTranscribed(event: TranscribedEvent): void {
@@ -3438,6 +4179,19 @@ export class AgentCoordinator {
   }
 
   private enqueueContextUpdate(event: ContextUpdateEvent): void {
+    // Identity-learning bridge: gallery growth is gated behind the Observer
+    // VERIFYING who someone is. When it confirms an identity, commit the held
+    // (pending) biometric sample for that person — face on person_identified,
+    // voice on voice_identified, and both on set_person_as_user (the user being
+    // named confirms whichever modality we have a fresh sample for). Handled
+    // here (not the debounced flush) so the sample is still fresh. `key` is the
+    // person's name/role per the tool.
+    if (event.updateType === "voice_identified" || event.updateType === "set_person_as_user") {
+      void this.seedVoiceFromObserver(event.key);
+    }
+    if (event.updateType === "person_identified" || event.updateType === "set_person_as_user") {
+      void this.seedFaceFromObserver(event.key);
+    }
     this.contextUpdateBuffer.push(event);
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     this.contextUpdateDebounceTimer = setTimeout(
@@ -3596,7 +4350,7 @@ export class AgentCoordinator {
    * fallback; every frame carries the live [PEOPLE PRESENT] block. Used by both
    * the streaming frame_grid path and the immediate initialFrame at connect.
    */
-  private async forwardFrameToObserver(data: string): Promise<void> {
+  private async forwardFrameToObserver(data: string, triggerReason?: string, gestureContext?: string): Promise<void> {
     // Drop frames while the Observer's Live session isn't connected yet (its
     // setupComplete can land a few hundred ms AFTER we mark the session ready).
     // Crucially we DON'T count these — otherwise the stronger startup prompt
@@ -3623,14 +4377,43 @@ export class AgentCoordinator {
     // ObserverAgent) so we can append the live [PEOPLE PRESENT] block and use
     // the stronger startup prompt on the very first frame.
     const peopleCtx = this.buildPeoplePresentContext();
-    const peopleNote = peopleCtx ? `\n${peopleCtx}` : "";
+    const voicesCtx = this.buildVoicesHeardContext();
+    const peopleNote = `${peopleCtx ? `\n${peopleCtx}` : ""}${voicesCtx ? `\n${voicesCtx}` : ""}`;
     const base = isFirstFrame ? OBSERVER_STARTUP_PROMPT : OBSERVER_SCENE_UPDATE_PROMPT;
-    this.observer?.sendFrame(data, `${base}${peopleNote}`);
+    // Why this frame arrived (Phase 2 escalation reason) + the client's
+    // face/hand summary. Gated on economize so full-attention sessions stay
+    // byte-for-byte unchanged (they get frequent frames and never sent these);
+    // economize sessions get rarer frames, so each should carry max context. A
+    // safety-class escalation (a fall, someone leaving abruptly) nudges the
+    // Observer to check its alarm conditions — Phase 3 safety decoupling.
+    const reasonNote = this.economize ? this.buildFrameReasonNote(triggerReason) : "";
+    const gestureNote = this.economize && gestureContext ? `\n${gestureContext}` : "";
+    this.observer?.sendFrame(data, `${base}${reasonNote}${peopleNote}${gestureNote}`);
     if (this.frameCount === 1 || this.frameCount % 50 === 0) {
       runInSessionContext(this.sessionId || "?", this.debugMode, () => {
         logLiveSession("FRAME → observer", `count=${this.frameCount} observerConnected=${this.observer?.isConnected ?? false} startup=${this.startupBehavior}`);
       });
     }
+  }
+
+  /**
+   * Turn a client escalation reason (Phase 2/3) into a short prompt note so the
+   * Observer knows WHY it's seeing this frame. Safety-relevant reasons add an
+   * explicit alarm-evaluation nudge — this is how a fall / abrupt exit reaches
+   * the alarm path without a body-pose model (Phase 3 decoupling).
+   */
+  private buildFrameReasonNote(triggerReason?: string): string {
+    if (!triggerReason) return "";
+    if (triggerReason === "safety" || triggerReason === "left_frame") {
+      return `\n[FRAME REASON] ${triggerReason} — something changed abruptly (someone left view, a fall, sudden motion). Check carefully against your alarm_conditions before anything else; if it's benign (they just turned away or stepped out), note it and move on.`;
+    }
+    if (triggerReason === "object_shown") {
+      return `\n[FRAME REASON] object_shown — the view changed outside the person and their hands: they may be holding something up to the camera, showing you an object, or the surroundings changed. Look at what's there and respond if it's meant for you.`;
+    }
+    if (triggerReason === "posture_changed") {
+      return `\n[FRAME REASON] posture_changed — the student's body position shifted (e.g. sat up, leaned, slid down). Body-pose readings are coarse for this population, so confirm against what you SEE before reacting; treat it as a prompt to look, not a conclusion.`;
+    }
+    return `\n[FRAME REASON] ${triggerReason}`;
   }
 
   /** Await in-flight face recognition, capped at `timeoutMs`. */
@@ -3820,8 +4603,9 @@ export class AgentCoordinator {
     });
     flowNote("COORDINATOR", `Profile transition: ${this.sessionProfile} → ${target}`);
 
-    const observerTrigger = target === "resting" ? RESTING_COMPRESSION_TRIGGER : AWAKE_COMPRESSION_TRIGGER;
-    const observerTarget = target === "resting" ? RESTING_COMPRESSION_TARGET : AWAKE_COMPRESSION_TARGET;
+    const awakeComp = this.observerAwakeCompression();
+    const observerTrigger = target === "resting" ? RESTING_COMPRESSION_TRIGGER : awakeComp.trigger;
+    const observerTarget = target === "resting" ? RESTING_COMPRESSION_TARGET : awakeComp.target;
 
     try {
       // Observer: reconnect with new compression thresholds. Same prompt,
@@ -3961,8 +4745,8 @@ export class AgentCoordinator {
           toolConfig: this.observerToolConfigBase,
           useVertex: this.useVertex,
           voiceName: this.aiVoiceName,
-          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
-          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+          compressionTriggerTokens: this.observerAwakeCompression().trigger,
+          compressionTargetTokens: this.observerAwakeCompression().target,
         }),
         this.speaker.start({
           systemPrompt: this.speakerPrompt,
@@ -4087,6 +4871,25 @@ export class AgentCoordinator {
     this.send({ type: "focus_request", data: { reason: event.reason } });
     // Echo back so Observer doesn't request the same thing in rapid succession.
     this.observer?.sendContextInjection(`[FOCUS REQUESTED] ${event.reason}`);
+  }
+
+  /**
+   * Observer asked to re-hear a recent speech segment it only got as text
+   * (Phase 1b audio backlog pull). Resolve to the clip behind the most recent
+   * speech_text and ask the client for it. The clip comes back as `audio_clip`
+   * and is fed to the Observer as a turn (handleClientMessage). No clip on file
+   * (e.g. STT off, or it scrolled out of the client ring buffer) → no-op with a
+   * note so the Observer isn't left waiting.
+   */
+  private routeAudioRequest(event: AudioRequestEvent): void {
+    if (!this.capable("clientStt") || !this.lastSpeechClipId) {
+      this.observer?.sendContextInjection(`[NO AUDIO AVAILABLE] The clip for that speech is no longer on file — judge from the text you have.`);
+      return;
+    }
+    this.pendingAudioPullClipId = this.lastSpeechClipId;
+    this.send({ type: "request_audio_clip", data: { clipId: this.lastSpeechClipId } });
+    // Echo so the Observer doesn't spam the request while the clip is in flight.
+    this.observer?.sendContextInjection(`[AUDIO REQUESTED] ${event.reason}`);
   }
 
   /**
@@ -4312,11 +5115,19 @@ export class AgentCoordinator {
     // only ever fires when an agent explicitly emits monitor_call_requested,
     // which means Student_Notes / Student_Interests / Student_People are
     // never written. Mirrors legacy LiveRelay's per-turn triggerMonitor.
-    if (this.sessionId) {
+    // Phase 5.3: while economizing AND resting, skip the per-turn Monitor
+    // heartbeat. During quiet resting stretches a Monitor run is near-pure
+    // waste; pending messages just accumulate and are processed on the next
+    // awake heartbeat (or the session summary) — deferred, never lost.
+    // Incidents still flush immediately via explicit monitor_call_requested.
+    const skipMonitorHeartbeat = this.economize && this.sessionProfile === "resting";
+    if (this.sessionId && !skipMonitorHeartbeat) {
       flowNote("MONITOR", "turn-end heartbeat — triggerMonitor(force=false)");
       dualAgentService.triggerMonitor(this.sessionId, false).catch(err => {
         console.warn("[AgentCoordinator] triggerMonitor failed:", (err as Error).message);
       });
+    } else if (skipMonitorHeartbeat) {
+      flowNote("MONITOR", "turn-end heartbeat skipped (economize + resting)");
     }
   }
 
@@ -6643,7 +7454,41 @@ export class AgentCoordinator {
         usage,
         `${agent}:${model}`,  // attribution label — used for the cost LOG only
       )
+      // Feed the energy meter (Phase 4) with the credits actually charged. The
+      // live agents are the cost the Observer governs, so its energy reflects
+      // exactly the spend its observation decisions drive.
+      .then(credits => this.recordEnergyDrain(credits))
       .catch(err => console.error(`[AgentCoordinator] trackLiveUsage(${agent}) failed:`, err));
+  }
+
+  /**
+   * Add a live-agent charge to the energy meter and, when the band changes,
+   * tell the Observer (cheap context injection, only on transitions — not every
+   * charge). Energy is advisory: it informs the Observer's judgment, it does NOT
+   * gate anything mechanically, so safety/escalation are never suppressed.
+   */
+  private recordEnergyDrain(credits: number): void {
+    if (!this.energyMeterEnabled || !(credits > 0)) return;
+    const now = Date.now();
+    this.energy = applyCharge(this.energy, credits, now, this.energyConfig.perHour);
+    const pct = energyPercent(this.energy, now, this.energyConfig);
+    const band = energyBand(pct);
+    if (band === this.lastEnergyBand) return;
+    this.lastEnergyBand = band;
+    this.observer?.sendContextInjection(`[ENERGY] ${pct}% — ${band}. ${AgentCoordinator.energyGuidance(band)}`);
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      flowNote("COORDINATOR", `Energy band → ${band} (${pct}%)`);
+    });
+  }
+
+  /** One-line cost-aware reminder per band (the full rationale is in the
+   *  Observer's <energy> prompt block). */
+  private static energyGuidance(band: EnergyBand): string {
+    switch (band) {
+      case "high": return "Observe freely.";
+      case "moderate": return "Favor the cheap text signals; pull a real image/audio only when it genuinely matters.";
+      case "low": return "Minimal observation — lean on text, rest sooner, wake only on clear engagement. NEVER skip a safety concern.";
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -6757,34 +7602,259 @@ export class AgentCoordinator {
       });
     }
 
-    // Record the descriptor behind each match (for later correction targeting)
-    // and passively grow the person's multi-angle gallery from good, novel poses.
+    // Hold the sample behind each face WITHOUT growing the gallery — growth is
+    // gated behind Observer verification (seedFaceFromObserver). Matches keep
+    // their descriptor as a pending sample (also the correction target); UNKNOWN
+    // faces keep the best-quality one so the Observer naming a new person can
+    // seed it. Nothing is committed to the gallery until the Observer confirms.
     for (let i = 0; i < wire.length; i++) {
       const f = wire[i];
       const d = descriptors[i];
-      if (!f.matched || !f.entityId || !f.entityType || !d) continue;
-      const key = `${f.entityType}:${f.entityId}`;
-      this.recentMatchedDescriptors.set(key, { descriptor: d.descriptor, at: now });
-
-      // Gallery growth: only with a quality signal, rate-limited per entity.
-      // growFaceGalleryForEntity itself decides if the pose is novel enough.
-      if (typeof d.quality !== "number") continue;
-      const lastGrow = this.lastGalleryGrowAt.get(f.entityId) ?? 0;
-      if (now - lastGrow < AgentCoordinator.GALLERY_GROW_INTERVAL_MS) continue;
-      this.lastGalleryGrowAt.set(f.entityId, now);
-      growFaceGalleryForEntity(
-        { type: f.entityType as EntityType, id: f.entityId },
-        d.descriptor,
-        d.quality,
-      ).catch(err => {
-        logLiveSession("GALLERY_GROW_ERROR", `${key}: ${(err as Error).message}`);
-      });
+      if (!d) continue;
+      if (f.matched && f.entityId && f.entityType) {
+        const key = `${f.entityType}:${f.entityId}`;
+        this.recentMatchedDescriptors.set(key, { descriptor: d.descriptor, quality: d.quality, at: now });
+      } else if (!f.matched && typeof d.quality === "number" && d.quality >= AgentCoordinator.FACE_SAMPLE_QUALITY_MIN) {
+        if (!this.recentUnattributedFace || d.quality >= this.recentUnattributedFace.quality) {
+          this.recentUnattributedFace = { descriptor: d.descriptor, quality: d.quality, at: now };
+        }
+      }
     }
 
     // First identification of the active user arms the startup greeting (which
     // then waits for scene context before firing). set_person_as_user is
     // finicky, so we don't wait for it.
     this.maybeArmStartupGreet();
+  }
+
+  /**
+   * Server-side speaker matching for the voice embeddings the client computes
+   * from heard speech (mirror of recognizeFaces). Populates
+   * `currentIdentifiedVoices`, echoes to the client debug display, refines the
+   * gallery for confident matches, and — crucially — stashes the most-recent
+   * UNATTRIBUTED embedding so the Observer naming an unknown voice can seed a
+   * brand-new identity (a voice can't self-attribute the way a face descriptor
+   * does). Absence of voice is NOT "nobody" (people fall silent), so an empty
+   * batch does NOT clear the list.
+   */
+  private async recognizeVoices(
+    descriptors: Array<{ embedding: number[]; quality?: number }>,
+    pitch?: number,
+    dispersion?: number,
+  ): Promise<void> {
+    if (!this.studentId || !descriptors.length) return;
+
+    const matches = await Promise.all(
+      descriptors.map(d => findMatchingVoice(d.embedding, this.studentId!).catch(() => null as VoiceMatchResult | null)),
+    );
+
+    const now = Date.now();
+    let unknownCounter = 0;
+    const wire: IdentifiedVoiceWire[] = descriptors.map((d, i) => {
+      const m = matches[i];
+      if (m && m.matched) {
+        return {
+          voiceIndex: i,
+          matched: true,
+          name: m.name,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          relationship: m.relationship,
+          confidence: m.confidence,
+          similarity: m.similarity,
+          sampleCount: m.sampleCount,
+          description: m.description,
+          borderline: m.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE,
+        };
+      }
+      unknownCounter += 1;
+      return { voiceIndex: i, matched: false, name: `Unknown voice #${unknownCounter}`, confidence: 0 };
+    });
+
+    this.currentIdentifiedVoices = wire;
+    this.currentIdentifiedVoicesAt = now;
+    this.send({ type: "voices_identified", data: wire });
+
+    for (let i = 0; i < descriptors.length; i++) {
+      const d = descriptors[i];
+      const f = wire[i];
+      if (f.matched && f.entityId && f.entityType) {
+        // Remember the embedding behind the match as a PENDING sample (also the
+        // correction target). Growth is gated behind Observer verification
+        // (voice_identified / set_person_as_user → seedVoiceFromObserver) — we
+        // never refine the gallery from an unverified match, so a voice embedding
+        // can't self-reinforce a wrong identity.
+        const key = `${f.entityType}:${f.entityId}`;
+        this.recentMatchedVoiceEmbeddings.set(key, { embedding: d.embedding, quality: d.quality, pitch, dispersion, at: now });
+      } else if (typeof d.quality === "number" && d.quality >= AgentCoordinator.VOICE_SAMPLE_QUALITY_MIN) {
+        // Couldn't attribute this voice — hold the best recent sample so the
+        // Observer can name it (voice_identified → seedVoiceFromObserver).
+        if (!this.recentUnattributedVoice || d.quality >= this.recentUnattributedVoice.quality) {
+          this.recentUnattributedVoice = { embedding: d.embedding, quality: d.quality, pitch, dispersion, at: now };
+        }
+      }
+    }
+  }
+
+  /**
+   * The Observer named a heard voice (update_context: voice_identified, or named
+   * the active user). Resolve that name to a known person and seed their voice
+   * gallery with the most-recent unattributed embedding. This is the bootstrap
+   * bridge: an unknown voice has no way to attach itself to an identity on its
+   * own, so the Observer's intuition supplies WHO it is and we capture the
+   * acoustic sample. A stale or missing unattributed sample is a no-op.
+   */
+  private async seedVoiceFromObserver(name: string): Promise<void> {
+    if (!this.studentId || !name) return;
+    const fresh = (at: number) => Date.now() - at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
+
+    let people: KnownPerson[];
+    try {
+      people = await getKnownPeopleForStudent(this.studentId);
+    } catch (err) {
+      logLiveSession("VOICE_SEED_ERROR", `known-people lookup failed: ${(err as Error).message}`);
+      return;
+    }
+    const target = this.resolvePersonByName(people, name);
+    if (!target) {
+      logLiveSession("VOICE_SEED", `Observer named "${name}" but no known person matched — not seeding.`);
+      return;
+    }
+
+    // Prefer the embedding that matched THIS person (confirming a known voice);
+    // fall back to the most-recent unattributed one (naming a new voice). Either
+    // way we only commit because the Observer just verified the identity.
+    const key = `${target.type}:${target.id}`;
+    const matched = this.recentMatchedVoiceEmbeddings.get(key);
+    let embedding: number[] | null = null;
+    let quality: number | undefined;
+    let pitch: number | undefined;
+    let dispersion: number | undefined;
+    let fromUnattributed = false;
+    if (matched && fresh(matched.at) && typeof matched.quality === "number") {
+      embedding = matched.embedding;
+      quality = matched.quality;
+      pitch = matched.pitch;
+      dispersion = matched.dispersion;
+    } else if (this.recentUnattributedVoice && fresh(this.recentUnattributedVoice.at)) {
+      embedding = this.recentUnattributedVoice.embedding;
+      quality = this.recentUnattributedVoice.quality;
+      pitch = this.recentUnattributedVoice.pitch;
+      dispersion = this.recentUnattributedVoice.dispersion;
+      fromUnattributed = true;
+    }
+    if (!embedding || typeof quality !== "number") {
+      logLiveSession("VOICE_SEED", `"${name}" confirmed but no fresh voice sample to commit.`);
+      return;
+    }
+
+    try {
+      // Commit the embedding AND its acoustic cues (pitch + dispersion) — these
+      // feed the fast tier's match/age-gender read next time.
+      const res = await growVoiceGalleryForEntity({ type: target.type, id: target.id }, embedding, quality, pitch, dispersion);
+      if (res.added) this.pitchProfiles = null; // new acoustic sample → refresh profiles
+      if (res.added && fromUnattributed) this.recentUnattributedVoice = null; // consumed
+      logLiveSession("VOICE_SEED", `"${name}" → ${key}: ${res.reason} (size ${res.size})${typeof pitch === "number" ? ` pitch=${pitch}Hz` : ""}${typeof dispersion === "number" ? ` disp=${dispersion}Hz` : ""}.`);
+    } catch (err) {
+      logLiveSession("VOICE_SEED_ERROR", `grow failed for ${key}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * The Observer confirmed/named a FACE (update_context: person_identified, or
+   * set_person_as_user). Mirror of seedVoiceFromObserver — this is the ONLY path
+   * that grows the face gallery, so an embedding never self-reinforces an
+   * identity the Observer hasn't verified against the on-file description.
+   * Prefers the descriptor that matched the named person (confirming a known
+   * face from a fresh angle); falls back to the most-recent unattributed face
+   * (naming a brand-new person). A stale/missing sample is a no-op.
+   */
+  private async seedFaceFromObserver(name: string): Promise<void> {
+    if (!this.studentId || !name) return;
+    const fresh = (at: number) => Date.now() - at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
+
+    let people: KnownPerson[];
+    try {
+      people = await getKnownPeopleForStudent(this.studentId);
+    } catch (err) {
+      logLiveSession("FACE_SEED_ERROR", `known-people lookup failed: ${(err as Error).message}`);
+      return;
+    }
+    const target = this.resolvePersonByName(people, name);
+    if (!target) {
+      logLiveSession("FACE_SEED", `Observer named "${name}" but no known person matched — not seeding.`);
+      return;
+    }
+
+    const key = `${target.type}:${target.id}`;
+    const matched = this.recentMatchedDescriptors.get(key);
+    let descriptor: number[] | null = null;
+    let quality: number | undefined;
+    let fromUnattributed = false;
+    if (matched && fresh(matched.at) && typeof matched.quality === "number") {
+      descriptor = matched.descriptor;
+      quality = matched.quality;
+    } else if (this.recentUnattributedFace && fresh(this.recentUnattributedFace.at)) {
+      descriptor = this.recentUnattributedFace.descriptor;
+      quality = this.recentUnattributedFace.quality;
+      fromUnattributed = true;
+    }
+    if (!descriptor || typeof quality !== "number") {
+      logLiveSession("FACE_SEED", `"${name}" confirmed but no fresh face sample to commit.`);
+      return;
+    }
+
+    try {
+      const res = await growFaceGalleryForEntity({ type: target.type, id: target.id }, descriptor, quality);
+      if (res.added && fromUnattributed) this.recentUnattributedFace = null; // consumed
+      logLiveSession("FACE_SEED", `"${name}" → ${key}: ${res.reason} (size ${res.size}).`);
+    } catch (err) {
+      logLiveSession("FACE_SEED_ERROR", `grow failed for ${key}: ${(err as Error).message}`);
+    }
+  }
+
+  /** Resolve an Observer-supplied person name/role ("Mom", "Yael", a real name)
+   *  to a known person. Case-insensitive: exact name first, then relationship,
+   *  then a contains-match. Returns null when nothing is a clear hit (we'd
+   *  rather not seed than seed the wrong person). */
+  private resolvePersonByName(people: KnownPerson[], name: string): KnownPerson | null {
+    const n = name.trim().toLowerCase();
+    if (!n) return null;
+    return (
+      people.find(p => p.name.trim().toLowerCase() === n) ||
+      people.find(p => (p.relationship ?? "").trim().toLowerCase() === n) ||
+      people.find(p => {
+        const pn = p.name.trim().toLowerCase();
+        return pn.length >= 3 && (pn.includes(n) || n.includes(pn));
+      }) ||
+      null
+    );
+  }
+
+  /**
+   * Render the currently-heard voices as a compact `[VOICES HEARD]` block,
+   * appended after `[PEOPLE PRESENT]`. Returns "" when nothing recent is on
+   * file. A voice match is weaker evidence than a face (no `[THE STUDENT]`
+   * tag here), so it's framed as a hint the Observer cross-checks against what
+   * it sees and hears rather than authoritative identity.
+   */
+  private buildVoicesHeardContext(): string {
+    if (!this.currentIdentifiedVoices.length) return "";
+    if (Date.now() - this.currentIdentifiedVoicesAt > AgentCoordinator.IDENTIFIED_VOICES_TTL_MS) return "";
+    const matched = this.currentIdentifiedVoices.filter(v => v.matched);
+    if (!matched.length) return "";
+    const lines = matched.map(v => {
+      const conf = (v.confidence * 100).toFixed(0);
+      const rel = v.relationship ? `, ${v.relationship}` : "";
+      const samples = v.sampleCount ?? 0;
+      const dataNote = samples > 0
+        ? ` [${samples} voice sample${samples === 1 ? "" : "s"} on file${samples <= 1 ? " — limited data, a low score is expected" : ""}]`
+        : "";
+      const hedge = v.borderline ? " (UNCERTAIN — confirm by what you see/hear before using the name)" : "";
+      const desc = v.borderline && v.description ? ` On file: ${v.description}.` : "";
+      return `- ${v.name}${rel} — sounds like a ${conf}% voice match${hedge}${dataNote}.${desc}`;
+    });
+    return `[VOICES HEARD]\n${lines.join("\n")}\n(A voice match is a HINT, not proof of presence — a visible face outranks it. If a named voice doesn't fit who you can see, attribute speech by what you observe.)`;
   }
 
   /**
@@ -6801,30 +7871,78 @@ export class AgentCoordinator {
     reason?: string,
   ): Promise<void> {
     const key = `${entityType}:${entityId}`;
+    const now = Date.now();
     const recent = this.recentMatchedDescriptors.get(key);
-    if (!recent || Date.now() - recent.at > AgentCoordinator.RECENT_MATCH_TTL_MS) {
-      logLiveSession("IDENTITY_CORRECTION", `No fresh match descriptor for ${key} — nothing to penalize.`);
+    const recentVoiceEarly = this.recentMatchedVoiceEmbeddings.get(key);
+    const hasFace = !!recent && now - recent.at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
+    const hasVoice = !!recentVoiceEarly && now - recentVoiceEarly.at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
+    if (!hasFace && !hasVoice) {
+      logLiveSession("IDENTITY_CORRECTION", `No fresh face/voice match for ${key} — nothing to penalize.`);
       return;
     }
 
-    const result = await penalizeFaceMatch({ type: entityType, id: entityId }, recent.descriptor);
-    this.recentMatchedDescriptors.delete(key);
+    let faceNote = "no recent face match";
+    if (hasFace) {
+      const result = await penalizeFaceMatch({ type: entityType, id: entityId }, recent!.descriptor);
+      this.recentMatchedDescriptors.delete(key);
+      faceNote = `face: penalized ${result.penalized}${result.evicted ? " (evicted)" : ""}, gallery ${result.size}`;
+    }
 
-    // Stop acting on the corrected identity right away.
-    const before = this.currentIdentifiedFaces.length;
+    // Voice can mis-fire independently of the face, so a correction penalizes
+    // whichever modality(ies) recently matched this entity.
+    const recentVoice = this.recentMatchedVoiceEmbeddings.get(key);
+    let voiceNote = "no recent voice match";
+    if (recentVoice && Date.now() - recentVoice.at <= AgentCoordinator.RECENT_MATCH_TTL_MS) {
+      const vres = await penalizeVoiceMatch({ type: entityType, id: entityId }, recentVoice.embedding);
+      this.recentMatchedVoiceEmbeddings.delete(key);
+      voiceNote = `voice: penalized ${vres.penalized}${vres.evicted ? " (evicted)" : ""}, gallery ${vres.size}`;
+    }
+
+    // Stop acting on the corrected identity right away — drop it from BOTH lists.
+    const beforeFaces = this.currentIdentifiedFaces.length;
     this.currentIdentifiedFaces = this.currentIdentifiedFaces.filter(
       f => !(f.matched && f.entityType === entityType && f.entityId === entityId),
     );
-    if (this.currentIdentifiedFaces.length !== before) {
+    if (this.currentIdentifiedFaces.length !== beforeFaces) {
       this.currentIdentifiedFacesAt = Date.now();
       this.send({ type: "people_identified", data: this.currentIdentifiedFaces });
+    }
+    const beforeVoices = this.currentIdentifiedVoices.length;
+    this.currentIdentifiedVoices = this.currentIdentifiedVoices.filter(
+      v => !(v.matched && v.entityType === entityType && v.entityId === entityId),
+    );
+    if (this.currentIdentifiedVoices.length !== beforeVoices) {
+      this.currentIdentifiedVoicesAt = Date.now();
+      this.send({ type: "voices_identified", data: this.currentIdentifiedVoices });
     }
 
     logLiveSession(
       "IDENTITY_CORRECTION",
-      `${key} corrected${reason ? ` (${reason})` : ""}: penalized ${result.penalized}` +
-        `${result.evicted ? " (evicted)" : ""}, gallery size ${result.size}.`,
+      `${key} corrected${reason ? ` (${reason})` : ""}: ${faceNote}; ${voiceNote}.`,
     );
+  }
+
+  /**
+   * Render a client `scene_state` snapshot into the `[SCENE]` text, swapping in
+   * the server's authoritative identities. The tracker (MediaPipe) supplies
+   * movement/expression + a bbox per person but rarely knows WHO anyone is; we
+   * correlate by bbox IoU against the fresh face-api matches so "person 1"
+   * becomes "Mom 88% [student]". Stale identities (past the TTL) are dropped so
+   * the scene never names someone who left.
+   */
+  private renderScene(snap: SceneSnapshot): string {
+    const fresh = this.currentIdentifiedFaces.length > 0
+      && Date.now() - this.currentIdentifiedFacesAt <= AgentCoordinator.IDENTIFIED_FACES_TTL_MS;
+    const identified: IdentifiedForScene[] = fresh
+      ? this.currentIdentifiedFaces.map(f => ({
+          name: f.name,
+          confidence: f.confidence,
+          matched: f.matched,
+          isStudent: f.entityType === "student",
+          bbox: f.boundingBox,
+        }))
+      : [];
+    return renderSceneForObserver(snap, identified);
   }
 
   /**
@@ -6876,7 +7994,11 @@ export class AgentCoordinator {
         return `- ${f.name}${rel} — ${conf}% confidence${hedge}${where} [THE STUDENT]${dataNote}`;
       }
       if (!f.borderline) confidentOther = true;
-      return `- ${f.name}${rel} — ${conf}% confidence${where}${dataNote}`;
+      // Surface the on-file description on confident matches too — the Observer
+      // verifies the guess against it before confirming the identity (which is
+      // what lets the system learn this face). See <identity> in the prompt.
+      const desc = f.description ? ` On file: ${f.description}.` : "";
+      return `- ${f.name}${rel} — ${conf}% confidence${where}${dataNote}${desc}`;
     });
     const borderlineLine = anyBorderline
       ? `\n(NOTE: an UNCERTAIN match means the face only loosely resembles the named person. Compare the on-file description to what you see. If it doesn't fit, treat them as unidentified rather than greeting the wrong person.)`

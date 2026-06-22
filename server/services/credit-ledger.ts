@@ -29,6 +29,13 @@ export interface LedgerCharge {
    */
   category?: string;
   breakdown?: Record<string, number>;
+  /**
+   * Optional per-MODALITY credit split for Live-API turns, accumulated into
+   * chat_sessions.cost_modality_breakdown (keys: textIn / cachedIn / nonTextIn
+   * / textOut / audioOut). Parallel to `breakdown`/`category` (which split by
+   * agent). Phase 0 cost measurement — see planning-docs/aac-cost-saving*.
+   */
+  modalityBreakdown?: Record<string, number>;
   /** Human-readable attribution for the cost log line (e.g. "session-summary"). */
   label: string;
 }
@@ -62,6 +69,26 @@ export async function chargeCreditsToLedger(charge: LedgerCharge): Promise<void>
             )`,
           })
           .where(eq(chatSessions.id, sessionId));
+      }
+
+      // Per-modality accumulation (Phase 0 measurement). Optional and parallel
+      // to the per-agent breakdown above — same atomic jsonb_set increment so
+      // concurrent Live turns can't lose updates.
+      if (charge.modalityBreakdown) {
+        for (const [modality, amount] of Object.entries(charge.modalityBreakdown)) {
+          if (!(amount > 0)) continue;
+          await db
+            .update(chatSessions)
+            .set({
+              costModalityBreakdown: sql`jsonb_set(
+                COALESCE(${chatSessions.costModalityBreakdown}, '{}'::jsonb),
+                ARRAY[${modality}],
+                to_jsonb(COALESCE((${chatSessions.costModalityBreakdown}->>${modality})::double precision, 0) + ${amount}),
+                true
+              )`,
+            })
+            .where(eq(chatSessions.id, sessionId));
+        }
       }
     }
 

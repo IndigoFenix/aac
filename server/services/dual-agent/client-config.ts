@@ -94,6 +94,23 @@ export interface ClientConfig {
    * client→model I/O.
    */
   awakeDataSaver?: boolean;
+  /**
+   * Cost-saving (Phase 1): the server activated on-device speech-to-text for
+   * this session (full-attention OFF + client advertised `clientStt`). When
+   * true, the client transcribes VAD speech segments locally and sends
+   * `speech_text` instead of streaming raw audio, and SUPPRESSES continuous PCM
+   * (the server ignores it anyway). When false, the client streams audio as
+   * before. Server-resolved via `capable()`.
+   */
+  sttActive?: boolean;
+  /**
+   * Cost-saving (Phase 2): the server activated scene-state text. When true, the
+   * client sends a compact `scene_state` text description in place of a JPEG
+   * frame while the scene is stable, and only sends real frames on escalations
+   * (new/lost person, new gesture, safety). Server-resolved via
+   * `capable("sceneState")`.
+   */
+  sceneStateActive?: boolean;
 }
 
 /**
@@ -103,7 +120,7 @@ export interface ClientConfig {
  * Future per-student overrides layer on top of this.
  */
 export function buildDefaultClientConfig(
-  overrides?: Pick<ClientConfig, "awakeDataSaver">,
+  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive">,
 ): ClientConfig {
   return {
     activityMonitor: {
@@ -135,5 +152,10 @@ export function buildDefaultClientConfig(
     // setting (passed in by the caller as the inverse). The env var is a
     // global fallback for callers that don't supply a student override.
     awakeDataSaver: overrides?.awakeDataSaver ?? (process.env.AAC_AWAKE_DATA_SAVER === "1"),
+    // Resolved by the coordinator via capable("clientStt"); no env fallback
+    // here (capability gating needs the per-session client advertisement).
+    sttActive: overrides?.sttActive ?? false,
+    // Resolved by the coordinator via capable("sceneState").
+    sceneStateActive: overrides?.sceneStateActive ?? false,
   };
 }

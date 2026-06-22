@@ -240,3 +240,16 @@ html { font-size: calc(16px * var(--font-scale)); }
   outline-offset: 3px !important;
   box-shadow: 0 0 0 6px hsl(var(--primary) / 0.25) !important;
 }
+
+/* Music app (xylophone) — one-shot strike feedback (remount replays the anim) */
+@keyframes xylo-flash {
+  from { opacity: 0.85; }
+  to   { opacity: 0; }
+}
+.xylo-key-flash { animation: xylo-flash 0.5s ease-out forwards; }
+
+@keyframes xylo-ripple {
+  from { transform: translate(-50%, -50%) scale(0.4); opacity: 0.65; }
+  to   { transform: translate(-50%, -50%) scale(2.6); opacity: 0; }
+}
+.xylo-ripple { animation: xylo-ripple 0.55s ease-out forwards; }

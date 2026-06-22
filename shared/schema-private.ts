@@ -689,6 +689,14 @@ export const biometricData = pgTable("biometric_data", {
   // evicted) when a match they produced is corrected. See recognition-service.
   faceEmbeddings: jsonb("face_embeddings"),
   voiceEmbedding: jsonb("voice_embedding"),
+  // Multi-sample voice gallery: array of { embedding:number[], quality:number,
+  // capturedAt:string, weight:number }. Complements the single `voice_embedding`
+  // anchor so a person is recognised across the natural variation in their voice
+  // (loudness, mood, mic distance). Grows passively from confident novel-sample
+  // sightings; entries lose weight (and are evicted) when a match they produced
+  // is corrected. Usually seeds entirely from sightings — voice enrollment is
+  // rarely present. See recognition-service.
+  voiceEmbeddings: jsonb("voice_embeddings"),
   faceImageUrl: text("face_image_url"),
   faceImageQuality: real("face_image_quality"),
 
@@ -1756,6 +1764,13 @@ export const chatSessions = pgTable("chat_sessions", {
   // Keys are charge categories (see server/services/credit-ledger.ts); values sum to
   // creditsUsed for charges recorded after the column was introduced (0120).
   costBreakdown: jsonb("cost_breakdown").notNull().default({}),
+  // Per-MODALITY cost breakdown for Live-API turns (Phase 0 cost measurement,
+  // migration 0131): { "textIn", "nonTextIn", "textOut", "audioOut", "cachedIn" }
+  // in credits. Parallel to costBreakdown (which splits by agent); this splits
+  // the Live cost by input/output modality so the non-text-input re-billing that
+  // the cost-saving phases target is directly measurable. Only Live charges with
+  // modality detail populate it; HTTP/TTS charges leave it empty.
+  costModalityBreakdown: jsonb("cost_modality_breakdown").notNull().default({}),
   priority: real("priority").notNull().default(0),
   status: chatSessionStatusEnum("status").notNull().default("open"),
   useResponsesAPI: boolean("use_responses_api").default(false),

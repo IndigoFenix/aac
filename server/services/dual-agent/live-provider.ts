@@ -148,6 +148,11 @@ export interface LiveProvider {
   ): void;
   /** Send raw audio data */
   sendAudio(audioBase64: string, mimeType?: string): void;
+  /** Send an audio clip with a text prompt as one turn-completing message, so
+   *  the model HEARS the clip and reacts in the same turn. Used by the
+   *  cost-saving on-demand audio backlog pull (Phase 1b) — the Observer asks to
+   *  re-hear a clip it only got as text. */
+  sendAudioWithPrompt(audioBase64: string, mimeType: string, prompt: string): void;
   /** Send a brief silence to trigger audio VAD and kick the model into responding */
   sendAudioNudge(): void;
   /**

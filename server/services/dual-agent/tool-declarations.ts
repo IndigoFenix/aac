@@ -202,8 +202,8 @@ Types:
 - new_person: Someone appears who you haven't seen this session.
 - new_voice: A new voice is heard that you haven't heard this session.
 - set_person_as_user: Identify which visible person is the primary user of this device.
-- person_identified: You recognize a previously unknown person (e.g. learned their name).
-- voice_identified: You recognize which person a previously unknown voice belongs to.
+- person_identified: Confirm whose face this is (an unknown person you've placed, or a guessed match you've verified against the on-file description). The system stores no new face data until you confirm, so confirm only when sure.
+- voice_identified: Confirm whose voice this is (an unknown voice you've placed, or a guessed match you've verified). The system learns the voice only after you confirm, so confirm only when sure.
 - person_leaves: A previously-present person has left the frame.
 - new_location: The device appears to be in a new physical location/room.
 - new_object: A notable object appears in view.

@@ -377,10 +377,13 @@ export function VideoCaptionPanel(_props: VideoCaptionPanelProps) {
           return null;
         }
         const segs: CaptionSegment[] = data.segments.map(
-          (s: { startMs: number; endMs: number; text: string }) => ({
+          (s: { startMs: number; endMs: number; text: string; words?: CaptionSegment['words'] }) => ({
             startMs: s.startMs,
             endMs: s.endMs,
             text: s.text,
+            // Carry per-word timings (STT path) so the idea pass can split on
+            // real word boundaries.
+            ...(Array.isArray(s.words) && s.words.length ? { words: s.words } : {}),
           }),
         );
         setSegments(segs);
@@ -454,7 +457,14 @@ export function VideoCaptionPanel(_props: VideoCaptionPanelProps) {
         setExtractingIdeas(true);
         try {
           const res = await apiRequest('POST', '/api/video-caption/ideas', {
-            segments: baseSegments.map((s) => ({ startMs: s.startMs, endMs: s.endMs, text: s.text })),
+            // Forward per-word timings when present (STT path) so the idea pass
+            // can split on real word boundaries instead of estimating.
+            segments: baseSegments.map((s) => ({
+              startMs: s.startMs,
+              endMs: s.endMs,
+              text: s.text,
+              ...(s.words?.length ? { words: s.words } : {}),
+            })),
             language: captionLanguage,
             customInstructions: instructions || undefined,
             studentId,

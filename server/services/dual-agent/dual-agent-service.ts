@@ -9,7 +9,7 @@ import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "@shared/sch
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
-import { creditsForModelUsage, creditsForLiveUsage, creditsForTtsUsage, type TtsProvider } from "../chat/cost-helpers";
+import { creditsForModelUsage, creditsForLiveUsageByModality, creditsForTtsUsage, creditsForSttUsage, type TtsProvider } from "../chat/cost-helpers";
 import { chargeCreditsToLedger } from "../credit-ledger";
 import type { LLMProviderKey } from "@shared/llm-options";
 import {
@@ -178,8 +178,9 @@ export class DualAgentService {
     credits: number,
     logSuffix: string,
     category: string,
+    modalityBreakdown?: Record<string, number>,
   ): Promise<void> {
-    await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix, modalityBreakdown });
   }
 
   /**
@@ -197,12 +198,24 @@ export class DualAgentService {
     // MUST NOT be folded into `model` — `model` has to stay a catalog id so
     // pricing resolves the real rates instead of falling back.
     label?: string,
-  ): Promise<void> {
+  ): Promise<number> {
     let credits: number;
     let logSuffix: string;
+    // Per-modality credit split (Phase 0 measurement) — only available when the
+    // provider reported modality detail. Accumulated into
+    // chat_sessions.cost_modality_breakdown alongside the per-agent breakdown.
+    let modalityBreakdown: Record<string, number> | undefined;
     const attr = label ? `agent=${label} ` : "";
     if (usage.details) {
-      credits = creditsForLiveUsage(provider, model, usage.details);
+      const split = creditsForLiveUsageByModality(provider, model, usage.details);
+      credits = split.textIn + split.cachedIn + split.nonTextIn + split.textOut + split.audioOut;
+      modalityBreakdown = {
+        textIn: split.textIn,
+        cachedIn: split.cachedIn,
+        nonTextIn: split.nonTextIn,
+        textOut: split.textOut,
+        audioOut: split.audioOut,
+      };
       const d = usage.details;
       logSuffix =
         `${attr}model=${model} ` +
@@ -219,7 +232,8 @@ export class DualAgentService {
         + (usage.cacheCreationTokens ? ` cacheWrite=${usage.cacheCreationTokens}` : "")
         + ` (no-modality-details)`;
     }
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label ?? "live");
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label ?? "live", modalityBreakdown);
+    return credits;
   }
 
   /**
@@ -266,6 +280,23 @@ export class DualAgentService {
     const credits = creditsForTtsUsage(provider, characters);
     const logSuffix = `tts provider=${provider} chars=${characters}`;
     await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, "tts");
+  }
+
+  /**
+   * Track credits for one server-side speech-to-text (Google Cloud STT) run,
+   * billed by the audio duration of the transcribed clip. Cost saving (Phase 1):
+   * far cheaper than the Gemini-Live audio re-billing it replaces.
+   */
+  async trackSttUsage(
+    sessionId: string,
+    studentId: string,
+    userId: string | undefined,
+    seconds: number,
+  ): Promise<void> {
+    if (seconds <= 0) return;
+    const credits = creditsForSttUsage(seconds);
+    const logSuffix = `stt seconds=${seconds.toFixed(1)}`;
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, "stt");
   }
 
   /**

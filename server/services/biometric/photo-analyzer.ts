@@ -42,10 +42,18 @@ Rules:
 - eyeColor: short phrase when visible (e.g. "brown", "blue"); null if not visible.
 - estimatedAge: a label such as "child", "teen", "20s", "30s", "40s", "adult", "senior".
 - estimatedSex: "male", "female", or "unknown" — use "unknown" when uncertain.
-- identifyingFeatures: distinctive marks like "glasses", "beard", "scar on left cheek",
-  "hearing aid". Null if nothing notable.
+- identifyingFeatures: STABLE distinguishing marks the person carries day to day —
+  "scar on left cheek", "mole above lip", "freckles", "glasses", "beard", "hearing aid",
+  "visible tattoo". Null if nothing notable.
 - physicalDescription: 1-2 sentence natural description a clinician might
-  write — combines the above into a useful narrative.
+  write — combines the above into a useful narrative. STABLE features only.
+
+This description is used to recognize the SAME person on a different day, so
+record ONLY enduring physical features — hair color/style, eye color, build,
+age range, and lasting distinguishing marks. Do NOT include TRANSIENT qualities
+that change between sightings: clothing, accessories worn that day (hats,
+scarves), facial expression or mood, pose/gaze direction, makeup, lighting, or
+background. (Stable medical/vision aids like glasses or a hearing aid are fine.)
 
 Never speculate about ethnicity, nationality, or disability. Never comment on
 attractiveness. Only physical facts directly observable in the image.

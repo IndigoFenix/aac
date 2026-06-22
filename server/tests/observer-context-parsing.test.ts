@@ -41,6 +41,17 @@ describe("parseToolCall — update_context normalization", () => {
     expect(ev).toMatchObject({ type: "context_update", updateType: "other", key: "cup" });
   });
 
+  it("parses request_audio into an audio_request event (Phase 1b backlog pull)", () => {
+    const ev = parseToolCall(call("request_audio", { reason: "low confidence, need the tone" }), NOW);
+    expect(ev).toMatchObject({ type: "audio_request", source: "observer", reason: "low confidence, need the tone" });
+  });
+
+  it("defaults request_audio reason so a bare call still routes", () => {
+    const ev = parseToolCall(call("request_audio", {}), NOW);
+    expect(ev).toMatchObject({ type: "audio_request" });
+    expect((ev as any).reason).toBeTruthy();
+  });
+
   it("drops a context update with neither key nor description", () => {
     expect(parseToolCall(call("new_person", {}), NOW)).toBeNull();
   });

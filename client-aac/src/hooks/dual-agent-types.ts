@@ -60,7 +60,56 @@ export interface ClientConfig {
    * `AAC_AWAKE_DATA_SAVER` env var. Consumed in `dataFlowForState`.
    */
   awakeDataSaver?: boolean;
+  /**
+   * Cost-saving (Phase 1): the server activated on-device speech-to-text for
+   * this session. When true, the client transcribes VAD speech segments locally
+   * and sends `speech_text` instead of streaming raw audio, and suppresses
+   * continuous PCM. When false/absent, audio streams as before. See
+   * planning-docs/aac-cost-saving-spec.md §1.
+   */
+  sttActive?: boolean;
+  /**
+   * Cost-saving (Phase 2): the server activated scene-state text. When true, the
+   * client sends a compact `scene_state` text description in place of a JPEG
+   * frame while the scene is stable, sending real frames only on escalations.
+   */
+  sceneStateActive?: boolean;
 }
+
+/**
+ * What local offloading THIS client build can perform, advertised to the
+ * server at session init. Mirrors `ClientCapabilities` in
+ * `server/services/dual-agent/live-relay.ts`. The server only acts on a
+ * capability when full-attention is OFF and the matching phase flag is on, so
+ * advertising a capability is safe even before the server enables it.
+ */
+export interface ClientCapabilities {
+  clientStt?: boolean;
+  sceneState?: boolean;
+  poseSafety?: boolean;
+}
+
+/**
+ * Capabilities this build actually implements. Flip a flag to `true` as each
+ * cost-saving phase lands and is wired up. Section 0 ships all-false (plumbing
+ * only); Phase 1 sets `clientStt`, Phase 2 `sceneState`, Phase 3 `poseSafety`.
+ */
+export const CLIENT_CAPABILITIES: ClientCapabilities = {
+  clientStt: true,   // Phase 1: STT offload wired (server gates activation)
+  sceneState: true,  // Phase 2: scene_state classify+send wired (server gates activation)
+  poseSafety: true,  // Phase 3: body-pose posture/movement + conservative fall hint wired
+};
+
+/**
+ * Which speech-to-text engine the client uses when STT is active:
+ *  - "google":  send the VAD speech CLIP to the server, which transcribes via
+ *               Google Cloud STT (accurate, low-latency, no device freeze). ACTIVE.
+ *  - "whisper": transcribe on-device with the bundled Whisper model (offline,
+ *               but slower/less accurate; model no longer bundled by default).
+ * Whisper plumbing is kept; flip this to "whisper" (and re-run `npm run
+ * whisper:model`) to use it again.
+ */
+export const STT_ENGINE: "google" | "whisper" = "google";
 
 /** Identified person from biometric recognition */
 export interface IdentifiedPerson {
@@ -176,6 +225,19 @@ export interface IdentifiedFace {
   boundingBox?: { x: number; y: number; w: number; h: number };
 }
 
+/** Server-side voice match result delivered via the `voices_identified` WS message. */
+export interface IdentifiedVoice {
+  voiceIndex: number;
+  matched: boolean;
+  name: string;
+  entityType?: "student" | "user" | "contact";
+  entityId?: string;
+  relationship?: string;
+  confidence: number;
+  similarity?: number;
+  sampleCount?: number;
+}
+
 /** Data for an active add-on app */
 export interface ActiveAppData {
   appId: string;
@@ -279,6 +341,8 @@ export interface UseDualAgentReturn {
   audioClipCache: CachedAudioClip[];
   /** Latest server-side face matching results — empty array when no faces or no descriptors recently sent. */
   identifiedFaces: IdentifiedFace[];
+  /** Latest server-side voice matching results — empty array when no voices heard or matched recently. */
+  identifiedVoices: IdentifiedVoice[];
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -359,7 +423,30 @@ export interface UseDualAgentReturn {
   /** Push already-computed unknown face descriptors out-of-band (not on a frame).
    *  Used at session start so the server can match before the first frame. */
   sendFaceDescriptors?: (descriptors: UnknownFaceDescriptor[]) => void;
-  /** Report a wrong face match so the server penalizes the offending embedding. */
+  /** Push a speaker embedding computed from heard speech for server-side voice
+   *  matching (the voice analog of sendFaceDescriptors). `clipId` ties it to a
+   *  speech clip so the server syncs voice + STT before attributing. */
+  sendVoiceDescriptors?: (descriptors: Array<{ embedding: number[]; quality?: number }>, clipId?: string) => void;
+  /** Cost-saving (Phase 1, Whisper path): send an on-device transcript of a
+   *  heard speech segment in place of raw audio. Only used when sttActive. */
+  sendSpeechText?: (payload: { text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }) => void;
+  /** Cost-saving (Phase 1, ACTIVE path): send a VAD speech CLIP (base64 WAV) for
+   *  server-side Google STT, in place of raw audio. Only used when sttActive.
+   *  `lipActivity` carries per-face mouth activity over the utterance for
+   *  audio-visual speaker attribution. */
+  sendSpeechAudio?: (payload: {
+    data: string;
+    mimeType?: string;
+    language?: string;
+    clipId?: string;
+    voiceDescriptor?: { embedding: number[]; quality?: number };
+    lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>;
+    acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null };
+  }) => void;
+  /** Cost-saving (Phase 1b): reply to a request_audio_clip with a backlog clip
+   *  so the Observer can re-hear it. */
+  sendAudioClip?: (payload: { clipId: string; data: string; mimeType?: string }) => void;
+  /** Report a wrong face/voice match so the server penalizes the offending embedding. */
   sendIdentityCorrection?: (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => void;
   /** Capture a fresh frame now and send it as the first frame_grid — used the
    *  moment the session is ready so the startup scene uses a current snapshot. */

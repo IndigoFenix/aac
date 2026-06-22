@@ -532,6 +532,26 @@ export class GeminiLiveProvider implements LiveProvider {
     }
   }
 
+  sendAudioWithPrompt(audioBase64: string, mimeType: string, prompt: string): void {
+    if (!this.session || !this.connected) return;
+    try {
+      if (this.isPreview31) {
+        // 3.1: audio as realtime input, then the prompt text (triggers the turn).
+        logLiveSession("CLIENT → sendRealtimeInput(audio+text)", `prompt="${prompt.substring(0, 80)}"`);
+        this.session.sendRealtimeInput({ audio: { data: audioBase64, mimeType } });
+        this.session.sendRealtimeInput({ text: prompt });
+        return;
+      }
+      logLiveSession("CLIENT → sendAudioWithPrompt", `mime=${mimeType} prompt="${prompt.substring(0, 80)}" turnComplete=true`);
+      this.session.sendClientContent({
+        turns: [{ role: "user", parts: [{ inlineData: { data: audioBase64, mimeType } }, { text: prompt }] }],
+        turnComplete: true,
+      });
+    } catch (err) {
+      console.error("[GeminiLiveProvider] Failed to send audio with prompt:", err);
+    }
+  }
+
   sendAudio(audioBase64: string, mimeType = "audio/pcm;rate=16000"): void {
     if (!this.session || !this.connected) return;
     try {

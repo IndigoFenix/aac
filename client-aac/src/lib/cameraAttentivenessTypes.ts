@@ -151,6 +151,18 @@ export type SleepState =
   | 'asleep';
 
 /**
+ * Perception fidelity — independent of SleepState. While AWAKE and economizing
+ * (full-attention OFF), the system can run in a text-first 'text' mode where
+ * structured `scene_state` text replaces idle frames, escalating to 'full'
+ * (real frames flowing to the Observer) on initialization, transitions, focus
+ * requests, or safety triggers. Drives the avatar's "rest" eyes so a watching
+ * facilitator can see when camera detail is / isn't being sent.
+ * Defaults to 'full' so behavior is unchanged until a phase sets it.
+ * See planning-docs/aac-cost-saving-spec.md §0.2.
+ */
+export type PerceptionFidelity = 'full' | 'text';
+
+/**
  * Continuous-weight engagement signals fed into the score combiner.
  * v1 wires motion, voice, face, buttonPress. Others are stubs for v2.
  */

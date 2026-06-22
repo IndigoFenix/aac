@@ -5,10 +5,12 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
+import type { RawTrackedPose, PoseLandmark } from "@/lib/poseTrackingTypes";
 
 interface FaceMirrorProps {
   faces: RawTrackedFace[];
   hands: RawTrackedHand[];
+  poses?: RawTrackedPose[];
   size?: number;
 }
 
@@ -29,19 +31,22 @@ const FINGER_CHAINS: number[][] = [
 // Palm polygon landmark indices
 const PALM_INDICES = [0, 1, 5, 9, 13, 17];
 
-export function FaceMirror({ faces, hands, size = 80 }: FaceMirrorProps) {
+export function FaceMirror({ faces, hands, poses = [], size = 80 }: FaceMirrorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const facesRef = useRef<RawTrackedFace[]>(faces);
   const handsRef = useRef<RawTrackedHand[]>(hands);
+  const posesRef = useRef<RawTrackedPose[]>(poses);
   const rafRef = useRef<number>(0);
 
   // Update refs without causing re-renders
   facesRef.current = faces;
   handsRef.current = hands;
+  posesRef.current = poses;
 
   const draw = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const currentFaces = facesRef.current;
     const currentHands = handsRef.current;
+    const currentPoses = posesRef.current;
 
     ctx.clearRect(0, 0, w, h);
 
@@ -52,7 +57,7 @@ export function FaceMirror({ faces, hands, size = 80 }: FaceMirrorProps) {
       return areaB - areaA;
     });
 
-    if (sorted.length === 0 && currentHands.length === 0) {
+    if (sorted.length === 0 && currentHands.length === 0 && currentPoses.length === 0) {
       // Empty state — faint dashed circle
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = "rgba(255,255,255,0.25)";
@@ -62,6 +67,12 @@ export function FaceMirror({ faces, hands, size = 80 }: FaceMirrorProps) {
       ctx.stroke();
       ctx.setLineDash([]);
       return;
+    }
+
+    // Draw the body skeleton first (behind faces/hands) so the cartoon face and
+    // hand skeletons stay prominent on top.
+    for (const pose of currentPoses) {
+      drawPose(ctx, pose, w, h);
     }
 
     // Draw secondary faces first (behind primary)
@@ -121,14 +132,24 @@ function drawPrimaryFace(
   w: number,
   h: number,
 ) {
-  const cx = w / 2;
-  const cy = h * 0.42;
-  const r = w * 0.3;
   const b = face.blendshapes;
 
-  const yaw = face.headPose?.yaw ?? 0;
+  // Anchor the head to its REAL position + size (mirrored, to match the hand &
+  // pose skeletons), so it sits where the body is rather than fixed at center.
+  // Falls back to centered if no bounding box yet.
+  const bb = face.boundingBox;
+  let cx = w / 2, cy = h * 0.42, r = w * 0.3;
+  if (bb) {
+    cx = (1 - (bb.x + bb.width / 2)) * w; // mirrored x
+    cy = (bb.y + bb.height / 2) * h;
+    r = Math.max(bb.width * w, bb.height * h) / 2;
+    r = Math.max(w * 0.1, Math.min(r, w * 0.45)); // clamp so far/near faces stay sane
+  }
+
+  // Horizontal head cues are negated so the avatar reads as a true mirror.
+  const yaw = -(face.headPose?.yaw ?? 0);
   const pitch = face.headPose?.pitch ?? 0;
-  const roll = face.headPose?.roll ?? 0;
+  const roll = -(face.headPose?.roll ?? 0);
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -162,7 +183,7 @@ function drawPrimaryFace(
 
   const blinkL = bs(b, "eyeBlinkLeft");
   const blinkR = bs(b, "eyeBlinkRight");
-  const gazeX = (bs(b, "eyeLookOutLeft") - bs(b, "eyeLookInLeft")) * 0.5;
+  const gazeX = -(bs(b, "eyeLookOutLeft") - bs(b, "eyeLookInLeft")) * 0.5; // mirrored
   const gazeY = (bs(b, "eyeLookDownLeft") - bs(b, "eyeLookUpLeft")) * 0.5;
 
   for (const [side, blink] of [[-1, blinkL], [1, blinkR]] as [number, number][]) {
@@ -272,17 +293,19 @@ function drawSecondaryFace(
   w: number,
   h: number,
 ) {
-  // Position based on bounding box — fall back to offset corner
-  let cx: number, cy: number;
-  if (face.boundingBox) {
-    cx = (face.boundingBox.x + face.boundingBox.width / 2) * w;
-    cy = (face.boundingBox.y + face.boundingBox.height / 2) * h;
+  // Position + size from the bounding box (mirrored, like the primary face and
+  // skeletons) — fall back to an offset corner.
+  let cx: number, cy: number, r: number;
+  const bb = face.boundingBox;
+  if (bb) {
+    cx = (1 - (bb.x + bb.width / 2)) * w; // mirrored x
+    cy = (bb.y + bb.height / 2) * h;
+    r = Math.max(w * 0.07, Math.min(Math.max(bb.width * w, bb.height * h) / 2, w * 0.3));
   } else {
     cx = w * 0.8;
     cy = h * 0.25;
+    r = w * 0.14;
   }
-
-  const r = w * 0.14;
 
   // Blue-tinted circle
   ctx.fillStyle = "rgba(100,160,255,0.7)";
@@ -313,6 +336,57 @@ function drawSecondaryFace(
     ctx.moveTo(cx - r * 0.2, cy + r * 0.3);
     ctx.lineTo(cx + r * 0.2, cy + r * 0.3);
     ctx.stroke();
+  }
+}
+
+// ─── Body pose ────────────────────────────────────────────────────────────────
+
+// MediaPipe Pose landmark indices + the bones we connect.
+const POSE_BONES: Array<[number, number]> = [
+  [11, 12],            // shoulders
+  [11, 13], [13, 15],  // left arm
+  [12, 14], [14, 16],  // right arm
+  [11, 23], [12, 24],  // torso sides
+  [23, 24],            // hips
+  [23, 25], [25, 27],  // left leg
+  [24, 26], [26, 28],  // right leg
+];
+const POSE_VIS_MIN = 0.5;
+
+function drawPose(
+  ctx: CanvasRenderingContext2D,
+  pose: RawTrackedPose,
+  w: number,
+  h: number,
+) {
+  const lm = pose.landmarks;
+  if (!lm || lm.length < 29) return;
+
+  // Mirror horizontally so the widget acts as a mirror, matching drawHand.
+  const toX = (x: number) => (1 - x) * w;
+  const toY = (y: number) => y * h;
+  const vis = (p?: PoseLandmark) => (p ? p.visibility ?? 1 : 0);
+
+  ctx.strokeStyle = "rgba(120,230,180,0.55)";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  for (const [a, b] of POSE_BONES) {
+    const p = lm[a], q = lm[b];
+    if (!p || !q || vis(p) < POSE_VIS_MIN || vis(q) < POSE_VIS_MIN) continue;
+    ctx.beginPath();
+    ctx.moveTo(toX(p.x), toY(p.y));
+    ctx.lineTo(toX(q.x), toY(q.y));
+    ctx.stroke();
+  }
+
+  // Joint dots
+  ctx.fillStyle = "rgba(150,240,200,0.8)";
+  for (const i of [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) {
+    const p = lm[i];
+    if (!p || vis(p) < POSE_VIS_MIN) continue;
+    ctx.beginPath();
+    ctx.arc(toX(p.x), toY(p.y), 2, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 

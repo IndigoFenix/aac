@@ -8,6 +8,8 @@ const saveBoardSchema = z.object({
   name: z.string().min(1),
   irData: z.any(),
   studentId: z.string().optional(),
+  automaticSelection: z.boolean().optional(),
+  automaticSelectionHint: z.string().nullable().optional(),
 });
 
 export class BoardController {
@@ -18,13 +20,16 @@ export class BoardController {
    */
   async saveBoard(req: Request, res: Response): Promise<void> {
     try {
-      const { name, irData, studentId } = saveBoardSchema.parse(req.body);
+      const { name, irData, studentId, automaticSelection, automaticSelectionHint } =
+        saveBoardSchema.parse(req.body);
 
       const board = await boardRepository.createBoard({
         userId: req.user!.id,
         name,
         irData,
         ...(studentId ? { studentId } : {}),
+        ...(automaticSelection !== undefined ? { automaticSelection } : {}),
+        ...(automaticSelectionHint !== undefined ? { automaticSelectionHint } : {}),
       });
 
       res.status(201).json(board);

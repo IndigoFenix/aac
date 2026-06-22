@@ -494,10 +494,16 @@ export class BiometricController {
 
       const people = await getKnownPeopleForStudent(studentId);
 
+      // Voice matching is server-authoritative (the client sends a voice
+      // embedding, the server matches it), so the voice gallery is purely
+      // server-internal — strip it so a 512-dim × N payload doesn't ride along
+      // to the kiosk, which only reads `faceEmbedding`.
+      const slim = people.map(({ voiceGallery, ...rest }) => rest);
+
       res.json({
         success: true,
-        people,
-        count: people.length,
+        people: slim,
+        count: slim.length,
       });
     } catch (error: any) {
       console.error("[BiometricController] getKnownPeople error:", error);

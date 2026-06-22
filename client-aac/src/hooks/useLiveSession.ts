@@ -24,6 +24,7 @@ export type {
   DualAgentMessage,
   IdentifiedPerson,
   IdentifiedFace,
+  IdentifiedVoice,
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
@@ -33,12 +34,15 @@ import type {
   DualAgentMessage,
   IdentifiedPerson,
   IdentifiedFace,
+  IdentifiedVoice,
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
   BinaryChoiceOption,
   UseDualAgentReturn,
 } from "./dual-agent-types";
+import { CLIENT_CAPABILITIES } from "./dual-agent-types";
+import { classifyScene, sceneSignature } from "@shared/aac/scene-state";
 import {
   saveSessionSnapshot,
   loadLatestSnapshot,
@@ -79,10 +83,19 @@ export interface UseLiveSessionOptions {
   captureHighResFrame?: () => Promise<Blob | null>;
   /** Function to get serialized gesture/expression context (face + hand events) */
   getGestureContext?: () => string | null;
+  /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
+   *  used to decide frame-vs-scene_state and to build the scene_state text. */
+  getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
   /** AI invoked sleep / end_session — caller routes to the engagement state machine. */
   onSleepStateChange?: (state: import("@/lib/cameraAttentivenessTypes").SleepState, source: "ai" | "system") => void;
   /** AI invoked report_false_wake — caller bumps wake threshold dampening. */
   onFalseWakeReport?: (reason: string) => void;
+  /** Server drove perception fidelity (cost-saving) — caller routes to the
+   *  camera context so the data-flow gate and avatar follow. */
+  onSetFidelity?: (level: import("@/lib/cameraAttentivenessTypes").PerceptionFidelity, reason?: string) => void;
+  /** Observer asked to re-hear a recent speech clip (Phase 1b). The caller
+   *  looks it up in its audio ring buffer and replies via sendAudioClip. */
+  onRequestAudioClip?: (clipId: string) => void;
 }
 
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
@@ -107,6 +120,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     captureHighResFrame,
     onSleepStateChange,
     onFalseWakeReport,
+    onSetFidelity,
+    onRequestAudioClip,
   } = options;
   const { user, isLoading: isAuthLoading } = useAuth();
   // Stable ref so ws.onopen always reads the latest user
@@ -122,6 +137,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   onSleepStateChangeRef.current = onSleepStateChange;
   const onFalseWakeReportRef = useRef(onFalseWakeReport);
   onFalseWakeReportRef.current = onFalseWakeReport;
+  const onSetFidelityRef = useRef(onSetFidelity);
+  onSetFidelityRef.current = onSetFidelity;
+  const onRequestAudioClipRef = useRef(onRequestAudioClip);
+  onRequestAudioClipRef.current = onRequestAudioClip;
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
@@ -142,6 +161,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Server-side face recognition results
   const [identifiedFaces, setIdentifiedFaces] = useState<IdentifiedFace[]>([]);
+  // Server-side voice recognition results
+  const [identifiedVoices, setIdentifiedVoices] = useState<IdentifiedVoice[]>([]);
 
   // Session state
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -151,6 +172,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // consumers fall back to their built-in defaults until the first
   // `initialized` message lands.
   const [clientConfig, setClientConfig] = useState<import("./dual-agent-types").ClientConfig | null>(null);
+  // Phase 2 scene_state: read inside runDetectionWithGrid without rebuilding it.
+  const sceneStateActiveRef = useRef(false);
+  sceneStateActiveRef.current = clientConfig?.sceneStateActive ?? false;
+  // `runDetectionWithGrid` is a useCallback that deliberately does NOT rebuild on
+  // every render (its deps are [wsSend, activeApp]). So it must read the option
+  // callbacks (getSceneSnapshot / getGestureContext) through a ref — otherwise it
+  // captures the FIRST render's closures and the scene snapshot freezes at its
+  // load-time value. Keep this ref current every render.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  // Last SENT scene signature + person count, for escalation change-detection.
+  const lastSceneSignatureRef = useRef<string | null>(null);
+  const lastPersonCountRef = useRef<number | null>(null);
+  const lastPostureRef = useRef<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   // Mirror of isInitialized for use inside long-lived closures (ws.onclose)
   // that would otherwise capture a stale `false` from the initial render.
@@ -753,6 +788,22 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           break;
 
+        case "set_fidelity":
+          // Server drove perception fidelity (cost-saving). Route to the camera
+          // context so the data-flow gate (Phase 2) and avatar follow.
+          if (msg.data?.level) {
+            onSetFidelityRef.current?.(msg.data.level, msg.data.reason);
+          }
+          break;
+
+        case "request_audio_clip":
+          // Phase 1b: Observer wants to re-hear a recent speech clip. The caller
+          // looks it up in its audio ring buffer and replies via sendAudioClip.
+          if (msg.data?.clipId) {
+            onRequestAudioClipRef.current?.(msg.data.clipId);
+          }
+          break;
+
         case "false_wake_report":
           // AI invoked report_false_wake() — bump wake threshold dampening.
           if (typeof msg.data?.reason === "string") {
@@ -1052,6 +1103,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setIdentifiedFaces(msg.data || []);
           break;
 
+        case "voices_identified":
+          setIdentifiedVoices(msg.data || []);
+          break;
+
         case "complete":
           // Turn complete — keep text visible. Mark that the next "text" message
           // should start a fresh accumulation instead of appending.
@@ -1190,6 +1245,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             responseMode,
             debugMode,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            capabilities: CLIENT_CAPABILITIES,
             ...(classroomId ? { classroomId } : {}),
             ...(initialFrameBase64 ? { initialFrame: initialFrameBase64 } : {}),
             ...(gps ? { gps } : {}),
@@ -1463,9 +1519,39 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   ) => {
     if (!grid) return;
 
-    // Send unknown face descriptors if present
+    // Send unknown face descriptors if present. Sent on EVERY update (incl.
+    // text-only scene updates below) — they're small embeddings, and the server
+    // needs them to keep [PEOPLE PRESENT] current even when we send no image.
     if (unknownFaceDescriptors?.length) {
       wsSend({ type: "unknown_face_descriptors", data: unknownFaceDescriptors });
+    }
+
+    // Cost saving (Phase 2): while the scene is stable, send a compact
+    // scene_state TEXT line instead of the JPEG frame; only escalate to a real
+    // frame on a material change (new/lost person, new gesture, safety). The
+    // escalation reason becomes the frame's triggerReason for the Observer.
+    let effectiveTriggerReason = triggerReason;
+    if (sceneStateActiveRef.current && optionsRef.current.getSceneSnapshot) {
+      const snap = optionsRef.current.getSceneSnapshot();
+      if (snap) {
+        const decision = classifyScene(
+          lastSceneSignatureRef.current,
+          snap,
+          triggerReason,
+          lastPersonCountRef.current,
+          lastPostureRef.current,
+        );
+        lastSceneSignatureRef.current = sceneSignature(snap);
+        lastPersonCountRef.current = snap.people.length;
+        lastPostureRef.current = snap.posture ?? null;
+        if (decision.mode === "text") {
+          // Send the STRUCTURED snapshot — the server renders [SCENE] with the
+          // real identities (it holds the face-api matches; the tracker doesn't).
+          wsSend({ type: "scene_state", scene: snap });
+          return; // stable scene — skip the JPEG frame (and its audio clip)
+        }
+        effectiveTriggerReason = decision.reason;
+      }
     }
 
     // Capture and send app canvas (e.g. drawing) if an app is active
@@ -1486,7 +1572,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
 
     // Convert grid JPEG to base64
-    const gestureContext = options.getGestureContext?.() || undefined;
+    const gestureContext = optionsRef.current.getGestureContext?.() || undefined;
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = (reader.result as string).split(",")[1];
@@ -1495,7 +1581,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         data: base64,
         timestamps: grid.timestamps,
         ...(gestureContext ? { gestureContext } : {}),
-        ...(triggerReason ? { triggerReason } : {}),
+        ...(effectiveTriggerReason ? { triggerReason: effectiveTriggerReason } : {}),
       });
     };
     reader.readAsDataURL(grid.blob);
@@ -1534,6 +1620,63 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     if (!descriptors?.length) return;
     wsSend({ type: "unknown_face_descriptors", data: descriptors });
   }, [wsSend]);
+
+  /**
+   * Send speaker embeddings computed from heard speech up to the server for
+   * voice matching (mirror of sendFaceDescriptors). The client computes the
+   * vector; the server is authoritative for who it belongs to.
+   */
+  const sendVoiceDescriptors = useCallback((descriptors: Array<{ embedding: number[]; quality?: number }>, clipId?: string) => {
+    if (!descriptors?.length) return;
+    wsSend({ type: "voice_descriptors", data: descriptors, ...(clipId ? { clipId } : {}) });
+  }, [wsSend]);
+
+  /**
+   * Cost-saving (Phase 1): send an on-device transcript of a heard speech
+   * segment instead of streaming raw audio. The server feeds it to the Observer
+   * as a turn-completing [HEARD SPEECH] message. Only used when sttActive.
+   */
+  const sendSpeechText = useCallback(
+    (payload: { text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }) => {
+      const text = payload?.text?.trim();
+      if (!text) return;
+      wsSend({ type: "speech_text", ...payload, text });
+    },
+    [wsSend],
+  );
+
+  /**
+   * Cost-saving (Phase 1, ACTIVE path): send a VAD speech clip (base64 WAV) to
+   * the server for Google STT, in place of streaming raw audio.
+   */
+  const sendSpeechAudio = useCallback(
+    (payload: {
+      data: string;
+      mimeType?: string;
+      language?: string;
+      clipId?: string;
+      voiceDescriptor?: { embedding: number[]; quality?: number };
+      lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>;
+      acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null };
+    }) => {
+      if (!payload?.data) return;
+      wsSend({ type: "speech_audio", ...payload });
+    },
+    [wsSend],
+  );
+
+  /**
+   * Cost-saving (Phase 1b): reply to a request_audio_clip with a backlog clip
+   * so the Observer can actually hear it. `data` is base64; the server only
+   * honors it when the clipId matches the clip it pulled.
+   */
+  const sendAudioClip = useCallback(
+    (payload: { clipId: string; data: string; mimeType?: string }) => {
+      if (!payload?.clipId || !payload?.data) return;
+      wsSend({ type: "audio_clip", ...payload });
+    },
+    [wsSend],
+  );
 
   /**
    * Report that a recent face match was wrong. The server penalizes the stored
@@ -1751,6 +1894,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     requestCache: requestCache.cache,
     audioClipCache,
     identifiedFaces,
+    identifiedVoices,
 
     // Active app
     activeApp,
@@ -1805,6 +1949,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Live API only
     sendPcmAudio,
     sendFaceDescriptors,
+    sendVoiceDescriptors,
+    sendSpeechText,
+    sendSpeechAudio,
+    sendAudioClip,
     sendIdentityCorrection,
     sendFreshStartupFrame,
     isBusyRef: audioPlayer.isBusyRef,

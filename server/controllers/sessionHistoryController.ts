@@ -25,6 +25,7 @@ class SessionHistoryController {
         userName: s.userName,
         creditsUsed: s.creditsUsed,
         costBreakdown: s.costBreakdown,
+        costModalityBreakdown: s.costModalityBreakdown,
         status: s.status === "open" ? "active" : s.status === "closed" ? "ended" : s.status,
         started: s.started,
         lastActivity: s.lastUpdate,

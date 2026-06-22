@@ -211,6 +211,19 @@ export interface FocusRequestEvent extends BaseEvent {
 }
 
 /**
+ * Observer asked to re-HEAR a recent speech segment it only received as an
+ * on-device transcript ([HEARD SPEECH]) — the cost-saving audio backlog pull
+ * (Phase 1b). The Coordinator resolves it to the clip behind the most recent
+ * speech_text and asks the client for it (request_audio_clip). Used when the
+ * transcript is low-confidence or tone/intent matters.
+ */
+export interface AudioRequestEvent extends BaseEvent {
+  type: "audio_request";
+  source: "observer";
+  reason: string;
+}
+
+/**
  * Observer raised a caretaker-facing alarm based on what it sees/hears.
  * Two tiers, chosen by the model via two distinct tools to keep misfires
  * down:
@@ -249,6 +262,7 @@ export type ObserverEvent =
   | ContextUpdateEvent
   | EngagementChangeEvent
   | FocusRequestEvent
+  | AudioRequestEvent
   | AlarmRaisedEvent
   | GestureRecognizedEvent;
 

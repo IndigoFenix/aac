@@ -3,6 +3,8 @@ dist
 dist-electron
 dist-sidecar
 electron/sidecar/runtime
+# Bundled speaker-embedding model — fetched at package time by scripts/fetch-voice-model.mjs (~102 MB), not committed
+client-aac/public/models/Xenova
 release
 .DS_Store
 server/public

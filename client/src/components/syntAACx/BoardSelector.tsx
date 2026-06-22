@@ -411,27 +411,27 @@ export function BoardSelector() {
               {boards && boards.length > 0 ? (
                 boards.map((b) => (
                   <SelectItem key={b._id} value={b._id}>
-                    <div className="flex items-center gap-2">
-                      <span>{b.name}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">{b.name}</span>
                       {b.automaticSelection && (
-                        <Zap className="w-3 h-3 text-blue-500" />
+                        <span
+                          className="text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-500 flex items-center gap-1 max-w-[140px] shrink-0"
+                          title={b.automaticSelectionHint || undefined}
+                        >
+                          <Zap className="w-2.5 h-2.5 shrink-0" />
+                          {b.automaticSelectionHint && (
+                            <span className="truncate">{b.automaticSelectionHint}</span>
+                          )}
+                        </span>
                       )}
                       {(b as any).isGenerated && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500">
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500 shrink-0">
                           AI
                         </span>
                       )}
                       {b.isDirty && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500">
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500 shrink-0">
                           •
-                        </span>
-                      )}
-                      {!b.loadedFromServer && b.dbId && (
-                        <span className={cn(
-                          'text-[9px] px-1 py-0.5 rounded',
-                          isDark ? 'bg-slate-700 text-slate-400' : 'bg-gray-200 text-gray-500'
-                        )}>
-                          {t('board.notLoaded')}
                         </span>
                       )}
                     </div>
@@ -463,12 +463,15 @@ export function BoardSelector() {
                 {board.name}
               </span>
               {board.automaticSelection && (
-                <span className={cn(
-                  'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1',
-                  isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'
-                )}>
-                  <Zap className="w-2.5 h-2.5" />
-                  Auto
+                <span
+                  className={cn(
+                    'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 max-w-[180px]',
+                    isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'
+                  )}
+                  title={board.automaticSelectionHint || undefined}
+                >
+                  <Zap className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{board.automaticSelectionHint || 'Auto'}</span>
                 </span>
               )}
               {board.isDirty && (

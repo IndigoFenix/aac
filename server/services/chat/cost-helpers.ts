@@ -131,15 +131,30 @@ export interface LiveUsageBreakdown {
 }
 
 /**
- * Calculate credits for a Live API turn using modality-separated token
- * counts. When the model has no audio pricing configured, non-text tokens
- * are billed at the flat input rate (matches legacy behavior for safety).
+ * Credits for a Live API turn, SPLIT by input/output modality. Keys mirror the
+ * `cost_modality_breakdown` JSONB. Summing the values gives the same total as
+ * `creditsForLiveUsage` (which is defined in terms of this), so the per-agent
+ * and per-modality ledgers can never drift.
+ *  - textIn:    fresh (non-cached) text input
+ *  - cachedIn:  cached text-input reads (discounted)
+ *  - nonTextIn: audio + image + video input (the re-billing the cost-saving
+ *               phases target — moving this to text is the whole point)
+ *  - textOut:   text output (Observer responses, etc.)
+ *  - audioOut:  spoken-audio output (Speaker native audio)
  */
-export const creditsForLiveUsage = (
+export interface LiveCreditModalitySplit {
+    textIn: number;
+    cachedIn: number;
+    nonTextIn: number;
+    textOut: number;
+    audioOut: number;
+}
+
+export const creditsForLiveUsageByModality = (
     provider: LLMProviderKey,
     model: string,
     usage: LiveUsageBreakdown,
-): number => {
+): LiveCreditModalitySplit => {
     const { option, inputPer1M: textInputPer1M, outputPer1M: textOutputPer1M } =
         resolveModelRates(provider, model);
     // Audio/non-text rates fall back to text rates when the catalog entry
@@ -154,13 +169,27 @@ export const creditsForLiveUsage = (
     const cacheDiscount = provider === "claude" ? 0.1 : 0.5;
     const textInputBillable = Math.max(0, usage.textInputTokens - cached);
 
-    return (
-        per(textInputPer1M,  textInputBillable) +
-        per(textInputPer1M,  cached) * cacheDiscount +
-        per(audioInputPer1M, usage.nonTextInputTokens) +
-        per(textOutputPer1M,  usage.textOutputTokens) +
-        per(audioOutputPer1M, usage.audioOutputTokens)
-    );
+    return {
+        textIn:    per(textInputPer1M,  textInputBillable),
+        cachedIn:  per(textInputPer1M,  cached) * cacheDiscount,
+        nonTextIn: per(audioInputPer1M, usage.nonTextInputTokens),
+        textOut:   per(textOutputPer1M, usage.textOutputTokens),
+        audioOut:  per(audioOutputPer1M, usage.audioOutputTokens),
+    };
+};
+
+/**
+ * Calculate credits for a Live API turn using modality-separated token
+ * counts. When the model has no audio pricing configured, non-text tokens
+ * are billed at the flat input rate (matches legacy behavior for safety).
+ */
+export const creditsForLiveUsage = (
+    provider: LLMProviderKey,
+    model: string,
+    usage: LiveUsageBreakdown,
+): number => {
+    const s = creditsForLiveUsageByModality(provider, model, usage);
+    return s.textIn + s.cachedIn + s.nonTextIn + s.textOut + s.audioOut;
 };
 
 // ---------------------------------------------------------------------------

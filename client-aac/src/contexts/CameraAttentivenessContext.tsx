@@ -34,6 +34,7 @@ import {
   RESOLUTION_SETTINGS,
   MOTION_THRESHOLDS,
   SleepState,
+  PerceptionFidelity,
   EngagementSignalKind,
   AlwaysWakeTrigger,
   EngagementScore,
@@ -108,6 +109,18 @@ interface CameraAttentivenessContextType {
 
   /** Imperative state setter — used by AI tools (`sleep`, `end_session`) and external transitions like session-init. */
   setSleepState: (state: SleepState) => void;
+
+  // ---- Perception fidelity (cost-saving; see planning-docs/aac-cost-saving-spec.md §0.2) ----
+
+  /** Current perception fidelity. 'full' = frames streaming to the Observer;
+   *  'text' = text-first steady state (scene_state replaces idle frames).
+   *  Defaults to 'full' so behavior is unchanged until a phase drives it. */
+  fidelity: PerceptionFidelity;
+
+  /** Set perception fidelity. Driven by the server's `set_fidelity` message
+   *  (Phase 2/4) and, once wired, by the client's own escalation detector. The
+   *  avatar reflects it (rest eyes on 'text'). */
+  setFidelity: (fidelity: PerceptionFidelity) => void;
 }
 
 const CameraAttentivenessContext = createContext<CameraAttentivenessContextType | undefined>(
@@ -162,6 +175,10 @@ export function CameraAttentivenessProvider({
 
   const [sleepState, setSleepStateImpl] = useState<SleepState>('hibernation');
   const [engagementScore, setEngagementScore] = useState<EngagementScore>({ value: 0, contributions: {} });
+
+  // Perception fidelity — defaults to 'full' (current behavior). Phase 2/4 will
+  // drive it from server `set_fidelity` and a client escalation detector.
+  const [fidelity, setFidelityImpl] = useState<PerceptionFidelity>('full');
 
   // Mutable score is held in refs and only published into React state at the
   // sample cadence. This avoids re-rendering on every signal push.
@@ -606,6 +623,13 @@ export function CameraAttentivenessProvider({
     wakeThresholdMultRef.current = newMult;
   }, []);
 
+  const setFidelity = useCallback((next: PerceptionFidelity) => {
+    setFidelityImpl((prev) => {
+      if (prev !== next) console.log(`[PerceptionFidelity] ${prev} → ${next}`);
+      return next;
+    });
+  }, []);
+
   const setSleepState = useCallback((next: SleepState) => {
     if (next === sleepStateRef.current) return;
     // Guard: an AI rest() request can't fire while the user is mid-interaction.
@@ -678,7 +702,9 @@ export function CameraAttentivenessProvider({
     triggerAlwaysWake,
     reportFalseWake,
     setSleepState,
-  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow, sleepState, engagementScore, pushSignal, triggerAlwaysWake, reportFalseWake, setSleepState]);
+    fidelity,
+    setFidelity,
+  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow, sleepState, engagementScore, pushSignal, triggerAlwaysWake, reportFalseWake, setSleepState, fidelity, setFidelity]);
 
   return (
     <CameraAttentivenessContext.Provider value={value}>

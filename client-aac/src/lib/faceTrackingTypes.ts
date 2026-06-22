@@ -56,6 +56,7 @@ export interface TrackedFace {
   boundingBox: BoundingBox | null;
   currentBlendshapes: Map<string, number>; // blendshape name -> score
   currentExpression: FaceEventType | null; // dominant current expression
+  headPose: { yaw: number; pitch: number; roll: number } | null; // head orientation, ~-1..1
   events: FaceEvent[];        // rolling buffer of recent events
   missedTicks: number;        // consecutive ticks face was not detected
 }

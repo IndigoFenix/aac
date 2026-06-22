@@ -65,11 +65,19 @@ const saveProjectSchema = z.object({
   segments: z.array(projectSegmentSchema).max(5000),
 });
 
-// A caption segment as sent by the client (parsed from SRT/VTT there).
+// A caption segment as sent by the client (parsed from SRT/VTT there, or
+// transcribed via STT — which also carries per-word timings).
+const wordSchema = z.object({
+  text: z.string(),
+  startMs: z.number().nonnegative(),
+  endMs: z.number().nonnegative(),
+});
 const segmentSchema = z.object({
   startMs: z.number().nonnegative(),
   endMs: z.number().nonnegative(),
   text: z.string(),
+  // STT path only — lets the idea pass split on real word boundaries.
+  words: z.array(wordSchema).max(200).optional(),
 });
 
 const convertRequestSchema = z.object({

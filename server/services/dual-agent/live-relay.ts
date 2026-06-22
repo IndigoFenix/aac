@@ -74,6 +74,7 @@ import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { getVocabularyItem } from "@shared/glyph-registry";
+import type { SceneSnapshot } from "@shared/aac/scene-state";
 import { resolveButtonColorToken } from "@shared/button-color";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
@@ -661,11 +662,22 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 /** Messages from client → server */
+/** What offloading the client can perform locally, advertised at session init.
+ *  The server only activates a substitution when full-attention is OFF AND the
+ *  client advertised the matching capability (see AgentCoordinator.capable),
+ *  so old clients and new servers interoperate. All fields optional/false by
+ *  default — an absent block means "no offloading, stream raw as before". */
+export interface ClientCapabilities {
+  clientStt?: boolean;    // Phase 1: transcribe speech locally → send `speech_text` instead of raw audio
+  sceneState?: boolean;   // Phase 2: emit structured `scene_state` text in place of idle frames
+  poseSafety?: boolean;   // Phase 3: run fall/abnormal-posture detection that forces a safety frame
+}
+
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string; gps?: import("@shared/location-matching").GpsReading }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string; gps?: import("@shared/location-matching").GpsReading; capabilities?: ClientCapabilities }
   | { type: "gps_update"; gps: import("@shared/location-matching").GpsReading }  // periodic device-location refresh (movement / accuracy improvement)
   | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
-  | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
+  | { type: "audio_clip"; data: string; mimeType?: string; clipId?: string }        // base64 audio. Ignored in live mode UNLESS clipId matches an Observer request_audio pull (Phase 1b backlog).
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
@@ -678,7 +690,11 @@ export type ClientMessage =
   | { type: "set_response_mode"; mode: AACResponseMode }
   | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number }> }
-  | { type: "correct_identity"; entityType: "student" | "user" | "contact"; entityId: string; reason?: string }  // a recent face match was wrong — penalize the embedding that mis-fired
+  | { type: "voice_descriptors"; data: Array<{ embedding: number[]; quality?: number }>; clipId?: string }  // speaker embeddings computed from heard speech, for server-side voice matching. `clipId` ties this to a speech_audio clip so the server syncs voice + STT before attributing.
+  | { type: "speech_text"; text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }  // cost-saving (Phase 1, Whisper path — plumbing kept): on-device transcript of a VAD speech segment. Server injects as [HEARD SPEECH].
+  | { type: "speech_audio"; data: string; mimeType?: string; language?: string; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number }; lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>; acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null } }  // cost-saving (Phase 1, ACTIVE path): base64 WAV of a VAD speech segment — server transcribes via Google STT and injects as [HEARD SPEECH]. `lipActivity` = per-face mouth activity over the utterance for audio-visual speaker attribution. `acoustic` = cheap pitch + formant-dispersion fingerprint (fast-tier voice read + age/gender hint, sent before the slow embedding). Replaces raw audio when sttActive.
+  | { type: "scene_state"; scene: SceneSnapshot }  // cost-saving (Phase 2): structured scene snapshot (people w/ bbox + movement, hands, motion) sent in place of a JPEG frame while the scene is stable. Server renders [SCENE] with real identities (bbox IoU vs matched faces) and injects as non-turn context to the Observer.
+  | { type: "correct_identity"; entityType: "student" | "user" | "contact"; entityId: string; reason?: string }  // a recent face/voice match was wrong — penalize the embedding(s) that mis-fired
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
@@ -743,12 +759,15 @@ export type ServerMessage =
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
   | { type: "safety_blocked"; data: string }             // Safety/policy block — transient indicator
   | { type: "focus_request"; data: { reason: string } }  // AI requests a high-res focus frame
+  | { type: "set_fidelity"; data: { level: "full" | "text"; reason?: string; ttlMs?: number } }  // cost-saving: server drives client perception fidelity (full = stream frames, text = scene_state only). Avatar reflects it (rest eyes on "text").
+  | { type: "request_audio_clip"; data: { clipId: string } }  // Phase 1b: Observer asked to re-hear a clip — client replies with audio_clip{clipId} from its ring buffer.
   | { type: "session_snapshot"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot; config: import("@shared/aac-local-storage").AacLocalStorageConfig }
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
   | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
   | { type: "context_button_remove"; data: { label: string } } // Remove a button from the context sidebar by label
   | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
+  | { type: "voices_identified"; data: IdentifiedVoiceWire[] } // Server-side voice matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
   | { type: "alarm"; data: { level: "alert" | "emergency"; reason: string } }  // Observer raised a caretaker alarm: "alert" = short attention nudge, "emergency" = rising urgent alarm with on-screen cancel
@@ -894,6 +913,31 @@ export interface IdentifiedFaceWire {
   /** Reference faces backing this match (anchor + above-floor gallery poses).
    *  Calibrates certainty: a weak score off few samples is expected, off many
    *  is meaningful. */
+  sampleCount?: number;
+}
+
+/** Public wire format for an identified voice (server → client). Mirrors
+ *  IdentifiedFaceWire but for speaker matching — no bounding box / camera, and
+ *  carries `similarity` (cosine) alongside the normalized `confidence`. */
+export interface IdentifiedVoiceWire {
+  /** Index of the voice within the descriptor batch. */
+  voiceIndex: number;
+  /** True if matched to a known person above the confidence threshold. */
+  matched: boolean;
+  /** Display name — known person's name, or "Unknown voice #N" when no match. */
+  name: string;
+  entityType?: "student" | "user" | "contact";
+  entityId?: string;
+  relationship?: string;
+  /** Match confidence in [0,1], normalized from cosine similarity. 0 when unmatched. */
+  confidence: number;
+  /** Raw cosine similarity of the best-matching stored voice sample. */
+  similarity?: number;
+  /** On-file physical description — surfaced on borderline matches. */
+  description?: string;
+  /** True when confidence sits in the ambiguous band — the AI is asked to verify. */
+  borderline?: boolean;
+  /** Reference voice samples backing this match (anchor + above-floor gallery). */
   sampleCount?: number;
 }
 

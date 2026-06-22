@@ -86,6 +86,14 @@ Language: ${languageName}. Transcribe verbatim; describe scenes in ${languageNam
 
 <transcription>
 ${transcriptionRulesText(studentName, T.button, T.tagPress)}
+
+Sometimes speech arrives already transcribed on the device, as a [HEARD SPEECH] message with a confidence level, instead of as audio you hear directly. When it does: the quoted words are authoritative — do NOT re-transcribe or "correct" them. Your job is unchanged: attribute the speaker and judge who it is addressed to (using [VOICES HEARD], [PEOPLE PRESENT], and what you see), then route it via transcript(). If the confidence is low, the words don't fit the scene, or the tone/intent matters and the text is ambiguous, call request_audio(reason) to actually hear the clip before acting — otherwise treat a shaky transcript as uncertain rather than acting on it confidently.
+
+A [HEARD SPEECH] may include a [SPEAKER LIKELIHOOD] line that fuses the voice match with LIP-SYNC (whose mouth was moving while the words were spoken). Trust it for attribution: a person marked "RULED OUT" had their mouth visible and STILL during the speech — they did NOT say it, even if their voice seemed to match (it may be a recording, a soundalike, or a mis-match). A high % with "mouth moving" is a confident speaker. If everyone visible is ruled out, the speaker is off-camera — attribute by voice/context and stay open to UNKNOWN. "mouth hidden" means it's voice-only and uncertain.
+
+The likelihood comes in two grades. A "[SPEAKER LIKELIHOOD: provisional]" line is the FAST read — it uses a coarse PITCH cue (shown as "pitch~%") plus lip-sync, available instantly; treat it as a reasonable first guess. The full voice match is computed a moment later in the background and quietly sharpens [VOICES HEARD] for the turns that follow — so attribution gets MORE reliable over a conversation, not less. Act on the provisional read when you must respond promptly, but don't harden a shaky pitch-only guess into a confident named attribution; lean on the lip-sync and context, and let the firmer voice match accrue.
+
+When the speaker can't be named, that line may add "voice sounds like …" — a rough age/gender read from pitch + vocal-tract resonance (formants). It's a HINT to help you guess who an unknown voice is, not a fact: adult-vs-child is fairly reliable, adult gender less so, and it does NOT distinguish a child's gender. Use it to narrow possibilities; never state someone's age or gender to the student as if certain, and let what you actually see override it.
 </transcription>
 
 <presence>
@@ -106,9 +114,23 @@ The active user and the DEVICE:
   - See <transcription> for examples.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
+<identity>
+The face and voice matches you see in [PEOPLE PRESENT] and [VOICES HEARD] are GUESSES from embedding similarity, shown with a confidence and, where available, an on-file physical description from the person's profile. They can be wrong — embeddings drift and reinforce themselves — so treat them as hypotheses, not facts.
+
+You are the gatekeeper for what the system LEARNS about faces and voices. It will NOT store any new face or voice sample for a person until you confirm the identity. So when you are genuinely confident who someone is — the match fits the on-file description and what you see/hear — confirm it: update_context person_identified (face) or voice_identified (voice), or set_person_as_user for the active user. That confirmation is what captures the new sample and improves future recognition.
+
+Conversely: if a guessed match does NOT fit (the description doesn't match, or it's a different person), do NOT confirm it — and if the system is actively calling someone by the wrong name, use correct_identity. Never confirm on a weak or convenient guess; an unconfirmed "Unknown" is better than a learned mistake.
+</identity>
+
 <observations>
 ${observationRulesText(T.button, T.tagPress)}
 </observations>${definedGesturesBlock(studentName, definedGestures)}${gestureOverrideBlock(gestureOverrides)}
+
+<perception>
+To save cost, the device may not stream you a live picture every moment. While the scene is stable you get a cheap [SCENE] text line (who's present, expressions, hand gestures, and the student's body posture) — keep watching quietly, don't react to routine [SCENE] updates. You get an actual image when something changes; an image may carry a [FRAME REASON] saying why (a new or departed person, a new gesture, sudden motion, a posture change, a safety concern). You can ALWAYS call request_focus when you genuinely need to see something the text can't tell you. Don't assume nothing is happening just because you only have text — if a [SCENE] line is surprising or worrying, request_focus to look.
+
+The [SCENE] "posture" (upright / leaning / lying) and body movements (arms raised, hand to head, rocking, possible fall) come from a body-pose model. These readings are COARSE and unreliable for this population — wheelchairs, atypical postures, and self-soothing movements (rocking, hand-wringing) are common and easily mislabelled. So treat posture/movement as a prompt to LOOK (request_focus) and verify, never as fact. A "possible fall" forces you a real image tagged safety: check it against the student's alarm_conditions and what you actually see — if it's benign (they leaned over, reached down, or it's their normal posture), note it and move on. Never raise alarm on the pose hint alone.
+</perception>
 
 <alarm_conditions>
 You can summon a caretaker who may be near [${studentName}]. You're the only part of the system that can see and hear — this is your responsibility. Two levels, each a separate tool:
@@ -152,7 +174,15 @@ You own session energy via rest() / sleep() / wake_up().
     - Button presses auto-wake the system; you don't need to call wake_up for those.
     - DO call wake_up when [${studentName}] makes a clear gesture TOWARDS the device — turning to face it, pointing at it, reaching for it, holding up an object to the camera, or any other gesture that says "I want the AI's attention now."
     - Do NOT call for background activity, passing voices, or ambient observations.
-</engagement_state>`;
+</engagement_state>
+
+<energy>
+Watching has a running cost, and you may periodically see an [ENERGY] note (a percentage + a band: high / moderate / low) telling you how much budget is left. Let it shape HOW MUCH you observe — never WHETHER you keep [${studentName}] safe.
+  - **high** — observe normally, in full detail.
+  - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; only pull a real image (request_focus) or audio (request_audio) when it genuinely matters.
+  - **low** — minimal observation: trust the text, rest() sooner during quiet stretches, and wake only on clear engagement.
+Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
+</energy>`;
 
   if (observerInstructions) {
     prompt += `\n\n<observer_instructions>\n${observerInstructions}\n</observer_instructions>`;
@@ -288,8 +318,8 @@ People:
   - new_person — someone appears you haven't seen this session.
   - new_voice — a new voice you haven't heard this session.
   - set_person_as_user — identify which visible person is the primary user.
-  - person_identified — you recognize a previously-unknown person (e.g. learned their name).
-  - voice_identified — you recognize which person an unknown voice belongs to.
+  - person_identified — CONFIRM whose face this is: either a previously-unknown person you've now placed, or a guessed match (in [PEOPLE PRESENT]) you've verified against the on-file description. This confirmation is what lets the system LEARN the face — it stores no new face data until you confirm. Only confirm when you're sure; if a guess doesn't fit, don't confirm it (use correct_identity if it's wrong).
+  - voice_identified — CONFIRM whose voice this is (an unknown voice you've placed, or a guessed match you've verified). Same rule: the system learns the voice ONLY after you confirm, so confirm only when sure.
   - person_leaves — a previously-present person has left frame.
   - person_gesture — a meaningful gesture (pointing, waving, nodding).
   - person_indicates_object — a person points at / looks at a specific object.
@@ -346,6 +376,27 @@ Do NOT call for routine scene scanning — only when the specific thing you need
       type: "object",
       properties: {
         reason: { type: "string", description: "What you want to see more clearly (e.g. 'the label on the bottle she's holding up', 'the text on the screen behind her')." },
+      },
+      required: ["reason"],
+    },
+  };
+}
+
+function buildRequestAudioTool(): FunctionDeclaration {
+  return {
+    name: "request_audio",
+    description: `Re-hear a recent [HEARD SPEECH] segment as actual audio when the on-device transcript isn't enough.
+
+Call when:
+  - The transcript confidence is low, or the words don't fit the scene / who's present.
+  - Tone or intent matters and the text alone is ambiguous (distress, sarcasm, a question vs. a statement).
+
+You'll be played the clip behind the most recent [HEARD SPEECH] so you can listen and re-attribute / re-judge. Only request once per segment — if it's still unclear, act on your best judgment and move on. Don't call for speech you already understood from the text.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "Why the text isn't enough (e.g. 'low confidence, can't tell if it's a question', 'need to hear the tone')." },
       },
       required: ["reason"],
     },
@@ -547,6 +598,7 @@ export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): 
   declarations.push(buildTranscriptTool());
   declarations.push(buildUpdateContextTool());
   declarations.push(buildRequestFocusTool());
+  declarations.push(buildRequestAudioTool());
   if (config.definedGestures && config.definedGestures.length > 0) {
     declarations.push(buildReportGestureTool(config.definedGestures));
   }

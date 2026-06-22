@@ -10,10 +10,21 @@
 
 import { SpeechClient } from "@google-cloud/speech";
 
+/** A single word with its timing — carried so a downstream re-segmenter (the
+ *  caption idea pass) can split a line on REAL word boundaries instead of
+ *  estimating sub-line timings. */
+export interface SttWord {
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
 export interface SttSegment {
   startMs: number;
   endMs: number;
   text: string;
+  /** Per-word timings for this segment (when the recognizer supplied them). */
+  words?: SttWord[];
 }
 
 export interface SttResult {
@@ -26,6 +37,12 @@ export interface SttOptions {
   languageHint?: string;
   /** Sample rate of the supplied LINEAR16 audio. Defaults to 16000. */
   sampleRateHertz?: number;
+  /** Speech-adaptation phrase hints — bias recognition toward context-relevant
+   *  words (people's names, on-screen AAC vocabulary). Each group can carry its
+   *  own boost (0-20; higher = stronger bias). This is the lever for "inject
+   *  context into STT": it won't reconstruct meaning like an LLM, but it fixes
+   *  the proper-noun / domain-vocab mis-hears that have no context otherwise. */
+  speechContexts?: Array<{ phrases: string[]; boost?: number }>;
 }
 
 // Map our short language codes to the BCP-47 codes Google STT expects. A hint
@@ -136,7 +153,14 @@ export function wordsToSegments(words: TimedWord[]): SttSegment[] {
     const startMs = bucket[0].startMs;
     const endMs = bucket[bucket.length - 1].endMs;
     const text = bucket.map((w) => w.word).join(" ").trim();
-    if (text) segments.push({ startMs, endMs, text });
+    if (text) {
+      segments.push({
+        startMs,
+        endMs,
+        text,
+        words: bucket.map((w) => ({ text: w.word, startMs: w.startMs, endMs: w.endMs })),
+      });
+    }
     bucket = [];
   };
 
@@ -296,6 +320,12 @@ export async function transcribeSegments(
   const frameBytes = (wav.bitsPerSample / 8) * wav.channels;
   const boundaries = planSilenceAwareChunks(pcm, wav.sampleRate, frameBytes);
 
+  // Phrase hints (people's names, on-screen vocabulary) bias recognition toward
+  // the words actually likely here — drop empty groups so we never send [].
+  const speechContexts = (opts.speechContexts ?? [])
+    .map(g => ({ phrases: g.phrases.filter(Boolean), ...(typeof g.boost === "number" ? { boost: g.boost } : {}) }))
+    .filter(g => g.phrases.length > 0);
+
   const baseConfig = {
     encoding: "LINEAR16" as const,
     sampleRateHertz,
@@ -303,6 +333,7 @@ export async function transcribeSegments(
     languageCode,
     enableAutomaticPunctuation: true,
     enableWordTimeOffsets: true,
+    ...(speechContexts.length ? { speechContexts } : {}),
   };
 
   // `latest_long` is the best long-form model but only covers a subset of

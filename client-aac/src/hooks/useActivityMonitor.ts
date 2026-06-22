@@ -86,7 +86,7 @@ interface UseActivityMonitorParams {
   captureFrame: () => Promise<BufferedFrame | null>;
   /** Optional: capture frame from environment camera */
   captureEnvFrame?: () => Promise<BufferedFrame | null>;
-  onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null, triggerReason: string) => Promise<void> | void;
+  onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null, triggerReason: string, meta?: { speechStartMs?: number; speechEndMs?: number }) => Promise<void> | void;
   /** Optional: callback for real-time PCM audio streaming (e.g., to Gemini Live API) */
   onPcmChunk?: PcmChunkCallback;
   options?: Partial<ActivityMonitorConfig>;
@@ -192,8 +192,12 @@ export function useActivityMonitor({
       return;
     }
 
-    // Min interval guard
-    if (now - lastSendAtRef.current < cfg.minIntervalMs) {
+    // Min interval guard. EXEMPT "speech ended": for STT we want every speech
+    // segment transcribed, and this 3s throttle (shared with motion/heartbeat
+    // frame sends, which also reset lastSendAt) was silently dropping most
+    // clips — the main reason STT "rarely" fired. Speech segments are naturally
+    // spaced by the VAD and the in-flight guard still serializes them.
+    if (reason !== "speech ended" && now - lastSendAtRef.current < cfg.minIntervalMs) {
       return;
     }
 
@@ -234,14 +238,22 @@ export function useActivityMonitor({
 
     // Extract audio clip from the ring buffer based on trigger reason
     let audioClip: Blob | null = null;
+    // Speech window (wall-clock ms) of this utterance — passed to onTrigger so
+    // the client can measure which faces' mouths were moving during it (lip-sync).
+    let speechStartMs: number | undefined;
+    let speechEndMs: number | undefined;
     const ringBuf = audioRingBufferRef.current;
     const monitor = audioMonitorRef.current;
 
     if (ringBuf) {
       if (reason === "speech ended" && monitor) {
-        // Extract the exact speech segment with pre/post-roll
+        // Extract the exact speech segment WITH pre-roll (audio captured BEFORE
+        // the VAD detected onset — the VAD lags, so without this the first
+        // ~0.5s of the utterance is lost) and a short post-roll.
         const boundary = monitor.consumeLastSpeechBoundary();
         if (boundary) {
+          speechStartMs = boundary.start;
+          speechEndMs = boundary.end;
           const start = boundary.start - cfg.speechPreRollMs;
           const end = boundary.end + cfg.speechPostRollMs;
           audioClip = ringBuf.extractWav(start, end);
@@ -282,7 +294,7 @@ export function useActivityMonitor({
         lastSpeechBoundary: monitor?.peekLastSpeechBoundary() ?? prev.lastSpeechBoundary,
         ringBufferSamples: ringBufSamples,
       }));
-      await onTriggerRef.current(grid, audioClip, reason);
+      await onTriggerRef.current(grid, audioClip, reason, { speechStartMs, speechEndMs });
     } catch (err) {
       console.warn("[ActivityMonitor] Trigger callback failed:", err);
     } finally {
@@ -403,6 +415,10 @@ export function useActivityMonitor({
       const audio = audioStateRef.current;
       const timeSinceLastSend = now - lastSendAtRef.current;
       const flow = flowConfigRef?.current ?? null;
+      // Read config LIVE (not the effect-setup snapshot) so flags that flip
+      // mid-session — e.g. speechTriggerEnabled when on-device STT activates —
+      // take effect without re-running the whole capture effect.
+      const cfg = configRef.current;
 
       // Guard: don't trigger too frequently
       if (timeSinceLastSend < cfg.minIntervalMs) return;

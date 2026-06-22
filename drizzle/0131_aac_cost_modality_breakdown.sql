@@ -1,0 +1,17 @@
+-- Migration 0131: chat_sessions.cost_modality_breakdown (Phase 0 cost measurement)
+--
+-- Adds a per-session breakdown of LIVE-API cost split by INPUT/OUTPUT MODALITY,
+-- parallel to the existing per-agent `cost_breakdown`. Keys are modality buckets
+-- in credits: { "textIn", "nonTextIn", "textOut", "audioOut", "cachedIn" }.
+--
+-- Why: the Live API re-bills the entire context window — including audio and
+-- image frames — on every turn, and our analysis shows the Observer agent is
+-- ~72% of AAC session cost. The per-agent `cost_breakdown` proves WHICH agent is
+-- expensive; this column proves WHY (how much is non-text input re-billing vs.
+-- text context vs. output), which is the baseline the cost-saving phases (client
+-- STT, scene_state text) are measured against. See planning-docs/aac-cost-saving*.
+--
+-- Only populated for charges that carry modality detail (Gemini Live turns with
+-- usageMetadata.details); HTTP/TTS charges leave it untouched. Back-compatible:
+-- '{}' means "no modality detail recorded".
+ALTER TABLE "chat_sessions" ADD COLUMN IF NOT EXISTS "cost_modality_breakdown" jsonb NOT NULL DEFAULT '{}'::jsonb;

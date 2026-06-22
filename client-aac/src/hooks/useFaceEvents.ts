@@ -422,6 +422,7 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
           boundingBox: incoming.boundingBox,
           currentBlendshapes: incoming.blendshapes,
           currentExpression: getDominantExpression(newEvents),
+          headPose: incoming.headPose,
           events: keptEvents,
           missedTicks: 0,
         });
@@ -460,6 +461,7 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
         boundingBox: incoming.boundingBox,
         currentBlendshapes: incoming.blendshapes,
         currentExpression: getDominantExpression(newEvents),
+        headPose: incoming.headPose,
         events: newEvents,
         missedTicks: 0,
       });

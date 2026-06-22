@@ -18,11 +18,21 @@ import { settingsRepository } from "../repositories/settingsRepository";
 import { chargeCaptionModelUsage } from "./captionCost";
 import { captionDebug, captionDebugSeparator } from "./caption-debug-log";
 
-/** A timed transcript line in (from STT or a caption file). */
+/** One word with its timing — supplied by the STT path so the idea pass can
+ *  split on REAL word boundaries instead of estimating sub-line timings. */
+export interface TimedWord {
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
+/** A timed transcript line in (from STT or a caption file). `words` is present
+ *  only on the STT path; with it, splitting uses exact word timings. */
 export interface TranscriptLine {
   startMs: number;
   endMs: number;
   text: string;
+  words?: TimedWord[];
 }
 
 /** A timed idea unit out — `text` is the rephrased idea. */
@@ -52,17 +62,18 @@ const IDEAS_SCHEMA: JSONSchema = {
   properties: {
     ideas: {
       type: "array",
-      description: "Ordered, non-overlapping idea units covering the video.",
+      description:
+        "Ordered, non-overlapping idea units (small subject-verb-object chunks or short fragments) covering the video. Usually MORE units than source lines — split sentences aggressively.",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["startMs", "endMs", "idea"],
         properties: {
-          startMs: { type: "integer", description: "Start of the speech expressing this idea (ms)." },
-          endMs: { type: "integer", description: "End of the speech expressing this idea (ms)." },
+          startMs: { type: "integer", description: "Start (ms) of when this chunk is spoken. For a sub-line split, a consecutive sub-range of the source line's span." },
+          endMs: { type: "integer", description: "End (ms) of when this chunk is spoken. Must be > startMs and not overlap the next unit." },
           idea: {
             type: "string",
-            description: "Short plain rephrasing of the single idea — the meaning, not the literal words.",
+            description: "Short rephrasing of ONE small idea — a subject-verb-object chunk or fragment (the meaning, not the literal words).",
           },
         },
       },
@@ -70,23 +81,68 @@ const IDEAS_SCHEMA: JSONSchema = {
   },
 };
 
-function buildInstructions(opts: ExtractIdeasOptions): string {
+// Above this many words the numbered-word prompt gets unwieldy, so we fall back
+// to ms mode (proportional estimation) to keep the single call's prompt sane.
+const WORD_MODE_MAX_WORDS = 1500;
+
+// Word-index mode: the model selects the SOURCE word range each chunk covers,
+// and we compute exact ms from the words. Avoids the model doing millisecond
+// math and lands splits on real word boundaries.
+const IDEAS_WORD_SCHEMA: JSONSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ideas"],
+  properties: {
+    ideas: {
+      type: "array",
+      description:
+        "Ordered idea units (small subject-verb-object chunks or short fragments) covering the words in order. Usually MORE units than source lines — split aggressively.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["startWord", "endWord", "idea"],
+        properties: {
+          startWord: { type: "integer", description: "Global index of the FIRST transcript word this chunk covers." },
+          endWord: { type: "integer", description: "Global index of the LAST transcript word this chunk covers (>= startWord)." },
+          idea: {
+            type: "string",
+            description: "Short rephrasing of ONE small idea — a subject-verb-object chunk or fragment (the meaning, not the literal words).",
+          },
+        },
+      },
+    },
+  },
+};
+
+function buildInstructions(opts: ExtractIdeasOptions, mode: "ms" | "word"): string {
   const lang = opts.language || "the caption language";
   const custom = opts.customInstructions?.trim()
     ? `\n\nAdditional instructions from the user (honor these):\n${opts.customInstructions.trim()}`
     : "";
+  const intro = mode === "word"
+    ? `You are the FIRST pass of a video-captioning pipeline for non-verbal AAC users. You receive the full transcript of a video as a sequence of WORDS, each prefixed with its global \`[index]\`. Line breaks mark the recognizer's natural phrase groupings.`
+    : `You are the FIRST pass of a video-captioning pipeline for non-verbal AAC users. You receive the full timed transcript of a video as numbered lines, each with start/end times in milliseconds.`;
+  const timingBullet = mode === "word"
+    ? `  - \`startWord\`/\`endWord\`: the GLOBAL \`[index]\` of the FIRST and LAST source words this chunk covers (endWord >= startWord). Cover words in spoken order; consecutive chunks must NOT overlap word ranges. The on-screen time is computed from those words — do NOT output milliseconds, just the word indices.`
+    : `  - \`startMs\`/\`endMs\`: WHEN that chunk is spoken.
+      • A unit that covers a whole source line → use that line's start/end.
+      • When you split ONE source line into several units, divide that line's [start, end] span into CONSECUTIVE, NON-OVERLAPPING sub-ranges in spoken order, roughly proportional to each chunk's share of the words. (e.g. a line 1000–3000ms split into two even chunks → 1000–2000 and 2000–3000.)
+      • Units must stay in chronological order and never overlap.`;
   return `<task>
-You are the FIRST pass of a video-captioning pipeline for non-verbal AAC users. You receive the full timed transcript of a video as numbered lines, each with start/end times in milliseconds.
+${intro}
 
-Decide the sequence of IDEAS the video conveys and WHEN each should appear, so an AAC user can follow along. Output an ordered list of idea units. Each unit:
-  - should be a simplified rephrasing of what is being communicated, but you should still use the voice of the speaker (e.g. if they say "I think we should go to the park", the idea might be "we should go to the park", not "The speaker thinks going to the park is a good idea").
-  - should keep the overall purpose and tone of the original speech, and focus on what is most important for an AAC user to understand from it.
-  - expresses ONE clear idea — a single statement/concept the audience should grasp at that moment. Split compound or run-on sentences into separate ideas; merge fragments that together form one idea.
-  - each idea unit should ideally consist of a subject, verb, and object (who is doing what to whom/what), along with modifiers such as adjectives and adverbs.
-  - \`startMs\`/\`endMs\`: the span of speech that expresses the idea. Use the source-line timings — start at the first contributing line's start, end at the last contributing line's end. Keep units in chronological order and non-overlapping.
-  - \`idea\`: a short, plain rephrasing in ${lang} of WHAT is being communicated (the meaning), not a literal transcription. Drop filler, hedges, and asides.
+Break the speech into a sequence of SMALL idea units — each a single subject–verb–object chunk (who does what to whom/what) or a short standalone fragment — and decide WHEN each appears, so an AAC user follows along one bite-sized thought at a time. Output an ordered list of idea units. Each unit:
+  - is ONE small idea: ideally a subject + verb + object with its adjectives/adverbs ("Mom drove the red car"), OR a short standalone fragment when that's the natural unit ("at the park", "every morning", "because it's late", "yes!").
+  - SPLIT AGGRESSIVELY — prefer MORE, SMALLER units over fewer big ones. A single spoken sentence usually becomes SEVERAL units. Break on clauses, conjunctions (and / but / so / because / then), relative clauses, and list items:
+      • "Mom went to the store and bought apples" → "Mom went to the store" + "she bought apples".
+      • "I'm tired but I want to keep playing" → "I'm tired" + "I want to keep playing".
+    Only KEEP together words that make no sense apart (a verb and its object, a noun and its adjective).
+  - is a simplified rephrasing in the VOICE of the speaker ("we should go to the park", NOT "the speaker thinks going to the park is good"), keeping the original purpose and tone. Drop filler, hedges, and asides.
+${timingBullet}
+  - READABILITY: keep each unit on screen long enough to read. Don't make a unit out of a single tiny word — merge it with its neighbour.
+  - \`idea\`: the short rephrasing in ${lang} (the meaning, not a literal transcription).
 
-Cover the whole video in order. Do not invent content that isn't in the transcript. Aim for caption-sized units — roughly one short sentence each.${custom}
+Cover the whole video in order. Do not invent content that isn't in the transcript.${custom}
 </task>`;
 }
 
@@ -107,18 +163,44 @@ export async function extractCaptionIdeas(
   const minMs = Math.min(...transcript.map((l) => l.startMs));
   const maxMs = Math.max(...transcript.map((l) => l.endMs));
 
-  const input: GPTInputItem[] = [
-    {
+  // WORD MODE: when every line carries word timings (STT path) and the total is
+  // bounded, let the model pick split points by WORD INDEX and compute exact ms
+  // from the words — no proportional guessing. Otherwise (SRT/VTT, or a very
+  // long transcript) fall back to MS MODE (model estimates sub-line timings).
+  const totalWords = transcript.reduce((n, l) => n + (l.words?.length ?? 0), 0);
+  const useWords = transcript.every((l) => (l.words?.length ?? 0) > 0) && totalWords > 0 && totalWords <= WORD_MODE_MAX_WORDS;
+
+  // Flat, globally-indexed word list (word mode only) — the model references
+  // these [index] numbers, and we map index → exact ms after.
+  const globalWords: TimedWord[] = [];
+  let input: GPTInputItem[];
+  if (useWords) {
+    const lines = transcript.map((l) => {
+      const toks = (l.words ?? []).map((w) => {
+        const idx = globalWords.length;
+        globalWords.push(w);
+        return `[${idx}]${w.text}`;
+      });
+      return toks.join(" ");
+    });
+    input = [{
+      type: "message",
+      role: "user",
+      content: "Transcript as timed WORDS — use these [index] numbers for startWord/endWord:\n" + lines.join("\n"),
+    }];
+  } else {
+    input = [{
       type: "message",
       role: "user",
       content:
         "Timed transcript lines:\n" +
         JSON.stringify(transcript.map((l, index) => ({ index, startMs: l.startMs, endMs: l.endMs, text: l.text }))),
-    },
-  ];
+    }];
+  }
 
-  const ideaInstructions = buildInstructions(opts);
-  captionDebugSeparator(`IDEA PASS — ${transcript.length} transcript lines (${cfg.provider}/${cfg.model})`);
+  const mode = useWords ? "word" : "ms";
+  const ideaInstructions = buildInstructions(opts, mode);
+  captionDebugSeparator(`IDEA PASS — ${transcript.length} lines, ${mode} mode${useWords ? ` (${globalWords.length} words)` : ""} (${cfg.provider}/${cfg.model})`);
   captionDebug("SYSTEM INSTRUCTIONS (sent to model)", ideaInstructions);
   captionDebug("USER INPUT (sent to model)", input);
 
@@ -127,7 +209,7 @@ export async function extractCaptionIdeas(
     input,
     instructions: ideaInstructions,
     schemaName: "CaptionIdeas",
-    schema: IDEAS_SCHEMA,
+    schema: useWords ? IDEAS_WORD_SCHEMA : IDEAS_SCHEMA,
     temperature: 0.4,
     maxTokens: 4096,
   });
@@ -170,23 +252,40 @@ export async function extractCaptionIdeas(
 
   const out: IdeaSegment[] = [];
   for (const entry of ideas) {
-    if (
-      !entry ||
-      typeof entry.idea !== "string" ||
-      entry.idea.trim() === "" ||
-      typeof entry.startMs !== "number" ||
-      typeof entry.endMs !== "number"
-    ) {
-      continue;
+    if (!entry || typeof entry.idea !== "string" || entry.idea.trim() === "") continue;
+
+    let startMs: number;
+    let endMs: number;
+    if (useWords) {
+      // Word mode — map the chosen word range to exact ms from the words.
+      if (typeof entry.startWord !== "number" || typeof entry.endWord !== "number") continue;
+      const n = globalWords.length;
+      const s = Math.max(0, Math.min(n - 1, Math.round(entry.startWord)));
+      const e = Math.max(s, Math.min(n - 1, Math.round(entry.endWord)));
+      startMs = globalWords[s].startMs;
+      endMs = globalWords[e].endMs;
+    } else {
+      // Ms mode — the model estimated the span; clamp it.
+      if (typeof entry.startMs !== "number" || typeof entry.endMs !== "number") continue;
+      startMs = Math.round(entry.startMs);
+      endMs = Math.round(entry.endMs);
     }
     // Clamp to the transcript's span and ensure a positive duration.
-    const startMs = Math.max(minMs, Math.round(entry.startMs));
-    let endMs = Math.round(entry.endMs);
+    startMs = Math.max(minMs, startMs);
     if (endMs <= startMs) endMs = startMs + 1;
     endMs = Math.min(maxMs, Math.max(endMs, startMs + 1));
     out.push({ startMs, endMs, text: entry.idea.trim() });
   }
 
   out.sort((a, b) => a.startMs - b.startMs);
+
+  // Safety net: finer SVO/fragment splitting makes overlaps likelier, and two
+  // captions claiming the same instant would render ambiguously (the client
+  // picks the first interval covering a time). Force consecutive non-overlap by
+  // clamping each unit's start to the previous unit's end.
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].startMs < out[i - 1].endMs) out[i].startMs = out[i - 1].endMs;
+    if (out[i].endMs <= out[i].startMs) out[i].endMs = out[i].startMs + 1;
+  }
   return out;
 }

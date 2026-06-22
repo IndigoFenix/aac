@@ -24,6 +24,10 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
+import { useVoiceIdentification } from "@/hooks/useVoiceIdentification";
+import { useSpeechTranscription } from "@/hooks/useSpeechTranscription";
+import { STT_ENGINE, CLIENT_CAPABILITIES } from "@/hooks/dual-agent-types";
+import type { SceneSnapshot } from "@shared/aac/scene-state";
 import { useFaceImageCache } from "@/hooks/useFaceImageCache";
 import { usePeopleDirectory } from "@/hooks/usePeopleDirectory";
 import { setFaceImageResolver } from "@/lib/glyph-images";
@@ -47,12 +51,15 @@ import { FaceEngagementSignalFeed, MouseEyegazeSignalFeed } from "@/components/S
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
+import { usePoseTracking } from "@/hooks/usePoseTracking";
+import { usePoseEvents } from "@/hooks/usePoseEvents";
+import { useSceneChangeDetector, type MaskBox } from "@/hooks/useSceneChangeDetector";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
 import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
 import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
-import { serializeGestureContext } from "@/lib/gestureContextSerializer";
+import { serializeGestureContext, describeFaceForScene, describeHandForScene } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
 import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
@@ -773,6 +780,35 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     cacheFaceImage: faceImageCache.cacheFaceImage,
   });
 
+  // Voice identification (speaker embeddings from heard speech). The model is
+  // heavy and lazy-loaded, so it only initializes once a live session is active.
+  // TODO: gate behind an AAC/license setting before broad rollout — for now it
+  // mirrors face recognition's enablement.
+  const {
+    embedClip: embedVoiceClip,
+    isReady: voiceReady,
+    isLoading: voiceLoading,
+    error: voiceError,
+  } = useVoiceIdentification({
+    enabled: useDualAgent,
+  });
+
+  // On-device speech-to-text (cost saving, Phase 1). Heavy + lazy like voice ID;
+  // only the server decides whether to USE the transcript (clientConfig.sttActive),
+  // so loading it whenever the dual-agent session is active is safe.
+  const {
+    transcribeClip: transcribeSpeech,
+    isReady: sttReady,
+    isLoading: sttLoading,
+    isTranscribing: sttTranscribing,
+    error: sttError,
+  } = useSpeechTranscription({
+    // Only load the on-device Whisper model when it's the selected engine.
+    // Default is server-side Google STT, so this stays dormant (no model fetch).
+    enabled: useDualAgent && STT_ENGINE === "whisper",
+    language: currentLanguage,
+  });
+
   // Face event accumulation (derives semantic events from blendshapes)
   const { trackedFaces } = useFaceEvents({
     faces: rawFaces,
@@ -824,6 +860,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     },
   });
 
+  // Body-pose tracking (posture + body movement + conservative fall hint).
+  // Heaviest of the three trackers, so gated behind the poseSafety capability;
+  // only runs while the dual-agent session is active. Feeds the scene snapshot
+  // + gesture context; a suspected fall escalates to a frame the Observer judges.
+  const poseEnabled = useDualAgent && CLIENT_CAPABILITIES.poseSafety;
+  const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled });
+  const { trackedPoses } = usePoseEvents({ poses: rawPoses, enabled: poseEnabled });
+
   // Get current identified person (non-blocking getter for dual-agent)
   const getIdentifiedPerson = useCallback(() => {
     return currentIdentification?.person || null;
@@ -841,8 +885,90 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // Get serialized gesture/expression context for dual-agent AI
   const getGestureContext = useCallback(() => {
-    return serializeGestureContext(trackedFaces, trackedHands);
-  }, [trackedFaces, trackedHands]);
+    return serializeGestureContext(trackedFaces, trackedHands, trackedPoses);
+  }, [trackedFaces, trackedHands, trackedPoses]);
+
+  // Cost-saving (Phase 2): face + hand regions to EXCLUDE from background-change
+  // detection (their motion is expected and already described in the scene).
+  const getSceneMaskBoxes = useCallback((): MaskBox[] => {
+    const boxes: MaskBox[] = [];
+    for (const f of trackedFaces) {
+      const bb = f.boundingBox;
+      if (bb) boxes.push({ x: bb.x, y: bb.y, w: bb.width, h: bb.height });
+    }
+    for (const h of trackedHands) {
+      const lm = h.landmarks;
+      if (!lm || lm.length < 21) continue;
+      let minX = 1, minY = 1, maxX = 0, maxY = 0;
+      for (const p of lm) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      boxes.push({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+    }
+    // The whole body moves too — exclude its box so posture shifts / limb motion
+    // don't read as a background "object_shown" change.
+    const body = trackedPoses[0]?.boundingBox;
+    if (body) boxes.push({ x: body.x, y: body.y, w: body.w, h: body.h });
+    return boxes;
+  }, [trackedFaces, trackedHands, trackedPoses]);
+
+  // Detect something held up to the camera / a scenery change (a large pixel
+  // change outside the person and their hands) → escalates scene_state to a real
+  // frame so the Observer can see and identify it.
+  const { getChange: getBackgroundChange } = useSceneChangeDetector({
+    videoEl: userVideoEl,
+    enabled: useDualAgent,
+    getMaskBoxes: getSceneMaskBoxes,
+  });
+
+  // Cost-saving (Phase 2): structured scene snapshot the live session uses to
+  // decide whether to send a cheap scene_state text or a real frame.
+  const getSceneSnapshot = useCallback((): SceneSnapshot => {
+    const people = trackedFaces.map((f, i) => ({
+      // Generic fallback — the server swaps in the real identity by bbox IoU.
+      name: f.personName || `person ${i + 1}`,
+      expression: f.currentExpression ? f.currentExpression.replace(/_/g, " ") : null,
+      movement: describeFaceForScene(f) || undefined,
+      bbox: f.boundingBox
+        ? { x: f.boundingBox.x, y: f.boundingBox.y, w: f.boundingBox.width, h: f.boundingBox.height }
+        : undefined,
+    }));
+    const hands = trackedHands
+      .map((h) => describeHandForScene(h, trackedFaces))
+      .filter((s): s is string => !!s);
+    // Body pose (active user): posture text + a recent suspected-fall hint.
+    const body = trackedPoses[0];
+    const posture = body && body.currentPosture !== "unknown" ? body.currentPosture : undefined;
+    const suspectedFall = body
+      ? body.events.some(e => e.type === "fall" && Date.now() - e.timestamp < 3000)
+      : false;
+    return { people, hands, posture, suspectedFall, backgroundChange: getBackgroundChange() };
+  }, [trackedFaces, trackedHands, trackedPoses, getBackgroundChange]);
+
+  // Lip-sync evidence (speaker attribution): for each tracked face, how active
+  // its mouth was during a speech window [startMs,endMs] — mouth_open events per
+  // second. The server correlates these (by bbox IoU) with identified faces and
+  // fuses with the voice match to judge who actually spoke. See speaker-fusion.ts.
+  const getLipActivity = useCallback((startMs: number, endMs: number) => {
+    const winSec = Math.max(0.2, (endMs - startMs) / 1000);
+    const out: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }> = [];
+    for (const f of trackedFaces) {
+      const bb = f.boundingBox;
+      if (!bb) continue; // not visible / no box → can't judge its mouth
+      const mouthEvents = f.events.filter(
+        (e) => e.type === "mouth_open" && e.timestamp >= startMs && e.timestamp <= endMs,
+      ).length;
+      out.push({
+        bbox: { x: bb.x, y: bb.y, w: bb.width, h: bb.height },
+        mouthActivity: mouthEvents / winSec,
+        visible: true,
+      });
+    }
+    return out;
+  }, [trackedFaces]);
 
   // (Removed the separate sharedCameraStream <video>. The shared user-camera
   // element from MultiCameraProvider (userVideoEl) already binds to the
@@ -2150,6 +2276,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           getIdentifiedPerson={getIdentifiedPerson}
           getGestureContext={getGestureContext}
           getUnmatchedFaceDescriptors={getUnmatchedDescriptors}
+          embedVoiceClip={embedVoiceClip}
+          transcribeSpeech={transcribeSpeech}
+          sttReady={sttReady}
+          getSceneSnapshot={getSceneSnapshot}
+          getLipActivity={getLipActivity}
           debugMode={debugMode}
           getFaceImage={resolveFaceImage}
         >
@@ -2217,7 +2348,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             }
             rawFaces={rawFaces}
             rawHands={rawHands}
+            rawPoses={rawPoses}
             identification={currentIdentification}
+            aiName={userProfile?.aacSettings?.aiName}
           />
           <FullscreenAvatarOverlay />
           <DeviceManagerModal
@@ -2242,6 +2375,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               handGestureReady={handGestureReady}
               handGestureError={handGestureError}
               lastCapturedFaceImage={lastCapturedFaceImage}
+              sttReady={sttReady}
+              sttLoading={sttLoading}
+              sttTranscribing={sttTranscribing}
+              sttError={sttError}
+              voiceReady={voiceReady}
+              voiceLoading={voiceLoading}
+              voiceError={voiceError}
+              faceRecognitionReady={isPersonIdReady}
             />
           )}
           </SocialBotProvider>

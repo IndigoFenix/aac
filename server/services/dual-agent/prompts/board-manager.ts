@@ -584,6 +584,7 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     // resolved gesture into a button_pressed event before fan-out.)
     case "emote_change":
     case "focus_request":
+    case "audio_request":
     case "alarm_raised":
     case "monitor_call_requested":
     case "private_note":

@@ -3,6 +3,8 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, UseDualAgentReturn } from "@/hooks/dual-agent-types";
+import { STT_ENGINE } from "@/hooks/dual-agent-types";
+import { analyzeVoicePitch } from "@/lib/voiceFeatures";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
@@ -34,6 +36,16 @@ const VAD_HANGOVER_MS = 1000;
 
 /** Current VAD gate state, surfaced to the debug panel. */
 export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous";
+
+/** Read a Blob as base64 (no data-URL prefix). Returns "" on failure. */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const r = new FileReader();
+    r.onloadend = () => resolve(((r.result as string) || "").split(",")[1] || "");
+    r.onerror = () => resolve("");
+    r.readAsDataURL(blob);
+  });
+}
 
 interface DualAgentContextType {
   // Session state
@@ -258,6 +270,9 @@ interface DualAgentContextType {
     /** Pre-roll chunks replayed on gate-open (recovered utterance onsets) */
     recoveredCount: number;
   };
+  /** Debug: the last on-device STT transcript (text + confidence + when), or
+   *  null. Surfaced in the debug panel so STT output is visible. */
+  lastSttTranscript?: { text: string; confidence: number; at: number } | null;
 }
 
 const DualAgentContext = createContext<DualAgentContextType | null>(null);
@@ -277,8 +292,26 @@ interface DualAgentProviderProps {
   getIdentifiedPerson?: () => IdentifiedPerson | null;
   /** Function to get serialized gesture/expression context (face + hand events) */
   getGestureContext?: () => string | null;
+  /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
+   *  used by the live session to decide frame-vs-scene_state text. */
+  getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
+  /** Lip-sync speaker attribution: per-face mouth activity during a speech
+   *  window, sent with speech clips so the server can fuse it with the voice
+   *  match. See shared/aac/speaker-fusion.ts. */
+  getLipActivity?: (startMs: number, endMs: number) => import("@shared/aac/speaker-fusion").LipFace[];
   /** Function to get unmatched face descriptors for AI-triggered enrollment */
   getUnmatchedFaceDescriptors?: () => Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
+  /** Compute a speaker embedding from a VAD-gated speech clip (16 kHz mono WAV).
+   *  When provided, voice samples are sent to the server for voice matching. */
+  embedVoiceClip?: (wav: Blob) => Promise<{ embedding: number[]; quality: number } | null>;
+  /** Transcribe a VAD-gated speech clip on-device (cost saving, Phase 1). When
+   *  provided AND the server activated STT (clientConfig.sttActive), the
+   *  transcript is sent as `speech_text` in place of streaming raw audio. */
+  transcribeSpeech?: (wav: Blob) => Promise<{ text: string; confidence: number } | null>;
+  /** Whether the on-device STT model has finished loading. PCM is only
+   *  suppressed once this is true — until then we keep streaming audio so the AI
+   *  is never deaf while the (heavy) Whisper model loads or if it fails. */
+  sttReady?: boolean;
   /** Callback for board patches from detection */
   onBoardPatch?: (patch: BoardPatch) => void;
   /** Enable debug mode — sends debugMode to backend, collects debug SSE events */
@@ -305,7 +338,12 @@ function DualAgentProviderInner({
   captureFrame: captureFrameProp,
   captureEnvFrame: captureEnvFrameProp,
   getUnmatchedFaceDescriptors,
+  embedVoiceClip,
+  transcribeSpeech,
+  sttReady,
   getGestureContext,
+  getSceneSnapshot,
+  getLipActivity,
   onBoardPatch: onBoardPatchProp,
   debugMode,
   getFaceImage: getFaceImageProp,
@@ -443,6 +481,22 @@ function DualAgentProviderInner({
     attentivenessRef.current?.reportFalseWake(reason);
   }, []);
 
+  const handleSetFidelity = useCallback(
+    (level: import("@/lib/cameraAttentivenessTypes").PerceptionFidelity, reason?: string) => {
+      console.log(`[DualAgentContext] server set_fidelity → ${level}${reason ? ` (${reason})` : ""}`);
+      attentivenessRef.current?.setFidelity(level);
+    },
+    [],
+  );
+
+  // Phase 1b: the real audio-pull handler needs the ring buffer + liveAgent
+  // (both defined below). Bridge via a ref so a STABLE callback can be passed
+  // into useLiveSession now, and the implementation wired in afterward.
+  const handleRequestAudioClipRef = useRef<((clipId: string) => void) | null>(null);
+  const onRequestAudioClip = useCallback((clipId: string) => {
+    handleRequestAudioClipRef.current?.(clipId);
+  }, []);
+
   const liveAgent = useLiveSession({
     studentId,
     classroomId,
@@ -468,12 +522,15 @@ function DualAgentProviderInner({
     onSymbolUpdate: handleSymbolUpdate,
     onSleepStateChange: handleSleepStateChange,
     onFalseWakeReport: handleFalseWakeReport,
+    onSetFidelity: handleSetFidelity,
+    onRequestAudioClip,
     autoPlayAudio: true,
     pitchByTag,
     debugMode,
     captureFrame,
     captureHighResFrame,
     getGestureContext,
+    getSceneSnapshot,
   });
 
   const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
@@ -486,10 +543,133 @@ function DualAgentProviderInner({
   const getUnmatchedFaceDescriptorsRef = useRef(getUnmatchedFaceDescriptors);
   getUnmatchedFaceDescriptorsRef.current = getUnmatchedFaceDescriptors;
 
-  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null, triggerReason: string) => {
+  const embedVoiceClipRef = useRef(embedVoiceClip);
+  embedVoiceClipRef.current = embedVoiceClip;
+  const transcribeSpeechRef = useRef(transcribeSpeech);
+  transcribeSpeechRef.current = transcribeSpeech;
+  const sendVoiceDescriptorsRef = useRef(liveAgent.sendVoiceDescriptors);
+  sendVoiceDescriptorsRef.current = liveAgent.sendVoiceDescriptors;
+  const sendSpeechTextRef = useRef(liveAgent.sendSpeechText);
+  sendSpeechTextRef.current = liveAgent.sendSpeechText;
+  const sendSpeechAudioRef = useRef(liveAgent.sendSpeechAudio);
+  sendSpeechAudioRef.current = liveAgent.sendSpeechAudio;
+  const getLipActivityRef = useRef(getLipActivity);
+  getLipActivityRef.current = getLipActivity;
+  // Session language (student locale), for the server STT language hint.
+  const languageRef = useRef(language);
+  languageRef.current = language;
+  // Synchronous "is AI talking" gate — don't embed the AI's own TTS as a voice.
+  const aiBusyRef = liveAgent.isBusyRef;
+  // Server-resolved: when true, transcribe speech on-device and send text in
+  // place of streaming raw audio (cost saving, Phase 1).
+  const sttActive = liveAgent.clientConfig?.sttActive ?? false;
+  const sttActiveRef = useRef(sttActive);
+  sttActiveRef.current = sttActive;
+  // Whether the on-device STT model is loaded. PCM is only suppressed once STT
+  // is BOTH active and ready — otherwise we keep streaming audio so the AI is
+  // never deaf while the heavy model loads (or if it fails to load).
+  const sttReadyRef = useRef(!!sttReady);
+  sttReadyRef.current = !!sttReady;
+  // Debug: last on-device STT transcript, surfaced in the debug panel.
+  const [lastSttTranscript, setLastSttTranscript] = useState<{ text: string; confidence: number; at: number } | null>(null);
+
+  // Phase 1b audio backlog: keep the recent speech clips keyed by clipId so the
+  // Observer can pull one (request_audio) to actually hear it. Bounded to the
+  // last few segments — a pull only ever targets the most recent transcript.
+  const audioClipBufferRef = useRef<Map<string, { blob: Blob; mimeType: string; at: number }>>(new Map());
+  const AUDIO_CLIP_BUFFER_MAX = 6;
+  const rememberAudioClip = useCallback((clipId: string, blob: Blob) => {
+    const buf = audioClipBufferRef.current;
+    buf.set(clipId, { blob, mimeType: blob.type || "audio/wav", at: Date.now() });
+    // Drop the oldest entries past the cap (Map preserves insertion order).
+    while (buf.size > AUDIO_CLIP_BUFFER_MAX) {
+      const oldest = buf.keys().next().value;
+      if (oldest === undefined) break;
+      buf.delete(oldest);
+    }
+  }, []);
+
+  // Implementation of the Phase 1b audio pull (bridged in via the ref above so
+  // the stable onRequestAudioClip passed to useLiveSession can reach it).
+  const sendAudioClipFn = liveAgent.sendAudioClip;
+  handleRequestAudioClipRef.current = useCallback(async (clipId: string) => {
+    const entry = audioClipBufferRef.current.get(clipId);
+    if (!entry || !sendAudioClipFn) return;
+    const base64 = await blobToBase64(entry.blob);
+    if (base64) sendAudioClipFn({ clipId, data: base64, mimeType: entry.mimeType });
+  }, [sendAudioClipFn]);
+
+  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null, triggerReason: string, meta?: { speechStartMs?: number; speechEndMs?: number }) => {
     const unknownDescriptors = getUnmatchedFaceDescriptorsRef.current?.() || undefined;
     await runDetectionWithGridRef.current(grid, audioClip, unknownDescriptors, triggerReason);
-  }, []);
+
+    // Skip clips captured while the AI was talking — that audio is TTS, not a
+    // person, and would poison voice galleries / produce echo transcripts.
+    if (!audioClip || aiBusyRef?.current) return;
+
+    // Voice embedding (wavlm) runs OFF the main thread and is INDEPENDENT of
+    // transcription. Fire it in parallel and tag the result with `clipId` so the
+    // server can synchronize it with the STT text before attributing — never
+    // block the (latency-sensitive) STT send on the embed. Best-effort.
+    const runVoiceId = (clipId?: string) => {
+      if (!embedVoiceClipRef.current || !sendVoiceDescriptorsRef.current) return;
+      void (async () => {
+        try {
+          const desc = await embedVoiceClipRef.current!(audioClip);
+          if (desc && !aiBusyRef?.current) sendVoiceDescriptorsRef.current!([desc], clipId);
+        } catch { /* voice ID is non-critical */ }
+      })();
+    };
+
+    if (sttActiveRef.current) {
+      // Cost saving (Phase 1): get the speech as TEXT instead of streaming raw
+      // audio to Gemini (PCM is suppressed in handlePcmChunk). The clip is also
+      // stashed for the Phase 1b audio-pull backlog.
+      const clipId = crypto.randomUUID();
+      rememberAudioClip(clipId, audioClip);
+      // (1) Voice embed in parallel, tagged with the clip.
+      runVoiceId(clipId);
+      // (2) Send the clip for transcription IMMEDIATELY.
+      if (STT_ENGINE === "google" && sendSpeechAudioRef.current) {
+        try {
+          // Fast-tier pitch fingerprint (cheap DSP) computed alongside the
+          // base64 encode — rides WITH the clip so the server can give an
+          // immediate pitch + lip read before the slow embedding lands.
+          const [base64, acoustic] = await Promise.all([
+            blobToBase64(audioClip),
+            analyzeVoicePitch(audioClip).catch(() => null),
+          ]);
+          if (base64 && !aiBusyRef?.current) {
+            const lipActivity = (meta?.speechStartMs && meta?.speechEndMs)
+              ? getLipActivityRef.current?.(meta.speechStartMs, meta.speechEndMs)
+              : undefined;
+            sendSpeechAudioRef.current({
+              data: base64,
+              mimeType: audioClip.type || "audio/wav",
+              language: languageRef.current,
+              clipId,
+              lipActivity: lipActivity && lipActivity.length ? lipActivity : undefined,
+              acoustic: acoustic ?? undefined,
+            });
+          }
+        } catch {
+          // STT send is best-effort — never let it disrupt detection.
+        }
+      } else if (STT_ENGINE === "whisper" && transcribeSpeechRef.current && sendSpeechTextRef.current) {
+        // Whisper path (plumbing kept): transcribe on-device, send the text.
+        try {
+          const result = await transcribeSpeechRef.current(audioClip);
+          if (result?.text && !aiBusyRef?.current) {
+            setLastSttTranscript({ text: result.text, confidence: result.confidence, at: Date.now() });
+            sendSpeechTextRef.current({ text: result.text, confidence: result.confidence, clipId });
+          }
+        } catch { /* STT is best-effort */ }
+      }
+    } else {
+      // Not in STT mode — voice ID only (ambient [VOICES HEARD]), no clip sync.
+      runVoiceId();
+    }
+  }, [aiBusyRef, rememberAudioClip]);
 
   // Mic stream lifecycle. Each activate/deactivate transition is reported to the
   // server (sendMicState) purely for diagnostics — the server logs it to the
@@ -586,6 +766,26 @@ function DualAgentProviderInner({
   const handlePcmChunk = useCallback((int16Base64: string) => {
     if (liveAgent.paused) return;
     const now = Date.now();
+
+    // Cost saving (Phase 1): when STT is active the Observer is fed text (from
+    // server Google STT of VAD clips, or on-device Whisper), never raw PCM — so
+    // suppress the continuous stream. We still drive the VAD "listening" light
+    // from speech detection (the mic IS in use), so it blinks with speech rather
+    // than being stuck on. (No readiness gate: Google STT is server-side with no
+    // model to load; the Whisper path tolerates a brief gap while it loads.)
+    if (sttActiveRef.current) {
+      const voice = contributionsRef.current.voice ?? 0;
+      const noise = contributionsRef.current.noise ?? 0;
+      vadVoiceLevelRef.current = voice;
+      vadNoiseLevelRef.current = noise;
+      const active = voice >= VAD_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+      if (active) lastVadActiveAtRef.current = now;
+      const open = active || now - lastVadActiveAtRef.current < VAD_HANGOVER_MS;
+      gateStateRef.current = open ? "open" : "vad-blocked";
+      vadGateOpenRef.current = open;
+      return;
+    }
+
     const flow = flowRef.current;
 
     // Always retain a short rolling pre-roll of recent chunks so that, when the
@@ -721,11 +921,13 @@ function DualAgentProviderInner({
     // Tuning constants come from the server's `clientConfig.activityMonitor`
     // (shipped in the `initialized` message) so capture rate, settle/silence
     // windows, pre/post-roll, etc. can be tweaked without a client rebuild.
-    // The fixed local overrides (speechTriggerEnabled: false in Live mode)
-    // win over server-supplied values.
+    // speechTriggerEnabled: normally OFF in Live mode (audio streams via PCM and
+    // frame grids are decoupled from speech). But when on-device STT is active we
+    // suppress PCM and need the speech-segment CLIP — so the "speech ended"
+    // trigger MUST fire to extract it. Enable it exactly when STT is active.
     options: {
       ...(liveAgent.clientConfig?.activityMonitor ?? {}),
-      speechTriggerEnabled: false,
+      speechTriggerEnabled: sttActive,
     },
     // Sleep-system data-flow config: heartbeat interval, attached audio,
     // grid size, motion-trigger gating all read from this ref per-tick.
@@ -894,6 +1096,7 @@ function DualAgentProviderInner({
       activityMonitor={activityMonitor}
       pcmDebug={pcmDebug}
       micActive={micStream !== null}
+      lastSttTranscript={lastSttTranscript}
     >
       {children}
     </ProviderShell>
@@ -944,6 +1147,7 @@ interface ProviderShellProps {
     recoveredCount: number;
   };
   micActive: boolean;
+  lastSttTranscript?: { text: string; confidence: number; at: number } | null;
 }
 
 function ProviderShell({
@@ -970,6 +1174,7 @@ function ProviderShell({
   activityMonitor,
   pcmDebug: pcmDebugProp,
   micActive,
+  lastSttTranscript,
 }: ProviderShellProps) {
   const value: DualAgentContextType = {
     studentId,
@@ -1111,6 +1316,7 @@ function ProviderShell({
       audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0,
       gateState: "continuous", voiceLevel: 0, noiseLevel: 0, recoveredCount: 0,
     },
+    lastSttTranscript,
   };
 
   return (

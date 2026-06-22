@@ -56,6 +56,39 @@ interface UnifiedDebugPanelProps {
   handGestureError?: string | null;
   // Face image debug (from usePersonIdentification)
   lastCapturedFaceImage?: LastCapturedFaceImage | null;
+  // Client-side ML model load status (from home's hooks)
+  sttReady?: boolean;
+  sttLoading?: boolean;
+  sttTranscribing?: boolean;
+  sttError?: string | null;
+  voiceReady?: boolean;
+  voiceLoading?: boolean;
+  voiceError?: string | null;
+  faceRecognitionReady?: boolean;
+}
+
+/** Resolve a model's load state into a colored status chip. */
+function modelStatus(ready?: boolean, loading?: boolean, error?: string | null): { label: string; color: string } {
+  if (error) return { label: "failed", color: "bg-red-500" };
+  if (ready) return { label: "loaded", color: "bg-green-500" };
+  if (loading) return { label: "loading…", color: "bg-yellow-500" };
+  return { label: "idle", color: "bg-gray-400" };
+}
+
+function ModelRow({ name, ready, loading, error }: { name: string; ready?: boolean; loading?: boolean; error?: string | null }) {
+  const s = modelStatus(ready, loading, error);
+  return (
+    <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${s.color}`} />
+          <span className="text-[11px]">{name}</span>
+        </span>
+        <span className="text-[10px] text-gray-500">{s.label}</span>
+      </div>
+      {error && <p className="text-[9px] text-red-500 mt-0.5 break-all">{error}</p>}
+    </div>
+  );
 }
 
 const SECTION_STORAGE_KEY = "debug-panel-sections";
@@ -237,6 +270,14 @@ export default function UnifiedDebugPanel({
   handGestureReady,
   handGestureError,
   lastCapturedFaceImage,
+  sttReady,
+  sttLoading,
+  sttTranscribing,
+  sttError,
+  voiceReady,
+  voiceLoading,
+  voiceError,
+  faceRecognitionReady,
 }: UnifiedDebugPanelProps) {
   // Context data
   const ctx = useDualAgentContext();
@@ -255,6 +296,7 @@ export default function UnifiedDebugPanel({
   const [sections, setSections] = useState<Record<string, boolean>>(() => {
     const stored = loadSections();
     return {
+      models: stored.models ?? true,
       cameras: stored.cameras ?? true,
       audioClips: stored.audioClips ?? true,
       identifiedPeople: stored.identifiedPeople ?? true,
@@ -439,6 +481,57 @@ export default function UnifiedDebugPanel({
       {/* Scrollable content */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
+
+          {/* ===== Models (client-side ML load status) ===== */}
+          <div>
+            <SectionHeader
+              title="Models"
+              icon={<Brain className="w-3.5 h-3.5" />}
+              isOpen={sections.models}
+              onClick={() => toggleSection("models")}
+              badge={(() => {
+                const flags = [sttReady, voiceReady, faceRecognitionReady, faceTrackingReady, handGestureReady];
+                const loaded = flags.filter(Boolean).length;
+                return (
+                  <Badge className={`${loaded === flags.length ? "bg-green-500" : "bg-yellow-500"} text-white text-[9px] px-1`}>
+                    {loaded}/{flags.length}
+                  </Badge>
+                );
+              })()}
+            />
+            {sections.models && (
+              <div className="p-2 space-y-1 text-xs">
+                <ModelRow name="Speech-to-text (Whisper)" ready={sttReady} loading={sttLoading} error={sttError} />
+                <ModelRow name="Voice ID (WavLM)" ready={voiceReady} loading={voiceLoading} error={voiceError} />
+                <ModelRow name="Face recognition (face-api)" ready={faceRecognitionReady} loading={!faceRecognitionReady} />
+                <ModelRow name="Face tracking (MediaPipe)" ready={faceTrackingReady} loading={!faceTrackingReady && !faceTrackingError} error={faceTrackingError} />
+                <ModelRow name="Hand gesture (MediaPipe)" ready={handGestureReady} loading={!handGestureReady && !handGestureError} error={handGestureError} />
+
+                {/* Live on-device STT output + server-side voice match */}
+                <div className="mt-1 p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                  <div className="text-[10px] text-gray-500 mb-0.5 flex items-center gap-1">
+                    Last heard (on-device STT)
+                    {sttTranscribing && (
+                      <span className="flex items-center gap-1 text-[9px] text-amber-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        transcribing…
+                      </span>
+                    )}
+                  </div>
+                  {ctx.lastSttTranscript ? (
+                    <div className="text-[11px]">
+                      <span className="font-medium">“{ctx.lastSttTranscript.text}”</span>
+                      <span className="text-[9px] text-gray-400 ml-1">
+                        conf {(ctx.lastSttTranscript.confidence * 100).toFixed(0)}% · {Math.round((Date.now() - ctx.lastSttTranscript.at) / 1000)}s ago
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] italic text-gray-400">nothing transcribed yet</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* ===== Section 1: Cameras ===== */}
           <div>

@@ -103,7 +103,7 @@ function buildInstructions(opts: ConvertCaptionsOptions): string {
   // in its STRUCTURED JSON form, so caption glyphs follow identical rules.
   // Generated images are produced in the background and the fallback is shown
   // until they're ready (see the controller + client).
-  const grammar = buildGlyphSyntaxJson({ singleGlyphButtons: false, allowGenerate: true });
+  const grammar = buildGlyphSyntaxJson({ singleGlyphButtons: false, allowGenerate: true, generationStance: "eager" });
   const icons = getBundledIconsBlock();
   const customSymbols = buildCustomSymbolsBlock(opts.customSymbols);
   const knownPeople = buildKnownPeopleBlock(opts.knownPeople);
@@ -122,7 +122,7 @@ Convey the IDEA, not the words. For EACH numbered caption line, produce ONE glyp
 Conveying abstract ideas is the hardest part of this task. Follow these rules:
   - All GLYPHs must be real, renderable pictures. For abstract ideas, pick a concrete physical object that evokes the idea, or a picture of a person/animal doing something that evokes the idea.
   - Ideally, use a real emoji or canonical key.
-  - If no emoji or canonical key exists, use a \`gen\` GLYPH (with a resolvable \`fb\` fallback) — that's how a picture gets drawn. Run the <generation_rules> self-check first.
+  - If no emoji or canonical key fits well, use a \`gen\` GLYPH (with a resolvable \`fb\` fallback) — that's how a richer picture gets drawn. Follow <generation_rules>; a generated picture is encouraged whenever it's clearer than the closest emoji.
   - Remember that the image generator will not be aware of the context of the video, it will simply be told to draw the object you specify. So pick a concrete, unambiguous object that evokes the idea, not an abstract concept.
   - If a word has multiple meanings, use snake_case to clarify which meaning you intend (e.g. \`gen:bat_animal\` vs \`gen:bat_sports\`).
   - Some canonical keys are abstract words, because the system already contains an icon to represent them. You can use these. DO NOT invent a new abstract key and try to generate it, though.

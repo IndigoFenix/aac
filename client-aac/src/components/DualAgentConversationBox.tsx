@@ -39,6 +39,7 @@ import { ProceduralFace } from "@shared/social-bot/ProceduralFace";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
+import type { RawTrackedPose } from "@/lib/poseTrackingTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Glyph } from "@/components/Glyph";
 import { glyphStripWidth } from "@/lib/glyph-layout";
@@ -80,8 +81,11 @@ interface DualAgentConversationBoxProps {
   onTestAlarm?: (level: "alert" | "emergency") => void;
   rawFaces?: RawTrackedFace[];
   rawHands?: RawTrackedHand[];
+  rawPoses?: RawTrackedPose[];
   /** Client-side person identification (for the subtle name indicator). */
   identification?: IdentificationResult | null;
+  /** The AI companion's display name (aacSettings.aiName), shown under its avatar. */
+  aiName?: string;
 }
 
 export function DualAgentConversationBox({
@@ -108,7 +112,9 @@ export function DualAgentConversationBox({
   onTestAlarm,
   rawFaces,
   rawHands,
+  rawPoses,
   identification,
+  aiName,
 }: DualAgentConversationBoxProps) {
   const {
     currentMessage,
@@ -342,6 +348,20 @@ export function DualAgentConversationBox({
   // overlay render the exact same blink/ear-flap frames.
   const { isAsleep, eyeState } = sprite;
 
+  // The AI's own avatar is visible only when awake and not handed to a social
+  // peer. Its name tag follows it: under the avatar normally, under the cave
+  // when the AI is silent (asleep/muted) or a social-trainer peer has the slot.
+  const aiAvatarVisible = !isAsleep && !socialBot.active;
+  const aiNameTag = aiName ? (
+    <div
+      className="pointer-events-none select-none absolute left-1/2 -translate-x-1/2 bottom-0 flex items-center gap-1 rounded-full bg-black/40 px-1.5 py-0.5 text-[10px] text-white/85 max-w-[88px]"
+      aria-hidden="true"
+    >
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 shrink-0" />
+      <span className="font-medium truncate">{aiName}</span>
+    </div>
+  ) : null;
+
   if (!isVisible) return null;
 
   return (
@@ -349,32 +369,39 @@ export function DualAgentConversationBox({
       <div className="px-4 py-2">
           {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
-            {/* Cave (sleep toggle) — left of avatar (right in RTL) */}
-            <button type="button"
-              data-dwell
-              onClick={handleCaveClick}
-              className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-              title={isAsleep ? "Unmute (tap cave to wake)" : "Mute (tap cave to silence)"}
-            >
-              <AacCave
-                avatar={sprite.avatar}
-                // During a social-trainer session the companion is silent (the
-                // peer has taken the avatar slot), so show the cave occupied —
-                // the same images it shows in silent/muted mode.
-                empty={!isAsleep && !socialBot.active}
-                eyeState={eyeState}
-              />
-              {/* Mode-change indicator — flashes briefly when AI changes mode */}
-              {lastModeChange && lastModeChange.source === "ai" && (Date.now() - lastModeChange.at) < 4000 && (
-                <div
-                  key={lastModeChange.at}
-                  className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-semibold shadow animate-pulse"
-                  title={lastModeChange.reason || `AI switched to ${lastModeChange.mode}`}
-                >
-                  AI: {lastModeChange.mode}
-                </div>
-              )}
-            </button>
+            {/* Cave (sleep toggle) — left of avatar (right in RTL). Wrapped in a
+                full-height column so its name tag anchors to the header row's
+                bottom while the cave image stays vertically centered. */}
+            <div className="relative self-stretch shrink-0 flex flex-col items-center justify-center">
+              <button type="button"
+                data-dwell
+                onClick={handleCaveClick}
+                className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+                title={isAsleep ? "Unmute (tap cave to wake)" : "Mute (tap cave to silence)"}
+              >
+                <AacCave
+                  avatar={sprite.avatar}
+                  // During a social-trainer session the companion is silent (the
+                  // peer has taken the avatar slot), so show the cave occupied —
+                  // the same images it shows in silent/muted mode.
+                  empty={!isAsleep && !socialBot.active}
+                  eyeState={eyeState}
+                />
+                {/* Mode-change indicator — flashes briefly when AI changes mode */}
+                {lastModeChange && lastModeChange.source === "ai" && (Date.now() - lastModeChange.at) < 4000 && (
+                  <div
+                    key={lastModeChange.at}
+                    className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-semibold shadow animate-pulse"
+                    title={lastModeChange.reason || `AI switched to ${lastModeChange.mode}`}
+                  >
+                    AI: {lastModeChange.mode}
+                  </div>
+                )}
+              </button>
+              {/* AI name tag lives here when the AI is silent/muted or a social
+                  peer has the avatar slot — i.e. the AI is "in the cave". */}
+              {!aiAvatarVisible && aiNameTag}
+            </div>
 
             {/* Animated Avatar — hidden when sleeping. Click to send attention message in interact mode.
                 data-dwell is omitted while the avatar is talking + 3s grace period so eyegaze
@@ -382,9 +409,11 @@ export function DualAgentConversationBox({
                 During a social-trainer session the avatar slot is taken over by
                 the bot face — the AAC AI is in muted/silent mode and has no
                 visible avatar of its own. */}
+            {(socialBot.active || !isAsleep) && (
+            <div className="relative self-stretch shrink-0 flex flex-col items-center justify-center">
             {socialBot.active ? (
               <div
-                className="relative shrink-0 self-center w-20 flex items-center justify-center select-none"
+                className="relative shrink-0 w-20 flex items-center justify-center select-none"
                 title={socialBot.characterName
                   ? `${socialBot.characterName}${socialBot.voiceName ? ` (voice: ${socialBot.voiceName})` : ""}`
                   : "Social peer"}
@@ -409,11 +438,10 @@ export function DualAgentConversationBox({
                 )}
               </div>
             ) : (
-              !isAsleep && (
                 <button type="button"
                   {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
                   onClick={handleAvatarClick}
-                  className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+                  className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
                   title="Tap to get attention"
                 >
                   <AacAvatar
@@ -466,7 +494,11 @@ export function DualAgentConversationBox({
                     )}
                   </AnimatePresence>
                 </button>
-              )
+            )}
+              {/* AI name tag — under the avatar while awake & not social,
+                  anchored to the header row's bottom (not the image's). */}
+              {aiAvatarVisible && aiNameTag}
+            </div>
             )}
 
             {/* Right side: two rows. relative+z so buttons stack in front of the avatar sprite. */}
@@ -642,9 +674,6 @@ export function DualAgentConversationBox({
                     </span>
                   )}
 
-                  {/* Subtle "who is at the device" indicator — top-right of the
-                      upper row, directly above the "New" button. */}
-                  <IdentificationBadge identification={identification ?? null} />
                 </div>
               </div>
 
@@ -784,29 +813,37 @@ export function DualAgentConversationBox({
 
             {/* Face Mirror — always reserves space; click/dwell to toggle pause.
                 When the camera is off or not working, a camera-off icon takes
-                the mirror's place in the same slot. */}
-            <button type="button"
-              data-dwell
-              onClick={() => setPaused(!paused)}
-              className={`shrink-0 self-center rounded-lg cursor-pointer transition-opacity ${paused ? 'ring-2 ring-red-400 opacity-80' : 'hover:opacity-90'}`}
-              title={cameraOff ? t('status.cameraOff') : paused ? t('pause.resume') : t('pause.pause')}
-              style={{ width: 80, height: 80 }}
-            >
-              {cameraOff ? (
-                <div
-                  className="w-full h-full flex items-center justify-center rounded-lg bg-white/5 text-white/40"
-                  aria-label={t('status.cameraOff')}
-                >
-                  <CameraOff className="w-8 h-8" />
-                </div>
-              ) : (
-                <FaceMirror
-                  faces={rawFaces ?? []}
-                  hands={rawHands ?? []}
-                  size={80}
-                />
-              )}
-            </button>
+                the mirror's place in the same slot. Wrapped in a full-height
+                column so the user tag anchors to the header row's bottom. */}
+            <div className="relative self-stretch shrink-0 flex flex-col items-center justify-center">
+              <button type="button"
+                data-dwell
+                onClick={() => setPaused(!paused)}
+                className={`relative shrink-0 rounded-lg cursor-pointer transition-opacity ${paused ? 'ring-2 ring-red-400 opacity-80' : 'hover:opacity-90'}`}
+                title={cameraOff ? t('status.cameraOff') : paused ? t('pause.resume') : t('pause.pause')}
+                style={{ width: 80, height: 80 }}
+              >
+                {cameraOff ? (
+                  <div
+                    className="w-full h-full flex items-center justify-center rounded-lg bg-white/5 text-white/40"
+                    aria-label={t('status.cameraOff')}
+                  >
+                    <CameraOff className="w-8 h-8" />
+                  </div>
+                ) : (
+                  <FaceMirror
+                    faces={rawFaces ?? []}
+                    hands={rawHands ?? []}
+                    poses={rawPoses ?? []}
+                    size={80}
+                  />
+                )}
+              </button>
+              {/* Who the camera sees — the user tag, anchored to the row bottom. */}
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-0">
+                <IdentificationBadge identification={identification ?? null} />
+              </div>
+            </div>
 
             {/* Microphone-off indicator — sits next to the mirror (to the right,
                 or left in RTL via the header row's text direction). Shown only

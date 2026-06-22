@@ -1,0 +1,17 @@
+-- Migration 0130: biometric_data.voice_embeddings (multi-sample voice gallery)
+--
+-- Adds a per-person gallery of speaker (voice) embeddings alongside the legacy
+-- single `voice_embedding` anchor. Each entry is { embedding:number[],
+-- quality:number, capturedAt:string, weight:number }. Matching takes the MAX
+-- cosine similarity across the anchor plus every gallery entry whose weight is
+-- above the floor, so a person is recognised across the natural variation in
+-- their voice (loudness, mood, distance from the mic, phone vs. in-person)
+-- instead of only the one enrolled sample. The gallery grows passively from
+-- confident, good-quality, genuinely-novel speech captured during live
+-- sessions, and an entry's weight is reduced (and the entry eventually evicted)
+-- when a match it produced is corrected as a misidentification. The enrolled
+-- `voice_embedding` anchor is never evicted. Voice enrollment is usually absent
+-- (there is rarely an initial upload), so in practice the gallery seeds itself
+-- entirely from sightings once the Observer attributes speech to a person.
+-- Back-compatible: NULL means "anchor only" (often "no data yet").
+ALTER TABLE "biometric_data" ADD COLUMN IF NOT EXISTS "voice_embeddings" jsonb;

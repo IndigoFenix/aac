@@ -101,12 +101,17 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
   const sleepState = attentiveness?.sleepState;
   const isSleepingStateRaw =
     noSession || sleepState === "hibernation" || sleepState === "asleep";
-  // "rest" eyes are tied to the RESTING sleep-state exclusively — NOT to the
-  // AI's standby behavioral mode. Standby stays visually distinct via its ear
-  // state (closed, no flap) below; its eyes should read as awake/open.
+  // "rest" eyes mean "the AI isn't taking in live frames right now". Two cases
+  // drive this: (1) the RESTING sleep-state, and (2) text-first perception
+  // fidelity while awake (cost-saving, full-attention OFF) — the AI is awake
+  // but running on cheap signals, not streaming frames. NOT tied to the AI's
+  // standby behavioral mode (that stays visually distinct via the ear state
+  // below; its eyes read as awake/open).
   const isRestingStateRaw =
     !noSession &&
-    (sleepState === "resting" || sleepState === "waking");
+    (sleepState === "resting" ||
+      sleepState === "waking" ||
+      attentiveness?.fidelity === "text");
 
   // Was the fullscreen overlay visible (sleep- or wake-phase) at the live
   // moment? Used as the snapshot value if an error appears next.

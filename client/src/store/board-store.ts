@@ -1041,7 +1041,10 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const boards = state.boards.map((b) => {
         if (b.dbId === dbId || b._id === dbId || (!matched && b._id === state.activeBoardId)) {
           matched = true;
-          return { ...b, dbId, name: name ?? b.name, isDirty: false };
+          // The in-memory IR we just persisted is authoritative, so this board is
+          // fully loaded — without this a freshly-created board keeps showing the
+          // "Not loaded" badge (and overlapping the auto-select lightning icon).
+          return { ...b, dbId, name: name ?? b.name, isDirty: false, loadedFromServer: true };
         }
         return b;
       });

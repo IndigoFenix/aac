@@ -6,6 +6,13 @@
 // built on: the AI glyph step keys its output to these `startMs`/`endMs`, and
 // the preview player / exporter both drive off the same list.
 
+/** One word with its timing — present only on STT-transcribed segments. */
+export interface CaptionWord {
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
 export interface CaptionSegment {
   /** Cue start, in milliseconds from the beginning of the video. */
   startMs: number;
@@ -13,6 +20,9 @@ export interface CaptionSegment {
   endMs: number;
   /** Caption text, with line breaks collapsed to single spaces. */
   text: string;
+  /** Per-word timings (STT path only) — lets the idea pass split on real word
+   *  boundaries. Absent for SRT/VTT cues. */
+  words?: CaptionWord[];
 }
 
 export type CaptionFormat = 'srt' | 'vtt';

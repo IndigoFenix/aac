@@ -37,6 +37,7 @@ import type {
   ContextUpdateEvent,
   EngagementChangeEvent,
   FocusRequestEvent,
+  AudioRequestEvent,
   AlarmRaisedEvent,
   GestureRecognizedEvent,
   ModeChangeEvent,
@@ -192,6 +193,19 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
         source: "observer",
         timestamp: now,
         reason,
+      };
+      return event;
+    }
+
+    case "request_audio": {
+      // Pull the audio behind a recent on-device transcript so the Observer can
+      // actually hear it (Phase 1b). Reason is optional — default it so a
+      // bare call still routes.
+      const event: AudioRequestEvent = {
+        type: "audio_request",
+        source: "observer",
+        timestamp: now,
+        reason: asString(args.reason) || "re-hear recent speech",
       };
       return event;
     }
@@ -432,6 +446,16 @@ export class ObserverAgent {
     this.provider?.sendAudio(audioBase64, mimeType);
   }
 
+  /** Deliver a requested backlog audio clip as a turn-completing message so the
+   *  Observer HEARS it and re-evaluates in the same turn. Used by the on-demand
+   *  audio pull (Phase 1b): the Observer asked to re-hear speech it only got as
+   *  on-device text. Bypasses micMuted — this is an explicit, Observer-requested
+   *  pull, not ambient mic audio. */
+  sendAudioClipTurn(audioBase64: string, mimeType: string, prompt: string): void {
+    flowInput("OBSERVER", "audio_clip", prompt);
+    this.provider?.sendAudioWithPrompt(audioBase64, mimeType, prompt);
+  }
+
   /** Coordinator-controlled mute flag. True while Speaker is producing
    *  audio (+ ~300ms tail); false otherwise. */
   setMicMuted(muted: boolean): void {
@@ -443,6 +467,17 @@ export class ObserverAgent {
   sendContextInjection(text: string): void {
     flowInput("OBSERVER", "context", text);
     this.provider?.sendContextInjection(text);
+  }
+
+  /** Deliver a turn-completing TEXT message that the Observer must REACT to —
+   *  the text analog of sendFrame. Used by the cost-saving client-STT path:
+   *  the client transcribes heard speech on-device and the server feeds the
+   *  transcript here (instead of streaming raw audio), so the Observer makes
+   *  its who/whom judgment and routes via transcript() exactly as it would
+   *  from audio, but at text cost. See planning-docs/aac-cost-saving-spec.md §1. */
+  sendUserTurn(text: string): void {
+    flowInput("OBSERVER", "user_turn", text);
+    this.provider?.sendMessage(text, "user", /* turnComplete */ true);
   }
 
   /** Replay history after reconnection. Each turn is text-only since
