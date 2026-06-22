@@ -89,6 +89,14 @@ interface UseActivityMonitorParams {
   onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null, triggerReason: string, meta?: { speechStartMs?: number; speechEndMs?: number }) => Promise<void> | void;
   /** Optional: callback for real-time PCM audio streaming (e.g., to Gemini Live API) */
   onPcmChunk?: PcmChunkCallback;
+  /** Streaming STT (Web-Speech-like): when true, on speech-start we open a stream
+   *  and pipe VAD-gated PCM (with a pre-roll flush); on speech-end we hand the
+   *  clip to `onSpeechEndClip` (for acoustic/voice/lip + the stream-end). The
+   *  settle "speech ended" trigger then sends only the frame grid (no WAV). */
+  sttStreamingEnabled?: boolean;
+  onSttStreamStart?: (streamId: string) => void;
+  onSttStreamChunk?: (streamId: string, int16Base64: string) => void;
+  onSpeechEndClip?: (streamId: string, clip: Blob | null, speechStartMs: number, speechEndMs: number) => void;
   options?: Partial<ActivityMonitorConfig>;
   /**
    * Optional ref to the current sleep-system data-flow config. When provided,
@@ -108,6 +116,10 @@ export function useActivityMonitor({
   captureEnvFrame,
   onTrigger,
   onPcmChunk,
+  sttStreamingEnabled = false,
+  onSttStreamStart,
+  onSttStreamChunk,
+  onSpeechEndClip,
   options,
   flowConfigRef,
 }: UseActivityMonitorParams): ActivityMonitorResult {
@@ -136,6 +148,17 @@ export function useActivityMonitor({
   onPcmChunkRef.current = onPcmChunk;
   const configRef = useRef(config);
   configRef.current = config;
+  // Streaming-STT refs (read inside the long-lived audio effect / callbacks).
+  const sttStreamingEnabledRef = useRef(sttStreamingEnabled);
+  sttStreamingEnabledRef.current = sttStreamingEnabled;
+  const onSttStreamStartRef = useRef(onSttStreamStart);
+  onSttStreamStartRef.current = onSttStreamStart;
+  const onSttStreamChunkRef = useRef(onSttStreamChunk);
+  onSttStreamChunkRef.current = onSttStreamChunk;
+  const onSpeechEndClipRef = useRef(onSpeechEndClip);
+  onSpeechEndClipRef.current = onSpeechEndClip;
+  /** Active streaming-STT id while the user is speaking (null otherwise). */
+  const currentSttStreamIdRef = useRef<string | null>(null);
 
   // Frame buffer (persists across renders but resets on enable/disable)
   const frameBufferRef = useRef<FrameRingBuffer | null>(null);
@@ -246,7 +269,10 @@ export function useActivityMonitor({
     const monitor = audioMonitorRef.current;
 
     if (ringBuf) {
-      if (reason === "speech ended" && monitor) {
+      if (reason === "speech ended" && monitor && !sttStreamingEnabledRef.current) {
+        // CLIP path only. In streaming mode the audio (transcript + acoustic +
+        // voice + lip) is handled at the speech-end transition via onSpeechEndClip,
+        // so the settle trigger sends just the frame grid (audioClip stays null).
         // Extract the exact speech segment WITH pre-roll (audio captured BEFORE
         // the VAD detected onset — the VAD lags, so without this the first
         // ~0.5s of the utterance is lost) and a short post-roll.
@@ -335,6 +361,7 @@ export function useActivityMonitor({
     // Audio activity monitor (only when audio capture is enabled)
     const audioMonitor = new AudioActivityMonitor({
       onStateChange: (state) => {
+        const wasSpeaking = audioStateRef.current.isSpeaking;
         audioStateRef.current = state;
         setResult(prev => ({
           ...prev,
@@ -343,6 +370,35 @@ export function useActivityMonitor({
           speechMethod: audioMonitor.getSpeechMethod(),
           lastSpeechBoundary: audioMonitor.peekLastSpeechBoundary() ?? prev.lastSpeechBoundary,
         }));
+
+        // Streaming STT lifecycle, driven off the speech-boundary VAD.
+        if (!sttStreamingEnabledRef.current) return;
+        const cfg = configRef.current;
+        if (!wasSpeaking && state.isSpeaking && !currentSttStreamIdRef.current) {
+          // Speech START: open a stream and flush the pre-roll (audio captured
+          // just before the VAD fired) so the word onset isn't lost.
+          const streamId = crypto.randomUUID();
+          currentSttStreamIdRef.current = streamId;
+          onSttStreamStartRef.current?.(streamId);
+          const preroll = audioRingBufferRef.current?.extractRecentPcmBase64(cfg.speechPreRollMs);
+          if (preroll) onSttStreamChunkRef.current?.(streamId, preroll);
+        } else if (wasSpeaking && !state.isSpeaking && currentSttStreamIdRef.current) {
+          // Speech END: hand off the clip (boundary now available) for acoustic /
+          // voice / lip + the stream-end message. Chunks stop (id cleared).
+          const streamId = currentSttStreamIdRef.current;
+          currentSttStreamIdRef.current = null;
+          const ringBuf = audioRingBufferRef.current;
+          const boundary = audioMonitor.consumeLastSpeechBoundary();
+          let clip: Blob | null = null;
+          let startMs = state.speechStartedAt ?? Date.now();
+          let endMs = Date.now();
+          if (boundary) {
+            startMs = boundary.start;
+            endMs = boundary.end;
+            clip = ringBuf?.extractWav(boundary.start - cfg.speechPreRollMs, boundary.end + cfg.speechPostRollMs) ?? null;
+          }
+          onSpeechEndClipRef.current?.(streamId, clip, startMs, endMs);
+        }
       },
     });
     audioMonitorRef.current = audioMonitor;
@@ -357,10 +413,13 @@ export function useActivityMonitor({
       const sourceNode = audioMonitor.getSourceNode();
       if (audioCtx && sourceNode) {
         audioRingBuf = new AudioRingBuffer(audioCtx.sampleRate);
-        // Set PCM streaming callback if provided (for Gemini Live API)
-        if (onPcmChunkRef.current) {
-          audioRingBuf.setStreamCallback(onPcmChunkRef.current);
-        }
+        // One PCM callback feeds BOTH the existing consumer (Gemini live / VAD
+        // light) AND — while a streaming-STT episode is open — the STT stream.
+        audioRingBuf.setStreamCallback((int16Base64) => {
+          onPcmChunkRef.current?.(int16Base64);
+          const sid = currentSttStreamIdRef.current;
+          if (sid) onSttStreamChunkRef.current?.(sid, int16Base64);
+        });
         audioRingBuf.connect(audioCtx, sourceNode);
         audioRingBufferRef.current = audioRingBuf;
       }

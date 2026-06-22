@@ -111,6 +111,18 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
  */
 export const STT_ENGINE: "google" | "whisper" = "google";
 
+/**
+ * How the Google STT path delivers audio:
+ *  - "stream": stream VAD-gated PCM during speech to a server-side
+ *              streamingRecognize session — Web-Speech-like (transcript ready at
+ *              speech-end, online LM). ACTIVE.
+ *  - "clip":   capture a finished WAV clip and batch-recognize it (the older,
+ *              higher-latency path). Kept as a one-flag fallback if streaming
+ *              misbehaves.
+ * Only applies when STT_ENGINE === "google".
+ */
+export const STT_MODE: "stream" | "clip" = "stream";
+
 /** Identified person from biometric recognition */
 export interface IdentifiedPerson {
   id: string;
@@ -442,6 +454,13 @@ export interface UseDualAgentReturn {
     voiceDescriptor?: { embedding: number[]; quality?: number };
     lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>;
     acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null };
+  }) => void;
+  /** Streaming STT (Web-Speech-like): open a session, feed PCM, finalize. */
+  sendSttStreamStart?: (streamId: string, language?: string) => void;
+  sendSttStreamChunk?: (streamId: string, data: string) => void;
+  sendSttStreamEnd?: (streamId: string, meta?: {
+    acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null };
+    lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>;
   }) => void;
   /** Cost-saving (Phase 1b): reply to a request_audio_clip with a backlog clip
    *  so the Observer can re-hear it. */

@@ -1665,6 +1665,22 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     [wsSend],
   );
 
+  // Streaming STT (Web-Speech-like): open a session, stream VAD-gated PCM during
+  // speech, finalize at speech-end (carrying the acoustic + lip evidence).
+  const sendSttStreamStart = useCallback((streamId: string, language?: string) => {
+    wsSend({ type: "stt_stream_start", streamId, language });
+  }, [wsSend]);
+  const sendSttStreamChunk = useCallback((streamId: string, data: string) => {
+    if (!data) return;
+    wsSend({ type: "stt_stream_chunk", streamId, data });
+  }, [wsSend]);
+  const sendSttStreamEnd = useCallback((streamId: string, meta?: {
+    acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null };
+    lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>;
+  }) => {
+    wsSend({ type: "stt_stream_end", streamId, ...(meta ?? {}) });
+  }, [wsSend]);
+
   /**
    * Cost-saving (Phase 1b): reply to a request_audio_clip with a backlog clip
    * so the Observer can actually hear it. `data` is base64; the server only
@@ -1952,6 +1968,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendVoiceDescriptors,
     sendSpeechText,
     sendSpeechAudio,
+    sendSttStreamStart,
+    sendSttStreamChunk,
+    sendSttStreamEnd,
     sendAudioClip,
     sendIdentityCorrection,
     sendFreshStartupFrame,

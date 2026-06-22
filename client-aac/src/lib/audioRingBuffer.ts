@@ -214,6 +214,31 @@ export class AudioRingBuffer {
     return encodeWav(samples, TARGET_SAMPLE_RATE);
   }
 
+  /**
+   * Extract the last N ms as base64 Int16 PCM (no WAV header) — the streaming
+   * pre-roll flush: the audio captured just BEFORE the VAD detected onset, sent
+   * as the first chunk so streaming STT doesn't miss the word onset.
+   */
+  extractRecentPcmBase64(durationMs: number): string | null {
+    if (this.totalSamplesWritten === 0) return null;
+    const numSamples = Math.min(
+      Math.floor((durationMs / 1000) * TARGET_SAMPLE_RATE),
+      this.totalSamplesWritten,
+      BUFFER_SIZE,
+    );
+    if (numSamples <= 0) return null;
+    const int16 = new Int16Array(numSamples);
+    for (let i = 0; i < numSamples; i++) {
+      const idx = (this.writeIndex - numSamples + i + BUFFER_SIZE) % BUFFER_SIZE;
+      const clamped = Math.max(-1, Math.min(1, this.buffer[idx]));
+      int16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+    }
+    const bytes = new Uint8Array(int16.buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
   /** Number of samples written so far (for diagnostics). */
   get samplesWritten(): number {
     return this.totalSamplesWritten;

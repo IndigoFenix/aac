@@ -43,6 +43,11 @@ export interface SttOptions {
    *  context into STT": it won't reconstruct meaning like an LLM, but it fixes
    *  the proper-noun / domain-vocab mis-hears that have no context otherwise. */
   speechContexts?: Array<{ phrases: string[]; boost?: number }>;
+  /** Recognition model. Defaults to `latest_long` (best for the long-form video
+   *  captioning this service was built for). Short conversational utterances
+   *  (the AAC live path) should pass `latest_short` — purpose-built for short
+   *  audio: more accurate AND lower-latency on turn-sized clips. */
+  model?: string;
 }
 
 // Map our short language codes to the BCP-47 codes Google STT expects. A hint
@@ -336,20 +341,21 @@ export async function transcribeSegments(
     ...(speechContexts.length ? { speechContexts } : {}),
   };
 
-  // `latest_long` is the best long-form model but only covers a subset of
-  // languages (e.g. NOT Hebrew → "model is currently not supported for
-  // language"). Try it; on a model-support error, drop the model (default
-  // model covers far more languages) and remember the choice for later chunks.
-  let useEnhancedModel = true;
+  // The preferred model (default `latest_long` for captions; AAC passes
+  // `latest_short`) only covers a subset of languages (e.g. NOT Hebrew → "model
+  // is currently not supported for language"). Try it; on a model-support error,
+  // drop the model (default model covers far more languages) and remember it.
+  const preferredModel = opts.model || "latest_long";
+  let useModel: string | null = preferredModel;
   const recognizeSlice = async (content: string) => {
-    if (useEnhancedModel) {
+    if (useModel) {
       try {
-        const [r] = await client.recognize({ audio: { content }, config: { ...baseConfig, model: "latest_long" } });
+        const [r] = await client.recognize({ audio: { content }, config: { ...baseConfig, model: useModel } });
         return r;
       } catch (err: any) {
         const msg = String(err?.message || err);
         if (!/not supported for language|model/i.test(msg)) throw err;
-        useEnhancedModel = false; // fall through to default model
+        useModel = null; // fall through to default model
       }
     }
     const [r] = await client.recognize({ audio: { content }, config: baseConfig });
@@ -386,6 +392,146 @@ export async function transcribeSegments(
 
   allWords.sort((a, b) => a.startMs - b.startMs);
   return { segments: wordsToSegments(allWords), language: languageCode };
+}
+
+// ============================================================================
+// Streaming recognition (low-latency, Web-Speech-like)
+// ============================================================================
+
+export interface SttStreamOptions extends SttOptions {
+  /** Called with rolling interim (non-final) transcripts as they update. */
+  onInterim?: (text: string) => void;
+  /** Called with each FINAL phrase the moment the recognizer's endpointer
+   *  commits it — mid-stream, before the client even declares silence. Lets the
+   *  caller respond as speech comes in rather than waiting for the full clip. */
+  onFinal?: (text: string) => void;
+  /** Called with the gRPC stream error (so callers can log the real cause
+   *  instead of silently getting an empty transcript). */
+  onError?: (message: string) => void;
+}
+
+export interface SttStreamSession {
+  /** Feed a chunk of LINEAR16 PCM (base64 or Buffer) at the configured rate. */
+  write(chunk: string | Buffer): void;
+  /** Half-close and resolve with the final transcript (accumulated finals). */
+  end(): Promise<string>;
+  /** Tear down without awaiting (on error / cancel). */
+  abort(): void;
+}
+
+/**
+ * Open a Google STT streamingRecognize session for ONE utterance. Audio is fed
+ * incrementally as the person speaks (the client streams VAD-gated PCM), so the
+ * final transcript is essentially ready at speech-end — far lower latency than
+ * uploading a finished clip, and the streaming recognizer's online LM is more
+ * accurate. Defaults to 16kHz LINEAR16 mono (the client's ring-buffer format).
+ * One session per utterance (well under the 5-min streaming cap).
+ */
+export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSession {
+  const client = getClient();
+  const languageCode = toBcp47(opts.languageHint);
+  const speechContexts = (opts.speechContexts ?? [])
+    .map(g => ({ phrases: g.phrases.filter(Boolean), ...(typeof g.boost === "number" ? { boost: g.boost } : {}) }))
+    .filter(g => g.phrases.length > 0);
+
+  const buildConfig = (model?: string): Record<string, unknown> => ({
+    encoding: "LINEAR16",
+    sampleRateHertz: opts.sampleRateHertz ?? 16000,
+    audioChannelCount: 1,
+    languageCode,
+    enableAutomaticPunctuation: true,
+    ...(speechContexts.length ? { speechContexts } : {}),
+    ...(model ? { model } : {}),
+  });
+
+  let model = opts.model;
+  let finalText = "";
+  let ended = false;
+  let dead = false;            // terminal error — stop writing
+  let dataEvents = 0;
+  let triedModelFallback = false;
+  let buffering = true;        // keep audio until the config is accepted (for a model-fallback restart)
+  const buffered: Buffer[] = [];
+  const MAX_BUFFERED = 400;    // ~30s safety cap; the model error fires almost immediately
+  let resolveEnd: ((t: string) => void) | null = null;
+  let stream: any;
+
+  const finish = () => { if (resolveEnd) { resolveEnd(finalText.trim()); resolveEnd = null; } };
+
+  // IMPORTANT (@google-cloud/speech helper): pass the streamingConfig as the
+  // ARGUMENT — the helper auto-sends it on the first write — and then write RAW
+  // audio Buffers (it wraps them into `{audioContent}` itself). Do NOT call with
+  // no arg and hand-write `{streamingConfig}`/`{audioContent}` objects.
+  const open = () => {
+    const s = client.streamingRecognize({ config: buildConfig(model), interimResults: !!opts.onInterim } as any);
+    s.on("data", (data: any) => {
+      dataEvents++;
+      if (buffering) { buffering = false; buffered.length = 0; } // config accepted — free the replay buffer
+      const result = data?.results?.[0];
+      if (!result) return;
+      const transcript = (result.alternatives?.[0]?.transcript || "").trim();
+      if (!transcript) return;
+      if (result.isFinal) {
+        finalText = finalText ? `${finalText} ${transcript}` : transcript;
+        opts.onFinal?.(transcript); // commit this phrase now, mid-stream
+      } else if (opts.onInterim) {
+        opts.onInterim(transcript);
+      }
+    });
+    s.on("error", (err: any) => {
+      const msg = String(err?.message || err);
+      // Model not supported for this language (e.g. latest_short + Hebrew) →
+      // restart WITHOUT the model (default model covers all languages) and
+      // replay the buffered audio. Mirrors the batch path's fallback.
+      if (!triedModelFallback && model && /not supported for language|model/i.test(msg)) {
+        triedModelFallback = true;
+        model = undefined;
+        try { s.removeAllListeners(); s.destroy(); } catch { /* noop */ }
+        open();
+        for (const b of buffered) { try { stream.write(b); } catch { /* noop */ } }
+        return;
+      }
+      // "write after destroyed" floods after a terminal error — log the first.
+      if (!dead) { console.error(`[GoogleSTTService] streamingRecognize error: ${msg}`); opts.onError?.(msg); }
+      dead = true;
+      finish();
+    });
+    s.on("end", () => {
+      if (dataEvents === 0 && !triedModelFallback) {
+        const note = "stream ended with 0 response events (no recognizer output)";
+        console.warn(`[GoogleSTTService] ${note}`);
+        opts.onError?.(note);
+      }
+      finish();
+    });
+    stream = s;
+  };
+  open();
+
+  return {
+    write(chunk) {
+      if (ended || dead) return;
+      const buf = typeof chunk === "string" ? Buffer.from(chunk, "base64") : chunk;
+      if (buffering && buffered.length < MAX_BUFFERED) buffered.push(buf);
+      try { stream.write(buf); } catch { /* ignore mid-stream write errors */ }
+    },
+    end() {
+      if (ended) return Promise.resolve(finalText.trim());
+      ended = true;
+      return new Promise<string>((resolve) => {
+        resolveEnd = resolve;
+        try { stream.end(); } catch { resolve(finalText.trim()); }
+        // Safety: never hang the pipeline if the stream never closes.
+        setTimeout(finish, 4000);
+      });
+    },
+    abort() {
+      if (ended) return;
+      ended = true;
+      dead = true;
+      try { stream.destroy(); } catch { /* noop */ }
+    },
+  };
 }
 
 export interface DetectLanguageResult {
@@ -460,4 +606,4 @@ export async function detectLanguage(
   };
 }
 
-export const googleSttService = { transcribeSegments, detectLanguage };
+export const googleSttService = { transcribeSegments, detectLanguage, createStreamingSession };

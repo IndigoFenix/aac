@@ -105,7 +105,7 @@ import {
 import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities } from "./live-relay";
 import { isCapabilityActive } from "./capability-gate";
 import { buildHeardSpeechTurn } from "./speech-text";
-import { transcribeSegments } from "../voice/google-stt-service";
+import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
 import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
 import { renderSceneForObserver, type SceneSnapshot, type IdentifiedForScene } from "@shared/aac/scene-state";
 import { matchPitch, describeVoiceCharacter } from "@shared/aac/voice-pitch";
@@ -1300,6 +1300,7 @@ export class AgentCoordinator {
     try { this.observer?.close(); } catch {}
     try { this.speaker?.close(); } catch {}
     try { this.boardManager?.close?.(); } catch {}
+    this.abortSttStreams();
     this.observer = null;
     this.speaker = null;
     this.boardManager = null;
@@ -1498,9 +1499,10 @@ export class AgentCoordinator {
     // High-signal client-message visibility — every non-streaming press /
     // navigation / state event gets surfaced in the flow log so "did the
     // press even reach the server?" can be answered by reading the log.
-    // Excludes the high-volume streaming types (frame_grid, pcm_audio) —
-    // those have their own periodic sampling counters below.
-    if (msg.type !== "frame_grid" && msg.type !== "pcm_audio") {
+    // Excludes the high-volume streaming types (frame_grid, pcm_audio,
+    // stt_stream_chunk) — those have their own periodic / summary counters
+    // (e.g. the per-utterance "STT stream end: chunks=N" line) instead.
+    if (msg.type !== "frame_grid" && msg.type !== "pcm_audio" && msg.type !== "stt_stream_chunk") {
       const summary = clientMsgSummary(msg);
       flowInput("CLIENT", msg.type, summary);
     }
@@ -1614,6 +1616,18 @@ export class AgentCoordinator {
         if (!this.capable("clientStt")) return;
         if (this.paused) return;
         void this.handleSpeechAudio(msg);
+        return;
+      case "stt_stream_start":
+        // Streaming STT (Web-Speech-like): open a Cloud STT streamingRecognize
+        // session for this utterance. Audio arrives as stt_stream_chunk.
+        if (!this.capable("clientStt") || this.paused) return;
+        this.startSttStream(msg.streamId, msg.language);
+        return;
+      case "stt_stream_chunk":
+        this.sttStreamWrite(msg.streamId, msg.data);
+        return;
+      case "stt_stream_end":
+        void this.endSttStream(msg.streamId, msg.acoustic, msg.lipActivity);
         return;
       case "scene_state":
         // Cost saving (Phase 2): compact text scene description in place of a
@@ -3722,7 +3736,9 @@ export class AgentCoordinator {
       // STT biases toward the words actually likely here — the proper nouns and
       // AAC vocab it otherwise mis-hears without Gemini's contextual fill-in.
       const speechContexts = await this.buildSpeechContexts().catch(() => undefined);
-      const { segments } = await transcribeSegments(buf, { languageHint: msg.language, speechContexts });
+      // Short conversational turns → the short-utterance model (more accurate +
+      // lower latency than latest_long on turn-sized clips).
+      const { segments } = await transcribeSegments(buf, { languageHint: msg.language, speechContexts, model: "latest_short" });
       text = segments.map(s => s.text).join(" ").replace(/\s+/g, " ").trim();
       // Bill the actual speech duration (cheap — only the clip, not wall-clock).
       if (this.sessionId && this.studentId && seconds > 0) {
@@ -3764,8 +3780,10 @@ export class AgentCoordinator {
   ): void {
     const e = this.pendingSpeech.get(clipId) ?? {};
     e.text = text;
-    e.lipActivity = lipActivity;
-    e.acoustic = acoustic;
+    // Merge, don't clobber: the streaming path delivers lip/acoustic separately
+    // (speech_meta) BEFORE the transcript, so only overwrite when provided.
+    if (lipActivity !== undefined) e.lipActivity = lipActivity;
+    if (acoustic !== undefined) e.acoustic = acoustic;
     if (inlineVoice) e.voice = inlineVoice;
     this.pendingSpeech.set(clipId, e);
     if (text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(text, e.acoustic, e.lipActivity, clipId); }
@@ -3920,6 +3938,19 @@ export class AgentCoordinator {
    * Bounded + de-duped (across tiers) so we bias toward the relevant words.
    */
   private async buildSpeechContexts(): Promise<Array<{ phrases: string[]; boost?: number }>> {
+    return this.assembleSpeechContexts(await this.getKnownNamePhrases());
+  }
+
+  /** Synchronous variant for opening a streaming session without an await (so no
+   *  audio chunk races the session). Uses the CACHED known-names (empty until
+   *  warmed — names then kick in from the next utterance); warms it for next time. */
+  private buildSpeechContextsSync(): Array<{ phrases: string[]; boost?: number }> {
+    if (!this.knownNamePhrases) void this.getKnownNamePhrases(); // warm for next time
+    return this.assembleSpeechContexts(this.knownNamePhrases ?? []);
+  }
+
+  /** Assemble the boost-tiered phrase groups from a (possibly cached) roster. */
+  private assembleSpeechContexts(roster: string[]): Array<{ phrases: string[]; boost?: number }> {
     const hasLetter = (s: string) => /\p{L}/u.test(s);
     const used = new Set<string>(); // lowercase dedup — keeps each name in its highest tier
     const out: Array<{ phrases: string[]; boost?: number }> = [];
@@ -3937,22 +3968,96 @@ export class AgentCoordinator {
       if (phrases.length) out.push({ phrases, boost });
     };
 
-    // 1. The active user (student, always) + the AI's name.
     const top: string[] = [];
     if (this.currentStudentName && this.currentStudentName !== "the user") top.push(this.currentStudentName);
     if (this.aiName) top.push(this.aiName);
-    addGroup(top, 20, 8);
-
-    // 2. People present right now.
-    addGroup(this.presentIdentifiedNames(), 17, 20);
-
-    // 3. The rest of the known roster.
-    addGroup(await this.getKnownNamePhrases(), 12, 120);
-
-    // 4. On-screen vocabulary.
-    addGroup(this.currentBoardLabels, 9, 60);
-
+    addGroup(top, 20, 8);                          // 1. active user + AI
+    addGroup(this.presentIdentifiedNames(), 17, 20); // 2. people present now
+    addGroup(roster, 12, 120);                     // 3. rest of known roster
+    addGroup(this.currentBoardLabels, 9, 60);      // 4. on-screen vocabulary
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // Streaming STT (Web-Speech-like): one Cloud STT streamingRecognize session
+  // per utterance, fed VAD-gated PCM as the person speaks. Transcript is ready
+  // at speech-end and flows into the same pendingSpeech fast/slow fusion.
+  // -------------------------------------------------------------------------
+  private sttStreams = new Map<string, { session: SttStreamSession; bytes: number; chunks: number; firedAny: boolean; language?: string }>();
+
+  private startSttStream(streamId: string, language?: string): void {
+    if (this.sttStreams.has(streamId)) return;
+    try {
+      const session = createStreamingSession({
+        languageHint: language,
+        model: "latest_short",
+        speechContexts: this.buildSpeechContextsSync(),
+        // Commit each phrase the MOMENT the recognizer finalizes it (mid-stream),
+        // rather than waiting for the client's end-of-speech. Web-Speech-like.
+        onFinal: (seg) => this.onSttStreamFinal(streamId, seg),
+        onError: (m) => flowNote("COORDINATOR", `STT stream error [${streamId.slice(0, 8)}]: ${m}`),
+      });
+      this.sttStreams.set(streamId, { session, bytes: 0, chunks: 0, firedAny: false, language });
+      flowInput("CLIENT", "stt_stream_start", `streamId=${streamId.slice(0, 8)} lang=${language ?? "?"}`);
+    } catch (err) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => logLiveSession("STT_STREAM_ERROR", `start: ${(err as Error).message}`));
+    }
+  }
+
+  private sttStreamWrite(streamId: string, dataBase64: string): void {
+    const s = this.sttStreams.get(streamId);
+    if (!s) return;
+    if (!dataBase64) return; // empty chunk — nothing to feed
+    s.bytes += Math.floor((dataBase64.length * 3) / 4); // approx decoded bytes
+    s.chunks += 1;
+    s.session.write(dataBase64);
+  }
+
+  /** A phrase finalized mid-stream — inject it as a [HEARD SPEECH] turn NOW.
+   *  Speaker attribution rides on [VOICES HEARD] (from the parallel voice
+   *  embedding) rather than waiting for an end-of-speech fusion. */
+  private onSttStreamFinal(streamId: string, segment: string): void {
+    const s = this.sttStreams.get(streamId);
+    const text = (segment || "").trim();
+    if (!text) return;
+    if (s) s.firedAny = true;
+    flowNote("COORDINATOR", `STT stream final [${streamId.slice(0, 8)}] → "${text.slice(0, 120)}"`);
+    this.injectHeardSpeech(text, 0.9, undefined, streamId, "stt_stream");
+  }
+
+  private async endSttStream(streamId: string, acoustic?: Acoustic, lipActivity?: LipFace[]): Promise<void> {
+    const s = this.sttStreams.get(streamId);
+    if (!s) return;
+    this.sttStreams.delete(streamId);
+    let text = "";
+    try { text = await s.session.end(); } catch { /* resolves empty */ }
+    const seconds = s.bytes / 2 / 16000; // Int16 mono 16kHz
+    if (this.sessionId && this.studentId && seconds > 0.2) {
+      void dualAgentService.trackSttUsage(this.sessionId, this.studentId, this.userId, seconds);
+    }
+    flowNote("COORDINATOR", `STT stream end: chunks=${s.chunks} ${seconds.toFixed(1)}s fired=${s.firedAny}${text && !s.firedAny ? ` → "${text.slice(0, 120)}"` : ""}`);
+    // If the recognizer never emitted a mid-stream final (short clip / it only
+    // finalized at close), inject the full transcript now as the fallback.
+    if (!s.firedAny && text) this.injectHeardSpeech(text, 0.9, undefined, streamId, "stt_stream");
+    // Stash the lip/acoustic evidence so the parallel voice embedding
+    // (voice_descriptors[streamId] → slow read) can still do the lip-confirmed
+    // gallery correction. The transcript itself already fired above.
+    if (lipActivity !== undefined || acoustic !== undefined) {
+      const e = this.pendingSpeech.get(streamId) ?? {};
+      if (lipActivity !== undefined) e.lipActivity = lipActivity;
+      if (acoustic !== undefined) e.acoustic = acoustic;
+      this.pendingSpeech.set(streamId, e);
+      this.cleanupOrReap(streamId, e);
+    }
+  }
+
+  /** Abort any open streaming-STT sessions (on sleep / session close) so a
+   *  stream that never got its stt_stream_end can't leak a gRPC connection. */
+  private abortSttStreams(): void {
+    for (const { session } of this.sttStreams.values()) {
+      try { session.abort(); } catch { /* noop */ }
+    }
+    this.sttStreams.clear();
   }
 
   /**
@@ -4541,6 +4646,7 @@ export class AgentCoordinator {
     this.flushRepeatBurst();
     this.clearDeferredBoardMgr("entering sleep");
     this.speakerSpeaking = false;
+    this.abortSttStreams();
     try { this.observer?.close(); } catch {}
     try { this.speaker?.close(); } catch {}
     // Close the Live Board Manager session too (no invokes while asleep); it

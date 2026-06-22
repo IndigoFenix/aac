@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, UseDualAgentReturn } from "@/hooks/dual-agent-types";
-import { STT_ENGINE } from "@/hooks/dual-agent-types";
+import { STT_ENGINE, STT_MODE } from "@/hooks/dual-agent-types";
 import { analyzeVoicePitch } from "@/lib/voiceFeatures";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
@@ -553,6 +553,12 @@ function DualAgentProviderInner({
   sendSpeechTextRef.current = liveAgent.sendSpeechText;
   const sendSpeechAudioRef = useRef(liveAgent.sendSpeechAudio);
   sendSpeechAudioRef.current = liveAgent.sendSpeechAudio;
+  const sendSttStreamStartRef = useRef(liveAgent.sendSttStreamStart);
+  sendSttStreamStartRef.current = liveAgent.sendSttStreamStart;
+  const sendSttStreamChunkRef = useRef(liveAgent.sendSttStreamChunk);
+  sendSttStreamChunkRef.current = liveAgent.sendSttStreamChunk;
+  const sendSttStreamEndRef = useRef(liveAgent.sendSttStreamEnd);
+  sendSttStreamEndRef.current = liveAgent.sendSttStreamEnd;
   const getLipActivityRef = useRef(getLipActivity);
   getLipActivityRef.current = getLipActivity;
   // Session language (student locale), for the server STT language hint.
@@ -669,6 +675,42 @@ function DualAgentProviderInner({
       // Not in STT mode — voice ID only (ambient [VOICES HEARD]), no clip sync.
       runVoiceId();
     }
+  }, [aiBusyRef, rememberAudioClip]);
+
+  // Streaming STT (Web-Speech-like). The PCM is streamed during speech by
+  // useActivityMonitor; these just forward start/chunk to the server.
+  const handleSttStreamStart = useCallback((streamId: string) => {
+    sendSttStreamStartRef.current?.(streamId, languageRef.current);
+  }, []);
+  const handleSttStreamChunk = useCallback((streamId: string, data: string) => {
+    sendSttStreamChunkRef.current?.(streamId, data);
+  }, []);
+
+  // Speech ended (streaming mode): compute the speaker evidence from the clip
+  // and finalize the stream. acoustic + lip ride WITH stt_stream_end so they
+  // reach the server alongside the transcript; the voice embedding goes in
+  // parallel (tagged streamId) for [VOICES HEARD] + the slow read. Always closes
+  // the stream (even while the AI is talking) so the server session can't leak.
+  const handleSpeechEndClip = useCallback(async (streamId: string, clip: Blob | null, startMs: number, endMs: number) => {
+    if (aiBusyRef?.current) { sendSttStreamEndRef.current?.(streamId); return; }
+    if (clip) {
+      rememberAudioClip(streamId, clip);
+      if (embedVoiceClipRef.current && sendVoiceDescriptorsRef.current) {
+        void (async () => {
+          try {
+            const desc = await embedVoiceClipRef.current!(clip);
+            if (desc && !aiBusyRef?.current) sendVoiceDescriptorsRef.current!([desc], streamId);
+          } catch { /* voice ID non-critical */ }
+        })();
+      }
+    }
+    let acoustic: Awaited<ReturnType<typeof analyzeVoicePitch>> | null = null;
+    if (clip) acoustic = await analyzeVoicePitch(clip).catch(() => null);
+    const lipActivity = (startMs && endMs) ? getLipActivityRef.current?.(startMs, endMs) : undefined;
+    sendSttStreamEndRef.current?.(streamId, {
+      acoustic: acoustic ?? undefined,
+      lipActivity: lipActivity && lipActivity.length ? lipActivity : undefined,
+    });
   }, [aiBusyRef, rememberAudioClip]);
 
   // Mic stream lifecycle. Each activate/deactivate transition is reported to the
@@ -918,6 +960,12 @@ function DualAgentProviderInner({
     onTrigger: handleActivityTrigger,
     // Stream raw PCM audio to Gemini Live API (continuous mic → WebSocket → Gemini)
     onPcmChunk: handlePcmChunk,
+    // Streaming STT (Web-Speech-like) — only when STT is active and the Google
+    // streaming engine/mode is selected. Streams VAD-gated PCM during speech.
+    sttStreamingEnabled: sttActive && STT_ENGINE === "google" && STT_MODE === "stream",
+    onSttStreamStart: handleSttStreamStart,
+    onSttStreamChunk: handleSttStreamChunk,
+    onSpeechEndClip: handleSpeechEndClip,
     // Tuning constants come from the server's `clientConfig.activityMonitor`
     // (shipped in the `initialized` message) so capture rate, settle/silence
     // windows, pre/post-roll, etc. can be tweaked without a client rebuild.
