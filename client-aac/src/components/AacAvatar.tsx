@@ -4,7 +4,7 @@
 // individual parts. The companion <AacCave> renders the cave that the
 // avatar lives in when the system is in silent mode (or has no session).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export type EyeState = "open" | "rest" | "closed" | "hurt";
@@ -32,33 +32,21 @@ const CAVE_EYE_FILE: Record<EyeState, string> = {
   hurt: "cave-eyes-hurt.png",
 };
 
-// Idle blink: every ~8s (+0–4s jitter) snap eyes shut briefly. Disabled when
+// Snapshot blink: snap eyes shut briefly each time a camera frame/snapshot is
+// taken (snapshotTick changes), rather than on a random timer. Disabled when
 // eyes are already closed or showing the hurt sprite.
-export function useBlink(eyeState: EyeState): boolean {
+export function useBlink(eyeState: EyeState, snapshotTick: number): boolean {
   const [blinking, setBlinking] = useState(false);
+  const prevTickRef = useRef(snapshotTick);
   useEffect(() => {
-    if (eyeState === "closed" || eyeState === "hurt") {
-      setBlinking(false);
-      return;
-    }
-    let openTimer: ReturnType<typeof setTimeout>;
-    let closeTimer: ReturnType<typeof setTimeout>;
-    const scheduleNext = () => {
-      const wait = (8 + Math.random() * 4) * 1000;
-      openTimer = setTimeout(() => {
-        setBlinking(true);
-        closeTimer = setTimeout(() => {
-          setBlinking(false);
-          scheduleNext();
-        }, 150);
-      }, wait);
-    };
-    scheduleNext();
-    return () => {
-      clearTimeout(openTimer);
-      clearTimeout(closeTimer);
-    };
-  }, [eyeState]);
+    // Only react to an actual snapshot (tick change) — not eyeState changes.
+    if (prevTickRef.current === snapshotTick) return;
+    prevTickRef.current = snapshotTick;
+    if (eyeState === "closed" || eyeState === "hurt") return;
+    setBlinking(true);
+    const closeTimer = setTimeout(() => setBlinking(false), 150);
+    return () => clearTimeout(closeTimer);
+  }, [snapshotTick, eyeState]);
   return blinking;
 }
 
@@ -93,9 +81,10 @@ export function useEarFlap(earState: EarState, earFlapSpeed: number): EarState {
 export function useAvatarFrames(
   eyeState: EyeState,
   earState: EarState,
-  earFlapSpeed: number
+  earFlapSpeed: number,
+  snapshotTick: number
 ): { renderedEye: EyeState; renderedEar: EarState } {
-  const blinking = useBlink(eyeState);
+  const blinking = useBlink(eyeState, snapshotTick);
   const renderedEar = useEarFlap(earState, earFlapSpeed);
   return {
     renderedEye: blinking ? "closed" : eyeState,
@@ -173,11 +162,13 @@ interface AacCaveProps {
   empty: boolean;
   // Only consulted when empty === false.
   eyeState: EyeState;
+  // Snapshot counter — blinks the cave eyes on each new snapshot.
+  blinkTick: number;
 }
 
-export function AacCave({ avatar, empty, eyeState }: AacCaveProps) {
+export function AacCave({ avatar, empty, eyeState, blinkTick }: AacCaveProps) {
   const base = BASE(avatar);
-  const blinking = useBlink(eyeState);
+  const blinking = useBlink(eyeState, blinkTick);
   const renderedEye: EyeState = blinking ? "closed" : eyeState;
   const src = empty
     ? `${base}/cave-empty.png`

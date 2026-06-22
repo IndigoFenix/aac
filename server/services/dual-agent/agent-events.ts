@@ -257,6 +257,25 @@ export interface GestureRecognizedEvent extends BaseEvent {
   gesture: string;
 }
 
+/**
+ * Observer changed a SUSTAINED perception attention level (set_visual_attention
+ * / set_audio_attention). Unlike the one-off focus/audio pulls, this flips the
+ * client between cheap text-derived input and direct camera/audio for that
+ * modality (mapped to clientConfig.sceneStateActive / sttActive), and stays
+ * until changed. The Coordinator pushes the resulting clientConfig patch to the
+ * client and tells the Observer the new drain expectation.
+ */
+export interface AttentionChangeEvent extends BaseEvent {
+  type: "attention_change";
+  source: "observer";
+  modality: "visual" | "audio";
+  /** visual: "text" | "live". audio: "text" | "adaptive" | "live" — adaptive is
+   *  raw audio with the silence/voice VAD gate on (cheaper, but pre-segmenting
+   *  can hurt Gemini's transcription); live is ungated continuous audio. */
+  level: "text" | "adaptive" | "live";
+  reason?: string;
+}
+
 export type ObserverEvent =
   | TranscribedEvent
   | ContextUpdateEvent
@@ -264,7 +283,8 @@ export type ObserverEvent =
   | FocusRequestEvent
   | AudioRequestEvent
   | AlarmRaisedEvent
-  | GestureRecognizedEvent;
+  | GestureRecognizedEvent
+  | AttentionChangeEvent;
 
 // ---------------------------------------------------------------------------
 // Speaker-emitted events

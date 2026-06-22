@@ -130,10 +130,13 @@ import {
   applyCharge,
   energyPercent,
   energyBand,
+  energyCostPercent,
+  minutesToEmpty,
   type EnergyState,
   type EnergyConfig,
   type EnergyBand,
 } from "@shared/aac/energy-meter";
+import type { ClientConfig } from "./client-config";
 import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
 import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, findMatchingVoice, growVoiceGalleryForEntity, penalizeVoiceMatch, getKnownPeopleForStudent, getVoicePitchProfiles, type FaceMatchResult, type VoiceMatchResult, type KnownPerson, type EntityType, type VoicePitchProfile } from "../biometric/recognition-service";
 import {
@@ -841,14 +844,36 @@ export class AgentCoordinator {
    *  to give the Observer a cost-aware signal. Reset at session init. */
   private energy: EnergyState = { drain: 0, asOf: 0 };
   private lastEnergyBand: EnergyBand | null = null;
+  /** Last energy % we actually told the Observer. Recovery is reported when the
+   *  live % climbs >=1 above this; drains lower it silently so the next recovery
+   *  is measured from the recent low. */
+  private lastReportedEnergyPercent = 100;
+  /** Periodic recompute so passive regeneration (recovery during quiet stretches,
+   *  when no charge fires) still reaches the Observer. */
+  private energyTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly ENERGY_TICK_MS = 15_000;
   private readonly energyConfig: EnergyConfig = {
+    // $3 reservoir, regenerating $1/hr → a full empty→full recovery takes 3h
+    // and ~$1/hr is the break-even observation spend. Credits are 1:1 USD.
     ceiling: Number(process.env.AAC_ENERGY_CEILING) || 3,
-    perHour: Number(process.env.AAC_ENERGY_PER_HOUR) || 3,
+    perHour: Number(process.env.AAC_ENERGY_PER_HOUR) || 1,
   };
   /** Energy governance is active whenever economizing. */
   private get energyMeterEnabled(): boolean {
     return this.economize;
   }
+  /** Sustained perception attention the Observer controls (set_visual_attention /
+   *  set_audio_attention). "text" = cheap text-derived input (scene_state / STT);
+   *  "live" = direct camera frames / raw audio. Mapped to clientConfig
+   *  sceneStateActive / sttActive. Initialized from capability at session start. */
+  private visualAttention: "text" | "live" = "text";
+  /** audio: "text" (STT) | "adaptive" (VAD-gated raw audio) | "live" (continuous
+   *  raw audio). */
+  private audioAttention: "text" | "adaptive" | "live" = "text";
+  /** Credits drained per live agent since the last [HEARD SPEECH] the Observer
+   *  was given, so each transcript carries a "this exchange cost −N% (speaker …)"
+   *  note. Reset on each injectHeardSpeech. */
+  private drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
 
   /** The Observer's AWAKE compression window. Economize sessions use a tighter
    *  tier (Phase 5.1) to cut the per-turn re-billing of the running context.
@@ -1269,6 +1294,7 @@ export class AgentCoordinator {
     // Clear timers
     this.stopPingTimer();
     this.stopIdleWatchdog();
+    this.stopEnergyTimer();
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     if (this.monitorCallDedupTimer) clearTimeout(this.monitorCallDedupTimer);
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
@@ -1536,11 +1562,13 @@ export class AgentCoordinator {
         return;
       case "pcm_audio":
         if (this.paused) return;
-        // Cost saving (Phase 1): when STT is active the client sends VAD speech
-        // CLIPS (speech_audio → server Google STT) and suppresses continuous PCM,
-        // so none should arrive. Drop any that does — otherwise it would re-bill
-        // as audio in the Gemini context, defeating the whole point.
-        if (this.capable("clientStt")) return;
+        // Cost saving (Phase 1): while audio attention is "text" the client sends
+        // VAD speech CLIPS (speech_audio → server Google STT) and suppresses
+        // continuous PCM, so none should arrive — drop any that does, else it
+        // re-bills as audio in the Gemini context. When the Observer raises audio
+        // attention to "live" (set_audio_attention), the client streams raw
+        // (silence-cut) PCM and we forward it to the Observer model.
+        if (this.audioAttention === "text") return;
         this.observer?.sendAudio(msg.data, "audio/pcm;rate=16000");
         this.lastAudioInputAt = Date.now();
         this.pcmCount += 1;
@@ -2103,6 +2131,16 @@ export class AgentCoordinator {
     // Start the energy meter full as of session start (Phase 4).
     this.energy = initEnergy(Date.now());
     this.lastEnergyBand = "high";
+    this.lastReportedEnergyPercent = 100;
+    this.drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
+    this.startEnergyTimer();
+    // Initial attention mirrors the clientConfig flags below. The Observer can
+    // raise/lower these per modality at runtime via set_*_attention.
+    //  - visual: cheap scene-state text when supported, else direct frames.
+    //  - audio: STT text when supported; else gated raw audio ("adaptive") while
+    //    economizing, or continuous ("live") in full-attention.
+    this.visualAttention = this.capable("sceneState") ? "text" : "live";
+    this.audioAttention = this.capable("clientStt") ? "text" : (this.economize ? "adaptive" : "live");
     runInSessionContext(this.sessionId, this.debugMode, () => {
       logLiveSession("SESSION START", [
         `Path: three-agent (AgentCoordinator)`,
@@ -2151,6 +2189,8 @@ export class AgentCoordinator {
         // When active, the client sends compact `scene_state` text in place of
         // idle frames, sending real frames only on escalation (Phase 2).
         sceneStateActive: this.capable("sceneState"),
+        // Continuous (ungated) raw PCM only when audio attention starts at "live".
+        pcmContinuous: this.audioAttention === "live",
       }),
     });
 
@@ -2331,6 +2371,7 @@ export class AgentCoordinator {
           ?.filter(b => b.key !== HOME_BOARD_KEY)
           .map(b => ({ key: b.key, name: b.name, hint: b.hint })),
         definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
+        energyBudget: this.buildEnergyBudgetText(this.aacChatProvider),
       },
       speaker: {
         ...base,
@@ -3647,6 +3688,9 @@ export class AgentCoordinator {
       case "audio_request":
         this.routeAudioRequest(event);
         return;
+      case "attention_change":
+        this.setAttention(event.modality, event.level, event.reason);
+        return;
       case "gesture_recognized":
         void this.handleGestureRecognized(event);
         return;
@@ -4167,8 +4211,11 @@ export class AgentCoordinator {
     const baseTurn = buildHeardSpeechTurn(text, confidence);
     if (!baseTurn) return;
     // Append the audio-visual speaker likelihood so the Observer attributes from
-    // voice + lip-sync together (a visible-but-still mouth rules a person out).
-    const turn = extraContext ? `${baseTurn}\n${extraContext}` : baseTurn;
+    // voice + lip-sync together (a visible-but-still mouth rules a person out),
+    // then a compact energy status so it sees its running drain (incl. the
+    // Speaker's spend, which it never observes directly) on every transcript.
+    const energyNote = this.buildTranscriptEnergyNote();
+    const turn = [baseTurn, extraContext, energyNote].filter(Boolean).join("\n");
 
     // Wake from resting on heard speech, mirroring routeTranscribed's gate —
     // otherwise the lightweight resting Observer won't act on it.
@@ -7567,8 +7614,17 @@ export class AgentCoordinator {
       )
       // Feed the energy meter (Phase 4) with the credits actually charged. The
       // live agents are the cost the Observer governs, so its energy reflects
-      // exactly the spend its observation decisions drive.
-      .then(credits => this.recordEnergyDrain(credits))
+      // exactly the spend its observation decisions drive. Also attribute the
+      // charge by agent so the next [HEARD SPEECH] can tell the Observer what
+      // the recent exchange cost (esp. the Speaker, which it doesn't "see").
+      .then(credits => {
+        if (credits > 0) {
+          if (agent === "speaker") this.drainSinceTranscript.speaker += credits;
+          else if (agent === "board-manager") this.drainSinceTranscript.boardManager += credits;
+          else this.drainSinceTranscript.observer += credits;
+        }
+        this.recordEnergyDrain(credits);
+      })
       .catch(err => console.error(`[AgentCoordinator] trackLiveUsage(${agent}) failed:`, err));
   }
 
@@ -7582,14 +7638,146 @@ export class AgentCoordinator {
     if (!this.energyMeterEnabled || !(credits > 0)) return;
     const now = Date.now();
     this.energy = applyCharge(this.energy, credits, now, this.energyConfig.perHour);
+    this.reportEnergy(now, { fromCharge: true });
+  }
+
+  /**
+   * Recompute energy and, when warranted, push a cheap [ENERGY] context note to
+   * the Observer. Reports on (a) a band change — with the band's guidance line —
+   * and (b) a recovery of >=1% since the last report — a plain percentage so the
+   * Observer can tell its budget is replenishing. A drain that doesn't cross a
+   * band lowers the baseline SILENTLY, so the next recovery is measured from the
+   * recent low rather than a stale high. Advisory only; gates nothing.
+   */
+  private reportEnergy(now: number, opts: { fromCharge: boolean }): void {
+    if (!this.energyMeterEnabled) return;
     const pct = energyPercent(this.energy, now, this.energyConfig);
     const band = energyBand(pct);
-    if (band === this.lastEnergyBand) return;
-    this.lastEnergyBand = band;
-    this.observer?.sendContextInjection(`[ENERGY] ${pct}% — ${band}. ${AgentCoordinator.energyGuidance(band)}`);
+    const bandChanged = band !== this.lastEnergyBand;
+    const recovered = pct - this.lastReportedEnergyPercent >= 1;
+
+    if (bandChanged || recovered) {
+      const guidance = bandChanged ? ` ${AgentCoordinator.energyGuidance(band)}` : "";
+      this.observer?.sendContextInjection(`[ENERGY] ${pct}% remaining — ${band}.${guidance}`);
+      this.lastReportedEnergyPercent = pct;
+      this.lastEnergyBand = band;
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        flowNote("COORDINATOR", `Energy ${pct}% (${band})${bandChanged ? " — band change" : " — recovery"}`);
+      });
+    } else if (opts.fromCharge && pct < this.lastReportedEnergyPercent) {
+      this.lastReportedEnergyPercent = pct;
+    }
+  }
+
+  private startEnergyTimer(): void {
+    this.stopEnergyTimer();
+    if (!this.energyMeterEnabled) return;
+    this.energyTimer = setInterval(
+      () => this.reportEnergy(Date.now(), { fromCharge: false }),
+      AgentCoordinator.ENERGY_TICK_MS,
+    );
+  }
+
+  private stopEnergyTimer(): void {
+    if (this.energyTimer) {
+      clearInterval(this.energyTimer);
+      this.energyTimer = null;
+    }
+  }
+
+  /**
+   * Apply an Observer attention change (set_visual_attention / set_audio_attention):
+   * flip the corresponding clientConfig flag, push it to the client, and confirm
+   * back to the Observer with the new drain expectation. No-op outside economize
+   * (full-attention already streams everything) and when the client can't supply
+   * the cheap "text" form for that modality.
+   */
+  private setAttention(modality: "visual" | "audio", level: "text" | "adaptive" | "live", reason?: string): void {
+    if (!this.economize) return;
+    const patch: Partial<ClientConfig> = {};
+    if (modality === "visual") {
+      if (level === "adaptive") return; // visual is binary (text/live)
+      if (this.visualAttention === level) return;
+      if (level === "text" && !this.capable("sceneState")) return; // can't downshift without scene-state support
+      this.visualAttention = level;
+      patch.sceneStateActive = level === "text";
+    } else {
+      if (this.audioAttention === level) return;
+      if (level === "text" && !this.capable("clientStt")) return; // can't downshift to STT without on-device support
+      this.audioAttention = level;
+      // text = STT (no raw PCM). adaptive = VAD-gated raw PCM. live = continuous raw PCM.
+      patch.sttActive = level === "text";
+      patch.pcmContinuous = level === "live";
+    }
+    this.send({ type: "client_config_update", config: patch });
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-      flowNote("COORDINATOR", `Energy band → ${band} (${pct}%)`);
+      flowNote("COORDINATOR", `Attention ${modality} → ${level}${reason ? ` (${reason})` : ""}`);
     });
+    const costNote =
+      level === "live" ? ` Continuous direct ${modality === "visual" ? "frames" : "audio"} — most faithful but drains energy fastest; drop back when done.`
+      : level === "adaptive" ? ` Gated raw audio (silence dropped) — cheaper, but your transcription of it may be slightly less accurate than text/live.`
+      : ` Back to cheap ${modality} text.`;
+    this.observer?.sendContextInjection(`[ATTENTION] ${modality} → ${level}.${costNote}`);
+  }
+
+  /**
+   * Budget-derived <energy_budget> block for the Observer prompt. Rough by
+   * design — it just needs to convey the right ORDER of magnitude so the model
+   * can weigh observation against its budget. Everything scales off the live
+   * energy config (ceiling/regen) + the Observer model's non-text input rate, so
+   * if the budget rules change (or a long/short-term budget is added later) the
+   * numbers track automatically. Anchored on the historic full-live spend, split
+   * roughly across modalities; the real meter does the actual accounting and the
+   * Observer also learns empirically from its [ENERGY] notes.
+   */
+  private buildEnergyBudgetText(provider: string): string {
+    if (!this.energyMeterEnabled) return "";
+    const cfg = this.energyConfig;
+    const perHour = cfg.perHour;
+    const regenPctMin = Math.round((perHour / 60 / cfg.ceiling) * 1000) / 10;
+    const refillHrs = perHour > 0 ? Math.round((cfg.ceiling / perHour) * 10) / 10 : 0;
+    // Sustained full-live (both modalities) spend, credits(=USD)/min. Tunable.
+    const fullLivePerMin = Number(process.env.AAC_FULL_LIVE_USD_PER_MIN) || 0.89;
+    const visualPerMin = fullLivePerMin * 0.6;
+    const audioLivePerMin = fullLivePerMin * 0.5;
+    const audioAdaptivePerMin = audioLivePerMin * 0.4; // silence-cut → ~40% of continuous
+    const pctMin = (perMin: number) => Math.round((perMin / cfg.ceiling) * 100);
+    const emptyIn = (perMin: number) => {
+      const m = minutesToEmpty(perMin, cfg, perHour);
+      return m === null ? "stays within your regen" : `~${m} min until empty`;
+    };
+    // One-off pull cost from the model's non-text input rate (rough token counts).
+    const opt = getModelOption(provider as any, this.observerModel);
+    const nonTextRate = (opt as any)?.audioInputCostPer1M ?? opt?.inputCostPer1M ?? 3;
+    const focusPct = energyCostPercent((1000 * nonTextRate) / 1_000_000, cfg);
+    const audioClipPct = energyCostPercent((160 * nonTextRate) / 1_000_000, cfg);
+    const pull = Math.max(focusPct, audioClipPct);
+    return `<energy_budget>
+Rough costs (approximate — your [ENERGY] notes show the real level; budget regenerates ~${regenPctMin}%/min, full refill from empty ~${refillHrs}h):
+  - Default "text" attention (cheap [SCENE]/[HEARD SPEECH]): essentially free — stays within your regen.
+  - set_audio_attention("adaptive"): ~${pctMin(audioAdaptivePerMin)}%/min (${emptyIn(audioAdaptivePerMin)}) — gated raw audio, cheaper than live.
+  - set_audio_attention("live"): ~${pctMin(audioLivePerMin)}%/min (${emptyIn(audioLivePerMin)}) — continuous, most faithful.
+  - set_visual_attention("live"): ~${pctMin(visualPerMin)}%/min (${emptyIn(visualPerMin)}).
+  - Audio "live" + visual "live" at once: ~${pctMin(visualPerMin + audioLivePerMin)}%/min (${emptyIn(visualPerMin + audioLivePerMin)}) — expensive; reserve for real need.
+  - A single request_focus / request_audio: under ${Math.max(0.1, pull)}% — one-off checks are cheap; it's SUSTAINED attention that drains you.
+Other agents draw on the same budget — when the Speaker talks a lot your energy drops even while you only watch.
+</energy_budget>`;
+  }
+
+  /** Compact energy status appended to each [HEARD SPEECH] turn — current level
+   *  plus what the exchange since the last transcript cost, with the Speaker's
+   *  share called out (the Observer never "sees" the Speaker spend otherwise).
+   *  Resets the per-transcript accumulator. */
+  private buildTranscriptEnergyNote(): string {
+    if (!this.energyMeterEnabled) return "";
+    const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
+    const d = this.drainSinceTranscript;
+    this.drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
+    const totalPct = energyCostPercent(d.observer + d.speaker + d.boardManager, this.energyConfig);
+    if (totalPct < 0.1) return `[ENERGY ${pct}%]`;
+    const speakerPct = energyCostPercent(d.speaker, this.energyConfig);
+    const speakerNote = speakerPct >= 0.1 ? `, speaker ${speakerPct}%` : "";
+    return `[ENERGY ${pct}% | since last −${totalPct}%${speakerNote}]`;
   }
 
   /** One-line cost-aware reminder per band (the full rationale is in the

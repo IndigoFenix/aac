@@ -38,6 +38,7 @@ import type {
   EngagementChangeEvent,
   FocusRequestEvent,
   AudioRequestEvent,
+  AttentionChangeEvent,
   AlarmRaisedEvent,
   GestureRecognizedEvent,
   ModeChangeEvent,
@@ -206,6 +207,25 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
         source: "observer",
         timestamp: now,
         reason: asString(args.reason) || "re-hear recent speech",
+      };
+      return event;
+    }
+
+    case "set_visual_attention":
+    case "set_audio_attention": {
+      const modality = call.name === "set_visual_attention" ? "visual" : "audio";
+      const level = asString(args.level);
+      // Visual is binary (text/live); audio adds an "adaptive" middle tier.
+      const valid = level === "text" || level === "live" ||
+        (modality === "audio" && level === "adaptive");
+      if (!valid) return null;
+      const event: AttentionChangeEvent = {
+        type: "attention_change",
+        source: "observer",
+        timestamp: now,
+        modality,
+        level: level as AttentionChangeEvent["level"],
+        reason: asString(args.reason),
       };
       return event;
     }

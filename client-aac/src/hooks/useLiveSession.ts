@@ -186,6 +186,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const lastSceneSignatureRef = useRef<string | null>(null);
   const lastPersonCountRef = useRef<number | null>(null);
   const lastPostureRef = useRef<string | null>(null);
+  // Bumps each time a real camera frame/snapshot is actually sent (frame_grid or
+  // focus_frame — NOT the text-only scene_state). The avatar blinks on each
+  // change instead of on a random timer.
+  const [snapshotTick, setSnapshotTick] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   // Mirror of isInitialized for use inside long-lived closures (ws.onclose)
   // that would otherwise capture a stale `false` from the initial render.
@@ -507,6 +511,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // the UI stuck. The board will render whenever it actually arrives.
           setIsLoading(false);
           setError(null);
+          break;
+
+        case "client_config_update":
+          // Mid-session clientConfig patch (Observer attention dials flip
+          // sttActive / sceneStateActive). Shallow-merge so consumer refs
+          // (sttActiveRef / sceneStateActiveRef, refreshed each render) pick up
+          // the change live — no reconnect needed.
+          if ((msg as any).config) {
+            setClientConfig(prev => prev ? { ...prev, ...(msg as any).config } : (msg as any).config);
+          }
           break;
 
         case "text": {
@@ -864,6 +878,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
               reader.onloadend = () => {
                 const base64 = (reader.result as string).split(",")[1];
                 wsSend({ type: "focus_frame", data: base64 });
+                setSnapshotTick(t => t + 1); // blink on the manual focus snapshot
                 console.log("[LiveSession] Focus frame sent:", blob.size, "bytes");
               };
               reader.readAsDataURL(blob);
@@ -1583,6 +1598,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         ...(gestureContext ? { gestureContext } : {}),
         ...(effectiveTriggerReason ? { triggerReason: effectiveTriggerReason } : {}),
       });
+      setSnapshotTick(t => t + 1); // blink the avatar on each real snapshot
     };
     reader.readAsDataURL(grid.blob);
 
@@ -1733,6 +1749,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           });
           console.log(`[useLiveSession] Sending fresh startup frame (attempt ${attempt + 1}),`, blob.size, "bytes");
           wsSend({ type: "frame_grid", data: base64 });
+          setSnapshotTick(t => t + 1); // blink on the startup snapshot
           return;
         }
       } catch (err) {
@@ -1870,6 +1887,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     isInitialized,
     isLoading,
     error,
+    snapshotTick,
 
     // Messages
     currentMessage,

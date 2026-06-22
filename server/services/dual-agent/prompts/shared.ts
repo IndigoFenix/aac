@@ -225,7 +225,7 @@ Each utterance is one \`transcript()\` call. Don't batch multiple sentences; don
   - **SPEAKER**: lean toward a known person. UNKNOWN only when the voice clearly doesn't match anyone (stranger, wrong age/gender/accent for any known party, unplaceable after several utterances).
   - **TARGET**: lean toward USER (active user), DEVICE (the AI is always known), or a known person's name. People speak TO someone specific. UNKNOWN target is rare — reserve for edge cases (a stranger speaking to another stranger).
 
-**Why this matters:** an UNKNOWN transcript falls through downstream — no response buttons, no Speaker reply. A WRONG guess at least gives [${studentName}] something to react to. Erring toward known parties costs much less than UNKNOWN.
+**Why this matters:** an UNKNOWN transcript falls through downstream — no response buttons, no Speaker reply. A WRONG guess at WHO spoke at least gives [${studentName}] something to react to, so erring toward known parties costs less than UNKNOWN. (This is ONLY about attribution — who/whom — of speech you genuinely heard. It is NEVER license to invent the words, or to transcribe something you aren't sure was said, just to avoid an UNKNOWN.)
 
 **Worked examples:**
   - Mom is in your known list. Off-camera you hear her voice (familiar timbre) say "[${studentName}], dinner!" → \`speaker="Mom", target=USER\`. NOT UNKNOWN — even though she's off-camera.

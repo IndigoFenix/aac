@@ -74,6 +74,13 @@ export interface ClientConfig {
    * frame while the scene is stable, sending real frames only on escalations.
    */
   sceneStateActive?: boolean;
+  /**
+   * Audio "live" attention: stream raw PCM CONTINUOUSLY (no VAD/silence gate)
+   * even while economizing. When false (default / "adaptive"), raw PCM stays
+   * VAD-gated. Only meaningful when sttActive is false. Consumed in
+   * `handlePcmChunk` — overrides a vad-gated data-flow to continuous.
+   */
+  pcmContinuous?: boolean;
 }
 
 /**
@@ -310,6 +317,9 @@ export interface UseDualAgentReturn {
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
+  /** Increments each time a real camera frame/snapshot is sent (frame_grid /
+   *  focus_frame) — the avatar blinks on each change. */
+  snapshotTick: number;
 
   // Messages
   currentMessage: DualAgentMessage | null;

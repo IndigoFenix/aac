@@ -111,6 +111,15 @@ export interface ClientConfig {
    * `capable("sceneState")`.
    */
   sceneStateActive?: boolean;
+  /**
+   * Audio "live" attention: stream raw PCM CONTINUOUSLY (no VAD/silence gate)
+   * even while economizing. Set by the Observer's set_audio_attention("live").
+   * When false (the default / "adaptive"), raw PCM is still VAD-gated by the
+   * data-flow (silence dropped). Independent of `awakeDataSaver` so audio
+   * fidelity can be raised without changing visual/heartbeat behavior. Only
+   * meaningful when sttActive is false (otherwise PCM is suppressed for STT).
+   */
+  pcmContinuous?: boolean;
 }
 
 /**
@@ -120,7 +129,7 @@ export interface ClientConfig {
  * Future per-student overrides layer on top of this.
  */
 export function buildDefaultClientConfig(
-  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive">,
+  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous">,
 ): ClientConfig {
   return {
     activityMonitor: {
@@ -157,5 +166,8 @@ export function buildDefaultClientConfig(
     sttActive: overrides?.sttActive ?? false,
     // Resolved by the coordinator via capable("sceneState").
     sceneStateActive: overrides?.sceneStateActive ?? false,
+    // Off by default — raw PCM stays VAD-gated ("adaptive"). The Observer flips
+    // it on via set_audio_attention("live").
+    pcmContinuous: overrides?.pcmContinuous ?? false,
   };
 }

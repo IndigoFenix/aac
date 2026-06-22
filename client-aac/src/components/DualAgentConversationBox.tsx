@@ -128,7 +128,7 @@ export function DualAgentConversationBox({
     audioLevel,
     recordingDuration,
     micActive,
-    pcmDebug,
+    snapshotTick,
     transcription,
     muteState,
     setMuteState,
@@ -187,13 +187,8 @@ export function DualAgentConversationBox({
   // it's intentionally idle, so don't flag it as off/broken during startup.
   const micOff = isInitialized && !micActive;
 
-  // Voice "live" light next to the avatar: lit while the mic is actually being
-  // streamed to the model. In Full Attention mode that's continuous; with the
-  // resting input filter (Full Attention off) the VAD gate opens it only when
-  // the user speaks, so the light blinks on with speech. See pcmDebug.gateState.
-  const voiceFlowing =
-    voiceEnabled && micActive &&
-    (pcmDebug.gateState === "open" || pcmDebug.gateState === "continuous");
+  // (The green "voice live" listening dot that used to sit on the avatar was
+  // removed.)
 
   // Stable refs — prevents re-send loops when callback identities change across renders
   const sendMessageRef = useRef(sendMessage);
@@ -386,6 +381,7 @@ export function DualAgentConversationBox({
                   // the same images it shows in silent/muted mode.
                   empty={!isAsleep && !socialBot.active}
                   eyeState={eyeState}
+                  blinkTick={snapshotTick}
                 />
                 {/* Mode-change indicator — flashes briefly when AI changes mode */}
                 {lastModeChange && lastModeChange.source === "ai" && (Date.now() - lastModeChange.at) < 4000 && (
@@ -476,23 +472,7 @@ export function DualAgentConversationBox({
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  {/* Voice "live" light — lit while the mic is actually being
-                      streamed to the AI (continuous in Full Attention mode, or
-                      gated-open on speech when the resting filter is active). */}
-                  <AnimatePresence>
-                    {voiceFlowing && (
-                      <motion.span
-                        key="voice-live"
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
-                        transition={{ duration: 0.18 }}
-                        className="pointer-events-none absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-green-400 ring-2 ring-white dark:ring-gray-900 shadow-[0_0_8px_2px_rgba(74,222,128,0.7)] animate-pulse"
-                        aria-label={t('aac.voiceLive') || 'Listening'}
-                        title={t('aac.voiceLive') || 'Listening'}
-                      />
-                    )}
-                  </AnimatePresence>
+                  {/* (The green "voice live" listening dot was removed.) */}
                 </button>
             )}
               {/* AI name tag — under the avatar while awake & not social,

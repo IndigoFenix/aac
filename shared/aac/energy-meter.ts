@@ -63,3 +63,21 @@ export function energyBand(percent: number): EnergyBand {
   if (percent >= 25) return "moderate";
   return "low";
 }
+
+/** A credit charge expressed as a percentage of the FULL energy budget, to one
+ *  decimal place. Used to tell the Observer roughly what an action / interval
+ *  costs ("a request_focus is ~0.1%", "that exchange cost −2%"). Derived from
+ *  the master budget (`cfg.ceiling`), so it tracks budget changes automatically. */
+export function energyCostPercent(credits: number, cfg: EnergyConfig): number {
+  if (!(cfg.ceiling > 0) || !(credits > 0)) return 0;
+  return Math.round((credits / cfg.ceiling) * 1000) / 10;
+}
+
+/** Approximate minutes until empty (from full) spending `creditsPerMin`, net of
+ *  regeneration. Returns null when spend stays within regen (effectively never
+ *  empties). For budget-derived "you can sustain live attention ~N min" hints. */
+export function minutesToEmpty(creditsPerMin: number, cfg: EnergyConfig, perHour: number): number | null {
+  const net = creditsPerMin - perHour / 60;
+  if (!(net > 0) || !(cfg.ceiling > 0)) return null;
+  return Math.max(1, Math.round(cfg.ceiling / net));
+}

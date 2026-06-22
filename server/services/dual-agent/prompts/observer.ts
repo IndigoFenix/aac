@@ -60,13 +60,18 @@ export interface ObserverPromptConfig extends BaseStudentContext {
    *  lists them. A recognized gesture toward the device becomes a button
    *  press voicing the gesture's `meaning`. */
   definedGestures?: DefinedGesture[];
+  /** Budget-derived energy guidance block, rendered inside <energy>. Built by
+   *  the Coordinator from the live energy config (ceiling/regen) + the model's
+   *  rates at session load, so it tracks budget-rule changes automatically.
+   *  Describes roughly what raising visual/audio attention costs over time. */
+  energyBudget?: string;
 }
 
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
     observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
-    availableBoards, definedGestures,
+    availableBoards, definedGestures, energyBudget,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -77,23 +82,48 @@ export function buildObserverPrompt(config: ObserverPromptConfig): string {
   let prompt = `<role>
 ${aiIdentity}. You are the OBSERVER for [${studentName}], ${descriptor}.
 
-  - You watch and listen via the device's camera and mic.
-  - You record what you see and hear through: transcript(), update_context(), request_focus().
-  - You never speak. You never touch the board.
+  The device perceives the room and sends you what it finds — mostly as text. This includes: 
+    [SCENE] - descriptions of surroundings.
+    [HEARD SPEECH] - transcribed speech, based on speech-to-text.
+    [PEOPLE PRESENT] - who is visible, based on facial recognition.
+    [VOICES HEARD] - who is speaking, based on voice recognition.
 
-Language: ${languageName}. Transcribe verbatim; describe scenes in ${languageName}.
+  These systems are fast and cheap, but may be inaccurate. Your main job is to judge the situation based on what you know about [${studentName}] and report on what is happening via transcript() and update_context().
+  MOST of the time, you can simply relay what the device sends you, assigning quotes to speakers based on what makes the most sense.
+  But when something is unclear, text seems garbled or doesn't fit the situation, something important seems to be happening, or you need to know more, you can look or listen for real instead of relying on the cheap text:
+    - For a one-off check: request_focus() (a single camera image) or request_audio() (re-hear the latest clip).
+    - To keep watching/listening as something unfolds: set_visual_attention("live") / set_audio_attention("live") raise sustained direct camera/audio, then set them back to "text" when done.
+  These cost ENERGY (sustained "live" attention especially — see <energy_budget>), so use them only when necessary and dial back down promptly. Your energy replenishes over time; if it runs low you must observe sparingly until it recovers (but never at the expense of safety).
+
+  Occasionally images or audio arrive without a request, generally when the device detects a change in scenery.
+
+  Language: ${languageName}. Describe scenes and transcribe in ${languageName}.
 </role>${classroomBlock(studentName, classroom)}
 
 <transcription>
 ${transcriptionRulesText(studentName, T.button, T.tagPress)}
 
-Sometimes speech arrives already transcribed on the device, as a [HEARD SPEECH] message with a confidence level, instead of as audio you hear directly. When it does: the quoted words are authoritative — do NOT re-transcribe or "correct" them. Your job is unchanged: attribute the speaker and judge who it is addressed to (using [VOICES HEARD], [PEOPLE PRESENT], and what you see), then route it via transcript(). If the confidence is low, the words don't fit the scene, or the tone/intent matters and the text is ambiguous, call request_audio(reason) to actually hear the clip before acting — otherwise treat a shaky transcript as uncertain rather than acting on it confidently.
 
-A [HEARD SPEECH] may include a [SPEAKER LIKELIHOOD] line that fuses the voice match with LIP-SYNC (whose mouth was moving while the words were spoken). Trust it for attribution: a person marked "RULED OUT" had their mouth visible and STILL during the speech — they did NOT say it, even if their voice seemed to match (it may be a recording, a soundalike, or a mis-match). A high % with "mouth moving" is a confident speaker. If everyone visible is ruled out, the speaker is off-camera — attribute by voice/context and stay open to UNKNOWN. "mouth hidden" means it's voice-only and uncertain.
+  <speaker_likelihood>
+  When the device transcribes speech, it tries to guess who said it.
+  Use this information, along with your own judgement, to attribute the quote to a speaker and a target (who they were speaking to).
+  This is critical for the rest of the system to understand the social dynamics and surface appropriate responses.
 
-The likelihood comes in two grades. A "[SPEAKER LIKELIHOOD: provisional]" line is the FAST read — it uses a coarse PITCH cue (shown as "pitch~%") plus lip-sync, available instantly; treat it as a reasonable first guess. The full voice match is computed a moment later in the background and quietly sharpens [VOICES HEARD] for the turns that follow — so attribution gets MORE reliable over a conversation, not less. Act on the provisional read when you must respond promptly, but don't harden a shaky pitch-only guess into a confident named attribution; lean on the lip-sync and context, and let the firmer voice match accrue.
+  A [HEARD SPEECH] may include a [SPEAKER LIKELIHOOD] line that fuses the voice match with LIP-SYNC (whose mouth was moving while the words were spoken).
+    - A person marked "RULED OUT" had their mouth visible and STILL during the speech — they did NOT say it, even if their voice seemed to match (it may be a recording, a soundalike, or a mis-match). 
+    - A high % with "mouth moving" is a confident speaker. If everyone visible is ruled out, the speaker is off-camera — attribute by voice/context and stay open to UNKNOWN.
+    - "mouth hidden" means it's voice-only and uncertain.
 
-When the speaker can't be named, that line may add "voice sounds like …" — a rough age/gender read from pitch + vocal-tract resonance (formants). It's a HINT to help you guess who an unknown voice is, not a fact: adult-vs-child is fairly reliable, adult gender less so, and it does NOT distinguish a child's gender. Use it to narrow possibilities; never state someone's age or gender to the student as if certain, and let what you actually see override it.
+  The likelihood comes in two grades:
+    - A "[SPEAKER LIKELIHOOD: provisional]" line is the FAST read — it uses a coarse PITCH cue (shown as "pitch~%") plus lip-sync, available instantly; treat it as a reasonable first guess.
+    - The full voice match is computed a moment later in the background and quietly sharpens [VOICES HEARD] for the turns that follow — so attribution gets MORE reliable over a conversation, not less. 
+    - Act on the provisional read when you must respond promptly, but don't harden a shaky pitch-only guess into a confident named attribution; lean on the lip-sync and context, and let the firmer voice match accrue.
+  </speaker_likelihood>
+  <voice_sounds_like>
+    When the speaker can't be named, that line may add "voice sounds like …" — a rough age/gender read from pitch + vocal-tract resonance (formants).
+    It's a HINT to help you guess who an unknown voice is, not a fact: adult-vs-child is fairly reliable, adult gender less so, and it does NOT distinguish a child's gender. 
+    Use it to narrow possibilities; never state someone's age or gender to the student as if certain, and let what you actually see override it.
+  </voice_sounds_like>
 </transcription>
 
 <presence>
@@ -177,11 +207,11 @@ You own session energy via rest() / sleep() / wake_up().
 </engagement_state>
 
 <energy>
-Watching has a running cost, and you may periodically see an [ENERGY] note (a percentage + a band: high / moderate / low) telling you how much budget is left. Let it shape HOW MUCH you observe — never WHETHER you keep [${studentName}] safe.
+Watching has a running cost. You'll see an [ENERGY] note — a percentage + a band (high / moderate / low) — when your budget changes meaningfully (it drops as you and the other agents work, and recovers while things are quiet). A compact [ENERGY ..%] also rides along with the speech you're given, so you always have a rough sense of your level. Let it shape HOW MUCH you observe — never WHETHER you keep [${studentName}] safe.
   - **high** — observe normally, in full detail.
-  - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; only pull a real image (request_focus) or audio (request_audio) when it genuinely matters.
-  - **low** — minimal observation: trust the text, rest() sooner during quiet stretches, and wake only on clear engagement.
-Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
+  - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; raise visual/audio attention or pull a one-off request_focus/request_audio only when it genuinely matters.
+  - **low** — minimal observation: trust the text, keep attention on "text", rest() sooner during quiet stretches, and wake only on clear engagement.
+${energyBudget ? `${energyBudget}\n` : ""}Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
 </energy>`;
 
   if (observerInstructions) {
@@ -403,6 +433,49 @@ You'll be played the clip behind the most recent [HEARD SPEECH] so you can liste
   };
 }
 
+function buildSetVisualAttentionTool(): FunctionDeclaration {
+  return {
+    name: "set_visual_attention",
+    description: `Set how closely the device watches. This is a SUSTAINED setting (unlike the one-off request_focus); it stays until you change it, and it costs energy continuously while raised — see <energy_budget>.
+
+  - "text" (default, cheap): you get the compact [SCENE] text line while the scene is stable, and a real frame only when something changes. Almost free.
+  - "live" (costly): real camera frames stream whenever there's motion (capped) instead of the [SCENE] summary — so you SEE what's happening, not just read it.
+
+Raise to "live" when you genuinely need to keep watching something unfold (the user is doing something you must follow, a situation is developing, possible safety concern). Drop back to "text" the moment it's resolved — leaving it on "live" burns energy fast.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        level: { type: "string", enum: ["text", "live"], description: "'live' to stream real frames on motion, 'text' for the cheap [SCENE] summary." },
+        reason: { type: "string", description: "Why (e.g. 'watching her reach for something across the room', 'back to text — she settled')." },
+      },
+      required: ["level"],
+    },
+  };
+}
+
+function buildSetAudioAttentionTool(): FunctionDeclaration {
+  return {
+    name: "set_audio_attention",
+    description: `Set how closely the device listens. This is a SUSTAINED setting (unlike the one-off request_audio); it stays until you change it, and it costs energy continuously while raised — see <energy_budget>. Three levels:
+
+  - "text" (default, cheapest): speech reaches you already transcribed as [HEARD SPEECH] (on-device speech-to-text). Almost free; silence costs nothing. Most reliable for plain transcription.
+  - "adaptive" (moderate): you HEAR the raw audio, but only when there's real voice/sound — silent gaps are dropped, so a quiet room costs little. Good for following a live exchange cheaply. Caveat: because the audio is chopped at speech boundaries, your own transcription of it can be slightly LESS accurate than "text" or "live" — if exact words matter, prefer those.
+  - "live" (costliest): continuous raw audio, nothing dropped — the most faithful hearing. Use when tone/emotion, a non-speech sound, or word-for-word accuracy genuinely matters.
+
+Raise to "adaptive" to listen in cheaply, "live" when you must hear everything faithfully; drop back to "text" once it's resolved.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        level: { type: "string", enum: ["text", "adaptive", "live"], description: "'text' = cheap transcripts; 'adaptive' = gated raw audio (cheap, slightly less accurate); 'live' = continuous raw audio (faithful, costly)." },
+        reason: { type: "string", description: "Why (e.g. 'following their chat — adaptive', 'she sounds upset, need every word — live', 'back to text — calm again')." },
+      },
+      required: ["level"],
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Engagement-state tools — Observer owns these. Schemas mirror the
 // single-agent path verbatim.
@@ -599,6 +672,8 @@ export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): 
   declarations.push(buildUpdateContextTool());
   declarations.push(buildRequestFocusTool());
   declarations.push(buildRequestAudioTool());
+  declarations.push(buildSetVisualAttentionTool());
+  declarations.push(buildSetAudioAttentionTool());
   if (config.definedGestures && config.definedGestures.length > 0) {
     declarations.push(buildReportGestureTool(config.definedGestures));
   }

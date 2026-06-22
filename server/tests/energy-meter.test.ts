@@ -11,6 +11,8 @@ import {
   applyCharge,
   energyPercent,
   energyBand,
+  energyCostPercent,
+  minutesToEmpty,
   type EnergyConfig,
 } from "../../shared/aac/energy-meter.js";
 
@@ -69,5 +71,34 @@ describe("energyBand", () => {
     expect(energyBand(25)).toBe("moderate");
     expect(energyBand(24)).toBe("low");
     expect(energyBand(0)).toBe("low");
+  });
+});
+
+describe("energyCostPercent", () => {
+  it("expresses a charge as a 1-decimal percentage of the budget ceiling", () => {
+    expect(energyCostPercent(3, cfg)).toBe(50);      // half of ceiling 6
+    expect(energyCostPercent(0.6, cfg)).toBe(10);
+    expect(energyCostPercent(0.06, cfg)).toBe(1);
+    expect(energyCostPercent(0.003, cfg)).toBe(0.1); // rounds to one decimal
+  });
+  it("tracks the master budget — a bigger ceiling makes the same charge cheaper", () => {
+    expect(energyCostPercent(3, { ceiling: 3, perHour: 1 })).toBe(100);
+    expect(energyCostPercent(3, { ceiling: 12, perHour: 1 })).toBe(25);
+  });
+  it("returns 0 for non-positive charge or ceiling", () => {
+    expect(energyCostPercent(0, cfg)).toBe(0);
+    expect(energyCostPercent(-5, cfg)).toBe(0);
+    expect(energyCostPercent(3, { ceiling: 0, perHour: 6 })).toBe(0);
+  });
+});
+
+describe("minutesToEmpty", () => {
+  it("computes time-to-empty net of regeneration", () => {
+    // ceiling 6, regen 6/hr = 0.1/min. Spending 0.6/min nets 0.5/min → 12 min.
+    expect(minutesToEmpty(0.6, cfg, cfg.perHour)).toBe(12);
+  });
+  it("returns null when spend stays within regen (never empties)", () => {
+    expect(minutesToEmpty(0.1, cfg, cfg.perHour)).toBeNull(); // == regen rate
+    expect(minutesToEmpty(0.05, cfg, cfg.perHour)).toBeNull();
   });
 });

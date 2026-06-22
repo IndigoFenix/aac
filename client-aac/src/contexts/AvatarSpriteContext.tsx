@@ -77,7 +77,17 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     speakingVolume,
     focusActive,
     lastModeChange,
+    snapshotTick,
+    pcmDebug,
+    voiceEnabled,
+    micActive,
   } = useDualAgentContext();
+  // "Listening" = audio is actively reaching the model: the VAD gate is open on
+  // a heard voice/sound, or it's streaming continuously (live audio). Drives the
+  // ears to flap at double speed.
+  const listening =
+    voiceEnabled && micActive &&
+    (pcmDebug.gateState === "open" || pcmDebug.gateState === "continuous");
   // Freeze trigger: any signal that the session is in trouble. Both `error`
   // and `reconnecting` are intermittent within a disconnect cycle — the
   // useLiveSession retry path explicitly setError(null) before reopening
@@ -172,9 +182,10 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     ? "neutral"
     : "open";
 
-  const earFlapSpeed: number = isSleepingState ? 5000 : isStandbyMode ? 0 : isAssistMode ? 0 : 2000;
+  // Ears flap at double speed (1000ms vs 2000ms) while actively listening.
+  const earFlapSpeed: number = isSleepingState ? 5000 : isStandbyMode ? 0 : isAssistMode ? 0 : listening ? 1000 : 2000;
 
-  const { renderedEye, renderedEar } = useAvatarFrames(eyeState, earState, earFlapSpeed);
+  const { renderedEye, renderedEar } = useAvatarFrames(eyeState, earState, earFlapSpeed, snapshotTick);
 
   const value: AvatarSpriteState = {
     avatar: AVATAR_VARIANT,

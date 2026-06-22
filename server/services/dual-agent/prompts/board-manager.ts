@@ -585,6 +585,7 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "emote_change":
     case "focus_request":
     case "audio_request":
+    case "attention_change":
     case "alarm_raised":
     case "monitor_call_requested":
     case "private_note":

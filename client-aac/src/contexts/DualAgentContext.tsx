@@ -75,6 +75,9 @@ interface DualAgentContextType {
    *  mic is off (voice disabled) OR not working (acquisition failed) — both map
    *  to the "microphone off" indicator. */
   micActive: boolean;
+  /** Increments each time a real camera frame/snapshot is sent (frame_grid /
+   *  focus_frame). The avatar blinks on each change. */
+  snapshotTick: number;
 
   // Board state
   currentBoard: ParsedBoardData | null;
@@ -571,6 +574,11 @@ function DualAgentProviderInner({
   const sttActive = liveAgent.clientConfig?.sttActive ?? false;
   const sttActiveRef = useRef(sttActive);
   sttActiveRef.current = sttActive;
+  // Audio "live" attention: stream raw PCM continuously (override a vad-gated
+  // data-flow). When false ("adaptive"), PCM stays VAD-gated. Read live each
+  // render so the Observer's set_audio_attention flips it mid-session.
+  const pcmContinuousRef = useRef(liveAgent.clientConfig?.pcmContinuous ?? false);
+  pcmContinuousRef.current = liveAgent.clientConfig?.pcmContinuous ?? false;
   // Whether the on-device STT model is loaded. PCM is only suppressed once STT
   // is BOTH active and ready — otherwise we keep streaming audio so the AI is
   // never deaf while the heavy model loads (or if it fails to load).
@@ -829,6 +837,14 @@ function DualAgentProviderInner({
     }
 
     const flow = flowRef.current;
+    // Audio "live" attention overrides a vad-gated flow to continuous: stream
+    // raw PCM unbroken (no silence/voice gate, no paced replay) so Gemini gets a
+    // continuous real-time stream — which it transcribes more reliably than
+    // chopped, time-shifted segments. "off" (asleep) still wins. "adaptive"
+    // leaves the gate on.
+    const pcmMode = (pcmContinuousRef.current && flow.pcmMode === "vad-gated")
+      ? "continuous"
+      : flow.pcmMode;
 
     // Always retain a short rolling pre-roll of recent chunks so that, when the
     // VAD gate opens, the audio captured BEFORE detection crossed threshold can
@@ -853,7 +869,7 @@ function DualAgentProviderInner({
       pcmPacedTimersRef.current.clear();
     };
 
-    if (flow.pcmMode === "off") {
+    if (pcmMode === "off") {
       // Asleep / Hibernation — drop.
       pcmGatedCountRef.current++;
       gateStateRef.current = "off";
@@ -862,7 +878,7 @@ function DualAgentProviderInner({
       return;
     }
 
-    if (flow.pcmMode === "continuous") {
+    if (pcmMode === "continuous") {
       // Full Attention Mode — no VAD gate, always stream. Clear the pre-roll so
       // a later switch to vad-gated can't replay stale audio.
       pcmPrerollRef.current.length = 0;
@@ -1245,6 +1261,7 @@ function ProviderShell({
     isRecording: agent.isRecording,
     audioLevel: agent.audioLevel,
     recordingDuration: agent.recordingDuration,
+    snapshotTick: agent.snapshotTick,
     micActive,
 
     currentBoard,
