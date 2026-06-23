@@ -23,20 +23,24 @@ export interface FanoutBus {
   start(): Promise<void>;
   stop(): Promise<void>;
   publish(channel: string, payload: string): Promise<void>;
-  /** Register a single handler; replaces any previous handler. */
+  /**
+   * Register a handler. Additive: every registered handler is invoked for each
+   * incoming message. Subsystems share one bus connection and each filter by
+   * their own logical `channel`, so they must not clobber one another.
+   */
   onMessage(handler: (channel: string, payload: string) => void): void;
 }
 
 export class InMemoryBus implements FanoutBus {
   readonly instanceId = randomUUID();
-  private handler: ((channel: string, payload: string) => void) | null = null;
+  private handlers: ((channel: string, payload: string) => void)[] = [];
 
   async start(): Promise<void> {
     // no-op
   }
 
   async stop(): Promise<void> {
-    this.handler = null;
+    this.handlers = [];
   }
 
   async publish(_channel: string, _payload: string): Promise<void> {
@@ -45,6 +49,6 @@ export class InMemoryBus implements FanoutBus {
   }
 
   onMessage(handler: (channel: string, payload: string) => void): void {
-    this.handler = handler;
+    this.handlers.push(handler);
   }
 }

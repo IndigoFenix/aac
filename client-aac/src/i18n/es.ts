@@ -718,6 +718,28 @@ export const es: Translations = {
     starting: "Iniciando…",
   },
 
+  call: {
+    incoming: "Llamada entrante",
+    accept: "Sí",
+    decline: "No",
+    calling: "Llamando…",
+    connecting: "Conectando…",
+    inCall: "En llamada",
+    hangUp: "Colgar",
+    phoneCallApp: "Llamada telefónica",
+    noCallableContacts: "No hay nadie a quien llamar ahora.",
+    online: "En línea",
+    offline: "Desconectado",
+    callContact: "Llamar",
+    unknownCaller: "Desconocido",
+    groupChat: {
+      peopleInChat: "Personas en este chat",
+      talkTo: "Hablar con",
+      talkingTo: "Hablando con",
+      yourTurn: "Tu turno",
+    },
+  },
+
   social: {
     peer: "Compañero:",
     waiting: "Esperando al compañero…",

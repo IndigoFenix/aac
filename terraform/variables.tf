@@ -251,3 +251,49 @@ variable "aac_update_installer_max_age_seconds" {
   type        = number
   default     = 3600
 }
+
+# =============================================================================
+# coturn TURN relay (live video calls)
+# =============================================================================
+# Self-hosted coturn EC2 instance providing a WebRTC TURN relay fallback for
+# calls that can't establish a direct peer-to-peer path (symmetric NAT, strict
+# corporate firewalls). The app mints time-limited HMAC credentials for it
+# (see server/services/call/turnCredentials.ts). Media relayed through coturn
+# stays DTLS-SRTP encrypted end-to-end — the relay never sees plaintext. See
+# planning-docs/live-video-chat.md.
+
+variable "enable_coturn" {
+  description = "Provision the self-hosted coturn TURN relay (EC2 + EIP) and wire TURN_URLS/TURN_SECRET into the app. Off by default so adding the module doesn't churn existing deploys; on in lean.tfvars (the active path needs a relay fallback)."
+  type        = bool
+  default     = false
+}
+
+variable "coturn_instance_type" {
+  description = "EC2 instance type for the coturn host. t4g.micro (ARM) is plenty for low call volume; size up for many concurrent relayed calls."
+  type        = string
+  default     = "t4g.micro"
+}
+
+variable "coturn_subdomain" {
+  description = "Subdomain under domain_name for the TURN server (final host = <subdomain>.<domain_name>). Ignored when domain_name is empty (the raw EIP is used instead)."
+  type        = string
+  default     = "turn"
+}
+
+variable "coturn_relay_port_min" {
+  description = "Low end of the UDP relay port range coturn allocates per call. Keep the range modest on small instances (each relayed call uses a couple of ports)."
+  type        = number
+  default     = 49160
+}
+
+variable "coturn_relay_port_max" {
+  description = "High end of the UDP relay port range. coturn_relay_port_max - coturn_relay_port_min bounds concurrent relayed media streams."
+  type        = number
+  default     = 49260
+}
+
+variable "coturn_credential_ttl_seconds" {
+  description = "Lifetime of a minted TURN credential. The app embeds the expiry in the username; coturn rejects it afterward. One hour comfortably outlasts any call."
+  type        = number
+  default     = 3600
+}

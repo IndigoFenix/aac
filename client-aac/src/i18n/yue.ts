@@ -718,6 +718,28 @@ export const yue: Translations = {
     starting: "正在啟動…",
   },
 
+  call: {
+    incoming: "嚟電",
+    accept: "好",
+    decline: "唔好",
+    calling: "撥緊電話…",
+    connecting: "連接緊…",
+    inCall: "通話中",
+    hangUp: "收線",
+    phoneCallApp: "打電話",
+    noCallableContacts: "而家冇人可以打。",
+    online: "在線",
+    offline: "離線",
+    callContact: "打俾佢",
+    unknownCaller: "未知",
+    groupChat: {
+      peopleInChat: "傾偈嘅人",
+      talkTo: "同邊個講",
+      talkingTo: "正在同佢講",
+      yourTurn: "輪到你",
+    },
+  },
+
   social: {
     peer: "朋友：",
     waiting: "等緊朋友…",

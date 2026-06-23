@@ -226,6 +226,7 @@ export const fr = {
     noStudentSelected: "Aucun {{STUDENT}} sélectionné",
     calendar: "Calendrier",
     personChat: "Messages",
+    call: "Appel",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const fr = {
     },
   },
 
+  call: {
+    title: "Appel",
+    searchContacts: "Rechercher des contacts",
+    noInstitute: "Rejoignez une organisation pour passer des appels",
+    loadingContacts: "Chargement des contacts…",
+    noContacts: "Aucun contact trouvé",
+    callPerson: "Appeler {{name}}",
+    students: "Élèves",
+    online: "En ligne",
+    offline: "Hors ligne",
+    calling: "Appel en cours…",
+    connecting: "Connexion…",
+    callEnded: "Appel terminé",
+    incoming: "Appel entrant",
+    unknownCaller: "Appelant inconnu",
+    accept: "Accepter",
+    decline: "Refuser",
+    hangUp: "Raccrocher",
+    mute: "Couper le micro",
+    unmute: "Réactiver le micro",
+    cameraOn: "Activer la caméra",
+    cameraOff: "Désactiver la caméra",
+    remoteVideo: "Vidéo distante",
+    selfVideo: "Votre caméra",
+    whoTalkingTo: "À qui parlez-vous ?",
+    everyone: "Tout le monde",
+    speakTo: "Parler à",
+    isTalkingToYou: "vous parle",
+  },
+
   personChat: {
     title: "Messages",
     newChat: "Nouvelle discussion",
@@ -3523,6 +3554,8 @@ export const fr = {
     otherStudents: "Autres étudiants",
     linkedHint: "Les contacts liés partagent leurs données biométriques avec l'enregistrement utilisateur/étudiant lié. Modifiez les données biométriques dans cet enregistrement.",
     unlinkedHint: "Ce contact a son propre enregistrement biométrique. Téléversez une photo pour activer la reconnaissance faciale CAA.",
+    callable: "Autoriser les appels vidéo",
+    callableHint: "L'élève (et l'IA) peuvent appeler cette personne en vidéo lorsqu'elle est en ligne.",
     photoAfterCreate: "Le téléversement de photo sera disponible après l'enregistrement du contact.",
   },
 

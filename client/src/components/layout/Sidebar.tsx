@@ -39,6 +39,7 @@ import {
   Share2,
   Receipt,
   Captions,
+  Phone,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
@@ -127,6 +128,13 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       feature: 'userchat' as FeatureType,
       testId: 'nav-userchat',
       badge: personChatUnreadBadge,
+    }] : []),
+    ...(hasInstitute ? [{
+      icon: Phone,
+      labelKey: 'nav.call',
+      feature: 'call' as FeatureType,
+      testId: 'nav-call',
+      badge: undefined as string | undefined,
     }] : []),
   ];
   // Hide Workspace entirely if user has no institutes AND maxStudents=0

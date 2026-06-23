@@ -17,6 +17,10 @@ import { DualAgentConversationBox } from "@/components/DualAgentConversationBox"
 import { FullscreenAvatarOverlay } from "@/components/FullscreenAvatarOverlay";
 import { AvatarSpriteProvider } from "@/contexts/AvatarSpriteContext";
 import { SocialBotProvider } from "@/contexts/SocialBotContext";
+import { CallProvider } from "@/contexts/CallContext";
+import { IncomingCallPopup } from "@/components/IncomingCallPopup";
+import { GroupChatHeader } from "@/components/GroupChatHeader";
+import PhoneCallApp from "@/components/PhoneCallApp";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
@@ -317,6 +321,8 @@ function renderAppContent(
   if (activeApp.appId === "drawing") {
     return <DrawingApp onClose={dismissApp} onRegisterCapture={registerCapture} />;
   }
+  // phone_call renders as a full-screen overlay inside CallProvider (see below),
+  // not here — it needs the call context which lives in the header subtree.
   if (activeApp.appId === "music") {
     return <MusicApp onClose={dismissApp} />;
   }
@@ -1975,7 +1981,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           {/* App content — replaces board when an app is active.
               Exception: "social_trainer" runs in the header only and lets
               the board keep rendering underneath. */}
-          {activeApp && activeApp.appId !== "social_trainer" ? (
+          {activeApp && activeApp.appId !== "social_trainer" && activeApp.appId !== "phone_call" ? (
             <div className="flex-1 min-w-0 h-full">
               {renderAppContent(
                 activeApp,
@@ -2286,6 +2292,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         >
           <AvatarSpriteProvider>
           <SocialBotProvider>
+          <CallProvider>
           <DualAgentBridge
             onModeChange={setMuteStateFromCtx}
             onVoiceReady={(fn) => { voiceFnRef.current = fn; }}
@@ -2353,6 +2360,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             aiName={userProfile?.aacSettings?.aiName}
           />
           <FullscreenAvatarOverlay />
+          {/* Phone-call app — full-screen overlay INSIDE CallProvider so it can
+              use the call context (it can't render via renderAppContent, which
+              lives outside the provider). data-dwell-trap keeps eye-gaze inside. */}
+          {activeApp?.appId === "phone_call" && (
+            <div className="fixed inset-0 z-40 bg-white dark:bg-gray-900" data-dwell-trap>
+              <PhoneCallApp onClose={() => dismissAppRef.current?.()} />
+            </div>
+          )}
+          {/* Group-chat peer faces — side-by-side header during a multi-student
+              chat. Dwell/tap a face to focus that peer as the addressee. Renders
+              null when not in a group chat. */}
+          <GroupChatHeader />
+          {/* Incoming-call ring — rendered globally so calls ring on any screen. */}
+          <IncomingCallPopup />
           <DeviceManagerModal
             studentId={studentId}
             isOpen={showDeviceManager}
@@ -2385,6 +2406,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               faceRecognitionReady={isPersonIdReady}
             />
           )}
+          </CallProvider>
           </SocialBotProvider>
           </AvatarSpriteProvider>
         </DualAgentProvider>

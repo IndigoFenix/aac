@@ -26,6 +26,22 @@ import { voiceRecordRepository } from "../../repositories/voiceRecordRepository"
 
 import { ObserverAgent, type ObserverOutputEvent } from "./observer-agent";
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
+import { getContactById, listCallableContacts, resolveContactPersonId } from "../call/callContacts";
+import { isPersonOnline } from "../realtime/room-registry";
+import { personRepository } from "../../repositories/personRepository";
+import { resolveAddressee } from "./addressee";
+import { getPeerFacePhotoDataUrl } from "./peer-photo";
+import {
+  joinRoom as joinConversationRoom,
+  leaveRoom as leaveConversationRoom,
+  publishUtterance as publishRoomUtterance,
+  publishFocus as publishRoomFocus,
+  type RoomUtterance,
+  type RoomPresence,
+  type RoomMember,
+  type RoomFocus,
+  type FloorState,
+} from "./conversation-room";
 import { HttpSpeakerAgent } from "./http-speaker-agent";
 import type { ISpeakerAgent } from "./speaker-interface";
 import {
@@ -79,6 +95,7 @@ import type {
   InterpretIntentEvent,
   ModeChangeEvent,
   EmoteChangeEvent,
+  CallPersonEvent,
   AppOpenRequestedEvent,
   AppCloseRequestedEvent,
   WebsiteOpenRequestedEvent,
@@ -639,6 +656,22 @@ interface PendingSpeechEntry {
   fastDone?: boolean;
   slowDone?: boolean;
   timer?: ReturnType<typeof setTimeout>;
+}
+
+/** Human-readable Speaker context for a call that ended before connecting. */
+function describeCallOutcome(outcome: string): string {
+  switch (outcome) {
+    case "declined":
+      return `[CALL DECLINED] They declined the call.`;
+    case "no_answer":
+      return `[CALL UNANSWERED] There was no answer.`;
+    case "unavailable":
+      return `[CALL FAILED] They were not available.`;
+    case "cancelled":
+      return `[CALL CANCELLED] The call was cancelled before connecting.`;
+    default:
+      return `[CALL FAILED] The call could not be completed.`;
+  }
 }
 
 export class AgentCoordinator {
@@ -1322,6 +1355,18 @@ export class AgentCoordinator {
       console.error("[AgentCoordinator] Final monitor pass failed:", err);
     });
 
+    // Leave any group conversation room so peers stop delivering to a dead
+    // session (and get a "left" notice).
+    if (this.conversationRoomId && this.conversationPersonId) {
+      try { leaveConversationRoom(this.conversationRoomId, this.conversationPersonId); } catch {}
+      this.conversationRoomId = null;
+      this.conversationActive = false;
+      this.conversationRoster.clear();
+      this.floorActiveNote = "";
+      this.currentFloor = null;
+      this.addresseeFocus = null;
+    }
+
     // Close agents
     try { this.observer?.close(); } catch {}
     try { this.speaker?.close(); } catch {}
@@ -1790,6 +1835,27 @@ export class AgentCoordinator {
         this.speaker?.sendUserTurn(directive);
         return;
       }
+      case "call_active":
+        // A live video call started/ended on the client. Step the AI back into
+        // facilitator mode (quiet, supporting the human-to-human conversation)
+        // while the call is up, and restore the prior mode when it ends.
+        this.setCallMode(msg.active);
+        // When a call ends without having connected, let the Speaker know the
+        // outcome so it can react (acknowledge, suggest trying later, etc.).
+        if (!msg.active && msg.outcome && msg.outcome !== "ended" && msg.outcome !== "connected") {
+          this.speaker?.sendContextInjection(describeCallOutcome(msg.outcome));
+        }
+        return;
+      case "conversation_room":
+        // The client entered/left a group AAC chat (shape C). Join/leave the
+        // shared conversation room so peer utterances flow both ways.
+        void this.setConversationRoom(msg.roomId);
+        return;
+      case "conversation_focus":
+        // The student tapped/dwelt on a peer's face (or cleared it). Focus that
+        // peer as the addressee + tell the BoardManager to build phrases for them.
+        this.handleConversationFocus(msg.personId);
+        return;
       case "app_dismissed":
         // User closed the active app surface. For a social-training
         // session this is the user-initiated exit (cave click / back);
@@ -2103,6 +2169,9 @@ export class AgentCoordinator {
     const initialModeRendered = `[MODE] ${this.currentInteractionMode} (session start)`;
     this.speaker.sendContextInjection(initialModeRendered);
     this.observer.sendContextInjection(initialModeRendered);
+
+    // Tell the Speaker who it can video-call (callable contacts + online flags).
+    void this.injectCallableContacts();
 
     // 7d. Reset the rest debounce window now that the session is actually
     //     ready. The class-field initializer set lastEngagementActivityAt
@@ -2571,7 +2640,7 @@ export class AgentCoordinator {
     //    plays the audio out a beat later, but at this point the audio
     //    chunks have arrived in order ahead of Speaker's reply.
     if (sentence) {
-      try { await this.streamStudentTts(sentence, "button_press"); } catch { /* logged inside */ }
+      try { await this.streamStudentTts(sentence, "button_press", { bid: pressRole === "bid", addressee: this.pressedButtonAddressee(label) }); } catch { /* logged inside */ }
     }
 
     // 3. Route the event so Observer / Speaker / Board Manager all see it.
@@ -2582,6 +2651,7 @@ export class AgentCoordinator {
       label,
       sentence,
       role: this.pressedButtonRole(label),
+      addressee: this.pressedButtonAddressee(label),
     });
   }
 
@@ -2591,6 +2661,13 @@ export class AgentCoordinator {
   private pressedButtonRole(label: string): "reply" | "bid" {
     const b = this.currentBoardButtons.find((x) => x.label === label) as { role?: "reply" | "bid" } | undefined;
     return b?.role === "bid" ? "bid" : "reply";
+  }
+
+  /** Group-chat addressee the BoardManager set on the pressed button (a peer
+   *  name), if any — looked up from the current board by label. */
+  private pressedButtonAddressee(label: string): string | undefined {
+    const b = this.currentBoardButtons.find((x) => x.label === label) as { addressee?: string } | undefined;
+    return b?.addressee;
   }
 
   /** Join composed press sentences into one natural turn (each ends with
@@ -5087,6 +5164,9 @@ export class AgentCoordinator {
       case "emote_change":
         this.routeEmoteChange(event);
         return;
+      case "call_person":
+        void this.routeCallPerson(event);
+        return;
       case "mode_change":
         this.routeModeChange(event);
         return;
@@ -5292,6 +5372,378 @@ export class AgentCoordinator {
   private routeEmoteChange(event: EmoteChangeEvent): void {
     this.send({ type: "emote", data: event.emote });
     this.speaker?.sendContextInjection(`[EMOTE] ${event.emote}`);
+  }
+
+  /** Speaker asked to call a contact → direct the client to dial it. Media
+   *  lives on the client; the server only relays signaling afterwards. */
+  private async routeCallPerson(event: CallPersonEvent): Promise<void> {
+    try {
+      const contact = await getContactById(event.contactId);
+      if (!contact || !contact.callable || !contact.isActive) {
+        // The contact vanished or is no longer callable — tell the Speaker so it
+        // can explain rather than silently doing nothing.
+        this.speaker?.sendContextInjection(`[CALL FAILED] That contact can no longer be called.`);
+        return;
+      }
+      // Don't dial into the void: if the callee has no live socket on any
+      // instance, the ring would just time out. Tell the Speaker up front.
+      const calleePersonId = await resolveContactPersonId(contact);
+      if (!calleePersonId || !isPersonOnline(calleePersonId)) {
+        this.speaker?.sendContextInjection(`[CALL FAILED] ${contact.name} is not available right now.`);
+        return;
+      }
+      this.send({ type: "call_directive", action: "start", contactId: event.contactId, contactName: contact.name });
+    } catch (err) {
+      console.error("[AgentCoordinator] routeCallPerson:", err);
+    }
+  }
+
+  /** Inject the student's callable contacts (with live online flags) so the
+   *  Speaker knows who it may call and the contactId to pass to call_person. */
+  private async injectCallableContacts(): Promise<void> {
+    if (!this.studentId) return;
+    try {
+      const contacts = await listCallableContacts(this.studentId);
+      if (contacts.length === 0) return;
+      const lines = contacts
+        .map((c) => `- ${c.name}${c.relationship ? ` (${c.relationship})` : ""} [contactId:${c.contactId}] ${c.online ? "online" : "offline"}`)
+        .join("\n");
+      this.speaker?.sendContextInjection(`[CALLABLE CONTACTS]\n${lines}`);
+    } catch (err) {
+      console.error("[AgentCoordinator] injectCallableContacts:", err);
+    }
+  }
+
+  // Facilitator "hold": a live call OR a group chat forces facilitator mode
+  // (the AI supports a human/peer exchange rather than chatting itself). Either
+  // source can hold it; the pre-hold mode is restored only when BOTH release.
+  private modeBeforeHold: "companion" | "facilitator" | null = null;
+  private callActive = false;
+  private conversationActive = false;
+
+  // Shape-C group AAC chat: the conversation room this student is currently in
+  // (null = solo). When set, this student's voiced utterances are fanned out to
+  // peers, and their utterances arrive via onPeerUtterance.
+  private conversationRoomId: string | null = null;
+  // This coordinator's own canonical identity in the conversation layer. The
+  // room keys on personId (participants may be students OR non-students), so we
+  // resolve studentId → persons.id once and cache it. studentId stays an
+  // AAC-internal detail (own agents, board, biometric photo).
+  private conversationPersonId: string | null = null;
+  // Known peers in the current room (personId → display name), kept current
+  // from the join roster + presence deltas so the AI knows who's in the chat.
+  private conversationRoster = new Map<string, string>();
+  // Last actionable floor note surfaced to the AI, to dedupe + know when to
+  // announce the floor reopening.
+  private floorActiveNote = "";
+  // Most recent floor state (for adjacency-based addressee inference).
+  private currentFloor: FloorState | null = null;
+  // Peer the student is currently focused on (tapped/dwelt on their face in the
+  // group-chat header) — an exact peer studentId, or null. Strongest addressee
+  // signal; the client owns the highlight and clears this when it goes away.
+  private addresseeFocus: string | null = null;
+
+  /** Force facilitator mode for the duration of a live video call. */
+  private setCallMode(active: boolean): void {
+    this.callActive = active;
+    this.updateFacilitatorHold();
+  }
+
+  /** Force facilitator mode while a call OR group chat is active; restore the
+   *  pre-hold mode once both release. Idempotent — safe to call repeatedly. */
+  private updateFacilitatorHold(): void {
+    const hold = this.callActive || this.conversationActive;
+    if (hold) {
+      if (this.modeBeforeHold === null) this.modeBeforeHold = this.currentInteractionMode;
+      if (this.currentInteractionMode !== "facilitator") {
+        const reason = this.callActive ? "live video call" : "group chat";
+        this.routeModeChange({ type: "mode_change", source: "observer", timestamp: Date.now(), mode: "facilitator", reason });
+      }
+    } else {
+      const restore = this.modeBeforeHold ?? "companion";
+      this.modeBeforeHold = null;
+      if (this.currentInteractionMode !== restore) {
+        this.routeModeChange({ type: "mode_change", source: "observer", timestamp: Date.now(), mode: restore, reason: "call/chat ended" });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Shape-C group AAC chat (conversation room)
+  // -------------------------------------------------------------------------
+
+  /** Display name peers see for this student (first name preferred). */
+  private get conversationDisplayName(): string {
+    return this.currentStudentName || this.currentStudentFullName || "Friend";
+  }
+
+  /** Resolve + cache this coordinator's personId (studentId → persons.id). */
+  private async ensureConversationPersonId(): Promise<string | null> {
+    if (this.conversationPersonId) return this.conversationPersonId;
+    if (!this.studentId) return null;
+    try {
+      const person = await personRepository.getOrCreateForStudent(this.studentId);
+      this.conversationPersonId = person.id;
+    } catch (err) {
+      console.error("[AgentCoordinator] ensureConversationPersonId:", err);
+      return null;
+    }
+    return this.conversationPersonId;
+  }
+
+  /** Join/leave the shared conversation room for a group AAC chat. */
+  private async setConversationRoom(roomId: string | null): Promise<void> {
+    logLiveSession("CHAT_ROOM", `coordinator setConversationRoom(${roomId}) studentId=${this.studentId} (was ${this.conversationRoomId})`);
+    if (roomId === this.conversationRoomId) return;
+    const personId = await this.ensureConversationPersonId();
+    logLiveSession("CHAT_ROOM", `coordinator resolved personId=${personId} for studentId=${this.studentId}; ${roomId ? "JOINING" : "leaving"} room=${roomId}`);
+    // Leave the previous room first.
+    if (this.conversationRoomId && personId) {
+      leaveConversationRoom(this.conversationRoomId, personId);
+    }
+    this.conversationRoomId = roomId;
+    this.conversationActive = !!roomId;
+    this.conversationRoster.clear();
+    this.floorActiveNote = "";
+    this.currentFloor = null;
+    this.addresseeFocus = null;
+    if (roomId && personId) {
+      joinConversationRoom(roomId, {
+        personId,
+        name: this.conversationDisplayName,
+        onUtterance: (u) => this.onPeerUtterance(u),
+        onPresence: (p) => this.onPeerPresence(p),
+        onRoster: (members) => this.onPeerRoster(members),
+        onFloor: (s) => this.onFloor(s),
+        onPeerFocus: (f) => this.onPeerFocus(f),
+      });
+      flowNote("COORDINATOR", `Joined conversation room ${roomId} as "${this.conversationDisplayName}".`);
+    } else {
+      flowNote("COORDINATOR", "Left conversation room.");
+      this.pushConversationRoster(); // empty roster → client clears the header
+    }
+    // Stepping into a group chat is the same conversational posture as a call:
+    // the AI supports the student-to-student exchange rather than chatting
+    // itself. Force facilitator while in a room (released when both call + chat
+    // are clear).
+    this.updateFacilitatorHold();
+  }
+
+  /** A peer student voiced something. Deliver it as if it were heard speech so
+   *  it flows through all the existing mode / wake / board-rebuild logic. The
+   *  utterance is already attributed (it came from a known peer session), and
+   *  audio is carried by the call layer — here we only drive the AI/board. */
+  private onPeerUtterance(u: RoomUtterance): void {
+    // Default ROOM broadcast → every recipient may reply (toUser). A targeted
+    // utterance only rebuilds the addressed peer's board; others see it as
+    // ambient context. Addressee is a soft hint (see shape-C eval).
+    const addressedToMe = u.addressee === "ROOM" || u.addressee === this.conversationPersonId;
+    logLiveSession("CHAT_ROOM", `coordinator(studentId=${this.studentId}, personId=${this.conversationPersonId}) onPeerUtterance from="${u.fromName}" addressee=${u.addressee} addressedToMe=${addressedToMe} text="${u.text}" → routeTranscribed${addressedToMe ? " (toUser → BoardManager rebuild)" : " (ambient)"}`);
+    const event: TranscribedEvent = {
+      type: "transcribed",
+      source: "observer",
+      timestamp: u.at,
+      text: u.text,
+      speaker: u.fromName,
+      target: addressedToMe ? (this.currentStudentName || "USER") : "ROOM",
+      targetIsUser: addressedToMe,
+      confidence: "high",
+    };
+    flowNote("COORDINATOR", `Peer utterance from "${u.fromName}" (addressee=${u.addressee}) → ${addressedToMe ? "reply board" : "ambient"}.`);
+    this.routeTranscribed(event);
+  }
+
+  /** A peer joined or left the room — keep the roster current and give the AI a
+   *  light awareness note. */
+  private onPeerPresence(p: RoomPresence): void {
+    if (p.personId === this.conversationPersonId) return;
+    if (p.joined) this.conversationRoster.set(p.personId, p.name);
+    else {
+      this.conversationRoster.delete(p.personId);
+      // The peer who left was the focused addressee → clear the focus.
+      if (this.addresseeFocus === p.personId) this.addresseeFocus = null;
+    }
+    const note = `[CHAT] ${p.name} ${p.joined ? "joined" : "left"} the group chat.`;
+    this.observer?.sendContextInjection(note);
+    this.speaker?.sendContextInjection(note);
+    this.pushConversationRoster();
+  }
+
+  /** On join, the peers already in the room are delivered here (possibly in
+   *  several batches across instances). Merge into the roster and tell the AI
+   *  who's already present so a late joiner has the social context. */
+  private onPeerRoster(members: RoomMember[]): void {
+    const added: string[] = [];
+    for (const m of members) {
+      if (m.personId === this.conversationPersonId) continue;
+      if (!this.conversationRoster.has(m.personId)) added.push(m.name);
+      this.conversationRoster.set(m.personId, m.name);
+    }
+    if (added.length === 0) return;
+    const note = `[CHAT] Already in the group chat: ${added.join(", ")}.`;
+    this.observer?.sendContextInjection(note);
+    this.speaker?.sendContextInjection(note);
+    this.pushConversationRoster();
+  }
+
+  /** Send the current peer roster (name + stored-face photo) to the client so
+   *  it can render the group-chat header face row. Photos are fetched
+   *  best-effort + cached; the message is sent without them first if a fetch is
+   *  slow, then resent once resolved. */
+  private pushConversationRoster(): void {
+    const peers = Array.from(this.conversationRoster.entries()).map(([personId, name]) => ({ personId, name }));
+    // Send names immediately so the header appears without waiting on S3.
+    this.send({ type: "conversation_roster", peers });
+    if (peers.length === 0) return;
+    void Promise.all(
+      peers.map(async (p) => ({ ...p, photo: (await getPeerFacePhotoDataUrl(p.personId)) ?? undefined })),
+    )
+      .then((withPhotos) => {
+        // Only resend if we're still in the same room and at least one photo
+        // resolved (avoid a redundant identical message).
+        if (!this.conversationRoomId) return;
+        if (withPhotos.some((p) => p.photo)) {
+          this.send({ type: "conversation_roster", peers: withPhotos });
+        }
+      })
+      .catch((err) => console.error("[AgentCoordinator] pushConversationRoster photos:", err));
+  }
+
+  /** Floor/turn changed in the group chat. Advisory only — surface a concise
+   *  cue to the AI ("your turn" / "wait for X" / "X asked — you can answer") so
+   *  it can facilitate. Deduped, and announces the floor reopening once when a
+   *  surfaced turn clears. NEVER blocks the student from pressing. */
+  private onFloor(s: FloorState): void {
+    this.currentFloor = s;
+    // Tell the client so the header can highlight whose turn it is.
+    this.send({ type: "floor_state", holder: s.holder, awaiting: s.awaiting });
+    const me = this.conversationPersonId;
+    const nameOf = (id: string) => this.conversationRoster.get(id) || "someone";
+    let note = "";
+    if (s.holder === me) {
+      note = `[FLOOR] It's your turn to speak.`;
+    } else if (s.holder) {
+      note = `[FLOOR] It's ${nameOf(s.holder)}'s turn — let them answer.`;
+    } else if (s.awaiting && s.awaiting !== me) {
+      note = `[FLOOR] ${nameOf(s.awaiting)} asked the group — you can answer.`;
+    }
+    // else: open floor, or we're the one awaiting our own answer → not actionable.
+
+    if (note) {
+      if (note === this.floorActiveNote) return; // unchanged
+      this.floorActiveNote = note;
+    } else {
+      // Floor went open/neutral. Announce it once if we'd surfaced a turn.
+      if (!this.floorActiveNote) return;
+      this.floorActiveNote = "";
+      note = `[FLOOR] The floor is open — anyone may speak.`;
+    }
+    this.observer?.sendContextInjection(note);
+    this.speaker?.sendContextInjection(note);
+  }
+
+  /** Publish a voiced utterance to the conversation room, if in one. `bid`
+   *  marks a turn-handing question so the floor expects a response;
+   *  `buttonAddressee` is the peer name the BoardManager tagged on the button. */
+  private publishUtteranceToRoom(text: string, bid: boolean, buttonAddressee?: string): void {
+    if (!this.conversationRoomId || !this.conversationPersonId) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    publishRoomUtterance({
+      roomId: this.conversationRoomId,
+      fromPersonId: this.conversationPersonId,
+      fromName: this.conversationDisplayName,
+      text: trimmed,
+      addressee: this.resolveUtteranceAddressee(buttonAddressee),
+      bid,
+      at: Date.now(),
+    });
+  }
+
+  /** Decide who an outgoing utterance is addressed to (see addressee.ts for the
+   *  priority stack). Always returns a peer personId in the room, or "ROOM". */
+  private resolveUtteranceAddressee(buttonAddressee?: string): string {
+    return resolveAddressee({
+      me: this.conversationPersonId ?? "",
+      roster: this.conversationRoster,
+      focus: this.addresseeFocus,
+      floorAwaiting: this.currentFloor?.awaiting ?? null,
+      buttonAddressee,
+    });
+  }
+
+  /** The student tapped/dwelt on a peer's face (personId), or cleared it
+   *  (null). Set the addressee focus and nudge the BoardManager to build
+   *  phrases for that peer. */
+  private handleConversationFocus(personId: string | null): void {
+    if (!this.conversationRoomId) return;
+    if (!personId) {
+      if (this.addresseeFocus) {
+        this.addresseeFocus = null;
+        this.speaker?.sendContextInjection(`[CHAT FOCUS] cleared — addressing the whole group again.`);
+        this.broadcastFocus(null);
+      }
+      return;
+    }
+    // Only focus an actual peer who is in this room.
+    if (personId === this.conversationPersonId || !this.conversationRoster.has(personId)) return;
+    if (this.addresseeFocus === personId) return;
+    this.addresseeFocus = personId;
+    // Tell the addressed peer they're now being spoken to (symmetric with the
+    // clinician-side picker).
+    this.broadcastFocus(personId);
+    const name = this.conversationRoster.get(personId) || "them";
+    const note = `[CHAT FOCUS] The student is focused on ${name} — build replies and questions addressed specifically to ${name} (set each ${T.button}'s addressee to "${name}").`;
+    this.speaker?.sendContextInjection(note);
+    // Rebuild the board tailored to the focused peer.
+    const focusHint: ContextUpdateEvent = {
+      type: "context_update",
+      source: "observer",
+      timestamp: Date.now(),
+      updateType: "other",
+      key: "chat_focus",
+      description: `The student selected ${name} in the group chat — they likely want to say something to ${name}. Offer replies AND bids (questions) addressed to ${name}; set each ${T.button}'s addressee to "${name}".`,
+    };
+    this.recordEvent(focusHint);
+    if (this.sessionProfile === "resting") {
+      void this.transitionToProfile("awake").then(() => this.invokeBoardManager([focusHint]));
+    } else {
+      void this.invokeBoardManager([focusHint]);
+    }
+  }
+
+  /** Broadcast this student's current addressee focus to the room, so the
+   *  addressed peer (and external parties like a clinician) learn of it. */
+  private broadcastFocus(targetPersonId: string | null): void {
+    if (!this.conversationRoomId || !this.conversationPersonId) return;
+    publishRoomFocus({
+      roomId: this.conversationRoomId,
+      fromPersonId: this.conversationPersonId,
+      fromName: this.conversationDisplayName,
+      targetPersonId,
+    });
+  }
+
+  /** Someone else (a peer, or a clinician on the call) declared who they're
+   *  addressing. If it's THIS student, prep the board to respond to them. */
+  private onPeerFocus(f: RoomFocus): void {
+    if (f.targetPersonId !== this.conversationPersonId) return; // not aimed at us
+    const note = `[CHAT] ${f.fromName} is now speaking to you — offer ways to respond to ${f.fromName}.`;
+    this.speaker?.sendContextInjection(note);
+    const focusHint: ContextUpdateEvent = {
+      type: "context_update",
+      source: "observer",
+      timestamp: Date.now(),
+      updateType: "other",
+      key: "chat_addressed",
+      description: `${f.fromName} just turned to address the student directly in the group chat. Offer replies and follow-up questions aimed back at ${f.fromName}.`,
+    };
+    this.recordEvent(focusHint);
+    if (this.sessionProfile === "resting") {
+      void this.transitionToProfile("awake").then(() => this.invokeBoardManager([focusHint]));
+    } else {
+      void this.invokeBoardManager([focusHint]);
+    }
   }
 
   private routeModeChange(event: ModeChangeEvent): void {
@@ -6409,7 +6861,7 @@ export class AgentCoordinator {
     }
   }
 
-  private async streamStudentTts(text: string, source: string = "?"): Promise<void> {
+  private async streamStudentTts(text: string, source: string = "?", meta?: { bid?: boolean; addressee?: string }): Promise<void> {
     if (!this.studentVoice) return;
     // Cancel any in-flight TTS from a prior press / interpret AND tell
     // the client to drop queued utterance audio. Without this, a second
@@ -6422,6 +6874,12 @@ export class AgentCoordinator {
     }
     const controller = new AbortController();
     this.studentTtsAbortController = controller;
+
+    // Shape-C: the student just voiced something → broadcast it to any group
+    // chat peers. Skip re-voiced repeats (a perseverating tap isn't a new turn).
+    if (source !== "button_press_repeat") {
+      this.publishUtteranceToRoom(text, meta?.bid ?? false, meta?.addressee);
+    }
 
     flowOutput("COORDINATOR", "student_tts_start", `[${source}] "${text}"`);
     const iter = ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
@@ -7134,6 +7592,10 @@ export class AgentCoordinator {
       buttonType: b.buttonType,
       narrowDimension: (b as any).narrowDimension,
       narrowValue: (b as any).narrowValue,
+      // Carry the conversational role + group-chat addressee so the press can
+      // read them back (previously dropped here — role always read as "reply").
+      role: (b as { role?: "reply" | "bid" }).role,
+      addressee: (b as { addressee?: string }).addressee,
     };
 
     let newIdCounter = 0;

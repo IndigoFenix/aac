@@ -129,7 +129,18 @@ resource "aws_ecs_task_definition" "main" {
             name  = "REALTIME_BUS"
             value = var.enable_redis ? "redis" : "postgres"
           }
-        ]
+        ],
+        # TURN relay urls (non-secret). TURN_SECRET is injected via secrets below.
+        var.enable_coturn ? [
+          {
+            name  = "TURN_URLS"
+            value = local.coturn_turn_urls
+          },
+          {
+            name  = "TURN_TTL"
+            value = tostring(var.coturn_credential_ttl_seconds)
+          }
+        ] : []
       )
 
       secrets = concat(
@@ -137,6 +148,12 @@ resource "aws_ecs_task_definition" "main" {
           {
             name      = "REDIS_URL"
             valueFrom = "${aws_secretsmanager_secret.redis_auth[0].arn}:REDIS_URL::"
+          }
+        ] : [],
+        var.enable_coturn ? [
+          {
+            name      = "TURN_SECRET"
+            valueFrom = "${aws_secretsmanager_secret.turn[0].arn}:TURN_SECRET::"
           }
         ] : [],
         [

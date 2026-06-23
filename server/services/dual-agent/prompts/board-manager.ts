@@ -583,6 +583,7 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     // (gesture_recognized never arrives raw — the Coordinator converts a
     // resolved gesture into a button_pressed event before fan-out.)
     case "emote_change":
+    case "call_person":
     case "focus_request":
     case "audio_request":
     case "attention_change":
@@ -810,6 +811,10 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
       type: "string",
       enum: ["reply", "bid"],
       description: `The conversational ROLE of this ${T.button}. "reply" = an answer, reaction, or acknowledgement that does NOT require the other side to respond ("Me too", "I'm tired", "I want water"). "bid" = a question or request that HANDS THE TURN to the other side and expects a response ("What about you?", "Why?", "Can you help me?"). Default "reply" if omitted. See <conversation_register>.`,
+    },
+    addressee: {
+      type: "string",
+      description: `GROUP CHAT ONLY. When this ${T.button} is aimed at ONE specific peer (replying to or asking that peer directly), set this to that peer's NAME exactly as it appears in the conversation — e.g. the speaker in a peer's transcript ("[Sara to YOU] …" → "Sara") or the name in a "[CHAT FOCUS]" note. Omit (or "ROOM") for something said to the whole group. A "bid" addressed to a specific peer hands them the turn. Ignore this field entirely outside a group chat.`,
     },
     rowSpan: {
       type: "integer",

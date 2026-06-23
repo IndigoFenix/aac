@@ -29,6 +29,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     enabledByDefault: false,
   },
   {
+    id: "phone_call",
+    name: "Phone Call",
+    description: "Opens a list of the student's callable contacts so they can place a live video call to someone who is online. Use open_app(phone_call) when the student wants to call a person but you are not sure who, or wants to browse who is available. To call a specific known person directly, prefer the call_person tool instead.",
+    icon: "☎️",
+    enabledByDefault: true,
+  },
+  {
     id: "spotify",
     name: "Spotify",
     description: "Opens an interactive Spotify music player on the user's screen. Use open_app to launch it when the user wants to listen to music. Pass a search query in the data parameter (e.g. 'happy kids songs').",

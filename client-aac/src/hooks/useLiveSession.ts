@@ -29,6 +29,7 @@ export type {
   BoardPatch,
   CachedAudioClip,
   BinaryChoiceOption,
+  CallDirective,
 } from "./dual-agent-types";
 import type {
   DualAgentMessage,
@@ -39,6 +40,9 @@ import type {
   BoardPatch,
   CachedAudioClip,
   BinaryChoiceOption,
+  CallDirective,
+  ChatPeer,
+  FloorCue,
   UseDualAgentReturn,
 } from "./dual-agent-types";
 import { CLIENT_CAPABILITIES } from "./dual-agent-types";
@@ -232,6 +236,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Active app state
   const [activeApp, setActiveApp] = useState<ActiveAppData | null>(null);
+
+  // AI-initiated video-call directive (server `call_directive`). The CallProvider
+  // consumes the latest one and dials; `at` lets it dedupe.
+  const [callDirective, setCallDirective] = useState<CallDirective | null>(null);
+
+  // Group-chat peers (server `conversation_roster`) for the header face row.
+  const [conversationRoster, setConversationRoster] = useState<ChatPeer[]>([]);
+  // Group-chat turn cue (server `floor_state`).
+  const [floorState, setFloorState] = useState<FloorCue | null>(null);
 
   // Server-owned social-training session (peer persona replaces the
   // Speaker server-side). Set by the `social_session` message; the peer's
@@ -900,6 +913,29 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setActiveApp(null);
           break;
 
+        case "call_directive":
+          // AI asked to start a video call to a contact. Surface the latest
+          // directive; the CallProvider dials it (and dedupes via `at`).
+          if (msg.action === "start" && typeof msg.contactId === "string") {
+            setCallDirective({
+              action: "start",
+              contactId: msg.contactId,
+              contactName: typeof msg.contactName === "string" ? msg.contactName : undefined,
+              at: Date.now(),
+            });
+          }
+          break;
+
+        case "conversation_roster":
+          // Group-chat peers for the header face row (name + stored photo).
+          setConversationRoster(Array.isArray(msg.peers) ? msg.peers : []);
+          break;
+
+        case "floor_state":
+          // Group-chat turn cue for the header highlight.
+          setFloorState({ holder: msg.holder ?? null, awaiting: msg.awaiting ?? null });
+          break;
+
         case "social_session":
           // Server-owned social-training session lifecycle. "started"
           // carries the peer's face data; "ended" tears the face down
@@ -1374,6 +1410,24 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // so it's safe to call on every transition. No-ops if the socket isn't open.
   const sendMicState = useCallback((active: boolean, reason?: string) => {
     wsSend({ type: "mic_state", active, reason });
+  }, [wsSend]);
+
+  /** Tell the server a live video call started/ended (drives facilitator mode). */
+  const sendCallActive = useCallback((active: boolean, outcome?: string) => {
+    wsSend({ type: "call_active", active, ...(outcome ? { outcome } : {}) });
+  }, [wsSend]);
+
+  /** Tell the server the student entered/left a group AAC chat (shape C). Pass
+   *  the call/chat roomId on join, or null on leave. Drives peer-utterance flow. */
+  const sendConversationRoom = useCallback((roomId: string | null) => {
+    wsSend({ type: "conversation_room", roomId });
+  }, [wsSend]);
+
+  /** Tell the server the student focused a peer's face in the group chat (pass
+   *  the peer's personId), or cleared it (null). Focuses that peer as the
+   *  addressee and asks the BoardManager to build phrases for them. */
+  const sendConversationFocus = useCallback((personId: string | null) => {
+    wsSend({ type: "conversation_focus", personId });
   }, [wsSend]);
 
   /** Push construction-board state to the AI; relay formats as context injection. */
@@ -1956,6 +2010,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     binaryChoiceInputGlyphs,
     dismissBinaryChoice,
 
+    // AI-initiated video-call directive (consumed by CallProvider)
+    callDirective,
+
     // Caretaker alarm raised by the Observer agent
     activeAlarm,
     cancelAlarm,
@@ -1968,6 +2025,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendMessage,
     sendContextOnly,
     sendMicState,
+    sendCallActive,
+    sendConversationRoom,
+    sendConversationFocus,
+    conversationRoster,
+    floorState,
     sendBoardExit,
     sendVoice,
     voiceButtons,

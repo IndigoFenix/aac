@@ -1336,6 +1336,17 @@ export async function getPersonFaceImageUrlForStudent(
   return null;
 }
 
+/** Resolve a user's own enrolled face-image S3 key (or null). Used by the
+ *  group-chat header to show a non-student participant's stored photo. */
+export async function getFaceImageUrlForUser(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ faceImageUrl: biometricData.faceImageUrl })
+    .from(users)
+    .leftJoin(biometricData, eq(biometricData.id, users.biometricDataId))
+    .where(eq(users.id, userId));
+  return row?.faceImageUrl ?? null;
+}
+
 export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson[]> {
   const people: KnownPerson[] = [];
 

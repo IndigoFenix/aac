@@ -226,6 +226,7 @@ export const zh = {
     noStudentSelected: "未选择{{STUDENT}}",
     calendar: "日历",
     personChat: "消息",
+    call: "通话",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const zh = {
     },
   },
 
+  call: {
+    title: "通话",
+    searchContacts: "搜索联系人",
+    noInstitute: "加入组织即可开始通话",
+    loadingContacts: "正在加载联系人…",
+    noContacts: "未找到联系人",
+    callPerson: "呼叫 {{name}}",
+    students: "学生",
+    online: "在线",
+    offline: "离线",
+    calling: "正在呼叫…",
+    connecting: "正在连接…",
+    callEnded: "通话已结束",
+    incoming: "来电",
+    unknownCaller: "未知来电者",
+    accept: "接听",
+    decline: "拒接",
+    hangUp: "挂断",
+    mute: "静音",
+    unmute: "取消静音",
+    cameraOn: "打开摄像头",
+    cameraOff: "关闭摄像头",
+    remoteVideo: "对方视频",
+    selfVideo: "你的摄像头",
+    whoTalkingTo: "你在和谁说话？",
+    everyone: "所有人",
+    speakTo: "对话对象",
+    isTalkingToYou: "正在和你说话",
+  },
+
   personChat: {
     title: "消息",
     newChat: "新对话",
@@ -3523,6 +3554,8 @@ export const zh = {
     otherStudents: "其他学生",
     linkedHint: "链接的联系人与链接的用户/学生记录共享其生物识别数据。在该记录上编辑生物识别数据。",
     unlinkedHint: "此联系人有自己的生物识别记录。上传照片以启用 AAC 面部识别。",
+    callable: "允许视频通话",
+    callableHint: "当此人在线时，学生（和 AI）可以与其进行视频通话。",
     photoAfterCreate: "保存联系人后，照片上传将可用。",
   },
 

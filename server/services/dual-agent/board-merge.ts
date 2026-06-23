@@ -25,6 +25,13 @@ export interface MergeButton {
   narrowValue?: string;
   rowSpan?: number;
   colSpan?: number;
+  /** Conversational role ("reply" | "bid"). Listed here so it survives the
+   *  merge into currentBoardButtons and is readable on press. */
+  role?: "reply" | "bid";
+  /** Group-chat addressee: the peer this button is aimed at (a peer name the
+   *  Board Manager set, resolved to a studentId on press), or "ROOM". Survives
+   *  the merge so the press can route the utterance to the right peer. */
+  addressee?: string;
 }
 
 export interface MergeReport {

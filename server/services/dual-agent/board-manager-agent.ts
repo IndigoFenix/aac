@@ -142,6 +142,13 @@ function extractButtonRole(input: unknown): "reply" | "bid" | undefined {
   return r === "bid" || r === "reply" ? r : undefined;
 }
 
+/** Read the AI's group-chat addressee for a button (a peer name, or "ROOM").
+ *  Undefined for anything non-string. Resolved to a peer session on press. */
+function extractButtonAddressee(input: unknown): string | undefined {
+  const a = (input as { addressee?: unknown } | null)?.addressee;
+  return typeof a === "string" && a.trim() ? a.trim() : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -530,9 +537,11 @@ function parseToolCall(
         ? arr.flatMap(item => {
             const kind = extractSpecialButtonType(item);
             if (kind) return [buildSpecialButton(kind)];
-            // Carry the AI's conversational role onto each parsed button.
+            // Carry the AI's conversational role + group-chat addressee onto
+            // each parsed button.
             const role = extractButtonRole(item);
-            return parseStructuredButtonsExpanding(item).map(b => Object.assign(b, { role }));
+            const addressee = extractButtonAddressee(item);
+            return parseStructuredButtonsExpanding(item).map(b => Object.assign(b, { role, addressee }));
           }).filter((b): b is NonNullable<typeof b> => !!b)
         : [];
       const buttons: BoardButton[] = parsed.map(b => ({
@@ -547,6 +556,7 @@ function parseToolCall(
         rowSpan: b.rowSpan,
         colSpan: b.colSpan,
         role: (b as { role?: "reply" | "bid" }).role,
+        addressee: (b as { addressee?: string }).addressee,
         buttonType: b.buttonType,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,

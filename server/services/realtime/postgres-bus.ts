@@ -13,7 +13,7 @@ const NOTIFY_CHANNEL = "realtime_events";
 export class PostgresBus implements FanoutBus {
   readonly instanceId = randomUUID();
   private client: pg.Client | null = null;
-  private handler: ((channel: string, payload: string) => void) | null = null;
+  private handlers: ((channel: string, payload: string) => void)[] = [];
   private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly connectionString: string) {}
@@ -31,7 +31,7 @@ export class PostgresBus implements FanoutBus {
       if (msg.channel !== NOTIFY_CHANNEL || !msg.payload) return;
       try {
         const decoded = JSON.parse(msg.payload) as { channel: string; body: string };
-        this.handler?.(decoded.channel, decoded.body);
+        for (const handler of this.handlers) handler(decoded.channel, decoded.body);
       } catch (err) {
         console.error("[PostgresBus] payload parse error:", err);
       }
@@ -71,7 +71,7 @@ export class PostgresBus implements FanoutBus {
   }
 
   onMessage(handler: (channel: string, payload: string) => void): void {
-    this.handler = handler;
+    this.handlers.push(handler);
   }
 
   async stop(): Promise<void> {

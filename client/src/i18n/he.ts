@@ -226,6 +226,7 @@ export const he = {
     noStudentSelected: "אין {{STUDENT}} נבחר",
     calendar: "לוח שנה",
     personChat: "הודעות",
+    call: "שיחה",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const he = {
     },
   },
 
+  call: {
+    title: "שיחה",
+    searchContacts: "חיפוש אנשי קשר",
+    noInstitute: "הצטרפו לארגון כדי להתחיל בשיחות",
+    loadingContacts: "טוען אנשי קשר…",
+    noContacts: "לא נמצאו אנשי קשר",
+    callPerson: "התקשרו אל {{name}}",
+    students: "תלמידים",
+    online: "מחובר",
+    offline: "מנותק",
+    calling: "מתקשר…",
+    connecting: "מתחבר…",
+    callEnded: "השיחה הסתיימה",
+    incoming: "שיחה נכנסת",
+    unknownCaller: "מתקשר לא ידוע",
+    accept: "מענה",
+    decline: "דחייה",
+    hangUp: "ניתוק",
+    mute: "השתקה",
+    unmute: "ביטול השתקה",
+    cameraOn: "הפעלת מצלמה",
+    cameraOff: "כיבוי מצלמה",
+    remoteVideo: "וידאו מרוחק",
+    selfVideo: "המצלמה שלך",
+    whoTalkingTo: "עם מי אתה מדבר?",
+    everyone: "כולם",
+    speakTo: "דבר עם",
+    isTalkingToYou: "מדבר אליך",
+  },
+
   personChat: {
     title: "הודעות",
     newChat: "צ'אט חדש",
@@ -3523,6 +3554,8 @@ export const he = {
     otherStudents: "תלמידים אחרים",
     linkedHint: "אנשי קשר מקושרים חולקים את הנתונים הביומטריים שלהם עם רשומת המשתמש/תלמיד המקושרת. ערוך נתונים ביומטריים על הרשומה הזו.",
     unlinkedHint: "לאיש קשר זה יש רשומה ביומטרית משלו. העלה תמונה כדי לאפשר זיהוי פנים ב-AAC.",
+    callable: "אפשר שיחות וידאו",
+    callableHint: "התלמיד (וה-AI) יכולים להתקשר לאדם זה בשיחת וידאו כשהוא מחובר.",
     photoAfterCreate: "העלאת תמונה תהיה זמינה לאחר שמירת איש הקשר.",
   },
 

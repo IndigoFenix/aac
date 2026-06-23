@@ -6,7 +6,7 @@
 // as a chat member, we materialize their person row. Both facet FKs are UNIQUE,
 // so concurrent creation is resolved with onConflictDoNothing + re-select.
 
-import { persons, type Person } from "@shared/schema";
+import { persons, users, students, type Person } from "@shared/schema";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
 
@@ -48,6 +48,24 @@ export class PersonRepository {
   async getUserId(personId: string): Promise<string | null> {
     const [row] = await db.select({ userId: persons.userId }).from(persons).where(eq(persons.id, personId));
     return row?.userId ?? null;
+  }
+
+  /** Human-readable name for a person — user-facet name, else student name. */
+  async getDisplayName(personId: string): Promise<string> {
+    const [row] = await db
+      .select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        studentName: students.name,
+      })
+      .from(persons)
+      .leftJoin(users, eq(users.id, persons.userId))
+      .leftJoin(students, eq(students.id, persons.studentId))
+      .where(eq(persons.id, personId));
+    if (!row) return "Someone";
+    const userName = [row.firstName, row.lastName].filter(Boolean).join(" ");
+    return userName || row.studentName || row.email || "Someone";
   }
 }
 

@@ -62,6 +62,7 @@ interface FormState {
   contextNotes: string;
   linkedUserId: string;
   linkedStudentId: string;
+  callable: boolean;
 }
 
 const EMPTY: FormState = {
@@ -75,6 +76,7 @@ const EMPTY: FormState = {
   contextNotes: '',
   linkedUserId: '',
   linkedStudentId: '',
+  callable: false,
 };
 
 const ROLE_OPTIONS: TeamMemberRole[] = [
@@ -108,6 +110,7 @@ function contactToForm(c: StudentContact): FormState {
     contextNotes: c.contextNotes || '',
     linkedUserId: c.linkedUserId || '',
     linkedStudentId: c.linkedStudentId || '',
+    callable: c.callable ?? false,
   };
 }
 
@@ -123,6 +126,8 @@ function formToPayload(form: FormState) {
     contextNotes: form.contextNotes.trim() || undefined,
     linkedUserId: form.linkedUserId.trim() || null,
     linkedStudentId: form.linkedStudentId.trim() || null,
+    // Only linked contacts can be callable; never send true for an unlinked one.
+    callable: (form.linkedUserId || form.linkedStudentId) ? form.callable : false,
   };
 }
 
@@ -313,6 +318,23 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
               {isLinked ? t('contacts.linkedHint') : t('contacts.unlinkedHint')}
             </p>
           </div>
+
+          {/* Callable — only meaningful for linked contacts (a person to call). */}
+          {isLinked && (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.callable}
+                onChange={(e) => setForm((f) => ({ ...f, callable: e.target.checked }))}
+                aria-label={t('contacts.callable')}
+              />
+              <span className="text-sm">
+                {t('contacts.callable')}
+                <span className="block text-xs text-muted-foreground">{t('contacts.callableHint')}</span>
+              </span>
+            </label>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1">

@@ -8,10 +8,24 @@ import { setupSocialBotWebSocket } from "./services/social-bot/social-bot-relay"
 import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
 import { subscribe, registerPersonSocket } from "./services/realtime/room-registry";
 import { initBus } from "./services/realtime/bus-factory";
+import { initPresence } from "./services/realtime/presence";
 import { initPersonChatFanout } from "./services/personChat/personChatFanout";
 import { personChatController } from "./controllers/personChatController";
 import { personChatService } from "./services/personChat/personChatService";
 import { personRepository } from "./repositories/personRepository";
+import { initCallFanout } from "./services/call/callFanout";
+import {
+  initConversationRoomFanout,
+  joinRoom as joinConversationRoom,
+  leaveRoom as leaveConversationRoom,
+} from "./services/dual-agent/conversation-room";
+import { callService, CallError, CALL_PERSON_TOPIC } from "./services/call/callService";
+import { buildIceConfig } from "./services/call/turnCredentials";
+import { ClinicianStt } from "./services/call/clinician-stt";
+import { logLiveSession } from "./services/dual-agent/dual-agent-logger";
+import { createStreamingSession } from "./services/voice/google-stt-service";
+import { listCallableContacts, listCallableStudentsForUser, userMayActAsStudent } from "./services/call/callContacts";
+import type { CallClientCommand } from "@shared/realtime-events";
 
 import {
   authController,
@@ -122,6 +136,65 @@ const aacUpload = multer({
     }
   },
 });
+
+/**
+ * Join/leave a non-student (clinician) caller to the conversation room for a
+ * call, with callbacks that deliver the room roster + "who's addressing me" over
+ * this socket. The clinician becomes a full room member (so AAC students see
+ * them in their headers and can address them). AAC students are excluded — they
+ * join the room via their dual-agent session, keyed on the same personId.
+ */
+async function handleCallConversation(socket: any, personId: string, join: boolean, callId: string): Promise<void> {
+  logLiveSession("CHAT_ROOM", `/ws/call call:conversation join=${join} callId=${callId} person=${personId}`);
+  if (join) {
+    const actingPerson = await personRepository.getById(personId);
+    if (actingPerson?.studentId) {
+      logLiveSession("CHAT_ROOM", `/ws/call skipping room-join: person=${personId} is a STUDENT (studentId=${actingPerson.studentId}) — joins via dual-agent instead`);
+      return; // AAC student → joins via dual-agent
+    }
+    if (socket.__convRoomId === callId) return; // already in
+    logLiveSession("CHAT_ROOM", `/ws/call CLINICIAN person=${personId} joining conversation room=${callId}`);
+    const name = await personRepository.getDisplayName(personId);
+    const roster = new Map<string, string>(); // personId → name
+    socket.__convRoomId = callId;
+    socket.__convRoster = roster;
+    const sendRoster = () => {
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(JSON.stringify({
+        type: "call:roster",
+        participants: Array.from(roster.entries()).map(([pid, n]) => ({ personId: pid, name: n })),
+      }));
+    };
+    joinConversationRoom(callId, {
+      personId,
+      name,
+      onUtterance: () => { /* clinician hears peers via the call audio */ },
+      onPresence: (p) => {
+        if (p.joined) roster.set(p.personId, p.name);
+        else roster.delete(p.personId);
+        sendRoster();
+      },
+      onRoster: (members) => {
+        for (const m of members) roster.set(m.personId, m.name);
+        sendRoster();
+      },
+      onFloor: () => { /* the floor cue is for the AI; clinician doesn't need it */ },
+      onPeerFocus: (f) => {
+        if (f.targetPersonId !== personId || socket.readyState !== socket.OPEN) return;
+        socket.send(JSON.stringify({ type: "call:addressed", fromPersonId: f.fromPersonId, fromName: f.fromName }));
+      },
+    });
+  } else {
+    const roomId: string | undefined = socket.__convRoomId;
+    if (roomId) {
+      leaveConversationRoom(roomId, personId);
+      socket.__convRoomId = null;
+      socket.__convRoster = null;
+    }
+    socket.__stt?.stop();
+    socket.__stt = null;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set trust proxy for rate limiting behind proxies
@@ -1744,6 +1817,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     personChatController.registerPush(req, res),
   );
 
+  // ============= LIVE CALL ROUTES =============
+  // ICE servers for WebRTC. Always returns STUN; adds a self-hosted coturn TURN
+  // relay with a freshly-minted, time-limited HMAC credential when TURN_URLS +
+  // TURN_SECRET are configured (otherwise STUN-only). See turnCredentials.ts and
+  // terraform/modules/coturn.
+  app.get("/api/call/ice-servers", requireAuth, (req, res) => {
+    const user = req.user as any;
+    const { iceServers } = buildIceConfig(user?.id ?? "anon");
+    res.json({ success: true, iceServers });
+  });
+
+  // Callable contacts for a student (with live online flags) — backs the AAC
+  // "Phone call" app and incoming-caller resolution.
+  app.get("/api/call/callable-contacts/:studentId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const studentId = req.params.studentId;
+      if (!(await userMayActAsStudent(user.id, studentId))) {
+        res.status(403).json({ success: false, message: "No access to this student" });
+        return;
+      }
+      const contacts = await listCallableContacts(studentId);
+      res.json({ success: true, contacts });
+    } catch (err) {
+      console.error("[call] callable-contacts:", err);
+      res.status(500).json({ success: false, message: "Failed to load callable contacts" });
+    }
+  });
+
+  // Students who have listed the current user as a callable contact — lets a
+  // clinician/caregiver call a student (the callable link is bidirectional).
+  app.get("/api/call/callable-students", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const students = await listCallableStudentsForUser(user.id);
+      res.json({ success: true, students });
+    } catch (err) {
+      console.error("[call] callable-students:", err);
+      res.status(500).json({ success: false, message: "Failed to load callable students" });
+    }
+  });
+
+  // Active participants of a call (personId + name), for the clinician's in-call
+  // addressee picker. Only a participant in the call may read it.
+  app.get("/api/call/:callId/participants", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const callId = req.params.callId;
+      const person = await personRepository.getOrCreateForUser(user.id);
+      const isMember = await callService.isParticipant(callId, person.id);
+      if (!isMember && !user.isAdmin && !user.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not a participant in this call" });
+        return;
+      }
+      const participants = (await callService.listParticipantsWithNames(callId))
+        .filter((p) => p.personId !== person.id); // exclude self
+      res.json({ success: true, participants });
+    } catch (err) {
+      console.error("[call] participants:", err);
+      res.status(500).json({ success: false, message: "Failed to load participants" });
+    }
+  });
+
   // ============= ADMIN ROUTES =============
   // Institutes (admin lookup)
   app.get("/api/admin/institutes", requireAuth, requireSystemAdmin, (req, res) =>
@@ -2091,7 +2227,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize the cross-instance fanout bus and wire the person-chat dispatcher
   // into it. Selection (memory / postgres / redis) is via REALTIME_BUS env var.
   await initBus();
+  initPresence();
   initPersonChatFanout();
+  initCallFanout();
+  initConversationRoomFanout();
 
   registerRealtimeHandler({
     path: "/ws/person-chat",
@@ -2104,6 +2243,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const topics = await personChatService.initialTopicsForPerson(person.id);
       for (const topic of topics) subscribe(socket, topic);
       socket.send(JSON.stringify({ type: "personChat:ready", topics, selfPersonId: person.id }));
+    },
+  });
+
+  registerRealtimeHandler({
+    path: "/ws/call",
+    onConnect: async (socket, user) => {
+      // By default the connected user acts as its own person. The AAC client
+      // declares `call:act-as` to act as the student it fronts (validated below).
+      const person = await personRepository.getOrCreateForUser(user.id);
+      (socket as any).__actingPersonId = person.id;
+      registerPersonSocket(person.id, socket);
+      subscribe(socket, CALL_PERSON_TOPIC(person.id));
+      socket.send(JSON.stringify({ type: "call:ready", selfPersonId: person.id }));
+    },
+    onCommand: async (socket, user, message) => {
+      const cmd = message as CallClientCommand;
+      if (typeof cmd?.type !== "string" || !cmd.type.startsWith("call:")) return;
+
+      // Switch the socket's acting person to a student the user serves.
+      if (cmd.type === "call:act-as") {
+        const serves = await userMayActAsStudent(user.id, cmd.studentId);
+        if (!serves) {
+          socket.send(JSON.stringify({ type: "call:error", payload: { code: "forbidden", message: "Not allowed to act as this student" } }));
+          return;
+        }
+        const studentPerson = await personRepository.getOrCreateForStudent(cmd.studentId);
+        (socket as any).__actingPersonId = studentPerson.id;
+        registerPersonSocket(studentPerson.id, socket);
+        subscribe(socket, CALL_PERSON_TOPIC(studentPerson.id));
+        socket.send(JSON.stringify({ type: "call:ready", selfPersonId: studentPerson.id }));
+        return;
+      }
+
+      const personId: string = (socket as any).__actingPersonId
+        ?? (await personRepository.getOrCreateForUser(user.id)).id;
+      try {
+        switch (cmd.type) {
+          case "call:invite":
+            await callService.invite(personId, { callId: cmd.callId, roomId: cmd.roomId, media: cmd.media });
+            break;
+          case "call:invite-contact":
+            await callService.inviteContact(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media });
+            break;
+          case "call:accept":
+            await callService.accept(personId, { callId: cmd.callId });
+            break;
+          case "call:decline":
+            await callService.decline(personId, { callId: cmd.callId, reason: cmd.reason });
+            break;
+          case "call:cancel":
+            await callService.cancel(personId, { callId: cmd.callId });
+            break;
+          case "call:signal":
+            await callService.signal(personId, { callId: cmd.callId, to: cmd.to, signal: cmd.signal });
+            break;
+          case "call:media-state":
+            await callService.mediaState(personId, { callId: cmd.callId, audio: cmd.audio, video: cmd.video, pose: cmd.pose });
+            break;
+          case "call:leave":
+            await callService.leave(personId, { callId: cmd.callId });
+            break;
+          case "call:focus":
+            // Caller picked who they're addressing → relay into the conversation
+            // room so the addressed AAC student's AI can prepare a response.
+            // Remember it so the caller's spoken utterances inherit the addressee.
+            (socket as any).__addressee = cmd.to ?? "ROOM";
+            await callService.focus(personId, { callId: cmd.callId, to: cmd.to ?? null });
+            break;
+          case "call:utterance": {
+            // PRIMARY: a non-student caller's Web-Speech transcript → publish
+            // into the conversation room. Gated on room membership.
+            const roomId: string | undefined = (socket as any).__convRoomId;
+            const text = typeof cmd.text === "string" ? cmd.text.trim() : "";
+            if (roomId && text) {
+              logLiveSession("CLINICIAN_STT", `call:utterance (Web Speech) text="${text}" → publish to room=${roomId} addressee=${(socket as any).__addressee ?? "ROOM"}`);
+              await callService.utterance(personId, { callId: roomId, text, addressee: (socket as any).__addressee ?? "ROOM" });
+            }
+            break;
+          }
+          case "call:audio": {
+            // FALLBACK: a non-student caller's mic PCM → server STT → publish each
+            // phrase into the conversation room. Gated on room membership
+            // (clinician members only; AAC students are transcribed on-device).
+            const roomId: string | undefined = (socket as any).__convRoomId;
+            if (!roomId || typeof cmd.chunk !== "string") {
+              if (!(socket as any).__audioDropLogged) {
+                (socket as any).__audioDropLogged = true;
+                logLiveSession("CLINICIAN_STT", `DROPPING call:audio — convRoomId=${roomId ?? "(not joined)"} chunkType=${typeof cmd.chunk}. Clinician not in conversation room → no STT. (logged once)`);
+              }
+              break;
+            }
+            let stt: ClinicianStt | undefined = (socket as any).__stt;
+            if (!stt) {
+              logLiveSession("CLINICIAN_STT", `first call:audio chunk for room=${roomId} person=${personId} lang=${cmd.lang ?? "?"} sampleRate=${cmd.sampleRate} — creating STT session`);
+              stt = new ClinicianStt(
+                cmd.lang,
+                (text) => {
+                  const rid: string | undefined = (socket as any).__convRoomId;
+                  logLiveSession("CLINICIAN_STT", `STT onFinal text="${text}" → publish to room=${rid ?? "(none)"} addressee=${(socket as any).__addressee ?? "ROOM"}`);
+                  if (!rid) return;
+                  void callService
+                    .utterance(personId, { callId: rid, text, addressee: (socket as any).__addressee ?? "ROOM" })
+                    .catch((err) => console.warn("[call] utterance publish failed:", err?.message));
+                },
+                typeof cmd.sampleRate === "number" && cmd.sampleRate > 0 ? cmd.sampleRate : 48000,
+                // Echo the live transcript back so the caller can see what the
+                // recognizer is hearing (debug + a self-caption).
+                (text, isFinal) => {
+                  if (socket.readyState === socket.OPEN) {
+                    socket.send(JSON.stringify({ type: "call:transcript", text, isFinal }));
+                  }
+                },
+              );
+              (socket as any).__stt = stt;
+            }
+            stt.feed(cmd.chunk);
+            break;
+          }
+          case "call:conversation":
+            // A non-student (clinician) caller joins/leaves the conversation room
+            // for this call, so they appear in AAC students' rosters and receive
+            // roster + "who's addressing me" updates over this socket. AAC
+            // students join the room via their dual-agent session instead.
+            await handleCallConversation(socket, personId, cmd.join, cmd.callId);
+            break;
+        }
+      } catch (err: any) {
+        const code = err instanceof CallError ? err.code : "error";
+        console.warn(`[call] command ${cmd.type} (acting=${personId}) failed: ${code} — ${err?.message}`);
+        socket.send(JSON.stringify({
+          type: "call:error",
+          payload: { callId: (cmd as any).callId, code, message: err?.message ?? "Call error" },
+        }));
+      }
+    },
+    onClose: (socket) => {
+      // Leave any conversation room this socket joined + tear down its STT
+      // session (clinician disconnects).
+      const roomId = (socket as any).__convRoomId as string | undefined;
+      const personId = (socket as any).__actingPersonId as string | undefined;
+      if (roomId && personId) {
+        try { leaveConversationRoom(roomId, personId); } catch { /* ignore */ }
+      }
+      try { (socket as any).__stt?.stop(); } catch { /* ignore */ }
+      (socket as any).__stt = null;
+    },
+  });
+
+  // ============= STT TEST HARNESS =============
+  // A standalone sandbox for evaluating server-side (Google Cloud) STT quality
+  // in isolation from the call machinery. The client streams mic PCM; we feed it
+  // to a streaming recognizer and stream interim/final transcripts back. Lets us
+  // compare server-side STT against the browser's Web Speech API and tune
+  // capture constraints / model without touching live calls.
+  registerRealtimeHandler({
+    path: "/ws/stt-test",
+    onConnect: (socket) => {
+      socket.send(JSON.stringify({ type: "stt:ready" }));
+    },
+    onCommand: (socket, _user, message) => {
+      const msg = message as any;
+      if (typeof msg?.type !== "string") return;
+      const s = socket as any;
+      const send = (obj: unknown) => { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(obj)); };
+      if (msg.type === "stt:start") {
+        try { s.__sttTest?.abort(); } catch { /* ignore */ }
+        s.__sttTest = createStreamingSession({
+          sampleRateHertz: typeof msg.sampleRate === "number" && msg.sampleRate > 0 ? msg.sampleRate : 48000,
+          languageHint: typeof msg.lang === "string" ? msg.lang : undefined,
+          model: typeof msg.model === "string" && msg.model ? msg.model : "latest_short",
+          onInterim: (text) => send({ type: "stt:interim", text }),
+          onFinal: (text) => send({ type: "stt:final", text }),
+          onError: (error) => send({ type: "stt:error", error }),
+        });
+        send({ type: "stt:started", sampleRate: msg.sampleRate, model: msg.model ?? "latest_short" });
+      } else if (msg.type === "stt:audio") {
+        if (s.__sttTest && typeof msg.chunk === "string") s.__sttTest.write(msg.chunk);
+      } else if (msg.type === "stt:stop") {
+        try { void s.__sttTest?.end(); } catch { /* ignore */ }
+        s.__sttTest = null;
+      }
+    },
+    onClose: (socket) => {
+      try { (socket as any).__sttTest?.abort(); } catch { /* ignore */ }
+      (socket as any).__sttTest = null;
     },
   });
 

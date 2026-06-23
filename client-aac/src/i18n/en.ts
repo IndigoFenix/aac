@@ -716,6 +716,28 @@ export const en = {
     starting: "Starting…",
   },
 
+  call: {
+    incoming: "Incoming call",
+    accept: "Yes",
+    decline: "No",
+    calling: "Calling…",
+    connecting: "Connecting…",
+    inCall: "In call",
+    hangUp: "Hang up",
+    phoneCallApp: "Phone call",
+    noCallableContacts: "No one to call right now.",
+    online: "Online",
+    offline: "Offline",
+    callContact: "Call",
+    unknownCaller: "Unknown",
+    groupChat: {
+      peopleInChat: "People in this chat",
+      talkTo: "Talk to",
+      talkingTo: "Talking to",
+      yourTurn: "Your turn",
+    },
+  },
+
   social: {
     peer: "Peer:",
     waiting: "Waiting for peer…",

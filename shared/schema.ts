@@ -1055,7 +1055,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'call' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
@@ -1360,6 +1360,13 @@ export interface BoardButton {
    * a visual indicator and the per-mode press handling. Defaults to "reply".
    */
   role?: "reply" | "bid";
+  /**
+   * Group-chat addressee: the peer this button is specifically aimed at (a peer
+   * name the Board Manager set when building a reply/bid directed at one peer),
+   * or "ROOM"/omitted for the whole room. On press the Coordinator resolves the
+   * name to that peer's session and routes the utterance accordingly.
+   */
+  addressee?: string;
   /**
    * For `buttonType: "suggestion"` only — the full `suggestion:<dim>:<value>`
    * key this button represents. The AAC client parses it on press to update

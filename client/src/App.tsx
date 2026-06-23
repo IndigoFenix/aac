@@ -16,6 +16,7 @@ import { StudentLabelSync } from "@/hooks/useStudentLabel";
 import NotFound from "@/pages/not-found";
 import PurchaseCredits from "@/pages/purchase-credits";
 import PaddleTest from "@/pages/paddle-test";
+import SttTestPanel from "@/features/sttTest/SttTestPanel";
 import TermsOfService from "@/pages/terms-of-service";
 import PrivacyPolicy from "@/pages/privacy-policy";
 import CookiePolicy from "@/pages/cookie-policy";
@@ -32,6 +33,9 @@ import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
 import { PersonChatProvider } from "./features/personChat/PersonChatContext";
+import { CallProvider } from "./features/call/CallContext";
+import { CallView } from "./features/call/CallView";
+import { IncomingCallModal } from "./features/call/IncomingCallModal";
 import { IdentityVerificationDialog } from "./components/IdentityVerificationDialog";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
@@ -238,6 +242,12 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/stt-test">
+        <ProtectedRoute>
+          <SttTestPanel />
+        </ProtectedRoute>
+      </Route>
+
       {/* Dashboard feature routes - all protected */}
       {/* Core workspace features */}
       <Route path="/boards" component={ProtectedDashboard} />
@@ -259,6 +269,7 @@ function Router() {
       <Route path="/calendar" component={ProtectedDashboard} />
       <Route path="/locations" component={ProtectedDashboard} />
       <Route path="/userchat" component={ProtectedDashboard} />
+      <Route path="/call" component={ProtectedDashboard} />
       <Route path="/deep-analysis" component={ProtectedDashboard} />
       <Route path="/shares" component={ProtectedDashboard} />
       <Route path="/insurance-bridge" component={ProtectedDashboard} />
@@ -399,6 +410,7 @@ function App() {
                 <StudentLabelSync />
                 <StudentProvider>
                   <PersonChatProvider>
+                  <CallProvider>
                   <FeaturePanelProvider>
                     <ChatProvider>
                       <ThemeProvider defaultTheme="dark">
@@ -406,12 +418,15 @@ function App() {
                           <TooltipProvider>
                             <Toaster />
                             <Router />
+                            <CallView />
+                            <IncomingCallModal />
                             <CookieConsent />
                           </TooltipProvider>
                         </AccessibilityProvider>
                       </ThemeProvider>
                     </ChatProvider>
                   </FeaturePanelProvider>
+                  </CallProvider>
                   </PersonChatProvider>
                 </StudentProvider>
               </InstituteProvider>

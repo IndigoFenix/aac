@@ -1,0 +1,1 @@
+ALTER TABLE "student_contacts" ADD COLUMN "callable" boolean DEFAULT false NOT NULL;

@@ -34,6 +34,8 @@ import {
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useSocialBot } from "@/contexts/SocialBotContext";
+import { useCallOptional } from "@/contexts/CallContext";
+import { CallFace } from "@/components/CallFace";
 import { SocialDebugDialog } from "@/components/SocialDebugDialog";
 import { ProceduralFace } from "@shared/social-bot/ProceduralFace";
 import type { ParsedBoardData } from "@shared/schema";
@@ -169,6 +171,11 @@ export function DualAgentConversationBox({
   } = useDualAgentContext();
   const sprite = useAvatarSprite();
   const socialBot = useSocialBot();
+  // Active video call takes over the avatar slot (precedence over both the idle
+  // AI avatar and the social-trainer peer). Optional so the box still renders if
+  // no CallProvider is mounted.
+  const call = useCallOptional();
+  const callActive = !!call?.active;
   // DEBUG-only: social-trainer parameter/internals inspector dialog.
   const [showSocialDebug, setShowSocialDebug] = useState(false);
   const { t, isRTL } = useLanguage();
@@ -346,7 +353,10 @@ export function DualAgentConversationBox({
   // The AI's own avatar is visible only when awake and not handed to a social
   // peer. Its name tag follows it: under the avatar normally, under the cave
   // when the AI is silent (asleep/muted) or a social-trainer peer has the slot.
-  const aiAvatarVisible = !isAsleep && !socialBot.active;
+  // During a call the remote peer's face takes the avatar slot and the AI
+  // retreats "into the cave" (same as a social-trainer session) — so its own
+  // avatar is hidden and its name tag moves under the cave.
+  const aiAvatarVisible = !isAsleep && !socialBot.active && !callActive;
   const aiNameTag = aiName ? (
     <div
       className="pointer-events-none select-none absolute left-1/2 -translate-x-1/2 bottom-0 flex items-center gap-1 rounded-full bg-black/40 px-1.5 py-0.5 text-[10px] text-white/85 max-w-[88px]"
@@ -376,10 +386,11 @@ export function DualAgentConversationBox({
               >
                 <AacCave
                   avatar={sprite.avatar}
-                  // During a social-trainer session the companion is silent (the
-                  // peer has taken the avatar slot), so show the cave occupied —
-                  // the same images it shows in silent/muted mode.
-                  empty={!isAsleep && !socialBot.active}
+                  // During a social-trainer session OR an active call the
+                  // companion is silent (the peer/remote face has taken the
+                  // avatar slot), so show the cave occupied — the same images it
+                  // shows in silent/muted mode.
+                  empty={!isAsleep && !socialBot.active && !callActive}
                   eyeState={eyeState}
                   blinkTick={snapshotTick}
                 />
@@ -405,9 +416,18 @@ export function DualAgentConversationBox({
                 During a social-trainer session the avatar slot is taken over by
                 the bot face — the AAC AI is in muted/silent mode and has no
                 visible avatar of its own. */}
-            {(socialBot.active || !isAsleep) && (
+            {(callActive || socialBot.active || !isAsleep) && (
             <div className="relative self-stretch shrink-0 flex flex-col items-center justify-center">
-            {socialBot.active ? (
+            {callActive ? (
+              /* Active video call — the remote peer's face takes over the slot,
+                 ahead of both the idle AI avatar and the social-trainer peer. */
+              <div
+                className="relative shrink-0 w-20 flex items-center justify-center select-none"
+                title={call?.activeContact?.name ?? "Call"}
+              >
+                <CallFace />
+              </div>
+            ) : socialBot.active ? (
               <div
                 className="relative shrink-0 w-20 flex items-center justify-center select-none"
                 title={socialBot.characterName

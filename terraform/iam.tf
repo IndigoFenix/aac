@@ -206,6 +206,7 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
             aws_secretsmanager_secret.database.arn,
           ],
           var.enable_redis ? [aws_secretsmanager_secret.redis_auth[0].arn] : [],
+          var.enable_coturn ? [aws_secretsmanager_secret.turn[0].arn] : [],
         )
       },
       {

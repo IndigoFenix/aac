@@ -67,6 +67,10 @@ export interface ButtonPressedEvent extends BaseEvent {
    *  Defaults to "DEVICE" when no target was set. When DEVICE, the press
    *  is routed to Speaker as a user_turn; otherwise it's a context note. */
   target?: SpeechParty;
+  /** Group-chat addressee: the peer this button was aimed at (a peer name the
+   *  Board Manager set), separate from `target`. Resolved to a peer session and
+   *  used to route the broadcast utterance. Omitted/"ROOM" = the whole room. */
+  addressee?: string;
 }
 
 export interface SentenceComposedEvent extends BaseEvent {
@@ -338,6 +342,15 @@ export interface EmoteChangeEvent extends BaseEvent {
   emote: "happy" | "sad" | "neutral";
 }
 
+/** Speaker asks to place a video call to one of the student's callable contacts.
+ *  The Coordinator resolves the contact and directs the client to dial (media
+ *  lives on the client; the server only relays signaling). */
+export interface CallPersonEvent extends BaseEvent {
+  type: "call_person";
+  source: "speaker";
+  contactId: string;
+}
+
 /** Behavioral mode within an active session.
  *  - `companion` — AI is the user's conversation partner (back-and-forth chat).
  *  - `facilitator` — AI supports the user in talking to a human in the room
@@ -410,6 +423,7 @@ export type SpeakerEvent =
   | SpeechTextFinalizedEvent
   | SpeechEndEvent
   | EmoteChangeEvent
+  | CallPersonEvent
   | ModeChangeEvent
   | AppOpenRequestedEvent
   | AppCloseRequestedEvent
@@ -450,6 +464,9 @@ export interface BoardButton {
    *  press handling (companion/facilitator/social) + a client color indicator.
    *  Defaults to "reply" when the BoardManager omits it. */
   role?: "reply" | "bid";
+  /** Group-chat addressee — the peer this button is aimed at (a peer name),
+   *  or "ROOM"/omitted for everyone. Set by the Board Manager. */
+  addressee?: string;
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   suggestionKey?: string;
   /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */

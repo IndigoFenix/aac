@@ -226,6 +226,7 @@ export const ko = {
     noStudentSelected: "{{STUDENT}} 미선택",
     calendar: "캘린더",
     personChat: "메시지",
+    call: "통화",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const ko = {
     },
   },
 
+  call: {
+    title: "통화",
+    searchContacts: "연락처 검색",
+    noInstitute: "통화를 시작하려면 조직에 가입하세요",
+    loadingContacts: "연락처 불러오는 중…",
+    noContacts: "연락처를 찾을 수 없습니다",
+    callPerson: "{{name}}에게 전화 걸기",
+    students: "학생",
+    online: "온라인",
+    offline: "오프라인",
+    calling: "전화 거는 중…",
+    connecting: "연결 중…",
+    callEnded: "통화 종료됨",
+    incoming: "수신 전화",
+    unknownCaller: "알 수 없는 발신자",
+    accept: "수락",
+    decline: "거절",
+    hangUp: "통화 종료",
+    mute: "음소거",
+    unmute: "음소거 해제",
+    cameraOn: "카메라 켜기",
+    cameraOff: "카메라 끄기",
+    remoteVideo: "상대방 영상",
+    selfVideo: "내 카메라",
+    whoTalkingTo: "누구와 이야기하나요?",
+    everyone: "모두",
+    speakTo: "대화 상대",
+    isTalkingToYou: "당신에게 말하고 있어요",
+  },
+
   personChat: {
     title: "메시지",
     newChat: "새 채팅",
@@ -3523,6 +3554,8 @@ export const ko = {
     otherStudents: "다른 학생",
     linkedHint: "연결된 연락처는 연결된 사용자/학생 기록과 생체 데이터를 공유합니다. 해당 기록에서 생체 데이터를 편집하세요.",
     unlinkedHint: "이 연락처에는 자체 생체 기록이 있습니다. AAC 얼굴 인식을 활성화하려면 사진을 업로드하세요.",
+    callable: "영상 통화 허용",
+    callableHint: "이 사람이 온라인일 때 학생(및 AI)이 영상 통화를 할 수 있습니다.",
     photoAfterCreate: "연락처를 저장한 후 사진 업로드를 사용할 수 있습니다.",
   },
 

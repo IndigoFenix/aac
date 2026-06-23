@@ -226,6 +226,7 @@ export const en = {
     noStudentSelected: "No {{STUDENT}} Selected",
     calendar: "Calendar",
     personChat: "Messages",
+    call: "Call",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const en = {
     },
   },
 
+  call: {
+    title: "Call",
+    searchContacts: "Search contacts",
+    noInstitute: "Join an organization to start calling",
+    loadingContacts: "Loading contacts…",
+    noContacts: "No contacts found",
+    callPerson: "Call {{name}}",
+    students: "Students",
+    online: "Online",
+    offline: "Offline",
+    calling: "Calling…",
+    connecting: "Connecting…",
+    callEnded: "Call ended",
+    incoming: "Incoming call",
+    unknownCaller: "Unknown caller",
+    accept: "Accept",
+    decline: "Decline",
+    hangUp: "Hang up",
+    mute: "Mute",
+    unmute: "Unmute",
+    cameraOn: "Camera on",
+    cameraOff: "Camera off",
+    remoteVideo: "Remote video",
+    selfVideo: "Your camera",
+    whoTalkingTo: "Who are you talking to?",
+    everyone: "Everyone",
+    speakTo: "Speak to",
+    isTalkingToYou: "is talking to you",
+  },
+
   personChat: {
     title: "Messages",
     newChat: "New chat",
@@ -3523,6 +3554,8 @@ export const en = {
     otherStudents: "Other Students",
     linkedHint: "Linked contacts share their biometric data with the linked user/student record. Edit biometric data on that record.",
     unlinkedHint: "This contact has its own biometric record. Upload a photo to enable AAC face recognition.",
+    callable: "Allow video calls",
+    callableHint: "The student (and the AI) can video-call this person when they are online.",
     photoAfterCreate: "Photo upload becomes available after saving the contact.",
   },
 

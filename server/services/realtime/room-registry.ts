@@ -1,5 +1,6 @@
 import type { WebSocket } from "ws";
 import type { RealtimeEventEnvelope } from "@shared/realtime-events";
+import { announceLocalOnline, announceLocalOffline, isPersonOnlineRemotely } from "./presence";
 
 // In-memory pub/sub. Single-process for now; when we scale horizontally this
 // will need a Redis fanout behind the same interface.
@@ -30,15 +31,36 @@ export function subscribeUserToTopic(userId: string, topic: string): void {
 }
 
 export function registerPersonSocket(personId: string, socket: WebSocket): void {
-  if (!personSockets.has(personId)) personSockets.set(personId, new Set());
-  personSockets.get(personId)!.add(socket);
+  let set = personSockets.get(personId);
+  const wasOffline = !set || set.size === 0;
+  if (!set) {
+    set = new Set();
+    personSockets.set(personId, set);
+  }
+  set.add(socket);
   const ids: Set<string> = (socket as any).__personIds ?? new Set<string>();
   ids.add(personId);
   (socket as any).__personIds = ids;
+  // First local socket for this person → announce online cross-instance.
+  if (wasOffline) announceLocalOnline(personId);
 }
 
 export function socketsForPerson(personId: string): WebSocket[] {
   return Array.from(personSockets.get(personId) ?? []);
+}
+
+/** Every person currently represented by at least one socket on this instance. */
+export function localOnlinePersonIds(): string[] {
+  return Array.from(personSockets.keys());
+}
+
+/**
+ * A person is online/reachable if any socket on THIS instance represents them,
+ * or any other instance reports them online over the presence bus.
+ */
+export function isPersonOnline(personId: string): boolean {
+  if ((personSockets.get(personId)?.size ?? 0) > 0) return true;
+  return isPersonOnlineRemotely(personId);
 }
 
 export function subscribePersonToTopic(personId: string, topic: string): void {
@@ -77,8 +99,13 @@ export function removeSocket(socket: WebSocket): void {
   const personIds: Set<string> | undefined = (socket as any).__personIds;
   if (personIds) {
     for (const personId of personIds) {
-      personSockets.get(personId)?.delete(socket);
-      if (personSockets.get(personId)?.size === 0) personSockets.delete(personId);
+      const set = personSockets.get(personId);
+      set?.delete(socket);
+      if (set && set.size === 0) {
+        personSockets.delete(personId);
+        // Last local socket for this person closed → announce offline.
+        announceLocalOffline(personId);
+      }
     }
   }
 }

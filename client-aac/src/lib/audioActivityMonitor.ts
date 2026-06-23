@@ -72,9 +72,19 @@ export class AudioActivityMonitor {
   start(stream: MediaStream): void {
     this.stop();
 
-    // Set up AudioContext for energy monitoring
+    // Set up AudioContext for energy monitoring + the STT ring buffer that hangs
+    // off the same context. Pin it to 16 kHz so the BROWSER resamples the mic
+    // (with a proper anti-alias filter) — the ring buffer's manual
+    // downsample-to-16k is then a pass-through. Capturing at 48k and crudely
+    // linear-interpolating to 16k aliased the speech and badly hurt STT
+    // accuracy. 16 kHz is the recognizer's native rate and ample for all the
+    // speech analysis (VAD / pitch / formants) hanging off this context.
     try {
-      this.audioCtx = new AudioContext();
+      try {
+        this.audioCtx = new AudioContext({ sampleRate: 16000 });
+      } catch {
+        this.audioCtx = new AudioContext(); // browser rejected the rate hint
+      }
 
       // Chrome suspends AudioContext until user interaction — resume it
       if (this.audioCtx.state === "suspended") {

@@ -29,6 +29,7 @@ import { SymbolsPanel } from '@/features/SymbolsPanel';
 import { CalendarPanel } from '@/features/CalendarPanel';
 import { LocationsPanel } from '@/features/LocationsPanel';
 import { PersonChatPanel } from '@/features/personChat/PersonChatPanel';
+import { CallPanel } from '@/features/call/CallPanel';
 import { DeepAnalysisPanel } from '@/features/DeepAnalysisPanel';
 import { SharesPanel } from '@/features/SharesPanel';
 import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
@@ -187,6 +188,8 @@ export function MainLayout() {
         return <LocationsPanel isOpen={isPanelOpen} />;
       case 'userchat':
         return <PersonChatPanel isOpen={isPanelOpen} />;
+      case 'call':
+        return <CallPanel isOpen={isPanelOpen} />;
       case 'deepAnalysis':
         return <DeepAnalysisPanel isOpen={isPanelOpen} />;
       case 'shares':

@@ -742,6 +742,10 @@ export const studentContacts = pgTable("student_contacts", {
   lastSeenAt: timestamp("last_seen_at"),
   timesIdentified: integer("times_identified").default(0).notNull(),
 
+  // Live calling — when true (and the contact is linked to a user/student), the
+  // student may video-call this person and the AI may offer/place the call.
+  callable: boolean("callable").default(false).notNull(),
+
   // Guardian verification — populated when this contact signs informed consent.
   // governmentIdNumber is sensitive; encrypt at rest via the existing
   // PHI-column pattern when production-grade encryption lands.
@@ -2070,6 +2074,42 @@ export const personChatPushTokens = pgTable("person_chat_push_tokens", {
   uniqueIndex("idx_person_chat_push_tokens_user_token").on(table.userId, table.token),
 ]);
 
+// =============================================================================
+// LIVE CALLS — WebRTC video/audio calls between persons. Membership reuses
+// person_chat_rooms (who-may-call-whom); media flows peer-to-peer over WebRTC
+// and never touches the server. These tables hold call lifecycle + history;
+// the SDP/ICE signaling itself is transient (WebSocket only, never persisted).
+// =============================================================================
+
+export const callSessions = pgTable("call_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roomId: varchar("room_id").references(() => personChatRooms.id, { onDelete: "cascade" }).notNull(),
+  instituteId: varchar("institute_id").notNull(),
+  initiatedByPersonId: varchar("initiated_by_person_id").references(() => persons.id).notNull(),
+  mode: text("mode").default("aac_caretaker").notNull(), // 'aac_caretaker' | 'aac_aac' | ...
+  status: text("status").default("ringing").notNull(),   // ringing|active|ended|missed|declined|cancelled
+  media: jsonb("media").default({}).notNull(),           // requested tracks {audio,video,pose}
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+  endedReason: text("ended_reason"),
+}, (table) => [
+  index("idx_call_sessions_room_started").on(table.roomId, table.startedAt),
+  index("idx_call_sessions_status").on(table.status),
+]);
+
+export const callParticipants = pgTable("call_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  callId: varchar("call_id").references(() => callSessions.id, { onDelete: "cascade" }).notNull(),
+  personId: varchar("person_id").references(() => persons.id).notNull(),
+  role: text("role"),                                    // 'aac' | 'caretaker'
+  mediaState: jsonb("media_state").default({}).notNull(), // live {audio,video,pose}
+  joinedAt: timestamp("joined_at"),
+  leftAt: timestamp("left_at"),
+}, (table) => [
+  uniqueIndex("idx_call_participants_call_person").on(table.callId, table.personId),
+  index("idx_call_participants_person_id").on(table.personId),
+]);
+
 export const boards = pgTable("boards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
@@ -3101,6 +3141,12 @@ export type PersonChat = typeof personChats.$inferSelect;
 export type InsertPersonChat = typeof personChats.$inferInsert;
 export type PersonChatPushToken = typeof personChatPushTokens.$inferSelect;
 export type InsertPersonChatPushToken = typeof personChatPushTokens.$inferInsert;
+
+// Live call types
+export type CallSession = typeof callSessions.$inferSelect;
+export type InsertCallSession = typeof callSessions.$inferInsert;
+export type CallParticipant = typeof callParticipants.$inferSelect;
+export type InsertCallParticipant = typeof callParticipants.$inferInsert;
 
 // =============================================================================
 // VIDEO CAPTION STUDIO — caption projects

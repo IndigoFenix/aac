@@ -204,7 +204,7 @@ resource "aws_lambda_function" "api" {
   }
 
   environment {
-    variables = {
+    variables = merge({
       NODE_ENV                = var.environment == "prod" ? "production" : var.environment
       PORT                    = "8080"
       ENVIRONMENT             = var.environment
@@ -217,7 +217,14 @@ resource "aws_lambda_function" "api" {
       S3_UPLOADS_BUCKET       = aws_s3_bucket.uploads.bucket
       # Public URL for email links (Lambda sees API Gateway host, not the domain)
       APP_URL                 = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
-    }
+    },
+    # TURN relay (live calls). Secret is KMS-encrypted at rest as a Lambda env
+    # var; URLs are non-secret. Both absent → app serves STUN-only.
+    var.enable_coturn ? {
+      TURN_URLS   = local.coturn_turn_urls
+      TURN_SECRET = random_password.turn_secret[0].result
+      TURN_TTL    = tostring(var.coturn_credential_ttl_seconds)
+    } : {})
   }
 
   tags = {

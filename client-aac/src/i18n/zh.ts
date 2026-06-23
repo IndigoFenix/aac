@@ -718,6 +718,28 @@ export const zh: Translations = {
     starting: "正在启动…",
   },
 
+  call: {
+    incoming: "来电",
+    accept: "是",
+    decline: "否",
+    calling: "正在呼叫…",
+    connecting: "正在连接…",
+    inCall: "通话中",
+    hangUp: "挂断",
+    phoneCallApp: "电话呼叫",
+    noCallableContacts: "现在没有人可以呼叫。",
+    online: "在线",
+    offline: "离线",
+    callContact: "呼叫",
+    unknownCaller: "未知",
+    groupChat: {
+      peopleInChat: "聊天中的人",
+      talkTo: "对话对象",
+      talkingTo: "正在对话",
+      yourTurn: "轮到你了",
+    },
+  },
+
   social: {
     peer: "朋友：",
     waiting: "等待朋友…",

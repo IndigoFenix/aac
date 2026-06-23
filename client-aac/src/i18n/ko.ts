@@ -718,6 +718,28 @@ export const ko: Translations = {
     starting: "시작 중…",
   },
 
+  call: {
+    incoming: "수신 전화",
+    accept: "예",
+    decline: "아니요",
+    calling: "전화 거는 중…",
+    connecting: "연결 중…",
+    inCall: "통화 중",
+    hangUp: "끊기",
+    phoneCallApp: "전화 걸기",
+    noCallableContacts: "지금 전화할 수 있는 사람이 없습니다.",
+    online: "온라인",
+    offline: "오프라인",
+    callContact: "전화",
+    unknownCaller: "알 수 없음",
+    groupChat: {
+      peopleInChat: "이 대화의 사람들",
+      talkTo: "대화 상대",
+      talkingTo: "대화 중",
+      yourTurn: "당신 차례",
+    },
+  },
+
   social: {
     peer: "친구:",
     waiting: "친구를 기다리는 중…",

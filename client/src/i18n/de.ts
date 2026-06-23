@@ -226,6 +226,7 @@ export const de = {
     noStudentSelected: "Kein {{STUDENT}} ausgewählt",
     calendar: "Kalender",
     personChat: "Nachrichten",
+    call: "Anruf",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const de = {
     },
   },
 
+  call: {
+    title: "Anruf",
+    searchContacts: "Kontakte suchen",
+    noInstitute: "Treten Sie einer Organisation bei, um Anrufe zu starten",
+    loadingContacts: "Kontakte werden geladen…",
+    noContacts: "Keine Kontakte gefunden",
+    callPerson: "{{name}} anrufen",
+    students: "Schüler",
+    online: "Online",
+    offline: "Offline",
+    calling: "Anruf läuft…",
+    connecting: "Verbindung wird hergestellt…",
+    callEnded: "Anruf beendet",
+    incoming: "Eingehender Anruf",
+    unknownCaller: "Unbekannter Anrufer",
+    accept: "Annehmen",
+    decline: "Ablehnen",
+    hangUp: "Auflegen",
+    mute: "Stummschalten",
+    unmute: "Stummschaltung aufheben",
+    cameraOn: "Kamera an",
+    cameraOff: "Kamera aus",
+    remoteVideo: "Video der Gegenseite",
+    selfVideo: "Ihre Kamera",
+    whoTalkingTo: "Mit wem sprichst du?",
+    everyone: "Alle",
+    speakTo: "Sprich mit",
+    isTalkingToYou: "spricht mit dir",
+  },
+
   personChat: {
     title: "Nachrichten",
     newChat: "Neuer Chat",
@@ -3523,6 +3554,8 @@ export const de = {
     otherStudents: "Andere Schüler",
     linkedHint: "Verknüpfte Kontakte teilen ihre biometrischen Daten mit dem verknüpften Benutzer-/Schülerdatensatz. Bearbeiten Sie biometrische Daten in diesem Datensatz.",
     unlinkedHint: "Dieser Kontakt hat seinen eigenen biometrischen Datensatz. Laden Sie ein Foto hoch, um AAC-Gesichtserkennung zu aktivieren.",
+    callable: "Videoanrufe erlauben",
+    callableHint: "Der Schüler (und die KI) können diese Person per Videoanruf erreichen, wenn sie online ist.",
     photoAfterCreate: "Foto-Upload wird nach dem Speichern des Kontakts verfügbar.",
   },
 

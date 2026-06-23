@@ -226,6 +226,7 @@ export const yue = {
     noStudentSelected: "未揀{{STUDENT}}",
     calendar: "日曆",
     personChat: "訊息",
+    call: "通話",
   },
 
   // ============================================================================
@@ -3460,6 +3461,36 @@ export const yue = {
     },
   },
 
+  call: {
+    title: "通話",
+    searchContacts: "搜尋聯絡人",
+    noInstitute: "加入機構就可以開始通話",
+    loadingContacts: "正喺度載入聯絡人…",
+    noContacts: "搵唔到聯絡人",
+    callPerson: "打俾 {{name}}",
+    students: "學生",
+    online: "在線",
+    offline: "離線",
+    calling: "正喺度打緊…",
+    connecting: "正喺度連接緊…",
+    callEnded: "通話已經結束",
+    incoming: "來電",
+    unknownCaller: "唔知邊個打嚟",
+    accept: "接聽",
+    decline: "拒接",
+    hangUp: "收線",
+    mute: "靜音",
+    unmute: "取消靜音",
+    cameraOn: "開鏡頭",
+    cameraOff: "閂鏡頭",
+    remoteVideo: "對方畫面",
+    selfVideo: "你嘅鏡頭",
+    whoTalkingTo: "你同邊個講？",
+    everyone: "所有人",
+    speakTo: "同邊個講",
+    isTalkingToYou: "同緊你講嘢",
+  },
+
   personChat: {
     title: "訊息",
     newChat: "新對話",
@@ -3523,6 +3554,8 @@ export const yue = {
     otherStudents: "其他學生",
     linkedHint: "連結嘅聯絡人同連結嘅用戶/學生記錄共享佢哋嘅生物識別數據。喺嗰個記錄編輯生物識別數據。",
     unlinkedHint: "呢個聯絡人有自己嘅生物識別記錄。上載相片以啟用 AAC 面部識別。",
+    callable: "允許視像通話",
+    callableHint: "當呢個人喺線時，學生（同 AI）可以同佢視像通話。",
     photoAfterCreate: "儲存聯絡人後，相片上載會變為可用。",
   },
 

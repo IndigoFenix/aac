@@ -442,6 +442,24 @@ function buildEmoteTool(): FunctionDeclaration {
   };
 }
 
+function buildCallPersonTool(): FunctionDeclaration {
+  return {
+    name: "call_person",
+    description: `Place a live video call to one of the people listed in [CALLABLE CONTACTS]. Only call a person shown there as online, and only when the student clearly wants to talk to them. Pass the exact contactId from that list.`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        contactId: {
+          type: "string",
+          description: "The contactId of the person to call, taken from the [CALLABLE CONTACTS] list.",
+        },
+      },
+      required: ["contactId"],
+    },
+  };
+}
+
 // set_interaction_mode moved to Observer (it has the camera/mic context
 // to judge companion vs. facilitator). Speaker learns the current mode
 // from [MODE] context injections forwarded by the Coordinator.
@@ -554,6 +572,7 @@ export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] 
   }
 
   declarations.push(buildEmoteTool());
+  declarations.push(buildCallPersonTool());
 
   // Apps + websites
   const hasBuiltInApps = config.enabledApps.length > 0;

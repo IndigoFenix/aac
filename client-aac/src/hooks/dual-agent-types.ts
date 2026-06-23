@@ -306,6 +306,31 @@ export interface CachedAudioClip {
   triggerReason: string;
 }
 
+/** AI-initiated video-call directive surfaced from the live session. */
+export interface CallDirective {
+  action: "start";
+  contactId: string;
+  contactName?: string;
+  /** Monotonic stamp (Date.now() when received) so consumers can dedupe. */
+  at: number;
+}
+
+/** A group-chat peer for the header face row (server `conversation_roster`). */
+export interface ChatPeer {
+  personId: string;
+  name: string;
+  /** Stored-face photo as a data URL, when one is enrolled. */
+  photo?: string;
+}
+
+/** Group-chat turn cue (server `floor_state`). holder = whose turn it is (a
+ *  personId, or null when open); awaiting = who asked the group and is waiting
+ *  for an answer. */
+export interface FloorCue {
+  holder: string | null;
+  awaiting: string | null;
+}
+
 export interface UseDualAgentReturn {
   // Session state
   sessionId: string | null;
@@ -401,6 +426,22 @@ export interface UseDualAgentReturn {
   sendContextOnly: (text: string) => void;
   /** Diagnostics: report mic activate/deactivate to the server (logged to chat history, not sent to any live agent). */
   sendMicState: (active: boolean, reason?: string) => void;
+  /** Tell the server a live video call started/ended — drives facilitator mode.
+   *  On end, `outcome` (declined/no_answer/unavailable/cancelled/ended) lets the
+   *  AI react to a call that never connected. */
+  sendCallActive: (active: boolean, outcome?: string) => void;
+  /** Tell the server the student entered/left a group AAC chat (shape C). Pass
+   *  the roomId on join, or null on leave. Drives peer-utterance fan-out. */
+  sendConversationRoom: (roomId: string | null) => void;
+  /** Tell the server the student focused a peer's face in the group chat (the
+   *  peer's personId), or cleared it (null). Sets the addressee + asks the
+   *  BoardManager to build phrases for that peer. */
+  sendConversationFocus: (personId: string | null) => void;
+  /** Current group-chat peers (name + stored-face photo) for the header face
+   *  row. Empty when not in a group chat. */
+  conversationRoster: ChatPeer[];
+  /** Current group-chat turn cue (whose turn / who's awaiting), or null. */
+  floorState: FloorCue | null;
   /** Send a board exit message (exit/exitBoard button pressed on loaded board) */
   sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
@@ -438,6 +479,12 @@ export interface UseDualAgentReturn {
    *  when off or the choice isn't a reply to incoming speech. */
   binaryChoiceInputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
   dismissBinaryChoice: () => void;
+
+  /** AI-initiated video-call directive (server `call_directive` message). The
+   *  CallProvider consumes the latest one and dials automatically. `at` is a
+   *  monotonic stamp so consumers can ignore a directive they've already acted
+   *  on. Null until the first directive arrives. */
+  callDirective: CallDirective | null;
 
   // Live API only — raw PCM audio streaming
   /** Send a raw PCM audio chunk (base64 Int16 16kHz) to Gemini Live API. Only available in Live mode. */

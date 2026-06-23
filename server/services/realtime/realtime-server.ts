@@ -17,6 +17,9 @@ export interface RealtimeHandler {
   onConnect: (socket: AuthenticatedSocket, user: User) => void | Promise<void>;
   // Optional — additional command types beyond subscribe/unsubscribe/ping.
   onCommand?: (socket: AuthenticatedSocket, user: User, message: unknown) => void | Promise<void>;
+  // Optional — called when the socket closes (for handler-specific cleanup,
+  // e.g. leaving a conversation room). Runs before the generic removeSocket.
+  onClose?: (socket: AuthenticatedSocket, user: User) => void;
 }
 
 const handlers: Map<string, RealtimeHandler> = new Map();
@@ -73,8 +76,12 @@ export function setupRealtimeServer(server: Server): void {
         }
       });
 
-      ws.on("close", () => removeSocket(ws));
-      ws.on("error", () => removeSocket(ws));
+      const onClose = () => {
+        try { handler.onClose?.(authed, user); } catch (err) { console.error(`[realtime] onClose error for ${url.pathname}:`, err); }
+        removeSocket(ws);
+      };
+      ws.on("close", onClose);
+      ws.on("error", onClose);
 
       try {
         await handler.onConnect(authed, user);

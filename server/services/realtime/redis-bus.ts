@@ -28,7 +28,7 @@ export class RedisBus implements FanoutBus {
   readonly instanceId = randomUUID();
   private pub: RedisClientLike | null = null;
   private sub: RedisClientLike | null = null;
-  private handler: ((channel: string, payload: string) => void) | null = null;
+  private handlers: ((channel: string, payload: string) => void)[] = [];
 
   constructor(private readonly connectionString: string) {}
 
@@ -59,7 +59,7 @@ export class RedisBus implements FanoutBus {
     this.sub.on("message", (_channel: string, raw: string) => {
       try {
         const decoded = JSON.parse(raw) as { channel: string; body: string };
-        this.handler?.(decoded.channel, decoded.body);
+        for (const handler of this.handlers) handler(decoded.channel, decoded.body);
       } catch (err) {
         console.error("[RedisBus] payload parse error:", err);
       }
@@ -76,7 +76,7 @@ export class RedisBus implements FanoutBus {
   }
 
   onMessage(handler: (channel: string, payload: string) => void): void {
-    this.handler = handler;
+    this.handlers.push(handler);
   }
 
   async stop(): Promise<void> {

@@ -177,6 +177,20 @@ interface DualAgentContextType {
   binaryChoiceInputGlyphs: Array<{ glyph: string; fallback?: string }> | null;
   dismissBinaryChoice: () => void;
 
+  // AI-initiated video-call directive (server `call_directive`) — consumed by
+  // the CallProvider, which dials the contact automatically.
+  callDirective: import("@/hooks/dual-agent-types").CallDirective | null;
+  // Tell the server a live video call started/ended — drives facilitator mode.
+  sendCallActive: (active: boolean, outcome?: string) => void;
+  // Tell the server the student entered/left a group AAC chat (shape C).
+  sendConversationRoom: (roomId: string | null) => void;
+  // Tell the server the student focused a peer's face in the group chat.
+  sendConversationFocus: (personId: string | null) => void;
+  // Group-chat peers (name + stored photo) for the header face row.
+  conversationRoster: import("@/hooks/dual-agent-types").ChatPeer[];
+  // Group-chat turn cue (whose turn / who's awaiting), or null.
+  floorState: import("@/hooks/dual-agent-types").FloorCue | null;
+
   // Caretaker alarm raised by the Observer agent. "alert" = short
   // attention nudge; "emergency" = building alarm + on-screen cancel.
   activeAlarm: { level: "alert" | "emergency"; reason: string } | null;
@@ -1325,6 +1339,13 @@ function ProviderShell({
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,
     binaryChoiceInputGlyphs: (agent as any).binaryChoiceInputGlyphs ?? null,
     dismissBinaryChoice: agent.dismissBinaryChoice,
+
+    callDirective: (agent as any).callDirective ?? null,
+    sendCallActive: agent.sendCallActive,
+    sendConversationRoom: agent.sendConversationRoom,
+    sendConversationFocus: agent.sendConversationFocus,
+    conversationRoster: agent.conversationRoster,
+    floorState: agent.floorState,
 
     activeAlarm: agent.activeAlarm,
     cancelAlarm: agent.cancelAlarm,

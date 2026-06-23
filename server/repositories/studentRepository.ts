@@ -19,6 +19,7 @@ import {
 import { db } from "../db";
 import { eq, and, desc, or, isNotNull, sql } from "drizzle-orm";
 import { instituteRepository } from "./instituteRepository";
+import { personRepository } from "./personRepository";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -42,6 +43,8 @@ export class StudentRepository {
       .insert(students)
       .values(insertStudent)
       .returning();
+    // Provision the person row up front (the chat/call membership identity).
+    void personRepository.getOrCreateForStudent(student.id).catch(() => {});
     const ref = this.ref(student.id);
     const ext = await extractSensitiveFields("students", student.id, student as Record<string, unknown>, ref);
     if (ext.isExternal) {
@@ -84,6 +87,9 @@ export class StudentRepository {
 
       return { student, link };
     });
+
+    // Provision the person row up front (the chat/call membership identity).
+    void personRepository.getOrCreateForStudent(result.student.id).catch(() => {});
 
     // External writes happen AFTER transaction commit
     const ref = this.ref(result.student.id);

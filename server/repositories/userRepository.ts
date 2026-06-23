@@ -8,6 +8,7 @@ import {
   type InsertUser,
 } from "@shared/schema";
 import { db } from "../db";
+import { personRepository } from "./personRepository";
 import { eq, desc, count, sql } from "drizzle-orm";
 import {
   hydrateRecords,
@@ -82,6 +83,8 @@ export class UserRepository {
     };
 
     const [user] = await db.insert(users).values(userData).returning();
+    // Provision the person row up front (the chat/call membership identity).
+    void personRepository.getOrCreateForUser(user.id).catch(() => {});
     const ref = this.ref(user.id);
     const ext = await extractSensitiveFields("users", user.id, user as Record<string, unknown>, ref);
     if (ext.isExternal) {
@@ -119,6 +122,8 @@ export class UserRepository {
     };
 
     const [user] = await db.insert(users).values(userData).returning();
+    // Provision the person row up front (the chat/call membership identity).
+    void personRepository.getOrCreateForUser(user.id).catch(() => {});
     const ref = this.ref(user.id);
     const ext = await extractSensitiveFields("users", user.id, user as Record<string, unknown>, ref);
     if (ext.isExternal) {

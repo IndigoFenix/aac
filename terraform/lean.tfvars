@@ -58,6 +58,14 @@ db_max_allocated_storage = 40                 # Cap autoscaling at 40GB
 enable_rds_enhanced_monitoring = false        # Saves CloudWatch costs
 
 # =============================================================================
+# TURN relay (live video calls)
+# =============================================================================
+# Self-hosted coturn so calls behind symmetric NAT / strict firewalls still
+# connect. ~t4g.micro + EIP. Media stays DTLS-SRTP encrypted through the relay.
+enable_coturn        = true
+coturn_instance_type = "t4g.micro"
+
+# =============================================================================
 # Other
 # =============================================================================
 existing_rds_endpoint          = ""

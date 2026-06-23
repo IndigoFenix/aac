@@ -718,6 +718,28 @@ export const he: Translations = {
     starting: "מתחיל…",
   },
 
+  call: {
+    incoming: "שיחה נכנסת",
+    accept: "כן",
+    decline: "לא",
+    calling: "מתקשר…",
+    connecting: "מתחבר…",
+    inCall: "בשיחה",
+    hangUp: "נתק",
+    phoneCallApp: "שיחת טלפון",
+    noCallableContacts: "אין למי להתקשר כרגע.",
+    online: "מחובר",
+    offline: "לא מחובר",
+    callContact: "התקשר",
+    unknownCaller: "לא ידוע",
+    groupChat: {
+      peopleInChat: "אנשים בצ'אט הזה",
+      talkTo: "דבר עם",
+      talkingTo: "מדבר עם",
+      yourTurn: "תורך",
+    },
+  },
+
   social: {
     peer: "חבר:",
     waiting: "ממתין לחבר…",

@@ -43,6 +43,7 @@ import type {
   SpeechTextFinalizedEvent,
   SpeechEndEvent,
   EmoteChangeEvent,
+  CallPersonEvent,
   AppOpenRequestedEvent,
   AppCloseRequestedEvent,
   WebsiteOpenRequestedEvent,
@@ -608,6 +609,18 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
           source: "speaker",
           timestamp: now,
           emote: emotion,
+        };
+        return [ev];
+      }
+
+      case "call_person": {
+        const contactId = asString(args.contactId);
+        if (!contactId) return [];
+        const ev: CallPersonEvent = {
+          type: "call_person",
+          source: "speaker",
+          timestamp: now,
+          contactId,
         };
         return [ev];
       }
