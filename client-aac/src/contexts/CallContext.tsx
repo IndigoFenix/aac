@@ -30,7 +30,7 @@ import {
 } from "@shared/call/call-client";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
 import type { WorldNetMessage } from "@shared/world-engine/index";
-import { CallWorldHub } from "@shared/social-world/call-game-net";
+import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
 import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
 import { proximityRule, solveAudibleFor, audibleRecvIds } from "@shared/social-world/circle-solver";
 import { audibleGains } from "@shared/social-world/media-gate";
@@ -136,6 +136,10 @@ interface CallContextValue {
   sendWorld: (msgs: WorldNetMessage[]) => void;
   /** Fan-out of inbound peer world messages (fed by the CallClient). */
   worldHub: CallWorldHub;
+  /** Broadcast an NPC-conversation message over the reliable `call:npc` relay. */
+  sendNpc: (msg: unknown) => void;
+  /** Fan-out of inbound NPC-conversation messages (fed by the CallClient). */
+  npcHub: CallNpcHub;
   /** Phase 1 position relay: publish the local avatar's position world-wide. */
   publishPresence: (p: WorldPresence) => void;
   /** Phase 1 position relay: inbound positions of everyone in the world. */
@@ -156,6 +160,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // CallClient only connects once it's known.
   const dual = useDualAgentContextOptional();
   const studentId = dual?.studentId ?? null;
+  // Stable ref so the once-constructed CallClient can pull the latest synthesized-
+  // voice stream when it acquires local media for a call.
+  const dualRef = useRef(dual);
+  dualRef.current = dual;
 
   const clientRef = useRef<CallClient | null>(null);
 
@@ -172,6 +180,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
   // Inbound world-message fan-out for the mounted CallGameSurface.
   const worldHubRef = useRef(new CallWorldHub());
+  const npcHubRef = useRef(new CallNpcHub());
   // Phase 1 position relay: world-wide avatar positions, fed by `presence` events.
   const presenceChannelRef = useRef(new WorldPresenceChannel());
   // Mirror remoteStreams in a ref so the proximity A/V gate reads it without
@@ -200,6 +209,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setPeerGains(new Map());
     pendingGameRef.current = null;
     worldHubRef.current.clear();
+    npcHubRef.current.clear();
     presenceChannelRef.current.clear();
   }, []);
 
@@ -300,6 +310,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // connected; the solver's backup source) → feed the same channel.
         presenceChannelRef.current.receive(event.presence);
         break;
+      case "npcData":
+        // Inbound NPC-conversation message (reliable relay) → fan out to the game
+        // surface's conversation layer.
+        npcHubRef.current.emit(event.fromPersonId, event.message);
+        break;
       case "mediaState":
       case "data":
         // Remote media-state + data-channel extras unused by the AAC call UI.
@@ -321,6 +336,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
       getIceServers: fetchIceServers,
       emit: (e) => handleEventRef.current(e),
       actAsStudentId: studentId,
+      // The AAC student speaks via TTS — feed that synthesized voice into the call
+      // as an extra outgoing audio track so the other side actually hears them.
+      getAppAudioTrack: () => dualRef.current?.getCallAudioStream?.()?.getAudioTracks()[0] ?? null,
     });
     clientRef.current = client;
     client.connect();
@@ -407,6 +425,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const sendWorld = useCallback((msgs: WorldNetMessage[]) => {
     clientRef.current?.sendWorldData(msgs);
+  }, []);
+
+  const sendNpc = useCallback((msg: unknown) => {
+    clientRef.current?.sendNpc(msg);
   }, []);
 
   // Phase 1 position relay. Publishing also records our own presence locally so
@@ -608,6 +630,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     stopGame,
     sendWorld,
     worldHub: worldHubRef.current,
+    sendNpc,
+    npcHub: npcHubRef.current,
     publishPresence,
     presenceChannel: presenceChannelRef.current,
     getAudibleIds,
@@ -616,7 +640,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, activeContact,
     error, audioEnabled, videoEnabled, contacts, contactsLoading, refreshContacts,
     startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
-    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld,
+    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendNpc,
     publishPresence, getAudibleIds, peerGains,
   ]);
 

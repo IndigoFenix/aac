@@ -356,6 +356,9 @@ export interface UseDualAgentReturn {
 
   // Audio state
   audioEnabled: boolean;
+  /** A MediaStream of the AAC's synthesized voice (all TTS paths), to send over a
+   *  call so the student's button-press speech reaches the other side. */
+  getCallAudioStream: () => MediaStream | null;
   isPlaying: boolean;
   /** Tag of the audio currently playing ("avatar"/"utterance"), or null. */
   audioPlayingTag?: string | null;

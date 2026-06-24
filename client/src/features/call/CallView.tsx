@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2 } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
@@ -9,18 +9,34 @@ import type { CallGame } from "@shared/realtime-events";
 import { useCall } from "./CallContext";
 import { fetchSocialGameOptions } from "./api";
 
+/** Resolve a backend ws:// URL, honoring VITE_API_URL (the clinician dev server
+ *  doesn't proxy /ws). Mirrors usePersonChatSocket / CallContext. */
+function resolveCallWsUrl(path: string): string {
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+  if (base) {
+    const url = new URL(base);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = path;
+    return url.toString();
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${path}`;
+}
+
 /** One remote participant's video tile for the in-game people sidebar. `gain` is
  *  the proximity volume (1 = in the circle; <1 = fading at the edge). */
-function PeerVideoTile({ stream, name, gain }: { stream: MediaStream; name: string | null; gain: number }) {
+function PeerVideoTile({ stream, name, gain, muted }: { stream: MediaStream; name: string | null; gain: number; muted?: boolean }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const attach = useCallback((el: HTMLVideoElement | null) => {
     ref.current = el;
     if (el) {
       if (el.srcObject !== stream) el.srcObject = stream;
       el.volume = gain;
+      el.muted = !!muted;
     }
-  }, [stream, gain]);
+  }, [stream, gain, muted]);
   useEffect(() => { if (ref.current) ref.current.volume = gain; }, [gain]);
+  useEffect(() => { if (ref.current) ref.current.muted = !!muted; }, [muted]);
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/60">
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC peer feed */}
@@ -60,10 +76,16 @@ export function CallView() {
     selfPersonId,
     sendWorld,
     worldHub,
+    sendNpc,
+    npcHub,
     publishPresence,
     presenceChannel,
     peerGains,
   } = useCall();
+
+  // Reliable NPC-conversation transport (call:npc) + the brain WS URL.
+  const npcTransport = useMemo(() => ({ send: sendNpc, subscribe: npcHub.subscribe.bind(npcHub) }), [sendNpc, npcHub]);
+  const npcBrainWsUrl = useMemo(() => resolveCallWsUrl("/ws/social-bot"), []);
 
   const remoteEntry = useMemo(() => {
     const first = remoteStreams.entries().next();
@@ -113,18 +135,28 @@ export function CallView() {
   // Callback refs: fire both when the stream changes AND when the (conditionally
   // mounted) <video> attaches, so srcObject is set even if the stream arrived
   // before the element mounted.
+  // Output mute: silence ALL audio this window plays (the remote peer + the game's
+  // NPC voices). Distinct from the mic toggle, which mutes what we SEND. Handy for
+  // testing on one machine (mute one window, listen on the other) without feedback.
+  const [outputMuted, setOutputMuted] = useState(false);
+
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const attachRemote = useCallback((el: HTMLVideoElement | null) => {
     remoteVideoRef.current = el;
     if (el) {
       if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
       el.volume = remoteGain;
+      el.muted = outputMuted;
     }
-  }, [remoteStream, remoteGain]);
-  // Keep volume synced as the peer moves through the hysteresis band.
+  }, [remoteStream, remoteGain, outputMuted]);
+  // Keep volume synced as the peer moves through the hysteresis band, and output
+  // mute synced when toggled.
   useEffect(() => {
     if (remoteVideoRef.current) remoteVideoRef.current.volume = remoteGain;
   }, [remoteGain]);
+  useEffect(() => {
+    if (remoteVideoRef.current) remoteVideoRef.current.muted = outputMuted;
+  }, [outputMuted]);
 
   const attachLocal = useCallback((el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== localStream) el.srcObject = localStream;
@@ -224,6 +256,7 @@ export function CallView() {
                   stream={stream}
                   name={participants.find((p) => p.personId === pid)?.name ?? null}
                   gain={peerGains.get(pid) ?? 1}
+                  muted={outputMuted}
                 />
               ))
             )}
@@ -264,6 +297,9 @@ export function CallView() {
               presenceChannel={presenceChannel}
               getLabel={getLabel}
               selfStream={localStream}
+              npcBrainWsUrl={npcBrainWsUrl}
+              npcTransport={npcTransport}
+              audioMuted={outputMuted}
               onExit={stopGame}
               t={t}
             />
@@ -350,6 +386,19 @@ export function CallView() {
           data-testid="call-toggle-video"
         >
           {videoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+        </Button>
+
+        {/* Output (speaker) mute — silences what we HEAR, distinct from the mic. */}
+        <Button
+          type="button"
+          size="icon"
+          variant={outputMuted ? "destructive" : "secondary"}
+          onClick={() => setOutputMuted((m) => !m)}
+          aria-label={outputMuted ? t("call.unmuteSpeaker") : t("call.muteSpeaker")}
+          aria-pressed={outputMuted}
+          data-testid="call-toggle-output"
+        >
+          {outputMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </Button>
 
         {/* Start (open the game picker) / end the social game on the call. */}

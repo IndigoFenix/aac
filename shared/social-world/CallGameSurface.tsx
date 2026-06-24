@@ -9,17 +9,30 @@
 // onto the SocialWorldCanvas net adapter, so each client owns its own avatar and
 // the possessed ball, streamed latest-wins over the mesh.
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CallGame } from "../realtime-events.js";
-import type { Vec2, WorldNetMessage } from "../world-engine/index.js";
+import type { NpcSpec, Vec2, WorldNetMessage } from "../world-engine/index.js";
+import { getWorldSpec } from "../world-engine/specs/index.js";
+import type { NpcProximity } from "./npc-controller.js";
 import type { WorldPresence, WorldPresenceChannel } from "./world-presence.js";
 import SocialWorldCanvas from "./SocialWorldCanvas";
+import NpcConversationDock from "./NpcConversationDock";
+import { useNpcConversations, electNpcOwner, type NpcNetMessage } from "./useNpcConversations.js";
 import { CallWorldHub, buildSocialWorldNet } from "./call-game-net";
+
+/** Transport for the reliable NPC-conversation relay (`call:npc`). The client wires
+ *  this from its CallClient; absent ⇒ solo (no broadcast, this peer owns NPCs). */
+export interface NpcTransport {
+  send: (msg: NpcNetMessage) => void;
+  /** msg is an NpcNetMessage on the wire (typed `unknown` to match the call hub). */
+  subscribe: (handler: (fromPersonId: string, msg: unknown) => void) => () => void;
+}
 
 const DEFAULT_LABELS: Record<string, string> = {
   "socialWorld.title": "Play with friends",
   "socialWorld.exit": "End game",
   "socialWorld.invite": "Invite",
+  "socialWorld.switchView": "Switch view",
 };
 
 interface Props {
@@ -44,15 +57,103 @@ interface Props {
   getLabel?: (personId: string) => string;
   /** Local camera stream — drawn live onto the local avatar. */
   selfStream?: MediaStream | null;
+  /** Resolved absolute ws URL for `/ws/social-bot` (the client builds it from its
+   *  API origin). The NPC OWNER opens one session per NPC here; omit to leave NPCs
+   *  as silent bodies. */
+  npcBrainWsUrl?: string;
+  /** Reliable NPC-conversation relay (`call:npc`). Omit in solo. */
+  npcTransport?: NpcTransport;
+  /** The local player's display name, for utterance attribution in group chat. */
+  selfName?: string;
+  /** Silence all NPC voice locally (the window's audio-output mute). */
+  audioMuted?: boolean;
   /** Optional translator; falls back to English. */
   t?: (key: string) => string;
 }
 
-export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, publishPresence, presenceChannel, onExit, onInvite, getFaceUrl, getLabel, selfStream, t }: Props) {
+export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, publishPresence, presenceChannel, onExit, onInvite, getFaceUrl, getLabel, selfStream, npcBrainWsUrl, npcTransport, selfName, audioMuted, t }: Props) {
   const tr = (key: string) => {
     const translated = t?.(key);
     return translated && translated !== key ? translated : DEFAULT_LABELS[key] ?? key;
   };
+
+  // The world's NPCs (from its spec) + their live conversations. Proximity from the
+  // canvas marks the nearest in-range NPC active; its brain runs over /ws/social-bot.
+  const resolvedSpec = useMemo(() => game.worldSpec ?? getWorldSpec(game.worldSpecKey ?? "") ?? null, [game.worldSpec, game.worldSpecKey]);
+  const npcs: NpcSpec[] = useMemo(() => resolvedSpec?.npcs ?? [], [resolvedSpec]);
+  const npcIdSet = useMemo(() => new Set(npcs.map((n) => n.id)), [npcs]);
+  const language = resolvedSpec?.meta.locale ?? "en";
+
+  // Owner election: the lowest participant id hosts every NPC's body + brain (and
+  // re-elects as people join/leave). Solo (no id yet) is trivially the owner.
+  // presenceChannel.participants() isn't reactive, so bump a tick on its events.
+  const [rosterTick, setRosterTick] = useState(0);
+  useEffect(() => {
+    if (!presenceChannel) return;
+    const a = presenceChannel.subscribePresence(() => setRosterTick((n) => n + 1));
+    const b = presenceChannel.subscribeLeave(() => setRosterTick((n) => n + 1));
+    return () => { a(); b(); };
+  }, [presenceChannel]);
+  const isOwner = useMemo(() => {
+    if (!selfPersonId) return true; // solo / call not ready
+    const others = presenceChannel ? presenceChannel.participants().map((p) => p.personId) : [];
+    return electNpcOwner(selfPersonId, others) === selfPersonId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selfPersonId, presenceChannel, rosterTick]);
+
+  const conv = useNpcConversations({
+    wsUrl: npcs.length ? (npcBrainWsUrl ?? null) : null,
+    npcs,
+    language,
+    isOwner,
+    selfName: selfName ?? "You",
+    resolveName: getLabel,
+    muted: audioMuted,
+    sendNpc: npcTransport?.send,
+  });
+
+  // Route inbound `call:npc` messages: NPC body positions into the world hub (so
+  // they render even when the mesh pruned this peer from the owner), the rest into
+  // the conversation layer. Via a ref so re-subscription doesn't churn each render.
+  const applyInboundRef = useRef(conv.applyInbound);
+  applyInboundRef.current = conv.applyInbound;
+  useEffect(() => {
+    if (!npcTransport) return;
+    return npcTransport.subscribe((from, raw) => {
+      if (!raw || typeof raw !== "object") return;
+      const msg = raw as NpcNetMessage;
+      if (msg.k === "pos") {
+        if (Array.isArray(msg.avatars)) hub.emit(from, msg.avatars);
+      } else {
+        applyInboundRef.current(from, msg);
+      }
+    });
+  }, [npcTransport, hub]);
+
+  const setActiveRef = useRef(conv.setActive);
+  setActiveRef.current = conv.setActive;
+  const onNpcProximity = useCallback((nearby: NpcProximity[]) => {
+    setActiveRef.current(nearby[0]?.npcId ?? null);
+  }, []);
+
+  const activeState = conv.activeId ? conv.states[conv.activeId] ?? null : null;
+
+  // The OWNER also relays NPC body positions over the reliable channel (throttled),
+  // so peers the mesh has pruned still see the NPCs move. Wraps the mesh sender.
+  const lastPosRef = useRef(0);
+  const sendWorldWrapped = useCallback((msgs: WorldNetMessage[]) => {
+    sendWorld(msgs);
+    if (!isOwner || !npcTransport || npcIdSet.size === 0) return;
+    const now = Date.now();
+    if (now - lastPosRef.current < 110) return; // ~8 Hz
+    const avatars = msgs.filter((m) => m.t === "avatar" && npcIdSet.has(m.id));
+    if (avatars.length) { lastPosRef.current = now; npcTransport.send({ k: "pos", avatars }); }
+  }, [sendWorld, isOwner, npcTransport, npcIdSet]);
+
+  // Renderer toggle. 3D is the default immersive environment; 2D is the top-down
+  // view — also the motion-comfort fallback (near-zero vection) for anyone the 3D
+  // camera makes queasy. Switching remounts the canvas, so the avatar respawns.
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
 
   // Networked only once we know our own id; otherwise run the canvas solo so the
   // world still renders while the call finishes connecting. When the relay
@@ -60,9 +161,9 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
   const net = useMemo(
     () =>
       selfPersonId
-        ? buildSocialWorldNet({ localId: selfPersonId, send: sendWorld, hub, publishPresence, presence: presenceChannel })
+        ? buildSocialWorldNet({ localId: selfPersonId, send: sendWorldWrapped, hub, publishPresence, presence: presenceChannel })
         : undefined,
-    [selfPersonId, sendWorld, hub, publishPresence, presenceChannel],
+    [selfPersonId, sendWorldWrapped, hub, publishPresence, presenceChannel],
   );
 
   // Spawn near whoever is already in the world (so people who enter together land
@@ -78,7 +179,7 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0f172a", overflow: "hidden" }}>
-      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} />
+      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} renderer={viewMode} hostNpcs={isOwner} onNpcProximity={onNpcProximity} npcEngagements={conv.engagements} />
 
       {/* Thin top bar: game name + end-game. Kept minimal so the world fills the
           surface; richer chrome (video billboards, controls) is per-client. */}
@@ -101,6 +202,27 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
           {game.name ?? tr("socialWorld.title")}
         </span>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setViewMode((m) => (m === "3d" ? "2d" : "3d"))}
+            data-dwell="social-world-view-toggle"
+            title={tr("socialWorld.switchView")}
+            aria-label={tr("socialWorld.switchView")}
+            style={{
+              pointerEvents: "auto",
+              background: "rgba(148,163,184,0.9)",
+              color: "#0f172a",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 14px",
+              fontWeight: 700,
+              minWidth: 44,
+              cursor: "pointer",
+            }}
+          >
+            {/* Shows the mode you'll switch TO. */}
+            {viewMode === "3d" ? "2D" : "3D"}
+          </button>
           {onInvite && (
             <button
               type="button"
@@ -141,6 +263,9 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
           )}
         </div>
       </div>
+
+      {/* In-world conversation dock for the NPC the player is standing next to. */}
+      <NpcConversationDock state={activeState} onSend={conv.send} t={t} />
     </div>
   );
 }

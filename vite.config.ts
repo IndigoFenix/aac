@@ -16,6 +16,10 @@ export default defineConfig({
         ]
       : []),
   ],
+  // The social-world render worker (shared/social-world/world-render.worker.ts)
+  // dynamically imports three.js, so its bundle is code-split — which needs the ES
+  // module worker format (the default "iife" can't code-split). Matches the AAC config.
+  worker: { format: "es" },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

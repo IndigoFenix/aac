@@ -521,6 +521,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Trailing-side host for the other people in the call (opposite the buttons).
   const [peopleHost, setPeopleHost] = useState<HTMLDivElement | null>(null);
   const gameActive = activeSocialGame != null;
+  // While a social game is on screen, the (WebGL) renderer competes with the
+  // on-device camera-ML for BOTH the GPU (MediaPipe runs on the GPU delegate) and
+  // the main thread (each setInterval detection blocks rAF), making the game
+  // choppy. Throttle — don't stop — the MediaPipe trackers during a game: they
+  // keep feeding the Observer (attention/pose/face), just at a slower cadence.
+  // Voice ID already runs in a Web Worker, so it's left alone. `undefined` means
+  // "use the hook's default rate" (no game).
+  const trackerConfig = (gameMs: number) =>
+    gameActive ? { processingIntervalMs: gameMs } : undefined;
   // Notify the server when the sentence builder opens/closes so it can track
   // the conversation detour and inject a [RESUME] reminder afterward. Only fires
   // on an actual transition (skips the initial false on mount).
@@ -713,6 +722,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   } = useFaceTracking({
     videoEl: userVideoEl,
     enabled: faceTrackingEnabled,
+    config: trackerConfig(700), // default 300ms; ~halve the rate during a game
   });
 
   // Unified eye gaze service — skip entirely for cursor control mode (mouse provider)
@@ -856,6 +866,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   } = useHandGestureTracking({
     videoEl: userVideoEl,
     enabled: handGestureEnabled,
+    config: trackerConfig(800), // default 300ms; gestures matter least mid-game
   });
 
   // Sign-language source of truth: AAC settings (clinician-controlled),
@@ -896,7 +907,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // only runs while the dual-agent session is active. Feeds the scene snapshot
   // + gesture context; a suspected fall escalates to a frame the Observer judges.
   const poseEnabled = useDualAgent && CLIENT_CAPABILITIES.poseSafety;
-  const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled });
+  const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled, config: trackerConfig(900) }); // default 400ms; heaviest tracker
   const { trackedPoses } = usePoseEvents({ poses: rawPoses, enabled: poseEnabled });
 
   // Get current identified person (non-blocking getter for dual-agent)

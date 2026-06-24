@@ -3481,6 +3481,8 @@ export const ru = {
     hangUp: "Завершить",
     mute: "Выключить микрофон",
     unmute: "Включить микрофон",
+    muteSpeaker: "Выключить звук",
+    unmuteSpeaker: "Включить звук",
     cameraOn: "Включить камеру",
     cameraOff: "Выключить камеру",
     remoteVideo: "Видео собеседника",
@@ -3833,6 +3835,13 @@ export const ru = {
     exit: "Завершить игру",
     pick: "Выберите игру",
     noOneNearby: "Никого рядом",
+    switchView: "Сменить вид",
+    testGameRoom: "Тест игровой комнаты",
+    npcSay: "Скажите что-нибудь…",
+    npcSend: "Отправить",
+    npcThinking: "…",
+    npcConnecting: "Подключение…",
+    npcError: "Не удалось связаться с этим персонажем.",
   },
 
 };

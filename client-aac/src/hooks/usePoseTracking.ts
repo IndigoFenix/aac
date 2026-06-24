@@ -1,69 +1,15 @@
 // client-aac/src/hooks/usePoseTracking.ts
-// Core MediaPipe PoseLandmarker hook — singleton loader, raw 33-landmark output.
-// Mirrors useFaceTracking / useHandGestureTracking; reads the shared user <video>
-// (MultiCameraProvider) rather than owning one. Uses the LITE model + a slower
-// cadence since pose is the heaviest of the three trackers running together.
+// MediaPipe PoseLandmarker hook — raw 33-landmark output. Reads the shared user
+// <video> (MultiCameraProvider) rather than owning one. Inference runs OFF the
+// main thread via the shared vision worker (lib/visionWorkerClient.ts), with a
+// transparent main-thread fallback if the worker is unavailable — so the heavy
+// detect no longer stalls rAF (which made the 3D game choppy). Public API
+// unchanged. Uses the LITE model + slower cadence (heaviest of the three trackers).
 
 import { useState, useEffect, useRef } from "react";
 import type { PoseTrackingConfig, RawTrackedPose, PoseLandmark } from "@/lib/poseTrackingTypes";
 import { DEFAULT_POSE_TRACKING_CONFIG } from "@/lib/poseTrackingTypes";
-
-// =============================================================================
-// SINGLETON LOADER (same pattern as useFaceTracking)
-// =============================================================================
-
-let poseLandmarkerInstance: any = null;
-let poseLandmarkerPromise: Promise<any> | null = null;
-let poseLandmarkerError: Error | null = null;
-
-async function loadPoseLandmarker(maxPoses: number): Promise<any> {
-  if (poseLandmarkerInstance) return poseLandmarkerInstance;
-  if (poseLandmarkerError) throw poseLandmarkerError;
-  if (poseLandmarkerPromise) return poseLandmarkerPromise;
-
-  poseLandmarkerPromise = (async () => {
-    try {
-      const vision = await import("@mediapipe/tasks-vision");
-      const { PoseLandmarker, FilesetResolver } = vision;
-
-      const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
-      );
-
-      const createOptions = (delegate: "GPU" | "CPU") => ({
-        baseOptions: {
-          // LITE variant — cheapest; we only need coarse posture/movement.
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-          delegate,
-        },
-        runningMode: "VIDEO" as const,
-        numPoses: maxPoses,
-        outputSegmentationMasks: false,
-      });
-
-      try {
-        poseLandmarkerInstance = await PoseLandmarker.createFromOptions(filesetResolver, createOptions("GPU"));
-        console.log("[PoseTracking] PoseLandmarker initialized (GPU)");
-      } catch (gpuErr) {
-        console.warn("[PoseTracking] GPU delegate failed, falling back to CPU:", gpuErr);
-        poseLandmarkerInstance = await PoseLandmarker.createFromOptions(filesetResolver, createOptions("CPU"));
-        console.log("[PoseTracking] PoseLandmarker initialized (CPU fallback)");
-      }
-
-      return poseLandmarkerInstance;
-    } catch (err) {
-      poseLandmarkerError = err as Error;
-      console.error("[PoseTracking] Failed to load PoseLandmarker:", err);
-      throw err;
-    }
-  })();
-
-  return poseLandmarkerPromise;
-}
-
-// =============================================================================
-// HOOK
-// =============================================================================
+import { acquireVisionTask, type VisionTaskHandle } from "@/lib/visionWorkerClient";
 
 export interface UsePoseTrackingOptions {
   videoEl: HTMLVideoElement | null;
@@ -93,67 +39,64 @@ export function usePoseTracking(options: UsePoseTrackingOptions): UsePoseTrackin
   const [poses, setPoses] = useState<RawTrackedPose[]>([]);
   const [fps, setFps] = useState(0);
 
-  const landmarkerRef = useRef<any>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handleRef = useRef<VisionTaskHandle | null>(null);
   const frameCountRef = useRef(0);
-  const lastTimestampRef = useRef(0);
 
-  // Initialize PoseLandmarker
+  // Acquire / release the shared pose task (loads in the worker, else main thread).
   useEffect(() => {
     if (!enabled) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const landmarker = await loadPoseLandmarker(config.maxPoses);
-        if (mounted) { landmarkerRef.current = landmarker; setIsReady(true); setError(null); }
-      } catch (err: any) {
-        if (mounted) { setError(err?.message || "Failed to load pose tracking model"); setIsReady(false); }
-      }
-    })();
-    return () => { mounted = false; };
+    let cancelled = false;
+    const handle = acquireVisionTask("pose", { numEntities: config.maxPoses });
+    handleRef.current = handle;
+    handle.whenReady().then((ok) => {
+      if (cancelled) return;
+      setIsReady(ok);
+      setError(ok ? null : "Failed to load pose tracking model");
+    });
+    return () => {
+      cancelled = true;
+      handle.release();
+      handleRef.current = null;
+      setIsReady(false);
+    };
   }, [enabled, config.maxPoses]);
 
-  // Detection loop
+  // Detection loop — drives the shared handle; the worker (or main-thread
+  // fallback) returns the same plain result, mapped here exactly as before.
   useEffect(() => {
-    if (!isReady || !enabled || !videoEl) {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (!enabled || !videoEl) {
       setPoses([]);
       setFps(0);
       return;
     }
+    let stopped = false;
 
-    const runDetection = () => {
+    const tick = () => {
+      const handle = handleRef.current;
       const video = videoEl;
-      const landmarker = landmarkerRef.current;
-      if (!video || !landmarker || video.readyState < 2) return;
-      const now = performance.now();
-      if (now <= lastTimestampRef.current) return; // MediaPipe needs monotonic ts
-      lastTimestampRef.current = now;
-
-      try {
-        const results = landmarker.detectForVideo(video, now);
+      if (!handle || !handle.isReady() || video.readyState < 2) return;
+      handle.detect(video, performance.now()).then((results) => {
+        if (stopped || !results) return;
         const raw: RawTrackedPose[] = [];
-        const lmSets = results?.landmarks ?? [];
+        const lmSets = results.landmarks ?? [];
         for (let i = 0; i < lmSets.length; i++) {
           const landmarks: PoseLandmark[] = lmSets[i].map((p: any) => ({ x: p.x, y: p.y, visibility: p.visibility }));
           raw.push({ poseIndex: i, landmarks });
         }
         setPoses(raw);
         frameCountRef.current++;
-      } catch {
-        // Silent per-frame failures (same as face/hand).
-      }
+      }).catch(() => { /* per-frame failures are non-fatal */ });
     };
 
-    intervalRef.current = setInterval(runDetection, config.processingIntervalMs);
-    fpsTimerRef.current = setInterval(() => { setFps(frameCountRef.current); frameCountRef.current = 0; }, 1000);
+    const interval = setInterval(tick, config.processingIntervalMs);
+    const fpsTimer = setInterval(() => { setFps(frameCountRef.current); frameCountRef.current = 0; }, 1000);
 
     return () => {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-      if (fpsTimerRef.current) { clearInterval(fpsTimerRef.current); fpsTimerRef.current = null; }
+      stopped = true;
+      clearInterval(interval);
+      clearInterval(fpsTimer);
     };
-  }, [isReady, enabled, videoEl, config.processingIntervalMs]);
+  }, [enabled, videoEl, config.processingIntervalMs]);
 
   return { isReady, error, poses, fps };
 }

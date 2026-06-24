@@ -35,6 +35,28 @@ export class CallWorldHub {
   }
 }
 
+type NpcHandler = (fromPersonId: string, msg: unknown) => void;
+
+/** Fan-out for inbound NPC-conversation messages (the reliable `call:npc` relay).
+ *  Mirrors CallWorldHub: the call context feeds `npcData` events in, the mounted
+ *  game surface subscribes to route them to the conversation layer. */
+export class CallNpcHub {
+  private handlers = new Set<NpcHandler>();
+
+  emit(fromPersonId: string, msg: unknown): void {
+    for (const h of this.handlers) h(fromPersonId, msg);
+  }
+
+  subscribe(handler: NpcHandler): () => void {
+    this.handlers.add(handler);
+    return () => { this.handlers.delete(handler); };
+  }
+
+  clear(): void {
+    this.handlers.clear();
+  }
+}
+
 /** Build the canvas net adapter from the call primitives. When `publishPresence`
  *  + `presence` are supplied, avatar positions ride the world-wide RELAY (the
  *  call WS) instead of the mesh, and the canvas applies remote avatars from the

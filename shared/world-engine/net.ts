@@ -51,25 +51,31 @@ const NET_DEFAULTS: NetOptions = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the messages to broadcast for the local peer: its avatar, the toys it
- * owns, and any discrete possession changes from the tick just run. Call at the
- * network send rate (~15 Hz) rather than every render frame.
+ * Build the messages to broadcast for the local peer: every avatar it OWNS, the
+ * toys it owns, and any discrete possession changes from the tick just run. Call
+ * at the network send rate (~15 Hz) rather than every render frame.
+ *
+ * `ownedAvatarIds` defaults to just the local player. A peer that hosts NPCs
+ * passes its NPC ids too, so each NPC streams over the mesh and every peer renders
+ * it as an ordinary remote avatar (no NPC-aware code needed on the receiving end).
  */
 export function collectOutbound(
   state: WorldState,
   tickEvents: readonly WorldEvent[] = [],
+  ownedAvatarIds: readonly string[] = [state.localId],
 ): WorldNetMessage[] {
   const out: WorldNetMessage[] = [];
   const me = state.localId;
 
-  const local = state.avatars[me];
-  if (local) {
+  for (const id of ownedAvatarIds) {
+    const a = state.avatars[id];
+    if (!a) continue;
     out.push({
       t: "avatar",
-      id: me,
-      x: local.x, y: local.y,
-      fx: local.fx, fy: local.fy,
-      vx: local.vx, vy: local.vy,
+      id,
+      x: a.x, y: a.y,
+      fx: a.fx, fy: a.fy,
+      vx: a.vx, vy: a.vy,
     });
   }
 

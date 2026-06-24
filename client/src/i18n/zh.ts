@@ -3481,6 +3481,8 @@ export const zh = {
     hangUp: "挂断",
     mute: "静音",
     unmute: "取消静音",
+    muteSpeaker: "静音扬声器",
+    unmuteSpeaker: "取消静音",
     cameraOn: "打开摄像头",
     cameraOff: "关闭摄像头",
     remoteVideo: "对方视频",
@@ -3833,6 +3835,13 @@ export const zh = {
     exit: "结束游戏",
     pick: "选择游戏",
     noOneNearby: "附近没有人",
+    switchView: "切换视图",
+    testGameRoom: "测试游戏室",
+    npcSay: "说点什么…",
+    npcSend: "发送",
+    npcThinking: "…",
+    npcConnecting: "连接中…",
+    npcError: "无法连接此角色。",
   },
 
 };

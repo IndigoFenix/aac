@@ -33,6 +33,12 @@ export interface UseStreamingAudioPlayerReturn {
   clear: () => void;
   /** Clear queued chunks matching a tag, leaving other tags intact. */
   clearByTag: (tag: string) => void;
+  /** Mute/unmute LOCAL speaker output only (the call tap is unaffected, so a
+   *  locally-muted AAC still transmits its voice). */
+  setLocalMuted: (muted: boolean) => void;
+  /** A MediaStream carrying everything this player sounds (all TTS paths), for
+   *  sending the AAC's synthesized voice over a call. Null until the graph is up. */
+  getCallStream: () => MediaStream | null;
 }
 
 export interface UseStreamingAudioPlayerOptions {
@@ -105,6 +111,11 @@ export function useStreamingAudioPlayer(
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   // Currently-playing AudioBufferSourceNode (pitch-shifted path)
   const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Local-output gain (mute = 0) and a parallel tap that exposes everything this
+  // player sounds as a MediaStream, so the AAC's synthesized voice can be sent over
+  // a call exactly like a microphone would be.
+  const masterGainRef = useRef<GainNode | null>(null);
+  const callDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const volumeRafRef = useRef<number>(0);
   // Keep latest pitch map in a ref so playNext doesn't need to re-render
   const pitchByTagRef = useRef(pitchByTag);
@@ -126,10 +137,22 @@ export function useStreamingAudioPlayer(
       analyser.smoothingTimeConstant = 0.3;
       const source = ctx.createMediaElementSource(audio);
       source.connect(analyser);
-      analyser.connect(ctx.destination);
+      // Local speakers: analyser → masterGain → destination (mute = gain 0).
+      const masterGain = ctx.createGain();
+      analyser.connect(masterGain);
+      masterGain.connect(ctx.destination);
+      // Call tap: analyser → MediaStreamDestination, in PARALLEL (not through
+      // masterGain), so muting the local speakers never silences what we transmit.
+      // Both the <audio>-element path AND the pitch-shifted bufferSource path feed
+      // the analyser, so this captures regular server TTS and the ElevenLabs
+      // (client_tts) path alike.
+      const callDest = ctx.createMediaStreamDestination();
+      analyser.connect(callDest);
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
       sourceRef.current = source;
+      masterGainRef.current = masterGain;
+      callDestRef.current = callDest;
     } catch (err) {
       console.warn("[StreamingAudioPlayer] AudioContext setup failed:", err);
     }
@@ -148,6 +171,8 @@ export function useStreamingAudioPlayer(
       audioContextRef.current = null;
       analyserRef.current = null;
       sourceRef.current = null;
+      masterGainRef.current = null;
+      callDestRef.current = null;
       busyRef.current = false;
       // Clean up any remaining blob URLs
       queueRef.current.forEach((e) => { if (e.url) URL.revokeObjectURL(e.url); });
@@ -536,6 +561,14 @@ export function useStreamingAudioPlayer(
     }
   }, [currentTag, stop, playNext]);
 
+  // Mute LOCAL speakers without affecting the call tap (analyser → callDest sits
+  // before masterGain in parallel).
+  const setLocalMuted = useCallback((muted: boolean) => {
+    if (masterGainRef.current) masterGainRef.current.gain.value = muted ? 0 : 1;
+  }, []);
+
+  const getCallStream = useCallback((): MediaStream | null => callDestRef.current?.stream ?? null, []);
+
   return {
     isPlaying,
     isBuffering,
@@ -548,6 +581,8 @@ export function useStreamingAudioPlayer(
     stop,
     clear,
     clearByTag,
+    setLocalMuted,
+    getCallStream,
   };
 }
 

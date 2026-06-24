@@ -96,6 +96,73 @@ export interface SoccerBallSpec {
 }
 export type ToySpec = SoccerBallSpec;
 
+// ---------------------------------------------------------------------------
+// NPCs — AI-driven inhabitants of the world
+// ---------------------------------------------------------------------------
+
+/**
+ * How an NPC moves when it isn't actively engaged in conversation.
+ *   • "stationary"      — holds its spawn; turns to face the nearest person.
+ *   • "wander"          — roams to random waypoints, pausing between them.
+ *   • "approach_nearest"— walks up to the nearest person and holds a
+ *                         conversational distance (roams when nobody is around).
+ * The behavior only ever produces a STEERING AIM; the same locomotion that moves
+ * a player avatar (engine.advanceAvatar) carries the NPC, so it can't diverge.
+ */
+export type NpcMovement = "stationary" | "wander" | "approach_nearest";
+
+export interface NpcBehaviorSpec {
+  movement: NpcMovement;
+  /**
+   * Distance (world units) at which the NPC treats a person as a conversation
+   * partner — it stops approaching and holds here, and (Phase 2) this is the
+   * range the social brain engages over. Defaults to the proximity-circle radius.
+   */
+  conversationRadius?: number;
+}
+
+/**
+ * The NPC's social persona. These fields MIRROR the `social_trainer` app's
+ * startup params (server/services/dual-agent/app-registry.ts) one-for-one so the
+ * social brain (Phase 2) can pass them straight to generatePersona /
+ * DirectedSession — an NPC and a hand-launched Social Trainer share one character
+ * pipeline. All optional: the generator samples anything omitted.
+ */
+export interface NpcPersonaSpec {
+  /** "any" → randomized. */
+  genderHint?: "male" | "female" | "any";
+  /** Personality archetype id, or "any" to randomize. Validated by the brain, not
+   *  the world schema, so new archetypes don't require a world-engine bump. */
+  archetypeHint?: string;
+  /** Up to a few topics the NPC should love — ideally the student's interests. */
+  interestHints?: string[];
+  /** How demanding the NPC is. */
+  difficulty?: "gentle" | "medium" | "challenging";
+  /** The social situation to frame ("greeting", "making_friends", …). */
+  scenario?: string;
+  /** Optional social skills to focus the session on. */
+  targetSkills?: string[];
+}
+
+/**
+ * An AI-driven inhabitant of the world. In the sim it is just an avatar whose
+ * steering aim comes from an NpcController (shared/social-world/npc-controller.ts)
+ * instead of a pointer — so it networks and renders exactly like a player. Its
+ * persona drives the social brain (Phase 2); its behavior drives its body.
+ */
+export interface NpcSpec {
+  id: string;
+  /** Spawn position in world units. */
+  x: number;
+  y: number;
+  /** Initial facing in radians (0 = +x). Defaults to 0. */
+  facing?: number;
+  /** Display name. When omitted the brain's generated persona name is shown. */
+  name?: string;
+  persona?: NpcPersonaSpec;
+  behavior?: NpcBehaviorSpec;
+}
+
 export interface MultiplayerSpec {
   /** Hard cap; the lobby/WebRTC mesh inherits this (mesh is O(n²)). */
   maxPlayers: number;
@@ -119,6 +186,9 @@ export interface WorldSpec {
   terrain: TerrainSpec;
   spawns: SpawnSpec[];
   toys: ToySpec[];
+  /** AI-driven inhabitants. Optional (most worlds have none). Hosted by exactly
+   *  one peer at runtime — see shared/social-world/world-host.ts. */
+  npcs?: NpcSpec[];
   multiplayer: MultiplayerSpec;
   content: ContentSpec;
 }
@@ -129,6 +199,9 @@ export interface WorldSpec {
 
 export const WORLD_MAX_SPAWNS = 16;
 export const WORLD_MAX_TOYS = 32;
+/** Each NPC is hosted + voiced (a live social session) on one peer; keep the
+ *  count low so a single host can drive them all. */
+export const WORLD_MAX_NPCS = 8;
 export const WORLD_MAX_PLAYERS = 12;
 /** Max world-units per manifold axis. */
 export const WORLD_MANIFOLD_MAX = 10_000;

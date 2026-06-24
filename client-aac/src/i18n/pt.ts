@@ -748,6 +748,7 @@ export const pt: Translations = {
     playInCall: "Jogar nesta chamada",
     invite: "Convidar",
     noOneNearby: "Ninguém por perto",
+    switchView: "Alternar vista",
   },
 
   social: {

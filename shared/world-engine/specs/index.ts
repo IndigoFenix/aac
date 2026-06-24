@@ -8,13 +8,15 @@
 
 import type { WorldSpec } from "../types.js";
 import { socialFieldSpec } from "./social-field.js";
+import { socialFieldNpcsSpec } from "./social-field-npcs.js";
 
 export const WORLD_SPECS: Record<string, WorldSpec> = {
   "social-field": socialFieldSpec,
+  "social-field-npcs": socialFieldNpcsSpec,
 };
 
 export function getWorldSpec(key: string): WorldSpec | null {
   return WORLD_SPECS[key] ?? null;
 }
 
-export { socialFieldSpec };
+export { socialFieldSpec, socialFieldNpcsSpec };

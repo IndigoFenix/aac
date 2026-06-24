@@ -3481,6 +3481,8 @@ export const de = {
     hangUp: "Auflegen",
     mute: "Stummschalten",
     unmute: "Stummschaltung aufheben",
+    muteSpeaker: "Lautsprecher stumm",
+    unmuteSpeaker: "Lautsprecher an",
     cameraOn: "Kamera an",
     cameraOff: "Kamera aus",
     remoteVideo: "Video der Gegenseite",
@@ -3833,6 +3835,13 @@ export const de = {
     exit: "Spiel beenden",
     pick: "Spiel auswählen",
     noOneNearby: "Niemand in der Nähe",
+    switchView: "Ansicht wechseln",
+    testGameRoom: "Spielraum testen",
+    npcSay: "Sag etwas…",
+    npcSend: "Senden",
+    npcThinking: "…",
+    npcConnecting: "Verbinden…",
+    npcError: "Diese Figur konnte nicht erreicht werden.",
   },
 
 };

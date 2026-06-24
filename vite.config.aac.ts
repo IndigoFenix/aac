@@ -4,6 +4,11 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  // The vision worker (src/workers/vision.worker.ts) dynamically imports MediaPipe,
+  // so its bundle is code-split — which needs the ES module worker format (the
+  // default "iife" can't code-split). Module workers are supported by the Electron
+  // Chromium and all target browsers.
+  worker: { format: "es" },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client-aac", "src"),

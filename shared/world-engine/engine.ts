@@ -221,6 +221,53 @@ export function createWorldState(
   return { spec, localId, avatars: { [localId]: avatar }, toys, time: 0 };
 }
 
+/**
+ * Add a LOCALLY-OWNED avatar to the state (an NPC this peer hosts). Unlike a
+ * remote avatar it carries no smoothing target (t* fields), so smoothRemoteAvatars
+ * leaves it alone — the host advances it directly via steerAvatar each frame, just
+ * like the local player's avatar. Returns the created avatar.
+ */
+export function addLocalAvatar(
+  state: WorldState,
+  id: string,
+  x: number,
+  y: number,
+  facing = 0,
+): AvatarState {
+  const a: AvatarState = {
+    id,
+    x,
+    y,
+    fx: Math.cos(facing),
+    fy: Math.sin(facing),
+    vx: 0,
+    vy: 0,
+  };
+  state.avatars[id] = a;
+  return a;
+}
+
+/**
+ * Advance ONE locally-owned avatar by `dt` toward `aim` (or coast to a stop when
+ * null), using the same locomotion as the local player. This is the injection
+ * point for AI-driven NPCs: a controller computes the aim, the engine moves the
+ * body — so an NPC can never move in a way a player couldn't. Toy possession is
+ * intentionally NOT run for NPCs (that path is keyed to the local player); NPCs
+ * walk and turn, they don't dribble. No-ops if the id isn't present.
+ */
+export function steerAvatar(
+  state: WorldState,
+  id: string,
+  aim: Vec2 | null,
+  dt: number,
+  config: WorldEngineConfig = WORLD_ENGINE_DEFAULTS,
+): void {
+  const a = state.avatars[id];
+  if (!a) return;
+  const step = Math.min(Math.max(dt, 0), config.maxStep);
+  if (step > 0) advanceAvatar(a, aim, state.spec, config, step);
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------

@@ -3481,6 +3481,8 @@ export const ar = {
     hangUp: "إنهاء المكالمة",
     mute: "كتم الصوت",
     unmute: "إلغاء كتم الصوت",
+    muteSpeaker: "كتم السماعة",
+    unmuteSpeaker: "تشغيل السماعة",
     cameraOn: "تشغيل الكاميرا",
     cameraOff: "إيقاف الكاميرا",
     remoteVideo: "فيديو بعيد",
@@ -3833,6 +3835,13 @@ export const ar = {
     exit: "إنهاء اللعبة",
     pick: "اختر لعبة",
     noOneNearby: "لا أحد بالقرب",
+    switchView: "تبديل العرض",
+    testGameRoom: "اختبار غرفة اللعب",
+    npcSay: "قل شيئًا…",
+    npcSend: "إرسال",
+    npcThinking: "…",
+    npcConnecting: "جارٍ الاتصال…",
+    npcError: "تعذّر الوصول إلى هذه الشخصية.",
   },
 
 };

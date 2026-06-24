@@ -748,6 +748,7 @@ export const ar: Translations = {
     playInCall: "العب في هذه المكالمة",
     invite: "دعوة",
     noOneNearby: "لا أحد بالقرب",
+    switchView: "تبديل العرض",
   },
 
   social: {

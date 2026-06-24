@@ -748,6 +748,7 @@ export const yue: Translations = {
     playInCall: "喺呢個通話入面玩",
     invite: "邀請",
     noOneNearby: "附近冇人",
+    switchView: "切換視圖",
   },
 
   social: {

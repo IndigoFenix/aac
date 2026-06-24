@@ -3481,6 +3481,8 @@ export const he = {
     hangUp: "ניתוק",
     mute: "השתקה",
     unmute: "ביטול השתקה",
+    muteSpeaker: "השתקת רמקול",
+    unmuteSpeaker: "ביטול השתקת רמקול",
     cameraOn: "הפעלת מצלמה",
     cameraOff: "כיבוי מצלמה",
     remoteVideo: "וידאו מרוחק",
@@ -3833,6 +3835,13 @@ export const he = {
     exit: "סיים משחק",
     pick: "בחר משחק",
     noOneNearby: "אין אף אחד בקרבת מקום",
+    switchView: "החלף תצוגה",
+    testGameRoom: "בדיקת חדר משחק",
+    npcSay: "אמרו משהו…",
+    npcSend: "שליחה",
+    npcThinking: "…",
+    npcConnecting: "מתחבר…",
+    npcError: "לא ניתן היה להתחבר לדמות הזו.",
   },
 
 };

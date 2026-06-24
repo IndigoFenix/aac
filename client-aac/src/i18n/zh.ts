@@ -748,6 +748,7 @@ export const zh: Translations = {
     playInCall: "在此通话中玩",
     invite: "邀请",
     noOneNearby: "附近没有人",
+    switchView: "切换视图",
   },
 
   social: {

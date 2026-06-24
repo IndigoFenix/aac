@@ -104,6 +104,7 @@ export type CallClientCommand =
   | { type: "call:start-solo-game"; callId: string; game: CallGame } // open a one-person room with a game (no ring), joinable via invite
   | { type: "call:invite-into-call"; callId: string; contactId: string; media: CallMediaFlags } // ring a contact INTO the existing call (vs starting a new one)
   | { type: "call:world"; callId: string; presence: WorldPresence } // RELAY: this participant's avatar position, fanned world-wide to feed the circle solver (decoupled from the media mesh)
+  | { type: "call:npc"; callId: string; msg: unknown } // RELIABLE relay for AI-NPC conversation (say/state/audio/position) — server-fanned to every participant, independent of the media mesh (which prunes distant peers). `msg` is an NpcNetMessage (shared/social-world), relayed verbatim.
   | { type: "call:focus"; callId: string; to: string | null } // caller declares who they're addressing (a remote personId), or null for everyone
   | { type: "call:conversation"; join: boolean; callId: string } // non-student caller joins/leaves the conversation room for the call (so they appear in AAC rosters + receive roster/focus)
   | { type: "call:utterance"; callId: string; text: string } // non-student caller's Web-Speech transcript → published into the conversation room (primary path)
@@ -122,6 +123,7 @@ export type CallEvent =
   | { type: "call:media-state"; topic: string; payload: { callId: string; personId: string; audio: boolean; video: boolean; pose: boolean } }
   | { type: "call:game"; topic: string; payload: { callId: string; game: CallGame | null; byPersonId: string } } // a participant attached/detached a game (also sent to late joiners as catch-up)
   | { type: "call:world"; topic: string; payload: { callId: string; personId: string; presence: WorldPresence } } // a participant's relayed avatar position (world-wide position channel)
+  | { type: "call:npc"; topic: string; payload: { callId: string; fromPersonId: string; msg: unknown } } // an NPC-conversation message relayed from `fromPersonId` to every participant
   | { type: "call:ended"; topic: string; payload: { callId: string; reason: string } }
   | { type: "call:error"; topic: string; payload: { callId?: string; code: string; message: string } };
 

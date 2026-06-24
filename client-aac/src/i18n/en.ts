@@ -746,6 +746,7 @@ export const en = {
     playInCall: "Play in this call",
     invite: "Invite",
     noOneNearby: "No one nearby",
+    switchView: "Switch view",
   },
 
   social: {

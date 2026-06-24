@@ -748,6 +748,7 @@ export const ko: Translations = {
     playInCall: "이 통화에서 놀기",
     invite: "초대",
     noOneNearby: "근처에 아무도 없습니다",
+    switchView: "보기 전환",
   },
 
   social: {

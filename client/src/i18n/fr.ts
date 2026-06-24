@@ -3481,6 +3481,8 @@ export const fr = {
     hangUp: "Raccrocher",
     mute: "Couper le micro",
     unmute: "Réactiver le micro",
+    muteSpeaker: "Couper le son",
+    unmuteSpeaker: "Activer le son",
     cameraOn: "Activer la caméra",
     cameraOff: "Désactiver la caméra",
     remoteVideo: "Vidéo distante",
@@ -3833,6 +3835,13 @@ export const fr = {
     exit: "Terminer le jeu",
     pick: "Choisir un jeu",
     noOneNearby: "Personne à proximité",
+    switchView: "Changer de vue",
+    testGameRoom: "Tester la salle de jeu",
+    npcSay: "Dis quelque chose…",
+    npcSend: "Envoyer",
+    npcThinking: "…",
+    npcConnecting: "Connexion…",
+    npcError: "Impossible de joindre ce personnage.",
   },
 
 };

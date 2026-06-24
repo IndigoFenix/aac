@@ -177,11 +177,17 @@ export class SocialBotRelay {
     const difficultyParam = typeof params.difficulty === "number"
       ? Math.max(0, Math.min(1, params.difficulty))
       : DEFAULT_DIFFICULTY;
+    // Up to 3 topics the character should love (e.g. world NPCs pass the student's
+    // interests so the peer shares common ground).
+    const interestHints = Array.isArray(params.interestHints)
+      ? params.interestHints.filter((x: unknown): x is string => typeof x === "string" && x.length > 0).slice(0, 3)
+      : undefined;
 
     // Procedural persona FIRST — its gender drives voice selection.
     const persona = generatePersona({
       archetype: archetypeParam as any,
       gender: genderParam,
+      interestHints,
     });
     this.personaName = persona.name;
 

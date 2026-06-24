@@ -1,100 +1,15 @@
 // client-aac/src/hooks/useHandGestureTracking.ts
-// Core MediaPipe GestureRecognizer hook - singleton loader, gesture + landmark extraction
+// MediaPipe GestureRecognizer hook — gesture + landmark + sign-language output.
+// Inference runs OFF the main thread via the shared vision worker
+// (lib/visionWorkerClient.ts), with a transparent main-thread fallback if the
+// worker is unavailable. Public API unchanged. Reads the shared user <video>
+// (MultiCameraProvider). A sign-language model change re-acquires the task (the
+// worker reloads the recognizer with the custom classifier).
 
 import { useState, useEffect, useRef } from "react";
 import type { HandGestureConfig, RawTrackedHand, HandLandmark } from "@/lib/handGestureTypes";
 import { DEFAULT_HAND_GESTURE_CONFIG, MEDIAPIPE_GESTURE_MAP } from "@/lib/handGestureTypes";
-
-// =============================================================================
-// SINGLETON LOADER
-// =============================================================================
-
-let gestureRecognizerInstance: any = null;
-let gestureRecognizerPromise: Promise<any> | null = null;
-let gestureRecognizerError: Error | null = null;
-let currentSignLanguageModelUrl: string | null = null;
-
-async function loadGestureRecognizer(
-  maxHands: number,
-  signLanguageModelUrl: string | null
-): Promise<any> {
-  // If sign language URL changed, close old instance and re-create
-  if (gestureRecognizerInstance && currentSignLanguageModelUrl !== signLanguageModelUrl) {
-    console.log("[HandGesture] Sign language model URL changed, re-creating recognizer");
-    try {
-      gestureRecognizerInstance.close();
-    } catch (_) {
-      // ignore close errors
-    }
-    gestureRecognizerInstance = null;
-    gestureRecognizerPromise = null;
-    gestureRecognizerError = null;
-  }
-
-  if (gestureRecognizerInstance) return gestureRecognizerInstance;
-  if (gestureRecognizerError) throw gestureRecognizerError;
-  if (gestureRecognizerPromise) return gestureRecognizerPromise;
-
-  gestureRecognizerPromise = (async () => {
-    try {
-      const vision = await import("@mediapipe/tasks-vision");
-      const { GestureRecognizer, FilesetResolver } = vision;
-
-      const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
-      );
-
-      const buildOptions = (delegate: "GPU" | "CPU") => {
-        const opts: any = {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-            delegate,
-          },
-          runningMode: "VIDEO",
-          numHands: maxHands,
-        };
-
-        if (signLanguageModelUrl) {
-          opts.customGesturesClassifierOptions = {
-            modelAssetPath: signLanguageModelUrl,
-          };
-          console.log("[HandGesture] Loading with sign language model:", signLanguageModelUrl);
-        }
-
-        return opts;
-      };
-
-      try {
-        gestureRecognizerInstance = await GestureRecognizer.createFromOptions(
-          filesetResolver,
-          buildOptions("GPU")
-        );
-        console.log("[HandGesture] GestureRecognizer initialized (GPU)");
-      } catch (gpuErr) {
-        console.warn("[HandGesture] GPU delegate failed, falling back to CPU:", gpuErr);
-        gestureRecognizerInstance = await GestureRecognizer.createFromOptions(
-          filesetResolver,
-          buildOptions("CPU")
-        );
-        console.log("[HandGesture] GestureRecognizer initialized (CPU fallback)");
-      }
-
-      currentSignLanguageModelUrl = signLanguageModelUrl;
-      return gestureRecognizerInstance;
-    } catch (err) {
-      gestureRecognizerError = err as Error;
-      console.error("[HandGesture] Failed to load GestureRecognizer:", err);
-      throw err;
-    }
-  })();
-
-  return gestureRecognizerPromise;
-}
-
-// =============================================================================
-// HOOK
-// =============================================================================
+import { acquireVisionTask, type VisionTaskHandle } from "@/lib/visionWorkerClient";
 
 export interface UseHandGestureTrackingOptions {
   /**
@@ -139,113 +54,67 @@ export function useHandGestureTracking(
   const [hands, setHands] = useState<RawTrackedHand[]>([]);
   const [fps, setFps] = useState(0);
 
-  const recognizerRef = useRef<any>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handleRef = useRef<VisionTaskHandle | null>(null);
   const frameCountRef = useRef(0);
-  const fpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastTimestampRef = useRef(0);
 
-  // NOTE: this hook no longer owns a <video> element. It reads frames from the
-  // shared `videoEl` provided by MultiCameraProvider. See useMultiCamera.tsx.
-
-  // Initialize GestureRecognizer
+  // Acquire / release the shared hand task. A maxHands or sign-language-model
+  // change re-runs this effect → release + re-acquire → the worker reloads the
+  // recognizer with the new custom classifier.
   useEffect(() => {
     if (!enabled) return;
-
-    let mounted = true;
-
-    async function init() {
-      try {
-        const recognizer = await loadGestureRecognizer(
-          config.maxHands,
-          config.signLanguageModelUrl
-        );
-        if (mounted) {
-          recognizerRef.current = recognizer;
-          setIsReady(true);
-          setError(null);
-          console.log("[HandGesture] Ready");
-        }
-      } catch (err: any) {
-        if (mounted) {
-          setError(err.message || "Failed to load hand gesture model");
-          setIsReady(false);
-        }
-      }
-    }
-
-    init();
-
+    let cancelled = false;
+    const handle = acquireVisionTask("hand", {
+      numEntities: config.maxHands,
+      signLanguageModelUrl: config.signLanguageModelUrl,
+    });
+    handleRef.current = handle;
+    handle.whenReady().then((ok) => {
+      if (cancelled) return;
+      setIsReady(ok);
+      setError(ok ? null : "Failed to load hand gesture model");
+    });
     return () => {
-      mounted = false;
+      cancelled = true;
+      handle.release();
+      handleRef.current = null;
+      setIsReady(false);
     };
   }, [enabled, config.maxHands, config.signLanguageModelUrl]);
 
-  // Run detection loop
+  // Detection loop. The worker (or main-thread fallback) returns the same plain
+  // result shape; mapping below is unchanged from the previous main-thread path.
   useEffect(() => {
-    if (!isReady || !enabled || !videoEl) {
-      console.log("[HandGesture] Detection loop not starting:", {
-        isReady,
-        enabled,
-        hasVideo: !!videoEl,
-      });
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+    if (!enabled || !videoEl) {
       setHands([]);
       setFps(0);
       return;
     }
+    let stopped = false;
 
-    console.log("[HandGesture] Starting detection loop");
-
-    const runDetection = () => {
+    const tick = () => {
+      const handle = handleRef.current;
       const video = videoEl;
-      const recognizer = recognizerRef.current;
-      if (!video || !recognizer || video.readyState < 2) return;
-
-      // MediaPipe requires monotonically increasing timestamps
-      const now = performance.now();
-      if (now <= lastTimestampRef.current) return;
-      lastTimestampRef.current = now;
-
+      if (!handle || !handle.isReady() || video.readyState < 2) return;
       setIsProcessing(true);
-
-      try {
-        const results = recognizer.recognizeForVideo(video, now);
+      handle.detect(video, performance.now()).then((results) => {
+        if (stopped || !results) return;
         const rawHands: RawTrackedHand[] = [];
 
         if (results.landmarks && results.landmarks.length > 0) {
           for (let i = 0; i < results.landmarks.length; i++) {
-            // Extract landmarks
             const landmarks: HandLandmark[] = results.landmarks[i].map(
-              (lm: any) => ({
-                x: lm.x,
-                y: lm.y,
-                z: lm.z,
-              })
+              (lm: any) => ({ x: lm.x, y: lm.y, z: lm.z })
             );
 
-            // Extract handedness
             let handedness: "Left" | "Right" = "Right";
-            if (
-              results.handedness &&
-              results.handedness[i] &&
-              results.handedness[i].length > 0
-            ) {
+            if (results.handedness && results.handedness[i] && results.handedness[i].length > 0) {
               const label = results.handedness[i][0].categoryName;
               handedness = label === "Left" ? "Left" : "Right";
             }
 
-            // Extract built-in gesture
             let gesture: string | null = null;
             let gestureConfidence = 0;
-            if (
-              results.gestures &&
-              results.gestures[i] &&
-              results.gestures[i].length > 0
-            ) {
+            if (results.gestures && results.gestures[i] && results.gestures[i].length > 0) {
               const topGesture = results.gestures[i][0];
               if (topGesture.categoryName !== "None") {
                 gesture = topGesture.categoryName;
@@ -253,22 +122,13 @@ export function useHandGestureTracking(
               }
             }
 
-            // Extract custom/sign language gesture if available
-            // Custom gestures appear after built-in gestures in the results
+            // Custom/sign-language gestures appear after the built-in ones.
             let signLanguageGesture: string | null = null;
             let signLanguageConfidence = 0;
-            if (
-              results.gestures &&
-              results.gestures[i] &&
-              results.gestures[i].length > 1
-            ) {
-              // Check subsequent gesture entries for custom model results
+            if (results.gestures && results.gestures[i] && results.gestures[i].length > 1) {
               for (let g = 1; g < results.gestures[i].length; g++) {
                 const entry = results.gestures[i][g];
-                if (
-                  entry.categoryName !== "None" &&
-                  !MEDIAPIPE_GESTURE_MAP[entry.categoryName]
-                ) {
+                if (entry.categoryName !== "None" && !MEDIAPIPE_GESTURE_MAP[entry.categoryName]) {
                   signLanguageGesture = entry.categoryName;
                   signLanguageConfidence = entry.score;
                   break;
@@ -290,32 +150,19 @@ export function useHandGestureTracking(
 
         setHands(rawHands);
         frameCountRef.current++;
-      } catch (_) {
-        // Silent fail on individual frame errors
-      } finally {
-        setIsProcessing(false);
-      }
+      }).catch(() => { /* per-frame failures are non-fatal */ })
+        .finally(() => { if (!stopped) setIsProcessing(false); });
     };
 
-    intervalRef.current = setInterval(runDetection, config.processingIntervalMs);
-
-    // FPS counter
-    fpsTimerRef.current = setInterval(() => {
-      setFps(frameCountRef.current);
-      frameCountRef.current = 0;
-    }, 1000);
+    const interval = setInterval(tick, config.processingIntervalMs);
+    const fpsTimer = setInterval(() => { setFps(frameCountRef.current); frameCountRef.current = 0; }, 1000);
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (fpsTimerRef.current) {
-        clearInterval(fpsTimerRef.current);
-        fpsTimerRef.current = null;
-      }
+      stopped = true;
+      clearInterval(interval);
+      clearInterval(fpsTimer);
     };
-  }, [isReady, enabled, videoEl, config.processingIntervalMs]);
+  }, [enabled, videoEl, config.processingIntervalMs]);
 
   return { isReady, isProcessing, error, hands, fps };
 }

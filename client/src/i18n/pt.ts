@@ -3481,6 +3481,8 @@ export const pt = {
     hangUp: "Desligar",
     mute: "Silenciar",
     unmute: "Ativar som",
+    muteSpeaker: "Silenciar alto-falante",
+    unmuteSpeaker: "Ativar alto-falante",
     cameraOn: "Ligar câmera",
     cameraOff: "Desligar câmera",
     remoteVideo: "Vídeo remoto",
@@ -3833,6 +3835,13 @@ export const pt = {
     exit: "Terminar jogo",
     pick: "Escolher um jogo",
     noOneNearby: "Ninguém por perto",
+    switchView: "Alternar vista",
+    testGameRoom: "Testar sala de jogo",
+    npcSay: "Diga algo…",
+    npcSend: "Enviar",
+    npcThinking: "…",
+    npcConnecting: "Conectando…",
+    npcError: "Não foi possível alcançar este personagem.",
   },
 
 };

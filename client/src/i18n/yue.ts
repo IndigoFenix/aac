@@ -3481,6 +3481,8 @@ export const yue = {
     hangUp: "收線",
     mute: "靜音",
     unmute: "取消靜音",
+    muteSpeaker: "靜音喇叭",
+    unmuteSpeaker: "取消靜音",
     cameraOn: "開鏡頭",
     cameraOff: "閂鏡頭",
     remoteVideo: "對方畫面",
@@ -3833,6 +3835,13 @@ export const yue = {
     exit: "結束遊戲",
     pick: "揀一個遊戲",
     noOneNearby: "附近冇人",
+    switchView: "切換視圖",
+    testGameRoom: "測試遊戲室",
+    npcSay: "講啲嘢…",
+    npcSend: "傳送",
+    npcThinking: "…",
+    npcConnecting: "連線中…",
+    npcError: "無法連接呢個角色。",
   },
 
 };

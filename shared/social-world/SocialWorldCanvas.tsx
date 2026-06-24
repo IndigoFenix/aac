@@ -14,24 +14,21 @@
 // transport. When a call has a game attached, the in-call game surface maps the
 // CallClient's worldData / peerLeft events onto it (the world state rides the
 // mesh's unreliable "world" data channel alongside the call's audio/video).
+//
+// Rendering is delegated to a WorldView (see ../world-engine/world-view.ts): the
+// `renderer` prop picks the 2D top-down view or the 3D Three.js view. The view
+// owns BOTH the screen→world aim mapping and the draw call (they share one
+// camera); the sim/transport loop below is identical either way.
 
-import { useEffect, useRef } from "react";
-import {
-  applyInbound,
-  applyRemoteAvatar,
-  collectOutbound,
-  createWorldState,
-  removeAvatar,
-  smoothRemoteAvatars,
-  tickWorld,
-  type Vec2,
-  type WorldNetMessage,
-  type WorldSpec,
-  type WorldState,
-} from "../world-engine/index.js";
+import { useEffect, useRef, useState } from "react";
+import type { Vec2, WorldNetMessage, WorldSpec } from "../world-engine/index.js";
+import type { NpcEngagement, NpcProximity } from "./npc-controller.js";
 import type { WorldPresence } from "./world-presence.js";
 import { getWorldSpec, socialFieldSpec } from "../world-engine/specs/index.js";
-import { followCamera, renderWorld2D, screenToWorld } from "../world-engine/render2d.js";
+import { createWorld2DView, type WorldView } from "../world-engine/world-view.js";
+import { createWorld3DView } from "../world-engine/render3d.js";
+import { runWorldHost } from "./world-host.js";
+import { WorldRenderClient, supportsOffscreenRender } from "./world-render-client.js";
 
 /** Minimal transport the canvas needs in networked mode. */
 export interface SocialWorldNet {
@@ -72,12 +69,25 @@ interface Props {
   /** The local camera stream — drawn LIVE into the local avatar so you see your
    *  own face on yourself. Null (e.g. a camera-less solo game) → coloured disc. */
   selfStream?: MediaStream | null;
+  /** Which renderer to use. "3d" (default) is the Three.js environment; "2d" is
+   *  the original top-down canvas view. Both consume the same simulation. */
+  renderer?: "2d" | "3d";
+  /** Whether THIS peer hosts the world's NPC bodies. Defaults to solo (`!net`):
+   *  in a call, CallGameSurface passes the elected owner. Changing it rebuilds the
+   *  host (re-spawning the local avatar) — rare (only on owner change). */
+  hostNpcs?: boolean;
+  /** Fires when the set of NPCs the local player can talk to changes (nearest
+   *  first). Only meaningful on the NPC-hosting peer. */
+  onNpcProximity?: (nearby: NpcProximity[]) => void;
+  /** Live conversation bias per hosted NPC id — pushed into its body controller
+   *  so it leans in / drifts off as the conversation's mood shifts. */
+  npcEngagements?: Record<string, NpcEngagement>;
 }
 
-const SEND_INTERVAL_MS = 1000 / 15; // ~15 Hz mesh world-state (toys/possession)
-const PRESENCE_INTERVAL_MS = 1000 / 8; // ~8 Hz relay position (cheap, position-only)
-/** World units shown across the smaller screen dimension by the follow camera. */
-const FOLLOW_VIEW_SPAN = 30;
+/** Master switch for the OffscreenCanvas render worker. Falls back to the
+ *  main-thread loop automatically when the worker can't run; flip to false to
+ *  force the main-thread path everywhere (kill-switch). */
+const WORKER_RENDER_ENABLED = true;
 
 /** Stable spawn assignment so two peers don't always stack on spawn 0. */
 function spawnIndexFor(id: string, n: number): number {
@@ -96,8 +106,15 @@ function spawnOffset(id: string): Vec2 {
   return { x: Math.cos(ang) * r, y: Math.sin(ang) * r };
 }
 
-export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream }: Props) {
+export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream, renderer = "3d", hostNpcs: hostNpcsProp, onNpcProximity, npcEngagements }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Proximity handler via a ref so the long-lived loop always calls the latest one
+  // without re-running the effect (mirrors the face/label resolver pattern).
+  const onNpcProximityRef = useRef(onNpcProximity);
+  onNpcProximityRef.current = onNpcProximity;
+  // An adapter set by whichever render path is live, so the engagement effect can
+  // push into the host/worker without knowing which path it is.
+  const engageAdapterRef = useRef<((npcId: string, e: NpcEngagement | null) => void) | null>(null);
   // Read once at mount via a ref so changing the prop identity can't re-spawn us.
   const spawnHintRef = useRef(spawnHint);
   spawnHintRef.current = spawnHint;
@@ -110,50 +127,111 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
   const selfStreamRef = useRef(selfStream);
   selfStreamRef.current = selfStream;
 
+  // Render path: try the OffscreenCanvas worker first (when supported), and fall
+  // back to the main-thread loop if it can't run. `fallbackEpoch` bumps to force a
+  // FRESH canvas element on fallback — transferControlToOffscreen neuters the old
+  // one, so the main-thread path can't reuse it.
+  const [renderMode, setRenderMode] = useState<"worker" | "main">(
+    WORKER_RENDER_ENABLED && supportsOffscreenRender() ? "worker" : "main",
+  );
+  const [fallbackEpoch, setFallbackEpoch] = useState(0);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
 
     const spec = worldSpec ?? getWorldSpec(worldSpecKey ?? "social-field") ?? socialFieldSpec;
     const localId = net?.localId ?? "you";
+    // Who hosts the world's NPCs? CallGameSurface passes the elected owner in a
+    // call; the solo surface (no net) defaults to hosting them itself.
+    const hostNpcs = hostNpcsProp ?? !net;
     // Spawn near whoever is already here (so people entering together cluster),
     // else the field centre — plus a small offset to avoid exact stacking.
     const base = spawnHintRef.current?.() ?? { x: spec.manifold.width / 2, y: spec.manifold.height / 2 };
     const off = spawnOffset(localId);
-    const state: WorldState = createWorldState(
-      spec,
-      localId,
-      spawnIndexFor(localId, spec.spawns.length),
-      { x: base.x + off.x, y: base.y + off.y },
-    );
+    const spawnIndex = spawnIndexFor(localId, spec.spawns.length);
+    const spawnAt = { x: base.x + off.x, y: base.y + off.y };
 
-    // Last pointer position in CSS pixels (relative to the canvas), or null when
-    // the gaze/cursor has left. The world aim is derived from it EACH FRAME
-    // against the moving follow camera, so the avatar tracks the screen point the
-    // user is looking at even as the camera scrolls.
-    let pointer: { x: number; y: number } | null = null;
-    let raf = 0;
-    let last = performance.now();
-    let lastSend = 0;
-    let lastPresence = 0;
-    let pendingEvents: ReturnType<typeof tickWorld>["events"] = [];
+    // ── Worker render path ─────────────────────────────────────────────────────
+    // The whole loop runs in the worker on an OffscreenCanvas; this thread only
+    // bridges transport + input + faces. Self-cam-on-your-own-avatar is deferred
+    // here (worker mode shows your photo/disc); the main fallback keeps it live.
+    if (renderMode === "worker") {
+      const fulfillFace = async (id: string): Promise<{ bitmap: ImageBitmap | null; label: string }> => {
+        const url = getFaceUrlRef.current?.(id) ?? null;
+        let bitmap: ImageBitmap | null = null;
+        if (url) {
+          try {
+            const blob = await (await fetch(url)).blob();
+            bitmap = await createImageBitmap(blob);
+          } catch { bitmap = null; }
+        }
+        return { bitmap, label: getLabelRef.current?.(id) ?? "" };
+      };
 
-    // Inbound peer state (networked only). Mesh: toys/possession (+ avatar when
-    // no relay). Relay (Phase 1): remote avatar positions, applied per message.
-    const unsubscribe = net?.subscribe((_from, msgs) => {
-      for (const m of msgs) applyInbound(state, m);
-    });
-    const unsubPresence = net?.subscribePresence?.((p) => {
-      if (p.personId === localId) return; // never let the relay move our own avatar
-      applyRemoteAvatar(state, { id: p.personId, x: p.x, y: p.y, fx: p.fx, fy: p.fy, vx: p.vx, vy: p.vy });
-    });
-    const unsubLeave = net?.subscribePresenceLeave?.((id) => removeAvatar(state, id));
+      let client: WorldRenderClient;
+      try {
+        client = new WorldRenderClient({
+          canvas,
+          worldSpec,
+          worldSpecKey,
+          localId,
+          renderer,
+          spawnIndex,
+          spawnAt,
+          hostNpcs,
+          net: net ? { send: net.send, publishPresence: net.publishPresence } : undefined,
+          fulfillFace,
+          onNpcProximity: (nearby) => onNpcProximityRef.current?.(nearby),
+          initialSize: { width: canvas.clientWidth, height: canvas.clientHeight, dpr: window.devicePixelRatio || 1 },
+          onFallback: (reason) => {
+            console.warn("[WorldRender] worker fallback → main thread:", reason);
+            setRenderMode("main");
+            setFallbackEpoch((e) => e + 1);
+          },
+        });
+      } catch (err) {
+        // transferControlToOffscreen / Worker construction threw — go straight to
+        // the main path (the effect re-runs after the canvas remounts).
+        console.warn("[WorldRender] worker init threw → main thread:", err);
+        setRenderMode("main");
+        setFallbackEpoch((e) => e + 1);
+        return;
+      }
 
+      const c = client;
+      engageAdapterRef.current = (npcId, e) => c.setNpcEngagement(npcId, e);
+      const unsubscribe = net?.subscribe((_from, msgs) => c.applyNetInbound(msgs));
+      const unsubPresence = net?.subscribePresence?.((p) => c.applyPresence(p));
+      const unsubLeave = net?.subscribePresenceLeave?.((id) => c.applyPresenceLeave(id));
+      const applyResize = () => c.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+      const ro = new ResizeObserver(applyResize);
+      ro.observe(canvas);
+      const onMove = (e: PointerEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        c.setPointer(e.clientX - rect.left, e.clientY - rect.top);
+      };
+      const onLeave = () => c.clearPointer();
+      canvas.addEventListener("pointermove", onMove);
+      canvas.addEventListener("pointerleave", onLeave);
+
+      return () => {
+        ro.disconnect();
+        canvas.removeEventListener("pointermove", onMove);
+        canvas.removeEventListener("pointerleave", onLeave);
+        unsubscribe?.();
+        unsubPresence?.();
+        unsubLeave?.();
+        engageAdapterRef.current = null;
+        c.dispose();
+      };
+    }
+
+    // ── Main-thread render path (fallback / unsupported) ───────────────────────
     // Face-photo cache (keyed by URL). Loads lazily; faceFor returns the image
     // only once it has actually decoded, else null → the renderer draws a
-    // coloured disc + initial.
+    // coloured disc + initial. (Face sourcing stays on the MAIN thread — photos +
+    // the live local camera — even when the render loop runs in a worker later.)
     const faceImgs = new Map<string, HTMLImageElement>();
     const loadFace = (url: string): HTMLImageElement => {
       let img = faceImgs.get(url);
@@ -198,98 +276,83 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
     };
     const labelFor = (id: string): string => getLabelRef.current?.(id) ?? "";
 
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(canvas.clientWidth * dpr);
-      canvas.height = Math.round(canvas.clientHeight * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
-    };
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
+    // The renderer (2D top-down or 3D environment). It owns the camera, so it
+    // supplies BOTH the pointer→world aim mapping and the draw call.
+    const viewDeps = { canvas, localId, faceFor, labelFor };
+    const view: WorldView =
+      renderer === "2d" ? createWorld2DView(viewDeps) : createWorld3DView(viewDeps, spec);
 
-    // Camera follows the local avatar at a fixed zoom (field is larger than view).
-    const camFor = () => {
-      const me = state.avatars[localId];
-      const center = me ?? { x: spec.manifold.width / 2, y: spec.manifold.height / 2 };
-      return followCamera(canvas.clientWidth, canvas.clientHeight, center, FOLLOW_VIEW_SPAN);
-    };
+    // The per-frame loop (sim + net + render) lives in the framework-free host so
+    // the exact same code can run inside the OffscreenCanvas worker later. Here it
+    // runs on the main thread, driven by requestAnimationFrame.
+    const host = runWorldHost({
+      view,
+      spec,
+      localId,
+      spawnIndex,
+      spawnAt,
+      hostNpcs,
+      net: net ? { send: net.send, publishPresence: net.publishPresence } : undefined,
+      onNpcProximity: (nearby) => onNpcProximityRef.current?.(nearby),
+      scheduleFrame: (cb) => {
+        const id = requestAnimationFrame(cb);
+        return () => cancelAnimationFrame(id);
+      },
+      now: () => performance.now(),
+    });
+    engageAdapterRef.current = (npcId, e) => host.setNpcEngagement(npcId, e);
+
+    // Inbound peer state → host. Mesh: toys/possession (+ avatar when no relay).
+    // Relay (Phase 1): remote avatar positions.
+    const unsubscribe = net?.subscribe((_from, msgs) => host.applyNetInbound(msgs));
+    const unsubPresence = net?.subscribePresence?.((p) => host.applyPresence(p));
+    const unsubLeave = net?.subscribePresenceLeave?.((id) => host.applyPresenceLeave(id));
+
+    // Size + pointer input (the host owns DOM measurement on the main thread).
+    const applyResize = () => host.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+    applyResize();
+    const ro = new ResizeObserver(applyResize);
+    ro.observe(canvas);
 
     const onMove = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      host.setPointer(e.clientX - rect.left, e.clientY - rect.top);
     };
-    const onLeave = () => { pointer = null; };
+    const onLeave = () => host.clearPointer();
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerleave", onLeave);
 
-    const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-
-      const cam = camFor();
-      const aim: Vec2 | null = pointer ? screenToWorld(cam, pointer.x, pointer.y) : null;
-      const { events } = tickWorld(state, { aim }, dt);
-      // Glide remote avatars between network packets (dead-reckon + ease) so their
-      // motion isn't jittery at the relay/mesh update rate.
-      smoothRemoteAvatars(state, dt);
-
-      if (net) {
-        if (events.length) pendingEvents.push(...events);
-
-        // Avatar position → world-wide RELAY (Phase 1). Position-only, lower rate.
-        if (net.publishPresence && now - lastPresence >= PRESENCE_INTERVAL_MS) {
-          const local = state.avatars[localId];
-          if (local) {
-            net.publishPresence({
-              personId: localId,
-              x: local.x, y: local.y,
-              fx: local.fx, fy: local.fy,
-              vx: local.vx, vy: local.vy,
-            });
-          }
-          lastPresence = now;
-        }
-
-        // Avatar + toys/possession → mesh (the WORLD layer). Every participant
-        // stays on the data mesh and streams its avatar, so EVERYONE renders as a
-        // game object regardless of whether their live A/V is in range — only the
-        // audio/video is proximity-gated (by the call context), not the world.
-        // (The relay still publishes positions above for the circle solver; it
-        // becomes the avatar source again if/when connections are gated for very
-        // large worlds.)
-        if (now - lastSend >= SEND_INTERVAL_MS) {
-          net.send(collectOutbound(state, pendingEvents));
-          pendingEvents = [];
-          lastSend = now;
-        }
-      }
-
-      renderWorld2D(ctx, state, cam, {
-        localId,
-        viewWidth: canvas.clientWidth,
-        viewHeight: canvas.clientHeight,
-        faceFor,
-        labelFor,
-      });
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
+    host.start();
 
     return () => {
-      cancelAnimationFrame(raf);
+      host.stop(); // stops the loop + disposes the view
       ro.disconnect();
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerleave", onLeave);
       unsubscribe?.();
       unsubPresence?.();
       unsubLeave?.();
+      engageAdapterRef.current = null;
       try { selfVideo.pause(); selfVideo.srcObject = null; } catch { /* ignore */ }
     };
-  }, [worldSpecKey, worldSpec, net]);
+  }, [worldSpecKey, worldSpec, net, renderer, renderMode, fallbackEpoch, hostNpcsProp]);
+
+  // Push live conversation bias into the hosted NPC bodies. Declared AFTER the
+  // render effect so the adapter ref is set before this runs; calls are idempotent
+  // so re-pushing the whole map on any change is harmless.
+  useEffect(() => {
+    const push = engageAdapterRef.current;
+    if (!push || !npcEngagements) return;
+    for (const [npcId, e] of Object.entries(npcEngagements)) push(npcId, e);
+  }, [npcEngagements]);
 
   return (
     <canvas
+      // Remount on a renderer switch OR a worker→main fallback: a canvas keeps its
+      // first context type for life (and transferControlToOffscreen neuters it), so
+      // the element itself must be replaced when toggling 2D↔3D or dropping to the
+      // main-thread path.
+      key={`${renderer}:${renderMode}:${fallbackEpoch}`}
       ref={canvasRef}
       style={{
         width: "100%",

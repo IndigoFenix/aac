@@ -359,6 +359,22 @@ export class CallService {
   }
 
   /**
+   * Relay an AI-NPC conversation message (NpcNetMessage, opaque here) to every
+   * call participant. Mirrors publishWorld but reaches everyone over the server
+   * fan-out, not the proximity-pruned media mesh — needed because a player can be
+   * near an NPC whose host they have no direct mesh link to. The sender is stamped
+   * authoritatively (`fromPersonId`) so utterance attribution can't be spoofed.
+   */
+  async publishNpc(actingPersonId: string, input: { callId: string; msg: unknown }): Promise<void> {
+    await this.assertActiveParticipant(input.callId, actingPersonId);
+    await broadcastToCall(input.callId, {
+      type: "call:npc",
+      topic: CALL_TOPIC(input.callId),
+      payload: { callId: input.callId, fromPersonId: actingPersonId, msg: input.msg },
+    });
+  }
+
+  /**
    * A caller declares who they're addressing in a multi-party call — relayed
    * into the conversation room (roomId === callId) so the addressed AAC
    * student's AI can prepare a response. The conversation room may have members

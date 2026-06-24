@@ -10,13 +10,26 @@
 // game" leaves whichever game is active (a call's game detaches; a solo one
 // stops).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CallGame } from "@shared/realtime-events";
 import CallGameSurface from "@shared/social-world/CallGameSurface";
 import { useCall } from "@/contexts/CallContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+
+/** Resolve a backend ws:// URL, honoring VITE_API_URL (baked for the Electron AAC). */
+function resolveAacWsUrl(path: string): string {
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+  if (base) {
+    const url = new URL(base);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = path;
+    return url.toString();
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${path}`;
+}
 
 /** One remote participant's video tile for the in-game people panel. `gain` is
  *  the proximity media-gate volume (1 = in your circle; <1 = fading at the edge). */
@@ -88,7 +101,7 @@ export function SocialGameReporter({ onChange }: { onChange: (game: CallGame | n
 
 /** Renders the game surface into the home-provided host (board region). */
 export function SocialWorldOverlay({ host }: { host: HTMLElement | null }) {
-  const { activeGame, selfPersonId, sendWorld, worldHub, publishPresence, presenceChannel, localStream, endGame, inviteIntoCall, contacts, refreshContacts } = useCall();
+  const { activeGame, selfPersonId, sendWorld, worldHub, sendNpc, npcHub, publishPresence, presenceChannel, localStream, endGame, inviteIntoCall, contacts, refreshContacts } = useCall();
   const { t } = useLanguage();
   const dual = useDualAgentContextOptional();
   const [showInvite, setShowInvite] = useState(false);
@@ -103,6 +116,12 @@ export function SocialWorldOverlay({ host }: { host: HTMLElement | null }) {
     (personId: string) => roster.find((p) => p.personId === personId)?.name ?? "",
     [roster],
   );
+
+  // NPC conversation transport (reliable call:npc) + the student's own name for
+  // attribution + the brain WS URL (owner opens one /ws/social-bot per NPC).
+  const npcTransport = useMemo(() => ({ send: sendNpc, subscribe: npcHub.subscribe.bind(npcHub) }), [sendNpc, npcHub]);
+  const npcBrainWsUrl = useMemo(() => resolveAacWsUrl("/ws/social-bot"), []);
+  const selfName = roster.find((p) => p.personId === selfPersonId)?.name ?? "";
 
   useEffect(() => { if (showInvite) refreshContacts(); }, [showInvite, refreshContacts]);
 
@@ -119,6 +138,10 @@ export function SocialWorldOverlay({ host }: { host: HTMLElement | null }) {
         getFaceUrl={getFaceUrl}
         getLabel={getLabel}
         selfStream={localStream}
+        npcBrainWsUrl={npcBrainWsUrl}
+        npcTransport={npcTransport}
+        selfName={selfName}
+        audioMuted={dual?.audioEnabled === false}
         onExit={endGame}
         onInvite={() => setShowInvite(true)}
         t={t}

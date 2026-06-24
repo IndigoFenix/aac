@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { WorldSpec } from "./types.js";
 import {
   WORLD_MANIFOLD_MAX,
+  WORLD_MAX_NPCS,
   WORLD_MAX_PLAYERS,
   WORLD_MAX_SPAWNS,
   WORLD_MAX_TOYS,
@@ -84,6 +85,40 @@ const soccerBallSchema = z
 
 const toySchema = z.discriminatedUnion("kind", [soccerBallSchema]);
 
+// NPC persona mirrors the social_trainer app params. `archetypeHint`/`scenario`/
+// `targetSkills` are free strings here on purpose: the social brain owns their
+// vocabulary, so adding an archetype or skill there never needs a world-spec bump
+// (an unknown value just falls back to a sampled/default in the generator).
+const npcPersonaSchema = z
+  .object({
+    genderHint: z.enum(["male", "female", "any"]).optional(),
+    archetypeHint: z.string().min(1).max(64).optional(),
+    interestHints: z.array(z.string().min(1).max(64)).max(8).optional(),
+    difficulty: z.enum(["gentle", "medium", "challenging"]).optional(),
+    scenario: z.string().min(1).max(64).optional(),
+    targetSkills: z.array(z.string().min(1).max(64)).max(8).optional(),
+  })
+  .strict();
+
+const npcBehaviorSchema = z
+  .object({
+    movement: z.enum(["stationary", "wander", "approach_nearest"]),
+    conversationRadius: positive.max(WORLD_MANIFOLD_MAX).optional(),
+  })
+  .strict();
+
+const npcSchema = z
+  .object({
+    id: idSchema,
+    x: finite,
+    y: finite,
+    facing: finite.optional(),
+    name: z.string().min(1).max(120).optional(),
+    persona: npcPersonaSchema.optional(),
+    behavior: npcBehaviorSchema.optional(),
+  })
+  .strict();
+
 const multiplayerSchema = z
   .object({
     maxPlayers: z.number().int().min(1).max(WORLD_MAX_PLAYERS),
@@ -115,6 +150,7 @@ const worldSpecSchemaBase = z
     terrain: terrainSchema,
     spawns: z.array(spawnSchema).min(1).max(WORLD_MAX_SPAWNS),
     toys: z.array(toySchema).max(WORLD_MAX_TOYS),
+    npcs: z.array(npcSchema).max(WORLD_MAX_NPCS).optional(),
     multiplayer: multiplayerSchema,
     content: contentSchema,
   })
@@ -152,6 +188,20 @@ function validateWorldStructure(
     toyIds.add(t.id);
     if (!inBounds(t.x, t.y)) {
       issue(`toy "${t.id}" at (${t.x}, ${t.y}) is outside the manifold`);
+    }
+  }
+
+  // NPC ids must be unique AND distinct from spawn/toy ids: at runtime an NPC is
+  // an avatar, and its id rides the same wire namespace as toys and (potentially)
+  // spawn-derived references, so a clash would make a message ambiguous.
+  const npcIds = new Set<string>();
+  for (const n of spec.npcs ?? []) {
+    if (npcIds.has(n.id)) issue(`duplicate npc id: ${n.id}`);
+    if (toyIds.has(n.id)) issue(`npc id "${n.id}" collides with a toy id`);
+    if (spawnIds.has(n.id)) issue(`npc id "${n.id}" collides with a spawn id`);
+    npcIds.add(n.id);
+    if (!inBounds(n.x, n.y)) {
+      issue(`npc "${n.id}" at (${n.x}, ${n.y}) is outside the manifold`);
     }
   }
 }

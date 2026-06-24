@@ -704,22 +704,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "avatar_audio":
-          // AI voice audio chunk — tagged so avatar mouth animates
-          if (audioEnabled) {
-            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "avatar" });
-          }
+          // AI voice audio chunk — tagged so avatar mouth animates. Always queued so
+          // it plays AND transmits over a call; the header mute silences only LOCAL
+          // speakers via the player's master gain (setLocalMuted), it never drops the
+          // audio (which would also stop it reaching the call).
+          audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "avatar" });
           break;
 
         case "utterance_audio":
-          // Student voice audio chunk — tagged so avatar stays still
-          if (audioEnabled) {
-            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "utterance" });
-          }
+          // Student voice audio chunk — the AAC user's "voice". Always queued so it
+          // transmits over a call (this IS how they speak). Local mute is via the
+          // master gain, not by dropping the chunk.
+          audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "utterance" });
           break;
 
         case "client_tts": {
-          // Server requests client-side ElevenLabs TTS synthesis
-          if (!audioEnabled) break;
+          // Server requests client-side ElevenLabs TTS synthesis. Always synthesized
+          // + queued so it transmits over a call; local mute is the master gain.
           const { text: ttsText, voiceId, apiKey, language: ttsLang, voiceRole } = msg.data as {
             text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student";
           };
@@ -1179,6 +1180,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       }
     } catch (err) {
       console.error("[useLiveSession] Failed to parse server message:", err);
+    }
+  }, [audioEnabled, audioPlayer]);
+
+  // Header audio-output mute: silence LOCAL speakers only, via the player's master
+  // gain — the audio is still produced and still flows to the call tap, so a
+  // locally-muted AAC keeps transmitting its voice (the whole point of the mute is
+  // to test the call without the local audio leaking). Also cancel the browser's
+  // speechSynthesis (the immediate local button speech, which can't be transmitted
+  // and is gated separately in DynamicBoard).
+  useEffect(() => {
+    audioPlayer.setLocalMuted(!audioEnabled);
+    if (!audioEnabled && typeof window !== "undefined" && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
     }
   }, [audioEnabled, audioPlayer]);
 
@@ -1958,6 +1972,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
      *  "utterance" = student voice). Lets the avatar mouth animate only for
      *  its OWN voice, not the student's button-press playback. */
     audioPlayingTag: audioPlayer.currentTag,
+    /** A MediaStream of the AAC's synthesized voice (all TTS paths), to send over a
+     *  call so the student's button-press speech reaches the other side. */
+    getCallAudioStream: audioPlayer.getCallStream,
     voiceEnabled,
     isRecording: audioRecorder.isRecording,
     audioLevel: audioRecorder.audioLevel,

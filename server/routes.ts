@@ -2342,6 +2342,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // world-wide position channel feeding the circle solver.
             await callService.publishWorld(personId, { callId: cmd.callId, presence: cmd.presence });
             break;
+          case "call:npc":
+            // Relay an AI-NPC conversation message to every participant (reliable,
+            // independent of the proximity-pruned media mesh).
+            await callService.publishNpc(personId, { callId: cmd.callId, msg: cmd.msg });
+            break;
           case "call:leave":
             await callService.leave(personId, { callId: cmd.callId });
             break;

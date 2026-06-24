@@ -3481,6 +3481,8 @@ export const en = {
     hangUp: "Hang up",
     mute: "Mute",
     unmute: "Unmute",
+    muteSpeaker: "Mute speaker",
+    unmuteSpeaker: "Unmute speaker",
     cameraOn: "Camera on",
     cameraOff: "Camera off",
     remoteVideo: "Remote video",
@@ -3833,6 +3835,13 @@ export const en = {
     exit: "End game",
     pick: "Choose a game",
     noOneNearby: "No one nearby",
+    switchView: "Switch view",
+    testGameRoom: "Test game room",
+    npcSay: "Say something…",
+    npcSend: "Send",
+    npcThinking: "…",
+    npcConnecting: "Connecting…",
+    npcError: "Couldn't reach this character.",
   },
 
 };

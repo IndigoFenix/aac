@@ -451,7 +451,11 @@ export default function DynamicBoard({
       const textToSpeak = button.spokenText || button.label;
       const bt = (button as any).buttonType;
       const isMeta = bt === "suggestion" || bt === "wordfinder" || bt === "more";
-      if (!suppressLocalSpeech && !isMeta) {
+      // Respect the header audio-output mute: it silences EVERYTHING from this
+      // window, including this immediate local button speech (the streaming player
+      // is already gated by audioEnabled; this Web-Speech path was the leak).
+      const outputMuted = dualAgent?.audioEnabled === false;
+      if (!suppressLocalSpeech && !isMeta && !outputMuted) {
         speak(textToSpeak, language, voiceType as any);
       }
       onButtonClick(button, textToSpeak);

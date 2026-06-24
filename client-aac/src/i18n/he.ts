@@ -748,6 +748,7 @@ export const he: Translations = {
     playInCall: "לשחק בשיחה הזו",
     invite: "הזמן",
     noOneNearby: "אין אף אחד בקרבת מקום",
+    switchView: "החלף תצוגה",
   },
 
   social: {

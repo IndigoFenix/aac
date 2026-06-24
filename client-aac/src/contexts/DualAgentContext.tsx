@@ -65,6 +65,9 @@ interface DualAgentContextType {
 
   // Audio state
   audioEnabled: boolean;
+  /** A MediaStream of the AAC's synthesized voice (all TTS paths), to send over a
+   *  call so the student's button-press speech reaches the other side. */
+  getCallAudioStream: () => MediaStream | null;
   isPlaying: boolean;
   audioPlayingTag: string | null;
   voiceEnabled: boolean;
@@ -1269,6 +1272,7 @@ function ProviderShell({
     debugText: agent.debugText,
 
     audioEnabled: agent.audioEnabled,
+    getCallAudioStream: agent.getCallAudioStream,
     isPlaying: agent.isPlaying,
     audioPlayingTag: agent.audioPlayingTag ?? null,
     voiceEnabled: agent.voiceEnabled,

@@ -47,6 +47,9 @@ export type CallClientEvent =
   | { type: "game"; game: CallGame | null }
   | { type: "data"; personId: string; message: unknown }
   | { type: "worldData"; personId: string; message: unknown }
+  // An NPC-conversation message relayed by `fromPersonId` over the reliable
+  // server channel (reaches every participant, unlike the proximity-pruned mesh).
+  | { type: "npcData"; fromPersonId: string; message: unknown }
   // A peer's relayed avatar position (world-wide position channel, NOT the mesh).
   | { type: "presence"; personId: string; presence: WorldPresence }
   | { type: "ended"; callId: string; reason: string }
@@ -75,6 +78,12 @@ export interface CallClientOptions {
   emit: (event: CallClientEvent) => void;
   /** AAC only: act as the student being fronted, rather than the logged-in user. */
   actAsStudentId?: string;
+  /** AAC only: the student's "voice" is synthesized (TTS), not a microphone. Return
+   *  an audio track carrying that synthesized voice and it's mixed into the outgoing
+   *  stream as an extra audio track, so it travels every channel a mic would (sent
+   *  to peers, gated by the same controls). Pulled lazily when local media is
+   *  acquired. Return null when there's nothing to add. */
+  getAppAudioTrack?: () => MediaStreamTrack | null;
 }
 
 export class CallClient {
@@ -295,6 +304,13 @@ export class CallClient {
     if (this.call) this.send({ type: "call:world", callId: this.call.callId, presence });
   }
 
+  /** Broadcast an NPC-conversation message (NpcNetMessage) over the reliable server
+   *  relay — reaches every call participant regardless of mesh proximity pruning.
+   *  Used to share AI-NPC speech/state/audio/positions. No-op outside a call. */
+  sendNpc(msg: unknown): void {
+    if (this.call) this.send({ type: "call:npc", callId: this.call.callId, msg });
+  }
+
   // ---------- Proximity-gated media (Phase 2 conversation circles) ----------
   // The baseline mesh connects every participant on join; in a conversation-circle
   // world a controller (CallContext) prunes peers who wander out of range and
@@ -368,6 +384,14 @@ export class CallClient {
     if (!media.audio && !media.video) return;
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Mix the AAC's synthesized voice in as an EXTRA outgoing audio track (its TTS
+      // is how the student speaks). Cloned so call teardown can stop the call's copy
+      // without killing the player's live output. Added BEFORE peers connect, so no
+      // mid-call renegotiation. No-op for the clinician (no getAppAudioTrack).
+      const appTrack = this.opts.getAppAudioTrack?.();
+      if (appTrack) {
+        try { this.localStream.addTrack(appTrack.clone()); } catch { /* ignore — best effort */ }
+      }
       this.mesh.setLocalStream(this.localStream);
       this.opts.emit({ type: "localStream", stream: this.localStream });
     } catch (err: any) {
@@ -447,6 +471,14 @@ export class CallClient {
         const { personId, presence } = msg.payload as { personId: string; presence: WorldPresence };
         // The server echoes to the whole call topic, including us — skip our own.
         if (personId !== this.selfPersonId) this.opts.emit({ type: "presence", personId, presence });
+        break;
+      }
+
+      case "call:npc": {
+        const { fromPersonId, msg: npcMsg } = msg.payload as { fromPersonId: string; msg: unknown };
+        // Echoed to the whole topic including us — skip our own (the sender already
+        // applied it locally; this avoids double-processing our own broadcasts).
+        if (fromPersonId !== this.selfPersonId) this.opts.emit({ type: "npcData", fromPersonId, message: npcMsg });
         break;
       }
 

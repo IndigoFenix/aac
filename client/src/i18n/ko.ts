@@ -3481,6 +3481,8 @@ export const ko = {
     hangUp: "통화 종료",
     mute: "음소거",
     unmute: "음소거 해제",
+    muteSpeaker: "스피커 음소거",
+    unmuteSpeaker: "스피커 음소거 해제",
     cameraOn: "카메라 켜기",
     cameraOff: "카메라 끄기",
     remoteVideo: "상대방 영상",
@@ -3833,6 +3835,13 @@ export const ko = {
     exit: "게임 종료",
     pick: "게임 선택",
     noOneNearby: "근처에 아무도 없습니다",
+    switchView: "보기 전환",
+    testGameRoom: "게임룸 테스트",
+    npcSay: "말을 걸어보세요…",
+    npcSend: "보내기",
+    npcThinking: "…",
+    npcConnecting: "연결 중…",
+    npcError: "이 캐릭터에 연결할 수 없습니다.",
   },
 
 };

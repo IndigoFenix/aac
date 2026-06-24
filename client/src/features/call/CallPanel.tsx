@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Phone, Video, Loader2 } from "lucide-react";
+import { Phone, Video, Loader2, Gamepad2 } from "lucide-react";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchContacts, type PersonChatContact } from "@/features/personChat/api";
 import { fetchCallableStudents, type CallableStudent } from "./api";
 import { useCall } from "./CallContext";
+import CallGameSurface from "@shared/social-world/CallGameSurface";
+import { CallWorldHub } from "@shared/social-world/call-game-net";
+import { NPC_DEMO_GAME } from "@shared/social-world/default-game";
 
 interface CallPanelProps {
   isOpen?: boolean;
@@ -16,6 +19,20 @@ interface CallPanelProps {
 function displayNameFor(c: PersonChatContact): string {
   const full = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
   return full || c.email;
+}
+
+/** Resolve a backend ws:// URL, honoring VITE_API_URL (the clinician dev server
+ *  doesn't proxy /ws). Mirrors usePersonChatSocket / CallContext. */
+function resolveWsUrl(path: string): string {
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+  if (base) {
+    const url = new URL(base);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = path;
+    return url.toString();
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${path}`;
 }
 
 /** Launcher panel: lists contacts and starts a call when one is picked. */
@@ -67,12 +84,45 @@ export function CallPanel({ isOpen }: CallPanelProps) {
 
   const callBusy = callState !== "idle";
 
+  // Dev/test: open the social-world surface on its own — no call, no peers — so
+  // the physics + steering can be exercised without setting up a real video call.
+  // Reuses the in-call game surface in single-player mode (selfPersonId=null →
+  // the canvas runs solo); the hub/sendWorld are inert without a peer.
+  const [gameRoomOpen, setGameRoomOpen] = useState(false);
+  const soloHub = useMemo(() => new CallWorldHub(), []);
+
   return (
     <div className="flex h-full w-full min-h-0 flex-col bg-background">
       <div className="p-3 border-b border-border flex items-center gap-2">
         <Phone className="w-4 h-4" />
         <span className="font-semibold">{t("call.title")}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="ms-auto gap-1.5"
+          onClick={() => setGameRoomOpen(true)}
+          aria-label={t("socialWorld.testGameRoom")}
+          data-testid="open-test-game-room"
+        >
+          <Gamepad2 className="w-4 h-4" />
+          <span className="hidden sm:inline">{t("socialWorld.testGameRoom")}</span>
+        </Button>
       </div>
+
+      {gameRoomOpen && (
+        <div className="fixed inset-0 z-[100] bg-black">
+          <CallGameSurface
+            game={NPC_DEMO_GAME}
+            selfPersonId={null}
+            sendWorld={() => {}}
+            hub={soloHub}
+            npcBrainWsUrl={resolveWsUrl("/ws/social-bot")}
+            onExit={() => setGameRoomOpen(false)}
+            t={t}
+          />
+        </div>
+      )}
 
       <div className="p-3 border-b border-border">
         <Input
