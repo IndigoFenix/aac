@@ -28,6 +28,7 @@ import { ObserverAgent, type ObserverOutputEvent } from "./observer-agent";
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
 import { getContactById, listCallableContacts, resolveContactPersonId } from "../call/callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
+import { registerLiveSession, unregisterLiveSession, type LiveSessionHandle } from "./live-session-registry";
 import { personRepository } from "../../repositories/personRepository";
 import { resolveAddressee } from "./addressee";
 import { getPeerFacePhotoDataUrl } from "./peer-photo";
@@ -686,6 +687,8 @@ export class AgentCoordinator {
   private sessionId: string | null = null;
   private studentId: string | null = null;
   private userId: string | undefined;
+  /** Registry handle so a clinician can reach this live session by studentId. */
+  private liveHandle: LiveSessionHandle | null = null;
   private classroomId: string | null = null;
 
   // -------------------------------------------------------------------------
@@ -1380,12 +1383,25 @@ export class AgentCoordinator {
     // debrief; the conversation is already in the Monitor's queue).
     this.socialPeer = null;
 
+    // Drop from the live-session registry so a stale handle isn't reachable.
+    if (this.studentId && this.liveHandle) {
+      unregisterLiveSession(this.studentId, this.liveHandle);
+      this.liveHandle = null;
+    }
+
     // Close WS if still open
     try {
       if (this.ws.readyState === this.ws.OPEN) this.ws.close();
     } catch {}
 
     this.state = "closed";
+  }
+
+  /** Ask the AAC client to reload itself (clinician "reload AAC" action). */
+  private requestReload(): void {
+    if (this.ws.readyState !== this.ws.OPEN) return;
+    try { this.ws.send(JSON.stringify({ type: "reload" })); }
+    catch (err) { console.error("[AgentCoordinator] reload send failed:", err); }
   }
 
   /**
@@ -1948,6 +1964,12 @@ export class AgentCoordinator {
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
     this.userId = state.userId;
+    // Register so a clinician action (e.g. AAC reload) can reach this session.
+    if (this.studentId) {
+      if (this.liveHandle) unregisterLiveSession(this.studentId, this.liveHandle);
+      this.liveHandle = { requestReload: () => this.requestReload() };
+      registerLiveSession(this.studentId, this.liveHandle);
+    }
     this.classroomId = state.classroomId ?? null;
     this.muteState = state.muteState;
     this.debugMode = !!msg.debugMode;

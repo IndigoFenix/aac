@@ -4,6 +4,9 @@ import multer from "multer";
 import path from "path";
 import { stringify } from "csv-stringify";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
+import { getLiveSession } from "./services/dual-agent/live-session-registry";
+import { getPeerFacePhotoDataUrl } from "./services/dual-agent/peer-photo";
+import { studentService } from "./services/studentService";
 import { setupSocialBotWebSocket } from "./services/social-bot/social-bot-relay";
 import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
 import { subscribe, registerPersonSocket } from "./services/realtime/room-registry";
@@ -158,14 +161,24 @@ async function handleCallConversation(socket: any, personId: string, join: boole
     logLiveSession("CHAT_ROOM", `/ws/call CLINICIAN person=${personId} joining conversation room=${callId}`);
     const name = await personRepository.getDisplayName(personId);
     const roster = new Map<string, string>(); // personId → name
+    const photoCache = new Map<string, string | undefined>(); // personId → stored-face data URL (or undefined if none)
     socket.__convRoomId = callId;
     socket.__convRoster = roster;
     const sendRoster = () => {
       if (socket.readyState !== socket.OPEN) return;
       socket.send(JSON.stringify({
         type: "call:roster",
-        participants: Array.from(roster.entries()).map(([pid, n]) => ({ personId: pid, name: n })),
+        participants: Array.from(roster.entries()).map(([pid, n]) => ({ personId: pid, name: n, photo: photoCache.get(pid) })),
       }));
+    };
+    // Resolve stored-face photos (best-effort, cached) then resend, so the
+    // clinician's in-game avatars show real faces instead of plain initials.
+    const ensureRosterPhotos = () => {
+      const missing = Array.from(roster.keys()).filter((pid) => !photoCache.has(pid));
+      if (missing.length === 0) return;
+      void Promise.all(missing.map(async (pid) => { photoCache.set(pid, (await getPeerFacePhotoDataUrl(pid)) ?? undefined); }))
+        .then(() => sendRoster())
+        .catch((err) => console.error("[call] roster photos:", err));
     };
     joinConversationRoom(callId, {
       personId,
@@ -175,10 +188,12 @@ async function handleCallConversation(socket: any, personId: string, join: boole
         if (p.joined) roster.set(p.personId, p.name);
         else roster.delete(p.personId);
         sendRoster();
+        ensureRosterPhotos();
       },
       onRoster: (members) => {
         for (const m of members) roster.set(m.personId, m.name);
         sendRoster();
+        ensureRosterPhotos();
       },
       onFloor: () => { /* the floor cue is for the AI; clinician doesn't need it */ },
       onPeerFocus: (f) => {
@@ -875,6 +890,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/students/:id", requireAuth, (req, res) =>
     studentController.deleteStudent(req, res)
   );
+  // Remotely reload a student's AAC client (e.g. to apply changed settings) if
+  // they currently have a live session. Returns { online } so the UI can tell the
+  // clinician whether anything was reloaded.
+  app.post("/api/students/:id/reload-aac", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const studentId = req.params.id;
+      const access = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!access.hasAccess) { res.status(403).json({ success: false, message: "Forbidden" }); return; }
+      const session = getLiveSession(studentId);
+      if (session) session.requestReload();
+      res.json({ success: true, online: !!session });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err?.message ?? "Failed to reload" });
+    }
+  });
 
   // Student-user link management
   app.get("/api/students/:id/links", requireAuth, (req, res) =>
@@ -2304,10 +2335,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         switch (cmd.type) {
           case "call:invite":
-            await callService.invite(personId, { callId: cmd.callId, roomId: cmd.roomId, media: cmd.media });
+            await callService.invite(personId, { callId: cmd.callId, roomId: cmd.roomId, media: cmd.media, autoAccept: cmd.autoAccept });
             break;
           case "call:invite-contact":
             await callService.inviteContact(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media });
+            break;
+          case "call:invite-person":
+            await callService.inviteIntoCallByPerson(personId, { callId: cmd.callId, personId: cmd.personId, media: cmd.media, autoAccept: cmd.autoAccept });
             break;
           case "call:accept":
             await callService.accept(personId, { callId: cmd.callId });

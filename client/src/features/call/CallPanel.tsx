@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Phone, Video, Loader2, Gamepad2 } from "lucide-react";
+import { Phone, Video, Loader2, Gamepad2, UserPlus, Zap } from "lucide-react";
+import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -39,13 +40,14 @@ function resolveWsUrl(path: string): string {
 export function CallPanel({ isOpen }: CallPanelProps) {
   const { t, isRTL } = useLanguage();
   const { currentInstitute, institutes } = useInstitute();
-  const { startCallWithContact, startCallToStudent, callState, error } = useCall();
+  const { startCallWithContact, startCallToStudent, startCallWithPeople, callState, error } = useCall();
 
   const instituteId = currentInstitute?.id ?? institutes[0]?.id ?? null;
   const [contacts, setContacts] = useState<PersonChatContact[]>([]);
   const [students, setStudents] = useState<CallableStudent[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [groupPopupOpen, setGroupPopupOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !instituteId) {
@@ -99,8 +101,21 @@ export function CallPanel({ isOpen }: CallPanelProps) {
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="secondary"
           className="ms-auto gap-1.5"
+          onClick={() => setGroupPopupOpen(true)}
+          disabled={callBusy}
+          aria-label={t("call.newGroupCall")}
+          data-testid="open-new-group-call"
+        >
+          <UserPlus className="w-4 h-4" />
+          <span className="hidden sm:inline">{t("call.newGroupCall")}</span>
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="gap-1.5"
           onClick={() => setGameRoomOpen(true)}
           aria-label={t("socialWorld.testGameRoom")}
           data-testid="open-test-game-room"
@@ -109,6 +124,15 @@ export function CallPanel({ isOpen }: CallPanelProps) {
           <span className="hidden sm:inline">{t("socialWorld.testGameRoom")}</span>
         </Button>
       </div>
+
+      {groupPopupOpen && (
+        <InvitePeoplePopup
+          title={t("call.newGroupCall")}
+          confirmLabel={t("call.startCall")}
+          onConfirm={(personIds, autoAccept) => { void startCallWithPeople(personIds, autoAccept); }}
+          onClose={() => setGroupPopupOpen(false)}
+        />
+      )}
 
       {gameRoomOpen && (
         <div className="fixed inset-0 z-[100] bg-black">
@@ -160,17 +184,33 @@ export function CallPanel({ isOpen }: CallPanelProps) {
                     </div>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  disabled={callBusy || !s.online}
-                  onClick={() => { void startCallToStudent(s.contactId, s.name, s.personId); }}
-                  aria-label={t("call.callPerson", { name: s.name })}
-                  data-testid={`call-student-${s.contactId}`}
-                >
-                  <Video className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  {/* Optional call — rings; the student accepts on their device. */}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    disabled={callBusy || !s.online}
+                    onClick={() => { void startCallToStudent(s.contactId, s.name, s.personId); }}
+                    aria-label={t("call.callPerson", { name: s.name })}
+                    data-testid={`call-student-${s.contactId}`}
+                  >
+                    <Video className="w-4 h-4" />
+                  </Button>
+                  {/* Automatic call — opens directly on the student's device. */}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    disabled={callBusy || !s.online}
+                    onClick={() => { void startCallWithPeople([s.personId], true); }}
+                    aria-label={t("call.callPersonAuto", { name: s.name })}
+                    title={t("call.automatic")}
+                    data-testid={`call-student-auto-${s.contactId}`}
+                  >
+                    <Zap className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

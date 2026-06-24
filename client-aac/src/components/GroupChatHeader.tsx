@@ -35,7 +35,7 @@ export function GroupChatHeader() {
   const sendConversationFocus = dual?.sendConversationFocus;
   const floor = dual?.floorState ?? null;
 
-  const { remoteStreams, selfPersonId, callState } = useCall();
+  const { remoteStreams, selfPersonId, callState, activeGame } = useCall();
 
   // While in a call (e.g. a social game), only show peers actually CONNECTED to
   // the call — drop conversation-room members who aren't in it. Outside a call
@@ -61,7 +61,9 @@ export function GroupChatHeader() {
     [focused, sendConversationFocus],
   );
 
-  if (peers.length === 0) return null;
+  // During a game, peers render as avatars IN the world — the floating face row at
+  // the top is redundant (and overlaps the game), so hide it.
+  if (activeGame || peers.length === 0) return null;
 
   const myTurn = !!floor?.holder && floor.holder === selfPersonId;
 

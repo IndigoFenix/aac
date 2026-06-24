@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus } from "lucide-react";
+import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
@@ -73,6 +74,7 @@ export function CallView() {
     game,
     startGame,
     stopGame,
+    invitePeopleIntoCall,
     selfPersonId,
     sendWorld,
     worldHub,
@@ -82,6 +84,7 @@ export function CallView() {
     presenceChannel,
     peerGains,
   } = useCall();
+  const [invitePopupOpen, setInvitePopupOpen] = useState(false);
 
   // Reliable NPC-conversation transport (call:npc) + the brain WS URL.
   const npcTransport = useMemo(() => ({ send: sendNpc, subscribe: npcHub.subscribe.bind(npcHub) }), [sendNpc, npcHub]);
@@ -109,6 +112,12 @@ export function CallView() {
   // name initials + colour).
   const getLabel = useCallback(
     (personId: string) => participants.find((p) => p.personId === personId)?.name ?? "",
+    [participants],
+  );
+  // Stored-face photo for an in-game avatar (the roster carries them for peers,
+  // including AAC students, so their faces show instead of plain discs).
+  const getFaceUrl = useCallback(
+    (personId: string) => participants.find((p) => p.personId === personId)?.photo ?? null,
     [participants],
   );
 
@@ -296,6 +305,7 @@ export function CallView() {
               publishPresence={publishPresence}
               presenceChannel={presenceChannel}
               getLabel={getLabel}
+              getFaceUrl={getFaceUrl}
               selfStream={localStream}
               npcBrainWsUrl={npcBrainWsUrl}
               npcTransport={npcTransport}
@@ -416,6 +426,20 @@ export function CallView() {
           </Button>
         )}
 
+        {/* Invite more people into the active call. */}
+        {isActive && (
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
+            onClick={() => setInvitePopupOpen(true)}
+            aria-label={t("call.invitePeople")}
+            data-testid="call-invite-people"
+          >
+            <UserPlus className="w-5 h-5" />
+          </Button>
+        )}
+
         <Button
           type="button"
           size="icon"
@@ -427,6 +451,16 @@ export function CallView() {
           <PhoneOff className="w-5 h-5" />
         </Button>
       </div>
+
+      {invitePopupOpen && (
+        <InvitePeoplePopup
+          title={t("call.invitePeople")}
+          confirmLabel={t("call.invite")}
+          excludePersonIds={[selfPersonId, ...participants.map((p) => p.personId)].filter(Boolean) as string[]}
+          onConfirm={(personIds, autoAccept) => { void invitePeopleIntoCall(personIds, autoAccept); }}
+          onClose={() => setInvitePopupOpen(false)}
+        />
+      )}
     </div>
   );
 }

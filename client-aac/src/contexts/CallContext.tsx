@@ -225,7 +225,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setSelfPersonId(event.selfPersonId);
         break;
       case "incoming": {
-        setIncoming(event.call);
         const match = resolveContactByPerson(event.call.fromPersonId);
         setActiveContact({
           name: match?.name ?? event.call.fromName ?? null,
@@ -233,6 +232,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
           personId: event.call.fromPersonId,
         });
         setError(null);
+        if (event.call.autoAccept) {
+          // "Automatic" invite from a clinician — open the call immediately without
+          // showing the ring popup (the client already holds the incoming call).
+          setAudioEnabled(true);
+          setVideoEnabled(true);
+          void clientRef.current?.accept();
+        } else {
+          setIncoming(event.call);
+        }
         break;
       }
       case "state":

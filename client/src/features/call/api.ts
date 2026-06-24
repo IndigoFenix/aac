@@ -35,6 +35,8 @@ export async function fetchCallableStudents(): Promise<CallableStudent[]> {
 export interface CallParticipantInfo {
   personId: string;
   name: string;
+  /** Stored-face photo (data URL), when available — used for in-game avatar faces. */
+  photo?: string;
 }
 
 /** Social games attachable to a call: the built-in default + the institute's

@@ -93,8 +93,9 @@ export interface CallGame {
 // Client → server call commands (handled by the /ws/call onCommand).
 export type CallClientCommand =
   | { type: "call:act-as"; studentId: string } // AAC: act as the student being fronted (else the user acts as self)
-  | { type: "call:invite"; callId: string; roomId: string; media: CallMediaFlags }
+  | { type: "call:invite"; callId: string; roomId: string; media: CallMediaFlags; autoAccept?: boolean } // autoAccept: rung AAC clients auto-open the call instead of ringing
   | { type: "call:invite-contact"; callId: string; contactId: string; media: CallMediaFlags }
+  | { type: "call:invite-person"; callId: string; personId: string; media: CallMediaFlags; autoAccept?: boolean } // ring a specific person INTO an existing call (clinician multi-party invite, by personId)
   | { type: "call:accept"; callId: string }
   | { type: "call:decline"; callId: string; reason?: string }
   | { type: "call:cancel"; callId: string }
@@ -113,7 +114,7 @@ export type CallClientCommand =
 
 // Server → client call events (delivered on call:<callId> or call:person:<id>).
 export type CallEvent =
-  | { type: "call:ringing"; topic: string; payload: { callId: string; roomId: string; fromPersonId: string; fromName?: string; media: CallMediaFlags } }
+  | { type: "call:ringing"; topic: string; payload: { callId: string; roomId: string; fromPersonId: string; fromName?: string; media: CallMediaFlags; autoAccept?: boolean } }
   | { type: "call:accepted"; topic: string; payload: { callId: string; byPersonId: string } }
   | { type: "call:declined"; topic: string; payload: { callId: string; byPersonId: string; reason?: string } }
   | { type: "call:cancelled"; topic: string; payload: { callId: string } }

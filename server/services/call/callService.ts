@@ -60,12 +60,12 @@ export class CallService {
   // ---------- Invite / ring ----------
 
   /** Room-based invite: caller must already be a member of the room. */
-  async invite(actingPersonId: string, input: { callId: string; roomId: string; media: CallMediaFlags }): Promise<void> {
+  async invite(actingPersonId: string, input: { callId: string; roomId: string; media: CallMediaFlags; autoAccept?: boolean }): Promise<void> {
     const isMember = await personChatRepository.isParticipant(input.roomId, actingPersonId);
     if (!isMember) throw new CallError("not_a_member", "Not a participant in this room");
     const room = await personChatRepository.getRoomById(input.roomId);
     if (!room) throw new CallError("no_room", "Room not found");
-    await this.startSession(actingPersonId, { callId: input.callId, roomId: input.roomId, instituteId: room.instituteId, media: input.media });
+    await this.startSession(actingPersonId, { callId: input.callId, roomId: input.roomId, instituteId: room.instituteId, media: input.media, autoAccept: input.autoAccept });
   }
 
   /**
@@ -100,7 +100,7 @@ export class CallService {
   }
 
   /** Shared session creation + ring fan-out for both invite paths. */
-  private async startSession(actingPersonId: string, input: { callId: string; roomId: string; instituteId: string; media: CallMediaFlags }): Promise<void> {
+  private async startSession(actingPersonId: string, input: { callId: string; roomId: string; instituteId: string; media: CallMediaFlags; autoAccept?: boolean }): Promise<void> {
     const role = await this.resolveRole(actingPersonId);
     await callRepository.createSession({
       callId: input.callId,
@@ -125,7 +125,7 @@ export class CallService {
       await broadcastToPerson(callee, {
         type: "call:ringing",
         topic: CALL_PERSON_TOPIC(callee),
-        payload: { callId: input.callId, roomId: input.roomId, fromPersonId: actingPersonId, fromName, media: input.media },
+        payload: { callId: input.callId, roomId: input.roomId, fromPersonId: actingPersonId, fromName, media: input.media, autoAccept: input.autoAccept },
       });
     }
 
@@ -329,6 +329,42 @@ export class CallService {
       type: "call:ringing",
       topic: CALL_PERSON_TOPIC(calleePersonId),
       payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, media: input.media },
+    });
+  }
+
+  /**
+   * Ring a specific PERSON into an existing call — the clinician multi-party
+   * invite (works for any institute person: caretakers, other clinicians, and
+   * AAC students alike, unlike inviteIntoCall which is callable-contact-only).
+   * Adds them to the call's room + participant list and rings them on the same
+   * callId. `autoAccept` lets an AAC client open the call without ringing.
+   */
+  async inviteIntoCallByPerson(actingPersonId: string, input: { callId: string; personId: string; media: CallMediaFlags; autoAccept?: boolean }): Promise<void> {
+    await this.assertActiveParticipant(input.callId, actingPersonId);
+    const session = await callRepository.getSession(input.callId);
+    if (!session) throw new CallError("no_call", "Call not found");
+    if (input.personId === actingPersonId) return; // can't invite yourself
+
+    // Already in the call (joined) → nothing to do (avoids a duplicate ring).
+    const existing = await callRepository.getParticipant(input.callId, input.personId);
+    if (existing?.joinedAt) return;
+
+    if (!isPersonOnline(input.personId)) {
+      throw new CallError("offline", "That person is not available right now");
+    }
+    // Make them a member of the call's room so the call belongs to them too.
+    if (!(await personChatRepository.isParticipant(session.roomId, input.personId))) {
+      await personChatRepository.addParticipant(session.roomId, input.personId);
+    }
+    const role = await this.resolveRole(input.personId);
+    if (!existing) {
+      await callRepository.addParticipant({ callId: input.callId, personId: input.personId, role, joined: false });
+    }
+    const fromName = await personRepository.getDisplayName(actingPersonId);
+    await broadcastToPerson(input.personId, {
+      type: "call:ringing",
+      topic: CALL_PERSON_TOPIC(input.personId),
+      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, media: input.media, autoAccept: input.autoAccept },
     });
   }
 

@@ -744,6 +744,31 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
               </div>
+              {/* Remotely reload the student's AAC so changed settings take effect
+                  without them having to restart the app. */}
+              <div className="mt-3 flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={async () => {
+                    try {
+                      const res = await apiRequest('POST', `/api/students/${student.id}/reload-aac`);
+                      const data = await res.json().catch(() => ({}));
+                      toast({
+                        title: t('aacSettings.reloadAac'),
+                        description: data?.online ? t('aacSettings.reloadAacOnline') : t('aacSettings.reloadAacOffline'),
+                      });
+                    } catch {
+                      toast({ title: t('aacSettings.reloadAacFailed'), variant: 'destructive' });
+                    }
+                  }}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  {t('aacSettings.reloadAac')}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

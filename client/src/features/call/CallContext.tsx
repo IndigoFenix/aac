@@ -111,6 +111,11 @@ interface CallContextValue {
   startCallWithContact: (contact: PersonChatContact) => Promise<void>;
   /** Call a student who listed this user as a callable contact (via the contact link). */
   startCallToStudent: (contactId: string, studentName: string, personId: string) => Promise<void>;
+  /** Start a group call with one or more people (by personId). `autoAccept` opens it
+   *  automatically on AAC invitees instead of ringing. */
+  startCallWithPeople: (personIds: string[], autoAccept?: boolean) => Promise<void>;
+  /** Ring more people into the active call (by personId). */
+  invitePeopleIntoCall: (personIds: string[], autoAccept?: boolean) => Promise<void>;
   accept: () => Promise<void>;
   decline: () => void;
   cancel: () => void;
@@ -333,6 +338,41 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       setError({ code: "start_failed", message: err?.message ?? "Could not start the call" });
       setActiveContactName(null);
+    }
+  }, []);
+
+  // Start a fresh call with one OR MORE people (a group call). Creates a room
+  // containing everyone, then starts the call so the server rings them all.
+  // `autoAccept` asks AAC invitees to open the call without ringing.
+  const startCallWithPeople = useCallback(async (personIds: string[], autoAccept = false) => {
+    const client = clientRef.current;
+    if (!client || personIds.length === 0) return;
+    const instituteId = currentInstitute?.id ?? institutes[0]?.id ?? null;
+    if (!instituteId) {
+      setError({ code: "no_institute", message: "No organization available for this call" });
+      return;
+    }
+    setError(null);
+    setActiveContactName(personIds.length === 1 ? null : `${personIds.length} people`);
+    setAudioEnabled(true);
+    setVideoEnabled(true);
+    try {
+      const room = await createRoom({ instituteId, participantIds: personIds });
+      await client.startCall(room.id, { audio: true, video: true, pose: false }, personIds[0], autoAccept);
+    } catch (err: any) {
+      setError({ code: "start_failed", message: err?.message ?? "Could not start the call" });
+      setActiveContactName(null);
+    }
+  }, [currentInstitute?.id, institutes]);
+
+  // Ring more people INTO the active call (by personId — works for caretakers,
+  // clinicians and AAC students alike).
+  const invitePeopleIntoCall = useCallback(async (personIds: string[], autoAccept = false) => {
+    const client = clientRef.current;
+    if (!client) return;
+    for (const personId of personIds) {
+      try { await client.inviteIntoCallPerson(personId, autoAccept); }
+      catch (err) { console.error("[call] invitePeopleIntoCall:", err); }
     }
   }, []);
 
@@ -583,6 +623,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     peerGains,
     startCallWithContact,
     startCallToStudent,
+    startCallWithPeople,
+    invitePeopleIntoCall,
     accept,
     decline,
     cancel,
@@ -593,7 +635,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains,
-    startCallWithContact, startCallToStudent, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
+    startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

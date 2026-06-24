@@ -508,6 +508,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       const msg = JSON.parse(event.data);
 
       switch (msg.type) {
+        case "reload":
+          // Clinician asked us to reload (e.g. to apply changed AAC settings).
+          try { window.location.reload(); } catch { /* ignore */ }
+          break;
         case "initialized":
           setSessionId(msg.sessionId);
           // Capture server-driven tuning (activity monitor / sleep / gesture)

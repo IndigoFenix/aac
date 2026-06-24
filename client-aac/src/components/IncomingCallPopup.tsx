@@ -10,17 +10,19 @@
 // so they're dwell-selectable (matching BinaryChoiceOverlay's wiring).
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, PhoneOff } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCallOptional } from "@/contexts/CallContext";
+import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
+import { AacAvatar } from "@/components/AacAvatar";
+import { YesNoSprite } from "@/components/YesNoSprite";
 
 export function IncomingCallPopup() {
   const { t } = useLanguage();
   const call = useCallOptional();
+  const sprite = useAvatarSprite();
 
   const ringing = !!call && call.callState === "ringing-in" && !!call.incoming;
   const name = call?.activeContact?.name ?? call?.incoming?.fromName ?? null;
-  const initial = name ? name.trim().charAt(0).toUpperCase() : "?";
 
   return (
     <AnimatePresence>
@@ -34,19 +36,25 @@ export function IncomingCallPopup() {
           transition={{ duration: 0.15 }}
         >
           <div className="flex flex-col items-center gap-8">
-            {/* Caller identity — large circular avatar (initial) + name. */}
+            {/* The student's companion avatar announces the call. */}
             <div className="flex flex-col items-center gap-4">
               <motion.div
-                className="flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-xl"
+                className="relative flex items-center justify-center overflow-hidden rounded-full bg-white/10 shadow-xl"
                 style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)" }}
                 initial={{ scale: 0.85 }}
                 animate={{ scale: [0.96, 1.04, 0.96] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
                 aria-hidden="true"
               >
-                <span className="font-bold leading-none" style={{ fontSize: "min(20vw, 110px)" }}>
-                  {initial}
-                </span>
+                <AacAvatar
+                  avatar={sprite.avatar}
+                  renderedEye={sprite.renderedEye}
+                  renderedEar={sprite.renderedEar}
+                  mouthEmote={sprite.mouthEmote}
+                  mouthOpen={sprite.mouthOpen}
+                  showMouth={sprite.showMouth}
+                  focusActive={sprite.focusActive}
+                />
               </motion.div>
               <div className="text-center text-white">
                 <div className="text-sm uppercase tracking-wide opacity-80">
@@ -63,10 +71,10 @@ export function IncomingCallPopup() {
                 data-dwell="call-accept"
                 onClick={() => call?.accept()}
                 aria-label={t("call.accept")}
-                className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-green-500 hover:bg-green-600 text-white shadow-lg select-none"
+                className="flex flex-col items-center justify-center gap-1 rounded-3xl bg-green-500 hover:bg-green-600 text-white shadow-lg select-none"
                 style={{ width: "min(34vw, 200px)", height: "min(34vw, 200px)" }}
               >
-                <Phone style={{ width: "min(12vw, 72px)", height: "min(12vw, 72px)" }} />
+                <YesNoSprite variant="yes" size="min(20vw, 120px)" />
                 <span className="text-2xl font-bold">{t("call.accept")}</span>
               </button>
               <button
@@ -74,10 +82,10 @@ export function IncomingCallPopup() {
                 data-dwell="call-decline"
                 onClick={() => call?.decline()}
                 aria-label={t("call.decline")}
-                className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-red-500 hover:bg-red-600 text-white shadow-lg select-none"
+                className="flex flex-col items-center justify-center gap-1 rounded-3xl bg-red-500 hover:bg-red-600 text-white shadow-lg select-none"
                 style={{ width: "min(34vw, 200px)", height: "min(34vw, 200px)" }}
               >
-                <PhoneOff style={{ width: "min(12vw, 72px)", height: "min(12vw, 72px)" }} />
+                <YesNoSprite variant="no" size="min(20vw, 120px)" />
                 <span className="text-2xl font-bold">{t("call.decline")}</span>
               </button>
             </div>

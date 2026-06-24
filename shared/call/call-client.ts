@@ -31,6 +31,8 @@ export interface IncomingCall {
   fromPersonId: string;
   fromName?: string;
   media: CallMediaFlags;
+  /** The inviter marked this invite "automatic" — the AAC opens it without ringing. */
+  autoAccept?: boolean;
 }
 
 /** Events the client emits to its host (React hook, etc.). */
@@ -56,7 +58,7 @@ export type CallClientEvent =
   | { type: "error"; code: string; message: string }
   // Conversation-room membership (clinician): current participants for the
   // addressee picker, and a notice that someone is now addressing us.
-  | { type: "roster"; participants: Array<{ personId: string; name: string }> }
+  | { type: "roster"; participants: Array<{ personId: string; name: string; photo?: string }> }
   | { type: "addressedBy"; fromPersonId: string; fromName: string }
   // Live STT transcript of our own speech (server-side recognition), for a
   // self-caption / debugging.
@@ -191,12 +193,12 @@ export class CallClient {
   // ---------- Outgoing actions ----------
 
   /** Start a call to everyone in a room. */
-  async startCall(roomId: string, media: CallMediaFlags, remotePersonId?: string): Promise<void> {
+  async startCall(roomId: string, media: CallMediaFlags, remotePersonId?: string, autoAccept?: boolean): Promise<void> {
     await this.ensureIceServers();
     const callId = crypto.randomUUID();
     this.call = { callId, roomId, media, remotePersonId };
     await this.acquireLocalMedia(media);
-    this.send({ type: "call:invite", callId, roomId, media });
+    this.send({ type: "call:invite", callId, roomId, media, autoAccept });
     this.setState("ringing-out");
     this.armRingTimeout(callId);
   }
@@ -366,6 +368,17 @@ export class CallClient {
     await this.acquireLocalMedia(media);
     this.call.media = media;
     this.send({ type: "call:invite-into-call", callId: this.call.callId, contactId, media });
+  }
+
+  /** Ring a specific PERSON into the current call (clinician multi-party invite —
+   *  works for any institute person, not just callable contacts). `autoAccept`
+   *  asks an AAC client to open the call without ringing. No-op outside a call. */
+  async inviteIntoCallPerson(personId: string, autoAccept?: boolean): Promise<void> {
+    if (!this.call) return;
+    const media: CallMediaFlags = { audio: true, video: true, pose: false };
+    await this.acquireLocalMedia(media);
+    this.call.media = media;
+    this.send({ type: "call:invite-person", callId: this.call.callId, personId, media, autoAccept });
   }
 
   // ---------- Media ----------
