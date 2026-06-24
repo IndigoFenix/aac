@@ -740,6 +740,16 @@ export const de: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "Mit Freunden spielen",
+    start: "Spiel starten",
+    exit: "Spiel beenden",
+    playSolo: "Alleine spielen",
+    playInCall: "In diesem Anruf spielen",
+    invite: "Einladen",
+    noOneNearby: "Niemand in der Nähe",
+  },
+
   social: {
     peer: "Partner:",
     waiting: "Warte auf Partner…",

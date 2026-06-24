@@ -9,7 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import { CallClient, type CallClientEvent, type CallState, type IncomingCall } from "@shared/call/call-client";
-import type { CallMediaFlags } from "@shared/realtime-events";
+import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
+import type { WorldNetMessage } from "@shared/world-engine/index";
+import { CallWorldHub } from "@shared/social-world/call-game-net";
+import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
+import { proximityRule, solveAudibleFor, audibleRecvIds } from "@shared/social-world/circle-solver";
+import { audibleGains } from "@shared/social-world/media-gate";
+import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
 import { useAuth } from "@/hooks/useAuth";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -33,6 +39,16 @@ function resolveWsUrl(path: string): string {
 function contactDisplayName(c: PersonChatContact): string {
   const full = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
   return full || c.email;
+}
+
+/** How often the proximity media gate re-evaluates (ms). ~1s re-form is fine. */
+const MEDIA_GATE_INTERVAL_MS = 700;
+
+/** Cheap equality so the gate only triggers a re-render when gains actually change. */
+function sameGains(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
 }
 
 /** App language code → BCP-47 tag for the Web Speech API (mirrors the
@@ -68,6 +84,26 @@ interface CallContextValue {
    *  a self-caption that also shows whether the recognizer is hearing them. */
   selfTranscript: string;
 
+  /** Social game attached to the active call (null = plain video chat). */
+  game: CallGame | null;
+  /** Attach a game to the active call (defaults to the built-in social world). */
+  startGame: (game?: CallGame) => void;
+  /** Detach the game (back to plain video chat). */
+  stopGame: () => void;
+  /** Broadcast world state over the call's unreliable "world" channel. */
+  sendWorld: (msgs: WorldNetMessage[]) => void;
+  /** Fan-out of inbound peer world messages (fed by the CallClient). */
+  worldHub: CallWorldHub;
+  /** Phase 1 position relay: publish the local avatar's position world-wide. */
+  publishPresence: (p: WorldPresence) => void;
+  /** Phase 1 position relay: inbound positions of everyone in the world. */
+  presenceChannel: WorldPresenceChannel;
+  /** Circle solver: who the local user can currently hear (proximity rule).
+   *  Computed on demand. */
+  getAudibleIds: () => Set<string>;
+  /** Per-peer audio gain 0..1 from the proximity media gate (Phase 2). */
+  peerGains: Map<string, number>;
+
   startCallWithContact: (contact: PersonChatContact) => Promise<void>;
   /** Call a student who listed this user as a callable contact (via the contact link). */
   startCallToStudent: (contactId: string, studentName: string, personId: string) => Promise<void>;
@@ -101,6 +137,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [addressee, setAddresseeState] = useState<string | null>(null);
   const [addressedBy, setAddressedBy] = useState<{ fromPersonId: string; fromName: string } | null>(null);
   const [selfTranscript, setSelfTranscript] = useState("");
+  const [game, setGameState] = useState<CallGame | null>(null);
+  const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
+  // One world-message fan-out per provider; the active CallGameSurface subscribes.
+  const worldHubRef = useRef(new CallWorldHub());
+  // Phase 1 position relay: world-wide avatar positions, fed by `presence` events.
+  const presenceChannelRef = useRef(new WorldPresenceChannel());
+  // Mirror remoteStreams in a ref so the proximity A/V gate reads it without
+  // restarting its interval on every connect.
+  const remoteStreamsRef = useRef(remoteStreams);
+  remoteStreamsRef.current = remoteStreams;
 
   const clearStreams = useCallback(() => {
     setLocalStream(null);
@@ -110,6 +156,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setAddresseeState(null);
     setAddressedBy(null);
     setSelfTranscript("");
+    setGameState(null);
+    setPeerGains(new Map());
+    worldHubRef.current.clear();
+    presenceChannelRef.current.clear();
   }, []);
 
   const handleEvent = useCallback((event: CallClientEvent) => {
@@ -161,6 +211,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         });
         // If the clinician was addressing the peer who left, clear it.
         setAddresseeState((cur) => (cur === event.personId ? null : cur));
+        presenceChannelRef.current.leave(event.personId);
         break;
       case "ended":
         setIncoming(null);
@@ -168,8 +219,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setActiveContactName(null);
         break;
       case "error":
+        // Surface the error but do NOT tear down the call/game — a transient
+        // peer-connection blip (onPeerFailed → "connection") must not wipe the
+        // streams, presence channel and game out from under an active session.
+        // Real teardown comes from "ended".
         setError({ code: event.code, message: event.message });
-        clearStreams();
         break;
       case "roster":
         // Conversation-room roster (other participants) for the addressee picker.
@@ -182,6 +236,28 @@ export function CallProvider({ children }: { children: ReactNode }) {
       case "transcript":
         // Live STT of our own speech — rolling self-caption.
         setSelfTranscript(event.text);
+        break;
+      case "game":
+        // A participant attached/detached a social game on the call.
+        setGameState(event.game);
+        break;
+      case "worldData":
+        // Inbound peer world state → fan out to the mounted game surface, AND
+        // feed avatar positions into the circle solver's channel so it works off
+        // the (reliable, always-connected) mesh world layer.
+        worldHubRef.current.emit(event.personId, event.message);
+        if (Array.isArray(event.message)) {
+          for (const m of event.message as WorldNetMessage[]) {
+            if (m?.t === "avatar") {
+              presenceChannelRef.current.receive({ personId: m.id, x: m.x, y: m.y, fx: m.fx, fy: m.fy, vx: m.vx, vy: m.vy });
+            }
+          }
+        }
+        break;
+      case "presence":
+        // Relayed avatar position (redundant with the mesh while everyone is
+        // connected; the solver's backup source) → feed the same channel.
+        presenceChannelRef.current.receive(event.presence);
         break;
       case "data":
         // Reserved for AAC extras; the clinician UI ignores data-channel messages.
@@ -291,6 +367,70 @@ export function CallProvider({ children }: { children: ReactNode }) {
     clientRef.current?.setAddressee(personId);
     setAddresseeState(personId);
   }, []);
+
+  const startGame = useCallback((g: CallGame = DEFAULT_SOCIAL_GAME) => {
+    clientRef.current?.setGame(g);
+  }, []);
+
+  const stopGame = useCallback(() => {
+    clientRef.current?.setGame(null);
+  }, []);
+
+  const sendWorld = useCallback((msgs: WorldNetMessage[]) => {
+    clientRef.current?.sendWorldData(msgs);
+  }, []);
+
+  // Phase 1 position relay. Publishing also records our own presence locally so
+  // the solver sees self alongside everyone else (the relay echoes others to us
+  // but filters our own avatar back out).
+  const publishPresence = useCallback((p: WorldPresence) => {
+    clientRef.current?.publishPresence(p);
+    presenceChannelRef.current.receive(p);
+  }, []);
+
+  // The circle solver: who can the local user currently hear? Proximity rule for
+  // now; computed on demand (Phase 2 will subscribe to gate media).
+  const getAudibleIds = useCallback((): Set<string> => {
+    const me = selfPersonId;
+    if (!me) return new Set();
+    const all = presenceChannelRef.current.participants();
+    const self = all.find((p) => p.personId === me);
+    if (!self) return new Set();
+    const others = all.filter((p) => p.personId !== me);
+    return audibleRecvIds(solveAudibleFor(self, others, [proximityRule()]));
+  }, [selfPersonId]);
+
+  // Drop participants who stopped publishing (closed tab / lost focus).
+  useEffect(() => {
+    const channel = presenceChannelRef.current;
+    const id = setInterval(() => channel.prune(), 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Phase 2: proximity A/V gate. Everyone stays on the mesh (so all avatars
+  // render in the world); only the live AUDIO/VIDEO is constrained to the local
+  // circle. Out-of-range peers are muted; in-range peers fade with distance.
+  // Disabled for plain calls and non-circle games (full A/V to everyone).
+  const circlesOn = !!game?.conversationCircles;
+  useEffect(() => {
+    if (!circlesOn || !selfPersonId) {
+      for (const stream of remoteStreamsRef.current.values()) {
+        for (const t of stream.getTracks()) t.enabled = true;
+      }
+      setPeerGains(new Map());
+      return;
+    }
+    const channel = presenceChannelRef.current;
+    const id = setInterval(() => {
+      const gains = audibleGains(selfPersonId, channel.participants());
+      for (const [pid, stream] of remoteStreamsRef.current) {
+        const inRange = gains.has(pid);
+        for (const t of stream.getTracks()) t.enabled = inRange;
+      }
+      setPeerGains((prev) => (sameGains(prev, gains) ? prev : gains));
+    }, MEDIA_GATE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [circlesOn, selfPersonId]);
 
   // Remote-audio activity: while any remote stream is making sound (the student
   // talking / button-press TTS), mark a short "active" window. The Web Speech
@@ -415,6 +555,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setAddressee,
     addressedBy,
     selfTranscript,
+    game,
+    startGame,
+    stopGame,
+    sendWorld,
+    worldHub: worldHubRef.current,
+    publishPresence,
+    presenceChannel: presenceChannelRef.current,
+    getAudibleIds,
+    peerGains,
     startCallWithContact,
     startCallToStudent,
     accept,
@@ -426,6 +575,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript,
+    game, startGame, stopGame, sendWorld, publishPresence, getAudibleIds, peerGains,
     startCallWithContact, startCallToStudent, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 

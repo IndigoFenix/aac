@@ -13,7 +13,9 @@
 // The server never sees media — it only relays SDP/ICE. This class is the only
 // place that touches RTCPeerConnection; React hooks wrap it per app.
 
-import type { CallMediaFlags, CallSignal } from "../realtime-events";
+import type { CallGame, CallMediaFlags, CallSignal } from "../realtime-events";
+import type { WorldPresence } from "../social-world/world-presence";
+import { PeerMesh } from "../rtc/peer-mesh";
 
 export type CallState =
   | "idle"
@@ -40,7 +42,13 @@ export type CallClientEvent =
   | { type: "remoteStream"; personId: string; stream: MediaStream }
   | { type: "mediaState"; personId: string; media: CallMediaFlags }
   | { type: "peerLeft"; personId: string }
+  // A social game was attached to (or detached from, game=null) the call. The
+  // host turns the call panel into the game surface.
+  | { type: "game"; game: CallGame | null }
   | { type: "data"; personId: string; message: unknown }
+  | { type: "worldData"; personId: string; message: unknown }
+  // A peer's relayed avatar position (world-wide position channel, NOT the mesh).
+  | { type: "presence"; personId: string; presence: WorldPresence }
   | { type: "ended"; callId: string; reason: string }
   | { type: "error"; code: string; message: string }
   // Conversation-room membership (clinician): current participants for the
@@ -50,14 +58,6 @@ export type CallClientEvent =
   // Live STT transcript of our own speech (server-side recognition), for a
   // self-caption / debugging.
   | { type: "transcript"; text: string; isFinal: boolean };
-
-interface PeerState {
-  pc: RTCPeerConnection;
-  polite: boolean;
-  makingOffer: boolean;
-  ignoreOffer: boolean;
-  dataChannel?: RTCDataChannel;
-}
 
 interface ActiveCall {
   callId: string;
@@ -89,13 +89,26 @@ export class CallClient {
   private state: CallState = "idle";
   private call: ActiveCall | null = null;
   private incoming: IncomingCall | null = null;
-  private peers = new Map<string, PeerState>();
+  private mesh: PeerMesh;
   private localStream: MediaStream | null = null;
+  private currentGame: CallGame | null = null;
   private ringTimer: ReturnType<typeof setTimeout> | null = null;
   // Clinician (non-student) conversation-room membership for the call.
   private conversationJoined = false;
 
-  constructor(private opts: CallClientOptions) {}
+  constructor(private opts: CallClientOptions) {
+    this.mesh = new PeerMesh({
+      getSelfId: () => this.selfPersonId,
+      sendSignal: (to: string, signal: CallSignal) => {
+        if (this.call) this.send({ type: "call:signal", callId: this.call.callId, to, signal });
+      },
+      onRemoteStream: (personId, stream) => this.opts.emit({ type: "remoteStream", personId, stream }),
+      onData: (personId, message) => this.opts.emit({ type: "data", personId, message }),
+      onWorldData: (personId, message) => this.opts.emit({ type: "worldData", personId, message }),
+      onPeerConnected: () => this.setState("active"),
+      onPeerFailed: () => this.opts.emit({ type: "error", code: "connection", message: "Peer connection failed" }),
+    });
+  }
 
   // ---------- Connection ----------
 
@@ -201,7 +214,7 @@ export class CallClient {
     this.setState("connecting");
     // The caller is already present — establish the peer connection now and let
     // perfect negotiation drive the offer/answer.
-    this.ensurePeer(inc.fromPersonId);
+    this.mesh.connect(inc.fromPersonId);
     this.incoming = null;
   }
 
@@ -264,13 +277,79 @@ export class CallClient {
     this.send({ type: "call:media-state", callId: this.call.callId, ...next });
   }
 
-  /** Send an AAC extra (utterance text/glyph, pose) over the data channel. */
+  /** Send an AAC extra (utterance text/glyph, pose) over the reliable channel. */
   sendData(message: unknown): void {
-    for (const peer of this.peers.values()) {
-      if (peer.dataChannel?.readyState === "open") {
-        try { peer.dataChannel.send(JSON.stringify(message)); } catch { /* ignore */ }
-      }
-    }
+    this.mesh.sendData(message);
+  }
+
+  /** Broadcast high-frequency world state over the unreliable channel. Dropped
+   *  packets are never retransmitted — a fresher position supersedes them. */
+  sendWorldData(message: unknown): void {
+    this.mesh.sendWorldData(message);
+  }
+
+  /** Relay this client's avatar position over the world-wide position channel
+   *  (server-fanned to every call participant, independent of the media mesh).
+   *  Cheap + lossy; a fresher position supersedes. No-op outside a call. */
+  publishPresence(presence: WorldPresence): void {
+    if (this.call) this.send({ type: "call:world", callId: this.call.callId, presence });
+  }
+
+  // ---------- Proximity-gated media (Phase 2 conversation circles) ----------
+  // The baseline mesh connects every participant on join; in a conversation-circle
+  // world a controller (CallContext) prunes peers who wander out of range and
+  // re-opens them when they return, using these to drive the existing PeerMesh.
+
+  /** Person ids of peers with a live (open or connecting) mesh connection. */
+  connectedPeerIds(): string[] {
+    return this.mesh.peerIds();
+  }
+
+  /** Open (or reuse) a connection to a specific participant. No-op outside a call. */
+  connectPeer(personId: string): void {
+    if (this.call && personId !== this.selfPersonId) this.mesh.connect(personId);
+  }
+
+  /** Close the connection to a participant who has left our circle. They remain
+   *  in the call — proximity may reconnect them later. */
+  disconnectPeer(personId: string): void {
+    this.mesh.removePeer(personId);
+  }
+
+  /** Attach (or, with null, detach) a social game on the current call. The
+   *  server broadcasts call:game to every participant, turning the call panel
+   *  into the game surface. No-op outside a call. */
+  setGame(game: CallGame | null): void {
+    if (this.call) this.send({ type: "call:set-game", callId: this.call.callId, game });
+  }
+
+  /** The game currently attached to the call (null = plain video chat). Lets a
+   *  late-mounting UI read state instead of waiting for the next event. */
+  getGame(): CallGame | null {
+    return this.currentGame;
+  }
+
+  /** Open a SOLO game: a joinable one-person room with a game, no ring. We go
+   *  straight to "active" (no peer yet); friends can be invited in later. No
+   *  local media is acquired up front — inviteIntoCall acquires it on demand. */
+  async startSoloGameCall(game: CallGame): Promise<void> {
+    await this.ensureIceServers();
+    const callId = crypto.randomUUID();
+    this.call = { callId, media: { audio: false, video: false, pose: false } };
+    this.currentGame = game;
+    this.send({ type: "call:start-solo-game", callId, game });
+    this.setState("active");
+    this.opts.emit({ type: "game", game });
+  }
+
+  /** Ring a contact INTO the current call (grow a solo game into multiplayer).
+   *  Acquires audio/video first so joiners get media. No-op outside a call. */
+  async inviteIntoCall(contactId: string): Promise<void> {
+    if (!this.call) return;
+    const media: CallMediaFlags = { audio: true, video: true, pose: false };
+    await this.acquireLocalMedia(media);
+    this.call.media = media;
+    this.send({ type: "call:invite-into-call", callId: this.call.callId, contactId, media });
   }
 
   // ---------- Media ----------
@@ -280,6 +359,7 @@ export class CallClient {
       try { this.iceServers = await this.opts.getIceServers(); }
       catch { this.iceServers = [{ urls: "stun:stun.l.google.com:19302" }]; }
     }
+    this.mesh.setIceServers(this.iceServers);
   }
 
   private async acquireLocalMedia(media: CallMediaFlags): Promise<void> {
@@ -288,6 +368,7 @@ export class CallClient {
     if (!media.audio && !media.video) return;
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.mesh.setLocalStream(this.localStream);
       this.opts.emit({ type: "localStream", stream: this.localStream });
     } catch (err: any) {
       this.opts.emit({ type: "error", code: "media_denied", message: err?.message ?? "Camera/mic unavailable" });
@@ -295,97 +376,10 @@ export class CallClient {
     }
   }
 
-  // ---------- Peer connections (perfect negotiation) ----------
-
-  private ensurePeer(remotePersonId: string): PeerState {
-    let peer = this.peers.get(remotePersonId);
-    if (peer) return peer;
-
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-    // Politeness: deterministic by personId so exactly one side is impolite.
-    const polite = (this.selfPersonId ?? "") < remotePersonId;
-    peer = { pc, polite, makingOffer: false, ignoreOffer: false };
-    this.peers.set(remotePersonId, peer);
-
-    if (this.localStream) {
-      for (const track of this.localStream.getTracks()) pc.addTrack(track, this.localStream);
-    }
-
-    // Impolite peer owns the data channel; polite peer receives it.
-    if (!polite) {
-      peer.dataChannel = pc.createDataChannel("aac");
-      this.wireDataChannel(peer.dataChannel, remotePersonId);
-    }
-    pc.ondatachannel = (ev) => {
-      peer!.dataChannel = ev.channel;
-      this.wireDataChannel(ev.channel, remotePersonId);
-    };
-
-    pc.onnegotiationneeded = async () => {
-      try {
-        peer!.makingOffer = true;
-        await pc.setLocalDescription();
-        this.send({ type: "call:signal", callId: this.call!.callId, to: remotePersonId, signal: { description: pc.localDescription } as CallSignal });
-      } catch (err) {
-        console.error("[call-client] negotiation error:", err);
-      } finally {
-        peer!.makingOffer = false;
-      }
-    };
-
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        this.send({ type: "call:signal", callId: this.call!.callId, to: remotePersonId, signal: { candidate } as CallSignal });
-      }
-    };
-
-    pc.ontrack = ({ streams }) => {
-      if (streams[0]) this.opts.emit({ type: "remoteStream", personId: remotePersonId, stream: streams[0] });
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "connected") this.setState("active");
-      if (pc.connectionState === "failed") {
-        this.opts.emit({ type: "error", code: "connection", message: "Peer connection failed" });
-      }
-    };
-
-    return peer;
-  }
-
-  private wireDataChannel(channel: RTCDataChannel, remotePersonId: string): void {
-    channel.onmessage = (ev) => {
-      let parsed: unknown;
-      try { parsed = JSON.parse(ev.data); } catch { parsed = ev.data; }
-      this.opts.emit({ type: "data", personId: remotePersonId, message: parsed });
-    };
-  }
-
-  private async handleSignal(fromPersonId: string, signal: CallSignal): Promise<void> {
-    const peer = this.ensurePeer(fromPersonId);
-    const { pc } = peer;
-    const description = (signal as any).description as RTCSessionDescriptionInit | undefined;
-    const candidate = (signal as any).candidate as RTCIceCandidateInit | undefined;
-
-    try {
-      if (description) {
-        const offerCollision = description.type === "offer" && (peer.makingOffer || pc.signalingState !== "stable");
-        peer.ignoreOffer = !peer.polite && offerCollision;
-        if (peer.ignoreOffer) return;
-
-        await pc.setRemoteDescription(description);
-        if (description.type === "offer") {
-          await pc.setLocalDescription();
-          this.send({ type: "call:signal", callId: this.call!.callId, to: fromPersonId, signal: { description: pc.localDescription } as CallSignal });
-        }
-      } else if (candidate) {
-        try { await pc.addIceCandidate(candidate); }
-        catch (err) { if (!peer.ignoreOffer) throw err; }
-      }
-    } catch (err) {
-      console.error("[call-client] signal handling error:", err);
-    }
-  }
+  // Peer connections (perfect negotiation, both data channels) live in PeerMesh.
+  // CallClient drives it via this.mesh and relays call:signal into
+  // mesh.handleSignal. The "world" data channel carries social-game state when a
+  // call has a game attached.
 
   // ---------- Server message handling ----------
 
@@ -418,14 +412,14 @@ export class CallClient {
 
       case "call:peer-joined": {
         const pid = msg.payload.personId as string;
-        if (this.call && pid !== this.selfPersonId) this.ensurePeer(pid);
+        if (this.call && pid !== this.selfPersonId) this.mesh.connect(pid);
         break;
       }
 
       case "call:signal": {
         const { fromPersonId, toPersonId, signal } = msg.payload;
         if (toPersonId !== this.selfPersonId) break; // not addressed to us
-        await this.handleSignal(fromPersonId, signal);
+        await this.mesh.handleSignal(fromPersonId, signal);
         break;
       }
 
@@ -439,8 +433,22 @@ export class CallClient {
 
       case "call:peer-left":
         this.opts.emit({ type: "peerLeft", personId: msg.payload.personId });
-        this.closePeer(msg.payload.personId);
+        this.mesh.removePeer(msg.payload.personId);
         break;
+
+      case "call:game": {
+        const game = (msg.payload?.game ?? null) as CallGame | null;
+        this.currentGame = game;
+        this.opts.emit({ type: "game", game });
+        break;
+      }
+
+      case "call:world": {
+        const { personId, presence } = msg.payload as { personId: string; presence: WorldPresence };
+        // The server echoes to the whole call topic, including us — skip our own.
+        if (personId !== this.selfPersonId) this.opts.emit({ type: "presence", personId, presence });
+        break;
+      }
 
       case "call:declined":
         this.teardownCall("declined");
@@ -486,15 +494,6 @@ export class CallClient {
     if (this.ringTimer) { clearTimeout(this.ringTimer); this.ringTimer = null; }
   }
 
-  private closePeer(personId: string): void {
-    const peer = this.peers.get(personId);
-    if (peer) {
-      try { peer.dataChannel?.close(); } catch { /* ignore */ }
-      try { peer.pc.close(); } catch { /* ignore */ }
-      this.peers.delete(personId);
-    }
-  }
-
   private teardownCall(reason: string): void {
     this.clearRingTimeout();
     const callId = this.call?.callId;
@@ -503,13 +502,15 @@ export class CallClient {
       this.send({ type: "call:conversation", join: false, callId });
     }
     this.conversationJoined = false;
-    for (const personId of Array.from(this.peers.keys())) this.closePeer(personId);
+    this.mesh.closeAll();
     if (this.localStream) {
       for (const t of this.localStream.getTracks()) t.stop();
       this.localStream = null;
     }
+    this.mesh.setLocalStream(null);
     this.call = null;
     this.incoming = null;
+    this.currentGame = null;
     if (callId) this.opts.emit({ type: "ended", callId, reason });
     this.setState("idle");
   }

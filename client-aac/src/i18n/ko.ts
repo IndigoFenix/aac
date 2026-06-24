@@ -740,6 +740,16 @@ export const ko: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "친구와 놀기",
+    start: "게임 시작",
+    exit: "게임 종료",
+    playSolo: "혼자 놀기",
+    playInCall: "이 통화에서 놀기",
+    invite: "초대",
+    noOneNearby: "근처에 아무도 없습니다",
+  },
+
   social: {
     peer: "친구:",
     waiting: "친구를 기다리는 중…",

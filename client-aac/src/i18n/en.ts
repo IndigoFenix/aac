@@ -738,6 +738,16 @@ export const en = {
     },
   },
 
+  socialWorld: {
+    title: "Play with friends",
+    start: "Start game",
+    exit: "End game",
+    playSolo: "Play by myself",
+    playInCall: "Play in this call",
+    invite: "Invite",
+    noOneNearby: "No one nearby",
+  },
+
   social: {
     peer: "Peer:",
     waiting: "Waiting for peer…",

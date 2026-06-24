@@ -3827,4 +3827,12 @@ export const zh = {
     },
   },
 
+  socialWorld: {
+    title: "和朋友一起玩",
+    start: "开始游戏",
+    exit: "结束游戏",
+    pick: "选择游戏",
+    noOneNearby: "附近没有人",
+  },
+
 };

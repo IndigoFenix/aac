@@ -3827,4 +3827,12 @@ export const fr = {
     },
   },
 
+  socialWorld: {
+    title: "Jouer avec des amis",
+    start: "Démarrer le jeu",
+    exit: "Terminer le jeu",
+    pick: "Choisir un jeu",
+    noOneNearby: "Personne à proximité",
+  },
+
 };

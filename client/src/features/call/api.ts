@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/queryClient";
+import type { CallGame } from "@shared/realtime-events";
 
 /**
  * Fetch the ICE servers (STUN/TURN) the WebRTC peer connection should use.
@@ -34,4 +35,13 @@ export async function fetchCallableStudents(): Promise<CallableStudent[]> {
 export interface CallParticipantInfo {
   personId: string;
   name: string;
+}
+
+/** Social games attachable to a call: the built-in default + the institute's
+ *  multiplayer custom apps (each a ready-to-attach CallGame with its WorldSpec). */
+export async function fetchSocialGameOptions(instituteId: string): Promise<CallGame[]> {
+  const res = await apiRequest("GET", `/api/social-game/options/${instituteId}`);
+  const data = await res.json();
+  if (!data?.success) throw new Error(data?.message || "Failed to fetch social games");
+  return (data.options ?? []) as CallGame[];
 }

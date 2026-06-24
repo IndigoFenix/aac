@@ -3827,4 +3827,12 @@ export const ru = {
     },
   },
 
+  socialWorld: {
+    title: "Играть с друзьями",
+    start: "Начать игру",
+    exit: "Завершить игру",
+    pick: "Выберите игру",
+    noOneNearby: "Никого рядом",
+  },
+
 };

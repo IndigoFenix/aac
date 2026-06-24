@@ -21,6 +21,8 @@ import { CallProvider } from "@/contexts/CallContext";
 import { IncomingCallPopup } from "@/components/IncomingCallPopup";
 import { GroupChatHeader } from "@/components/GroupChatHeader";
 import PhoneCallApp from "@/components/PhoneCallApp";
+import { SocialWorldOverlay, SocialGameReporter, SocialWorldPeople } from "@/components/social-world/SocialWorldOverlay";
+import type { CallGame } from "@shared/realtime-events";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
@@ -506,6 +508,19 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // client-side, not forwarded to the AI). Closes when the user picks an app
   // (which then triggers the existing launchApp flow) or hits Back/Home.
   const [showAppsBoard, setShowAppsBoard] = useState(false);
+  // Portal target (in the board region) for the phone-call picker, so it keeps
+  // the QuickActions bar visible — same rules as the apps page. PhoneCallApp is
+  // portaled in from inside CallProvider so it retains the call context.
+  const [phoneHost, setPhoneHost] = useState<HTMLDivElement | null>(null);
+  // Social-game mode: when a game is active (call game or solo), home re-flows —
+  // header hidden, context buttons swapped for the main board's 8 buttons in 2×4,
+  // and the game fills the rest (rendered into `gameHost`). `activeSocialGame` is
+  // lifted out of CallProvider by SocialGameReporter.
+  const [activeSocialGame, setActiveSocialGame] = useState<CallGame | null>(null);
+  const [gameHost, setGameHost] = useState<HTMLDivElement | null>(null);
+  // Trailing-side host for the other people in the call (opposite the buttons).
+  const [peopleHost, setPeopleHost] = useState<HTMLDivElement | null>(null);
+  const gameActive = activeSocialGame != null;
   // Notify the server when the sentence builder opens/closes so it can track
   // the conversation detour and inject a [RESUME] reminder afterward. Only fires
   // on an actual transition (skips the initial false on mount).
@@ -534,6 +549,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Active app state (bridged from DualAgentContext)
   const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
   const dismissAppRef = useRef<() => void>(() => {});
+  // When a game ends, close the "Play with friends" launcher app if it was open,
+  // so the student returns to their normal board (not the picker).
+  const prevGameActiveRef = useRef(false);
+  useEffect(() => {
+    const was = prevGameActiveRef.current;
+    prevGameActiveRef.current = gameActive;
+    if (was && !gameActive && activeApp?.appId === "social_world") {
+      dismissAppRef.current?.();
+    }
+  }, [gameActive, activeApp?.appId]);
   const registerAppCanvasCaptureRef = useRef<(fn: (() => Promise<Blob | null>) | null) => void>(() => {});
   // Apps available to launch from the static Apps board overlay, bridged from
   // DualAgentContext (the overlay renders outside the provider subtree).
@@ -1754,9 +1779,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       {/* Main 3-Section Board Layout */}
       <main
         className={`flex-1 flex flex-col relative ${
-          showConversation ? 'pt-24' : 'pt-4'
+          gameActive ? 'pt-0' : showConversation ? 'pt-24' : 'pt-4'
         }`}
-        style={glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
+        style={!gameActive && glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
       >
         {/* Audio Feedback Indicator */}
         <AnimatePresence>
@@ -1885,6 +1910,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             </div>
           )}
 
+          {(activeApp?.appId === "phone_call" || (activeApp?.appId === "social_world" && !gameActive)) && (
+            // Portal target for the phone-call / "Play with friends" picker.
+            // Rendered in the board region (not a viewport-covering overlay) so
+            // the QuickActions bar stays visible with its dwellable Exit — same
+            // rules as the apps page. PhoneCallApp is portaled in below from
+            // inside CallProvider; "social_world" reuses it in game mode.
+            <div ref={setPhoneHost} className="absolute inset-0 z-30 bg-white dark:bg-gray-900" data-dwell-trap />
+          )}
+
           {showConstructionBoard && (
             // data-dwell-trap confines eyegaze dwell selection to the sentence
             // builder while it's open — gaze over its empty areas resolves to
@@ -1941,6 +1975,28 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               />
             </div>
           )}
+          {gameActive ? (
+            <>
+              {/* Game mode: the main board's 8 communication buttons in 2 cols ×
+                  4 rows where the context buttons normally sit (so the student
+                  can still talk), and the game fills the rest. */}
+              <AppMiniBoard
+                board={prebuiltBoardData || boardData}
+                columns={2}
+                onButtonClick={handleBoardButtonClick}
+                language={currentLanguage}
+                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                suppressLocalSpeech={aiSessionActive}
+                getFaceImage={resolveFaceImage}
+              />
+              {/* Game window — the game surface is portaled in here. */}
+              <div ref={setGameHost} className="flex-1 min-w-0 h-full relative" />
+              {/* Nearby people — opposite the button sidebar. Constant width so
+                  the game window doesn't jump as people come and go. */}
+              <div ref={setPeopleHost} className="h-full flex-shrink-0 w-32" />
+            </>
+          ) : (
+            <>
           {/* Context sidebar — always shows context buttons from add_context_button() */}
           {(() => {
             const sidebarBoard: ParsedBoardData | null = contextButtons.length > 0
@@ -2033,6 +2089,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 // Handle back at root level - could show board selector
               }}
             />
+          )}
+            </>
           )}
         </div>
 
@@ -2327,7 +2385,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSocialFaceChange={setSocialFace}
           />
           <DualAgentConversationBox
-            isVisible={showConversation}
+            isVisible={showConversation && !gameActive}
             glyphStripActive={glyphStripActive}
             onToggle={() => setShowConversation(!showConversation)}
             selectedSymbols={selectedSymbols}
@@ -2360,14 +2418,23 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             aiName={userProfile?.aacSettings?.aiName}
           />
           <FullscreenAvatarOverlay />
-          {/* Phone-call app — full-screen overlay INSIDE CallProvider so it can
-              use the call context (it can't render via renderAppContent, which
-              lives outside the provider). data-dwell-trap keeps eye-gaze inside. */}
-          {activeApp?.appId === "phone_call" && (
-            <div className="fixed inset-0 z-40 bg-white dark:bg-gray-900" data-dwell-trap>
-              <PhoneCallApp onClose={() => dismissAppRef.current?.()} />
-            </div>
-          )}
+          {/* Phone-call app — portaled into the board-region host (above) so it
+              keeps the call context (it renders inside CallProvider) WHILE the
+              QuickActions bar stays visible, same as the apps page. */}
+          {(activeApp?.appId === "phone_call" || (activeApp?.appId === "social_world" && !gameActive)) && phoneHost &&
+            createPortal(
+              <PhoneCallApp
+                onClose={() => dismissAppRef.current?.()}
+                gameMode={activeApp?.appId === "social_world"}
+              />,
+              phoneHost,
+            )}
+          {/* Social-game surface — portaled into the board-region game host so it
+              fills the game window (quick buttons + the 2×4 board stay visible).
+              The reporter lifts the active-game signal up to drive the layout. */}
+          <SocialGameReporter onChange={setActiveSocialGame} />
+          <SocialWorldOverlay host={gameHost} />
+          <SocialWorldPeople host={peopleHost} />
           {/* Group-chat peer faces — side-by-side header during a multi-student
               chat. Dwell/tap a face to focus that peer as the addressee. Renders
               null when not in a group chat. */}

@@ -3827,4 +3827,12 @@ export const he = {
     },
   },
 
+  socialWorld: {
+    title: "משחק עם חברים",
+    start: "התחל משחק",
+    exit: "סיים משחק",
+    pick: "בחר משחק",
+    noOneNearby: "אין אף אחד בקרבת מקום",
+  },
+
 };

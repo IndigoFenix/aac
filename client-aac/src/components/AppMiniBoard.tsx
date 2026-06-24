@@ -1,13 +1,14 @@
 // client-aac/src/components/AppMiniBoard.tsx
-// Compact 4-button panel shown alongside open apps and prebuilt boards.
-// Renders in a narrow vertical column; positioned left (LTR) or right (RTL).
+// Compact button panel shown alongside open apps / prebuilt boards (the context
+// sidebar) and, during a game, the main board's 8 buttons in 2×4. Buttons render
+// through the SAME shared <SentenceButton> as the main board, so borders, colors
+// and glyph/symbol/face rendering are identical. Positioned left (LTR) / right
+// (RTL) by the parent flex-row.
 
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
-import { apiUrl } from "@/lib/queryClient";
-import { resolveStaticIconPath } from "@/lib/utils";
-import { Glyph } from "@/components/Glyph";
+import { SentenceButton } from "@/components/SentenceButton";
 
 interface AppMiniBoardProps {
   board: ParsedBoardData | null;
@@ -16,54 +17,27 @@ interface AppMiniBoardProps {
   voiceType?: string;
   suppressLocalSpeech?: boolean;
   getFaceImage?: (contactId: string) => string | null;
+  /** Number of columns. 1 (default) = the narrow context strip; >1 = a wider
+   *  panel (e.g. the main board's 8 buttons in 2×4 during a game). */
+  columns?: number;
 }
 
-function renderButtonIcon(button: BoardButton, getFaceImage?: (contactId: string) => string | null) {
-  // Glyph wins (same as the main board / SentenceButton) — this is how most AI
-  // buttons carry their visual, including generated symbols that resolve later.
-  // The Glyph compositor renders the fallback while pieces generate and swaps in
-  // each symbol as it lands, so context buttons are no longer blank/unreliable.
-  if (
-    (button.glyph || button.glyphFallback) &&
-    !button.symbolPath?.startsWith("__FACE__:") &&
-    !button.symbolPath?.startsWith("__SYMBOL__:")
-  ) {
-    return (
-      <div style={{ width: "100%", height: "100%" }}>
-        <Glyph glyph={button.glyph} fallback={button.glyphFallback} noBackground ariaLabel={button.label} />
-      </div>
-    );
-  }
-  if (button.symbolPath?.startsWith("__FACE__:")) {
-    const contactId = button.symbolPath.substring(9);
-    const cached = getFaceImage?.(contactId);
-    if (cached) return <img src={cached} alt={button.label} className="icon-fill-img rounded-full" />;
-    return <span className="icon-fill-emoji">👤</span>;
-  }
-  if (button.symbolPath?.startsWith("__SYMBOL__:")) {
-    const symbolId = button.symbolPath.substring(11);
-    return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="icon-fill-img" loading="lazy" />;
-  }
-  if (button.symbolPath) {
-    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
-  }
-  // Emoji iconRef renders directly; a FontAwesome sentinel ("fas fa-comment")
-  // would otherwise render as literal text, so render it as an <i> instead.
-  if (button.iconRef) {
-    if (button.iconRef.startsWith("fa")) {
-      return <i className={button.iconRef} style={{ color: "white", fontSize: "1.5rem" }} />;
-    }
-    return <span className="icon-fill-emoji">{button.iconRef}</span>;
-  }
-  return null;
-}
+// Icon/text sizing for a 4-row column — mirrors DynamicBoard's formula so the
+// buttons read the same on the side as in the grid.
+const ICON_FONT = "clamp(1rem, calc((100dvh - 10.5rem) / 4 * 0.45), 6rem)";
+const TEXT_FONT = "clamp(0.5rem, calc((100dvh - 10.5rem) / 4 * 0.10), 1.25rem)";
 
-export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage }: AppMiniBoardProps) {
+export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage, columns = 1 }: AppMiniBoardProps) {
   const { speak } = useTextToSpeech();
 
-  // Get buttons from the first page (up to 4)
+  // 4 rows per column; the narrow strip is 1 col (4 buttons), the game panel is
+  // 2 cols (the main board's 8 buttons).
+  const cols = Math.max(1, columns);
   const page = board?.pages?.[0];
-  const buttons = (page?.buttons || []).slice(0, 4);
+  const buttons = (page?.buttons || []).slice(0, cols * 4);
+  // Game panel is a fixed 2×4; the narrow context strip sizes its rows to the
+  // button count so 1–2 buttons still fill the height (as before).
+  const rows = cols === 1 ? Math.max(1, buttons.length) : 4;
 
   const handleClick = (button: BoardButton) => {
     const text = button.spokenText || button.label;
@@ -74,29 +48,27 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
   };
 
   return (
-    <div className="flex flex-col gap-2 p-2 h-full w-28 flex-shrink-0 bg-gray-900/90">
+    <div
+      className="grid gap-2 p-2 h-full flex-shrink-0"
+      style={{
+        width: `${cols * 7}rem`,
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+      }}
+    >
       <AnimatePresence mode="popLayout">
         {buttons.map((button, i) => (
-          <motion.button
-            data-dwell
+          <SentenceButton
             key={button.label + i}
-            className="flex-1 flex flex-col items-center justify-center rounded-xl shadow-md border border-white/20 select-none overflow-hidden"
-            style={{ backgroundColor: button.color || "#3B82F6", padding: 5 }}
+            variant="board"
+            button={button}
             onClick={() => handleClick(button)}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ delay: i * 0.05 }}
-          >
-            <div className="icon-fill-area">
-              {renderButtonIcon(button, getFaceImage)}
-            </div>
-            <span className="text-xs font-semibold text-white mt-0.5 px-1 text-center leading-tight line-clamp-2 shrink-0" style={{ maxHeight: "40%" }}>
-              {button.label}
-            </span>
-          </motion.button>
+            borderClassName="border-gray-200"
+            getFaceImage={getFaceImage ?? undefined}
+            iconFontSize={ICON_FONT}
+            textFontSize={TEXT_FONT}
+            entering={false}
+          />
         ))}
       </AnimatePresence>
     </div>

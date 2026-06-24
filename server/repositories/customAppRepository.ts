@@ -146,6 +146,37 @@ export class CustomAppRepository {
       .orderBy(desc(customApps.loadedAt));
   }
 
+  /**
+   * Multiplayer apps owned by an institute — the social games a clinician can
+   * attach to a call. Filtered to the multiplayer engine type(s).
+   */
+  async listMultiplayerAppsForInstitute(
+    instituteId: string,
+    multiplayerTypes: string[],
+  ): Promise<CustomAppMetadata[]> {
+    if (multiplayerTypes.length === 0) return [];
+    return await db.select({
+      id: customApps.id,
+      userId: customApps.userId,
+      instituteId: customApps.instituteId,
+      type: customApps.type,
+      name: customApps.name,
+      description: customApps.description,
+      imageUrl: customApps.imageUrl,
+      language: customApps.language,
+      isGenerated: customApps.isGenerated,
+      createdAt: customApps.createdAt,
+      updatedAt: customApps.updatedAt,
+      loadedAt: customApps.loadedAt,
+    })
+      .from(customApps)
+      .where(and(
+        eq(customApps.instituteId, instituteId),
+        inArray(customApps.type, multiplayerTypes),
+      ))
+      .orderBy(desc(customApps.loadedAt));
+  }
+
   /** App ids currently assigned to the student. Pass `ctx` to filter assignments by cross-institute visibility. */
   async getAssignedAppIds(studentId: string, ctx?: AccessCtx): Promise<string[]> {
     const where = ctx

@@ -15,22 +15,31 @@ import { useCall } from "@/contexts/CallContext";
 
 interface PhoneCallAppProps {
   onClose: () => void;
+  /** "Play with friends" mode: picking a contact starts a call AND attaches the
+   *  default social game once connected. Otherwise this is a plain phone call. */
+  gameMode?: boolean;
 }
 
 const COLS = 3;
 
-export default function PhoneCallApp({ onClose }: PhoneCallAppProps) {
+export default function PhoneCallApp({ onClose, gameMode = false }: PhoneCallAppProps) {
   const { t } = useLanguage();
   const {
     contacts,
     contactsLoading,
     refreshContacts,
     startCallToContact,
+    startGameWithContact,
+    startSoloGame,
+    startGame,
     callState,
     activeContact,
     cancel,
     hangUp,
   } = useCall();
+
+  const pickContact = (contactId: string) =>
+    gameMode ? startGameWithContact(contactId) : startCallToContact(contactId);
 
   // Refresh online flags when the app opens.
   useEffect(() => {
@@ -60,9 +69,10 @@ export default function PhoneCallApp({ onClose }: PhoneCallAppProps) {
     <div className="flex flex-col w-full h-full p-4 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {t("call.phoneCallApp")}
+          {gameMode ? t("socialWorld.title") : t("call.phoneCallApp")}
         </h2>
         <button
+          data-dwell="phone-close"
           onClick={onClose}
           className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-lg font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
           aria-label={t("common.close")}
@@ -70,6 +80,21 @@ export default function PhoneCallApp({ onClose }: PhoneCallAppProps) {
           {t("common.close")}
         </button>
       </div>
+
+      {gameMode && (
+        // Start options: play alone, or — if already in a call — turn this call
+        // into a game. Calling a specific friend uses the contact grid below.
+        <div className="mb-4 shrink-0">
+          <button
+            type="button"
+            data-dwell={callState === "active" ? "game-in-call" : "game-solo"}
+            onClick={() => (callState === "active" ? startGame() : startSoloGame())}
+            className="w-full flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-5 text-2xl font-bold shadow-md"
+          >
+            🎮 {callState === "active" ? t("socialWorld.playInCall") : t("socialWorld.playSolo")}
+          </button>
+        </div>
+      )}
 
       {inCall ? (
         // Active / ringing call — status + hang-up.
@@ -125,7 +150,7 @@ export default function PhoneCallApp({ onClose }: PhoneCallAppProps) {
                 type="button"
                 {...(c.online ? { "data-dwell": `call-${c.contactId}` } : {})}
                 disabled={!c.online}
-                onClick={() => c.online && startCallToContact(c.contactId)}
+                onClick={() => c.online && pickContact(c.contactId)}
                 aria-label={
                   c.online
                     ? `${t("call.callContact")} ${c.name}`

@@ -740,6 +740,16 @@ export const zh: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "和朋友一起玩",
+    start: "开始游戏",
+    exit: "结束游戏",
+    playSolo: "自己玩",
+    playInCall: "在此通话中玩",
+    invite: "邀请",
+    noOneNearby: "附近没有人",
+  },
+
   social: {
     peer: "朋友：",
     waiting: "等待朋友…",

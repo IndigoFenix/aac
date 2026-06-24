@@ -740,6 +740,16 @@ export const yue: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "同朋友玩",
+    start: "開始遊戲",
+    exit: "結束遊戲",
+    playSolo: "自己玩",
+    playInCall: "喺呢個通話入面玩",
+    invite: "邀請",
+    noOneNearby: "附近冇人",
+  },
+
   social: {
     peer: "朋友：",
     waiting: "等緊朋友…",

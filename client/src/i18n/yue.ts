@@ -3827,4 +3827,12 @@ export const yue = {
     },
   },
 
+  socialWorld: {
+    title: "同朋友玩",
+    start: "開始遊戲",
+    exit: "結束遊戲",
+    pick: "揀一個遊戲",
+    noOneNearby: "附近冇人",
+  },
+
 };

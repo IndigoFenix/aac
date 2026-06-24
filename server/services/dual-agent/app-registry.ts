@@ -169,6 +169,17 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🎶",
     enabledByDefault: false,
   },
+  {
+    id: "social_world",
+    name: "Play with friends",
+    description: "Opens a shared multiplayer 'social world' where the student meets up with their contacts as avatars on a simple field and plays with physics toys (e.g. kicking a ball around). It runs inside a live video chat: opening it starts a chat with a friend and turns it into the game, or — if the student is already in a chat — attaches the game to that call so everyone in it can play. Use open_app(social_world) when the student wants to play WITH other people, meet friends, or hang out together — distinct from the single-player games and from a plain 1:1 video call (phone_call).",
+    icon: "🎮",
+    // A communication/social feature like phone_call (which is also default-on
+    // with no toggle): it must be openable so the student can START a game and
+    // invite friends (the game is a property of the chat, not a pre-existing
+    // room they wait to be invited into).
+    enabledByDefault: true,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

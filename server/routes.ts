@@ -25,6 +25,8 @@ import { ClinicianStt } from "./services/call/clinician-stt";
 import { logLiveSession } from "./services/dual-agent/dual-agent-logger";
 import { createStreamingSession } from "./services/voice/google-stt-service";
 import { listCallableContacts, listCallableStudentsForUser, userMayActAsStudent } from "./services/call/callContacts";
+import { listSocialGameOptions } from "./services/social-game/socialGameOptions";
+import { instituteService } from "./services/instituteService";
 import type { CallClientCommand } from "@shared/realtime-events";
 
 import {
@@ -1880,6 +1882,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Social games a clinician can attach to a call: the built-in default world +
+  // the selected institute's multiplayer custom apps (each with its WorldSpec).
+  app.get("/api/social-game/options/:instituteId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const instituteId = req.params.instituteId;
+      // Only members of the institute may enumerate its games.
+      const institutes = await instituteService.getUserInstitutes(user.id);
+      const isMember = institutes.some((i) => i.id === instituteId);
+      if (!isMember && !user.isAdmin && !user.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "No access to this organization" });
+        return;
+      }
+      const options = await listSocialGameOptions(instituteId);
+      res.json({ success: true, options });
+    } catch (err) {
+      console.error("[social-game] options:", err);
+      res.status(500).json({ success: false, message: "Failed to load social games" });
+    }
+  });
+
   // ============= ADMIN ROUTES =============
   // Institutes (admin lookup)
   app.get("/api/admin/institutes", requireAuth, requireSystemAdmin, (req, res) =>
@@ -2300,6 +2323,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
           case "call:media-state":
             await callService.mediaState(personId, { callId: cmd.callId, audio: cmd.audio, video: cmd.video, pose: cmd.pose });
+            break;
+          case "call:set-game":
+            // Attach/detach a social game on the call — turns the call panel into
+            // the game surface for everyone in it (no new ring).
+            await callService.setGame(personId, { callId: cmd.callId, game: cmd.game });
+            break;
+          case "call:start-solo-game":
+            // Open a joinable one-person room with a game (no ring).
+            await callService.startSoloGame(personId, { callId: cmd.callId, game: cmd.game });
+            break;
+          case "call:invite-into-call":
+            // Ring a contact INTO the existing call (grow a solo game).
+            await callService.inviteIntoCall(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media });
+            break;
+          case "call:world":
+            // Relay this participant's avatar position to the call — the
+            // world-wide position channel feeding the circle solver.
+            await callService.publishWorld(personId, { callId: cmd.callId, presence: cmd.presence });
             break;
           case "call:leave":
             await callService.leave(personId, { callId: cmd.callId });

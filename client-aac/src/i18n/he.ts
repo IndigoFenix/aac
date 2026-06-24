@@ -740,6 +740,16 @@ export const he: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "משחק עם חברים",
+    start: "התחל משחק",
+    exit: "סיים משחק",
+    playSolo: "לשחק לבד",
+    playInCall: "לשחק בשיחה הזו",
+    invite: "הזמן",
+    noOneNearby: "אין אף אחד בקרבת מקום",
+  },
+
   social: {
     peer: "חבר:",
     waiting: "ממתין לחבר…",

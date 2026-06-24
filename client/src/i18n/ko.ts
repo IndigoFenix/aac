@@ -3827,4 +3827,12 @@ export const ko = {
     },
   },
 
+  socialWorld: {
+    title: "친구와 놀기",
+    start: "게임 시작",
+    exit: "게임 종료",
+    pick: "게임 선택",
+    noOneNearby: "근처에 아무도 없습니다",
+  },
+
 };

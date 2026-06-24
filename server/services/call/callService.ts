@@ -22,7 +22,8 @@ import {
 } from "./callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
 import { publishFocus, publishUtterance } from "../dual-agent/conversation-room";
-import type { CallMediaFlags, CallSignal } from "@shared/realtime-events";
+import type { CallGame, CallMediaFlags, CallSignal } from "@shared/realtime-events";
+import type { WorldPresence } from "@shared/social-world/world-presence";
 
 export const CALL_PERSON_TOPIC = (personId: string) => `call:person:${personId}`;
 export const CALL_TOPIC = (callId: string) => `call:${callId}`;
@@ -172,6 +173,15 @@ export class CallService {
       topic: CALL_TOPIC(input.callId),
       payload: { callId: input.callId, personId: actingPersonId, role, media: session.media as CallMediaFlags },
     });
+    // Catch-up: if a game is already attached, replay it on the call topic so the
+    // just-joined peer renders the game surface (not just plain video).
+    if (session.game) {
+      await broadcastToCall(input.callId, {
+        type: "call:game",
+        topic: CALL_TOPIC(input.callId),
+        payload: { callId: input.callId, game: session.game as CallGame, byPersonId: session.initiatedByPersonId },
+      });
+    }
   }
 
   async decline(actingPersonId: string, input: { callId: string; reason?: string }): Promise<void> {
@@ -234,6 +244,117 @@ export class CallService {
       type: "call:media-state",
       topic: CALL_TOPIC(input.callId),
       payload: { callId: input.callId, personId: actingPersonId, ...media },
+    });
+  }
+
+  /**
+   * Attach (or, with null, detach) a social game on the call. Any active
+   * participant may do this. The game becomes a property of the call/chatroom:
+   * every current participant is told via call:game (the call panel turns into
+   * the game surface), and late joiners get a catch-up replay on accept. This
+   * does NOT ring anyone new — inviting more players uses the normal call invite.
+   */
+  async setGame(actingPersonId: string, input: { callId: string; game: CallGame | null }): Promise<void> {
+    await this.assertActiveParticipant(input.callId, actingPersonId);
+    await callRepository.setGame(input.callId, input.game);
+    await broadcastToCall(input.callId, {
+      type: "call:game",
+      topic: CALL_TOPIC(input.callId),
+      payload: { callId: input.callId, game: input.game, byPersonId: actingPersonId },
+    });
+  }
+
+  /**
+   * Open a SOLO game: an active one-person call session with a game attached and
+   * no ring. It's a real (joinable) room — the player can later ring contacts
+   * into it via inviteIntoCall. Backed by a one-person self-room.
+   */
+  async startSoloGame(actingPersonId: string, input: { callId: string; game: CallGame }): Promise<void> {
+    const person = await personRepository.getById(actingPersonId);
+    const studentId = person?.studentId ?? null;
+    const instituteId = studentId ? await resolveStudentInstitute(studentId) : null;
+    if (!instituteId) throw new CallError("no_institute", "No organization for a solo game room");
+
+    const room = await personChatRepository.createRoom({
+      instituteId,
+      createdByPersonId: actingPersonId,
+      participantPersonIds: [actingPersonId],
+      name: null,
+      isDirect: false,
+    });
+    const role = await this.resolveRole(actingPersonId);
+    await callRepository.createSession({
+      callId: input.callId,
+      roomId: room.id,
+      instituteId,
+      initiatedByPersonId: actingPersonId,
+      mode: "aac_caretaker",
+      media: { audio: false, video: false, pose: false },
+    });
+    await callRepository.setStatus(input.callId, "active");
+    await callRepository.addParticipant({ callId: input.callId, personId: actingPersonId, role, joined: true });
+    await callRepository.setGame(input.callId, input.game);
+    await broadcastSubscribeToCall(actingPersonId, input.callId);
+  }
+
+  /**
+   * Ring a callable contact INTO an existing call (vs starting a fresh one) —
+   * how a solo game grows into a multiplayer one. The callee joins the same
+   * callId and gets the game via the accept() catch-up.
+   */
+  async inviteIntoCall(actingPersonId: string, input: { callId: string; contactId: string; media: CallMediaFlags }): Promise<void> {
+    await this.assertActiveParticipant(input.callId, actingPersonId);
+    const session = await callRepository.getSession(input.callId);
+    if (!session) throw new CallError("no_call", "Call not found");
+
+    const contact = await getContactById(input.contactId);
+    if (!contact || !contact.isActive || !contact.callable) {
+      throw new CallError("not_callable", "That contact is not callable");
+    }
+    const studentPerson = await personRepository.getByStudentId(contact.studentId);
+    const contactPersonId = await resolveContactPersonId(contact);
+    if (!studentPerson || !contactPersonId) throw new CallError("no_person", "Contact is not linked to a person");
+    let calleePersonId: string;
+    if (actingPersonId === studentPerson.id) calleePersonId = contactPersonId;
+    else if (actingPersonId === contactPersonId) calleePersonId = studentPerson.id;
+    else throw new CallError("not_allowed", "Not a party to this contact");
+
+    if (!isPersonOnline(calleePersonId)) {
+      throw new CallError("offline", "That person is not available right now");
+    }
+    const calleeRole = await this.resolveRole(calleePersonId);
+    await callRepository.addParticipant({ callId: input.callId, personId: calleePersonId, role: calleeRole, joined: false });
+    const fromName = await personRepository.getDisplayName(actingPersonId);
+    await broadcastToPerson(calleePersonId, {
+      type: "call:ringing",
+      topic: CALL_PERSON_TOPIC(calleePersonId),
+      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, media: input.media },
+    });
+  }
+
+  /**
+   * RELAY a participant's avatar position to everyone in the call — the
+   * world-wide position channel that feeds the circle solver (decoupled from the
+   * media mesh, so a client learns the position of people it has no peer
+   * connection to). High-frequency, ephemeral and non-PHI, like SDP/ICE
+   * signaling. The claimed presence id is overwritten with the authoritative
+   * acting person so a client can't spoof someone else's avatar.
+   *
+   * Phase 1 gates this like any in-call command (a single indexed participant
+   * read) and fans it out over the call topic. At larger scale this should move
+   * to a cached membership check / a dedicated lower-overhead channel — see
+   * planning-docs/large-world-conversation-circles.md.
+   */
+  async publishWorld(actingPersonId: string, input: { callId: string; presence: WorldPresence }): Promise<void> {
+    await this.assertActiveParticipant(input.callId, actingPersonId);
+    await broadcastToCall(input.callId, {
+      type: "call:world",
+      topic: CALL_TOPIC(input.callId),
+      payload: {
+        callId: input.callId,
+        personId: actingPersonId,
+        presence: { ...input.presence, personId: actingPersonId },
+      },
     });
   }
 
@@ -317,7 +438,10 @@ export class CallService {
     const all = await callRepository.listParticipants(callId);
     const active = all.filter((p) => p.joinedAt && !p.leftAt);
     const pending = all.filter((p) => !p.joinedAt && !p.leftAt); // still ringing
-    if (active.length < 2 && pending.length === 0) {
+    // A plain video call needs 2 to be worth keeping; a game call is still valid
+    // with a lone player in the world, so it only ends once everyone has left.
+    const minActive = session.game ? 1 : 2;
+    if (active.length < minActive && pending.length === 0) {
       this.clearRingTimer(callId);
       await callRepository.setStatus(callId, reason === "declined" ? "declined" : "ended", reason);
       await this.notifyEnded(callId, reason);

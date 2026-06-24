@@ -13,6 +13,8 @@ import type {
 } from "./custom-app-types";
 import { certifyGoalTreeGame } from "./goal-tree/index";
 import { GOAL_TREE_APP_TYPE } from "./goal-tree/types";
+import { certifyWorldSpec } from "./world-engine/index";
+import { WORLD_APP_TYPE } from "./world-engine/types";
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -538,9 +540,12 @@ export function validateCustomAppDefinition(
 }
 
 /**
- * Validates a custom_apps.definition according to the row's `type`:
- * goal-tree quest games run the full certification gauntlet on their
- * contentPack; everything else uses the v1 GameDefinition schema.
+ * Validates a custom_apps.definition according to the row's `type`, forking by
+ * engine (the family is backwards-compatible — each engine keeps its own
+ * validator):
+ *   - goal_tree_game → certify the goal-tree content pack (solvability gauntlet)
+ *   - social_world   → certify the WorldSpec (schema gauntlet); multiplayer
+ *   - everything else → the v1 grid GameDefinition schema
  */
 export function validateCustomAppDefinitionForType(
   type: string | null | undefined,
@@ -562,5 +567,20 @@ export function validateCustomAppDefinitionForType(
       data: { engine: "goal-tree", engineVersion: 1, contentPack: certified.game },
     };
   }
+  if (type === WORLD_APP_TYPE) {
+    const certified = certifyWorldSpec(input);
+    if (!certified.ok) {
+      return {
+        ok: false,
+        errors: certified.errors.map((e) => `[${certified.stage}] ${e}`),
+      };
+    }
+    return { ok: true, data: certified.spec };
+  }
   return validateCustomAppDefinition(input);
+}
+
+/** A custom_apps.type whose apps are multiplayer (selectable as a social game). */
+export function isMultiplayerAppType(type: string | null | undefined): boolean {
+  return type === WORLD_APP_TYPE;
 }

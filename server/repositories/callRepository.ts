@@ -42,6 +42,11 @@ export class CallRepository {
     return row ?? null;
   }
 
+  /** Attach (or, with null, detach) a social game on the call session. */
+  async setGame(callId: string, game: unknown | null): Promise<void> {
+    await db.update(callSessions).set({ game }).where(eq(callSessions.id, callId));
+  }
+
   async setStatus(callId: string, status: string, endedReason?: string): Promise<void> {
     const patch: Partial<CallSession> = { status };
     if (status === "ended" || status === "missed" || status === "declined" || status === "cancelled") {

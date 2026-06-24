@@ -740,6 +740,16 @@ export const ar: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "اللعب مع الأصدقاء",
+    start: "ابدأ اللعبة",
+    exit: "إنهاء اللعبة",
+    playSolo: "ألعب بمفردي",
+    playInCall: "العب في هذه المكالمة",
+    invite: "دعوة",
+    noOneNearby: "لا أحد بالقرب",
+  },
+
   social: {
     peer: "\u0627\u0644\u0632\u0645\u064a\u0644:",
     waiting: "\u0641\u064a \u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0632\u0645\u064a\u0644\u2026",

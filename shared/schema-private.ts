@@ -2089,6 +2089,7 @@ export const callSessions = pgTable("call_sessions", {
   mode: text("mode").default("aac_caretaker").notNull(), // 'aac_caretaker' | 'aac_aac' | ...
   status: text("status").default("ringing").notNull(),   // ringing|active|ended|missed|declined|cancelled
   media: jsonb("media").default({}).notNull(),           // requested tracks {audio,video,pose}
+  game: jsonb("game"),                                   // attached social game (CallGame) or null = plain video chat
   startedAt: timestamp("started_at").defaultNow().notNull(),
   endedAt: timestamp("ended_at"),
   endedReason: text("ended_reason"),

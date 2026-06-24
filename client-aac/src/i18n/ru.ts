@@ -740,6 +740,16 @@ export const ru: Translations = {
     },
   },
 
+  socialWorld: {
+    title: "Играть с друзьями",
+    start: "Начать игру",
+    exit: "Завершить игру",
+    playSolo: "Играть одному",
+    playInCall: "Играть в этом звонке",
+    invite: "Пригласить",
+    noOneNearby: "Никого рядом",
+  },
+
   social: {
     peer: "\u0421\u043e\u0431\u0435\u0441\u0435\u0434\u043d\u0438\u043a:",
     waiting: "\u041e\u0436\u0438\u0434\u0430\u043d\u0438\u0435 \u0441\u043e\u0431\u0435\u0441\u0435\u0434\u043d\u0438\u043a\u0430\u2026",

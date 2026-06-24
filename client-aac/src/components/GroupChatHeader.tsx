@@ -31,11 +31,17 @@ function PeerVideo({ stream }: { stream: MediaStream }) {
 export function GroupChatHeader() {
   const { t } = useLanguage();
   const dual = useDualAgentContextOptional();
-  const peers = dual?.conversationRoster ?? [];
+  const roster = dual?.conversationRoster ?? [];
   const sendConversationFocus = dual?.sendConversationFocus;
   const floor = dual?.floorState ?? null;
 
-  const { remoteStreams, selfPersonId } = useCall();
+  const { remoteStreams, selfPersonId, callState } = useCall();
+
+  // While in a call (e.g. a social game), only show peers actually CONNECTED to
+  // the call — drop conversation-room members who aren't in it. Outside a call
+  // (utterance-only group chat) show the whole roster.
+  const inCall = callState !== "idle";
+  const peers = inCall ? roster.filter((p) => remoteStreams.has(p.personId)) : roster;
 
   const [focused, setFocused] = useState<string | null>(null);
 

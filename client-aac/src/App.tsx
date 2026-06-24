@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import GameEmbed from "@/components/games/GameEmbed";
+import SocialWorldCanvas from "@/components/social-world/SocialWorldCanvas";
 import { CameraProvider } from "@/components/CameraProvider";
 import { MultiCameraProvider } from "@/hooks/useMultiCamera";
 import LoginModal from "@/components/LoginModal";
@@ -56,6 +57,17 @@ function MainApp() {
     () => localStorage.getItem('synapse_classroom_id')
   );
   const { t, isRTL, direction, language } = useLanguage();
+
+  // Dev/test bypass: the single-player social-world canvas, reachable at
+  // /social-world with no auth/student selection. Lets the world's render +
+  // steering + ball feel be tuned before the room/join system exists.
+  if (window.location.pathname.replace(/\/$/, "").endsWith("/social-world")) {
+    return (
+      <div className="h-screen w-screen">
+        <SocialWorldCanvas />
+      </div>
+    );
+  }
 
   // Direct routes that embed a /games/<id>/ iframe. These bypass auth/student
   // selection at the AAC-client layer; the games gate handles its own auth.
