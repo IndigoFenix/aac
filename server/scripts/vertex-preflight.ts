@@ -25,6 +25,16 @@ export async function runVertexPreflight(): Promise<void> {
   console.log(`env project=${project} location=${location}`);
   console.log(`GOOGLE_APPLICATION_CREDENTIALS_JSON present=${!!credentialsJson}`);
 
+  // Print THIS environment's public egress IP — the address Google's edge sees
+  // and is blocking. Hand this to Render support / use it to confirm a fix.
+  try {
+    const ipRes = await fetch("https://api.ipify.org?format=json");
+    const ip = (await ipRes.json() as { ip?: string }).ip;
+    console.log(`>>> EGRESS IP (what Google's edge sees) = ${ip}`);
+  } catch {
+    console.log(">>> could not determine egress IP (ipify unreachable)");
+  }
+
   let credentials: any;
   if (credentialsJson) {
     try {
@@ -111,6 +121,33 @@ export async function runVertexPreflight(): Promise<void> {
     if (/40[13]/.test(msg)) {
       console.log("    Same 403 as the app. If the REST call above SUCCEEDED, the block is Live-WebSocket-specific");
       console.log("    (different endpoint/handshake), not general Vertex access.");
+    }
+  }
+
+  // Step 3: is the PUBLIC Gemini API (different host: generativelanguage.googleapis.com)
+  // reachable from this environment? If Vertex is IP-blocked at Google's edge but
+  // this returns 200, routing the live agents to the public API is the fix.
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_2;
+  console.log(`\nPublic Gemini API reachability (host=generativelanguage.googleapis.com, GEMINI_API_KEY present=${!!apiKey})...`);
+  if (!apiKey) {
+    console.log(">>> No GEMINI_API_KEY set — cannot test the public-API escape hatch.");
+  } else {
+    try {
+      const purl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const pres = await fetch(purl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "ping" }] }] }),
+      });
+      const ptext = await pres.text();
+      console.log(`>>> Public Gemini API: HTTP ${pres.status} ${pres.statusText}`);
+      if (pres.ok) {
+        console.log("    Public API is REACHABLE from this environment — routing live agents here will unblock them.");
+      } else {
+        console.log(`    Body: ${ptext.slice(0, 600)}`);
+      }
+    } catch (e) {
+      console.log(`>>> Public Gemini API request errored: ${(e as Error).message}`);
     }
   }
 }
