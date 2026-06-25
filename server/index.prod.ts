@@ -109,6 +109,18 @@ async function waitForDatabase(): Promise<void> {
 
 async function startServer(): Promise<void> {
   try {
+    // Diagnostic: set VERTEX_PREFLIGHT=1 to print the REAL reason Vertex rejects
+    // the live agents (the WebSocket path only surfaces a bare "403"). Runs once
+    // at boot from THIS environment's egress, then continues normally.
+    if (process.env.VERTEX_PREFLIGHT === "1") {
+      try {
+        const { runVertexPreflight } = await import("./scripts/vertex-preflight");
+        await runVertexPreflight();
+      } catch (e) {
+        console.error("[VertexPreflight] probe error:", (e as Error).message);
+      }
+    }
+
     // Step 1: Wait for database to be available
     await waitForDatabase();
 
