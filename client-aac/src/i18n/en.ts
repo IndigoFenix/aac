@@ -817,6 +817,7 @@ export const en = {
     RATE_LIMITED: "Rate limit reached. Please wait a few minutes.",
     CONNECTION_CLOSED: "Connection closed. Reconnecting...",
     CONNECTION_ERROR: "Connection error.",
+    LIVE_CONNECT_FAILED: "The assistant is unavailable right now. Please try again shortly.",
     TURN_FAILED: "Turn processing error.",
     SAFETY_BLOCKED: "A response was filtered for safety. Continuing conversation...",
     SESSION_RESET_FAILED: "Failed to create new session.",

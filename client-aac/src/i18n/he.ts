@@ -819,6 +819,7 @@ export const he: Translations = {
     RATE_LIMITED: "הגבלת קצב הושגה. נא להמתין מספר דקות.",
     CONNECTION_CLOSED: "החיבור נסגר. מתחבר מחדש...",
     CONNECTION_ERROR: "שגיאת חיבור.",
+    LIVE_CONNECT_FAILED: "העוזר אינו זמין כעת. נסו שוב בעוד רגע.",
     TURN_FAILED: "שגיאה בעיבוד התור.",
     SAFETY_BLOCKED: "תגובה סוננה מסיבות בטיחות. ממשיכים בשיחה...",
     SESSION_RESET_FAILED: "יצירת מפגש חדש נכשלה.",

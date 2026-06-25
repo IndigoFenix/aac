@@ -81,6 +81,20 @@ export class GeminiLiveProvider implements LiveProvider {
   lastCloseCode: number | null = null;
   lastCloseWasRateLimit = false;
   lastCloseWasSafety = false;
+  // Handshake was rejected for auth/permission reasons (HTTP 401/403). Fatal —
+  // reconnecting with the same credentials just re-fails, so we give up and
+  // surface it instead of spinning the reconnect loop forever.
+  lastCloseWasFatalAuth = false;
+
+  // The SDK's live.connect() awaits the WebSocket `onopen` event before
+  // resolving (see @google/genai dist .../index.mjs: `await onopenPromise`).
+  // On a failed handshake (e.g. Vertex 403) `onopen` NEVER fires, so that
+  // await — and therefore our connect() — would hang forever. We guard the
+  // connect with a timeout + an onerror-triggered early rejection so a failed
+  // handshake rejects connect() promptly instead of leaving the caller stuck.
+  private static CONNECT_TIMEOUT_MS = 20_000;
+  private onopenFired = false;
+  private connectGuardReject: ((e: Error) => void) | null = null;
 
   // Proactive reconnection timer (reconnect before the 10-min session limit)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -171,6 +185,8 @@ export class GeminiLiveProvider implements LiveProvider {
   async connect(systemPrompt: string, config: LiveProviderConfig): Promise<void> {
     this.closedIntentionally = false;
     this.lastCloseWasSafety = false;
+    this.lastCloseWasFatalAuth = false;
+    this.onopenFired = false;
     this.systemPrompt = systemPrompt;
     this.config = config;
 
@@ -183,8 +199,24 @@ export class GeminiLiveProvider implements LiveProvider {
       `model=${config.model} vertexAI=${this.useVertexAI} responseModality=${config.responseModality} hasTools=${!!config.tools} hasResumptionHandle=${!!this.resumptionHandle} textVia=${isPreview31 ? "sendRealtimeInput" : "sendClientContent"}`,
     );
 
+    // Connect guard: reject if the handshake never completes (no onopen) so a
+    // 403/timeout fails fast instead of hanging the caller forever.
+    let guardReject: ((e: Error) => void) | null = null;
+    const guardPromise = new Promise<never>((_, reject) => { guardReject = reject; });
+    this.connectGuardReject = guardReject;
+    const guardTimer = setTimeout(() => {
+      this.connectGuardReject?.(
+        new Error(`Live connect timed out after ${GeminiLiveProvider.CONNECT_TIMEOUT_MS}ms — handshake never completed (no onopen)`),
+      );
+    }, GeminiLiveProvider.CONNECT_TIMEOUT_MS);
+    const clearGuard = () => {
+      clearTimeout(guardTimer);
+      this.connectGuardReject = null;
+    };
+
     try {
-      this.session = await this.client.live.connect({
+      this.session = await Promise.race([
+      this.client.live.connect({
         model: config.model,
         config: {
           // TEXT modality for prefix token mode (no tools), AUDIO for function calling mode (with tools)
@@ -262,6 +294,7 @@ export class GeminiLiveProvider implements LiveProvider {
         callbacks: {
           onopen: () => {
             this.connected = true;
+            this.onopenFired = true;
             console.log("[GeminiLiveProvider] Connected to Gemini Live API");
           },
           onmessage: (msg: LiveServerMessage) => {
@@ -292,6 +325,16 @@ export class GeminiLiveProvider implements LiveProvider {
             console.error("[GeminiLiveProvider] WebSocket error:", msg);
             if (/resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(msg)) {
               this.lastCloseWasRateLimit = true;
+            }
+            // HTTP 401/403 on the upgrade ("Unexpected server response: 403") =
+            // auth/permission rejection. Fatal — flag it so onclose doesn't loop.
+            if (/Unexpected server response: 40[13]\b|\b40[13]\b|forbidden|permission denied|unauthor/i.test(msg)) {
+              this.lastCloseWasFatalAuth = true;
+            }
+            // If the handshake failed before onopen, the SDK's `await onopenPromise`
+            // would hang forever — break out of it by rejecting the connect guard.
+            if (!this.onopenFired && this.connectGuardReject) {
+              this.connectGuardReject(new Error(msg));
             }
             this.callbacks.onError(new Error(msg));
           },
@@ -329,6 +372,15 @@ export class GeminiLiveProvider implements LiveProvider {
               return;
             }
 
+            // Auth/permission handshake rejection (HTTP 401/403, flagged in
+            // onerror). Reconnecting re-fails identically — surface and stop.
+            if (this.lastCloseWasFatalAuth) {
+              console.warn(`[GeminiLiveProvider] Auth/permission error (handshake rejected) — NOT auto-reconnecting.`);
+              logLiveSession("RECONNECT_SKIPPED", `auth error: code=${e.code}`);
+              this.callbacks.onError(new Error(`Live API auth/permission error (handshake rejected, code=${e.code})`));
+              return;
+            }
+
             // Config errors are non-recoverable without a code change. Don't
             // try to reconnect — surface as a fatal error so the caller can
             // tear down cleanly instead of looping.
@@ -359,11 +411,19 @@ export class GeminiLiveProvider implements LiveProvider {
             }
           },
         },
-      });
+      }),
+        guardPromise,
+      ]);
+      clearGuard();
 
       this.startReconnectTimer();
       console.log(`[GeminiLiveProvider] Session established, model=${config.model}, vertexAI=${this.useVertexAI}`);
     } catch (err) {
+      clearGuard();
+      // The handshake never produced a live session. Suppress the onclose
+      // auto-reconnect path for the half-open socket — the caller decides what
+      // to do with the rejection (the coordinator tears down + notifies the client).
+      this.closedIntentionally = true;
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[GeminiLiveProvider] Failed to connect:", error.message);
       this.callbacks.onError(error);

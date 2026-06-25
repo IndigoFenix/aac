@@ -819,6 +819,7 @@ export const de: Translations = {
     RATE_LIMITED: "Anfragelimit erreicht. Bitte warten Sie einige Minuten.",
     CONNECTION_CLOSED: "Verbindung geschlossen. Wiederverbindung...",
     CONNECTION_ERROR: "Verbindungsfehler.",
+    LIVE_CONNECT_FAILED: "Der Assistent ist derzeit nicht verfügbar. Bitte versuchen Sie es in Kürze erneut.",
     TURN_FAILED: "Fehler bei der Zugverarbeitung.",
     SAFETY_BLOCKED: "Eine Antwort wurde aus Sicherheitsgr\u00fcnden gefiltert. Gespr\u00e4ch wird fortgesetzt...",
     SESSION_RESET_FAILED: "Neue Sitzung konnte nicht erstellt werden.",

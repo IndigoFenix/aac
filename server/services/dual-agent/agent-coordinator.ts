@@ -2167,8 +2167,14 @@ export class AgentCoordinator {
         }),
       ]);
     } catch (err) {
+      const detail = (err as Error).message || String(err);
       console.error("[AgentCoordinator] agent connect failed:", err);
-      this.sendError(`agent connect failed: ${(err as Error).message}`);
+      // Distinguish a fatal auth/permission/config rejection (the live AI
+      // backend refused us — e.g. Vertex HTTP 403) from a transient network
+      // failure or connect timeout, so the client can show the right message
+      // instead of sitting on "waking up" forever. Detail stays in the logs.
+      const isAuthOrConfig = /\b40[13]\b|forbidden|permission|unauthor|auth\/permission|config error/i.test(detail);
+      this.sendError(isAuthOrConfig ? "error:LIVE_CONNECT_FAILED" : "error:CONNECTION_ERROR");
       this.cleanup("agent connect failed");
       return;
     }

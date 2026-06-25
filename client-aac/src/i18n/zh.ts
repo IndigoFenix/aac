@@ -819,6 +819,7 @@ export const zh: Translations = {
     RATE_LIMITED: "已达到速率限制，请稍等几分钟。",
     CONNECTION_CLOSED: "连接已关闭。正在重新连接...",
     CONNECTION_ERROR: "连接错误。",
+    LIVE_CONNECT_FAILED: "助手目前不可用。请稍后再试。",
     TURN_FAILED: "轮次处理错误。",
     SAFETY_BLOCKED: "一条回复因安全原因被过滤。继续对话...",
     SESSION_RESET_FAILED: "创建新会话失败。",

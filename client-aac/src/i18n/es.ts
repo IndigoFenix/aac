@@ -819,6 +819,7 @@ export const es: Translations = {
     RATE_LIMITED: "L\u00edmite de solicitudes alcanzado. Por favor, espere unos minutos.",
     CONNECTION_CLOSED: "Conexi\u00f3n cerrada. Reconectando...",
     CONNECTION_ERROR: "Error de conexi\u00f3n.",
+    LIVE_CONNECT_FAILED: "El asistente no est\u00e1 disponible en este momento. Int\u00e9ntalo de nuevo en breve.",
     TURN_FAILED: "Error en el procesamiento del turno.",
     SAFETY_BLOCKED: "Una respuesta fue filtrada por seguridad. Continuando la conversaci\u00f3n...",
     SESSION_RESET_FAILED: "Error al crear nueva sesi\u00f3n.",

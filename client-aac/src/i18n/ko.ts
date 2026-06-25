@@ -819,6 +819,7 @@ export const ko: Translations = {
     RATE_LIMITED: "요청 한도에 도달했습니다. 몇 분 후에 다시 시도해 주세요.",
     CONNECTION_CLOSED: "연결이 닫혔습니다. 재연결 중...",
     CONNECTION_ERROR: "연결 오류.",
+    LIVE_CONNECT_FAILED: "어시스턴트를 지금 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
     TURN_FAILED: "턴 처리 오류.",
     SAFETY_BLOCKED: "안전상의 이유로 응답이 필터링되었습니다. 대화를 계속합니다...",
     SESSION_RESET_FAILED: "새 세션 생성에 실패했습니다.",

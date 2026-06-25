@@ -819,6 +819,7 @@ export const yue: Translations = {
     RATE_LIMITED: "已達到速率限制，請等幾分鐘。",
     CONNECTION_CLOSED: "連接已關閉。重新連接緊...",
     CONNECTION_ERROR: "連接錯誤。",
+    LIVE_CONNECT_FAILED: "助手而家用唔到。請稍後再試。",
     TURN_FAILED: "輪次處理錯誤。",
     SAFETY_BLOCKED: "有個回覆因為安全原因被過濾咗。繼續對話...",
     SESSION_RESET_FAILED: "建立新對話失敗。",
