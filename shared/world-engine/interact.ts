@@ -1,0 +1,98 @@
+// shared/world-engine/interact.ts
+//
+// INTERACT intent (P3): when a settled gaze rests ON something — a toy, an NPC, or
+// another player — the aim should mean "engage that", not "walk to the ground point
+// behind it". This module turns a gaze ground-point into (a) which entity (if any)
+// it's resting on and (b) the aim that engages it, TYPE-AWARE:
+//   • a toy (the soccer ball) → aim AT its centre, so you walk INTO it and dribble
+//     (the ball's whole interaction is "move into it"; stopping short would break it),
+//   • a person (NPC or peer) → approach to a comfortable conversation distance and
+//     stop there FACING them (you don't walk through someone to talk to them).
+//
+// Pure + headless-testable. Picking is WORLD-SPACE proximity to the gaze's ground
+// point — deliberately renderer-agnostic. That's exact in the overhead "home" view
+// (steep camera ⇒ a gaze on an entity maps to ~its base), which is where local
+// interaction happens; in the shallow travel view it's approximate, but there you're
+// heading to a far destination, not engaging what's next to you, so it doesn't bite.
+
+import type { Vec2 } from "./types.js";
+import type { WorldState } from "./engine.js";
+import { WORLD_ENGINE_DEFAULTS } from "./engine.js";
+import { DEFAULT_INTERACT_TUNABLES, type InteractTunables } from "./world-tunables.js";
+
+export type InteractKind = "toy" | "avatar";
+
+export interface PickedEntity {
+  id: string;
+  kind: InteractKind;
+  /** The entity's current world position. */
+  x: number;
+  y: number;
+}
+
+/**
+ * The entity a gaze ground-point is resting on, or null. Nearest wins; the local
+ * avatar is excluded (you can't interact with yourself — that's the WATCH/sit path).
+ */
+export function pickEntity(
+  point: Vec2,
+  state: WorldState,
+  localId: string,
+  cfg: InteractTunables = DEFAULT_INTERACT_TUNABLES,
+): PickedEntity | null {
+  let best: PickedEntity | null = null;
+  let bestD = Infinity;
+
+  for (const toy of Object.values(state.toys)) {
+    const spec = state.spec.toys.find((t) => t.id === toy.id);
+    const pickR = Math.max(cfg.toyPickRadius, spec?.touchRadius ?? 0);
+    const d = Math.hypot(toy.x - point.x, toy.y - point.y);
+    if (d <= pickR && d < bestD) {
+      best = { id: toy.id, kind: "toy", x: toy.x, y: toy.y };
+      bestD = d;
+    }
+  }
+
+  for (const a of Object.values(state.avatars)) {
+    if (a.id === localId) continue;
+    const d = Math.hypot(a.x - point.x, a.y - point.y);
+    if (d <= cfg.avatarPickRadius && d < bestD) {
+      best = { id: a.id, kind: "avatar", x: a.x, y: a.y };
+      bestD = d;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * The aim that engages a picked entity from the avatar's current position.
+ *   • toy → the toy centre (walk in / dribble — the existing soccer behaviour),
+ *   • avatar → a point `npcStopDistance` short of them along the approach line, so
+ *     the engine's arrive-steer stops there facing them. When already within that
+ *     distance, aim a hair toward them (inside aimDeadRadius ⇒ brake + face) so you
+ *     hold position turned toward them instead of backing away.
+ */
+export function approachAim(
+  avatar: Vec2,
+  target: Vec2,
+  kind: InteractKind,
+  cfg: InteractTunables = DEFAULT_INTERACT_TUNABLES,
+): Vec2 {
+  if (kind === "toy") return { x: target.x, y: target.y };
+
+  const dx = target.x - avatar.x;
+  const dy = target.y - avatar.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-4) return { x: avatar.x, y: avatar.y };
+  const ux = dx / d;
+  const uy = dy / d;
+
+  if (d > cfg.npcStopDistance) {
+    return { x: target.x - ux * cfg.npcStopDistance, y: target.y - uy * cfg.npcStopDistance };
+  }
+  // Already in range: aim a hair toward them so we brake + turn to face (the engine
+  // treats an aim within aimDeadRadius as "stop here, face the aim").
+  const eps = Math.min(0.05, WORLD_ENGINE_DEFAULTS.aimDeadRadius * 0.5);
+  return { x: avatar.x + ux * eps, y: avatar.y + uy * eps };
+}

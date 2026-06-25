@@ -154,6 +154,9 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
   // view — also the motion-comfort fallback (near-zero vection) for anyone the 3D
   // camera makes queasy. Switching remounts the canvas, so the avatar respawns.
   const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
+  // Live tuning panel for the gaze/camera system (debug affordance until the
+  // per-student settings surface lands).
+  const [debug, setDebug] = useState(false);
 
   // Networked only once we know our own id; otherwise run the canvas solo so the
   // world still renders while the call finishes connecting. When the relay
@@ -179,7 +182,7 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0f172a", overflow: "hidden" }}>
-      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} renderer={viewMode} hostNpcs={isOwner} onNpcProximity={onNpcProximity} npcEngagements={conv.engagements} />
+      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} renderer={viewMode} hostNpcs={isOwner} onNpcProximity={onNpcProximity} npcEngagements={conv.engagements} debug={debug} onCloseDebug={() => setDebug(false)} />
 
       {/* Thin top bar: game name + end-game. Kept minimal so the world fills the
           surface; richer chrome (video billboards, controls) is per-client. */}
@@ -202,6 +205,25 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
           {game.name ?? tr("socialWorld.title")}
         </span>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setDebug((d) => !d)}
+            title="Tune gaze/camera (debug)"
+            aria-label="Tune gaze/camera (debug)"
+            style={{
+              pointerEvents: "auto",
+              background: debug ? "rgba(56,189,248,0.9)" : "rgba(148,163,184,0.55)",
+              color: "#0f172a",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontWeight: 700,
+              minWidth: 40,
+              cursor: "pointer",
+            }}
+          >
+            ⚙
+          </button>
           <button
             type="button"
             onClick={() => setViewMode((m) => (m === "3d" ? "2d" : "3d"))}

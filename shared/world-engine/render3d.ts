@@ -23,36 +23,24 @@
 import * as THREE from "three";
 import type { Vec2, WorldSpec } from "./types.js";
 import type { AvatarState, WorldState } from "./engine.js";
-import type { WorldView, WorldViewDeps } from "./world-view.js";
+import type { RenderIntent, WorldView, WorldViewDeps } from "./world-view.js";
+import {
+  DEFAULT_CAMERA_TUNABLES,
+  DEFAULT_COMFORT_TUNABLES,
+  type CameraRigPose,
+  type CameraTunables,
+  type ComfortTunables,
+} from "./world-tunables.js";
 
 // ---------------------------------------------------------------------------
-// Tunables (camera rig + default model). World units; the ground plane is XZ
-// with +Y up. A world point (x, y) maps to the 3D point (x, 0, y).
+// Tunables. The camera rig + comfort knobs now live in world-tunables.ts (so the
+// debug menu can push them live and the future settings system can serialise
+// them); only the placeholder avatar model's geometry stays a local constant.
+// World units; the ground plane is XZ with +Y up. A world point (x, y) maps to
+// the 3D point (x, 0, y).
 // ---------------------------------------------------------------------------
 
-const CAMERA = {
-  fov: 50,
-  /** Height above the followed avatar. */
-  height: 15,
-  /** Distance the camera sits BEHIND the avatar (opposite its heading). */
-  back: 13,
-  /** Look point: this far AHEAD of the avatar (along its heading) and at this
-   *  height — tuned so the whole screen still falls below the horizon (every pixel
-   *  hits the ground, so the aim mapping never dead-zones). A longer look-ahead
-   *  than the 2D view, since the rotated chase cam is meant to reveal what's in
-   *  front of you. */
-  lookAhead: 8,
-  lookHeight: 1.2,
-  /** Per-second rate the followed CENTRE eases toward the avatar (position). Low,
-   *  so the camera glides rather than rigidly tracking every micro-motion. */
-  follow: 5,
-  /** Per-second rate the camera HEADING eases toward the movement direction —
-   *  deliberately slow so the world swings gently behind you, never snappily. */
-  yawRate: 2.2,
-  /** Below this speed (units/sec) the heading is HELD: a near-stationary avatar's
-   *  velocity direction is noisy and would make the camera wander. */
-  moveThreshold: 0.35,
-} as const;
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 const MODEL = {
   bodyRadius: 0.45,
@@ -63,39 +51,6 @@ const MODEL = {
 } as const;
 
 const BACKDROP = "#0f172a";
-
-// Motion-comfort tunables. Eye-gaze 3D is nausea-prone (looking IS steering, so
-// the camera moves involuntarily); these soften the two worst triggers —
-// rotational optical flow and peripheral flow. Set maxVignette: 0 / maxYawSpeed:
-// Infinity to disable. Exposed via World3DRendererOptions.comfort for per-user
-// tuning later (the AAC keeps such logic server-side).
-export interface ComfortConfig {
-  /** Peak peripheral dim applied WHILE the camera is in motion (0 disables the
-   *  vignette entirely). The single biggest anti-nausea lever. */
-  maxVignette: number;
-  /** Radius (fraction of the half-diagonal) at which the vignette starts. */
-  vignetteInner: number;
-  /** Linear / angular speeds that map to "full" optical flow for the vignette. */
-  refSpeed: number;
-  refYaw: number;
-  /** Hard cap on camera turn rate (rad/s) so the world can never whip around —
-   *  rotation is the worst trigger, so this is clamped low. */
-  maxYawSpeed: number;
-  /** Ignore heading changes below this (rad) so a glance doesn't wobble the view. */
-  yawDeadband: number;
-  /** How fast the vignette eases in/out (1/sec) — gentle, so it never flickers. */
-  vignetteEase: number;
-}
-
-export const DEFAULT_COMFORT: ComfortConfig = {
-  maxVignette: 0.5,
-  vignetteInner: 0.55,
-  refSpeed: 5,
-  refYaw: 0.6,
-  maxYawSpeed: 0.7, // ~40°/s
-  yawDeadband: 0.05,
-  vignetteEase: 6,
-};
 
 // ---------------------------------------------------------------------------
 // Pure math (no DOM/GL) — unit-testable.
@@ -149,6 +104,12 @@ export interface AvatarFrame {
   label: string;
   /** The scene camera, so face cards can billboard toward the viewer. */
   camera: THREE.Camera;
+  /** This avatar is in the WATCH/sitting pose (local-only for now). Drives the
+   *  seated idle animation. */
+  sitting: boolean;
+  /** The local player's gaze is resting on this avatar (INTERACT target) — draw a
+   *  highlight so they can see who they're about to engage. */
+  highlighted: boolean;
 }
 
 /** A swappable avatar body. `object` is added to the scene once; `update` runs
@@ -286,6 +247,12 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
 
   let usingFace = false;
 
+  // Animation state for the seated idle + INTERACT highlight (eased, not snapped).
+  let seatedAmt = 0;
+  let animClock = 0;
+  const baseRingOpacity = ringMat.opacity;
+  const baseFaceY = MODEL.faceY;
+
   // ── Blob shadow ───────────────────────────────────────────────────────────
   const shadowGeom = new THREE.CircleGeometry(MODEL.bodyRadius * 1.25, 24);
   const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22 });
@@ -296,7 +263,8 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
 
   return {
     object: root,
-    update(frame) {
+    update(frame, dt) {
+      const step = Math.max(0, dt || 0);
       // Face body toward heading: map the body's -Z to (fx, fy). yaw such that
       // (0,0,-1) rotated about +Y lands on (fx, 0, fy) is atan2(-fx, -fy).
       const { fx, fy } = frame.state;
@@ -329,6 +297,20 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
         }
       }
 
+      // Seated idle (WATCH): sink down + gently bob, eased so it never snaps. The
+      // creature-builder will replace this with a real seated pose later.
+      animClock += step;
+      seatedAmt += ((frame.sitting ? 1 : 0) - seatedAmt) * (1 - Math.exp(-6 * step));
+      body.position.y = -0.3 * seatedAmt;
+      const bob = Math.sin(animClock * 1.8) * 0.04 * seatedAmt;
+      faceGroup.position.y = baseFaceY - 0.45 * seatedAmt + bob;
+
+      // INTERACT highlight: brighten the face ring + a soft scale pulse so the
+      // player sees who/what they're about to engage.
+      const hi = frame.highlighted ? 1 : 0;
+      ringMat.opacity = baseRingOpacity + (1 - baseRingOpacity) * hi;
+      ring.scale.setScalar(1 + 0.08 * hi * (0.5 + 0.5 * Math.sin(animClock * 5)));
+
       // Billboard the face card toward the camera.
       faceGroup.quaternion.copy(frame.camera.quaternion);
     },
@@ -357,8 +339,23 @@ export interface World3DRendererOptions {
   backdrop?: string;
   /** Swap in richer avatar bodies (e.g. the creature-builder). */
   modelFactory?: AvatarModelFactory;
-  /** Motion-comfort overrides (merged over DEFAULT_COMFORT). */
-  comfort?: Partial<ComfortConfig>;
+  /** Camera-rig + transition overrides (merged over DEFAULT_CAMERA_TUNABLES). */
+  camera?: Partial<CameraTunables>;
+  /** Motion-comfort overrides (merged over DEFAULT_COMFORT_TUNABLES). */
+  comfort?: Partial<ComfortTunables>;
+}
+
+/** Merge partial camera/comfort overrides over the defaults (nested poses too). */
+function mergeCamera(p?: Partial<CameraTunables>): CameraTunables {
+  return {
+    ...DEFAULT_CAMERA_TUNABLES,
+    ...p,
+    overhead: { ...DEFAULT_CAMERA_TUNABLES.overhead, ...p?.overhead },
+    shoulder: { ...DEFAULT_CAMERA_TUNABLES.shoulder, ...p?.shoulder },
+  };
+}
+function mergeComfort(p?: Partial<ComfortTunables>): ComfortTunables {
+  return { ...DEFAULT_COMFORT_TUNABLES, ...p };
 }
 
 /**
@@ -371,6 +368,7 @@ export class World3DRenderer {
   private readonly spec: WorldSpec;
   private readonly localId: string;
   private readonly modelFactory: AvatarModelFactory;
+  private cameraCfg: CameraTunables;
 
   // Injected logical size (CSS px) + DPR — set by resize(). Stored (not read from
   // canvas.clientWidth / window) so the renderer runs on an OffscreenCanvas in a
@@ -389,7 +387,7 @@ export class World3DRenderer {
   private readonly toys = new Map<string, { mesh: THREE.Mesh; shadow: THREE.Mesh }>();
 
   // --- Motion comfort ---------------------------------------------------------
-  private readonly comfort: ComfortConfig;
+  private comfort: ComfortTunables;
   /** Fullscreen vignette drawn over the scene; its strength tracks camera motion. */
   private overlayScene!: THREE.Scene;
   private overlayCamera!: THREE.Camera;
@@ -407,13 +405,24 @@ export class World3DRenderer {
    *  the avatar as it moves. Defaults to -Z (north), matching the spawn framing. */
   private readonly camForward = new THREE.Vector3(0, 0, -1);
 
+  // --- Overhead ↔ shoulder rig --------------------------------------------------
+  /** 0 = overhead (home/watch), 1 = over-the-shoulder (travel). Eased toward
+   *  `travelTarget`; the rig pose is lerp(overhead, shoulder, travelCommit). */
+  private travelCommit = 0;
+  private travelTarget = 0;
+  /** The current interpolated rig pose (placeCamera reads it each frame). */
+  private readonly rig: CameraRigPose;
+
   private readonly disposables: { dispose(): void }[] = [];
 
   constructor(canvas: HTMLCanvasElement | OffscreenCanvas, spec: WorldSpec, opts: World3DRendererOptions) {
     this.spec = spec;
     this.localId = opts.localId;
     this.modelFactory = opts.modelFactory ?? defaultAvatarModelFactory;
-    this.comfort = { ...DEFAULT_COMFORT, ...opts.comfort };
+    this.cameraCfg = mergeCamera(opts.camera);
+    this.comfort = mergeComfort(opts.comfort);
+    // Start at the overhead "home" pose (the avatar spawns at rest → watch/overhead).
+    this.rig = { ...this.cameraCfg.overhead };
 
     const backdrop = opts.backdrop ?? BACKDROP;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -424,7 +433,7 @@ export class World3DRenderer {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(new THREE.Color(backdrop), 40, 150);
 
-    this.camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(this.rig.fov, 1, 0.1, 1000);
 
     this.buildLights();
     this.buildGround(backdrop);
@@ -439,11 +448,13 @@ export class World3DRenderer {
   }
 
   /** Position + aim the camera behind the followed ground point, along the current
-   *  smoothed heading. Shared by the constructor pre-placement and updateCamera. */
+   *  smoothed heading, using the current (overhead↔shoulder) rig pose. Shared by
+   *  the constructor pre-placement and updateCamera. */
   private placeCamera(cx: number, cz: number): void {
     const f = this.camForward;
-    this.camera.position.set(cx - f.x * CAMERA.back, CAMERA.height, cz - f.z * CAMERA.back);
-    this.camera.lookAt(cx + f.x * CAMERA.lookAhead, CAMERA.lookHeight, cz + f.z * CAMERA.lookAhead);
+    const r = this.rig;
+    this.camera.position.set(cx - f.x * r.back, r.height, cz - f.z * r.back);
+    this.camera.lookAt(cx + f.x * r.lookAhead, r.lookHeight, cz + f.z * r.lookAhead);
   }
 
   private buildLights(): void {
@@ -559,15 +570,25 @@ export class World3DRenderer {
     return screenRayToGround(this.camera, ndcX, ndcY, this.raycaster, this.groundPlane, this._scratch);
   }
 
+  /** Live-update the camera/comfort tunables (the debug menu pushes these). */
+  setTunables(t: { camera?: CameraTunables; comfort?: ComfortTunables }): void {
+    if (t.camera) this.cameraCfg = mergeCamera(t.camera);
+    if (t.comfort) {
+      this.comfort = mergeComfort(t.comfort);
+      this.vignetteUniforms.uInner.value = this.comfort.vignetteInner;
+    }
+  }
+
   render(
     state: WorldState,
     dt: number,
     faceFor: (id: string) => CanvasImageSource | null,
     labelFor: (id: string) => string,
+    intent?: RenderIntent,
   ): void {
-    this.syncAvatars(state, dt, faceFor, labelFor);
-    this.syncToys(state);
-    this.updateCamera(state, dt);
+    this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId);
+    this.syncToys(state, intent?.interactId);
+    this.updateCamera(state, dt, intent);
     this.updateComfort(state, dt);
 
     // Scene, then the comfort vignette on top (autoClear is off).
@@ -597,12 +618,15 @@ export class World3DRenderer {
     dt: number,
     faceFor: (id: string) => CanvasImageSource | null,
     labelFor: (id: string) => string,
+    sitting: boolean,
+    interactId?: string,
   ): void {
     // Add models for new avatars; update all present ones.
     for (const a of Object.values(state.avatars)) {
+      const isLocal = a.id === this.localId;
       let model = this.avatars.get(a.id);
       if (!model) {
-        model = this.modelFactory(a.id, a.id === this.localId);
+        model = this.modelFactory(a.id, isLocal);
         this.avatars.set(a.id, model);
         this.scene.add(model.object);
       }
@@ -610,11 +634,14 @@ export class World3DRenderer {
       model.update(
         {
           state: a,
-          isLocal: a.id === this.localId,
+          isLocal,
           speed: Math.hypot(a.vx, a.vy),
           faceSource: faceFor(a.id),
           label: labelFor(a.id),
           camera: this.camera,
+          // Sitting is the local player's WATCH state (not networked yet).
+          sitting: isLocal && sitting,
+          highlighted: a.id === interactId,
         },
         dt,
       );
@@ -629,7 +656,7 @@ export class World3DRenderer {
     }
   }
 
-  private syncToys(state: WorldState): void {
+  private syncToys(state: WorldState, interactId?: string): void {
     for (const toy of Object.values(state.toys)) {
       const spec = state.spec.toys.find((t) => t.id === toy.id);
       const radius = spec?.radius ?? 0.5;
@@ -651,20 +678,27 @@ export class World3DRenderer {
       }
       entry.mesh.position.set(toy.x, radius, toy.y);
       entry.shadow.position.set(toy.x, 0.02, toy.y);
-      // Possession tint on the ball's emissive so the owner is readable.
+      // Possession tint on the ball's emissive so the owner is readable; an
+      // INTERACT highlight (the local gaze resting on a FREE toy) pulses cyan.
       const mat = entry.mesh.material as THREE.MeshStandardMaterial;
       if (toy.possessedBy) {
         mat.emissive = colorForId(toy.possessedBy);
         mat.emissiveIntensity = 0.35;
+      } else if (toy.id === interactId) {
+        mat.emissive.set("#38bdf8");
+        mat.emissiveIntensity = 0.35 + 0.2 * Math.sin(state.time * 5);
       } else {
         mat.emissiveIntensity = 0;
       }
     }
   }
 
-  private updateCamera(state: WorldState, dt: number): void {
+  private updateCamera(state: WorldState, dt: number, intent?: RenderIntent): void {
     const me = state.avatars[this.localId];
     const step = Math.max(0, dt);
+    const cam = this.cameraCfg;
+    const sitting = intent?.sitting ?? false;
+    const aim = intent?.aim ?? null;
 
     // Position: ease the followed centre toward the local avatar.
     const target = this._scratch.set(
@@ -675,34 +709,80 @@ export class World3DRenderer {
     if (!this.camCenter) {
       this.camCenter = target.clone();
     } else {
-      this.camCenter.lerp(target, 1 - Math.exp(-CAMERA.follow * step));
+      this.camCenter.lerp(target, 1 - Math.exp(-cam.follow * step));
     }
 
-    // Heading: ease toward the avatar's movement direction so the world swings to
-    // reveal what's ahead. Held when nearly stopped (noisy direction). Interpolated
-    // as an ANGLE so it turns the short way and survives a 180° reversal cleanly.
-    const speed = me ? Math.hypot(me.vx, me.vy) : 0;
-    let thx = this.camForward.x;
-    let thz = this.camForward.z;
-    if (me && speed > CAMERA.moveThreshold) {
-      thx = me.vx / speed;
-      thz = me.vy / speed;
+    // Travel direction + gaze distance from the AIM (not raw velocity): the camera
+    // commits to where the player is steering, which is what makes the rig
+    // predictable (driving heading from twitchy velocity feeds the spin loop).
+    let gazeDistance = 0;
+    let aimx = 0;
+    let aimz = 0;
+    let haveDir = false;
+    if (me && aim) {
+      const dx = aim.x - me.x;
+      const dz = aim.y - me.y;
+      gazeDistance = Math.hypot(dx, dz);
+      if (gazeDistance > 1e-3) {
+        aimx = dx / gazeDistance;
+        aimz = dz / gazeDistance;
+        haveDir = true;
+      }
     }
-    const cur = Math.atan2(this.camForward.x, this.camForward.z);
-    const tgt = Math.atan2(thx, thz);
-    let delta = Math.atan2(Math.sin(tgt - cur), Math.cos(tgt - cur)); // shortest signed turn
-    // Deadband: ignore tiny heading changes so a glance doesn't wobble the view.
-    if (Math.abs(delta) < this.comfort.yawDeadband) delta = 0;
-    // Ease toward the target, then HARD-CLAMP the per-frame turn so the world can
-    // never whip around (rotation is the worst nausea trigger). For comfort the
-    // cap dominates on big turns; the ease only matters for small ones.
-    let stepAngle = delta * (1 - Math.exp(-CAMERA.yawRate * step));
-    const maxStep = this.comfort.maxYawSpeed * step;
-    if (stepAngle > maxStep) stepAngle = maxStep;
-    else if (stepAngle < -maxStep) stepAngle = -maxStep;
-    const next = cur + stepAngle;
-    this.camForward.set(Math.sin(next), 0, Math.cos(next));
-    this.lastYawSpeed = step > 0 ? Math.abs(stepAngle) / step : 0;
+    // How aligned the aim is with the current heading: + = ahead (screen-top), − =
+    // behind. Decides the overhead↔shoulder transition (computed pre-turn).
+    const ahead = haveDir ? aimx * this.camForward.x + aimz * this.camForward.z : -1;
+
+    // Heading: ease toward the aim direction. Held while sitting, when the gaze is
+    // on the avatar (gd ≤ moveThreshold), or with no aim — so a watcher's glances
+    // never rotate the world. Turn rate is capped BOTH by the gaze-distance rule
+    // (near gaze ⇒ fast pivot, far gaze ⇒ slow reveal) AND comfort.maxYawSpeed.
+    let appliedYaw = 0;
+    if (!sitting && haveDir && gazeDistance > cam.moveThreshold) {
+      const cur = Math.atan2(this.camForward.x, this.camForward.z);
+      const tgt = Math.atan2(aimx, aimz);
+      let delta = Math.atan2(Math.sin(tgt - cur), Math.cos(tgt - cur)); // shortest turn
+      if (Math.abs(delta) < this.comfort.yawDeadband) delta = 0;
+      let stepAngle = delta * (1 - Math.exp(-cam.yawStiffness * step));
+      const effMax = Math.min(
+        this.comfort.maxYawSpeed,
+        cam.yawDistGain / Math.max(gazeDistance, cam.yawDistMin),
+      );
+      const maxStep = effMax * step;
+      if (stepAngle > maxStep) stepAngle = maxStep;
+      else if (stepAngle < -maxStep) stepAngle = -maxStep;
+      const next = cur + stepAngle;
+      this.camForward.set(Math.sin(next), 0, Math.cos(next));
+      appliedYaw = stepAngle;
+    }
+    this.lastYawSpeed = step > 0 ? Math.abs(appliedYaw) / step : 0;
+
+    // Overhead ↔ shoulder transition (hysteresis bands). Commit to TRAVEL only on a
+    // sustained forward far gaze; drop to OVERHEAD when sitting, stopped, gaze
+    // pulled in, or gaze behind (so "look behind me" lifts to overhead to pivot,
+    // never whips the shoulder cam 180°).
+    const enterTravel =
+      !sitting && haveDir && gazeDistance > cam.travelEnterDist && ahead > cam.travelAheadEnter;
+    const exitTravel =
+      sitting || !haveDir || gazeDistance < cam.travelExitDist || ahead < cam.travelAheadExit;
+    if (enterTravel) this.travelTarget = 1;
+    else if (exitTravel) this.travelTarget = 0;
+    this.travelCommit += (this.travelTarget - this.travelCommit) * (1 - Math.exp(-cam.travelEase * step));
+
+    // Interpolate the rig pose and (only when it actually moved) the FOV.
+    const t = this.travelCommit;
+    const o = cam.overhead;
+    const s = cam.shoulder;
+    this.rig.height = lerp(o.height, s.height, t);
+    this.rig.back = lerp(o.back, s.back, t);
+    this.rig.lookAhead = lerp(o.lookAhead, s.lookAhead, t);
+    this.rig.lookHeight = lerp(o.lookHeight, s.lookHeight, t);
+    const fov = lerp(o.fov, s.fov, t);
+    if (Math.abs(fov - this.camera.fov) > 1e-3) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.rig.fov = fov;
 
     const c = this.camCenter;
     this.placeCamera(c.x, c.z);
@@ -744,8 +824,9 @@ export function createWorld3DView(
   });
   return {
     screenToWorld: (px, py) => renderer.screenToWorld(px, py),
-    render: (state, dt) => renderer.render(state, dt, faceFor, labelFor),
+    render: (state, dt, intent) => renderer.render(state, dt, faceFor, labelFor, intent),
     resize: (width, height, dpr) => renderer.resize(width, height, dpr),
+    setTunables: (t) => renderer.setTunables({ camera: t.camera, comfort: t.comfort }),
     dispose: () => renderer.dispose(),
   };
 }

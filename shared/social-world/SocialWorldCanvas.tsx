@@ -27,8 +27,10 @@ import type { WorldPresence } from "./world-presence.js";
 import { getWorldSpec, socialFieldSpec } from "../world-engine/specs/index.js";
 import { createWorld2DView, type WorldView } from "../world-engine/world-view.js";
 import { createWorld3DView } from "../world-engine/render3d.js";
+import { cloneWorldTunables, type WorldTunables } from "../world-engine/world-tunables.js";
 import { runWorldHost } from "./world-host.js";
 import { WorldRenderClient, supportsOffscreenRender } from "./world-render-client.js";
+import WorldDebugPanel from "./WorldDebugPanel";
 
 /** Minimal transport the canvas needs in networked mode. */
 export interface SocialWorldNet {
@@ -82,6 +84,10 @@ interface Props {
   /** Live conversation bias per hosted NPC id — pushed into its body controller
    *  so it leans in / drifts off as the conversation's mood shifts. */
   npcEngagements?: Record<string, NpcEngagement>;
+  /** Show the live tuning panel (debug affordance — see WorldDebugPanel). */
+  debug?: boolean;
+  /** Close the debug panel (the parent owns the `debug` flag). */
+  onCloseDebug?: () => void;
 }
 
 /** Master switch for the OffscreenCanvas render worker. Falls back to the
@@ -106,7 +112,7 @@ function spawnOffset(id: string): Vec2 {
   return { x: Math.cos(ang) * r, y: Math.sin(ang) * r };
 }
 
-export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream, renderer = "3d", hostNpcs: hostNpcsProp, onNpcProximity, npcEngagements }: Props) {
+export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream, renderer = "3d", hostNpcs: hostNpcsProp, onNpcProximity, npcEngagements, debug = false, onCloseDebug }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Proximity handler via a ref so the long-lived loop always calls the latest one
   // without re-running the effect (mirrors the face/label resolver pattern).
@@ -115,6 +121,13 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
   // An adapter set by whichever render path is live, so the engagement effect can
   // push into the host/worker without knowing which path it is.
   const engageAdapterRef = useRef<((npcId: string, e: NpcEngagement | null) => void) | null>(null);
+  // Live tunables (debug menu). Pushed into the running host/worker WITHOUT
+  // remounting (the render effect doesn't depend on them); a separate effect calls
+  // the adapter the live path installs, mirroring the engagement plumbing.
+  const [tunables, setTunables] = useState<WorldTunables>(() => cloneWorldTunables());
+  const tunablesRef = useRef(tunables);
+  tunablesRef.current = tunables;
+  const tuneAdapterRef = useRef<((t: WorldTunables) => void) | null>(null);
   // Read once at mount via a ref so changing the prop identity can't re-spawn us.
   const spawnHintRef = useRef(spawnHint);
   spawnHintRef.current = spawnHint;
@@ -182,6 +195,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
           hostNpcs,
           net: net ? { send: net.send, publishPresence: net.publishPresence } : undefined,
           fulfillFace,
+          tunables: tunablesRef.current,
           onNpcProximity: (nearby) => onNpcProximityRef.current?.(nearby),
           initialSize: { width: canvas.clientWidth, height: canvas.clientHeight, dpr: window.devicePixelRatio || 1 },
           onFallback: (reason) => {
@@ -201,6 +215,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
 
       const c = client;
       engageAdapterRef.current = (npcId, e) => c.setNpcEngagement(npcId, e);
+      tuneAdapterRef.current = (t) => c.setTunables(t);
       const unsubscribe = net?.subscribe((_from, msgs) => c.applyNetInbound(msgs));
       const unsubPresence = net?.subscribePresence?.((p) => c.applyPresence(p));
       const unsubLeave = net?.subscribePresenceLeave?.((id) => c.applyPresenceLeave(id));
@@ -223,6 +238,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
         unsubPresence?.();
         unsubLeave?.();
         engageAdapterRef.current = null;
+        tuneAdapterRef.current = null;
         c.dispose();
       };
     }
@@ -299,8 +315,10 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
         return () => cancelAnimationFrame(id);
       },
       now: () => performance.now(),
+      tunables: tunablesRef.current,
     });
     engageAdapterRef.current = (npcId, e) => host.setNpcEngagement(npcId, e);
+    tuneAdapterRef.current = (t) => host.setTunables(t);
 
     // Inbound peer state → host. Mesh: toys/possession (+ avatar when no relay).
     // Relay (Phase 1): remote avatar positions.
@@ -333,9 +351,16 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
       unsubPresence?.();
       unsubLeave?.();
       engageAdapterRef.current = null;
+      tuneAdapterRef.current = null;
       try { selfVideo.pause(); selfVideo.srcObject = null; } catch { /* ignore */ }
     };
   }, [worldSpecKey, worldSpec, net, renderer, renderMode, fallbackEpoch, hostNpcsProp]);
+
+  // Push live tunables (debug menu) into whichever render path is running, without
+  // remounting it. Runs after the render effect so the adapter ref is installed.
+  useEffect(() => {
+    tuneAdapterRef.current?.(tunables);
+  }, [tunables]);
 
   // Push live conversation bias into the hosted NPC bodies. Declared AFTER the
   // render effect so the adapter ref is set before this runs; calls are idempotent
@@ -347,20 +372,25 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
   }, [npcEngagements]);
 
   return (
-    <canvas
-      // Remount on a renderer switch OR a worker→main fallback: a canvas keeps its
-      // first context type for life (and transferControlToOffscreen neuters it), so
-      // the element itself must be replaced when toggling 2D↔3D or dropping to the
-      // main-thread path.
-      key={`${renderer}:${renderMode}:${fallbackEpoch}`}
-      ref={canvasRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        touchAction: "none",
-        cursor: "crosshair",
-      }}
-    />
+    <>
+      <canvas
+        // Remount on a renderer switch OR a worker→main fallback: a canvas keeps its
+        // first context type for life (and transferControlToOffscreen neuters it), so
+        // the element itself must be replaced when toggling 2D↔3D or dropping to the
+        // main-thread path.
+        key={`${renderer}:${renderMode}:${fallbackEpoch}`}
+        ref={canvasRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          touchAction: "none",
+          cursor: "crosshair",
+        }}
+      />
+      {debug && (
+        <WorldDebugPanel tunables={tunables} onChange={setTunables} renderer={renderer} onClose={onCloseDebug} />
+      )}
+    </>
   );
 }

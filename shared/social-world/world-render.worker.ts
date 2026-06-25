@@ -76,6 +76,7 @@ function setup(msg: Extract<MainToWorker, { type: "init" }>): void {
     },
     scheduleFrame,
     now: () => performance.now(),
+    tunables: msg.tunables,
   });
   host.resize(msg.width, msg.height, msg.dpr);
   host.start();
@@ -100,6 +101,9 @@ globalThis.addEventListener("message", (event: MessageEvent<MainToWorker>) => {
         break;
       case "resize":
         host?.resize(msg.width, msg.height, msg.dpr);
+        break;
+      case "tune":
+        host?.setTunables(msg.tunables);
         break;
       case "pointer":
         host?.setPointer(msg.x, msg.y);

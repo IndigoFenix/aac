@@ -15,12 +15,25 @@
 
 import type { Vec2 } from "./types.js";
 import type { WorldState } from "./engine.js";
+import type { WorldTunables } from "./world-tunables.js";
 import {
   followCamera,
   renderWorld2D,
   screenToWorld as screenToWorldFromCam,
   type WorldCamera,
 } from "./render2d.js";
+
+/** Per-frame intent from the gaze interpreter that a renderer's camera may react
+ *  to. `aim` is the same value the engine consumed (so the 3D camera commits to
+ *  where the player is steering); `sitting` latches the calm WATCH framing. The 2D
+ *  view ignores it (its camera is a fixed follow). */
+export interface RenderIntent {
+  aim: Vec2 | null;
+  sitting: boolean;
+  /** The entity the local player is about to INTERACT with (toy/peer/NPC), for a
+   *  highlight. Undefined when the gaze isn't resting on anything engageable. */
+  interactId?: string;
+}
 
 /** World units shown across the smaller screen dimension by a follow camera. The
  *  3D view uses the same span to keep the two renderers' zoom comparable. */
@@ -48,11 +61,14 @@ export interface WorldView {
    *  point, or null when the pixel doesn't fall on the ground (e.g. above the 3D
    *  horizon) — null reads as "no aim", so the avatar coasts to a stop. */
   screenToWorld(px: number, py: number): Vec2 | null;
-  /** Draw one frame of `state`. `dt` (seconds) drives camera smoothing / animation. */
-  render(state: WorldState, dt: number): void;
+  /** Draw one frame of `state`. `dt` (seconds) drives camera smoothing / animation.
+   *  `intent` (optional) lets the camera react to gaze intent (3D); 2D ignores it. */
+  render(state: WorldState, dt: number, intent?: RenderIntent): void;
   /** Set the logical size (CSS px) + device pixel ratio. The host owns the DOM
    *  measurement (or stored values in a worker); the view never reads them itself. */
   resize(width: number, height: number, dpr: number): void;
+  /** Live-update tunables (debug menu). Optional — the 2D view has nothing to tune. */
+  setTunables?(t: WorldTunables): void;
   dispose(): void;
 }
 

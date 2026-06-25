@@ -28,6 +28,9 @@ import {
   type WorldState,
 } from "../world-engine/index.js";
 import type { WorldView } from "../world-engine/world-view.js";
+import { createGazeInterpreter } from "../world-engine/gaze-intent.js";
+import { approachAim, pickEntity } from "../world-engine/interact.js";
+import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "../world-engine/world-tunables.js";
 import {
   createNpcController,
   DEFAULT_CONVERSATION_RADIUS,
@@ -72,6 +75,8 @@ export interface WorldHostDeps {
   scheduleFrame: (cb: (nowMs: number) => void) => () => void;
   /** Monotonic clock in ms (performance.now on both threads). */
   now: () => number;
+  /** Initial gaze/camera/comfort tunables (debug menu). Defaults applied if omitted. */
+  tunables?: WorldTunables;
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -91,6 +96,8 @@ export interface WorldHost {
   /** Bias a hosted NPC's body from its live conversation (mind → body). No-op for
    *  an unknown id or a peer that doesn't host that NPC. */
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void;
+  /** Live-update the gaze interpreter + camera/comfort tunables (debug menu). */
+  setTunables(t: WorldTunables): void;
   start(): void;
   /** Stop the loop and dispose the view. */
   stop(): void;
@@ -98,10 +105,23 @@ export interface WorldHost {
   readonly state: WorldState;
 }
 
+/** Below this `unsettled` an INTERACT pick may engage — so a target is only chosen
+ *  from a genuinely settled gaze, never mid-flick. */
+const INTERACT_SETTLE_MAX = 0.4;
+
 export function runWorldHost(deps: WorldHostDeps): WorldHost {
   const { view, spec, localId, net } = deps;
+  // Mutable so setTunables() can swap interact knobs live (gaze + camera/comfort are
+  // pushed into the interpreter + view; the interact config is read here in frame()).
+  let tunables: WorldTunables = deps.tunables ?? DEFAULT_WORLD_TUNABLES;
 
   const state: WorldState = createWorldState(spec, localId, deps.spawnIndex, deps.spawnAt);
+
+  // The gaze→aim interpreter (fixation gate + weakening + auto-sit). Sits between
+  // the raw pointer and the engine's single `aim`, so the engine is untouched. Its
+  // output also feeds the camera director (the view's render call) so the camera
+  // commits to where the player is steering.
+  const gaze = createGazeInterpreter(tunables.gaze);
 
   // NPCs we host: spawn each as a locally-owned avatar + build its steering
   // controller. Their ids ride the outbound avatar stream so peers render them as
@@ -175,9 +195,31 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let pendingEvents: ReturnType<typeof tickWorld>["events"] = [];
 
   const frame = (dt: number, now: number): void => {
-    // Aim is derived EACH frame from the stored pointer against the (moving) camera,
-    // so the avatar tracks the screen point even as the follow camera scrolls.
-    const aim: Vec2 | null = pointer ? view.screenToWorld(pointer.x, pointer.y) : null;
+    // Interpret the raw pointer into an aim EACH frame against the (moving) camera:
+    // the fixation gate drops flicks, weakening eases off during saccades, and the
+    // idle timer latches WATCH/sitting. The mapped aim tracks the screen point even
+    // as the follow camera scrolls. The full intent also drives the camera below.
+    const me = state.avatars[localId];
+    const intent = gaze.update({
+      pointer,
+      screenToWorld: (px, py) => view.screenToWorld(px, py),
+      avatar: me ? { x: me.x, y: me.y } : null,
+      dt,
+      nowMs: now,
+    });
+    // INTERACT (P3): a SETTLED gaze resting on an entity re-targets the aim to
+    // engage it (toy → walk in; person → approach to talking distance + face). The
+    // engine is unchanged — it just receives the engaging aim instead of the raw
+    // ground point. interactId is forwarded so the renderer can highlight the target.
+    let aim: Vec2 | null = intent.aim;
+    let interactId: string | undefined;
+    if (me && !intent.sitting && intent.committedWorld && intent.unsettled < INTERACT_SETTLE_MAX) {
+      const hit = pickEntity(intent.committedWorld, state, localId, tunables.interact);
+      if (hit) {
+        aim = approachAim({ x: me.x, y: me.y }, { x: hit.x, y: hit.y }, hit.kind, tunables.interact);
+        interactId = hit.id;
+      }
+    }
     const { events } = tickWorld(state, { aim }, dt);
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
     // local tick so controllers see this frame's player position.
@@ -212,7 +254,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       }
     }
 
-    view.render(state, dt);
+    view.render(state, dt, { aim, sitting: intent.sitting, interactId });
   };
 
   const loop = (now: number): void => {
@@ -246,6 +288,11 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     setNpcEngagement(npcId, engagement) {
       npcById.get(npcId)?.setEngagement(engagement);
+    },
+    setTunables(t) {
+      tunables = t;
+      gaze.setTunables(t.gaze);
+      view.setTunables?.(t);
     },
     start() {
       if (running) return;

@@ -11,6 +11,7 @@
 // crosses the boundary without transferables.
 
 import type { Vec2, WorldNetMessage, WorldSpec } from "../world-engine/index.js";
+import type { WorldTunables } from "../world-engine/world-tunables.js";
 import type { NpcEngagement, NpcProximity } from "./npc-controller.js";
 import type { WorldPresence } from "./world-presence.js";
 
@@ -32,8 +33,12 @@ export type MainToWorker =
       width: number;
       height: number;
       dpr: number;
+      /** Initial gaze/camera/comfort tunables (debug menu). */
+      tunables?: WorldTunables;
     }
   | { type: "resize"; width: number; height: number; dpr: number }
+  /** Live tunables update (debug menu) — applied to the interpreter + camera. */
+  | { type: "tune"; tunables: WorldTunables }
   | { type: "pointer"; x: number; y: number }
   | { type: "pointer-leave" }
   | { type: "net-inbound"; msgs: WorldNetMessage[] }

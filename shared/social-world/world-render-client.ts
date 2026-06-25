@@ -7,6 +7,7 @@
 // and the caller rebuilds the world on the main thread with a fresh canvas.
 
 import type { Vec2, WorldNetMessage, WorldSpec } from "../world-engine/index.js";
+import type { WorldTunables } from "../world-engine/world-tunables.js";
 import type { NpcEngagement, NpcProximity } from "./npc-controller.js";
 import type { WorldPresence } from "./world-presence.js";
 import type { MainToWorker, WorkerToMain } from "./world-render-protocol.js";
@@ -38,6 +39,8 @@ export interface WorldRenderClientOpts {
    *  bitmap is transferred to the worker. Return a null bitmap for the disc fallback. */
   fulfillFace: (id: string) => Promise<{ bitmap: ImageBitmap | null; label: string }>;
   initialSize: { width: number; height: number; dpr: number };
+  /** Initial gaze/camera/comfort tunables (debug menu); defaults if omitted. */
+  tunables?: WorldTunables;
   /** The set of NPCs the local player can talk to changed (worker → main bridge). */
   onNpcProximity?: (nearby: NpcProximity[]) => void;
   /** Worker unusable (spawn/init/context-loss) — caller must rebuild on the main
@@ -78,6 +81,7 @@ export class WorldRenderClient {
       width: opts.initialSize.width,
       height: opts.initialSize.height,
       dpr: opts.initialSize.dpr,
+      tunables: opts.tunables,
     };
     worker.postMessage(init, [offscreen]);
 
@@ -146,6 +150,7 @@ export class WorldRenderClient {
   clearPointer(): void { this.send({ type: "pointer-leave" }); }
   resize(width: number, height: number, dpr: number): void { this.send({ type: "resize", width, height, dpr }); }
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void { this.send({ type: "npc-engagement", npcId, engagement }); }
+  setTunables(tunables: WorldTunables): void { this.send({ type: "tune", tunables }); }
 
   dispose(): void {
     if (this.disposed) return;
