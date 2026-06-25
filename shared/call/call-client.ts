@@ -33,6 +33,8 @@ export interface IncomingCall {
   media: CallMediaFlags;
   /** The inviter marked this invite "automatic" — the AAC opens it without ringing. */
   autoAccept?: boolean;
+  /** The caller's stored-face photo (data URL), when available — shown on the ring. */
+  photo?: string;
 }
 
 /** Events the client emits to its host (React hook, etc.). */
@@ -204,12 +206,12 @@ export class CallClient {
   }
 
   /** Start a call to one of the student's callable contacts (server resolves the room). */
-  async startCallToContact(contactId: string, media: CallMediaFlags, remotePersonId?: string): Promise<void> {
+  async startCallToContact(contactId: string, media: CallMediaFlags, remotePersonId?: string, autoAccept?: boolean): Promise<void> {
     await this.ensureIceServers();
     const callId = crypto.randomUUID();
     this.call = { callId, media, remotePersonId };
     await this.acquireLocalMedia(media);
-    this.send({ type: "call:invite-contact", callId, contactId, media });
+    this.send({ type: "call:invite-contact", callId, contactId, media, autoAccept });
     this.setState("ringing-out");
     this.armRingTimeout(callId);
   }
@@ -362,12 +364,12 @@ export class CallClient {
 
   /** Ring a contact INTO the current call (grow a solo game into multiplayer).
    *  Acquires audio/video first so joiners get media. No-op outside a call. */
-  async inviteIntoCall(contactId: string): Promise<void> {
+  async inviteIntoCall(contactId: string, autoAccept?: boolean): Promise<void> {
     if (!this.call) return;
     const media: CallMediaFlags = { audio: true, video: true, pose: false };
     await this.acquireLocalMedia(media);
     this.call.media = media;
-    this.send({ type: "call:invite-into-call", callId: this.call.callId, contactId, media });
+    this.send({ type: "call:invite-into-call", callId: this.call.callId, contactId, media, autoAccept });
   }
 
   /** Ring a specific PERSON into the current call (clinician multi-party invite —
@@ -430,7 +432,9 @@ export class CallClient {
       case "call:ringing": {
         // Ignore a ring for a call we're already in.
         if (this.call) break;
-        this.incoming = msg.payload as IncomingCall;
+        const p = msg.payload as IncomingCall & { fromPhoto?: string };
+        // The wire carries the caller photo as `fromPhoto`; expose it as `photo`.
+        this.incoming = { ...p, photo: p.fromPhoto ?? p.photo };
         this.opts.emit({ type: "incoming", call: this.incoming });
         this.setState("ringing-in");
         break;

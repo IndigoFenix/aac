@@ -94,7 +94,7 @@ export interface CallGame {
 export type CallClientCommand =
   | { type: "call:act-as"; studentId: string } // AAC: act as the student being fronted (else the user acts as self)
   | { type: "call:invite"; callId: string; roomId: string; media: CallMediaFlags; autoAccept?: boolean } // autoAccept: rung AAC clients auto-open the call instead of ringing
-  | { type: "call:invite-contact"; callId: string; contactId: string; media: CallMediaFlags }
+  | { type: "call:invite-contact"; callId: string; contactId: string; media: CallMediaFlags; autoAccept?: boolean }
   | { type: "call:invite-person"; callId: string; personId: string; media: CallMediaFlags; autoAccept?: boolean } // ring a specific person INTO an existing call (clinician multi-party invite, by personId)
   | { type: "call:accept"; callId: string }
   | { type: "call:decline"; callId: string; reason?: string }
@@ -103,7 +103,7 @@ export type CallClientCommand =
   | { type: "call:media-state"; callId: string; audio: boolean; video: boolean; pose: boolean }
   | { type: "call:set-game"; callId: string; game: CallGame | null } // attach/detach a social game on the call (null → back to plain video)
   | { type: "call:start-solo-game"; callId: string; game: CallGame } // open a one-person room with a game (no ring), joinable via invite
-  | { type: "call:invite-into-call"; callId: string; contactId: string; media: CallMediaFlags } // ring a contact INTO the existing call (vs starting a new one)
+  | { type: "call:invite-into-call"; callId: string; contactId: string; media: CallMediaFlags; autoAccept?: boolean } // ring a contact INTO the existing call (vs starting a new one)
   | { type: "call:world"; callId: string; presence: WorldPresence } // RELAY: this participant's avatar position, fanned world-wide to feed the circle solver (decoupled from the media mesh)
   | { type: "call:npc"; callId: string; msg: unknown } // RELIABLE relay for AI-NPC conversation (say/state/audio/position) — server-fanned to every participant, independent of the media mesh (which prunes distant peers). `msg` is an NpcNetMessage (shared/social-world), relayed verbatim.
   | { type: "call:focus"; callId: string; to: string | null } // caller declares who they're addressing (a remote personId), or null for everyone
@@ -114,7 +114,7 @@ export type CallClientCommand =
 
 // Server → client call events (delivered on call:<callId> or call:person:<id>).
 export type CallEvent =
-  | { type: "call:ringing"; topic: string; payload: { callId: string; roomId: string; fromPersonId: string; fromName?: string; media: CallMediaFlags; autoAccept?: boolean } }
+  | { type: "call:ringing"; topic: string; payload: { callId: string; roomId: string; fromPersonId: string; fromName?: string; fromPhoto?: string; media: CallMediaFlags; autoAccept?: boolean } }
   | { type: "call:accepted"; topic: string; payload: { callId: string; byPersonId: string } }
   | { type: "call:declined"; topic: string; payload: { callId: string; byPersonId: string; reason?: string } }
   | { type: "call:cancelled"; topic: string; payload: { callId: string } }

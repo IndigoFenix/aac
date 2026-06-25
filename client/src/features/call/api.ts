@@ -39,6 +39,14 @@ export interface CallParticipantInfo {
   photo?: string;
 }
 
+/** A person picked to invite/call. STUDENTS carry a `contactId` so they're invited
+ *  through the callable-contact auth path (students aren't institute members, so the
+ *  room/institute path 403s for them); institute contacts have only a personId. */
+export interface InviteSelection {
+  personId: string;
+  contactId?: string;
+}
+
 /** Social games attachable to a call: the built-in default + the institute's
  *  multiplayer custom apps (each a ready-to-attach CallGame with its WorldSpec). */
 export async function fetchSocialGameOptions(instituteId: string): Promise<CallGame[]> {

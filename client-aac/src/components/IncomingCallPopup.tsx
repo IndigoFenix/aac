@@ -12,17 +12,16 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCallOptional } from "@/contexts/CallContext";
-import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
-import { AacAvatar } from "@/components/AacAvatar";
 import { YesNoSprite } from "@/components/YesNoSprite";
 
 export function IncomingCallPopup() {
   const { t } = useLanguage();
   const call = useCallOptional();
-  const sprite = useAvatarSprite();
 
   const ringing = !!call && call.callState === "ringing-in" && !!call.incoming;
   const name = call?.activeContact?.name ?? call?.incoming?.fromName ?? null;
+  const photo = call?.incoming?.photo ?? null;
+  const initial = name ? name.trim().charAt(0).toUpperCase() : "?";
 
   return (
     <AnimatePresence>
@@ -36,25 +35,24 @@ export function IncomingCallPopup() {
           transition={{ duration: 0.15 }}
         >
           <div className="flex flex-col items-center gap-8">
-            {/* The student's companion avatar announces the call. */}
+            {/* Caller identity — their stored-face photo when we have one, else a
+                big circular initial. */}
             <div className="flex flex-col items-center gap-4">
               <motion.div
-                className="relative flex items-center justify-center overflow-hidden rounded-full bg-white/10 shadow-xl"
+                className="relative flex items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-white shadow-xl"
                 style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)" }}
                 initial={{ scale: 0.85 }}
                 animate={{ scale: [0.96, 1.04, 0.96] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
                 aria-hidden="true"
               >
-                <AacAvatar
-                  avatar={sprite.avatar}
-                  renderedEye={sprite.renderedEye}
-                  renderedEar={sprite.renderedEar}
-                  mouthEmote={sprite.mouthEmote}
-                  mouthOpen={sprite.mouthOpen}
-                  showMouth={sprite.showMouth}
-                  focusActive={sprite.focusActive}
-                />
+                {photo ? (
+                  <img src={photo} alt="" className="h-full w-full object-cover" draggable={false} />
+                ) : (
+                  <span className="font-bold leading-none" style={{ fontSize: "min(20vw, 110px)" }}>
+                    {initial}
+                  </span>
+                )}
               </motion.div>
               <div className="text-center text-white">
                 <div className="text-sm uppercase tracking-wide opacity-80">

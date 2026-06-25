@@ -21,6 +21,7 @@ import {
   ensureCallRoom,
 } from "./callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
+import { getPeerFacePhotoDataUrl } from "../dual-agent/peer-photo";
 import { publishFocus, publishUtterance } from "../dual-agent/conversation-room";
 import type { CallGame, CallMediaFlags, CallSignal } from "@shared/realtime-events";
 import type { WorldPresence } from "@shared/social-world/world-presence";
@@ -73,7 +74,7 @@ export class CallService {
    * Authorized by the callable link (not institute-sharing); the call room is
    * provisioned on the fly. Used by the AAC "Phone call" app and the AI tool.
    */
-  async inviteContact(actingPersonId: string, input: { callId: string; contactId: string; media: CallMediaFlags }): Promise<void> {
+  async inviteContact(actingPersonId: string, input: { callId: string; contactId: string; media: CallMediaFlags; autoAccept?: boolean }): Promise<void> {
     const contact = await getContactById(input.contactId);
     if (!contact || !contact.isActive || !contact.callable) {
       throw new CallError("not_callable", "That contact is not callable");
@@ -96,7 +97,7 @@ export class CallService {
     const instituteId = await resolveStudentInstitute(contact.studentId);
     if (!instituteId) throw new CallError("no_institute", "Student has no institute");
     const roomId = await ensureCallRoom(studentPerson.id, contactPersonId, instituteId);
-    await this.startSession(actingPersonId, { callId: input.callId, roomId, instituteId, media: input.media });
+    await this.startSession(actingPersonId, { callId: input.callId, roomId, instituteId, media: input.media, autoAccept: input.autoAccept });
   }
 
   /** Shared session creation + ring fan-out for both invite paths. */
@@ -118,6 +119,7 @@ export class CallService {
     // Ring every other active room participant.
     const participants = await personChatRepository.getRoomParticipants(input.roomId);
     const fromName = await personRepository.getDisplayName(actingPersonId);
+    const fromPhoto = await getPeerFacePhotoDataUrl(actingPersonId).catch(() => null) ?? undefined;
     const callees = participants.map((p) => p.personId).filter((id) => id !== actingPersonId);
     for (const callee of callees) {
       const calleeRole = await this.resolveRole(callee);
@@ -125,7 +127,7 @@ export class CallService {
       await broadcastToPerson(callee, {
         type: "call:ringing",
         topic: CALL_PERSON_TOPIC(callee),
-        payload: { callId: input.callId, roomId: input.roomId, fromPersonId: actingPersonId, fromName, media: input.media, autoAccept: input.autoAccept },
+        payload: { callId: input.callId, roomId: input.roomId, fromPersonId: actingPersonId, fromName, fromPhoto, media: input.media, autoAccept: input.autoAccept },
       });
     }
 
@@ -302,7 +304,7 @@ export class CallService {
    * how a solo game grows into a multiplayer one. The callee joins the same
    * callId and gets the game via the accept() catch-up.
    */
-  async inviteIntoCall(actingPersonId: string, input: { callId: string; contactId: string; media: CallMediaFlags }): Promise<void> {
+  async inviteIntoCall(actingPersonId: string, input: { callId: string; contactId: string; media: CallMediaFlags; autoAccept?: boolean }): Promise<void> {
     await this.assertActiveParticipant(input.callId, actingPersonId);
     const session = await callRepository.getSession(input.callId);
     if (!session) throw new CallError("no_call", "Call not found");
@@ -325,10 +327,11 @@ export class CallService {
     const calleeRole = await this.resolveRole(calleePersonId);
     await callRepository.addParticipant({ callId: input.callId, personId: calleePersonId, role: calleeRole, joined: false });
     const fromName = await personRepository.getDisplayName(actingPersonId);
+    const fromPhoto = await getPeerFacePhotoDataUrl(actingPersonId).catch(() => null) ?? undefined;
     await broadcastToPerson(calleePersonId, {
       type: "call:ringing",
       topic: CALL_PERSON_TOPIC(calleePersonId),
-      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, media: input.media },
+      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, fromPhoto, media: input.media, autoAccept: input.autoAccept },
     });
   }
 
@@ -361,10 +364,11 @@ export class CallService {
       await callRepository.addParticipant({ callId: input.callId, personId: input.personId, role, joined: false });
     }
     const fromName = await personRepository.getDisplayName(actingPersonId);
+    const fromPhoto = await getPeerFacePhotoDataUrl(actingPersonId).catch(() => null) ?? undefined;
     await broadcastToPerson(input.personId, {
       type: "call:ringing",
       topic: CALL_PERSON_TOPIC(input.personId),
-      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, media: input.media, autoAccept: input.autoAccept },
+      payload: { callId: input.callId, roomId: session.roomId, fromPersonId: actingPersonId, fromName, fromPhoto, media: input.media, autoAccept: input.autoAccept },
     });
   }
 

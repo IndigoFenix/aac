@@ -19,7 +19,7 @@ import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
 import { useAuth } from "@/hooks/useAuth";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { fetchIceServers, type CallParticipantInfo } from "./api";
+import { fetchIceServers, type CallParticipantInfo, type InviteSelection } from "./api";
 import { streamMicPcm } from "./micPcm";
 import { createRoom, type PersonChatContact } from "@/features/personChat/api";
 
@@ -109,13 +109,14 @@ interface CallContextValue {
   peerGains: Map<string, number>;
 
   startCallWithContact: (contact: PersonChatContact) => Promise<void>;
-  /** Call a student who listed this user as a callable contact (via the contact link). */
-  startCallToStudent: (contactId: string, studentName: string, personId: string) => Promise<void>;
-  /** Start a group call with one or more people (by personId). `autoAccept` opens it
-   *  automatically on AAC invitees instead of ringing. */
-  startCallWithPeople: (personIds: string[], autoAccept?: boolean) => Promise<void>;
-  /** Ring more people into the active call (by personId). */
-  invitePeopleIntoCall: (personIds: string[], autoAccept?: boolean) => Promise<void>;
+  /** Call a student who listed this user as a callable contact (via the contact link).
+   *  `autoAccept` opens it automatically on the student's device instead of ringing. */
+  startCallToStudent: (contactId: string, studentName: string, personId: string, autoAccept?: boolean) => Promise<void>;
+  /** Start a group call with one or more people. `autoAccept` opens it automatically
+   *  on AAC invitees instead of ringing. */
+  startCallWithPeople: (selections: InviteSelection[], autoAccept?: boolean) => Promise<void>;
+  /** Ring more people into the active call. */
+  invitePeopleIntoCall: (selections: InviteSelection[], autoAccept?: boolean) => Promise<void>;
   accept: () => Promise<void>;
   decline: () => void;
   cancel: () => void;
@@ -325,7 +326,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }, [currentInstitute?.id, institutes]);
 
-  const startCallToStudent = useCallback(async (contactId: string, studentName: string, personId: string) => {
+  const startCallToStudent = useCallback(async (contactId: string, studentName: string, personId: string, autoAccept = false) => {
     const client = clientRef.current;
     if (!client) return;
     setError(null);
@@ -334,45 +335,61 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setVideoEnabled(true);
     try {
       // Contact-authorized call (server resolves the room); same path the AAC uses.
-      await client.startCallToContact(contactId, { audio: true, video: true, pose: false }, personId);
+      await client.startCallToContact(contactId, { audio: true, video: true, pose: false }, personId, autoAccept);
     } catch (err: any) {
       setError({ code: "start_failed", message: err?.message ?? "Could not start the call" });
       setActiveContactName(null);
     }
   }, []);
 
-  // Start a fresh call with one OR MORE people (a group call). Creates a room
-  // containing everyone, then starts the call so the server rings them all.
-  // `autoAccept` asks AAC invitees to open the call without ringing.
-  const startCallWithPeople = useCallback(async (personIds: string[], autoAccept = false) => {
+  // Start a fresh group call. STUDENTS are rung through the callable-contact path
+  // (they aren't institute members, so the room path 403s for them); institute
+  // CONTACTS go in a person-chat room. `autoAccept` asks AAC invitees to open
+  // without ringing.
+  const startCallWithPeople = useCallback(async (selections: InviteSelection[], autoAccept = false) => {
     const client = clientRef.current;
-    if (!client || personIds.length === 0) return;
-    const instituteId = currentInstitute?.id ?? institutes[0]?.id ?? null;
-    if (!instituteId) {
-      setError({ code: "no_institute", message: "No organization available for this call" });
-      return;
-    }
+    if (!client || selections.length === 0) return;
+    const contacts = selections.filter((s) => !s.contactId);
+    const students = selections.filter((s) => s.contactId);
+    const media: CallMediaFlags = { audio: true, video: true, pose: false };
     setError(null);
-    setActiveContactName(personIds.length === 1 ? null : `${personIds.length} people`);
+    setActiveContactName(selections.length === 1 ? null : `${selections.length} people`);
     setAudioEnabled(true);
     setVideoEnabled(true);
     try {
-      const room = await createRoom({ instituteId, participantIds: personIds });
-      await client.startCall(room.id, { audio: true, video: true, pose: false }, personIds[0], autoAccept);
+      let pendingStudents = students;
+      if (contacts.length > 0) {
+        // Institute room with the contacts (rung at start), students invited after.
+        const instituteId = currentInstitute?.id ?? institutes[0]?.id ?? null;
+        if (!instituteId) { setError({ code: "no_institute", message: "No organization available for this call" }); return; }
+        const room = await createRoom({ instituteId, participantIds: contacts.map((c) => c.personId) });
+        await client.startCall(room.id, media, contacts[0].personId, autoAccept);
+      } else {
+        // All students — start with the first via the callable-contact path.
+        await client.startCallToContact(students[0].contactId!, media, students[0].personId, autoAccept);
+        pendingStudents = students.slice(1);
+      }
+      // Ring the remaining students into the now-started call.
+      for (const s of pendingStudents) {
+        try { await client.inviteIntoCall(s.contactId!, autoAccept); }
+        catch (err) { console.error("[call] startCallWithPeople invite:", err); }
+      }
     } catch (err: any) {
       setError({ code: "start_failed", message: err?.message ?? "Could not start the call" });
       setActiveContactName(null);
     }
   }, [currentInstitute?.id, institutes]);
 
-  // Ring more people INTO the active call (by personId — works for caretakers,
-  // clinicians and AAC students alike).
-  const invitePeopleIntoCall = useCallback(async (personIds: string[], autoAccept = false) => {
+  // Ring more people INTO the active call. Students via the callable-contact path,
+  // institute contacts by personId.
+  const invitePeopleIntoCall = useCallback(async (selections: InviteSelection[], autoAccept = false) => {
     const client = clientRef.current;
     if (!client) return;
-    for (const personId of personIds) {
-      try { await client.inviteIntoCallPerson(personId, autoAccept); }
-      catch (err) { console.error("[call] invitePeopleIntoCall:", err); }
+    for (const s of selections) {
+      try {
+        if (s.contactId) await client.inviteIntoCall(s.contactId, autoAccept);
+        else await client.inviteIntoCallPerson(s.personId, autoAccept);
+      } catch (err) { console.error("[call] invitePeopleIntoCall:", err); }
     }
   }, []);
 

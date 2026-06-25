@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchContacts, type PersonChatContact } from "@/features/personChat/api";
-import { fetchCallableStudents, type CallableStudent } from "./api";
+import { fetchCallableStudents, type CallableStudent, type InviteSelection } from "./api";
 
 interface Person {
   personId: string;
@@ -21,6 +21,8 @@ interface Person {
   sub?: string;
   online?: boolean;
   isStudent: boolean;
+  /** Callable-contact id, for students (routes them through the right auth path). */
+  contactId?: string;
 }
 
 function contactName(c: PersonChatContact): string {
@@ -33,7 +35,7 @@ interface Props {
   confirmLabel: string;
   /** Already in the call — hidden from the list. */
   excludePersonIds?: string[];
-  onConfirm: (personIds: string[], autoAccept: boolean) => void;
+  onConfirm: (selections: InviteSelection[], autoAccept: boolean) => void;
   onClose: () => void;
 }
 
@@ -72,7 +74,7 @@ export function InvitePeoplePopup({ title, confirmLabel, excludePersonIds, onCon
     for (const s of students) {
       if (seen.has(s.personId)) continue;
       seen.add(s.personId);
-      out.push({ personId: s.personId, name: s.name, online: s.online, isStudent: true });
+      out.push({ personId: s.personId, name: s.name, online: s.online, isStudent: true, contactId: s.contactId });
     }
     for (const c of contacts) {
       if (seen.has(c.id)) continue;
@@ -92,7 +94,11 @@ export function InvitePeoplePopup({ title, confirmLabel, excludePersonIds, onCon
 
   const confirm = () => {
     if (selected.size === 0) return;
-    onConfirm([...selected], autoAccept);
+    // Map each selected personId back to a selection (students carry contactId).
+    const byId = new Map<string, InviteSelection>();
+    for (const s of students) byId.set(s.personId, { personId: s.personId, contactId: s.contactId });
+    for (const c of contacts) byId.set(c.id, { personId: c.id });
+    onConfirm([...selected].map((id) => byId.get(id) ?? { personId: id }), autoAccept);
     onClose();
   };
 

@@ -203,7 +203,7 @@ export function CallPanel({ isOpen }: CallPanelProps) {
                     size="icon"
                     variant="outline"
                     disabled={callBusy || !s.online}
-                    onClick={() => { void startCallWithPeople([s.personId], true); }}
+                    onClick={() => { void startCallToStudent(s.contactId, s.name, s.personId, true); }}
                     aria-label={t("call.callPersonAuto", { name: s.name })}
                     title={t("call.automatic")}
                     data-testid={`call-student-auto-${s.contactId}`}

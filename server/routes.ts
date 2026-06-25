@@ -2338,7 +2338,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await callService.invite(personId, { callId: cmd.callId, roomId: cmd.roomId, media: cmd.media, autoAccept: cmd.autoAccept });
             break;
           case "call:invite-contact":
-            await callService.inviteContact(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media });
+            await callService.inviteContact(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media, autoAccept: cmd.autoAccept });
             break;
           case "call:invite-person":
             await callService.inviteIntoCallByPerson(personId, { callId: cmd.callId, personId: cmd.personId, media: cmd.media, autoAccept: cmd.autoAccept });
@@ -2369,7 +2369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
           case "call:invite-into-call":
             // Ring a contact INTO the existing call (grow a solo game).
-            await callService.inviteIntoCall(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media });
+            await callService.inviteIntoCall(personId, { callId: cmd.callId, contactId: cmd.contactId, media: cmd.media, autoAccept: cmd.autoAccept });
             break;
           case "call:world":
             // Relay this participant's avatar position to the call — the
