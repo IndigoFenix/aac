@@ -37,6 +37,23 @@ jest.mock("../services/dual-agent/gemini-live-provider", () => ({
   GeminiLiveProvider: class {},
 }));
 
+// Fake chat provider for the HTTP-path tests. `mockNextChunks` is the stream
+// the next fireCompletion() will see; `mockStreamChatCalls` counts how many
+// times streamChat ran (proves a leaked turn does NOT re-enter the orphan
+// re-prompt loop). Both are mock-prefixed so jest's hoisted factory may close
+// over them.
+let mockNextChunks: any[] = [];
+const mockStreamChatCalls = { n: 0 };
+jest.mock("../services/providers/provider-factory", () => ({
+  getChatProvider: () => ({
+    completeChat: async () => ({ content: null, toolCalls: [] }),
+    async *streamChat() {
+      mockStreamChatCalls.n += 1;
+      for (const c of mockNextChunks) yield c;
+    },
+  }),
+}));
+
 import {
   SpeakerAgent,
   isLeakedThought,
@@ -44,6 +61,7 @@ import {
   type SpeakerCallbacks,
   type SpeakerOutputEvent,
 } from "../services/dual-agent/speaker-agent";
+import { HttpSpeakerAgent } from "../services/dual-agent/http-speaker-agent";
 
 // ---- Pure detection / stripping helpers --------------------------------
 
@@ -237,5 +255,115 @@ describe("SpeakerAgent — native-audio thought-leak suppression", () => {
     expect(cap.suppressCalls).toBe(1); // still just the one from turn 1
     expect(cap.deltas).toContain("שלום!");
     expect(cap.events.filter((e) => e.type === "speech_end")).toHaveLength(1);
+  });
+});
+
+// ---- HttpSpeakerAgent thought-leak suppression -------------------------
+//
+// The HTTP path is the DEFAULT Speaker backend (per-student liveAudioSpeaker
+// off → "http"). It streams the model's text content straight to the client
+// subtitle (onTranscriptionDelta) AND to TTS (onSpeakText), so a VOICED
+// `private_thought` would otherwise leak to the child on the most-used path.
+// The same isLeakedThought guard the native-audio agent uses is applied to
+// the accumulated stream text here.
+
+type HttpCaptured = {
+  events: SpeakerOutputEvent[];
+  deltas: string[];
+  speakTexts: string[];
+};
+
+function makeHttpSpeaker(): { agent: HttpSpeakerAgent; cap: HttpCaptured } {
+  const cap: HttpCaptured = { events: [], deltas: [], speakTexts: [] };
+  const callbacks: SpeakerCallbacks = {
+    onEvent: (e) => cap.events.push(e),
+    onTranscriptionDelta: (t) => { cap.deltas.push(t); },
+    onSpeakText: (t) => { cap.speakTexts.push(t); },
+    onError: () => {},
+  };
+  const agent = new HttpSpeakerAgent("gemini", callbacks);
+  // Minimal white-box setup — skip start()/a real tool surface; drive
+  // fireCompletion() directly with a seeded history + the mocked stream.
+  const a = agent as any;
+  a.opened = true;
+  a.systemPrompt = "sys";
+  a.model = "gemini-test";
+  a.tools = [];
+  a.history = [{ role: "user", content: "hi" }];
+  return { agent, cap };
+}
+
+const textDelta = (text: string) => ({ type: "text_delta", text });
+const doneChunk = { type: "done" };
+
+describe("HttpSpeakerAgent — thought-leak suppression", () => {
+  beforeEach(() => {
+    mockNextChunks = [];
+    mockStreamChatCalls.n = 0;
+  });
+
+  test("leaked turn: nothing reaches client subtitle or TTS; emits thought_leak, not speech", async () => {
+    const { agent, cap } = makeHttpSpeaker();
+    mockNextChunks = [
+      textDelta("private_thought The user "),
+      textDelta("wants a hug from dad."),
+      doneChunk,
+    ];
+
+    await (agent as any).fireCompletion();
+
+    // Leaked reasoning never streamed to the client subtitle or to TTS.
+    expect(cap.deltas).toEqual([]);
+    expect(cap.speakTexts).toEqual([]);
+
+    // No speech events (→ no BoardManager rebuild, no echo, no history append).
+    expect(cap.events.some((e) => e.type === "speech_text_finalized")).toBe(false);
+    expect(cap.events.some((e) => e.type === "speech_end")).toBe(false);
+
+    // A single thought_leak event carries the stripped reasoning.
+    const leaks = cap.events.filter((e) => e.type === "thought_leak");
+    expect(leaks).toHaveLength(1);
+    expect((leaks[0] as any).note).toBe("The user wants a hug from dad.");
+
+    // Crucially, the leaked turn did NOT re-enter the orphan re-prompt loop
+    // (that would fire a second completion on the empty reply).
+    expect(mockStreamChatCalls.n).toBe(1);
+  });
+
+  test("detection fires when the marker is split across deltas", async () => {
+    const { agent, cap } = makeHttpSpeaker();
+    mockNextChunks = [
+      textDelta("private_"),       // not yet a match on its own
+      textDelta("thought here is my reasoning"),
+      doneChunk,
+    ];
+
+    await (agent as any).fireCompletion();
+
+    // A pre-detection subtitle fragment ("private_") may have streamed before
+    // the marker completed on the 2nd delta — the Coordinator's thought_leak
+    // handler resets the client accumulator, so it's wiped. The load-bearing
+    // guarantee is that nothing is ever VOICED: no complete sentence reached
+    // TTS (the splitter only flushes on a sentence boundary, which the marker
+    // never crosses before detection).
+    expect(cap.speakTexts).toEqual([]);
+    expect(cap.events.some((e) => e.type === "thought_leak")).toBe(true);
+    expect(cap.events.some((e) => e.type === "speech_end")).toBe(false);
+  });
+
+  test("normal reply is unaffected: forwarded to client + TTS, speech_end emitted, no leak", async () => {
+    const { agent, cap } = makeHttpSpeaker();
+    mockNextChunks = [
+      textDelta("איזה כיף! "),
+      textDelta("מה עוד בא לך?"),
+      doneChunk,
+    ];
+
+    await (agent as any).fireCompletion();
+
+    expect(cap.deltas.join("")).toContain("איזה כיף!");
+    expect(cap.speakTexts.length).toBeGreaterThan(0);
+    expect(cap.events.some((e) => e.type === "speech_end")).toBe(true);
+    expect(cap.events.some((e) => e.type === "thought_leak")).toBe(false);
   });
 });

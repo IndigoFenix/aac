@@ -313,6 +313,10 @@ export interface SessionConfig {
   /** Student's receptive language level (general AAC setting) — caps the
    *  peer's sentence length/complexity. Omit for the default register. */
   languageLevel?: LanguageLevel;
+  /** The STUDENT's grammatical gender, for correct second-person address in
+   *  gendered languages. Distinct from `gender` (the PEER's own gender). Omit
+   *  when unknown. */
+  addresseeGender?: "male" | "female";
 }
 
 export class DirectedSession {
@@ -366,7 +370,7 @@ export class DirectedSession {
     this.directive = deriveBaseDirective(this.vector, this.mode, this.trackers.askShare, params.balanceFlipAt, this.languageTier);
     this.lastDirective = this.directive;
 
-    this.sessionPrefix = buildSessionPrefix(cfg.name, cfg.gender, cfg.genome, cfg.identity, cfg.humorStyle, cfg.language, cfg.languageLevel);
+    this.sessionPrefix = buildSessionPrefix(cfg.name, cfg.gender, cfg.genome, cfg.identity, cfg.humorStyle, cfg.language, cfg.languageLevel, cfg.addresseeGender);
 
     // Log the full session prefix once so a debugger can see exactly what
     // persona/identity/safety the LLM is being given. Big block; gated

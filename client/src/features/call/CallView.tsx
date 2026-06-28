@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
+import { GameJsonEditor } from "./GameJsonEditor";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
@@ -71,6 +72,7 @@ export function CallView() {
     setAddressee,
     addressedBy,
     selfTranscript,
+    lastSelfSpeech,
     game,
     startGame,
     stopGame,
@@ -85,6 +87,9 @@ export function CallView() {
     peerGains,
   } = useCall();
   const [invitePopupOpen, setInvitePopupOpen] = useState(false);
+  // Live game-JSON editor (testing affordance): edit the running game and reload
+  // it for everyone in the call.
+  const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
 
   // Reliable NPC-conversation transport (call:npc) + the brain WS URL.
   const npcTransport = useMemo(() => ({ send: sendNpc, subscribe: npcHub.subscribe.bind(npcHub) }), [sendNpc, npcHub]);
@@ -310,8 +315,19 @@ export function CallView() {
               npcBrainWsUrl={npcBrainWsUrl}
               npcTransport={npcTransport}
               audioMuted={outputMuted}
+              selfSpeech={lastSelfSpeech}
               onExit={stopGame}
               t={t}
+            />
+          )}
+
+          {/* Live game-JSON editor — edit the running game and reload it for
+              everyone in the call (testing affordance). */}
+          {isActive && game && jsonEditorOpen && (
+            <GameJsonEditor
+              game={game}
+              onReload={(g) => startGame(g)}
+              onClose={() => setJsonEditorOpen(false)}
             />
           )}
         </div>
@@ -423,6 +439,21 @@ export function CallView() {
             data-testid="call-toggle-game"
           >
             <Gamepad2 className="w-5 h-5" />
+          </Button>
+        )}
+
+        {/* Edit the running game's JSON and reload it for everyone (testing). */}
+        {isActive && game && (
+          <Button
+            type="button"
+            size="icon"
+            variant={jsonEditorOpen ? "default" : "secondary"}
+            onClick={() => setJsonEditorOpen((o) => !o)}
+            aria-label="Edit game JSON"
+            aria-pressed={jsonEditorOpen}
+            data-testid="call-edit-game-json"
+          >
+            <Braces className="w-5 h-5" />
           </Button>
         )}
 

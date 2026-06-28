@@ -8,7 +8,7 @@ import type {
   ChatProvider,
 } from "../providers/streaming-provider";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
-import { stripBrackets } from "@shared/glyph-compositor.js";
+import { stripBrackets, JOINS } from "@shared/glyph-compositor.js";
 import {
   parseSuggestionKey,
   isValidSuggestionKey,
@@ -147,6 +147,10 @@ export interface GlyphSym {
   mods?: string[];
   /** Per-symbol fallback for a `gen` glyph (head + optional mods, never `gen`). */
   fb?: { sym?: string; mods?: string[] };
+  /** Forward-binding join to the previous glyph — a logical connector
+   *  (and/or/but/if/because) or a spatial relation (to/from/in/out/on/under/
+   *  over/through). Serializes as `+join+`; consumes no slot. */
+  join?: string;
 }
 
 const GLYPH_OPS: readonly string[] = ["past", "future", "question"];
@@ -156,6 +160,22 @@ function serializeHeadMods(head: string, mods: unknown): string {
     ? mods.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => `.${x.trim()}`).join("")
     : "";
   return `${head}${m}`;
+}
+
+/** Join glyph strings with `+`, interleaving a glyph's forward-binding
+ *  `join` CONNECTOR as `+connector+` before it. Empty strings are skipped. */
+function joinGlyphStrings(glyphs: GlyphSym[], strOf: (g: GlyphSym) => string): string {
+  let out = "";
+  for (const g of glyphs) {
+    const s = strOf(g);
+    if (!s) continue;
+    if (out) {
+      const j = typeof g.join === "string" && JOINS.has(g.join.toLowerCase()) ? g.join.toLowerCase() : null;
+      out += j ? `+${j}+` : "+";
+    }
+    out += s;
+  }
+  return out;
 }
 
 /** Structured glyph array → legacy glyph strings. `fallback` is emitted ONLY
@@ -170,22 +190,20 @@ export function serializeGlyph(
     : [];
   const opTag = typeof op === "string" && GLYPH_OPS.includes(op) ? `#${op}` : "";
 
-  const sentence = glyphs
-    .map((g) => serializeHeadMods(g.gen ? `generate:${g.gen}` : (g.sym ?? ""), g.mods))
-    .filter((s) => s.length > 0)
-    .join("+") + opTag;
+  const sentence = joinGlyphStrings(
+    glyphs,
+    (g) => serializeHeadMods(g.gen ? `generate:${g.gen}` : (g.sym ?? ""), g.mods),
+  ) + opTag;
 
   const hasGen = glyphs.some((g) => g.gen);
   if (!hasGen) return { sentence };
 
-  const fallback = glyphs
-    .map((g) =>
-      g.gen
-        ? serializeHeadMods(g.fb?.sym ?? "", g.fb?.mods)
-        : serializeHeadMods(g.sym ?? "", g.mods),
-    )
-    .filter((s) => s.length > 0)
-    .join("+") + opTag;
+  const fallback = joinGlyphStrings(
+    glyphs,
+    (g) => g.gen
+      ? serializeHeadMods(g.fb?.sym ?? "", g.fb?.mods)
+      : serializeHeadMods(g.sym ?? "", g.mods),
+  ) + opTag;
   return { sentence, fallback };
 }
 
@@ -243,22 +261,39 @@ export function glyphStringToJson(
 ): { glyph: GlyphSym[]; op?: GlyphOp } {
   const { body, op } = stripOp((sentence ?? "").trim());
   const fbBody = stripOp((fallback ?? "").trim()).body;
-  const fbSlots = fbBody ? fbBody.split("+").map((s) => s.trim()).filter(Boolean) : [];
-  const slots = body ? body.split("+").map((s) => s.trim()).filter(Boolean) : [];
+  // Strip forward-binding connectors from both sentence and fallback so the
+  // content-slot indices stay aligned; record each content slot's preceding
+  // connector to re-attach as `join`.
+  const fbSlots = fbBody
+    ? fbBody.split("+").map((s) => s.trim()).filter((s) => s && !JOINS.has(s.toLowerCase()))
+    : [];
+  const rawSlots = body ? body.split("+").map((s) => s.trim()).filter(Boolean) : [];
+  const slots: string[] = [];
+  const joins: Array<string | undefined> = [];
+  let pendingJoin: string | undefined;
+  for (const tok of rawSlots) {
+    if (JOINS.has(tok.toLowerCase())) { if (slots.length) pendingJoin = tok.toLowerCase(); continue; }
+    slots.push(tok);
+    joins.push(pendingJoin);
+    pendingJoin = undefined;
+  }
 
   const glyph: GlyphSym[] = slots.map((slot, i) => {
     const { head, mods } = parseSlot(slot);
+    let out: GlyphSym;
     if (head.startsWith("generate:")) {
-      const out: GlyphSym = { gen: head.slice("generate:".length) };
+      out = { gen: head.slice("generate:".length) };
       if (mods) out.mods = mods;
       const fbSlot = fbSlots[i];
       if (fbSlot) {
         const { head: fbHead, mods: fbMods } = parseSlot(fbSlot);
         out.fb = fbMods ? { sym: fbHead, mods: fbMods } : { sym: fbHead };
       }
-      return out;
+    } else {
+      out = mods ? { sym: head, mods } : { sym: head };
     }
-    return mods ? { sym: head, mods } : { sym: head };
+    if (joins[i]) out.join = joins[i];
+    return out;
   });
 
   return op ? { glyph, op } : { glyph };

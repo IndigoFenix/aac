@@ -117,15 +117,24 @@ export function flowSessionStart(
     boardMgrModel?: string;
     monitorModel?: string;
     useDirectAudio?: boolean;
+    // Per-student master switch. true → full-attention (raw frames + audio
+    // streamed continuously, energy/attention throttling disabled — higher cost
+    // by design). false/undefined → economize (text-first, cost-saving on).
+    fullAttention?: boolean;
   },
 ): void {
   appendLine("");
   appendLine("=".repeat(100));
   appendLine(`[${ts()}] ── SESSION START ${sessionId}${meta.studentName ? ` (${meta.studentName})` : ""}`);
+  const attentionLine =
+    meta.fullAttention === undefined
+      ? ""
+      : `attention=${meta.fullAttention ? "full" : "adaptive/economize"}`;
   const modelsLine =
     `models: observer=${meta.observerModel || "?"} | speaker=${meta.speakerModel || "?"}` +
     `${meta.useDirectAudio !== undefined ? ` (directAudio=${meta.useDirectAudio})` : ""}` +
-    ` | board=${meta.boardMgrModel || "?"}${meta.monitorModel ? ` | monitor=${meta.monitorModel}` : ""}`;
+    ` | board=${meta.boardMgrModel || "?"}${meta.monitorModel ? ` | monitor=${meta.monitorModel}` : ""}` +
+    `${attentionLine ? `\n${attentionLine}` : ""}`;
   appendLine(`              ${modelsLine}`);
   appendLine("=".repeat(100));
   persistFlowToDb(

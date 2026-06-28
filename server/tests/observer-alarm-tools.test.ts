@@ -43,6 +43,23 @@ describe("Observer alarm tools", () => {
     expect(props.reason.type).toBe("string");
   });
 
+  it("does NOT declare set_observation_mode by default (cost-saving system off)", () => {
+    const names = buildObserverToolDeclarations().flatMap((t) => t.functionDeclarations ?? []).map((d) => d.name);
+    expect(names).not.toContain("set_observation_mode");
+  });
+
+  it("declares set_observation_mode only when economyModeEnabled is set", () => {
+    const names = buildObserverToolDeclarations({ economyModeEnabled: true })
+      .flatMap((t) => t.functionDeclarations ?? [])
+      .map((d) => d.name);
+    expect(names).toContain("set_observation_mode");
+    const tool = buildObserverToolDeclarations({ economyModeEnabled: true })
+      .flatMap((t) => t.functionDeclarations ?? [])
+      .find((d) => d.name === "set_observation_mode");
+    const schema = tool?.parametersJsonSchema as any;
+    expect(schema.properties.mode.enum).toEqual(["live", "economy"]);
+  });
+
   it("keeps alert and emergency_alarm separate (distinct tools, not one leveled tool)", () => {
     // Two tools rather than a single raise_alarm(level) is deliberate: it
     // forces the model into a clear binary choice and cuts down on a minor

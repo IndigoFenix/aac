@@ -38,6 +38,17 @@ describe("serializeInputGlyphs", () => {
     expect(out[0].fallback).toBe("i_me+🌑");
   });
 
+  test("a `join` connector serializes as +connector+ before its glyph", () => {
+    const out = serializeInputGlyphs([
+      [{ sym: "🍎" }, { sym: "🍌", join: "or" }],
+      [{ sym: "😢" }, { sym: "you", join: "because" }],
+    ]);
+    expect(out).toEqual([
+      { glyph: "🍎+or+🍌" },
+      { glyph: "😢+because+you" },
+    ]);
+  });
+
   test("empty sentences are dropped; an all-empty input yields []", () => {
     expect(serializeInputGlyphs([[], [{ sym: "ok" }], []])).toEqual([{ glyph: "ok" }]);
     expect(serializeInputGlyphs([])).toEqual([]);

@@ -19,6 +19,8 @@ import {
   collectOutbound,
   createWorldState,
   removeAvatar,
+  sayMessage,
+  setAvatarSpeech,
   smoothRemoteAvatars,
   steerAvatar,
   tickWorld,
@@ -93,6 +95,9 @@ export interface WorldHost {
   clearPointer(): void;
   /** Logical size (CSS px) + DPR changed. */
   resize(width: number, height: number, dpr: number): void;
+  /** The local user spoke: show a speech bubble over the local avatar and broadcast
+   *  it once so peers render it too. `glyph` is the optional composed AAC glyph. */
+  say(text: string, glyph?: string): void;
   /** Bias a hosted NPC's body from its live conversation (mind → body). No-op for
    *  an unknown id or a peer that doesn't host that NPC. */
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void;
@@ -285,6 +290,14 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     resize(width, height, dpr) {
       view.resize(width, height, dpr);
+    },
+    say(text, glyph) {
+      const line = (text ?? "").trim();
+      if (!line) return;
+      // Show it locally (over our own avatar) and broadcast it once. setAvatarSpeech
+      // stamps it with state.time so it fades on the local clock.
+      setAvatarSpeech(state, localId, { text: line, glyph });
+      net?.send([sayMessage(localId, line, glyph)]);
     },
     setNpcEngagement(npcId, engagement) {
       npcById.get(npcId)?.setEngagement(engagement);

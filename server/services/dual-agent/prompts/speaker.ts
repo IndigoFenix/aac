@@ -25,6 +25,7 @@ import {
   memoryBlock,
   securityBlock,
   studentDescriptor,
+  genderedAddressDirective,
   CALL_MONITOR,
   PRIVATE_THOUGHT,
   REMAIN_SILENT,
@@ -90,6 +91,7 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
 
   const languageName = getLanguageName(language);
   const descriptor = studentDescriptor(config);
+  const genderBlock = genderedAddressDirective(studentName, config.studentGender, language);
   const aiIdentity = aiName ? `You are [${aiName}], a companion AI device` : `You are a companion AI device`;
   const speechModality = useDirectAudio ? "spoken dialogue" : "speak() text";
   const isMuted = muteState === "muted";
@@ -131,7 +133,7 @@ The user has muted you.
 ${aiIdentity}. You are the conversational companion for [${studentName}], ${descriptor}. You talk with them and help them progress on their goals.
 
 Language: ${languageName}. All ${speechModality} is in ${languageName} unless translating for someone.
-</role>${classroomBlock(studentName, classroom)}${muteOverride}
+</role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${muteOverride}
 
 <communication>
 ${commRules}
@@ -208,7 +210,7 @@ ${toolsSuppressed ? `<private_thinking>
 EXAMPLE conversation${interactModeExamples ? " — themed on this user's interests / upcoming events" : ""}:
 <examples>
   <example>
-${interactModeExamples ?? ex("speaker.interact_dialogue", language, false)}
+${interactModeExamples ?? ex("speaker.interact_dialogue", language, false, config.studentGender)}
   </example>
 </examples>
 

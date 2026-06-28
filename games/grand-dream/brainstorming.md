@@ -38,7 +38,15 @@ Items are tied to the area type they are found or used in.
 
 ### City Building
 - Tech trees unlocking new building types
-- Popu
+- Global resources
+- Spread
+- Structures
+    - Build cost
+    - Build time
+    - Move cost
+- Zones
+- Paths
+- Creatures
 
 ## Terrain
 
@@ -94,3 +102,41 @@ Terrain is generated based on the story and goals. Use the terrain to restrict t
 #### Rivers
 - Can be traveled on only with water travel, otherwise act as obstacles
 - Easier to travel in one direction
+
+
+# Game Types
+
+- Adventure
+- City Builder
+- Civilization
+
+- Gathering
+- Traveling
+- Farming
+- Shopkeeper
+
+# Relational Templates
+
+- Sort & Classify (Classify): dwell an item, dwell a bin. Carries an enormous subject range — even/odd/prime, parts of speech, biological taxonomy, chemical groups, recycling/civics, set membership. The single highest density-to-effort template.
+
+- Sequence & Order (Sequence): arrange into correct order. Number lines, alphabetization, historical timelines, story comprehension, the scientific method, musical scales, sorting-algorithm intuition.
+
+- Connect & Map (Connect): two-dwell edges between nodes. Relationships are everywhere, so this is the broadest of all — translation pairs, cause/effect, food webs, circuits, chemical bonds, family trees, grammar agreement, concept maps.
+
+- Flow & Network (Flow): place directional tiles to route resources. Systems thinking, water cycle, electricity, supply/demand, and a sneaky-good intro to programming (conditionals and loops are routing) and to algebra (a flow network is a function machine).
+
+# Game Type Templates
+
+- Cultivate / Farm (the producer anchor): plant, wait, harvest, trade. Teaches time and patience, linear-vs-exponential growth, ecology, probability of yield, basic economics. Slow timers make it eyegaze-perfect.
+
+- Explore / Collect / Quest (the consumer / narrative anchor): gaze-navigate regions, dwell to collect, meet gated challenges. Reading comprehension, map and geography skills, curiosity-driven discovery, inventory categorization. (Navigation and pathfinding fold in here rather than being a separate template — don't split them.)
+
+- Build / Craft / Combine (the transformer): combine components into new things. Combinatorics, chemistry (elements → compounds), language morphology (morphemes → words → sentences), fractions as parts-into-whole, engineering recipes.
+
+- Tend / Balance (signal-driven simulation): keep a system in homeostasis — a creature, an ecosystem, a town, a body. Feedback loops, biology, civics, budgeting. Build this last: it's the one with genuine stability dynamics, i.e. the exact problem the Emergence side is wrestling with (carrying capacity, density-dependent stabilizers, energy-as-Lyapunov). Reuse those lessons rather than rediscovering them.
+
+# Expressive Templates
+
+- Pattern / Rhythm sequencer: a dwell-cell grid. This is your arts coverage — rhythm, melody, scales, visual symmetry — and doubles as math patterns and coding loops. Often the forgotten subject, and a step-sequencer is one of the most eyegaze-native interfaces there is.
+
+- Dialogue / Socratic (LLM-wrapped, dwell-to-choose): branching conversation and open-response validation. This is your SEL, ethics, and language-comprehension coverage, and it's also the narrative wrapper that can frame any of the above. This is where your planned LLM integration (adaptive hinting, response validation) earns its keep.

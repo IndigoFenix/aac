@@ -11,6 +11,7 @@ import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessCo
 import { useActivityMonitor } from "@/hooks/useActivityMonitor";
 import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
 import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
+import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData } from "@shared/schema";
@@ -53,6 +54,8 @@ interface DualAgentContextType {
   sessionId: string | null;
   isInitialized: boolean;
   isLoading: boolean;
+  /** Pre-`initialized` startup phase, for the localized waking-up subtitle. */
+  startupStage: "connecting" | "checkingNotes" | "planningSession" | "loadingApps" | "wakingUp";
   error: string | null;
 
   // Messages
@@ -220,6 +223,10 @@ interface DualAgentContextType {
     ringBufferSamples: number;
   };
 
+  /** Per-student seizure-detection config (resolved thresholds + seed baseline),
+   *  or null when off / before init. Bridged up to home to gate the detector. */
+  seizureConfig: import("@shared/aac/seizure-config").ClientSeizureConfig | null;
+
   // Pause state
   paused: boolean;
   setPaused: (paused: boolean) => void;
@@ -315,6 +322,10 @@ interface DualAgentProviderProps {
   /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
    *  used by the live session to decide frame-vs-scene_state text. */
   getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
+  /** Seizure: true while the client detector has a surfaceable event. Its rising
+   *  edge PROACTIVELY pushes a frame to the server (a seizure is continuous
+   *  motion, so the activity monitor's motion-settle may never fire on its own). */
+  seizureActive?: boolean;
   /** Lip-sync speaker attribution: per-face mouth activity during a speech
    *  window, sent with speech clips so the server can fuse it with the voice
    *  match. See shared/aac/speaker-fusion.ts. */
@@ -363,6 +374,7 @@ function DualAgentProviderInner({
   sttReady,
   getGestureContext,
   getSceneSnapshot,
+  seizureActive,
   getLipActivity,
   onBoardPatch: onBoardPatchProp,
   debugMode,
@@ -517,6 +529,19 @@ function DualAgentProviderInner({
     handleRequestAudioClipRef.current?.(clipId);
   }, []);
 
+  // Seizure Phase 2b: rolling mic-energy ring (filled below from the activity
+  // monitor) + a stable getter that answers "sustained vocalization right now?".
+  // Passed into useLiveSession to corroborate a seizure [MOTION SIGNATURE] — it
+  // NEVER escalates on its own. Ref-bridged because the monitor is created later.
+  const vocalRingRef = useRef<AudioEnergySample[]>([]);
+  // Gated on the per-student audio-corroboration flag (set after liveAgent below)
+  // — when off, the cue never fires, so it can't annotate a motion event.
+  const audioCorroborationRef = useRef(false);
+  const getVocalCue = useCallback(
+    () => audioCorroborationRef.current && sustainedVocalization(vocalRingRef.current, Date.now()),
+    [],
+  );
+
   const liveAgent = useLiveSession({
     studentId,
     classroomId,
@@ -551,6 +576,7 @@ function DualAgentProviderInner({
     captureHighResFrame,
     getGestureContext,
     getSceneSnapshot,
+    getVocalCue,
   });
 
   const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
@@ -591,6 +617,8 @@ function DualAgentProviderInner({
   const sttActive = liveAgent.clientConfig?.sttActive ?? false;
   const sttActiveRef = useRef(sttActive);
   sttActiveRef.current = sttActive;
+  // Per-student audio-corroboration flag drives getVocalCue (declared above).
+  audioCorroborationRef.current = liveAgent.clientConfig?.seizure?.thresholds?.audioCorroboration ?? false;
   // Audio "live" attention: stream raw PCM continuously (override a vad-gated
   // data-flow). When false ("adaptive"), PCM stays VAD-gated. Read live each
   // render so the Observer's set_audio_attention flips it mid-session.
@@ -1015,6 +1043,15 @@ function DualAgentProviderInner({
     flowConfigRef: flowRef,
   });
 
+  // Seizure Phase 2b: feed the mic-energy ring from the activity monitor's 10 Hz
+  // RMS so getVocalCue can answer "sustained vocalization?" at frame-send time.
+  useEffect(() => {
+    const ring = vocalRingRef.current;
+    ring.push({ ts: Date.now(), energy: activityMonitor.energyLevel });
+    const cutoff = Date.now() - DEFAULT_VOCAL_CUE.windowMs;
+    while (ring.length && ring[0].ts < cutoff) ring.shift();
+  }, [activityMonitor.energyLevel]);
+
   // Voice + noise engagement signals for the sleep system. Independent of
   // activityMonitor (which feeds the activity-driven detection pipeline).
   // Both are computed from the same FFT analyzer for efficiency.
@@ -1088,6 +1125,21 @@ function DualAgentProviderInner({
     }, STARTUP_DETECTION_DELAY_MS);
     return () => clearTimeout(t);
   }, [liveAgent.isInitialized, liveAgent.sessionId, liveAgent.paused, liveAgent.videoCaptureEnabled, liveAgent.voiceEnabled]);
+
+  // Seizure: PROACTIVELY push a frame the instant the detector flags an event,
+  // then keep pushing every few seconds while it persists — a prolonged
+  // convulsion is the emergency, and the Observer needs repeated looks + the
+  // duration cue. Without this the seizure frame would only go out if the
+  // activity monitor happened to fire (motion-settle never triggers during the
+  // continuous motion of a seizure). The frame send reads getSceneSnapshot,
+  // which carries the [MOTION SIGNATURE].
+  useEffect(() => {
+    if (!seizureActive) return;
+    console.log("[DualAgentContext] Seizure detected — firing 'seizure' frame trigger");
+    triggerNowRef.current?.("seizure");
+    const id = setInterval(() => triggerNowRef.current?.("seizure"), 4000);
+    return () => clearInterval(id);
+  }, [seizureActive]);
 
   // Stabilize sendMessage identity — use refs so the callback doesn't change on every render
   const liveAgentSendRef = useRef(liveAgent.sendMessage);
@@ -1262,6 +1314,7 @@ function ProviderShell({
     sessionId: agent.sessionId,
     isInitialized: agent.isInitialized,
     isLoading: agent.isLoading,
+    startupStage: agent.startupStage,
     error: agent.error,
 
     currentMessage: agent.currentMessage,
@@ -1369,6 +1422,11 @@ function ProviderShell({
       lastTriggerReason: activityMonitor.lastTriggerReason,
       ringBufferSamples: activityMonitor.ringBufferSamples,
     },
+
+    // Per-student seizure detection (resolved thresholds + seed baseline) from
+    // the server's clientConfig. home bridges this up to gate/configure the
+    // pose-based detector. Null when off / before init.
+    seizureConfig: agent.clientConfig?.seizure ?? null,
 
     paused: agent.paused,
     setPaused: agent.setPaused,

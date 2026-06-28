@@ -38,6 +38,10 @@ export interface WorldRenderClientOpts {
   /** Resolve a participant's face image (decoded to an ImageBitmap) + label. The
    *  bitmap is transferred to the worker. Return a null bitmap for the disc fallback. */
   fulfillFace: (id: string) => Promise<{ bitmap: ImageBitmap | null; label: string }>;
+  /** Resolve a composed glyph string to its decoded symbol images (the bubble
+   *  strip). Bitmaps are transferred to the worker. Omit when the client has no
+   *  glyphs (e.g. the clinician) — the worker then draws text-only bubbles. */
+  fulfillGlyph?: (glyph: string) => Promise<ImageBitmap[]>;
   initialSize: { width: number; height: number; dpr: number };
   /** Initial gaze/camera/comfort tunables (debug menu); defaults if omitted. */
   tunables?: WorldTunables;
@@ -101,6 +105,9 @@ export class WorldRenderClient {
         this.requested.add(m.id);
         void this.fulfill(m.id);
         break;
+      case "request-glyph":
+        void this.fulfillGlyphImages(m.glyph);
+        break;
       case "npc-proximity":
         this.opts.onNpcProximity?.(m.nearby);
         break;
@@ -132,6 +139,22 @@ export class WorldRenderClient {
     for (const id of this.requested) void this.fulfill(id);
   }
 
+  /** Decode a glyph's symbol images on the main thread and transfer them in. */
+  private async fulfillGlyphImages(glyph: string): Promise<void> {
+    if (!this.opts.fulfillGlyph) return;
+    let bitmaps: ImageBitmap[];
+    try {
+      bitmaps = await this.opts.fulfillGlyph(glyph);
+    } catch {
+      return;
+    }
+    if (this.disposed || !this.worker) {
+      for (const b of bitmaps) { try { b.close(); } catch { /* ignore */ } }
+      return;
+    }
+    this.worker.postMessage({ type: "glyph", glyph, bitmaps } satisfies MainToWorker, bitmaps);
+  }
+
   private fail(reason: string): void {
     if (this.disposed) return;
     this.dispose();
@@ -148,6 +171,7 @@ export class WorldRenderClient {
   applyPresenceLeave(personId: string): void { this.send({ type: "presence-leave", personId }); }
   setPointer(x: number, y: number): void { this.send({ type: "pointer", x, y }); }
   clearPointer(): void { this.send({ type: "pointer-leave" }); }
+  say(text: string, glyph?: string): void { this.send({ type: "say", text, glyph }); }
   resize(width: number, height: number, dpr: number): void { this.send({ type: "resize", width, height, dpr }); }
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void { this.send({ type: "npc-engagement", npcId, engagement }); }
   setTunables(tunables: WorldTunables): void { this.send({ type: "tune", tunables }); }

@@ -20,6 +20,7 @@ import {
   applyRemoteAvatar,
   applyRemoteToy,
   removeAvatar,
+  setAvatarSpeech,
   WORLD_ENGINE_DEFAULTS,
   type WorldEvent,
   type WorldState,
@@ -35,7 +36,11 @@ export type WorldNetMessage =
   | { t: "grab"; id: string; by: string }
   | { t: "release"; id: string; by: string; at: number }
   | { t: "rest"; id: string }
-  | { t: "leave"; id: string };
+  | { t: "leave"; id: string }
+  // Display-only: a one-shot speech bubble for the sender's avatar (NOT streamed
+  // every frame — emitted once when the peer speaks). `text` is the line; `glyph`
+  // is the optional composed AAC glyph string for a symbol rendering.
+  | { t: "say"; id: string; text: string; glyph?: string };
 
 export interface NetOptions {
   /** Cooldown applied to a peer that loses possession, to damp re-grab churn. */
@@ -164,7 +169,16 @@ export function applyInbound(
     case "leave":
       removeAvatar(state, msg.id);
       break;
+
+    case "say":
+      setAvatarSpeech(state, msg.id, { text: msg.text, glyph: msg.glyph });
+      break;
   }
+}
+
+/** Build the one-shot "say" message a peer broadcasts when it speaks. */
+export function sayMessage(id: string, text: string, glyph?: string): WorldNetMessage {
+  return glyph ? { t: "say", id, text, glyph } : { t: "say", id, text };
 }
 
 /**

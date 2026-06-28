@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ALTER COLUMN "live_audio_speaker" SET DEFAULT true;

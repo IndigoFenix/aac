@@ -88,6 +88,18 @@ interface Props {
   debug?: boolean;
   /** Close the debug panel (the parent owns the `debug` flag). */
   onCloseDebug?: () => void;
+  /** The local user's latest utterance — shown as a speech bubble over the local
+   *  avatar and broadcast to peers. Pass a NEW object (changing `at`) per
+   *  utterance; re-passing the same `at` is ignored. `glyph` is the optional
+   *  composed AAC glyph string. Null/absent ⇒ no bubble. */
+  selfSpeech?: { text: string; glyph?: string; at: number } | null;
+  /** Resolve a composed AAC glyph string to a single self-contained image (data
+   *  URL) of the WHOLE glyph, rendered via the shared GlyphCompositor. Async +
+   *  client-supplied (it owns the glyph registry + asset resolver + React render);
+   *  the canvas decodes it to an image for whichever render path is live and draws
+   *  it above the avatar at its natural aspect ratio. Omit for clients with no
+   *  glyphs (e.g. the clinician). */
+  getGlyphImageUrl?: (glyph: string) => Promise<string | null>;
 }
 
 /** Master switch for the OffscreenCanvas render worker. Falls back to the
@@ -112,7 +124,7 @@ function spawnOffset(id: string): Vec2 {
   return { x: Math.cos(ang) * r, y: Math.sin(ang) * r };
 }
 
-export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream, renderer = "3d", hostNpcs: hostNpcsProp, onNpcProximity, npcEngagements, debug = false, onCloseDebug }: Props) {
+export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnHint, getFaceUrl, getLabel, selfStream, renderer = "3d", hostNpcs: hostNpcsProp, onNpcProximity, npcEngagements, debug = false, onCloseDebug, selfSpeech, getGlyphImageUrl }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Proximity handler via a ref so the long-lived loop always calls the latest one
   // without re-running the effect (mirrors the face/label resolver pattern).
@@ -139,6 +151,12 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
   getLabelRef.current = getLabel;
   const selfStreamRef = useRef(selfStream);
   selfStreamRef.current = selfStream;
+  const getGlyphImageUrlRef = useRef(getGlyphImageUrl);
+  getGlyphImageUrlRef.current = getGlyphImageUrl;
+  // Adapter installed by whichever render path is live, so the self-speech effect
+  // can push an utterance into the running host/worker without re-running the
+  // render effect (mirrors the engagement/tune plumbing).
+  const sayAdapterRef = useRef<((text: string, glyph?: string) => void) | null>(null);
 
   // Render path: try the OffscreenCanvas worker first (when supported), and fall
   // back to the main-thread loop if it can't run. `fallbackEpoch` bumps to force a
@@ -182,6 +200,33 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
         return { bitmap, label: getLabelRef.current?.(id) ?? "" };
       };
 
+      // Render a glyph string to a single composed-glyph ImageBitmap for the worker
+      // (transferred in). The client resolver returns a self-contained SVG data URL;
+      // we decode it via <img>+canvas (createImageBitmap(svgBlob) is flaky for SVGs
+      // that embed images in Chrome). Only wired when the client supplies a resolver.
+      const fulfillGlyph = getGlyphImageUrlRef.current
+        ? async (glyph: string): Promise<ImageBitmap[]> => {
+            const url = await getGlyphImageUrlRef.current?.(glyph);
+            if (!url) return [];
+            try {
+              const img = new Image();
+              img.decoding = "async";
+              img.src = url;
+              await img.decode();
+              const w = img.naturalWidth || img.width;
+              const h = img.naturalHeight || img.height;
+              if (!w || !h) return [];
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              const c = canvas.getContext("2d");
+              if (!c) return [];
+              c.drawImage(img, 0, 0, w, h);
+              return [await createImageBitmap(canvas)];
+            } catch { return []; /* a glyph that won't render → text-only bubble */ }
+          }
+        : undefined;
+
       let client: WorldRenderClient;
       try {
         client = new WorldRenderClient({
@@ -195,6 +240,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
           hostNpcs,
           net: net ? { send: net.send, publishPresence: net.publishPresence } : undefined,
           fulfillFace,
+          fulfillGlyph,
           tunables: tunablesRef.current,
           onNpcProximity: (nearby) => onNpcProximityRef.current?.(nearby),
           initialSize: { width: canvas.clientWidth, height: canvas.clientHeight, dpr: window.devicePixelRatio || 1 },
@@ -216,6 +262,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
       const c = client;
       engageAdapterRef.current = (npcId, e) => c.setNpcEngagement(npcId, e);
       tuneAdapterRef.current = (t) => c.setTunables(t);
+      sayAdapterRef.current = (text, glyph) => c.say(text, glyph);
       const unsubscribe = net?.subscribe((_from, msgs) => c.applyNetInbound(msgs));
       const unsubPresence = net?.subscribePresence?.((p) => c.applyPresence(p));
       const unsubLeave = net?.subscribePresenceLeave?.((id) => c.applyPresenceLeave(id));
@@ -239,6 +286,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
         unsubLeave?.();
         engageAdapterRef.current = null;
         tuneAdapterRef.current = null;
+        sayAdapterRef.current = null;
         c.dispose();
       };
     }
@@ -292,9 +340,30 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
     };
     const labelFor = (id: string): string => getLabelRef.current?.(id) ?? "";
 
+    // Speech-bubble glyph: the client renders the WHOLE glyph to one composed
+    // image (async, RTL + modifiers + emoji handled by the shared compositor). We
+    // request it once per glyph string, decode it lazily, and return it once it's
+    // loaded — mirroring the face path. `null` (pending) is requested only once.
+    const glyphImgs = new Map<string, HTMLImageElement | null>(); // null while in flight
+    const glyphForView = (glyph: string): CanvasImageSource[] | null => {
+      const have = glyphImgs.get(glyph);
+      if (have !== undefined) {
+        return have && have.complete && have.naturalWidth > 0 ? [have] : null;
+      }
+      glyphImgs.set(glyph, null); // mark requested
+      getGlyphImageUrlRef.current?.(glyph).then((url) => {
+        if (!url) return;
+        const img = new Image();
+        img.decoding = "async";
+        img.src = url;
+        glyphImgs.set(glyph, img);
+      });
+      return null;
+    };
+
     // The renderer (2D top-down or 3D environment). It owns the camera, so it
     // supplies BOTH the pointer→world aim mapping and the draw call.
-    const viewDeps = { canvas, localId, faceFor, labelFor };
+    const viewDeps = { canvas, localId, faceFor, labelFor, glyphFor: glyphForView };
     const view: WorldView =
       renderer === "2d" ? createWorld2DView(viewDeps) : createWorld3DView(viewDeps, spec);
 
@@ -319,6 +388,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
     });
     engageAdapterRef.current = (npcId, e) => host.setNpcEngagement(npcId, e);
     tuneAdapterRef.current = (t) => host.setTunables(t);
+    sayAdapterRef.current = (text, glyph) => host.say(text, glyph);
 
     // Inbound peer state → host. Mesh: toys/possession (+ avatar when no relay).
     // Relay (Phase 1): remote avatar positions.
@@ -352,6 +422,7 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
       unsubLeave?.();
       engageAdapterRef.current = null;
       tuneAdapterRef.current = null;
+      sayAdapterRef.current = null;
       try { selfVideo.pause(); selfVideo.srcObject = null; } catch { /* ignore */ }
     };
   }, [worldSpecKey, worldSpec, net, renderer, renderMode, fallbackEpoch, hostNpcsProp]);
@@ -361,6 +432,19 @@ export default function SocialWorldCanvas({ worldSpecKey, worldSpec, net, spawnH
   useEffect(() => {
     tuneAdapterRef.current?.(tunables);
   }, [tunables]);
+
+  // A fresh local utterance → show a bubble over our avatar + broadcast it. Keyed
+  // on `at` so re-renders with the same utterance don't re-fire (the parent passes
+  // a new object per utterance). The render path replays nothing on remount, so a
+  // transient bubble may not survive a 2D↔3D toggle — acceptable.
+  const lastSaidAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const speech = selfSpeech;
+    if (!speech || !speech.text.trim()) return;
+    if (lastSaidAtRef.current === speech.at) return;
+    lastSaidAtRef.current = speech.at;
+    sayAdapterRef.current?.(speech.text, speech.glyph);
+  }, [selfSpeech]);
 
   // Push live conversation bias into the hosted NPC bodies. Declared AFTER the
   // render effect so the adapter ref is set before this runs; calls are idempotent

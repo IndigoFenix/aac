@@ -12,7 +12,7 @@
 // explicitly at the demo backend. Dev-electron loads http://localhost:5174,
 // which deliberately falls through to the VITE_API_URL dev flow below.
 
-const DEMO_BACKEND = "https://aivota-demo.onrender.com";
+const DEMO_BACKEND = "https://aivota-demo-us.onrender.com";
 
 function stripTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");

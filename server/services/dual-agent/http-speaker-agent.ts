@@ -37,6 +37,10 @@ import { LeadingTagStripper } from "./leading-tag-stripper";
 import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
 import type { LiveUsage } from "./live-provider";
 import type { SpeakerCallbacks, SpeakerStartConfig, SpeakerOutputEvent } from "./speaker-agent";
+// Shared thought-leak detection/stripping — the same guard the native-audio
+// SpeakerAgent applies to its streaming transcript. Reused here so the HTTP
+// path doesn't let a voiced `private_thought` reach the client / TTS.
+import { isLeakedThought, stripThoughtLeakMarker } from "./speaker-agent";
 import type { ISpeakerAgent } from "./speaker-interface";
 import type {
   SpeechStartEvent,
@@ -50,6 +54,7 @@ import type {
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
   RemainSilentEvent,
+  ThoughtLeakEvent,
 } from "./agent-events";
 
 // ---------------------------------------------------------------------------
@@ -273,6 +278,11 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     const tagStripper = new LeadingTagStripper();
     let speechStartEmitted = false;
     let fullText = "";
+    // Set once the streamed text reveals the model voicing its private
+    // reasoning ("private_thought …") instead of calling the tool. While
+    // true we stop forwarding text to the client subtitle + TTS, and the
+    // turn resolves to a ThoughtLeakEvent instead of speech.
+    let leakedThought = false;
     const toolCalls: Array<{ name: string; arguments: string }> = [];
 
     const onSentenceReady = (sentence: string) => {
@@ -312,6 +322,19 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
             const cleaned = tagStripper.push(chunk.text);
             if (!cleaned) break;
             fullText += cleaned;
+            // Thought-leak guard (mirrors SpeakerAgent.handleOutputTranscription).
+            // The model sometimes VOICES its private_thought reasoning as
+            // text instead of calling the tool. Detect on the accumulated
+            // text and stop forwarding to BOTH the client subtitle and TTS.
+            // The marker leads the utterance and the sentence splitter only
+            // flushes on a sentence boundary, so we catch it before any
+            // audio is synthesized. Keep accumulating `fullText` (above) so
+            // the captured reasoning is complete for the supervisor log.
+            if (!leakedThought && isLeakedThought(fullText)) {
+              leakedThought = true;
+              flowOutput("SPEAKER", "thought_leak_detected", fullText.trim());
+            }
+            if (leakedThought) break; // swallow the leaked reasoning
             // Forward to the client as a streaming text delta — same
             // path the Live native-audio outputTranscription uses. The
             // subtitle / avatar mouth track this so the user sees text
@@ -347,6 +370,28 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
 
       if (controller.signal.aborted) {
         flowNote("SPEAKER", "HTTP completion aborted (superseded turn)");
+        return;
+      }
+
+      // ----- Leaked thought: terminal, no speech -----------------------
+      // The model voiced its private reasoning as text. Emit a ThoughtLeakEvent
+      // (marker stripped) INSTEAD of speech — nothing was forwarded to the
+      // client / TTS, nothing is persisted as a reply, and we deliberately
+      // skip the orphan re-prompt loop below (which would otherwise fire on
+      // the empty reply). The Coordinator records the note on supervisor
+      // channels, resets the client text accumulator, and injects a corrective.
+      if (leakedThought) {
+        // Fold in any text the tag-stripper withheld (unclosed bracket) so
+        // the captured note is complete — but never forward it.
+        const note = stripThoughtLeakMarker((fullText + tagStripper.flush()).trim());
+        flowOutput("SPEAKER", "thought_leak", note);
+        const ev: ThoughtLeakEvent = {
+          type: "thought_leak",
+          source: "speaker",
+          timestamp: Date.now(),
+          note,
+        };
+        this.callbacks.onEvent(ev);
         return;
       }
 

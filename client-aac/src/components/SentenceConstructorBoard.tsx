@@ -22,13 +22,15 @@ import {
   modifiersFor,
   colorModifiersFor,
   emotionModifiersFor,
+  gaugeModifiersFor,
+  qualityPairsFor,
+  listConnectors,
   MODE_CHIPS,
   defaultModeChip,
 } from "@shared/glyph-registry";
 import {
   EMPTY_GLYPH,
   MAX_SLOTS,
-  pushSlot,
   replaceSlot,
   clearSlot,
   addModifier,
@@ -38,9 +40,11 @@ import {
   serializeGlyph,
   setPayload,
   setToneTags,
+  SPATIAL_RELATIONS,
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
+import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji, isNonReversibleEmoji } from "@shared/emoji-registry";
@@ -400,6 +404,51 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return null;
   }, [displayedGlyph, effectiveActiveSlot]);
 
+  // Amount (gauge quantifier) modifiers — dedicated picker like colors.
+  const amountOptions = useMemo<VocabularyItem[]>(() => {
+    if (effectiveActiveSlot == null) return [];
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    if (!item) return [];
+    return gaugeModifiersFor(item.pos);
+  }, [displayedGlyph, effectiveActiveSlot]);
+  const [amountPickerOpen, setAmountPickerOpen] = useState(false);
+  useEffect(() => {
+    if (amountOptions.length === 0) setAmountPickerOpen(false);
+  }, [amountOptions]);
+  const activeAmountKey = useMemo(() => {
+    if (effectiveActiveSlot == null) return null;
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    if (!slot) return null;
+    for (const modKey of slot.modifiers) {
+      if (getVocabularyItem(modKey)?.modifier?.transform === "gauge") return modKey;
+    }
+    return null;
+  }, [displayedGlyph, effectiveActiveSlot]);
+
+  // Quality opposite-pairs — pole-toggle picker (none → pos → neg → none).
+  const qualityPairs = useMemo(() => {
+    if (effectiveActiveSlot == null) return [];
+    const slot = displayedGlyph.slots[effectiveActiveSlot];
+    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    if (!item) return [];
+    return qualityPairsFor(item.pos);
+  }, [displayedGlyph, effectiveActiveSlot]);
+  const [qualityPickerOpen, setQualityPickerOpen] = useState(false);
+  useEffect(() => {
+    if (qualityPairs.length === 0) setQualityPickerOpen(false);
+  }, [qualityPairs]);
+
+  // Forward pending-join (connectors + spatial). Selecting one arms it; the
+  // next pushed slot consumes it as its `join`. Available once a slot exists.
+  const joinOptions = useMemo(() => listConnectors(), []);
+  const [joinPickerOpen, setJoinPickerOpen] = useState(false);
+  const [pendingJoin, setPendingJoin] = useState<string | null>(null);
+  const canJoin = displayedGlyph.slots.length > 0 && displayedGlyph.slots.length < MAX_SLOTS;
+  useEffect(() => {
+    if (!canJoin) { setJoinPickerOpen(false); setPendingJoin(null); }
+  }, [canJoin]);
+
   const handleTabSelect = useCallback((tab: GlyphCategory) => {
     // Picking a category while guessing is active is a clear "I'm done
     // narrowing — let me browse this category instead" signal. Cancel
@@ -451,9 +500,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             return setPayload(g, pending, selectionKey);
           }
         }
-        return pushSlot(g, selectionKey);
+        return pushSlotWithJoin(g, selectionKey, pendingJoin);
       });
       setActiveSlot(null);
+      setPendingJoin(null);
       // If we just placed a composable host with no payload, hop to the
       // first suggestCategory so the grid surfaces relevant fillers.
       if (item.composable && item.composable.suggestCategories.length > 0) {
@@ -462,7 +512,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         setModeChip(defaultModeChip(nextTab));
       }
     },
-    [activeSlot]
+    [activeSlot, pendingJoin]
   );
 
   // Person press (from the "who → photos" person list): insert a `face:<id>`
@@ -485,11 +535,12 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             return setPayload(g, pending, selectionKey);
           }
         }
-        return pushSlot(g, selectionKey);
+        return pushSlotWithJoin(g, selectionKey, pendingJoin);
       });
       setActiveSlot(null);
+      setPendingJoin(null);
     },
-    [activeSlot]
+    [activeSlot, pendingJoin]
   );
 
   const handleSlotPress = useCallback((idx: number | null) => {
@@ -717,27 +768,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const handleColorPick = useCallback(
     (colorItem: VocabularyItem) => {
       if (effectiveActiveSlot == null) return;
-      setGlyph((g) => {
-        let next = g;
-        const slot = next.slots[effectiveActiveSlot];
-        if (!slot) return g;
-        // Strip any existing color modifier first (mutual exclusion).
-        for (const modKey of slot.modifiers) {
-          if (modKey === colorItem.key) continue;
-          const mod = getVocabularyItem(modKey);
-          if (mod?.modifier?.transform === "color") {
-            next = removeModifier(next, effectiveActiveSlot, modKey);
-          }
-        }
-        // Toggle: tapping the active color again removes it; otherwise add.
-        const refreshedSlot = next.slots[effectiveActiveSlot];
-        if (refreshedSlot.modifiers.includes(colorItem.key)) {
-          next = removeModifier(next, effectiveActiveSlot, colorItem.key);
-        } else {
-          next = addModifier(next, effectiveActiveSlot, colorItem.key);
-        }
-        return next;
-      });
+      setGlyph((g) => applyExclusiveModifier(g, effectiveActiveSlot, colorItem.key, "color"));
       setColorPickerOpen(false);
     },
     [effectiveActiveSlot]
@@ -746,31 +777,36 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const handleEmotionPick = useCallback(
     (emotionItem: VocabularyItem) => {
       if (effectiveActiveSlot == null) return;
-      setGlyph((g) => {
-        let next = g;
-        const slot = next.slots[effectiveActiveSlot];
-        if (!slot) return g;
-        // One emotion per slot — strip any existing emotion modifier first.
-        for (const modKey of slot.modifiers) {
-          if (modKey === emotionItem.key) continue;
-          const mod = getVocabularyItem(modKey);
-          if (mod?.modifier?.transform === "emotion") {
-            next = removeModifier(next, effectiveActiveSlot, modKey);
-          }
-        }
-        // Toggle: tapping the active emotion again removes it; otherwise add.
-        const refreshedSlot = next.slots[effectiveActiveSlot];
-        if (refreshedSlot.modifiers.includes(emotionItem.key)) {
-          next = removeModifier(next, effectiveActiveSlot, emotionItem.key);
-        } else {
-          next = addModifier(next, effectiveActiveSlot, emotionItem.key);
-        }
-        return next;
-      });
+      setGlyph((g) => applyExclusiveModifier(g, effectiveActiveSlot, emotionItem.key, "emotion"));
       setEmotionPickerOpen(false);
     },
     [effectiveActiveSlot]
   );
+
+  /** Amount (gauge) modifier — mutually exclusive on the slot, like color. */
+  const handleAmountPick = useCallback(
+    (amountItem: VocabularyItem) => {
+      if (effectiveActiveSlot == null) return;
+      setGlyph((g) => applyExclusiveModifier(g, effectiveActiveSlot, amountItem.key, "gauge"));
+      setAmountPickerOpen(false);
+    },
+    [effectiveActiveSlot]
+  );
+
+  /** Quality pole-toggle: cycle the active slot through none → pos → neg → none. */
+  const handleQualityToggle = useCallback(
+    (pair: { pos: VocabularyItem; neg: VocabularyItem }) => {
+      if (effectiveActiveSlot == null) return;
+      setGlyph((g) => cycleQualityPole(g, effectiveActiveSlot, pair.pos.key, pair.neg.key));
+    },
+    [effectiveActiveSlot]
+  );
+
+  /** Arm / disarm a forward-binding join for the next pushed slot. */
+  const handleJoinPick = useCallback((key: string) => {
+    setPendingJoin((cur) => (cur === key ? null : key));
+    setJoinPickerOpen(false);
+  }, []);
 
   // "More" press: hide the current SUGGESTIONs, exclude them next round.
   // After MORE_ESCALATION_THRESHOLD presses without a selection, escalate to
@@ -826,11 +862,12 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             return setPayload(g, pending, selectionKey);
           }
         }
-        return pushSlot(g, selectionKey);
+        return pushSlotWithJoin(g, selectionKey, pendingJoin);
       });
       setActiveSlot(null);
+      setPendingJoin(null);
     },
-    [activeSlot]
+    [activeSlot, pendingJoin]
   );
 
   return (
@@ -1017,7 +1054,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           (aiModifierCandidates.length > 0 && effectiveActiveSlot != null) ||
           modifierItems.length > 0 ||
           colorOptions.length > 0 ||
-          emotionOptions.length > 0
+          emotionOptions.length > 0 ||
+          amountOptions.length > 0 ||
+          qualityPairs.length > 0 ||
+          (canJoin && joinOptions.length > 0)
         ) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
             {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
@@ -1061,7 +1101,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 aria-hidden
               />
             )}
-            {(modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0) && (
+            {(modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0
+              || amountOptions.length > 0 || qualityPairs.length > 0 || (canJoin && joinOptions.length > 0)) && (
               <div className="flex items-center gap-2 shrink-0">
                 {modifierItems.map((m) => (
                   <ModifierButton
@@ -1090,6 +1131,33 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                     active={emotionPickerOpen}
                     activeEmoji={activeEmotionKey ? getVocabularyItem(activeEmotionKey)?.emoji : undefined}
                     onPress={() => setEmotionPickerOpen((o) => !o)}
+                  />
+                )}
+                {amountOptions.length > 0 && (
+                  <PickerToggleButton
+                    active={amountPickerOpen}
+                    emoji={activeAmountKey ? (getVocabularyItem(activeAmountKey)?.emoji ?? "🌗") : "🌗"}
+                    label="Amount"
+                    testId="amount-picker-toggle"
+                    onPress={() => setAmountPickerOpen((o) => !o)}
+                  />
+                )}
+                {qualityPairs.length > 0 && (
+                  <PickerToggleButton
+                    active={qualityPickerOpen}
+                    emoji="👍"
+                    label="Quality"
+                    testId="quality-picker-toggle"
+                    onPress={() => setQualityPickerOpen((o) => !o)}
+                  />
+                )}
+                {canJoin && joinOptions.length > 0 && (
+                  <PickerToggleButton
+                    active={joinPickerOpen}
+                    emoji={pendingJoin ? (getVocabularyItem(pendingJoin)?.emoji ?? "🔗") : "🔗"}
+                    label="Join"
+                    testId="join-picker-toggle"
+                    onPress={() => setJoinPickerOpen((o) => !o)}
                   />
                 )}
               </div>
@@ -1130,6 +1198,59 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 item={e}
                 active={activeEmotionKey === e.key}
                 onPress={() => handleEmotionPick(e)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Amount (quantifier) picker — mutually-exclusive gauge scale. */}
+        {!guessingActive && amountPickerOpen && amountOptions.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="amount-picker"
+          >
+            {amountOptions.map((a) => (
+              <ModifierButton
+                key={a.key}
+                item={a}
+                active={activeAmountKey === a.key}
+                onPress={() => handleAmountPick(a)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Quality pole-toggle picker — each pair is one button that cycles
+            none → positive → negative → none on the active slot. */}
+        {!guessingActive && qualityPickerOpen && qualityPairs.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="quality-picker"
+          >
+            {qualityPairs.map((pair) => (
+              <QualityToggleButton
+                key={pair.pos.key}
+                pair={pair}
+                activeKeys={activeModifierKeys}
+                onPress={() => handleQualityToggle(pair)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Join picker — arm a forward-binding connector / spatial relation for
+            the NEXT word. The compositor draws it in the seam once placed. */}
+        {!guessingActive && joinPickerOpen && canJoin && joinOptions.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="join-picker"
+          >
+            {joinOptions.map((j) => (
+              <ModifierButton
+                key={j.key}
+                item={j}
+                active={pendingJoin === j.key}
+                onPress={() => handleJoinPick(j.key)}
               />
             ))}
           </div>
@@ -1641,6 +1762,78 @@ function EmotionSwatchButton(props: {
       title={label}
     >
       <span className="text-2xl" aria-hidden>{props.item.emoji ?? "🙂"}</span>
+    </motion.button>
+  );
+}
+
+/**
+ * Generic picker-opener button (mirrors ColorPickerButton/EmotionPickerButton)
+ * for the amount / quality / join pickers. Shows a representative emoji.
+ */
+function PickerToggleButton(props: {
+  active: boolean;
+  emoji: string;
+  label: string;
+  testId: string;
+  onPress: () => void;
+}) {
+  return (
+    <motion.button
+      data-dwell
+      data-testid={props.testId}
+      onClick={props.onPress}
+      aria-pressed={props.active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
+        props.active
+          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      aria-label={props.label}
+      title={props.label}
+    >
+      <span className="text-2xl" aria-hidden>{props.emoji}</span>
+    </motion.button>
+  );
+}
+
+/**
+ * One opposite-pair toggle in the quality picker. Tapping cycles the active
+ * slot none → positive → negative → none; the button shows the current pole's
+ * emoji (green = positive, red = negative, dimmed = off).
+ */
+function QualityToggleButton(props: {
+  pair: { pos: VocabularyItem; neg: VocabularyItem };
+  activeKeys: Set<string>;
+  onPress: () => void;
+}) {
+  const { pair, activeKeys } = props;
+  const posLabel = useItemLabel(pair.pos);
+  const negLabel = useItemLabel(pair.neg);
+  const hasPos = activeKeys.has(pair.pos.key);
+  const hasNeg = activeKeys.has(pair.neg.key);
+  const state = hasPos ? "pos" : hasNeg ? "neg" : "off";
+  const emoji = hasNeg ? (pair.neg.emoji ?? "👎") : (pair.pos.emoji ?? "👍");
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`quality-toggle-${pair.pos.key}`}
+      onClick={props.onPress}
+      aria-pressed={hasPos || hasNeg}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
+        state === "pos"
+          ? "border-green-600 bg-green-50 dark:bg-green-900/40"
+          : state === "neg"
+            ? "border-red-600 bg-red-50 dark:bg-red-900/40"
+            : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      aria-label={`${posLabel} / ${negLabel}`}
+      title={`${posLabel} / ${negLabel}`}
+    >
+      <span className="text-2xl" aria-hidden style={state === "off" ? { opacity: 0.5 } : undefined}>{emoji}</span>
     </motion.button>
   );
 }

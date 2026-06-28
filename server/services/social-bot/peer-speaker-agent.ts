@@ -115,6 +115,9 @@ export interface SocialPeerAgentOptions {
    *  from the clinician's per-app defaults and the AI's session focus. Omit
    *  for DEFAULT_SLP_CONFIG (all skills in scope, default ceiling). */
   slpConfig?: SlpConfig;
+  /** The STUDENT's grammatical gender, so the peer addresses them with correct
+   *  feminine/masculine forms in gendered languages. Omit when unknown. */
+  addresseeGender?: "male" | "female";
   callbacks: SocialPeerCallbacks;
 }
 
@@ -150,6 +153,7 @@ export class SocialPeerSpeakerAgent implements ISpeakerAgent {
       model: this.opts.model,
       language: this.opts.languageName,
       languageLevel: this.opts.languageLevel,
+      addresseeGender: this.opts.addresseeGender,
     });
     this.opened = true;
     flowNote("SPEAKER", `Social peer director started (model=${this.opts.model}, peer=${p.name})`);

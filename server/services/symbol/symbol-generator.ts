@@ -9,7 +9,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import {
   IMAGE_GENERATION_STANDARDS_PROMPT,
   getOrCreatePromptCache,
@@ -123,6 +123,7 @@ async function refinePrompt(
 
 async function generateImage(
   prompt: string,
+  referenceImages?: Buffer[],
 ): Promise<{ imageBuffer: Buffer; inputTokens: number; outputTokens: number }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -131,15 +132,31 @@ async function generateImage(
 
   const openai = new OpenAI({ apiKey });
 
-  const response = await openai.images.generate({
-    model: IMAGE_GENERATION_MODEL,
-    prompt,
-    n: 1,
-    size: "1024x1024",
-    quality: "low",
-    background: "transparent",
-    output_format: "png",
-  });
+  // When reference images are supplied, condition generation on them via the
+  // edits endpoint (gpt-image-1 accepts up to ~16 input images) so the output
+  // matches the references' style/content — e.g. restyling a base person figure
+  // into gendered variants. Otherwise plain text-to-image.
+  const response = referenceImages?.length
+    ? await openai.images.edit({
+        model: IMAGE_GENERATION_MODEL,
+        image: await Promise.all(
+          referenceImages.map((buf, i) => toFile(buf, `ref${i}.png`, { type: "image/png" })),
+        ),
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "low",
+        background: "transparent",
+      })
+    : await openai.images.generate({
+        model: IMAGE_GENERATION_MODEL,
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "low",
+        background: "transparent",
+        output_format: "png",
+      });
 
   const b64Data = response.data?.[0]?.b64_json;
   if (!b64Data) {
@@ -168,13 +185,13 @@ async function generateImage(
  */
 export async function generateSymbolImage(
   description: string,
-  options?: { styleGuideBase64?: string },
+  options?: { styleGuideBase64?: string; referenceImages?: Buffer[] },
 ): Promise<SymbolGenerationResult> {
   // Step 1: Refine prompt
   const refinement = await refinePrompt(description, options);
 
-  // Step 2: Generate image
-  const imageResult = await generateImage(refinement.prompt);
+  // Step 2: Generate image (conditioned on reference images when provided)
+  const imageResult = await generateImage(refinement.prompt, options?.referenceImages);
 
   return {
     imageBuffer: imageResult.imageBuffer,

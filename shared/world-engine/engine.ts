@@ -48,6 +48,23 @@ export interface AvatarState {
   /** Seconds since the last network packet — caps dead-reckoning so a peer whose
    *  packets stop (e.g. a backgrounded tab) freezes instead of gliding away. */
   tAge?: number;
+  /** Ephemeral speech bubble shown over the avatar's head. DISPLAY-ONLY — not part
+   *  of the deterministic sim (tickWorld never reads or writes it), so it can ride
+   *  the same render path without perturbing physics. Set locally when this peer
+   *  speaks (setAvatarSpeech) and on remotes from the "say" net message; the
+   *  renderer fades it out `at` + a TTL. */
+  say?: AvatarSpeech;
+}
+
+/** An utterance to surface over an avatar. `text` is the spoken line; `glyph` is
+ *  the composed AAC glyph string for a symbol rendering of it (absent for plain
+ *  speech, e.g. a clinician's STT). `at` is LOCAL sim-time seconds (state.time)
+ *  when it was applied, so the renderer can fade it on its own clock — never the
+ *  speaker's wall clock, which differs per machine. */
+export interface AvatarSpeech {
+  text: string;
+  glyph?: string;
+  at: number;
 }
 
 export interface ToyState {
@@ -80,6 +97,21 @@ export interface WorldState {
 export interface WorldInput {
   /** Gaze/pointer aim in world coordinates, or null to coast to a stop. */
   aim: Vec2 | null;
+}
+
+/**
+ * Optional collision constraint applied to a locally-advanced avatar each step.
+ * The engine integrates velocity to a PROPOSED position, then asks the
+ * constraint whether that point is occupiable; if not, it slides along whichever
+ * axis stays walkable (zeroing the blocked component). Pure geometry supplied by
+ * the caller — the engine stays ignorant of WHAT blocks movement (an embedded
+ * goal-tree quest's room walls today; terrain/solids later), exactly as
+ * SceneOverlay keeps it ignorant of what's drawn. No constraint → open-field
+ * motion (the default; sandbox/social worlds pass none, so they're unaffected).
+ */
+export interface MoveConstraint {
+  /** True if an avatar of `radius` may occupy world point `p`. */
+  walkable(p: Vec2, radius: number): boolean;
 }
 
 export type WorldEvent =
@@ -261,11 +293,12 @@ export function steerAvatar(
   aim: Vec2 | null,
   dt: number,
   config: WorldEngineConfig = WORLD_ENGINE_DEFAULTS,
+  constraint?: MoveConstraint,
 ): void {
   const a = state.avatars[id];
   if (!a) return;
   const step = Math.min(Math.max(dt, 0), config.maxStep);
-  if (step > 0) advanceAvatar(a, aim, state.spec, config, step);
+  if (step > 0) advanceAvatar(a, aim, state.spec, config, step, constraint);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +315,7 @@ export function tickWorld(
   input: WorldInput,
   dt: number,
   config: WorldEngineConfig = WORLD_ENGINE_DEFAULTS,
+  constraint?: MoveConstraint,
 ): WorldTickResult {
   const step = Math.min(Math.max(dt, 0), config.maxStep);
   const events: WorldEvent[] = [];
@@ -291,7 +325,7 @@ export function tickWorld(
   const prevSpeed = local ? Math.hypot(local.vx, local.vy) : 0;
 
   if (local && step > 0) {
-    advanceAvatar(local, input.aim, state.spec, config, step);
+    advanceAvatar(local, input.aim, state.spec, config, step, constraint);
   }
   state.time += step;
 
@@ -312,6 +346,7 @@ function advanceAvatar(
   spec: WorldSpec,
   config: WorldEngineConfig,
   step: number,
+  constraint?: MoveConstraint,
 ): void {
   let ax = 0;
   let ay = 0;
@@ -380,8 +415,32 @@ function advanceAvatar(
     a.vy = 0;
   }
 
-  a.x += a.vx * step;
-  a.y += a.vy * step;
+  // Proposed step, then (optionally) constrained: if the target cell is solid,
+  // slide along whichever axis stays walkable and zero the blocked component, so
+  // the avatar grazes walls instead of sticking or tunnelling. Mirrors the
+  // Space2D slide; lifted here so any constrained world (a goal-tree quest's
+  // rooms) gets it without re-implementing locomotion.
+  const nx = a.x + a.vx * step;
+  const ny = a.y + a.vy * step;
+  if (!constraint) {
+    a.x = nx;
+    a.y = ny;
+  } else {
+    const r = config.avatarRadius;
+    if (constraint.walkable({ x: nx, y: ny }, r)) {
+      a.x = nx;
+      a.y = ny;
+    } else if (constraint.walkable({ x: nx, y: a.y }, r)) {
+      a.x = nx;
+      a.vy = 0;
+    } else if (constraint.walkable({ x: a.x, y: ny }, r)) {
+      a.y = ny;
+      a.vx = 0;
+    } else {
+      a.vx = 0;
+      a.vy = 0;
+    }
+  }
   clampToManifold(a, spec, config.avatarRadius);
 
   // Facing: toward the aim when stopped on top of it; else follows velocity
@@ -589,6 +648,27 @@ export function smoothRemoteAvatars(
 export function removeAvatar(state: WorldState, id: string): void {
   if (id === state.localId) return;
   delete state.avatars[id];
+}
+
+/**
+ * Attach (or clear) an avatar's speech bubble. DISPLAY-ONLY: stamps `at` with the
+ * local sim time so the renderer fades it on its own clock. No-ops for an unknown
+ * id (a "say" can race ahead of the avatar's first position packet — losing that
+ * rare first-frame bubble is preferable to materialising a positionless avatar).
+ * Blank text clears any existing bubble.
+ */
+export function setAvatarSpeech(
+  state: WorldState,
+  id: string,
+  speech: { text: string; glyph?: string } | null,
+): void {
+  const a = state.avatars[id];
+  if (!a) return;
+  if (!speech || !speech.text.trim()) {
+    delete a.say;
+    return;
+  }
+  a.say = { text: speech.text, glyph: speech.glyph, at: state.time };
 }
 
 /** Write a toy's position from the peer that currently owns it. */

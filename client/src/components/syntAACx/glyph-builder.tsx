@@ -28,16 +28,17 @@ import { resolveIconPath, registerStudentFace } from "@/lib/glyph-images";
 import {
   parseGlyph,
   serializeGlyph,
-  pushSlot,
   replaceSlot,
   clearSlot,
   addModifier,
   removeModifier,
   applyRelationalModifier,
   setToneTags,
+  MAX_SLOTS,
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
+import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
 import {
   listByCategory,
   listByModeChip,
@@ -45,6 +46,10 @@ import {
   defaultModeChip,
   modifiersFor,
   colorModifiersFor,
+  emotionModifiersFor,
+  gaugeModifiersFor,
+  qualityPairsFor,
+  listConnectors,
   getVocabularyItem,
   type VocabularyItem,
   type GlyphCategory,
@@ -90,6 +95,8 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
   const [modeChip, setModeChip] = useState<string>(defaultModeChip("what"));
   const [emojiInput, setEmojiInput] = useState("");
   const [view, setView] = useState<"main" | "symbol" | "person">("main");
+  // Forward-binding join armed for the next pushed slot (connector / spatial).
+  const [pendingJoin, setPendingJoin] = useState<string | null>(null);
 
   const apply = (next: ParsedGlyph) => onChange(serializeGlyph(next));
 
@@ -97,8 +104,9 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
     if (activeSlot != null && activeSlot < parsed.slots.length) {
       apply(replaceSlot(parsed, activeSlot, key));
     } else {
-      apply(pushSlot(parsed, key));
+      apply(pushSlotWithJoin(parsed, key, pendingJoin));
       setActiveSlot(parsed.slots.length); // select the newly added slot
+      setPendingJoin(null);
     }
   };
 
@@ -107,10 +115,18 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
     setActiveSlot(null);
   };
 
-  // Modifiers for the currently-selected slot.
+  // Modifier families for the currently-selected slot. The carousel (activeMods)
+  // excludes hiddenFromCarousel families (color/emotion/amount/quality); those
+  // get their own rows below, mirroring the AAC sentence builder. All mutation
+  // goes through the shared glyph-builder-ops so the two builders stay in sync.
   const activeItem = activeSlot != null ? getVocabularyItem(parsed.slots[activeSlot]?.key || "") : undefined;
   const activeMods = activeItem ? modifiersFor(activeItem.pos) : [];
   const activeColorMods = activeItem ? colorModifiersFor(activeItem.pos) : [];
+  const activeEmotionMods = activeItem ? emotionModifiersFor(activeItem.pos) : [];
+  const activeAmountMods = activeItem ? gaugeModifiersFor(activeItem.pos) : [];
+  const activeQualityPairs = activeItem ? qualityPairsFor(activeItem.pos) : [];
+  const joinOptions = listConnectors();
+  const canJoin = parsed.slots.length > 0 && parsed.slots.length < MAX_SLOTS;
   const activeSlotModifiers = activeSlot != null ? parsed.slots[activeSlot]?.modifiers ?? [] : [];
 
   const toggleModifier = (item: VocabularyItem) => {
@@ -122,18 +138,20 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
       return;
     }
     const has = activeSlotModifiers.includes(item.key);
-    if (mod.transform === "color") {
-      // Color is mutually exclusive — clear any existing color first.
-      let next = parsed;
-      for (const m of activeSlotModifiers) {
-        if (getVocabularyItem(m)?.modifier?.transform === "color") next = removeModifier(next, activeSlot, m);
-      }
-      if (!has) next = addModifier(next, activeSlot, item.key);
-      apply(next);
-      return;
-    }
     apply(has ? removeModifier(parsed, activeSlot, item.key) : addModifier(parsed, activeSlot, item.key));
   };
+
+  // Mutually-exclusive families (color / emotion / amount) + quality poles +
+  // forward-binding join — all via the shared ops shared with the AAC builder.
+  const pickExclusive = (item: VocabularyItem) => {
+    if (activeSlot == null || !item.modifier) return;
+    apply(applyExclusiveModifier(parsed, activeSlot, item.key, item.modifier.transform));
+  };
+  const toggleQuality = (pair: { pos: VocabularyItem; neg: VocabularyItem }) => {
+    if (activeSlot == null) return;
+    apply(cycleQualityPole(parsed, activeSlot, pair.pos.key, pair.neg.key));
+  };
+  const pickJoin = (key: string) => setPendingJoin((cur) => (cur === key ? null : key));
 
   const toggleTone = (tag: ToneTag) => {
     const has = parsed.toneTags.includes(tag);
@@ -304,22 +322,57 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {activeColorMods.map((m) => (
-                    <button key={m.key} type="button" title={m.key} onClick={() => toggleModifier(m)}
+                    <button key={m.key} type="button" title={m.key} onClick={() => pickExclusive(m)}
                       className={cn("w-6 h-6 rounded-full border", activeSlotModifiers.includes(m.key) ? "ring-2 ring-blue-500" : (isDark ? "border-slate-600" : "border-gray-300"))}
                       style={{ backgroundColor: m.modifier?.colorValue || "#ccc" }} />
                   ))}
+                  {activeEmotionMods.map((m) => (
+                    <button key={m.key} type="button" title={m.key} onClick={() => pickExclusive(m)}
+                      className={cn("w-6 h-6 rounded-full border flex items-center justify-center text-sm leading-none", activeSlotModifiers.includes(m.key) ? "ring-2 ring-blue-500" : (isDark ? "border-slate-600" : "border-gray-300"))}>
+                      {m.emoji ?? "🙂"}
+                    </button>
+                  ))}
+                  {activeAmountMods.map((m) => (
+                    <button key={m.key} type="button" onClick={() => pickExclusive(m)} className={chipCls(activeSlotModifiers.includes(m.key))}>
+                      {m.emoji ? m.emoji + " " : ""}{m.key}
+                    </button>
+                  ))}
+                  {activeQualityPairs.map((p) => {
+                    const has = activeSlotModifiers.includes(p.pos.key)
+                      ? "pos" : activeSlotModifiers.includes(p.neg.key) ? "neg" : "off";
+                    return (
+                      <button key={p.pos.key} type="button" title={`${p.pos.key} / ${p.neg.key}`} onClick={() => toggleQuality(p)}
+                        className={chipCls(has !== "off")}>
+                        {has === "neg" ? (p.neg.emoji ?? "👎") : (p.pos.emoji ?? "👍")}
+                      </button>
+                    );
+                  })}
                   {activeMods.map((m) => (
                     <button key={m.key} type="button" onClick={() => toggleModifier(m)} className={chipCls(activeSlotModifiers.includes(m.key))}>
                       {m.emoji ? m.emoji + " " : ""}{m.key.replace(/_/g, " ")}
                     </button>
                   ))}
-                  {activeMods.length === 0 && activeColorMods.length === 0 && (
+                  {activeMods.length === 0 && activeColorMods.length === 0 && activeEmotionMods.length === 0
+                    && activeAmountMods.length === 0 && activeQualityPairs.length === 0 && (
                     <span className={cn("text-[10px]", isDark ? "text-slate-600" : "text-gray-400")}>{t("button.gbNoModifiers")}</span>
                   )}
                 </div>
               </div>
             ) : (
               <div className={cn("text-[10px]", isDark ? "text-slate-600" : "text-gray-400")}>{t("button.gbSelectForMods")}</div>
+            )}
+
+            {/* Join (connector / spatial) — arm a forward-binding join for the
+                NEXT symbol added. Available once at least one slot exists. */}
+            {canJoin && (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className={cn("text-[10px] mr-1", isDark ? "text-slate-500" : "text-gray-500")}>{t("button.gbJoin") || "Join"}:</span>
+                {joinOptions.map((j) => (
+                  <button key={j.key} type="button" title={j.key} onClick={() => pickJoin(j.key)} className={chipCls(pendingJoin === j.key)}>
+                    {j.emoji ? j.emoji + " " : ""}{j.key}
+                  </button>
+                ))}
+              </div>
             )}
 
             {/* Tone / operators */}

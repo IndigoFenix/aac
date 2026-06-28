@@ -65,13 +65,18 @@ export interface ObserverPromptConfig extends BaseStudentContext {
    *  rates at session load, so it tracks budget-rule changes automatically.
    *  Describes roughly what raising visual/audio attention costs over time. */
   energyBudget?: string;
+  /** Cost-saving system gate (AAC_OBSERVER_COST_SAVING). When true, the
+   *  <energy> block tells the Observer about set_observation_mode (live↔economy)
+   *  as its biggest lever. Default off → those lines are omitted (and the tool
+   *  isn't declared), so the Observer never references a tool it doesn't have. */
+  economyModeEnabled?: boolean;
 }
 
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
     observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
-    availableBoards, definedGestures, energyBudget,
+    availableBoards, definedGestures, energyBudget, economyModeEnabled,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -160,6 +165,8 @@ ${observationRulesText(T.button, T.tagPress)}
 To save cost, the device may not stream you a live picture every moment. While the scene is stable you get a cheap [SCENE] text line (who's present, expressions, hand gestures, and the student's body posture) — keep watching quietly, don't react to routine [SCENE] updates. You get an actual image when something changes; an image may carry a [FRAME REASON] saying why (a new or departed person, a new gesture, sudden motion, a posture change, a safety concern). You can ALWAYS call request_focus when you genuinely need to see something the text can't tell you. Don't assume nothing is happening just because you only have text — if a [SCENE] line is surprising or worrying, request_focus to look.
 
 The [SCENE] "posture" (upright / leaning / lying) and body movements (arms raised, hand to head, rocking, possible fall) come from a body-pose model. These readings are COARSE and unreliable for this population — wheelchairs, atypical postures, and self-soothing movements (rocking, hand-wringing) are common and easily mislabelled. So treat posture/movement as a prompt to LOOK (request_focus) and verify, never as fact. A "possible fall" forces you a real image tagged safety: check it against the student's alarm_conditions and what you actually see — if it's benign (they leaned over, reached down, or it's their normal posture), note it and move on. Never raise alarm on the pose hint alone.
+
+A frame may also carry a **[MOTION SIGNATURE]** line — a motion detector's quantified read of body movement (rhythm in Hz, whether both sides move together, how much of the body is involved, how it compares to the student's usual motion, and how long it has lasted). It exists to flag patterns that CAN indicate a seizure (rhythmic-convulsive, sudden loss of tone, or a limp post-ictal state). It is still only a HINT: rhythmic self-soothing (hand-wringing, rocking) is the known mimic in this population, so the detector tries to separate them by bilateral symmetry, whole-body extent, and deviation from the student's baseline — but it is coarse and CAN be wrong. So when you see a [MOTION SIGNATURE]: LOOK at the image, weigh it against ${studentName ? `[${studentName}]'s` : "the student's"} alarm_conditions (which may describe their seizures and their normal stereotypies), and decide. The single clearest emergency cue is DURATION — a convulsive pattern that persists for minutes. Never alarm on the motion line alone; never dismiss it as "just stereotypy" without looking. A motion line may add an [AUDIO] note when sustained vocalization/sound was heard at the same time — treat that as RAISING concern (an ictal cry can accompany a seizure), but NOT as confirmation: vocalizing and irregular breathing are common here regardless. It only ever accompanies a motion signal, never stands alone.
 </perception>
 
 <alarm_conditions>
@@ -209,8 +216,8 @@ You own session energy via rest() / sleep() / wake_up().
 <energy>
 Watching has a running cost. You'll see an [ENERGY] note — a percentage + a band (high / moderate / low) — when your budget changes meaningfully (it drops as you and the other agents work, and recovers while things are quiet). A compact [ENERGY ..%] also rides along with the speech you're given, so you always have a rough sense of your level. Let it shape HOW MUCH you observe — never WHETHER you keep [${studentName}] safe.
   - **high** — observe normally, in full detail.
-  - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; raise visual/audio attention or pull a one-off request_focus/request_audio only when it genuinely matters.
-  - **low** — minimal observation: trust the text, keep attention on "text", rest() sooner during quiet stretches, and wake only on clear engagement.
+  - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; raise visual/audio attention or pull a one-off request_focus/request_audio only when it genuinely matters.${economyModeEnabled ? ` If nothing needs moment-by-moment watching, drop to economy observation (set_observation_mode("economy")).` : ""}
+  - **low** — minimal observation: trust the text, keep attention on "text", ${economyModeEnabled ? `switch to economy observation (set_observation_mode("economy")), ` : ""}rest() sooner during quiet stretches, and wake only on clear engagement.${economyModeEnabled ? `\n\nYour single biggest lever on energy is set_observation_mode: staying "live" runs you continuously and is what drains you over a long session. Default to dropping to "economy" whenever there's nothing to react to turn-by-turn, and go back to "live" only when [${studentName}] is actively engaging or a situation needs close watching.` : ""}
 ${energyBudget ? `${energyBudget}\n` : ""}Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
 </energy>`;
 
@@ -302,6 +309,10 @@ export interface ObserverToolConfig {
   /** Clinician-defined gestures. When non-empty, `report_gesture` is
    *  declared with these names as the gesture enum. */
   definedGestures?: DefinedGesture[];
+  /** Cost-saving system gate (AAC_OBSERVER_COST_SAVING). When true, the
+   *  `set_observation_mode` tool (live↔economy backend switch) is declared.
+   *  Default off → tool absent and the Observer stays Live. */
+  economyModeEnabled?: boolean;
 }
 
 function buildTranscriptTool(): FunctionDeclaration {
@@ -316,6 +327,7 @@ DO NOT transcribe:
 
 speaker / target — name the ACTUAL person (ALWAYS English / Latin letters, regardless of conversation language):
   - Always use the person's real identity: their name or a SHORT role label ("Mom", "Teacher", "Yael"). Use the active user's OWN name too — never replace it with a generic word. Preserving real names lets the Speaker tell people apart.
+  - **Use ONE consistent spelling per person.** When someone appears in [PEOPLE PRESENT] (or you have already named them this session), reuse that EXACT name verbatim — same letters, same romanization. Never re-romanize the same person two ways (e.g. don't write "Opher" once and "Ofer" the next turn, and never mix scripts like "Opher סוחמי"). Pick the [PEOPLE PRESENT] spelling when one exists; otherwise pick a spelling and keep it.
   - **DEVICE** — the AI itself. Use as TARGET when the person is addressing the AI (looking at the screen, using the AI's name, replying to the AI's last utterance).
   - **UNKNOWN** — speaker or target genuinely unidentifiable (off-camera voice, stranger). NOT a fallback for "I'm unsure" — make a best guess instead.
 
@@ -578,6 +590,30 @@ When switching to **facilitator**, also set \`register\` to say WHAT KIND of per
   },
 };
 
+const SET_OBSERVATION_MODE: FunctionDeclaration = {
+  name: "set_observation_mode",
+  description:
+    `Choose HOW you observe — this trades responsiveness for energy. It does NOT change what you can see or hear; both modes get the same [SCENE] / [HEARD SPEECH] / [PEOPLE PRESENT] text and you can still request_focus / request_audio in either.
+
+  - **live** (default): Fast response time, consumes energy. Best while [STUDENT] is actively engaging, a conversation is flowing, or anything is unfolding that you must follow turn-by-turn.
+  - **economy** (cheap): Slower response time, allows you to recover energy. Right when you're just keeping watch over a calm room, the user is absorbed in something else, or your energy is low.
+
+Switch to **economy** when there's nothing to react to moment-by-moment — most of a normal session. Switch back to **live** when [STUDENT] re-engages or a situation starts developing that you need to watch closely. Safety is unaffected: alarms fire from either mode.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      mode: {
+        type: "string",
+        enum: ["live", "economy"],
+        description: "'live' = continuous, responsive, consumes energy; 'economy' = slower response time, allows energy recovery.",
+      },
+      reason: { type: "string", description: "Brief reason (e.g. 'room is calm, just keeping watch', 'she turned back to the device — going live')." },
+    },
+    required: ["mode"],
+  },
+};
+
 /** `report_gesture` — declared only when the student has defined gestures.
  *  The gesture parameter enumerates the registry's names so the model can't
  *  invent new gestures; the Coordinator still re-validates server-side. */
@@ -678,6 +714,8 @@ export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): 
     declarations.push(buildReportGestureTool(config.definedGestures));
   }
   declarations.push(SET_INTERACTION_MODE);
+  // Only when the cost-saving system is enabled (default off).
+  if (config.economyModeEnabled) declarations.push(SET_OBSERVATION_MODE);
   declarations.push(WAKE_UP);
   declarations.push(REST);
   declarations.push(SLEEP);

@@ -33,6 +33,7 @@ import {
 } from "../chat/memory-types";
 
 import { listAllVocabulary } from "@shared/glyph-registry";
+import { SPATIAL_RELATIONS } from "@shared/glyph-compositor.js";
 import { getLanguageName } from "@shared/language-names";
 import { ex } from "./prompt-examples";
 import { T } from "./canonical-terms";
@@ -70,18 +71,30 @@ function buildBundledIconsBlock(): string {
   // because/instead — encode relations the interpreter can't infer from
   // verb+noun context). Same transform, distinct semantic groups for the
   // AI to reason about.
-  const RELATION_BADGE_KEYS = new Set(["with", "for", "instead", "before", "after", "because"]);
+  const RELATION_BADGE_KEYS = new Set(["with", "for", "instead", "before", "after"]);
+  // CONNECTOR SYMBOLs — forward-binding joins between two GLYPHs (and/or/but/
+  // if/because), listed in their own section since they're neither heads nor
+  // modifiers.
+  const connectors: string[] = [];
+  const spatialJoins: string[] = [];
   for (const v of listAllVocabulary()) {
     if (!v.exposeToAi) continue;
+    if (v.pos === "connector") {
+      (SPATIAL_RELATIONS.has(v.key) ? spatialJoins : connectors).push(v.key);
+      continue;
+    }
     if (v.pos === "modifier" && v.categories.length === 0) {
       // Pure MODIFIER SYMBOL — bucket by transform family.
       const transform = v.modifier?.transform ?? "other";
       const group =
-        transform === "dots" ? "count"
+        v.modifier?.pairKey ? "quality"
+        : transform === "dots" ? "count"
+        : transform === "gauge" ? "quantity"
         : transform === "hands" ? "possession"
         : transform === "red_x" ? "negation"
         : transform === "glow" || transform === "shrink" ? "intensity"
         : transform === "color" ? "color"
+        : transform === "gender_body" ? "gender"
         : transform === "badge" ? (RELATION_BADGE_KEYS.has(v.key) ? "relation" : "social")
         : transform;
       let arr = modifierGroups.get(group);
@@ -131,17 +144,40 @@ function buildBundledIconsBlock(): string {
     lines.push("");
     lines.push("MODIFIER SYMBOLs — attach to a HEAD SYMBOL with `.modifier` (e.g. `🍎.color_red`, `🍪.two`, `📖.my`, `🍽️.with`). Stack by chaining: `🤗.big.please`.");
     lines.push("**This list is EXHAUSTIVE. The renderer has no image for any modifier not listed here.** Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot. If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).");
-    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "relational", "other_modifier"];
+    const MODIFIER_ORDER = ["count", "quantity", "quality", "possession", "negation", "intensity", "size_shape", "temperature", "color", "gender", "social", "relation", "relational", "other_modifier"];
     for (const group of MODIFIER_ORDER) {
       const items = modifierGroups.get(group);
       if (!items?.length) continue;
       lines.push(`  - ${group.replace("_", " ")}: ${items.sort().join(", ")}`);
+    }
+    if (modifierGroups.get("quality")?.length) {
+      lines.push("    quality opposite-pairs attach to a noun/verb: `good`/`bad` (👍/👎), `right`/`wrong` (✓/✗ mark). `dog.good`, `answer.right`. Synonyms map to these: nice/great→`good`, terrible→`bad`, correct/true→`right`, incorrect/false→`wrong`.");
+    }
+    if (modifierGroups.get("quantity")?.length) {
+      lines.push("    quantity is the amount scale on a noun: `none`=zero, `some`, `half`, `most`, `all`. `cookie.none`=no cookies (distinct from `cookie.not`=not the cookie); `cookie.all`=all the cookies. Synonyms map to these: much→`all`/`most`, several→`some`, a few→`some`. For exact counts use `one`/`two`/`many`; for 'give me another' use `more`.");
+    }
+    if (modifierGroups.get("gender")?.length) {
+      lines.push("    gender attaches to a person HEAD: `person.male`=he, `person.female`=she, `person.plural`=they; also pluralizes/genders any person (`friend.plural`, `teacher.female`). (he/she/they are accepted aliases.)");
     }
     if (modifierGroups.get("relational")?.length) {
       // Relational modifiers step a HEAD SYMBOL along a sequence and are the
       // canonical way to express adjacent points in time.
       lines.push("    relational arrows attach beneath a HEAD and step it along a sequence: `this`=current, `next`=one forward, `prev`=one back. next/prev STACK (up to 4) and CANCEL each other one-for-one. Use them for relative time: `day.this`=today, `day.next`=tomorrow, `day.prev`=yesterday, `day.next.next`=in two days, `hour.next.next`=in two hours, `week.prev`=last week. (today/tomorrow/yesterday are accepted aliases for the day forms.)");
     }
+  }
+
+  if (connectors.length) {
+    lines.push("");
+    lines.push("CONNECTOR SYMBOLs — forward-binding joins between two GLYPHs (consume no slot):");
+    lines.push(`  ${connectors.sort().join(", ")}`);
+    lines.push("  Use as `A + connector + B` — the connector sits BEFORE the glyph it introduces: `🍎+or+🍌` (apple or banana), `😢+because+you_go` (sad because you left), `i_me+want+🍪+but+🥛.not` (want a cookie but not milk). Plain `+` already means \"and/then\", so `and` is only for emphasis.");
+  }
+
+  if (spatialJoins.length) {
+    lines.push("");
+    lines.push("SPATIAL RELATIONS — forward-binding joins (like connectors) for where/how A relates to B; render as an arrow A→B (consume no slot):");
+    lines.push(`  ${spatialJoins.sort().join(", ")}`);
+    lines.push("  Use as `A + relation + B`: `go+to+🏫` (go to school), `🐈+under+🪑` (cat under chair), `💧+in+🥤` (water in a cup), `🐦+over+🌳` (bird over a tree).");
   }
 
   lines.push("</bundled_icons>");

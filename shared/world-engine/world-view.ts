@@ -53,6 +53,9 @@ export interface WorldViewDeps {
   faceFor: (id: string) => CanvasImageSource | null;
   /** Display name for a participant — its initial is the no-face fallback. */
   labelFor: (id: string) => string;
+  /** Symbol images for a composed AAC glyph string (the speech-bubble glyph strip),
+   *  or null/[] when none are available (plain speech, or not yet decoded). */
+  glyphFor?: (glyph: string) => CanvasImageSource[] | null;
 }
 
 /** A pluggable renderer for the world engine. The host drives it once a frame. */
@@ -79,7 +82,7 @@ export interface WorldView {
  * unit-tested).
  */
 export function createWorld2DView(deps: WorldViewDeps): WorldView {
-  const { canvas, localId, faceFor, labelFor } = deps;
+  const { canvas, localId, faceFor, labelFor, glyphFor } = deps;
   // getContext("2d") exists on both HTMLCanvasElement and OffscreenCanvas; the 2D
   // context APIs we use (fillRect/arc/drawImage/fillText/setTransform) are common to
   // both. Type as CanvasRenderingContext2D for renderWorld2D — duck-compatible.
@@ -120,6 +123,7 @@ export function createWorld2DView(deps: WorldViewDeps): WorldView {
         viewHeight: viewH,
         faceFor,
         labelFor,
+        glyphFor,
       });
     },
     resize(width, height, dpr) {

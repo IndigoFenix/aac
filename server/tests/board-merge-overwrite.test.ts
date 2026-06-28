@@ -6,7 +6,7 @@
 // collapses them into a single rebuild_board that fully replaces the
 // board).
 
-import { smartMergeButtons } from "../services/dual-agent/board-merge";
+import { smartMergeButtons, sameBoard } from "../services/dual-agent/board-merge";
 
 const MAX = 8;
 let idCounter = 0;
@@ -95,5 +95,40 @@ describe("smartMergeButtons — overwrite when saturated", () => {
     expect(merged).toHaveLength(2);
     expect(report.duplicatesIgnored).toBe(1);
     expect(merged.map(b => b.label)).toEqual(["A", "B"]);
+  });
+});
+
+describe("sameBoard — stability gate for redundant rebuilds", () => {
+  test("identical button sets (ignoring id) are equal", () => {
+    const a = [btn("A"), btn("B"), btn("C")];
+    // Fresh ids, same visible content — a rebuild that reproduces the board.
+    const b = [btn("A"), btn("B"), btn("C")];
+    expect(sameBoard(a, b)).toBe(true);
+  });
+
+  test("different length → not equal", () => {
+    expect(sameBoard([btn("A"), btn("B")], [btn("A")])).toBe(false);
+  });
+
+  test("reordering counts as a change (slot positions differ)", () => {
+    expect(sameBoard([btn("A"), btn("B")], [btn("B"), btn("A")])).toBe(false);
+  });
+
+  test("same label/glyph but different spoken speech → not equal", () => {
+    const a = [{ label: "Yes", glyph: "yes", speech: "Yes please" }];
+    const b = [{ label: "Yes", glyph: "yes", speech: "Yeah" }];
+    expect(sameBoard(a, b)).toBe(false);
+  });
+
+  test("different addressee → not equal (press routes elsewhere)", () => {
+    const a = [{ label: "Hi", glyph: "hi", speech: "Hi", addressee: "Mom" }];
+    const b = [{ label: "Hi", glyph: "hi", speech: "Hi", addressee: "Dad" }];
+    expect(sameBoard(a, b)).toBe(false);
+  });
+
+  test("a changed glyph → not equal", () => {
+    const a = [{ label: "Dog", glyph: "🐕", speech: "I see a dog" }];
+    const b = [{ label: "Dog", glyph: "🐶", speech: "I see a dog" }];
+    expect(sameBoard(a, b)).toBe(false);
   });
 });

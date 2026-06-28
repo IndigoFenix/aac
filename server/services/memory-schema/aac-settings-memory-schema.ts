@@ -42,6 +42,7 @@ import { studentService } from "../studentService";
 import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList } from "./aac-memory-schema";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
+import { coerceSeizureConfig, type SeizureConfig } from "@shared/aac/seizure-config";
 
 // ============================================================================
 // DB HELPERS
@@ -168,7 +169,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider",
     "signLanguage", "multiCameraMode",
     "allowReadProgress", "allowReadReports", "allowNotes",
-    "appConfig", "chatAgentPrompt", "autoAacPrompt",
+    "appConfig", "chatAgentPrompt", "autoAacPrompt", "seizureDetection",
   ]);
 
   const filtered: Record<string, any> = {};
@@ -188,6 +189,19 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
   }
   if (filtered.autoAacPrompt !== undefined) {
     filtered.autoAacPrompt = sanitizePromptList(filtered.autoAacPrompt);
+  }
+
+  // seizureDetection is a JSON column holding clinician CONFIG + a machine-written
+  // BASELINE. The AI only ever edits config; merge so the write preserves the
+  // baseline (and coerce the config so a bad sensitivity value can't land).
+  if (filtered.seizureDetection !== undefined) {
+    const [row] = await db
+      .select({ sd: aacSettings.seizureDetection })
+      .from(aacSettings)
+      .where(eq(aacSettings.studentId, studentId));
+    const existing = (row?.sd as any) ?? {};
+    const incoming = filtered.seizureDetection as any;
+    filtered.seizureDetection = { ...existing, config: coerceSeizureConfig(incoming?.config ?? incoming) };
   }
 
   if (Object.keys(filtered).length === 0) return updates;
@@ -275,6 +289,12 @@ async function writeSocialTrainerConfig(ctx: DBOperationContext, incoming: any):
   appConfig.social_trainer = { ...current, ...sanitizeSocialTrainerConfig(incoming) };
   await writeAACSettings(ctx, { appConfig });
   return readSocialTrainerConfig({ appConfig });
+}
+
+/** The clinician-editable seizure-detection config (NOT the machine baseline),
+ *  coerced to a complete shape for display/edit by the assistant. */
+export function readSeizureConfig(settings: Record<string, any> | null): SeizureConfig {
+  return coerceSeizureConfig((settings?.seizureDetection as any)?.config);
 }
 
 // ============================================================================
@@ -626,6 +646,50 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
         write: async (ctx, value) => writeSocialTrainerConfig(ctx, value),
       },
     },
+    // Seizure detection — TECHNICAL config for the on-device motion detectors
+    // (when they flag a possible seizure to the live AI). NOT clinical policy:
+    // what the student's seizures look like and how to respond belongs in
+    // Context_AACPrompt, not here. The learned baseline lives in the same column
+    // and is machine-managed — never exposed or edited here.
+    seizureDetection: {
+      id: "seizureDetection",
+      type: "object",
+      title: "Seizure Detection",
+      description:
+        "Per-student tuning for the device's motion-based seizure detectors. These control WHEN the system flags a possible seizure to the AI; tune them so the student's usual movements (rocking, hand stereotypies, deliberate slumping) don't cause false warnings. Off by default — enable only for a student who needs it. Clinical guidance (their seizure signs, what to do) goes in Context_AACPrompt instead.",
+      properties: {
+        enabled: {
+          id: "enabled",
+          type: "string",
+          title: "Enabled",
+          description: "Master switch for seizure detection (true/false). When false, no detectors run.",
+        },
+        rhythmic: {
+          id: "rhythmic",
+          type: "string",
+          title: "Convulsive (rhythmic) sensitivity",
+          description:
+            "Sensitivity of the rhythmic / tonic-clonic (whole-body shaking) detector: off, low, medium, or high. " +
+            "Lower it (or off) for a student whose rocking or hand movements would trip it; higher catches subtler events but warns more often.",
+          enum: ["off", "low", "medium", "high"],
+        },
+        atonic: {
+          id: "atonic",
+          type: "string",
+          title: "Drop / loss-of-tone sensitivity",
+          description:
+            "Sensitivity of the atonic (sudden slump/collapse) detector: off, low, medium, or high. " +
+            "Lower it for a student who often leans or slumps on purpose.",
+          enum: ["off", "low", "medium", "high"],
+        },
+        audioCorroboration: {
+          id: "audioCorroboration",
+          type: "string",
+          title: "Audio corroboration",
+          description: "Let a concurrent vocalization/sound raise concern for a motion the detector already flagged (true/false). Never alarms on its own.",
+        },
+      },
+    },
   },
   db: {
     read: async (ctx) => {
@@ -652,6 +716,9 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
         exposed.appConfig = restAppConfig;
       }
       exposed.socialTrainer = readSocialTrainerConfig(settings);
+      // Replace the raw seizureDetection column ({config, baseline}) with just the
+      // clinician-editable config — the machine baseline is never shown/edited.
+      exposed.seizureDetection = readSeizureConfig(settings);
       return exposed;
     },
     write: async (ctx, value) => {

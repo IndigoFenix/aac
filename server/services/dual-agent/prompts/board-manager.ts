@@ -27,6 +27,7 @@ import {
   memoryBlock,
   securityBlock,
   studentDescriptor,
+  genderedAddressDirective,
   CALL_MONITOR,
 } from "./shared";
 
@@ -97,6 +98,7 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     ? `\n\n<language_level>\n${bmLangDirective}\nThis caps the \`speech\` and \`label\` text of every ${T.button} you build — keep them this short and simple. The GLYPH encoding is unaffected (it's language-neutral).\n</language_level>`
     : "";
   const descriptor = studentDescriptor(config);
+  const genderBlock = genderedAddressDirective(studentName, config.studentGender, language);
   const peopleLine = knownPeopleLine(knownContacts);
 
   let prompt = `<role>
@@ -131,7 +133,7 @@ Choosing which tool:
   - Conversation shifted (different topic/speaker/beat) → \`rebuild_board\`.
   - Ambient observation worth surfacing (object, person entering) → \`add_context_button\`.
   - Nothing else fits → \`no_change(reason)\`.
-</role>${classroomBlock(studentName, classroom)}${boardManagerGuidance ? `\n\n<board_manager_guidance>\n${boardManagerGuidance}\n</board_manager_guidance>` : ""}
+</role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${boardManagerGuidance ? `\n\n<board_manager_guidance>\n${boardManagerGuidance}\n</board_manager_guidance>` : ""}
 
 <when_to_act>
 The TARGET label on the incoming tagged event decides whether to build a board and what kind.
@@ -344,7 +346,7 @@ interpret() is the ONLY action on a ${T.tagComposed} turn — don't also rebuild
   5. Only if the SENTENCE is genuinely incoherent after creative interpretation should you fall back to a literal reading.
 
 Worked examples${sentenceInterpretationExamples ? " — themed on this user's known metaphor / compound patterns" : ""}:
-${(sentenceInterpretationExamples ?? ex("sentence_interpretation.worked_examples", language)).replace(/\$SPEAK_VERB\$/g, "voice via interpret()")}
+${(sentenceInterpretationExamples ?? ex("sentence_interpretation.worked_examples", language, undefined, config.studentGender)).replace(/\$SPEAK_VERB\$/g, "voice via interpret()")}
 </sentence_interpretation>
 </sentence_builder>
 
@@ -376,7 +378,7 @@ On [GUESSING STATE] the user is finding a word they can't reach directly. Build 
   - The tool only appears WHILE guessing is active.
 </guessing_mode>${gestureOverrideBlock(gestureOverrides)}`;
 
-  prompt += `\n\n<examples>\n${boardManagerExamples ?? ex("board_manager.examples", language, false)}\n</examples>`;
+  prompt += `\n\n<examples>\n${boardManagerExamples ?? ex("board_manager.examples", language, false, config.studentGender)}\n</examples>`;
 
   prompt += memoryBlock(memoryContext, `What you know about this user — interests, recent topics, preferences. Use this to pick buttons the user is likely to want:`);
 
@@ -593,6 +595,9 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "remain_silent":
     case "thought_leak":
     case "gesture_recognized":
+    // Observer's internal cost decision (live↔passive backend) — not relevant
+    // to the Board Manager's view of the conversation.
+    case "observation_mode_change":
       return "";
     // App / website opens — context that buttons may need to reflect
     // (an open app may want app-specific response buttons).
@@ -731,6 +736,10 @@ export interface BoardManagerToolConfig {
   /** Student's primary language code, for localized example strings inside
    *  tool descriptions. */
   language?: string;
+  /** Student's grammatical gender ("male" | "female"), so the localized example
+   *  utterances inside tool descriptions match the student's gender in gendered
+   *  languages. Omit → masculine default. */
+  studentGender?: string;
   /** When true, every button must carry a single GLYPH (modifiers OK).
    *  Drives the format hints embedded in button-shaped tool descriptions. */
   singleGlyphButtons?: boolean;
@@ -875,12 +884,13 @@ Omit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (th
 
 function rebuildBoardButtonsDescription(config: BoardManagerToolConfig): string {
   const language = config.language;
+  const gender = config.studentGender;
   const singleGlyph = !!config.singleGlyphButtons;
-  const exampleA = ex("tool.sbf_speech_water", language);
-  const exampleB = ex("tool.sbf_speech_three_glyph_banana", language);
+  const exampleA = ex("tool.sbf_speech_water", language, undefined, gender);
+  const exampleB = ex("tool.sbf_speech_three_glyph_banana", language, undefined, gender);
   const exampleC = singleGlyph
     ? ""
-    : ` Match glyph count to meaning — 1-glyph for one-word answers (${ex("tool.sbf_speech_one_glyph_tired", language)}), up to 3-glyph for full thoughts (${exampleB}). Don't pad.`;
+    : ` Match glyph count to meaning — 1-glyph for one-word answers (${ex("tool.sbf_speech_one_glyph_tired", language, undefined, gender)}), up to 3-glyph for full thoughts (${exampleB}). Don't pad.`;
   return `Up to 8 ${T.button}s for the ${T.board}. WIDE VARIETY. Each is \`{ speech, glyph, label }\` — \`speech\` is the voiced SENTENCE (e.g. ${exampleA}), \`glyph\` is the visual array, \`label\` is the on-button text.${exampleC}`;
 }
 

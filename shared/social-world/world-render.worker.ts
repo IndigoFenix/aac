@@ -42,6 +42,8 @@ let host: WorldHost | null = null;
 const faceCache = new Map<string, ImageBitmap | null>();
 const labelCache = new Map<string, string>();
 const requestedFaces = new Set<string>();
+const glyphCache = new Map<string, ImageBitmap[]>();
+const requestedGlyphs = new Set<string>();
 
 function setup(msg: Extract<MainToWorker, { type: "init" }>): void {
   const spec = msg.worldSpec ?? getWorldSpec(msg.worldSpecKey ?? "social-field") ?? socialFieldSpec;
@@ -57,7 +59,17 @@ function setup(msg: Extract<MainToWorker, { type: "init" }>): void {
   };
   const labelFor = (id: string): string => labelCache.get(id) ?? "";
 
-  const viewDeps = { canvas: msg.canvas, localId: msg.localId, faceFor, labelFor };
+  // Glyph symbol images are likewise sourced on the main thread (it owns the glyph
+  // registry + asset resolver); request once per glyph string, then cache.
+  const glyphFor = (glyph: string): CanvasImageSource[] | null => {
+    if (!requestedGlyphs.has(glyph)) {
+      requestedGlyphs.add(glyph);
+      post({ type: "request-glyph", glyph });
+    }
+    return glyphCache.get(glyph) ?? null;
+  };
+
+  const viewDeps = { canvas: msg.canvas, localId: msg.localId, faceFor, labelFor, glyphFor };
   // createWorld3DView constructs a WebGL context — the most likely failure point on
   // a given GPU/driver. Throwing here reports init-failed so main runs on-thread.
   const view = msg.renderer === "2d" ? createWorld2DView(viewDeps) : createWorld3DView(viewDeps, spec);
@@ -111,6 +123,9 @@ globalThis.addEventListener("message", (event: MessageEvent<MainToWorker>) => {
       case "pointer-leave":
         host?.clearPointer();
         break;
+      case "say":
+        host?.say(msg.text, msg.glyph);
+        break;
       case "net-inbound":
         host?.applyNetInbound(msg.msgs);
         break;
@@ -127,6 +142,12 @@ globalThis.addEventListener("message", (event: MessageEvent<MainToWorker>) => {
         labelCache.set(msg.id, msg.label);
         break;
       }
+      case "glyph": {
+        const prev = glyphCache.get(msg.glyph);
+        if (prev) for (const b of prev) { try { b.close(); } catch { /* ignore */ } }
+        glyphCache.set(msg.glyph, msg.bitmaps);
+        break;
+      }
       case "npc-engagement":
         host?.setNpcEngagement(msg.npcId, msg.engagement);
         break;
@@ -135,6 +156,8 @@ globalThis.addEventListener("message", (event: MessageEvent<MainToWorker>) => {
         host = null;
         for (const b of faceCache.values()) { try { b?.close(); } catch { /* ignore */ } }
         faceCache.clear();
+        for (const bs of glyphCache.values()) for (const b of bs) { try { b.close(); } catch { /* ignore */ } }
+        glyphCache.clear();
         (globalThis as unknown as { close: () => void }).close();
         break;
     }

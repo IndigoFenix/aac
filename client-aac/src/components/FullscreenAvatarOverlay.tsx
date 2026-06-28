@@ -63,7 +63,7 @@ function initialStageFor(phase: Phase): Stage {
 }
 
 export function FullscreenAvatarOverlay() {
-  const { isInitialized, isLoading } = useDualAgentContext();
+  const { isInitialized, isLoading, startupStage } = useDualAgentContext();
   const attentiveness = useCameraAttentivenessOptional();
   const sprite = useAvatarSprite();
   const { t } = useLanguage();
@@ -117,7 +117,16 @@ export function FullscreenAvatarOverlay() {
   );
 
   const visible = stage !== "hidden";
-  const label = stage === "waking" ? t("status.wakingUp") : t("status.sleeping");
+  // While actually starting up (isLoading), surface the server-reported startup
+  // phase ("Connecting…" → "Checking notes…" → …). The "waking" stage is also
+  // used for the post-load hold and sleep→wake transitions, which aren't
+  // startup — those fall back to the plain "Waking up…" string.
+  const label =
+    stage === "sleeping"
+      ? t("status.sleeping")
+      : isLoading
+        ? t(`status.startup.${startupStage}`)
+        : t("status.wakingUp");
 
   return (
     <AnimatePresence>

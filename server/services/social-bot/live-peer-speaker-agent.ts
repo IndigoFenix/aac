@@ -85,6 +85,9 @@ export interface LiveSocialPeerAgentOptions {
   difficulty?: number;
   languageLevel?: LanguageLevel;
   slpConfig?: SlpConfig;
+  /** The STUDENT's grammatical gender, so the live peer addresses them with
+   *  correct feminine/masculine forms in gendered languages. Omit when unknown. */
+  addresseeGender?: "male" | "female";
   compressionTriggerTokens?: number;
   compressionTargetTokens?: number;
   callbacks: LiveSocialPeerCallbacks;
@@ -134,6 +137,7 @@ export class LiveSocialPeerSpeakerAgent implements ISpeakerAgent {
       model: this.opts.analysisModel,
       language: this.opts.languageName,
       languageLevel: this.opts.languageLevel,
+      addresseeGender: this.opts.addresseeGender,
     });
 
     this.live = new SpeakerAgent("gemini", {
@@ -154,7 +158,7 @@ export class LiveSocialPeerSpeakerAgent implements ISpeakerAgent {
     });
 
     const systemPrompt = buildLivePeerPrompt(
-      p.name, p.gender, p.genome, p.identity, p.humorStyle, this.opts.languageName, this.opts.languageLevel,
+      p.name, p.gender, p.genome, p.identity, p.humorStyle, this.opts.languageName, this.opts.languageLevel, this.opts.addresseeGender,
     );
     await this.live.start({
       systemPrompt,

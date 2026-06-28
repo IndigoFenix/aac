@@ -43,6 +43,7 @@ import {
   studentSymbolAssociations,
 } from "@shared/schema";
 import { db } from "../db";
+import type { PersistedBaseline } from "@shared/aac/seizure-config";
 import { eq, inArray } from "drizzle-orm";
 import { deleteExternalData, type EntityRef } from "../external-storage";
 
@@ -62,7 +63,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
-  "accessibility", "definedGestures",
+  "accessibility", "definedGestures", "seizureDetection",
 ]);
 
 /**
@@ -234,11 +235,33 @@ export class StudentService {
 
     // Update AAC settings if any
     if (Object.keys(aacUpdates).length > 0) {
+      // seizureDetection JSON holds BOTH clinician config and a machine-written
+      // baseline; merge by top-level key so a config save (which sends only
+      // `config`) doesn't wipe `baseline` — and vice-versa for the write-back.
+      if ("seizureDetection" in aacUpdates) {
+        aacUpdates.seizureDetection = await this.mergeSeizureDetection(studentId, aacUpdates.seizureDetection);
+      }
       await aacSettingsRepository.upsert(studentId, aacUpdates as UpdateAacSettings);
     }
 
     // Return the full updated student with settings
     return studentRepository.getStudentWithAacSettings(studentId);
+  }
+
+  /** Merge an incoming partial seizureDetection ({config} OR {baseline}) onto the
+   *  stored value by top-level key, so the two write paths don't clobber each
+   *  other. The settings panel always sends a COMPLETE `config` object. */
+  private async mergeSeizureDetection(studentId: string, incoming: any): Promise<any> {
+    const current = await studentRepository.getStudentWithAacSettings(studentId);
+    const existing = (current?.aacSettings as any)?.seizureDetection ?? {};
+    return { ...existing, ...(incoming ?? {}) };
+  }
+
+  /** Persist the machine-learned long-term motion baseline (live-session write-
+   *  back), preserving the clinician's config. Called from the AAC live path. */
+  async persistSeizureBaseline(studentId: string, baseline: PersistedBaseline): Promise<void> {
+    const merged = await this.mergeSeizureDetection(studentId, { baseline });
+    await aacSettingsRepository.upsert(studentId, { seizureDetection: merged } as UpdateAacSettings);
   }
 
   /**

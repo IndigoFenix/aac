@@ -65,6 +65,19 @@ interface UnifiedDebugPanelProps {
   voiceLoading?: boolean;
   voiceError?: string | null;
   faceRecognitionReady?: boolean;
+  // Seizure detection live status (from home's useSeizureWatch)
+  seizure?: {
+    poseTrackingOn: boolean;
+    configured: boolean;
+    enabled: boolean;
+    thresholds: import("@shared/aac/seizure-config").SeizureThresholds | null;
+    hasSeedBaseline: boolean;
+    poseDetected: boolean;
+    baselineSamples: number;
+    signature: import("@shared/aac/seizure-signature").SeizureSignature | null;
+    willEscalate: boolean;
+    watchActive: boolean;
+  };
 }
 
 /** Resolve a model's load state into a colored status chip. */
@@ -87,6 +100,16 @@ function ModelRow({ name, ready, loading, error }: { name: string; ready?: boole
         <span className="text-[10px] text-gray-500">{s.label}</span>
       </div>
       {error && <p className="text-[9px] text-red-500 mt-0.5 break-all">{error}</p>}
+    </div>
+  );
+}
+
+/** Compact key/value row for the seizure readout. */
+function KV({ label, value, good, bad }: { label: string; value: string; good?: boolean; bad?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-mono text-[11px] ${bad ? "text-red-500" : good ? "text-green-600" : ""}`}>{value}</span>
     </div>
   );
 }
@@ -278,6 +301,7 @@ export default function UnifiedDebugPanel({
   voiceLoading,
   voiceError,
   faceRecognitionReady,
+  seizure,
 }: UnifiedDebugPanelProps) {
   // Context data
   const ctx = useDualAgentContext();
@@ -306,6 +330,7 @@ export default function UnifiedDebugPanel({
       monitor: stored.monitor ?? true,
       sessionLog: stored.sessionLog ?? false,
       dwell: stored.dwell ?? false,
+      seizure: stored.seizure ?? true,
     };
   });
 
@@ -529,6 +554,70 @@ export default function UnifiedDebugPanel({
                     <div className="text-[10px] italic text-gray-400">nothing transcribed yet</div>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ===== Seizure Detection ===== */}
+          <div>
+            <SectionHeader
+              title="Seizure Detection"
+              icon={<Activity className="w-3.5 h-3.5" />}
+              isOpen={sections.seizure}
+              onClick={() => toggleSection("seizure")}
+              badge={
+                <Badge className={`${
+                  !seizure?.enabled ? "bg-gray-400"
+                    : seizure.willEscalate ? "bg-red-500 animate-pulse"
+                    : seizure.watchActive ? "bg-amber-500"
+                    : "bg-green-500"
+                } text-white text-[9px] px-1`}>
+                  {!seizure?.enabled ? "off" : seizure.willEscalate ? "EVENT" : seizure.watchActive ? "watching" : "on"}
+                </Badge>
+              }
+            />
+            {sections.seizure && (
+              <div className="p-2 space-y-1 text-xs">
+                {!seizure ? (
+                  <div className="text-[10px] italic text-gray-400">no data</div>
+                ) : !seizure.poseTrackingOn ? (
+                  <div className="text-amber-600 text-[11px]">Pose tracking is OFF (poseSafety capability) — the detector can't run.</div>
+                ) : !seizure.configured ? (
+                  <div className="text-amber-600 text-[11px]">No server config for this session. Enable Seizure Detection in this student's AAC settings, <b>Save</b>, then <b>restart the AAC session</b> — clientConfig is sent once at session start.</div>
+                ) : !seizure.enabled ? (
+                  <div className="text-amber-600 text-[11px]">Configured but disabled (master switch off, or both detectors set to Off).</div>
+                ) : (
+                  <>
+                    <KV label="Pose detected" value={seizure.poseDetected ? "yes" : "NO — get in view"} bad={!seizure.poseDetected} />
+                    <KV label="Baseline" value={seizure.baselineSamples > 0 ? `ready (${seizure.baselineSamples})${seizure.hasSeedBaseline ? " seeded" : ""}` : "cold — warming (inert)"} bad={seizure.baselineSamples === 0} />
+                    <KV label="Rhythmic detector" value={seizure.thresholds?.rhythmic.enabled ? `on · ≥${seizure.thresholds.rhythmic.involvementMult}× · conf≥${seizure.thresholds.rhythmic.escalateConfidence}` : "off"} />
+                    <KV label="Atonic detector" value={seizure.thresholds?.atonic.enabled ? `on · drop≥${seizure.thresholds.atonic.dropFrac}` : "off"} />
+                    <KV label="Audio corroboration" value={seizure.thresholds?.audioCorroboration ? "on" : "off"} />
+                    <KV label="Pose rate" value={seizure.watchActive ? "BUMPED ~15fps (watch)" : "cheap ~2.5fps"} good={seizure.watchActive} />
+
+                    <div className="mt-1 p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-0.5">
+                      <div className="text-[10px] text-gray-500">Live motion signature</div>
+                      {seizure.signature ? (
+                        <>
+                          <KV label="phase" value={seizure.signature.phase} good={seizure.signature.phase !== "none"} />
+                          <KV label="dominant Hz" value={seizure.signature.dominantHz.toFixed(2)} />
+                          <KV label="rhythmicity" value={seizure.signature.rhythmicity.toFixed(2)} />
+                          <KV label="bilateral sym" value={seizure.signature.bilateralSymmetry.toFixed(2)} />
+                          <KV label="involved regions" value={seizure.signature.involvedRegions.join(", ") || "none"} />
+                          <KV label="energy vs baseline" value={`${seizure.signature.energyVsBaseline.toFixed(1)}×`} />
+                          <KV label="confidence" value={seizure.signature.confidence.toFixed(2)} />
+                        </>
+                      ) : (
+                        <div className="text-[10px] italic text-gray-400">no window analyzed yet (need ~2.5s of pose)</div>
+                      )}
+                    </div>
+
+                    <KV label="Signature ready" value={seizure.willEscalate ? "YES → [MOTION SIGNATURE]" : "no"} good={seizure.willEscalate} />
+                    <div className="text-[9px] text-gray-400 mt-1 leading-snug">
+                      To trip the rhythmic detector by hand: shake BOTH arms + torso together, sustained, ~2–4×/sec — a one-handed wave won't qualify (needs bilateral + axial). Atonic = a sudden seated slump that stays down. Note: the [MOTION SIGNATURE] only reaches the Observer in economize mode (Full Attention OFF).
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

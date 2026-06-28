@@ -38,6 +38,31 @@ import {
 export type ToneTag = "question" | "exclamation" | "past" | "future";
 
 /**
+ * Connectors — a closed set of forward-binding joins between two GLYPHs
+ * (`apple + or + banana`). Recognized positionally in `+` slots; they do NOT
+ * consume a content slot and bind to the slot that FOLLOWS them (a connector's
+ * `join` lives on the next ParsedSlot). See planning-docs/glyph-symbol-vocabulary.md.
+ */
+export type Connector = "and" | "or" | "but" | "if" | "because";
+export const CONNECTORS: ReadonlySet<string> = new Set<Connector>(["and", "or", "but", "if", "because"]);
+
+/**
+ * Spatial relations are ALSO forward-binding joins (same plumbing as
+ * connectors) but render as a trajectory arrow from glyph A → glyph B instead
+ * of a logical link. `go + to + school`, `cat + under + table`.
+ */
+export type SpatialRelation =
+  | "to" | "from" | "in" | "out" | "on" | "under" | "over" | "through";
+export const SPATIAL_RELATIONS: ReadonlySet<string> = new Set<SpatialRelation>([
+  "to", "from", "in", "out", "on", "under", "over", "through",
+]);
+
+/** Any forward-binding join — a logical connector or a spatial relation. */
+export type Join = Connector | SpatialRelation;
+/** Every keyword recognized in a `+` position as a forward-binding join. */
+export const JOINS: ReadonlySet<string> = new Set<string>([...CONNECTORS, ...SPATIAL_RELATIONS]);
+
+/**
  * Image resolver passed to the React renderer. Receives the registry item
  * (or undefined for AI-generated keys) and returns a URL or null. Returning
  * null lets the renderer fall back to emoji/text.
@@ -61,6 +86,13 @@ export interface ParsedSlot {
   payload?: string;
   /** True when the payload key is not in the registry. */
   payloadUnknown?: boolean;
+  /**
+   * Forward-binding join (logical connector OR spatial relation) joining this
+   * slot to the PREVIOUS one (`apple + because + you_go` → the `you_go` slot
+   * carries `join: "because"`; `go + to + school` → `school` carries `to`).
+   * Only set on slots after the first; a leading/trailing join is dropped.
+   */
+  join?: Join;
 }
 
 export interface ParsedGlyph {
@@ -109,9 +141,23 @@ export function parseGlyph(input: string): ParsedGlyph {
     }
   }
 
-  // Parse slots
-  const slotStrs = body.split("+").map((s) => s.trim()).filter(Boolean);
-  const slots: ParsedSlot[] = slotStrs.slice(0, MAX_SLOTS).map((slotStr) => parseSlot(slotStr));
+  // Parse slots. A `+`-token that is a connector keyword (and/or/but/if/
+  // because) does NOT become a content slot — it binds forward to the next
+  // slot as a `join`. A leading connector (no preceding slot) or a trailing
+  // one (no following slot) is dropped.
+  const tokens = body.split("+").map((s) => s.trim()).filter(Boolean);
+  const slots: ParsedSlot[] = [];
+  let pendingJoin: Join | undefined;
+  for (const tok of tokens) {
+    if (slots.length >= MAX_SLOTS) break;
+    if (JOINS.has(tok.toLowerCase())) {
+      if (slots.length > 0) pendingJoin = tok.toLowerCase() as Join;
+      continue;
+    }
+    const slot = parseSlot(tok);
+    if (pendingJoin) { slot.join = pendingJoin; pendingJoin = undefined; }
+    slots.push(slot);
+  }
 
   return { slots, toneTags, raw };
 }
@@ -194,15 +240,21 @@ function parseSlot(slotStr: string): ParsedSlot {
 
 /** Round-trip back to a glyph string. */
 export function serializeGlyph(parsed: ParsedGlyph): string {
-  const slotStrs = parsed.slots
-    .map((s) => {
-      if (!s.key) return "";
-      const headWithPayload = s.payload ? `${s.key}(${s.payload})` : s.key;
-      return s.modifiers.length ? [headWithPayload, ...s.modifiers].join(".") : headWithPayload;
-    })
-    .filter(Boolean);
+  const parts: Array<{ str: string; join?: Join }> = [];
+  for (const s of parsed.slots) {
+    if (!s.key) continue;
+    const headWithPayload = s.payload ? `${s.key}(${s.payload})` : s.key;
+    const str = s.modifiers.length ? [headWithPayload, ...s.modifiers].join(".") : headWithPayload;
+    parts.push({ str, join: s.join });
+  }
 
-  let result = slotStrs.join("+");
+  // Interleave connectors: a slot's `join` re-emits as `+connector+` before it.
+  let result = "";
+  parts.forEach((p, i) => {
+    if (i === 0) { result = p.str; return; }
+    result += p.join ? `+${p.join}+` : "+";
+    result += p.str;
+  });
   if (parsed.toneTags.length) {
     result += "#" + parsed.toneTags.join(".");
   }
@@ -360,6 +412,25 @@ export function replaceSlot(
   if (idx < 0 || idx >= glyph.slots.length) return glyph;
   const slots = glyph.slots.slice();
   slots[idx] = makeSlot(key);
+  return { ...glyph, slots };
+}
+
+/**
+ * Set (or clear, when `join` is undefined) the forward-binding join on the slot
+ * at `idx`. A join on slot 0 is meaningless (nothing precedes it) and is
+ * ignored. Used by the builder to attach a pending connector/spatial relation
+ * to a freshly-pushed slot.
+ */
+export function withSlotJoin(
+  glyph: ParsedGlyph,
+  idx: number,
+  join: Join | undefined,
+): ParsedGlyph {
+  if (idx <= 0 || idx >= glyph.slots.length) return glyph;
+  const slots = glyph.slots.slice();
+  const next: ParsedSlot = { ...slots[idx] };
+  if (join) next.join = join; else delete next.join;
+  slots[idx] = next;
   return { ...glyph, slots };
 }
 

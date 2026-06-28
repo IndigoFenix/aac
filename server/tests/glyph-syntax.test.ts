@@ -41,6 +41,16 @@ describe("buildGlyphSyntax", () => {
     expect(s).toContain("MODIFIER SYMBOLs");
     expect(s).toContain("Self-check before EVERY");
   });
+
+  it("teaches the question-word pattern (base#question)", () => {
+    for (const single of [false, true]) {
+      const s = buildGlyphSyntax({ singleGlyphButtons: single });
+      expect(s).toContain("QUESTION WORDS");
+      expect(s).toContain("person#question");
+      expect(s).toContain("cause#question");
+      expect(s).toContain("use#question");
+    }
+  });
 });
 
 describe("buildCustomSymbolsBlock", () => {

@@ -25,7 +25,8 @@ export type GlyphPos =
   | "place"
   | "time"
   | "feeling"
-  | "modifier";
+  | "modifier"
+  | "connector";  // forward-binding join between two GLYPHs (and/or/but/if/because) — recognized positionally in `+` slots, see CONNECTORS in glyph-compositor.ts
 
 /** Tone family — drives background color of the rendered button. */
 export type ToneFamily =
@@ -48,7 +49,10 @@ export type ModifierTransform =
   | "dimension"    // arrow decorations + image warp (big/small/long/short/tall/wide/thin)
   | "color"        // colored frame around slot rim — color name lives in modifier.colorValue
   | "emotion"      // emotion face badge in a corner — rendered like "badge" (uses the modifier's emoji)
-  | "relational";  // directional arrow(s) beneath the symbol (next/prev/this) — details in modifier.relation
+  | "relational"   // directional arrow(s) beneath the symbol (next/prev/this) — details in modifier.relation
+  | "gender_body"  // swap host art to a `-male`/`-female`/`-plural` body variant (he/she/they); falls back to a gendered emoji until the variant art exists
+  | "gauge"        // fill-level meter beneath the symbol for the amount scale (none/some/half/most/all) — level in modifier.gauge
+  | "polarity";    // opposite-pole mark on the host (✓ positive / ✗ negative) — pole in modifier.polarity; pairs link via modifier.pairKey
 
 /**
  * Dimension-modifier shapes. Each pattern drives both an arrow-decoration
@@ -93,6 +97,27 @@ export interface ModifierFacet {
    * the slot. e.g. "#DC2626" for color_red.
    */
   colorValue?: string;
+  /**
+   * Required when `transform === "gauge"` — fill level 0..1 the compositor
+   * draws as a meter beneath the host symbol. The amount scale:
+   * none=0, some≈0.33, half=0.5, most≈0.8, all=1. Distinct from `dots`
+   * (exact counts) and `not` (the red_x negation).
+   */
+  gauge?: number;
+  /**
+   * Required when `transform === "polarity"` — which pole this is. The
+   * compositor draws a green ✓ (pos) or red ✗ (neg) corner mark on the host.
+   * (The `mark` axis of the opposite-pair design; flip/overlay axes will
+   * extend this once custom art exists.)
+   */
+  polarity?: "pos" | "neg";
+  /**
+   * Opposite-pole key for an adjective pair (good↔bad, right↔wrong). Drives
+   * the SENTENCE BUILDER's pole-toggle and groups the pair under "quality"
+   * in <bundled_icons>. Independent of `transform` — emoji-badge pairs
+   * (good/bad) and polarity-mark pairs (right/wrong) both set it.
+   */
+  pairKey?: string;
   /**
    * Required when `transform === "relational"`. Drives BOTH the directional
    * arrow(s) the compositor draws beneath the symbol AND the stack/cancel
@@ -313,6 +338,24 @@ const VOCAB: VocabularyItem[] = [
     imagePath: "people/us", emoji: "👥", exposeToAi: true },
   { key: "they", tKey: "aac.glyph.they", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "comment", emoji: "👥", exposeToAi: true },
+  // Generic "person" base — also the question-word base: `person#question` = "who".
+  // `gender_body` appends `-male`/`-female` to this imagePath (he/she); `plural`
+  // has no art and falls back to the 👥 gendered emoji.
+  { key: "person", tKey: "aac.glyph.person", pos: "person", categories: ["who"],
+    modeChips: { who: ["all", "people"] }, tone: "comment",
+    imagePath: "people/person", emoji: "🧑", exposeToAi: true },
+  // Pronouns via the gender modifier: he = person.male, she = person.female,
+  // it = thing. `they` (above) is the plural. Accepted aliases that normalize
+  // to the composed form (like today → day.this).
+  { key: "he", tKey: "aac.glyph.he", pos: "person", categories: ["who"],
+    modeChips: { who: ["all", "people"] }, tone: "comment", emoji: "👨", exposeToAi: true,
+    expandsTo: "person.male" },
+  { key: "she", tKey: "aac.glyph.she", pos: "person", categories: ["who"],
+    modeChips: { who: ["all", "people"] }, tone: "comment", emoji: "👩", exposeToAi: true,
+    expandsTo: "person.female" },
+  { key: "it", tKey: "aac.glyph.it", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📦", exposeToAi: true,
+    expandsTo: "thing" },
   { key: "mom", tKey: "aac.glyph.mom", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "👩" },
   { key: "dad", tKey: "aac.glyph.dad", pos: "person", categories: ["who"],
@@ -549,6 +592,14 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["social", "mental"] }, tone: "question", emoji: "🙋", exposeToAi: true },
 
   // ── WHAT ─────────────────────────────────────────────────────────────────
+  // Generic / question-word bases: `thing#question` = "what" (and any noun +
+  // #question = "which X"); `cause#question` = "why". `how` reuses `use`.
+  { key: "thing", tKey: "aac.glyph.thing", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment",
+    imagePath: "things/thing", emoji: "📦", exposeToAi: true },
+  { key: "cause", tKey: "aac.glyph.cause", pos: "noun", categories: ["what"],
+    modeChips: {}, tone: "comment",
+    imagePath: "indicators/cause", emoji: "↩️", exposeToAi: true },
   { key: "water", tKey: "aac.glyph.water", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "drink"] }, tone: "comment", emoji: "💧" },
   { key: "food", tKey: "aac.glyph.food", pos: "noun", categories: ["what"],
@@ -829,6 +880,10 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { where: ["spatial"] }, tone: "comment", emoji: "📍", exposeToAi: true },
   { key: "there", tKey: "aac.glyph.there", pos: "place", categories: ["where"],
     modeChips: { where: ["spatial"] }, tone: "comment", emoji: "🎯", exposeToAi: true },
+  // Generic "place" base — also the question-word base: `place#question` = "where".
+  { key: "place", tKey: "aac.glyph.place", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment",
+    imagePath: "places/place", emoji: "🗺️", exposeToAi: true },
   { key: "store", tKey: "aac.glyph.store", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🏬" },
   { key: "library", tKey: "aac.glyph.library", pos: "place", categories: ["where"],
@@ -852,6 +907,9 @@ const VOCAB: VocabularyItem[] = [
   // ── WHEN ─────────────────────────────────────────────────────────────────
   { key: "now", tKey: "aac.glyph.now", pos: "time", categories: ["when"],
     modeChips: { when: ["quick"] }, tone: "comment", emoji: "⏱️", exposeToAi: true },
+  // Generic "time" base — also the question-word base: `time#question` = "when".
+  { key: "time", tKey: "aac.glyph.time", pos: "time", categories: ["when"],
+    modeChips: { when: ["quick"] }, tone: "comment", emoji: "🕐", exposeToAi: true },
   // today / tomorrow / yesterday are aliases for the `day` SYMBOL carrying a
   // relational modifier (this / next / prev). They render as the day icon with
   // a directional arrow beneath and serialize to their long form — so the AI
@@ -910,6 +968,50 @@ const VOCAB: VocabularyItem[] = [
     modeChips: {}, tone: "comment", emoji: "🔢", exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal", "person"], transform: "dots", order: 32 } },
 
+  // Amount scale — a fill-level gauge beneath the host (none→all). Distinct
+  // from `dots` (exact counts) and `not` (negation). Emoji fallbacks use moon
+  // phases so the standalone form still reads as a fill scale. `more` (above)
+  // is the increase delta; `less`/`enough`/`both`/`every` are a follow-up.
+  // Gauge quantifiers are hiddenFromCarousel — surfaced via the builder's
+  // dedicated "amount" picker (like colors/emotions), not the main carousel.
+  { key: "none", tKey: "aac.glyph.none", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🌑", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "gauge", order: 33, gauge: 0, hiddenFromCarousel: true } },
+  { key: "some", tKey: "aac.glyph.some", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🌒", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "gauge", order: 34, gauge: 0.33, hiddenFromCarousel: true } },
+  { key: "half", tKey: "aac.glyph.half", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🌓", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal"], transform: "gauge", order: 35, gauge: 0.5, hiddenFromCarousel: true } },
+  { key: "most", tKey: "aac.glyph.most", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🌖", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "gauge", order: 36, gauge: 0.8, hiddenFromCarousel: true } },
+  { key: "all", tKey: "aac.glyph.all", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🌕", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "gauge", order: 37, gauge: 1, hiddenFromCarousel: true } },
+
+  // Quality opposite-pairs. `pairKey` links the poles (for the builder
+  // pole-toggle + the <bundled_icons> "quality" group). good/bad render as
+  // emoji badges (👍/👎); right/wrong use the `polarity` mark (✓/✗) since
+  // ✓/✗ reads as correct/incorrect. Both attach to a host or stand alone.
+  // (Scalar pairs like fast/slow, full/empty reuse the `gauge` transform;
+  // overlay pairs like clean/dirty are a follow-up needing a spoil layer.)
+  // Quality pairs are hiddenFromCarousel — surfaced via the builder's "quality"
+  // pole-toggle picker. `polarity` marks the positive pole of each pair (also
+  // drives the ✓/✗ render for right/wrong; harmless on good/bad's badge render).
+  { key: "good", tKey: "aac.glyph.good", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "👍", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "badge", order: 43, polarity: "pos", pairKey: "bad", hiddenFromCarousel: true } },
+  { key: "bad", tKey: "aac.glyph.bad", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "👎", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "badge", order: 44, polarity: "neg", pairKey: "good", hiddenFromCarousel: true } },
+  { key: "right", tKey: "aac.glyph.right", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "✔️", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person", "verb"], transform: "polarity", order: 45, polarity: "pos", pairKey: "wrong", hiddenFromCarousel: true } },
+  { key: "wrong", tKey: "aac.glyph.wrong", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "✖️", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person", "verb"], transform: "polarity", order: 46, polarity: "neg", pairKey: "right", hiddenFromCarousel: true } },
+
   // Relational (sequence) — directional arrows drawn BENEATH the symbol that
   // step a concept along an axis: `this` (current, points up), `next`
   // (forward), `prev` (backward). next/prev cancel one-for-one and stack up to
@@ -942,6 +1044,21 @@ const VOCAB: VocabularyItem[] = [
     modeChips: {}, tone: "comment",
     imagePath: "actions/hands/give", emoji: "🫴", directional: true, exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 2, corner: "bottom-left" } },
+
+  // Gender / number — body-shape variants on a person head. `male`/`female`
+  // swap the host art to a `-male`/`-female` body variant (restroom-pictogram
+  // shapes); `plural` to a `-plural` (two figures). Until the variant art is
+  // generated they fall back to a gendered emoji (🧑 → 👨/👩/👥). he/she/they
+  // are the composed pronouns (person.male / person.female / person.plural).
+  { key: "male", tKey: "aac.glyph.male", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "♂️", exposeToAi: true,
+    modifier: { appliesTo: ["person"], transform: "gender_body", order: 40 } },
+  { key: "female", tKey: "aac.glyph.female", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "♀️", exposeToAi: true,
+    modifier: { appliesTo: ["person"], transform: "gender_body", order: 41 } },
+  { key: "plural", tKey: "aac.glyph.plural", pos: "modifier", categories: [],
+    modeChips: {}, tone: "comment", emoji: "👥", exposeToAi: true,
+    modifier: { appliesTo: ["person"], transform: "gender_body", order: 42 } },
 
   // Negation
   { key: "not", tKey: "aac.glyph.not", pos: "modifier", categories: [],
@@ -1171,9 +1288,43 @@ const VOCAB: VocabularyItem[] = [
   { key: "after", tKey: "aac.glyph.after", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment", emoji: "⏭️", exposeToAi: true, directional: true,
     modifier: { appliesTo: ["noun", "verb", "time"], transform: "badge", order: 19 } },
-  { key: "because", tKey: "aac.glyph.because", pos: "modifier", categories: [],
-    modeChips: {}, tone: "comment", emoji: "🔗", exposeToAi: true,
-    modifier: { appliesTo: ["verb", "feeling"], transform: "badge", order: 20 } },
+  // ── Connectors (forward-binding joins between two GLYPHs) ─────────────────
+  // Recognized positionally in `+` slots: `apple + or + banana`,
+  // `sad + because + you_leave`. They bind to the FOLLOWING glyph and consume
+  // no content slot (parser: CONNECTORS in glyph-compositor.ts). `with`/`for`
+  // stay modifiers (single-noun role markers). `because` was migrated here off
+  // its old badge-MODIFIER model.
+  { key: "and", tKey: "aac.glyph.and", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "➕", exposeToAi: true },
+  { key: "or", tKey: "aac.glyph.or", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🔀", exposeToAi: true },
+  { key: "but", tKey: "aac.glyph.but", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "↔️", exposeToAi: true },
+  { key: "if", tKey: "aac.glyph.if", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "❓", exposeToAi: true },
+  { key: "because", tKey: "aac.glyph.because", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🔗", exposeToAi: true },
+
+  // Spatial relations — also forward-binding joins, but rendered as a
+  // trajectory arrow from glyph A → glyph B (SpatialArrow) instead of a logical
+  // link. `go + to + school`, `cat + under + table`, `water + in + cup`.
+  // SPATIAL_RELATIONS in glyph-compositor.ts drives both the parser and render.
+  { key: "to", tKey: "aac.glyph.to", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "➡️", exposeToAi: true },
+  { key: "from", tKey: "aac.glyph.from", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬅️", exposeToAi: true },
+  { key: "in", tKey: "aac.glyph.in", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "📥", exposeToAi: true },
+  { key: "out", tKey: "aac.glyph.out", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "📤", exposeToAi: true },
+  { key: "on", tKey: "aac.glyph.on", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🔛", exposeToAi: true },
+  { key: "under", tKey: "aac.glyph.under", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⬇️", exposeToAi: true },
+  { key: "over", tKey: "aac.glyph.over", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "⤴️", exposeToAi: true },
+  { key: "through", tKey: "aac.glyph.through", pos: "connector", categories: [],
+    modeChips: {}, tone: "comment", emoji: "↪️", exposeToAi: true },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1288,6 +1439,46 @@ export function emotionModifiersFor(pos: GlyphPos): VocabularyItem[] {
     v.modifier?.transform === "emotion"
     && v.modifier.appliesTo.includes(pos)
   ).sort((a, b) => (a.modifier!.order - b.modifier!.order));
+}
+
+/** Gauge (amount-scale) modifiers applicable to a given part-of-speech.
+ *  Surfaced via the builder's dedicated "amount" picker, like colors. */
+export function gaugeModifiersFor(pos: GlyphPos): VocabularyItem[] {
+  return VOCAB.filter((v) =>
+    v.modifier?.transform === "gauge"
+    && v.modifier.appliesTo.includes(pos)
+  ).sort((a, b) => (a.modifier!.order - b.modifier!.order));
+}
+
+/**
+ * Opposite-pair quality modifiers applicable to a given part-of-speech, grouped
+ * into `{ pos, neg }` pairs (deduped by `pairKey`). Drives the builder's
+ * pole-toggle. Each pole carries `modifier.polarity` ("pos"/"neg"); the pair is
+ * keyed by the alphabetically-first of the two keys so it appears once.
+ */
+export function qualityPairsFor(pos: GlyphPos): Array<{ pos: VocabularyItem; neg: VocabularyItem }> {
+  const byKey = new Map<string, VocabularyItem>();
+  for (const v of VOCAB) {
+    if (v.modifier?.pairKey && v.modifier.appliesTo.includes(pos)) byKey.set(v.key, v);
+  }
+  const out: Array<{ pos: VocabularyItem; neg: VocabularyItem }> = [];
+  const seen = new Set<string>();
+  for (const v of byKey.values()) {
+    const partner = byKey.get(v.modifier!.pairKey!);
+    if (!partner || seen.has(v.key) || seen.has(partner.key)) continue;
+    seen.add(v.key); seen.add(partner.key);
+    const posItem = v.modifier!.polarity === "neg" ? partner : v;
+    const negItem = posItem === v ? partner : v;
+    out.push({ pos: posItem, neg: negItem });
+  }
+  out.sort((a, b) => (a.pos.modifier!.order - b.pos.modifier!.order));
+  return out;
+}
+
+/** All CONNECTOR/SPATIAL join SYMBOLs (forward-binding joins). For the builder's
+ *  join picker; logical connectors first, then spatial relations. */
+export function listConnectors(): VocabularyItem[] {
+  return VOCAB.filter((v) => v.pos === "connector");
 }
 
 /** True when the host can accept an item with the given part-of-speech as its payload. */

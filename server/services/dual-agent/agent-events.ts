@@ -280,6 +280,17 @@ export interface AttentionChangeEvent extends BaseEvent {
   reason?: string;
 }
 
+/** Observer switching its own perception backend between the fast-but-costly
+ *  native-audio Live session ("live") and the cheap HTTP completion path
+ *  ("economy"). Live-by-default; the Observer drops to economy when it's just
+ *  monitoring, and the Coordinator force-switches to economy at low energy. */
+export interface ObservationModeChangeEvent extends BaseEvent {
+  type: "observation_mode_change";
+  source: "observer";
+  mode: "live" | "economy";
+  reason?: string;
+}
+
 export type ObserverEvent =
   | TranscribedEvent
   | ContextUpdateEvent
@@ -288,7 +299,8 @@ export type ObserverEvent =
   | AudioRequestEvent
   | AlarmRaisedEvent
   | GestureRecognizedEvent
-  | AttentionChangeEvent;
+  | AttentionChangeEvent
+  | ObservationModeChangeEvent;
 
 // ---------------------------------------------------------------------------
 // Speaker-emitted events

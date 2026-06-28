@@ -17,6 +17,7 @@ import CallGameSurface from "@shared/social-world/CallGameSurface";
 import { useCall } from "@/contexts/CallContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { glyphBubbleImageUrl } from "@/lib/glyphRaster";
 
 /** Resolve a backend ws:// URL, honoring VITE_API_URL (baked for the Electron AAC). */
 function resolveAacWsUrl(path: string): string {
@@ -99,8 +100,10 @@ export function SocialGameReporter({ onChange }: { onChange: (game: CallGame | n
   return null;
 }
 
-/** Renders the game surface into the home-provided host (board region). */
-export function SocialWorldOverlay({ host }: { host: HTMLElement | null }) {
+/** Renders the game surface into the home-provided host (board region). `selfSpeech`
+ *  is the student's latest spoken statement (text + the pressed button's glyph),
+ *  shown as a bubble over their avatar and broadcast to peers. */
+export function SocialWorldOverlay({ host, selfSpeech }: { host: HTMLElement | null; selfSpeech?: { text: string; glyph?: string; at: number } | null }) {
   const { activeGame, selfPersonId, sendWorld, worldHub, sendNpc, npcHub, publishPresence, presenceChannel, localStream, endGame, inviteIntoCall, contacts, refreshContacts } = useCall();
   const { t } = useLanguage();
   const dual = useDualAgentContextOptional();
@@ -142,6 +145,8 @@ export function SocialWorldOverlay({ host }: { host: HTMLElement | null }) {
         npcTransport={npcTransport}
         selfName={selfName}
         audioMuted={dual?.audioEnabled === false}
+        selfSpeech={selfSpeech}
+        getGlyphImageUrl={glyphBubbleImageUrl}
         onExit={endGame}
         onInvite={() => setShowInvite(true)}
         t={t}

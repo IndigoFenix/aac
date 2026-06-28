@@ -48,6 +48,20 @@ export interface SceneSnapshot {
   /** A suspected fall/collapse (conservative pose hint) — forces a real frame
    *  tagged "safety" for the Observer to adjudicate. Never an auto-alarm. */
   suspectedFall?: boolean;
+  /** A seizure-like MOTION pattern (rhythmic-convulsive / atonic / post-ictal)
+   *  from the seizure-signature DSP — forces a real frame tagged "seizure" and
+   *  carries a pre-rendered [MOTION SIGNATURE] line for the Observer. A coarse
+   *  hint the Observer adjudicates against alarm_conditions; never an auto-alarm. */
+  seizure?: SeizureSceneInfo;
+}
+
+/** Compact seizure-signature payload attached to a scene snapshot. `summary` is
+ *  the [MOTION SIGNATURE] line (rendered client-side by summarizeSignature) so
+ *  the server forwards it verbatim to the Observer with the escalated frame. */
+export interface SeizureSceneInfo {
+  phase: "clonic" | "atonic" | "postictal";
+  confidence: number;
+  summary: string;
 }
 
 /** Background-change fraction above which we send a real frame (object shown /
@@ -198,6 +212,10 @@ export function classifyScene(
   // Suspected fall — highest priority: always send a real frame tagged "safety"
   // so the Observer can look and judge against the student's alarm_conditions.
   if (curr.suspectedFall) return { mode: "frame", reason: "safety" };
+  // Seizure-like motion pattern — same priority as a fall: always escalate to a
+  // real frame tagged "seizure" carrying the [MOTION SIGNATURE]. The Observer
+  // adjudicates; the DSP never alarms on its own.
+  if (curr.seizure) return { mode: "frame", reason: "seizure" };
 
   if (prevSignature === null) return { mode: "frame", reason: "first_scene" };
 

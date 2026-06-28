@@ -676,7 +676,7 @@ export interface ClientCapabilities {
 export type ClientMessage =
   | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; classroomId?: string; muteState?: AACMuteState; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string; gps?: import("@shared/location-matching").GpsReading; capabilities?: ClientCapabilities }
   | { type: "gps_update"; gps: import("@shared/location-matching").GpsReading }  // periodic device-location refresh (movement / accuracy improvement)
-  | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string }    // base64 JPEG
+  | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string; triggerReason?: string; motionSignature?: string }    // base64 JPEG; motionSignature = [MOTION SIGNATURE] line on a "seizure" escalation
   | { type: "audio_clip"; data: string; mimeType?: string; clipId?: string }        // base64 audio. Ignored in live mode UNLESS clipId matches an Observer request_audio pull (Phase 1b backlog).
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
@@ -730,8 +730,15 @@ export type ClientMessage =
   | { type: "social_peer_reconfigure"; params: import("@shared/social-bot/debug").SocialPeerParams }; // DEBUG-only: restart the social peer with fully custom parameters
 
 /** Messages from server → client */
+/** Pre-`initialized` startup phases, surfaced to the client as a localized
+ *  subtitle on the "waking up" indicator so the student/caretaker can see
+ *  what the slow startup is actually doing. "connecting" is the client-side
+ *  default (shown before the first server progress arrives). */
+export type StartupStage = "connecting" | "checkingNotes" | "planningSession" | "loadingApps" | "wakingUp";
+
 export type ServerMessage =
   | { type: "initialized"; sessionId: string; clientConfig?: ClientConfig }
+  | { type: "startup_progress"; stage: StartupStage }  // startup phase label for the waking-up subtitle
   | { type: "text"; data: string; noAudioClear?: boolean }
   | { type: "speak"; text: string; audio?: string }
   | { type: "utterance"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }

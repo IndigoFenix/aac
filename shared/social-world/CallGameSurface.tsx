@@ -67,11 +67,19 @@ interface Props {
   selfName?: string;
   /** Silence all NPC voice locally (the window's audio-output mute). */
   audioMuted?: boolean;
+  /** The local user's latest utterance → a speech bubble over their avatar,
+   *  broadcast to peers. Pass a new object (changing `at`) per utterance. */
+  selfSpeech?: { text: string; glyph?: string; at: number } | null;
+  /** Resolve a composed glyph string to a single self-contained image (data URL)
+   *  of the WHOLE glyph, rendered via the shared GlyphCompositor (RTL, modifiers,
+   *  emoji and all). Client-supplied; the canvas decodes it for both render paths
+   *  and draws it above the avatar at its natural aspect ratio. */
+  getGlyphImageUrl?: (glyph: string) => Promise<string | null>;
   /** Optional translator; falls back to English. */
   t?: (key: string) => string;
 }
 
-export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, publishPresence, presenceChannel, onExit, onInvite, getFaceUrl, getLabel, selfStream, npcBrainWsUrl, npcTransport, selfName, audioMuted, t }: Props) {
+export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, publishPresence, presenceChannel, onExit, onInvite, getFaceUrl, getLabel, selfStream, npcBrainWsUrl, npcTransport, selfName, audioMuted, selfSpeech, getGlyphImageUrl, t }: Props) {
   const tr = (key: string) => {
     const translated = t?.(key);
     return translated && translated !== key ? translated : DEFAULT_LABELS[key] ?? key;
@@ -182,7 +190,7 @@ export default function CallGameSurface({ game, selfPersonId, sendWorld, hub, pu
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0f172a", overflow: "hidden" }}>
-      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} renderer={viewMode} hostNpcs={isOwner} onNpcProximity={onNpcProximity} npcEngagements={conv.engagements} debug={debug} onCloseDebug={() => setDebug(false)} />
+      <SocialWorldCanvas worldSpecKey={game.worldSpecKey} worldSpec={game.worldSpec} net={net} spawnHint={getSpawnHint} getFaceUrl={getFaceUrl} getLabel={getLabel} selfStream={selfStream} renderer={viewMode} hostNpcs={isOwner} onNpcProximity={onNpcProximity} npcEngagements={conv.engagements} debug={debug} onCloseDebug={() => setDebug(false)} selfSpeech={selfSpeech} getGlyphImageUrl={getGlyphImageUrl} />
 
       {/* Thin top bar: game name + end-game. Kept minimal so the world fills the
           surface; richer chrome (video billboards, controls) is per-client. */}

@@ -59,6 +59,7 @@ import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { usePoseTracking } from "@/hooks/usePoseTracking";
 import { usePoseEvents } from "@/hooks/usePoseEvents";
+import { useSeizureWatch } from "@/hooks/useSeizureWatch";
 import { useSceneChangeDetector, type MaskBox } from "@/hooks/useSceneChangeDetector";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
@@ -94,7 +95,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -107,6 +108,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onInitializedChange?: (initialized: boolean) => void;
   onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyphs: Array<{ glyph: string; fallback?: string }> | null, dismiss: () => void) => void;
   onAlarmChange?: (alarm: { level: "alert" | "emergency"; reason: string } | null, cancel: () => void) => void;
+  onSeizureConfigChange?: (cfg: import("@shared/aac/seizure-config").ClientSeizureConfig | null) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
@@ -131,11 +133,15 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
    *  out of the provider so the top-level board (rendered outside it) can show it. */
   onSocialFaceChange?: (data: { preview: import("@/hooks/dual-agent-types").SocialPeerPreview | null; session: import("@/hooks/dual-agent-types").SocialSessionInfo | null }) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
   }, [muteState, onModeChange]);
+
+  useEffect(() => {
+    onSeizureConfigChange?.(seizureConfig);
+  }, [seizureConfig, onSeizureConfigChange]);
 
   useEffect(() => {
     onVoiceReady((buttons: string[], sentences?: Record<string, string>) => voiceButtons(buttons, sentences));
@@ -481,6 +487,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // Recent button presses for Voice feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
+
+  // The student's latest spoken statement for the in-game speech bubble: a button
+  // press carries its OWN stored glyph (the efficient path — no Board Manager
+  // re-translation needed), so capture text + glyph together at press time.
+  const [gameSelfSpeech, setGameSelfSpeech] = useState<{ text: string; glyph?: string; at: number } | null>(null);
 
 
   // Context sidebar buttons (from AI's add_context_button tool)
@@ -907,8 +918,32 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // only runs while the dual-agent session is active. Feeds the scene snapshot
   // + gesture context; a suspected fall escalates to a frame the Observer judges.
   const poseEnabled = useDualAgent && CLIENT_CAPABILITIES.poseSafety;
-  const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled, config: trackerConfig(900) }); // default 400ms; heaviest tracker
+  // Seizure "watch": while a seizure-like pattern is suspected, run the pose
+  // tracker fast enough (~15fps) to resolve the 2–5Hz clonic band. The default
+  // ~400ms cadence (and the slower in-game cadence) can't. Safety wins over the
+  // game-smoothness throttle here. Set by useSeizureWatch (declared below).
+  const [poseWatchActive, setPoseWatchActive] = useState(false);
+  // Per-student seizure-detection config from the server (bridged up from
+  // DualAgentContext). Null until the session initializes / when disabled.
+  const [serverSeizure, setServerSeizure] = useState<import("@shared/aac/seizure-config").ClientSeizureConfig | null>(null);
+  const poseConfig = poseWatchActive ? { processingIntervalMs: 66 } : trackerConfig(900);
+  const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled, config: poseConfig }); // default 400ms; heaviest tracker
   const { trackedPoses } = usePoseEvents({ poses: rawPoses, enabled: poseEnabled });
+  // Seizure-signature DSP over the same pose stream: a rhythmic-convulsive /
+  // atonic / post-ictal motion pattern escalates to a "seizure" frame carrying a
+  // [MOTION SIGNATURE] the Observer adjudicates (never an auto-alarm). Its
+  // suspicion signal bumps the pose rate via onWatchActiveChange. Gated on the
+  // per-student server config (clientConfig.seizure, bridged up from the context):
+  // disabled / unconfigured students never run it. Thresholds + seed baseline are
+  // per-student so the detectors are tuned to the student's own peculiarities.
+  const seizureEnabled = poseEnabled && !!serverSeizure?.enabled;
+  const { seizureInfo, signature: seizureSignature, watchActive: seizureWatchActive, baselineSamples: seizureBaselineSamples } = useSeizureWatch({
+    poses: rawPoses,
+    enabled: seizureEnabled,
+    thresholds: serverSeizure?.thresholds,
+    initialBaseline: serverSeizure?.baseline ?? null,
+    onWatchActiveChange: setPoseWatchActive,
+  });
 
   // Get current identified person (non-blocking getter for dual-agent)
   const getIdentifiedPerson = useCallback(() => {
@@ -987,8 +1022,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     const suspectedFall = body
       ? body.events.some(e => e.type === "fall" && Date.now() - e.timestamp < 3000)
       : false;
-    return { people, hands, posture, suspectedFall, backgroundChange: getBackgroundChange() };
-  }, [trackedFaces, trackedHands, trackedPoses, getBackgroundChange]);
+    return { people, hands, posture, suspectedFall, seizure: seizureInfo ?? undefined, backgroundChange: getBackgroundChange() };
+  }, [trackedFaces, trackedHands, trackedPoses, seizureInfo, getBackgroundChange]);
 
   // Lip-sync evidence (speaker attribution): for each tracked face, how active
   // its mouth was during a speech window [startMs,endMs] — mouth_open events per
@@ -1353,6 +1388,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
     setCurrentSpeech(spokenText);
     setTimeout(() => setCurrentSpeech(""), 2000);
+
+    // Surface it as the in-game speech bubble too — the button's own glyph is the
+    // glyph translation (no Board Manager round-trip for a button-sourced line).
+    setGameSelfSpeech({ text: spokenText, glyph: button.glyph, at: Date.now() });
 
     const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
@@ -2355,6 +2394,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           transcribeSpeech={transcribeSpeech}
           sttReady={sttReady}
           getSceneSnapshot={getSceneSnapshot}
+          seizureActive={!!seizureInfo}
           getLipActivity={getLipActivity}
           debugMode={debugMode}
           getFaceImage={resolveFaceImage}
@@ -2383,6 +2423,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onInitializedChange={setAiSessionActive}
             onBinaryChoiceChange={(options, escapeKind, inputGlyphs, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyphs(inputGlyphs); dismissBinaryChoiceRef.current = dismiss; }}
             onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
+            onSeizureConfigChange={setServerSeizure}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onEnabledAppsChange={setEnabledApps}
@@ -2444,7 +2485,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               fills the game window (quick buttons + the 2×4 board stay visible).
               The reporter lifts the active-game signal up to drive the layout. */}
           <SocialGameReporter onChange={setActiveSocialGame} />
-          <SocialWorldOverlay host={gameHost} />
+          <SocialWorldOverlay host={gameHost} selfSpeech={gameSelfSpeech} />
           <SocialWorldPeople host={peopleHost} />
           {/* Group-chat peer faces — side-by-side header during a multi-student
               chat. Dwell/tap a face to focus that peer as the addressee. Renders
@@ -2482,6 +2523,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               voiceLoading={voiceLoading}
               voiceError={voiceError}
               faceRecognitionReady={isPersonIdReady}
+              seizure={{
+                poseTrackingOn: !!poseEnabled,
+                configured: !!serverSeizure,
+                enabled: !!seizureEnabled,
+                thresholds: serverSeizure?.thresholds ?? null,
+                hasSeedBaseline: !!serverSeizure?.baseline,
+                poseDetected: rawPoses.length > 0,
+                baselineSamples: seizureBaselineSamples,
+                signature: seizureSignature,
+                willEscalate: !!seizureInfo,
+                watchActive: seizureWatchActive,
+              }}
             />
           )}
           </CallProvider>

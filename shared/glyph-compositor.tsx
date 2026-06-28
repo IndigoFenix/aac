@@ -24,6 +24,7 @@ import {
   dominantToneFamily,
   TONE_COLORS,
   SLOT_UNIT,
+  SPATIAL_RELATIONS,
   type ParsedGlyph,
   type ParsedSlot,
   type SlotLayout,
@@ -307,9 +308,14 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
     && !!item?.composable?.emptyImagePath
     && !!slot
     && !slot.payload;
-  const resolverItem = useEmptyImage
-    ? { ...item!, imagePath: item!.composable!.emptyImagePath }
-    : item;
+  // Gender-body modifier (he/she/they) swaps the host art to a `-male`/
+  // `-female`/`-plural` body variant. Composes after the empty-image swap.
+  const genderSuffix = collectGenderSuffix(slot);
+  let resolverImagePath = useEmptyImage ? item!.composable!.emptyImagePath : item?.imagePath;
+  if (genderSuffix && resolverImagePath) {
+    resolverImagePath = `${resolverImagePath}-${genderSuffix}`;
+  }
+  const resolverItem = item ? { ...item, imagePath: resolverImagePath } : item;
   const url = slot ? resolveImage?.({ item: resolverItem, key: slot.key }) ?? null : null;
   // The emoji this slot would fall back to. Computed up here (not just in the
   // emoji branch below) because reversibility depends on it: a concept whose
@@ -317,7 +323,10 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // and that holds whether it renders as the emoji OR as a generated image of
   // the same concept, so gating both on it kills the "loads unflipped, then
   // flips" transition when a generated image arrives to replace the emoji.
-  const emojiChar = slot ? (item?.emoji ?? resolveEmoji(slot.key) ?? "❓") : "❓";
+  const baseEmojiChar = slot ? (item?.emoji ?? resolveEmoji(slot.key) ?? "❓") : "❓";
+  // When the host carries a gender modifier but has no variant art (url null),
+  // swap the emoji fallback to a gendered one so he/she/they still read.
+  const emojiChar = genderSuffix ? applyGenderEmoji(baseEmojiChar, genderSuffix) : baseEmojiChar;
   const imageReversible = !!item && !isNonReversible(item) && !isNonReversibleEmoji(emojiChar);
   const mainCx = mainX + mainSize / 2;
   const mainCy = mainY + mainSize / 2;
@@ -516,6 +525,17 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
       {/* Dot indicators at bottom for count modifiers */}
       {transforms.has("dots") && (
         <DotIndicator slot={slot} layout={layout} />
+      )}
+      {transforms.has("gauge") && (
+        <GaugeIndicator level={collectGaugeLevel(slot) ?? 0} layout={layout} />
+      )}
+      {transforms.has("polarity") && (
+        <PolarityMark pole={collectPolarity(slot) ?? "pos"} layout={layout} />
+      )}
+      {slot?.join && layout.index > 0 && (
+        SPATIAL_RELATIONS.has(slot.join)
+          ? <SpatialArrow relation={slot.join} layout={layout} rtl={rtl} />
+          : <SeamConnector connector={slot.join} layout={layout} rtl={rtl} />
       )}
 
       {/* Red X overlay renders on top */}
@@ -723,6 +743,65 @@ function collectColorValue(slot: ParsedSlot | undefined): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Pick the first gauge modifier's fill level (none/some/half/most/all).
+ * Returns null when no gauge modifier is present. 0 is a valid level (none),
+ * so the check is `gauge !== undefined`, not truthiness.
+ */
+function collectGaugeLevel(slot: ParsedSlot | undefined): number | null {
+  if (!slot) return null;
+  for (const modKey of slot.modifiers) {
+    const g = getVocabularyItem(modKey)?.modifier;
+    if (g?.transform === "gauge" && g.gauge !== undefined) return g.gauge;
+  }
+  return null;
+}
+
+/**
+ * Pick the first polarity modifier's pole (`pos`/`neg`) — drives the ✓/✗
+ * opposite-pair mark (right/wrong). Null when none is present.
+ */
+function collectPolarity(slot: ParsedSlot | undefined): "pos" | "neg" | null {
+  if (!slot) return null;
+  for (const modKey of slot.modifiers) {
+    const p = getVocabularyItem(modKey)?.modifier;
+    if (p?.transform === "polarity" && p.polarity) return p.polarity;
+  }
+  return null;
+}
+
+/**
+ * Pick the first gender-body modifier on the slot (`male`/`female`/`plural`).
+ * Returns the suffix used to (a) swap the host art to a `-male`/`-female`/
+ * `-plural` variant and (b) swap the emoji fallback to a gendered emoji.
+ * Only one applies at a time — first wins. Undefined when none is present.
+ */
+function collectGenderSuffix(
+  slot: ParsedSlot | undefined
+): "male" | "female" | "plural" | undefined {
+  if (!slot) return undefined;
+  for (const modKey of slot.modifiers) {
+    if (getVocabularyItem(modKey)?.modifier?.transform === "gender_body") {
+      return modKey as "male" | "female" | "plural";
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Gendered emoji fallback for a `gender_body` modifier when the host has no
+ * `-male`/`-female`/`-plural` variant art yet. Keyed by the host's base emoji.
+ * Unmapped bases keep their base emoji (the modifier still applies to the art
+ * path when variant art exists).
+ */
+const GENDERED_EMOJI: Record<string, { male: string; female: string; plural: string }> = {
+  "🧑": { male: "👨", female: "👩", plural: "👥" },
+  "🧒": { male: "👦", female: "👧", plural: "🧒" },
+};
+function applyGenderEmoji(base: string, gender: "male" | "female" | "plural"): string {
+  return GENDERED_EMOJI[base]?.[gender] ?? base;
 }
 
 /**
@@ -1080,6 +1159,180 @@ function DotIndicator(props: DotIndicatorProps): React.ReactElement | null {
       {Array.from({ length: dotCount }).map((_, i) => (
         <circle key={i} cx={startX + i * spacing} cy={y} r={dotR} />
       ))}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gauge indicator (amount scale: none/some/half/most/all)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface GaugeIndicatorProps {
+  /** Fill fraction 0..1. */
+  level: number;
+  layout: SlotLayout;
+}
+
+/**
+ * A small fill meter beneath the symbol — an outlined pill with an inner bar
+ * filled to `level`. Renders the amount-scale quantifiers (none=empty …
+ * all=full) on a host noun. Sits in the same beneath-the-symbol band as the
+ * dot indicator, so the two never both apply to one slot in practice.
+ */
+function GaugeIndicator(props: GaugeIndicatorProps): React.ReactElement {
+  const { level, layout } = props;
+  const clamped = Math.max(0, Math.min(1, level));
+  const barW = SLOT_UNIT * 0.5;
+  const barH = 9;
+  const x = layout.x + (SLOT_UNIT - barW) / 2;
+  const y = layout.y + SLOT_UNIT - 13;
+  const pad = 2;
+  const innerW = (barW - pad * 2) * clamped;
+  return (
+    <g>
+      <rect x={x} y={y} width={barW} height={barH} rx={barH / 2} ry={barH / 2}
+        fill="#FFFFFF" stroke="#9CA3AF" strokeWidth={1.5} />
+      {innerW > 0 && (
+        <rect x={x + pad} y={y + pad} width={innerW} height={barH - pad * 2}
+          rx={(barH - pad * 2) / 2} ry={(barH - pad * 2) / 2} fill="#1E40AF" />
+      )}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seam connector (forward-binding join: and / or / but / if / because)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Compact symbol per connector, drawn in the seam between two glyphs. */
+const CONNECTOR_SYMBOL: Record<string, string> = {
+  and: "&", or: "/", but: "≠", if: "?", because: "∵",
+};
+
+interface SeamConnectorProps {
+  connector: string;
+  layout: SlotLayout;
+  rtl: boolean;
+}
+
+/**
+ * A small badge straddling the boundary BEFORE a slot, showing the connector
+ * that joins it to the previous slot. The boundary is the slot's leading edge
+ * (left in LTR, right in RTL). This is the minimal seam render; the spatial
+ * slice extends the same seam with trajectory arrows.
+ */
+function SeamConnector(props: SeamConnectorProps): React.ReactElement {
+  const { connector, layout, rtl } = props;
+  const sym = CONNECTOR_SYMBOL[connector] ?? "+";
+  const r = SLOT_UNIT * 0.16;
+  const cx = rtl ? layout.x + layout.width : layout.x;
+  const cy = layout.y + layout.height / 2;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={r} fill="#FFFFFF" stroke="#6B7280" strokeWidth={1.5} />
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={r * 1.1}
+        fill="#374151"
+        fontWeight="bold"
+      >
+        {sym}
+      </text>
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spatial arrow (trajectory join: to/from/in/out/on/under/over/through)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-relation geometry: `dir` is the arrow heading (+1 forward A→B, -1 back
+ * B→A) and `yFrac` is the vertical position in the slot (0=top, 1=bottom),
+ * which encodes elevation (over=high, under=low, on=top, in/out=slightly low).
+ */
+const SPATIAL_GEOMETRY: Record<string, { dir: 1 | -1; yFrac: number }> = {
+  to:      { dir: 1,  yFrac: 0.5 },
+  from:    { dir: -1, yFrac: 0.5 },
+  in:      { dir: 1,  yFrac: 0.58 },
+  out:     { dir: -1, yFrac: 0.58 },
+  on:      { dir: 1,  yFrac: 0.3 },
+  under:   { dir: 1,  yFrac: 0.78 },
+  over:    { dir: 1,  yFrac: 0.22 },
+  through: { dir: 1,  yFrac: 0.5 },
+};
+
+interface SpatialArrowProps {
+  relation: string;
+  layout: SlotLayout;
+  rtl: boolean;
+}
+
+/**
+ * A trajectory arrow drawn in the seam before a slot, reaching toward (or back
+ * from) the glyph. `dir` flips horizontally under RTL; `yFrac` gives elevation
+ * (over/under/on). The minimal straight-arrow render; curved over/under spans
+ * are a later enhancement.
+ */
+function SpatialArrow(props: SpatialArrowProps): React.ReactElement {
+  const { relation, layout, rtl } = props;
+  const g = SPATIAL_GEOMETRY[relation] ?? { dir: 1 as const, yFrac: 0.5 };
+  const y = layout.y + layout.height * g.yFrac;
+  const span = SLOT_UNIT * 0.5;
+  const cx = rtl ? layout.x + layout.width : layout.x; // boundary toward previous slot
+  const x1 = cx - span / 2;
+  const x2 = cx + span / 2;
+  const pointsRight = (rtl ? -g.dir : g.dir) > 0;
+  const tipX = pointsRight ? x2 : x1;
+  const tailX = pointsRight ? x1 : x2;
+  const head = 8;
+  const hx = pointsRight ? -head : head;
+  return (
+    <g stroke={REL_ARROW_STROKE} strokeWidth={3.5} fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <line x1={tailX} y1={y} x2={tipX} y2={y} />
+      <line x1={tipX} y1={y} x2={tipX + hx} y2={y - head} />
+      <line x1={tipX} y1={y} x2={tipX + hx} y2={y + head} />
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Polarity mark (opposite-pair: right ✓ / wrong ✗)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PolarityMarkProps {
+  pole: "pos" | "neg";
+  layout: SlotLayout;
+}
+
+/**
+ * A small green ✓ (positive pole) or red ✗ (negative pole) badge in the
+ * bottom-right corner of the slot — the `mark` axis of the opposite-pair
+ * design (right/wrong). Bottom-right avoids the emotion badge's top-right.
+ */
+function PolarityMark(props: PolarityMarkProps): React.ReactElement {
+  const { pole, layout } = props;
+  const size = SLOT_UNIT * 0.32;
+  const x = layout.x + SLOT_UNIT - size - 2;
+  const y = layout.y + SLOT_UNIT - size - 2;
+  const pos = pole === "pos";
+  return (
+    <g>
+      <rect x={x} y={y} width={size} height={size} rx={4} ry={4} fill={pos ? "#16A34A" : "#DC2626"} />
+      <text
+        x={x + size / 2}
+        y={y + size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={size * 0.7}
+        fill="#FFFFFF"
+        fontWeight="bold"
+      >
+        {pos ? "✓" : "✗"}
+      </text>
     </g>
   );
 }

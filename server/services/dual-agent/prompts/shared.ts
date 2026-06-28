@@ -11,6 +11,7 @@
 
 import { Behavior, type FunctionDeclaration } from "@google/genai";
 import { listAllVocabulary } from "@shared/glyph-registry";
+import { getLanguageName, languageMarksGender } from "@shared/language-names";
 import { ex as _ex, type ExampleEntry, type LocaleCode } from "../../memory-schema/prompt-examples";
 import { T } from "../../memory-schema/canonical-terms";
 
@@ -71,6 +72,31 @@ export function genderWord(gender?: string, age?: string): string {
   if (gender === "male") return isAdult ? "man" : "boy";
   if (gender === "female") return isAdult ? "woman" : "girl";
   return "";
+}
+
+/**
+ * Strong directive forcing correct grammatical gender. An English descriptor
+ * ("a girl") is too weak a signal for gendered languages: Hebrew/Arabic/etc.
+ * default to the masculine when not told otherwise, so the native-audio model
+ * addresses a female student (or voices HER own utterances) in the masculine.
+ * This states the requirement explicitly, naming the active language.
+ *
+ * Emitted ONLY when (a) the gender is known AND (b) the session language
+ * actually marks the addressee's gender (`languageMarksGender`). For English,
+ * Mandarin, Korean, etc. it returns "" — the directive would be pure noise.
+ * `language` may be a code ("he") or a display name ("Hebrew"). Used by the
+ * Speaker (addressing) and the Board Manager (which also AUTHORS the student's
+ * own first-person speech).
+ */
+export function genderedAddressDirective(name: string, gender?: string, language?: string): string {
+  if (gender !== "male" && gender !== "female") return "";
+  if (!languageMarksGender(language)) return "";
+  const forms = gender === "female" ? "feminine" : "masculine";
+  const poss = gender === "female" ? "her" : "his";
+  const langName = getLanguageName(language);
+  return `<grammatical_gender>
+[${name}] is ${gender}. ${langName} marks grammatical gender, so ALWAYS use ${forms} verb, pronoun, and adjective forms — both when you address [${name}] and when you write ${poss} OWN first-person words (the SENTENCEs they speak). If any worked example shows a different gender, follow [${name}]'s actual gender, not the example.
+</grammatical_gender>`;
 }
 
 /** "a 12 year old girl with X" / "a user" — student descriptor. */

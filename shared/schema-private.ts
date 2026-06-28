@@ -531,12 +531,13 @@ export const aacSettings = pgTable("aac_settings", {
   customVoiceId: varchar("custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
   customStudentVoiceId: varchar("custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
 
-  // Speaker backend: when true, the AAC Speaker runs as Gemini Live native-audio
-  // (model speaks directly). When false (default), it runs as HTTP completion +
-  // streaming TTS (cheaper, more reliable tool calling). The AI voice in live
+  // Speaker backend: when true (default), the AAC Speaker runs as Gemini Live
+  // native-audio (model speaks directly). When false, it runs as HTTP completion
+  // + streaming TTS (cheaper, more reliable tool calling). The AI voice in live
   // mode comes from Gemini Live's prebuilt voices, so the ElevenLabs AI voice
-  // picker is hidden client-side when this is on.
-  liveAudioSpeaker: boolean("live_audio_speaker").default(false).notNull(),
+  // picker is hidden client-side when this is on. Default flipped to true for
+  // newly created students; existing rows are left untouched (no backfill).
+  liveAudioSpeaker: boolean("live_audio_speaker").default(true).notNull(),
 
   // ElevenLabs voice settings (may be removed later)
   elevenlabsEnabled: boolean("elevenlabs_enabled").default(true), // Toggle ElevenLabs on/off without removing config
@@ -664,6 +665,19 @@ export const aacSettings = pgTable("aac_settings", {
   // Observer agent treats a recognized gesture toward the device as a button
   // press voicing `meaning` (see DefinedGesture in schema.ts).
   definedGestures: jsonb("defined_gestures").default([]),
+
+  // Seizure detection (per-student). TECHNICAL config for the client-side motion
+  // detectors — { config: { enabled, rhythmic, atonic, audioCorroboration },
+  // baseline?: { regionEnergy, samples, updatedAt } }. `config` is clinician-
+  // edited (master switch + per-detector sensitivity); `baseline` is the
+  // machine-learned habitual-motion model persisted across sessions. The two
+  // write paths merge by key (studentService) so a config save never clobbers
+  // the baseline and vice-versa. CLINICAL policy (what to do, what their seizures
+  // look like) lives in the prompt/alarmConditions, NOT here. See
+  // shared/aac/seizure-config.ts (SeizureDetectionSettings). Untyped at the
+  // column level (reads coerce via coerceSeizureConfig) — a strict $type union
+  // fights drizzle-zod's insert-schema widening.
+  seizureDetection: jsonb("seizure_detection"),
 
   // Metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),

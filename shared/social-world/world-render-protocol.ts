@@ -41,11 +41,16 @@ export type MainToWorker =
   | { type: "tune"; tunables: WorldTunables }
   | { type: "pointer"; x: number; y: number }
   | { type: "pointer-leave" }
+  /** The local user spoke — show a bubble over the local avatar + broadcast it. */
+  | { type: "say"; text: string; glyph?: string }
   | { type: "net-inbound"; msgs: WorldNetMessage[] }
   | { type: "presence"; presence: WorldPresence }
   | { type: "presence-leave"; personId: string }
   /** A face image (or null) + display name for a participant. `bitmap` transferred. */
   | { type: "face"; id: string; bitmap: ImageBitmap | null; label: string }
+  /** Decoded symbol images for a composed glyph string (the speech-bubble glyph
+   *  strip). `bitmaps` transferred. Empty ⇒ nothing resolved (text-only bubble). */
+  | { type: "glyph"; glyph: string; bitmaps: ImageBitmap[] }
   /** Bias a hosted NPC's body from its live conversation (mind → body). */
   | { type: "npc-engagement"; npcId: string; engagement: NpcEngagement | null }
   | { type: "dispose" };
@@ -61,6 +66,8 @@ export type WorkerToMain =
   | { type: "publish-presence"; presence: WorldPresence }
   /** Worker saw a participant with no cached face; main should fulfil it. */
   | { type: "request-face"; id: string }
+  /** Worker saw a speech bubble with an un-decoded glyph; main should fulfil it. */
+  | { type: "request-glyph"; glyph: string }
   /** The set of NPCs the local player is in conversation range of changed. */
   | { type: "npc-proximity"; nearby: NpcProximity[] }
   /** Unrecoverable (WebGL context loss / exception) — main falls back to on-thread. */

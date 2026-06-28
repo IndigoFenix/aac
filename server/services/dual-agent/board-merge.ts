@@ -51,6 +51,27 @@ export function exactDuplicate(a: MergeButton, b: MergeButton): boolean {
 }
 
 /**
+ * True when two boards are identical in display AND behavior — same buttons, in
+ * the same order. Builds on `exactDuplicate` (label/glyph/fallback/sentence) and
+ * additionally compares the spoken `speech`, `buttonType`, and `addressee`,
+ * which `exactDuplicate` ignores but which change what a press does.
+ *
+ * Used to suppress a redundant board re-push: re-sending a byte-identical board
+ * re-renders the grid on the client and resets any in-progress dwell, which for
+ * eye-gaze/dwell users can keep a selection from ever completing.
+ */
+export function sameBoard(a: MergeButton[], b: MergeButton[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!exactDuplicate(a[i], b[i])) return false;
+    if ((a[i].speech || "").trim() !== (b[i].speech || "").trim()) return false;
+    if ((a[i].buttonType || "") !== (b[i].buttonType || "")) return false;
+    if ((a[i].addressee || "") !== (b[i].addressee || "")) return false;
+  }
+  return true;
+}
+
+/**
  * Score how likely `incoming` is meant to REPLACE `existing`. Higher =
  * better match. 0 means no shared signature at all (we still allow
  * displacement as a last resort, but ranked behind partial matches).

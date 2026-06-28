@@ -41,6 +41,7 @@ import type {
   AttentionChangeEvent,
   AlarmRaisedEvent,
   GestureRecognizedEvent,
+  ObservationModeChangeEvent,
   ModeChangeEvent,
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
@@ -48,6 +49,7 @@ import type {
   SpeechDirection,
 } from "./agent-events";
 import { isDeviceTarget, isUserTarget } from "./speech-party";
+import type { IObserverAgent } from "./observer-interface";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -230,6 +232,19 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
       return event;
     }
 
+    case "set_observation_mode": {
+      const mode = asString(args.mode);
+      if (mode !== "live" && mode !== "economy") return null;
+      const event: ObservationModeChangeEvent = {
+        type: "observation_mode_change",
+        source: "observer",
+        timestamp: now,
+        mode,
+        reason: asString(args.reason),
+      };
+      return event;
+    }
+
     case "report_gesture": {
       const gesture = asString(args.gesture);
       if (!gesture) return null;
@@ -327,7 +342,7 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
 // ObserverAgent
 // ---------------------------------------------------------------------------
 
-export class ObserverAgent {
+export class ObserverAgent implements IObserverAgent {
   private provider: LiveProvider | null = null;
   private readonly callbacks: ObserverCallbacks;
   private readonly providerKey: LLMProviderKey;

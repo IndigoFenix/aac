@@ -23,6 +23,7 @@ import { apiRequest } from '@/lib/queryClient';
 import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
+import { type SeizureConfig, type SeizureSensitivity, DEFAULT_SEIZURE_CONFIG, coerceSeizureConfig } from '@shared/aac/seizure-config';
 import { COMPETENCY_LABEL } from '@shared/social-bot/state';
 
 // All trainable social-skill keys, in canonical order. Sourced from the shared
@@ -70,6 +71,7 @@ import {
   ListVideo,
   Sparkles,
   ChevronDown,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -222,9 +224,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // clinicians can delete entries but don't hand-edit them (the assistant
   // maintains them as it learns).
   const [autoAacPrompt, setAutoAacPrompt] = useState<string[]>([]);
-  const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(false);
+  const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(true);
   const [fullAttentionMode, setFullAttentionMode] = useState(false);
   const [boardManagerLiveModel, setBoardManagerLiveModel] = useState(false);
+  // Seizure detection — TECHNICAL config for the client motion detectors (master
+  // switch + per-detector sensitivity + audio corroboration). The learned
+  // baseline lives in the same JSON server-side and is NOT edited here.
+  const [seizureDetection, setSeizureDetection] = useState<SeizureConfig>(DEFAULT_SEIZURE_CONFIG);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
@@ -333,9 +339,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
-      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
+      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? true);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
       setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
+      setSeizureDetection(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -380,9 +387,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAiName = aac?.aiName || '';
       const originalPrompt = toRuleArray(aac?.chatAgentPrompt);
       const originalAutoPrompt = toRuleArray(aac?.autoAacPrompt);
-      const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? false;
+      const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? true;
       const originalFullAttentionMode = aac?.fullAttentionMode ?? false;
       const originalBoardManagerLiveModel = aac?.boardManagerLiveModel ?? false;
+      const originalSeizureDetection = JSON.stringify(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
@@ -422,6 +430,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         liveAudioSpeaker !== originalLiveAudioSpeaker ||
         fullAttentionMode !== originalFullAttentionMode ||
         boardManagerLiveModel !== originalBoardManagerLiveModel ||
+        JSON.stringify(seizureDetection) !== originalSeizureDetection ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
@@ -455,7 +464,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, boardManagerLiveModel, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, boardManagerLiveModel, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -466,6 +475,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       liveAudioSpeaker?: boolean;
       fullAttentionMode?: boolean;
       boardManagerLiveModel?: boolean;
+      seizureDetection?: { config: SeizureConfig };
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
@@ -526,6 +536,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       liveAudioSpeaker,
       fullAttentionMode,
       boardManagerLiveModel,
+      seizureDetection: { config: seizureDetection },
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -569,9 +580,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
-      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? false);
+      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? true);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
       setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
+      setSeizureDetection(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
@@ -1269,6 +1281,82 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 )}
                 </div>
               </div>
+            </CardContent>
+          </CollapsibleSection>
+
+          {/* Seizure Detection — TECHNICAL config for the on-device motion
+              detectors (when they flag a possible seizure to the AI). Tune per
+              student so their usual movements don't trip false warnings. Clinical
+              guidance (what their seizures look like, what to do) belongs in the
+              AAC prompt, not here. Opt-in / off by default. */}
+          <CollapsibleSection
+            icon={<Activity className="w-5 h-5" />}
+            title={t('aacSettings.seizureDetection')}
+            description={t('aacSettings.seizureDetectionDesc')}
+          >
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.seizureDetectionEnable')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('aacSettings.seizureDetectionEnableDesc')}</p>
+                </div>
+                <Switch
+                  checked={seizureDetection.enabled}
+                  onCheckedChange={(v) => setSeizureDetection(s => ({ ...s, enabled: v }))}
+                  data-testid="switch-seizure-detection"
+                />
+              </div>
+
+              {seizureDetection.enabled && (
+                <>
+                  {/* Rhythmic / convulsive (tonic-clonic) detector sensitivity. */}
+                  <div className="space-y-1 pt-4 border-t">
+                    <Label className="text-base font-medium">{t('aacSettings.seizureRhythmic')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.seizureRhythmicDesc')}</p>
+                    <Select
+                      value={seizureDetection.rhythmic}
+                      onValueChange={(v) => setSeizureDetection(s => ({ ...s, rhythmic: v as SeizureSensitivity }))}
+                    >
+                      <SelectTrigger data-testid="select-seizure-rhythmic"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(['off', 'low', 'medium', 'high'] as const).map(k => (
+                          <SelectItem key={k} value={k}>{t(`aacSettings.seizureSensitivity_${k}`)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Atonic / drop-attack detector sensitivity. */}
+                  <div className="space-y-1 pt-4 border-t">
+                    <Label className="text-base font-medium">{t('aacSettings.seizureAtonic')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.seizureAtonicDesc')}</p>
+                    <Select
+                      value={seizureDetection.atonic}
+                      onValueChange={(v) => setSeizureDetection(s => ({ ...s, atonic: v as SeizureSensitivity }))}
+                    >
+                      <SelectTrigger data-testid="select-seizure-atonic"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(['off', 'low', 'medium', 'high'] as const).map(k => (
+                          <SelectItem key={k} value={k}>{t(`aacSettings.seizureSensitivity_${k}`)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Audio corroboration — only ever raises confidence of a motion event. */}
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('aacSettings.seizureAudioCorroboration')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('aacSettings.seizureAudioCorroborationDesc')}</p>
+                    </div>
+                    <Switch
+                      checked={seizureDetection.audioCorroboration}
+                      onCheckedChange={(v) => setSeizureDetection(s => ({ ...s, audioCorroboration: v }))}
+                      data-testid="switch-seizure-audio"
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
           </CollapsibleSection>
 

@@ -9,6 +9,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   decideIdleTransition,
+  idleThresholdScaleForBand,
   type IdleWatchdogInput,
 } from "../services/dual-agent/idle-watchdog.js";
 
@@ -88,5 +89,28 @@ describe("decideIdleTransition", () => {
         decideIdleTransition(input({ idleMs: wayPastSleep, inSocialSession: true })),
       ).toBe("none");
     });
+  });
+});
+
+describe("idleThresholdScaleForBand (energy-scaled throttle)", () => {
+  it("leaves thresholds unchanged at high energy", () => {
+    expect(idleThresholdScaleForBand("high")).toBe(1);
+  });
+
+  it("tightens moderately at moderate energy", () => {
+    expect(idleThresholdScaleForBand("moderate")).toBeCloseTo(0.6, 5);
+  });
+
+  it("tightens aggressively at low energy (~3x sooner)", () => {
+    expect(idleThresholdScaleForBand("low")).toBeCloseTo(1 / 3, 5);
+  });
+
+  it("monotonically shrinks as energy falls", () => {
+    expect(idleThresholdScaleForBand("high")).toBeGreaterThan(idleThresholdScaleForBand("moderate"));
+    expect(idleThresholdScaleForBand("moderate")).toBeGreaterThan(idleThresholdScaleForBand("low"));
+  });
+
+  it("a low-energy session sleeps after ~100s instead of 300s", () => {
+    expect(Math.round(SLEEP_AFTER_MS * idleThresholdScaleForBand("low"))).toBe(100_000);
   });
 });

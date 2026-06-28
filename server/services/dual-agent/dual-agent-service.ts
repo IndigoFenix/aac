@@ -410,6 +410,10 @@ export class DualAgentService {
     timezone?: string,
     classroomId?: string,
     gps?: import("@shared/location-matching").GpsReading,
+    // Optional startup-progress hook: invoked before slow startup phases so the
+    // caller (AgentCoordinator) can surface a localized "waking up" subtitle.
+    // Only fires on the fresh-session path (cache/DB resumes are instant).
+    onProgress?: (stage: import("./live-relay").StartupStage) => void,
   ): Promise<DualAgentSessionState> {
     // Consent gate — runs even on resume so a session opened against an
     // active consent stops working once that consent is revoked.
@@ -439,12 +443,12 @@ export class DualAgentService {
     // Try to rebuild from client-provided local state (fallback when DB is empty/stale)
     if (localState && localState.studentId === studentId) {
       console.log("[DualAgentService] Rebuilding session from client local state:", localState.sessionId);
-      return this.rebuildFromLocalState(studentId, userId, localState, classroomId);
+      return this.rebuildFromLocalState(studentId, userId, localState, classroomId, onProgress);
     }
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, muteState, timezone, classroomId, gps);
+    return this.createNewSession(studentId, userId, muteState, timezone, classroomId, gps, onProgress);
   }
 
   /**
@@ -457,6 +461,7 @@ export class DualAgentService {
     timezone?: string,
     classroomId?: string,
     gps?: import("@shared/location-matching").GpsReading,
+    onProgress?: (stage: import("./live-relay").StartupStage) => void,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -486,10 +491,111 @@ export class DualAgentService {
     if (timezone) monitorAgent.setTimezone(timezone);
     if (gps) monitorAgent.setGps(gps);
 
-    // Initialize session - Monitor searches memory and creates base prompt
     const defaultApps = getDefaultEnabledApps();
     const enabledAppDefs = APP_REGISTRY.filter(a => defaultApps.includes(a.id));
-    const initResult = await monitorAgent.initializeSession(muteState, enabledAppDefs);
+
+    // Kick off the per-student context prefetches CONCURRENTLY with the
+    // thorough-startup enhancer LLM below. None of them depend on the
+    // enhancer's output or the Monitor's loaded student — they key only on
+    // the student / user / classroom IDs we already have — so issuing them in
+    // parallel with the (2-4s) LLM call takes them off the critical path
+    // instead of running serially after it. Each task keeps its own try/catch
+    // and degrades to the same empty/None result as before.
+    const contactsPromise = (async (): Promise<NonNullable<DualAgentSessionState['cachedContacts']>> => {
+      try {
+        const contacts = await getContactsByStudent(studentId);
+        return contacts.map(c => ({
+          id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+        }));
+      } catch { return []; }
+    })();
+
+    const symbolsPromise = (async (): Promise<NonNullable<DualAgentSessionState['cachedSymbols']>> => {
+      try {
+        const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
+        return symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
+      } catch { return []; }
+    })();
+
+    const diagnosisPromise = (async (): Promise<string | null> => {
+      try {
+        const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
+          .from(medicalRecords)
+          .where(eq(medicalRecords.studentId, studentId))
+          .limit(1);
+        return record?.primaryDiagnosis || null;
+      } catch { return null; }
+    })();
+
+    // Classroom context when this session runs on a shared classroom device.
+    // The roster (with short per-student entries) is injected into the system
+    // prompt so the AI can reframe when the active student changes. Skipped
+    // silently in single-student mode.
+    const classroomPromise = (async (): Promise<Parameters<typeof buildInteractiveAgentPrompt>[0]['classroom']> => {
+      if (!classroomId) return undefined;
+      try {
+        const classroom = await classroomRepository.getClassroomById(classroomId);
+        if (classroom && classroom.isActive) {
+          const rosterRows = await classroomRepository.getStudentsInClassroom(classroomId);
+          // Batch-fetch primary diagnosis for the whole roster in one query.
+          const rosterIds = rosterRows.map(r => r.student.id);
+          const diagByStudent = new Map<string, string>();
+          if (rosterIds.length > 0) {
+            const diagRows = await db
+              .select({ studentId: medicalRecords.studentId, primaryDiagnosis: medicalRecords.primaryDiagnosis })
+              .from(medicalRecords)
+              .where(inArray(medicalRecords.studentId, rosterIds));
+            for (const row of diagRows) {
+              if (row.primaryDiagnosis) diagByStudent.set(row.studentId, row.primaryDiagnosis);
+            }
+          }
+          return {
+            name: classroom.name,
+            grade: classroom.grade || undefined,
+            description: classroom.description || undefined,
+            roster: rosterRows.map(({ student, enrollment }) => ({
+              id: student.id,
+              name: student.firstName || student.name?.split(' ')[0] || student.name || '?',
+              age: computeAge(student.birthDate),
+              gender: student.gender || undefined,
+              diagnosis: diagByStudent.get(student.id),
+              notes: enrollment.notes || undefined,
+              isActive: student.id === studentId,
+            })),
+          };
+        }
+      } catch (err) {
+        console.warn("[DualAgentService] Failed to fetch classroom context:", err);
+      }
+      return undefined;
+    })();
+
+    // Auto-selectable boards (needs a userId).
+    const boardsPromise = (async (): Promise<NonNullable<DualAgentSessionState['availableBoards']>> => {
+      if (!userId) {
+        logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (createNewSession, student=${studentId})`);
+        return [];
+      }
+      try {
+        const boards = await boardRepository.getAutoSelectableBoards(userId, studentId);
+        const mapped = boards.map(b => {
+          const irData = b.irData as any;
+          const grid = irData?.grid || { rows: 3, cols: 4 };
+          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
+        });
+        logLiveSession("AVAILABLE_BOARDS", `loaded ${mapped.length} auto-selectable board(s) (createNewSession, user=${userId} student=${studentId}) — [${mapped.map(b => b.key).join(", ")}]`);
+        return mapped;
+      } catch (err) {
+        // Was silently swallowed — surface it: a throw here (e.g. irData
+        // hydration) is indistinguishable from "no boards" downstream.
+        logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (createNewSession, user=${userId} student=${studentId}): ${(err as Error)?.message ?? err}`);
+        return [];
+      }
+    })();
+
+    // Initialize session - Monitor searches memory and creates base prompt.
+    // Runs concurrently with the prefetches started above.
+    const initResult = await monitorAgent.initializeSession(muteState, enabledAppDefs, onProgress);
 
     // Bill credits for the thorough-startup enhancer if it fired. The
     // session ID is the one Monitor created/loaded above; we use it
@@ -510,93 +616,12 @@ export class DualAgentService {
       ).catch(err => console.error("[DualAgentService] trackHttpUsage(enhancer) failed:", err));
     }
 
-    // Fetch contacts for prompt context
-    let cachedContacts: DualAgentSessionState['cachedContacts'] = [];
-    try {
-      const contacts = await getContactsByStudent(studentId);
-      cachedContacts = contacts.map(c => ({
-        id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
-      }));
-    } catch { /* ignore */ }
-
-    // Fetch custom symbols for prompt context
-    let cachedSymbols: DualAgentSessionState['cachedSymbols'] = [];
-    try {
-      const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
-      cachedSymbols = symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
-    } catch { /* ignore */ }
-
-    // Fetch primary diagnosis from medical records
-    let cachedDiagnosis: string | null = null;
-    try {
-      const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
-        .from(medicalRecords)
-        .where(eq(medicalRecords.studentId, studentId))
-        .limit(1);
-      cachedDiagnosis = record?.primaryDiagnosis || null;
-    } catch { /* ignore */ }
-
-    // Fetch classroom context when this session runs on a shared classroom
-    // device. The roster (with short per-student entries) is injected into
-    // the system prompt so the AI can reframe when the active student
-    // changes. Skipped silently in single-student mode.
-    let classroomContext: Parameters<typeof buildInteractiveAgentPrompt>[0]['classroom'] = undefined;
-    if (classroomId) {
-      try {
-        const classroom = await classroomRepository.getClassroomById(classroomId);
-        if (classroom && classroom.isActive) {
-          const rosterRows = await classroomRepository.getStudentsInClassroom(classroomId);
-          // Batch-fetch primary diagnosis for the whole roster in one query.
-          const rosterIds = rosterRows.map(r => r.student.id);
-          const diagByStudent = new Map<string, string>();
-          if (rosterIds.length > 0) {
-            const diagRows = await db
-              .select({ studentId: medicalRecords.studentId, primaryDiagnosis: medicalRecords.primaryDiagnosis })
-              .from(medicalRecords)
-              .where(inArray(medicalRecords.studentId, rosterIds));
-            for (const row of diagRows) {
-              if (row.primaryDiagnosis) diagByStudent.set(row.studentId, row.primaryDiagnosis);
-            }
-          }
-          classroomContext = {
-            name: classroom.name,
-            grade: classroom.grade || undefined,
-            description: classroom.description || undefined,
-            roster: rosterRows.map(({ student, enrollment }) => ({
-              id: student.id,
-              name: student.firstName || student.name?.split(' ')[0] || student.name || '?',
-              age: computeAge(student.birthDate),
-              gender: student.gender || undefined,
-              diagnosis: diagByStudent.get(student.id),
-              notes: enrollment.notes || undefined,
-              isActive: student.id === studentId,
-            })),
-          };
-        }
-      } catch (err) {
-        console.warn("[DualAgentService] Failed to fetch classroom context:", err);
-      }
-    }
-
-    // Load auto-selectable boards
-    let availableBoards: DualAgentSessionState['availableBoards'] = [];
-    if (userId) {
-      try {
-        const boards = await boardRepository.getAutoSelectableBoards(userId, studentId);
-        availableBoards = boards.map(b => {
-          const irData = b.irData as any;
-          const grid = irData?.grid || { rows: 3, cols: 4 };
-          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
-        });
-        logLiveSession("AVAILABLE_BOARDS", `loaded ${availableBoards.length} auto-selectable board(s) (createNewSession, user=${userId} student=${studentId}) — [${availableBoards.map(b => b.key).join(", ")}]`);
-      } catch (err) {
-        // Was silently swallowed — surface it: a throw here (e.g. irData
-        // hydration) is indistinguishable from "no boards" downstream.
-        logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (createNewSession, user=${userId} student=${studentId}): ${(err as Error)?.message ?? err}`);
-      }
-    } else {
-      logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (createNewSession, student=${studentId})`);
-    }
+    // Collect the prefetches (already in flight during the LLM call above).
+    const cachedContacts = await contactsPromise;
+    const cachedSymbols = await symbolsPromise;
+    const cachedDiagnosis = await diagnosisPromise;
+    const classroomContext = await classroomPromise;
+    const availableBoards = await boardsPromise;
 
     // Build the function-calling prompt with contacts + boards + symbols + demographics.
     // If thorough startup produced structured sections, weave each one into
@@ -614,12 +639,11 @@ export class DualAgentService {
       const persona = sections?.persona || rawPersona;
       const { channels: ytChannels, playlists: ytPlaylists, videos: ytVideos } =
         splitYoutubeItems(resolvePermittedYoutubeItems(student.aacSettings));
-      const ytChannelVideos = ytChannels.length > 0
-        ? await fetchRecentVideosForChannels(ytChannels)
-        : undefined;
-      const ytPlaylistVideos = ytPlaylists.length > 0
-        ? await fetchRecentVideosForPlaylists(ytPlaylists)
-        : undefined;
+      // Both are independent network fetches — run them concurrently.
+      const [ytChannelVideos, ytPlaylistVideos] = await Promise.all([
+        ytChannels.length > 0 ? fetchRecentVideosForChannels(ytChannels) : Promise.resolve(undefined),
+        ytPlaylists.length > 0 ? fetchRecentVideosForPlaylists(ytPlaylists) : Promise.resolve(undefined),
+      ]);
       interactivePrompt = buildInteractiveAgentPrompt({
         studentName: student.firstName || student.name?.split(' ')[0] || "",
         persona,
@@ -736,6 +760,7 @@ export class DualAgentService {
     userId: string | undefined,
     localState: import("@shared/aac-local-storage").AacSessionSnapshot,
     classroomId?: string,
+    onProgress?: (stage: import("./live-relay").StartupStage) => void,
   ): Promise<DualAgentSessionState> {
     // Create a new session like normal, but seed it with local state data
     const state = await this.createNewSession(
@@ -744,6 +769,8 @@ export class DualAgentService {
       localState.muteState || 'unmuted',
       undefined,
       classroomId,
+      undefined,
+      onProgress,
     );
 
     // Overlay messages and board state from local snapshot

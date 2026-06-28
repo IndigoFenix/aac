@@ -11,6 +11,9 @@ import {
   listByCategory,
   listByModeChip,
   modifiersFor,
+  gaugeModifiersFor,
+  qualityPairsFor,
+  listConnectors,
   canAcceptPayload,
   listDimensions,
   getDimension,
@@ -41,6 +44,99 @@ describe("glyph registry", () => {
     const all = listAllVocabulary();
     const keys = new Set(all.map((v) => v.key));
     expect(keys.size).toBe(all.length);
+  });
+
+  it("exposes question-word bases that resolve and are AI-visible", () => {
+    // person#question = who, thing#question = what, place#question = where,
+    // time#question = when, cause#question = why (how reuses `use`).
+    for (const key of ["person", "thing", "place", "time", "cause"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.exposeToAi).toBe(true);
+      expect(item!.tKey).toBe(`aac.glyph.${key}`);
+    }
+    // Category placement drives the <bundled_icons> grouping.
+    expect(getVocabularyItem("person")!.categories).toContain("who");
+    expect(getVocabularyItem("thing")!.categories).toContain("what");
+    expect(getVocabularyItem("place")!.categories).toContain("where");
+    expect(getVocabularyItem("time")!.categories).toContain("when");
+  });
+
+  it("gender modifiers apply to person via the gender_body transform", () => {
+    for (const key of ["male", "female", "plural"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.modifier?.transform).toBe("gender_body");
+      expect(item!.modifier?.appliesTo).toContain("person");
+    }
+    // Surfaced in the person modifier carousel.
+    const personMods = modifiersFor("person").map((m) => m.key);
+    expect(personMods).toEqual(expect.arrayContaining(["male", "female", "plural"]));
+  });
+
+  it("gauge quantifiers form the amount scale on nouns", () => {
+    const levels: Record<string, number> = { none: 0, some: 0.33, half: 0.5, most: 0.8, all: 1 };
+    for (const [key, level] of Object.entries(levels)) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.modifier?.transform).toBe("gauge");
+      expect(item!.modifier?.gauge).toBe(level);
+      expect(item!.modifier?.appliesTo).toContain("noun");
+    }
+    // Surfaced via the dedicated amount picker, not the main carousel.
+    expect(gaugeModifiersFor("noun").map((m) => m.key)).toEqual(
+      expect.arrayContaining(["none", "some", "all"]),
+    );
+  });
+
+  it("quality opposite-pairs link via pairKey", () => {
+    // good/bad render as emoji badges; right/wrong use the polarity ✓/✗ mark.
+    expect(getVocabularyItem("good")!.modifier?.pairKey).toBe("bad");
+    expect(getVocabularyItem("bad")!.modifier?.pairKey).toBe("good");
+    expect(getVocabularyItem("right")!.modifier?.transform).toBe("polarity");
+    expect(getVocabularyItem("right")!.modifier?.polarity).toBe("pos");
+    expect(getVocabularyItem("wrong")!.modifier?.polarity).toBe("neg");
+    expect(getVocabularyItem("wrong")!.modifier?.pairKey).toBe("right");
+    // Surfaced via the dedicated quality pole-toggle picker, not the carousel.
+    expect(qualityPairsFor("noun").map((p) => p.pos.key)).toEqual(
+      expect.arrayContaining(["good", "right"]),
+    );
+  });
+
+  it("connectors are pos 'connector', AI-visible, and not modifiers", () => {
+    for (const key of ["and", "or", "but", "if", "because"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.pos).toBe("connector");
+      expect(item!.exposeToAi).toBe(true);
+      expect(item!.modifier).toBeUndefined();
+    }
+  });
+
+  it("spatial relations are forward-binding joins (pos connector)", () => {
+    for (const key of ["to", "from", "in", "out", "on", "under", "over", "through"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.pos).toBe("connector");
+      expect(item!.exposeToAi).toBe(true);
+    }
+  });
+
+  it("builder-picker helpers surface the new families", () => {
+    expect(gaugeModifiersFor("noun").map((m) => m.key)).toEqual(
+      expect.arrayContaining(["none", "some", "all"]),
+    );
+    const goodPair = qualityPairsFor("noun").find((p) => p.pos.key === "good");
+    expect(goodPair?.neg.key).toBe("bad");
+    expect(listConnectors().map((c) => c.key)).toEqual(
+      expect.arrayContaining(["and", "or", "because", "to", "under"]),
+    );
+  });
+
+  it("gauge + quality mods are hidden from the main modifier carousel", () => {
+    const nounCarousel = modifiersFor("noun").map((m) => m.key);
+    expect(nounCarousel).not.toContain("none");
+    expect(nounCarousel).not.toContain("good");
   });
 
   it("listByCategory returns items in that category", () => {

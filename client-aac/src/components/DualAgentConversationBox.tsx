@@ -121,6 +121,7 @@ export function DualAgentConversationBox({
   const {
     currentMessage,
     isLoading,
+    startupStage,
     isInitialized,
     error,
     audioEnabled,
@@ -701,7 +702,7 @@ export function DualAgentConversationBox({
                         style={{ animationDelay: "0.2s" }}
                       />
                       <span className="ml-2 text-sm">
-                        {t('status.wakingUp')}
+                        {t(`status.startup.${startupStage}`)}
                       </span>
                     </div>
                   ) : reconnecting ? (

@@ -135,6 +135,15 @@ describe("classifyScene", () => {
     expect(classifyScene(prev, s, "motion settled", 1)).toMatchObject({ mode: "frame", reason: "safety" });
   });
 
+  it("escalates ('seizure') when a seizure motion signature is present on a stable scene", () => {
+    const prev = sceneSignature(snap([{ name: "Ben" }]));
+    const s: SceneSnapshot = {
+      people: [{ name: "Ben" }], hands: [],
+      seizure: { phase: "clonic", confidence: 0.7, summary: "[MOTION SIGNATURE] rhythmic ~3.3Hz, bilateral" },
+    };
+    expect(classifyScene(prev, s, "motion settled", 1)).toMatchObject({ mode: "frame", reason: "seizure" });
+  });
+
   it("escalates ('posture_changed') when posture shifts on an otherwise stable scene", () => {
     const s: SceneSnapshot = { people: [{ name: "Ben" }], hands: [], posture: "lying" };
     const prevSig = sceneSignature(s);

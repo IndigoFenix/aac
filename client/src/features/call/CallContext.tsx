@@ -83,6 +83,9 @@ interface CallContextValue {
   /** Live STT transcript of the clinician's OWN speech (server recognition) —
    *  a self-caption that also shows whether the recognizer is hearing them. */
   selfTranscript: string;
+  /** The clinician's most recent FINAL utterance, for the in-game speech bubble
+   *  over their avatar. `at` changes per utterance (re-passing it is a no-op). */
+  lastSelfSpeech: { text: string; at: number } | null;
 
   /** Social game attached to the active call (null = plain video chat). */
   game: CallGame | null;
@@ -147,6 +150,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [addressee, setAddresseeState] = useState<string | null>(null);
   const [addressedBy, setAddressedBy] = useState<{ fromPersonId: string; fromName: string } | null>(null);
   const [selfTranscript, setSelfTranscript] = useState("");
+  const [lastSelfSpeech, setLastSelfSpeech] = useState<{ text: string; at: number } | null>(null);
   const [game, setGameState] = useState<CallGame | null>(null);
   const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
   // One world-message fan-out per provider; the active CallGameSurface subscribes.
@@ -577,6 +581,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           // hearing the speakers, not the clinician — don't publish it.
           if (Date.now() >= remoteActiveUntilRef.current) {
             clientRef.current?.sendUtterance(final.trim());
+            // Surface it as the clinician's in-game speech bubble too.
+            setLastSelfSpeech({ text: final.trim(), at: Date.now() });
           } else {
             console.log("[CallContext] suppressed likely echo of remote audio:", final.trim());
           }
@@ -627,6 +633,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setAddressee,
     addressedBy,
     selfTranscript,
+    lastSelfSpeech,
     game,
     startGame,
     stopGame,
@@ -650,7 +657,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     toggleVideo,
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
-    error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript,
+    error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);

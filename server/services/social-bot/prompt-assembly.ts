@@ -22,6 +22,7 @@ import type { PersonalityGenome } from "./personality-and-challenge";
 import type { HumorMove, HumorStyle, SharedMoment } from "./humor-and-history";
 import type { Probe } from "./personality-and-challenge";
 import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
+import { languageMarksGender } from "@shared/language-names";
 
 // ── Stable, never-changes blocks ───────────────────────────────────────
 
@@ -140,6 +141,29 @@ export function renderIdentity(
   ].filter(Boolean).join("\n");
 }
 
+/** `# WHO YOU'RE TALKING TO` block — tells the peer the STUDENT's grammatical
+ *  gender so it conjugates correctly when ADDRESSING them. The persona's own
+ *  gender (renderIdentity) governs self-reference; this governs second-person
+ *  address. Without it, gendered languages (Hebrew, Arabic, …) default to the
+ *  masculine and the peer addresses a female student in masculine forms. Empty
+ *  when the student's gender is unknown. */
+function buildAddresseeGenderBlock(
+  addresseeGender?: "male" | "female",
+  language?: string | null,
+): string {
+  if (addresseeGender !== "male" && addresseeGender !== "female") return "";
+  // Only meaningful in languages that mark the addressee's gender; for English
+  // etc. the peer mirrors the user's language and this would be noise.
+  if (!languageMarksGender(language)) return "";
+  const forms = addresseeGender === "female" ? "feminine" : "masculine";
+  const noun = addresseeGender === "female" ? "a girl/woman" : "a boy/man";
+  return [
+    `# WHO YOU'RE TALKING TO`,
+    ``,
+    `The user practicing with you is ${addresseeGender} (${noun}). Your language marks grammatical gender, so ALWAYS address them using ${forms} verb, pronoun, and adjective forms. This governs how you speak TO them; it does not change your own self-reference.`,
+  ].join("\n");
+}
+
 /** `# LANGUAGE LEVEL` block — caps the peer's sentence length/complexity to
  *  match the student's receptive language. Inherited from the general AAC
  *  setting. Empty at the default tier so the prefix is unchanged. */
@@ -165,10 +189,14 @@ export function buildSessionPrefix(
   /** Student's receptive language level (general AAC setting). Omit for the
    *  default register. */
   languageLevel?: LanguageLevel,
+  /** The STUDENT's grammatical gender (for second-person address). Distinct
+   *  from `gender`, which is the PEER's own gender. */
+  addresseeGender?: "male" | "female",
 ): string {
   return [
     buildRoleAndFrame(language),
     renderIdentity(name, gender, genome, identity, humorStyleVal),
+    buildAddresseeGenderBlock(addresseeGender, language),
     buildLanguageLevelBlock(languageLevel),
     HARD_RULES,
     OUTPUT_CONTRACT,
@@ -193,6 +221,8 @@ export function buildLivePeerPrompt(
   humorStyleVal: HumorStyle,
   language: string | null,
   languageLevel?: LanguageLevel,
+  /** The STUDENT's grammatical gender (for second-person address). */
+  addresseeGender?: "male" | "female",
 ): string {
   const speakDirective = language
     ? `**Always speak in ${language}**, regardless of what language the user uses. The user may be using AAC tools that translate their words; you stay in your own language so the audio pairs cleanly.`
@@ -222,6 +252,7 @@ Speak only as ${name}, in ${name}'s own consistent voice. The user's voice may b
   return [
     roleAndFrame,
     renderIdentity(name, gender, genome, identity, humorStyleVal),
+    buildAddresseeGenderBlock(addresseeGender, language),
     buildLanguageLevelBlock(languageLevel),
     voiceIdentity,
     hardRules,

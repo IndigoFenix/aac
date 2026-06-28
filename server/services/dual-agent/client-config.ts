@@ -16,6 +16,8 @@
 // client already receives. No new per-frame or per-event traffic.
 
 import type { LLMProviderKey } from "@shared/llm-options";
+import type { ClientSeizureConfig } from "@shared/aac/seizure-config";
+export type { ClientSeizureConfig };
 import "@shared/llm-options"; // ensure type module loads
 // (LLMProviderKey is unused but kept for parity with neighboring types.)
 void (null as unknown as LLMProviderKey | undefined);
@@ -76,6 +78,7 @@ export interface GestureSerializerConfig {
   windowMs?: number;
 }
 
+
 export interface ClientConfig {
   activityMonitor?: ActivityMonitorConfig;
   sleep?: SleepEngineConfig;
@@ -120,6 +123,11 @@ export interface ClientConfig {
    * meaningful when sttActive is false (otherwise PCM is suppressed for STT).
    */
   pcmContinuous?: boolean;
+  /**
+   * Per-student seizure detection (resolved thresholds + seed baseline). Absent
+   * when the student has the feature off. See ClientSeizureConfig.
+   */
+  seizure?: ClientSeizureConfig;
 }
 
 /**
@@ -129,7 +137,7 @@ export interface ClientConfig {
  * Future per-student overrides layer on top of this.
  */
 export function buildDefaultClientConfig(
-  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous">,
+  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous" | "seizure">,
 ): ClientConfig {
   return {
     activityMonitor: {
@@ -169,5 +177,8 @@ export function buildDefaultClientConfig(
     // Off by default — raw PCM stays VAD-gated ("adaptive"). The Observer flips
     // it on via set_audio_attention("live").
     pcmContinuous: overrides?.pcmContinuous ?? false,
+    // Per-student seizure detection — resolved + seeded by the coordinator.
+    // Omitted entirely when the student has the feature off.
+    ...(overrides?.seizure ? { seizure: overrides.seizure } : {}),
   };
 }

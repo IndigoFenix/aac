@@ -90,6 +90,10 @@ export interface UseLiveSessionOptions {
   /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
    *  used to decide frame-vs-scene_state and to build the scene_state text. */
   getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
+  /** Seizure Phase 2b: whether SUSTAINED vocal/sound energy is present right now.
+   *  Used ONLY to annotate a "seizure"-escalated [MOTION SIGNATURE] — audio never
+   *  escalates on its own (Rett baseline breathing = false-positive trap). */
+  getVocalCue?: () => boolean;
   /** AI invoked sleep / end_session — caller routes to the engagement state machine. */
   onSleepStateChange?: (state: import("@/lib/cameraAttentivenessTypes").SleepState, source: "ai" | "system") => void;
   /** AI invoked report_false_wake — caller bumps wake threshold dampening. */
@@ -199,6 +203,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // that would otherwise capture a stale `false` from the initial render.
   const isInitializedRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Which startup phase the server is in, shown as a subtitle under the
+  // "waking up" indicator. Defaults to "connecting" (shown from the moment we
+  // open the socket until the server's first startup_progress message). The
+  // server walks it through checkingNotes → planningSession → loadingApps →
+  // wakingUp before sending `initialized`, which clears isLoading.
+  const [startupStage, setStartupStage] =
+    useState<"connecting" | "checkingNotes" | "planningSession" | "loadingApps" | "wakingUp">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [safetyBlocked, setSafetyBlocked] = useState(false);
@@ -528,6 +539,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // the UI stuck. The board will render whenever it actually arrives.
           setIsLoading(false);
           setError(null);
+          break;
+
+        case "startup_progress":
+          // Pre-`initialized` phase label — drives the waking-up subtitle.
+          // Ignore once we're past loading (defensive; server won't send late).
+          if ((msg as any).stage) {
+            setStartupStage((msg as any).stage);
+          }
           break;
 
         case "client_config_update":
@@ -1239,6 +1258,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
 
     setIsLoading(true);
+    setStartupStage("connecting"); // reset the waking-up subtitle for this attempt
     setError(null);
     rateLimitedRef.current = false; // Reset on manual/retry initialization
 
@@ -1264,7 +1284,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
       // Build WebSocket URL from the resolved API base (same base as HTTP requests).
       // In dev: "http://localhost:5000" → "ws://localhost:5000/ws/live"
-      // Electron: demo backend → "wss://aivota-demo.onrender.com/ws/live"
+      // Electron: demo backend → "wss://aivota-demo-us.onrender.com/ws/live"
       // Web (staging/demo/prod): "" → same origin as page
       const apiBase = API_BASE_URL;
       // Append ?test=1 if the page URL has ?test=1 — routes to the MinimalLiveRelay
@@ -1618,19 +1638,41 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // frame on a material change (new/lost person, new gesture, safety). The
     // escalation reason becomes the frame's triggerReason for the Observer.
     let effectiveTriggerReason = triggerReason;
-    if (sceneStateActiveRef.current && optionsRef.current.getSceneSnapshot) {
-      const snap = optionsRef.current.getSceneSnapshot();
-      if (snap) {
-        const decision = classifyScene(
-          lastSceneSignatureRef.current,
-          snap,
-          triggerReason,
-          lastPersonCountRef.current,
-          lastPostureRef.current,
-        );
-        lastSceneSignatureRef.current = sceneSignature(snap);
-        lastPersonCountRef.current = snap.people.length;
-        lastPostureRef.current = snap.posture ?? null;
+    // The [MOTION SIGNATURE] line travels with a "seizure"-escalated frame so the
+    // Observer sees the quantified motion evidence, not just the picture.
+    let motionSignature: string | undefined;
+    const snap = optionsRef.current.getSceneSnapshot?.() ?? null;
+
+    // A seizure-class motion pattern ALWAYS escalates a real frame carrying its
+    // [MOTION SIGNATURE], independent of economize / scene-state / full-attention
+    // mode — it is safety-critical and must reach the Observer. (Previously this
+    // lived inside the scene-state branch, so full-attention sessions silently
+    // dropped it.)
+    if (snap?.seizure) {
+      effectiveTriggerReason = "seizure";
+      motionSignature = snap.seizure.summary;
+      // Audio corroboration (Phase 2b): only ANNOTATES an already-escalating
+      // motion event — never escalates alone (getVocalCue self-gates on the flag).
+      if (optionsRef.current.getVocalCue?.()) {
+        motionSignature += " | [AUDIO] concurrent sustained vocalization/sound heard — corroborates the motion (does NOT confirm; vocalizing and irregular breathing are common here).";
+      }
+    }
+
+    // Cost saving (Phase 2): while the scene is stable, send a compact scene_state
+    // TEXT line instead of the JPEG frame; only escalate on a material change
+    // (new/lost person, new gesture, safety). A seizure overrides this entirely.
+    if (sceneStateActiveRef.current && snap) {
+      const decision = classifyScene(
+        lastSceneSignatureRef.current,
+        snap,
+        triggerReason,
+        lastPersonCountRef.current,
+        lastPostureRef.current,
+      );
+      lastSceneSignatureRef.current = sceneSignature(snap);
+      lastPersonCountRef.current = snap.people.length;
+      lastPostureRef.current = snap.posture ?? null;
+      if (!snap.seizure) {
         if (decision.mode === "text") {
           // Send the STRUCTURED snapshot — the server renders [SCENE] with the
           // real identities (it holds the face-api matches; the tracker doesn't).
@@ -1669,6 +1711,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         timestamps: grid.timestamps,
         ...(gestureContext ? { gestureContext } : {}),
         ...(effectiveTriggerReason ? { triggerReason: effectiveTriggerReason } : {}),
+        ...(motionSignature ? { motionSignature } : {}),
       });
       setSnapshotTick(t => t + 1); // blink the avatar on each real snapshot
     };
@@ -1958,6 +2001,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     clientConfig,
     isInitialized,
     isLoading,
+    startupStage,
     error,
     snapshotTick,
 

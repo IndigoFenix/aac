@@ -3,14 +3,21 @@
 // pour water; then leave the terrain alone and watch springs, rivers and plants
 // emerge from its shape.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { X, FastForward, RotateCcw, ChevronDown, ChevronUp, Globe, SlidersHorizontal } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, FastForward, RotateCcw, ChevronDown, ChevronUp, Globe, SlidersHorizontal, FlaskConical, Mountain, Grid3x3, Network } from 'lucide-react';
 import { onPlatformMessage, sendToParent } from '@shared/games-bridge';
 import { useGameEngine } from './useGameEngine';
+import { useSystemGrid } from './useSystemGrid';
+import { useWorld } from './useWorld';
 import TerrainCanvas, { type GazeState } from './TerrainCanvas';
+import SystemCanvas from './SystemCanvas';
+import WorldMap from './WorldMap';
 import GameToolbar from './GameToolbar';
+import SystemToolbar from './SystemToolbar';
 import DebugPanel from './DebugPanel';
+import CellSystemEditor from './CellSystemEditor';
 import { applyOverrides, resetOverrides } from './debug-config';
+import { terrain, type SystemSpec, type ToolSpec } from './cell-systems';
 import type { ToolId } from './types';
 
 const GAME_ID = 'sandbox-game';
@@ -31,6 +38,24 @@ export default function SandboxGameApp() {
   const toolRef = useRef<ToolId | null>('sculpt');
   useEffect(() => { toolRef.current = selectedTool; }, [selectedTool]);
 
+  // ── Cell-system main grid (Step 2): a spec-driven world on the main canvas,
+  // alongside the hand-coded terrain. `activeSpec` defaults to the terrain spec
+  // and can be replaced from the Cell System Lab.
+  const [mode, setMode] = useState<'terrain' | 'systems' | 'world'>('terrain');
+  const [activeSpec, setActiveSpec] = useState<SystemSpec>(terrain);
+  const { getGrid, resetGrid, skipTime: skipSystem, wrap: sysWrap, toggleWrap: toggleSysWrap } = useSystemGrid(activeSpec, studentKey);
+  const { getWorld, resetWorld, skipTime: skipWorld } = useWorld(studentKey);
+  const [selectedSysTool, setSelectedSysTool] = useState<string | null>(activeSpec.tools?.[0]?.id ?? null);
+  const sysToolRef = useRef<ToolSpec | null>(activeSpec.tools?.[0] ?? null);
+  const sysTools = useMemo(() => activeSpec.tools ?? [], [activeSpec]);
+  useEffect(() => {
+    // When the spec changes, default to its first tool.
+    setSelectedSysTool(activeSpec.tools?.[0]?.id ?? null);
+  }, [activeSpec]);
+  useEffect(() => {
+    sysToolRef.current = sysTools.find(t => t.id === selectedSysTool) ?? null;
+  }, [selectedSysTool, sysTools]);
+
   const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
   const [dwellMs, setDwellMs] = useState(DEFAULT_DWELL_MS);
   // Whether the platform has a dwell control enabled (the student's eyegaze /
@@ -44,6 +69,7 @@ export default function SandboxGameApp() {
 
   const [showDebug, setShowDebug] = useState(false);
   const [showParams, setShowParams] = useState(false);
+  const [showLab, setShowLab] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showActive, setShowActive] = useState(false);
   const showActiveRef = useRef(false);
@@ -131,13 +157,19 @@ export default function SandboxGameApp() {
 
   const handleReset = useCallback(() => {
     if (showResetConfirm) {
-      resetGame();
+      if (mode === 'world') resetWorld(); else if (mode === 'systems') resetGrid(); else resetGame();
       setShowResetConfirm(false);
     } else {
       setShowResetConfirm(true);
       setTimeout(() => setShowResetConfirm(false), 3000);
     }
-  }, [showResetConfirm, resetGame]);
+  }, [showResetConfirm, resetGame, resetGrid, resetWorld, mode]);
+
+  /** Apply a spec authored in the lab to the main grid and switch to Systems mode. */
+  const applyToGrid = useCallback((spec: SystemSpec) => {
+    setActiveSpec(spec);
+    setMode('systems');
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden bg-gradient-to-br from-amber-200 to-orange-300">
@@ -145,6 +177,42 @@ export default function SandboxGameApp() {
       <div className="flex items-center justify-between px-3 py-2 bg-amber-950/80 border-b border-amber-800 shrink-0">
         <h1 className="text-lg font-bold text-amber-100">🏜️ Sandbox</h1>
         <div className="flex items-center gap-2">
+          {/* Terrain ↔ Systems (spec-driven grid) */}
+          <div className="flex rounded-lg overflow-hidden border border-amber-700">
+            <button
+              data-dwell
+              onClick={() => setMode('terrain')}
+              className={`p-1.5 text-xs ${mode === 'terrain' ? 'bg-amber-400 text-amber-950' : 'bg-amber-800 text-amber-100 hover:bg-amber-700'}`}
+              aria-label="Terrain mode" title="Terrain — the hand-coded sandbox sim"
+            >
+              <Mountain size={16} />
+            </button>
+            <button
+              data-dwell
+              onClick={() => setMode('systems')}
+              className={`p-1.5 text-xs ${mode === 'systems' ? 'bg-sky-500 text-white' : 'bg-amber-800 text-amber-100 hover:bg-amber-700'}`}
+              aria-label="Systems mode" title="Systems — the spec-driven cell grid"
+            >
+              <Grid3x3 size={16} />
+            </button>
+            <button
+              data-dwell
+              onClick={() => setMode('world')}
+              className={`p-1.5 text-xs ${mode === 'world' ? 'bg-sky-500 text-white' : 'bg-amber-800 text-amber-100 hover:bg-amber-700'}`}
+              aria-label="World mode" title="World — cities, trade & roads (entity layer)"
+            >
+              <Network size={16} />
+            </button>
+          </div>
+          <button
+            data-dwell
+            onClick={() => setShowLab(s => !s)}
+            className={`p-1.5 rounded-lg text-xs ${showLab ? 'bg-sky-600 text-white' : 'bg-amber-800 text-amber-100 hover:bg-amber-700'}`}
+            aria-label="Toggle cell system lab"
+            title="Cell System Lab — author & test idle-safe enclosed systems (Step 1)"
+          >
+            <FlaskConical size={16} />
+          </button>
           <button
             data-dwell
             onClick={() => setShowParams(s => !s)}
@@ -183,7 +251,7 @@ export default function SandboxGameApp() {
             <button
               key={opt.label}
               data-dwell
-              onClick={() => skipTime(opt.ms)}
+              onClick={() => (mode === 'world' ? skipWorld(opt.ms) : mode === 'systems' ? skipSystem(opt.ms) : skipTime(opt.ms))}
               className="px-2 py-0.5 rounded bg-amber-800 hover:bg-amber-700 active:scale-95 transition-transform"
             >
               <FastForward size={10} className="inline mr-1" />
@@ -200,18 +268,20 @@ export default function SandboxGameApp() {
             <RotateCcw size={10} className="inline mr-1" />
             {showResetConfirm ? 'Confirm?' : 'Reset'}
           </button>
-          <button
-            data-dwell
-            onClick={toggleWrap}
-            title="Toroidal geometry: the map edges wrap around. Water can only leave by evaporating (no off-map drainage)."
-            aria-label={`Wrap-around edges: ${wrap ? 'on' : 'off'}`}
-            className={`px-2 py-0.5 rounded active:scale-95 transition-transform ${
-              wrap ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-amber-800 hover:bg-amber-700'
-            }`}
-          >
-            <Globe size={10} className="inline mr-1" />
-            Wrap: {wrap ? 'on' : 'off'}
-          </button>
+          {mode !== 'world' && (
+            <button
+              data-dwell
+              onClick={mode === 'systems' ? toggleSysWrap : toggleWrap}
+              title="Toroidal geometry: the map edges wrap around (no off-grid)."
+              aria-label={`Wrap-around edges: ${(mode === 'systems' ? sysWrap : wrap) ? 'on' : 'off'}`}
+              className={`px-2 py-0.5 rounded active:scale-95 transition-transform ${
+                (mode === 'systems' ? sysWrap : wrap) ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-amber-800 hover:bg-amber-700'
+              }`}
+            >
+              <Globe size={10} className="inline mr-1" />
+              Wrap: {(mode === 'systems' ? sysWrap : wrap) ? 'on' : 'off'}
+            </button>
+          )}
           <button
             data-dwell
             onClick={() => setShowActive(a => !a)}
@@ -227,27 +297,48 @@ export default function SandboxGameApp() {
 
       {/* Main area: toolbar + terrain (+ tuning drawer) */}
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
-        <div className="w-16 sm:w-20 bg-amber-950/40 border-r border-amber-800 shrink-0 overflow-y-auto">
-          <GameToolbar
-            selectedTool={selectedTool}
-            onSelectTool={setSelectedTool}
-            gazeRef={gazeRef}
-            dwellMs={dwellMs}
-            dwellEnabled={dwellEnabled}
-          />
-        </div>
+        {mode !== 'world' && (
+          <div className="w-16 sm:w-20 bg-amber-950/40 border-r border-amber-800 shrink-0 overflow-y-auto">
+            {mode === 'systems' ? (
+              <SystemToolbar
+                tools={sysTools}
+                selectedId={selectedSysTool}
+                onSelect={setSelectedSysTool}
+                gazeRef={gazeRef}
+                dwellMs={dwellMs}
+                dwellEnabled={dwellEnabled}
+              />
+            ) : (
+              <GameToolbar
+                selectedTool={selectedTool}
+                onSelectTool={setSelectedTool}
+                gazeRef={gazeRef}
+                dwellMs={dwellMs}
+                dwellEnabled={dwellEnabled}
+              />
+            )}
+          </div>
+        )}
 
         <div
           className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0 min-w-0"
         >
           <div className="w-full h-full max-w-[min(100%,calc(100vh-8rem))] max-h-[min(100%,calc(100vw-5rem))] aspect-square rounded-lg overflow-hidden shadow-xl">
-            <TerrainCanvas getState={getState} gazeRef={gazeRef} toolRef={toolRef} showActiveRef={showActiveRef} />
+            {mode === 'world' ? (
+              <WorldMap getWorld={getWorld} />
+            ) : mode === 'systems' ? (
+              <SystemCanvas getGrid={getGrid} gazeRef={gazeRef} toolRef={sysToolRef} spec={activeSpec} />
+            ) : (
+              <TerrainCanvas getState={getState} gazeRef={gazeRef} toolRef={toolRef} showActiveRef={showActiveRef} />
+            )}
           </div>
         </div>
 
         {showParams && (
           <DebugPanel onApply={applyParams} onReset={resetParams} onClose={() => setShowParams(false)} />
         )}
+
+        {showLab && <CellSystemEditor onClose={() => setShowLab(false)} onApplyToGrid={applyToGrid} />}
       </div>
     </div>
   );

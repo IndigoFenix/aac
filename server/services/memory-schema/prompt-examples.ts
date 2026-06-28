@@ -51,19 +51,37 @@ export type LocaleCode =
   | "yue"
   | "ko";
 
+/**
+ * A localized example value. Usually a plain string, but for GENDERED
+ * languages (Hebrew, Arabic, …) a value may instead carry masculine/feminine
+ * variants so the worked example matches the student's grammatical gender —
+ * e.g. addressing the student ("תרצה" → "תרצי") or voicing HER own utterance
+ * ("אני עייף" → "אני עייפה"). `ex()` picks `f` for a female student and `m`
+ * otherwise (masculine is the historical default, so unknown gender is a no-op).
+ */
+export type GenderedExample = { m: string; f: string };
+export type ExampleText = string | GenderedExample;
+
 /** One translation entry. `en` is required; other locales are optional. */
 export interface ExampleEntry {
-  en: string;
-  he?: string;
-  es?: string;
-  pt?: string;
-  fr?: string;
-  ru?: string;
-  de?: string;
-  ar?: string;
-  zh?: string;
-  yue?: string;
-  ko?: string;
+  en: ExampleText;
+  he?: ExampleText;
+  es?: ExampleText;
+  pt?: ExampleText;
+  fr?: ExampleText;
+  ru?: ExampleText;
+  de?: ExampleText;
+  ar?: ExampleText;
+  zh?: ExampleText;
+  yue?: ExampleText;
+  ko?: ExampleText;
+}
+
+/** Resolve a possibly-gendered example value to a string for the given gender. */
+function pickGender(v: ExampleText | undefined, gender?: string): string | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v === "string") return v;
+  return gender === "female" ? v.f : v.m;
 }
 
 /**
@@ -81,12 +99,16 @@ export function ex(
   key: string,
   language: string | undefined | null,
   singleGlyph?: boolean,
+  /** Student's grammatical gender ("male" | "female"). Selects the matching
+   *  variant of any gendered example value; anything else falls back to the
+   *  masculine (historical default), so omitting it changes nothing. */
+  gender?: string,
 ): string {
   if (singleGlyph) {
     const sgEntry = EXAMPLES[`${key}_sg`];
     if (sgEntry) {
       const lang = (language || "en") as LocaleCode;
-      return sgEntry[lang] ?? sgEntry.en;
+      return pickGender(sgEntry[lang], gender) ?? pickGender(sgEntry.en, gender)!;
     }
   }
   const entry = EXAMPLES[key];
@@ -95,7 +117,7 @@ export function ex(
     return `(missing example: ${key})`;
   }
   const lang = (language || "en") as LocaleCode;
-  return entry[lang] ?? entry.en;
+  return pickGender(entry[lang], gender) ?? pickGender(entry.en, gender)!;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -117,12 +139,20 @@ const EXAMPLES: Record<string, ExampleEntry> = {
         AI: All right, let's talk about your morning! What did you do?
         [USER to YOU] "I ate breakfast."
         AI: Breakfast is important! What did you have for breakfast?`,
-    he: `        [USER to YOU] "אני רוצה לדבר על היום שלי."
+    he: {
+      m: `        [USER to YOU] "אני רוצה לדבר על היום שלי."
         AI: בטח! על מה תרצה לדבר?
         [USER to YOU] "הבוקר."
         AI: טוב, בוא נדבר על הבוקר שלך! מה עשית?
         [USER to YOU] "אכלתי ארוחת בוקר."
         AI: ארוחת בוקר זה חשוב! מה אכלת לארוחת בוקר?`,
+      f: `        [USER to YOU] "אני רוצה לדבר על היום שלי."
+        AI: בטח! על מה תרצי לדבר?
+        [USER to YOU] "הבוקר."
+        AI: טוב, בואי נדבר על הבוקר שלך! מה עשית?
+        [USER to YOU] "אכלתי ארוחת בוקר."
+        AI: ארוחת בוקר זה חשוב! מה אכלת לארוחת בוקר?`,
+    },
   },
 
   // ── Three-agent: Speaker silent dialogue (target not YOU) ────────────────
@@ -175,7 +205,8 @@ const EXAMPLES: Record<string, ExampleEntry> = {
 
         Trigger: Observer noted a passing car. (Ambient, not addressed to user.)
         Tool call: no_change(reason="ambient observation — current board still fits")`,
-    he: `        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
+    he: {
+      m: `        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
         Tool call: rebuild_board(buttons=[
           {speech:"הבוקר שלי", glyph:[{sym:"i_me"},{sym:"morning"}], label:"בוקר"},
           {speech:"הצהריים שלי", glyph:[{sym:"i_me"},{sym:"☀️"}], label:"צהריים"},
@@ -203,6 +234,35 @@ const EXAMPLES: Record<string, ExampleEntry> = {
 
         Trigger: Observer רשם מכונית שעוברת. (אמביינט, לא מופנה למשתמש.)
         Tool call: no_change(reason="תצפית אמביינט — הלוח הנוכחי עדיין מתאים")`,
+      f: `        Trigger: המשתמש לחץ "[BUTTON PRESS] אני רוצה לדבר על היום שלי."
+        Tool call: rebuild_board(buttons=[
+          {speech:"הבוקר שלי", glyph:[{sym:"i_me"},{sym:"morning"}], label:"בוקר"},
+          {speech:"הצהריים שלי", glyph:[{sym:"i_me"},{sym:"☀️"}], label:"צהריים"},
+          {speech:"אתמול", glyph:[{sym:"yesterday"}], label:"אתמול"},
+          {speech:"משהו טוב קרה", glyph:[{sym:"✨"}], label:"טוב"},
+          {speech:"משהו קשה קרה", glyph:[{sym:"🌧️"}], label:"קשה"},
+          {speech:"משהו אחר", glyph:[{sym:"🔄"}], label:"אחר"}
+        ])
+
+        Trigger: ה-AI אמר "על מה תרצי לדבר?"
+        Tool call: rebuild_board(buttons=[6–8 אפשרויות תשובה בצורת {speech, glyph, label}])
+
+        Trigger: המטפלת שאלה "מה עשית הבוקר?", target=USER
+        Tool call: rebuild_board(target:"מטפלת", buttons=[
+          {speech:"אכלתי ארוחת בוקר", glyph:[{sym:"i_me"},{sym:"eat"},{sym:"🍳"}], op:"past", label:"ארוחת בוקר"},
+          {speech:"הלכתי לבית הספר", glyph:[{sym:"i_me"},{sym:"go"},{sym:"🏫"}], op:"past", label:"בית ספר"},
+          ...
+        ])
+
+        Trigger: Observer רשם שכלב נכנס לתמונה.
+        Tool call: add_context_button(button={speech:"אני רואה כלב", glyph:[{sym:"i_me"},{sym:"see"},{sym:"🐕"}], label:"כלב"})
+
+        Trigger: [SENTENCE BUILDER STATE] category=do, partial=i_me
+        Tool call: suggest_construction_buttons(slot_index=1, head_candidates=[{symbol:"want", label:"רוצה"}, {symbol:"go", label:"הולכת"}, {symbol:"see", label:"רואה"}, {symbol:"eat", label:"אוכלת"}], modifier_candidates=[])
+
+        Trigger: Observer רשם מכונית שעוברת. (אמביינט, לא מופנה למשתמש.)
+        Tool call: no_change(reason="תצפית אמביינט — הלוח הנוכחי עדיין מתאים")`,
+    },
   },
 
   // ── <interact_mode> worked dialogue (3 turns) ────────────────────────────
@@ -496,26 +556,38 @@ const EXAMPLES: Record<string, ExampleEntry> = {
 
   "tool.button_format_add_example": {
     en: `Example: "I want a red apple|i_me+want+🍎.color_red||Red apple, Pizza, please|🍕.please||Pizza, A big hug|i_me+want+🤗.big||Big hug, I'm tired|😴||Tired, Tell me about Mars|you+say+generate:planet_mars|you+say+🌑.color_red|Mars"`,
-    he: `Example: "אני רוצה תפוח אדום|i_me+want+🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|i_me+want+🤗.big||חיבוק גדול, אני עייף|😴||עייף, ספר לי על מאדים|you+say+generate:planet_mars|you+say+🌑.color_red|מאדים"`,
+    he: {
+      m: `Example: "אני רוצה תפוח אדום|i_me+want+🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|i_me+want+🤗.big||חיבוק גדול, אני עייף|😴||עייף, ספר לי על מאדים|you+say+generate:planet_mars|you+say+🌑.color_red|מאדים"`,
+      f: `Example: "אני רוצה תפוח אדום|i_me+want+🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|i_me+want+🤗.big||חיבוק גדול, אני עייפה|😴||עייפה, ספר לי על מאדים|you+say+generate:planet_mars|you+say+🌑.color_red|מאדים"`,
+    },
   },
 
   // Single-glyph variant: every SENTENCE is one GLYPH (head + optional
   // modifiers). No `+`-joined heads.
   "tool.button_format_add_example_sg": {
     en: `Example: "A red apple|🍎.color_red||Red apple, Pizza, please|🍕.please||Pizza, A big hug|🤗.big||Big hug, I'm tired|😴||Tired, Tell me about Mars|generate:planet_mars|🌑.color_red|Mars"`,
-    he: `Example: "תפוח אדום|🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|🤗.big||חיבוק גדול, אני עייף|😴||עייף, ספר לי על מאדים|generate:planet_mars|🌑.color_red|מאדים"`,
+    he: {
+      m: `Example: "תפוח אדום|🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|🤗.big||חיבוק גדול, אני עייף|😴||עייף, ספר לי על מאדים|generate:planet_mars|🌑.color_red|מאדים"`,
+      f: `Example: "תפוח אדום|🍎.color_red||תפוח אדום, פיצה בבקשה|🍕.please||פיצה, חיבוק גדול|🤗.big||חיבוק גדול, אני עייפה|😴||עייפה, ספר לי על מאדים|generate:planet_mars|🌑.color_red|מאדים"`,
+    },
   },
 
   "tool.button_format_rebuild_example": {
     en: `Example: "I want to play|i_me+want+play||Play, Let's listen to music|i_me+want+🎵||Music, I want a cookie|i_me+want+🍪||Cookie, Two cookies|🍪.two||Two cookies, Outside|i_me+want+🌳||Outside, I'm hungry|🤤||Hungry, A big hug|i_me+want+🤗.big||Hug, Did we go to the park yesterday?|we+go+🛝#past#question||Park yesterday"`,
-    he: `Example: "אני רוצה לשחק|i_me+want+play||לשחק, בוא נשמע מוזיקה|i_me+want+🎵||מוזיקה, אני רוצה עוגייה|i_me+want+🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|i_me+want+🌳||בחוץ, אני רעב|🤤||רעב, חיבוק גדול|i_me+want+🤗.big||חיבוק, האם הלכנו אתמול לפארק?|we+go+🛝#past#question||פארק אתמול"`,
+    he: {
+      m: `Example: "אני רוצה לשחק|i_me+want+play||לשחק, בוא נשמע מוזיקה|i_me+want+🎵||מוזיקה, אני רוצה עוגייה|i_me+want+🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|i_me+want+🌳||בחוץ, אני רעב|🤤||רעב, חיבוק גדול|i_me+want+🤗.big||חיבוק, האם הלכנו אתמול לפארק?|we+go+🛝#past#question||פארק אתמול"`,
+      f: `Example: "אני רוצה לשחק|i_me+want+play||לשחק, בוא נשמע מוזיקה|i_me+want+🎵||מוזיקה, אני רוצה עוגייה|i_me+want+🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|i_me+want+🌳||בחוץ, אני רעבה|🤤||רעבה, חיבוק גדול|i_me+want+🤗.big||חיבוק, האם הלכנו אתמול לפארק?|we+go+🛝#past#question||פארק אתמול"`,
+    },
   },
 
   // Single-glyph variant: every SENTENCE is one GLYPH. Operators still apply
   // sentence-level (#past#question on a single-GLYPH SENTENCE).
   "tool.button_format_rebuild_example_sg": {
     en: `Example: "Play|play||Play, Music|🎵||Music, Cookie|🍪||Cookie, Two cookies|🍪.two||Two cookies, Outside|🌳||Outside, I'm hungry|🤤||Hungry, A big hug|🤗.big||Hug, Did we go to the park yesterday?|🛝#past#question||Park yesterday"`,
-    he: `Example: "לשחק|play||לשחק, מוזיקה|🎵||מוזיקה, עוגייה|🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|🌳||בחוץ, אני רעב|🤤||רעב, חיבוק גדול|🤗.big||חיבוק, האם הלכנו אתמול לפארק?|🛝#past#question||פארק אתמול"`,
+    he: {
+      m: `Example: "לשחק|play||לשחק, מוזיקה|🎵||מוזיקה, עוגייה|🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|🌳||בחוץ, אני רעב|🤤||רעב, חיבוק גדול|🤗.big||חיבוק, האם הלכנו אתמול לפארק?|🛝#past#question||פארק אתמול"`,
+      f: `Example: "לשחק|play||לשחק, מוזיקה|🎵||מוזיקה, עוגייה|🍪||עוגייה, שתי עוגיות|🍪.two||שתי עוגיות, בחוץ|🌳||בחוץ, אני רעבה|🤤||רעבה, חיבוק גדול|🤗.big||חיבוק, האם הלכנו אתמול לפארק?|🛝#past#question||פארק אתמול"`,
+    },
   },
 
   // ── tool: short inline phrases inside SENTENCE_BUTTON_FORMAT ─────────────
@@ -541,7 +613,10 @@ const EXAMPLES: Record<string, ExampleEntry> = {
   },
   "tool.sbf_speech_one_glyph_tired": {
     en: `speech: "I'm tired", glyph: [{sym:"😴"}]`,
-    he: `speech: "אני עייף", glyph: [{sym:"😴"}]`,
+    he: {
+      m: `speech: "אני עייף", glyph: [{sym:"😴"}]`,
+      f: `speech: "אני עייפה", glyph: [{sym:"😴"}]`,
+    },
   },
 
   // ── tool: BINARY_CHOICE_OPTION_FORMAT inline examples ────────────────────
@@ -573,7 +648,8 @@ const EXAMPLES: Record<string, ExampleEntry> = {
 - \`i_me+eat+🍌#past\` → interpret("I ate a banana") — operator-driven past tense.
 - \`i_me+go+park#future\` → interpret("I will go to the park").
 - \`mom+give+📖#past#question\` → interpret("Did Mom give me the book?") — operators stack on a 3-glyph SENTENCE.`,
-    he: `- \`i_me+want+💧\` → interpret("אני רוצה קצת מים") then $SPEAK_VERB$ + rebuild_board() about getting water.
+    he: {
+      m: `- \`i_me+want+💧\` → interpret("אני רוצה קצת מים") then $SPEAK_VERB$ + rebuild_board() about getting water.
 - \`talk+shoe+ball\` → interpret("אני רוצה לדבר על כדורגל") — shoe+ball compound matches interest; subject defaults to user.
 - \`go+park+🐕\` → interpret("אני רוצה ללכת לפארק עם הכלב") — companion, not two destinations.
 - \`mom+give+📖\` → interpret("אני רוצה שאמא תיתן לי את הספר") — recipient (me) is implied when omitted.
@@ -582,5 +658,15 @@ const EXAMPLES: Record<string, ExampleEntry> = {
 - \`i_me+eat+🍌#past\` → interpret("אכלתי בננה") — operator-driven past tense.
 - \`i_me+go+park#future\` → interpret("אני אלך לפארק").
 - \`mom+give+📖#past#question\` → interpret("האם אמא נתנה לי את הספר?") — operators stack on a 3-glyph SENTENCE.`,
+      f: `- \`i_me+want+💧\` → interpret("אני רוצה קצת מים") then $SPEAK_VERB$ + rebuild_board() about getting water.
+- \`talk+shoe+ball\` → interpret("אני רוצה לדבר על כדורגל") — shoe+ball compound matches interest; subject defaults to user.
+- \`go+park+🐕\` → interpret("אני רוצה ללכת לפארק עם הכלב") — companion, not two destinations.
+- \`mom+give+📖\` → interpret("אני רוצה שאמא תיתן לי את הספר") — recipient (me) is implied when omitted.
+- \`tired+i_me\` → interpret("אני עייפה") — feeling + subject; no verb needed.
+- \`📖.your\` → interpret("יש לך את הספר?") — 1-glyph SENTENCE with possession modifier.
+- \`i_me+eat+🍌#past\` → interpret("אכלתי בננה") — operator-driven past tense.
+- \`i_me+go+park#future\` → interpret("אני אלך לפארק").
+- \`mom+give+📖#past#question\` → interpret("האם אמא נתנה לי את הספר?") — operators stack on a 3-glyph SENTENCE.`,
+    },
   },
 };

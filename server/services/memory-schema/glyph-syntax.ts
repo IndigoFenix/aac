@@ -50,14 +50,22 @@ export function buildGlyphSyntax({ singleGlyphButtons, allowGenerate = true }: {
 ${singleGlyphButtons
   ? `  SENTENCE: one GLYPH per ${T.button}. Each ${T.button}'s \`sentence\` field is a single GLYPH (head + optional MODIFIER SYMBOLs).
 
-  OPERATOR: sentence-level tag appended with \`#\`. \`#past\`, \`#future\`, \`#question\` modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken \`speech\` accordingly; the visual stays the same.`
+  OPERATOR: sentence-level tag appended with \`#\`. \`#past\`, \`#future\`, \`#question\` modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken \`speech\` accordingly; the visual stays the same.
+
+  QUESTION WORDS: append \`#question\` to a base SYMBOL — \`person#question\` (who), \`place#question\` (where), \`time#question\` (when), \`thing#question\` (what), \`cause#question\` (why), \`use#question\` (how). On any concrete SYMBOL it asks "which one": \`🍎#question\` = "which apple / what fruit". Always put the actual question in \`speech\`.`
   : `  SENTENCE: up to 3 GLYPHs joined with \`+\`:
     - 1-glyph: \`😴\`, \`🍎.color_red\`
     - 2-glyph: \`i_me+🤒\`, \`have+💧\`
     - 3-glyph: \`i_me+want+🍌\`, \`you+give+i_me\`
   Match SENTENCE shape to meaning — don't pad. One-word answers are 1-glyph; full subject+verb+object thoughts are 3-glyph.
 
-  OPERATOR: sentence-level tag via \`#\` — \`#past\`, \`#future\`, \`#question\`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate \`speech\` accordingly.`}
+  CONNECTOR: a forward-binding join between two GLYPHs, written in a \`+\` position and consuming NO content slot — \`and\`, \`or\`, \`but\`, \`if\`, \`because\`. It sits BEFORE the glyph it introduces: \`🍎+or+🍌\` (apple or banana), \`😢+because+you_go\` (sad because you left). Plain \`+\` already means "and/then", so \`and\` is only for emphasis.
+
+  SPATIAL: the same \`+\` join mechanism, for where/how one glyph relates to another — \`to\`, \`from\`, \`in\`, \`out\`, \`on\`, \`under\`, \`over\`, \`through\`. \`go+to+🏫\` (go to school), \`🐈+under+🪑\` (cat under chair), \`💧+in+🥤\` (water in a cup).
+
+  OPERATOR: sentence-level tag via \`#\` — \`#past\`, \`#future\`, \`#question\`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate \`speech\` accordingly.
+
+  QUESTION WORDS: append \`#question\` to a base SYMBOL — \`person#question\` (who), \`place#question\` (where), \`time#question\` (when), \`thing#question\` (what), \`cause#question\` (why), \`use#question\` (how). On any concrete SYMBOL it asks "which one": \`🍎#question\` = "which apple / what fruit". Put the actual question in \`speech\`.`}
 </grammar>
 ${allowGenerate ? `
 <generation_rules>
@@ -188,7 +196,9 @@ A SENTENCE is ${singleGlyphButtons ? "a SINGLE GLYPH object" : "an ARRAY of 1–
 
 **MODIFIERs** (\`mods\`) come ONLY from <bundled_icons>, or are emojis. Invented modifiers ("new", "sad", "scary") render as a meaningless dot — use an emoji that encodes the quality (😢 sad, 👴 old, 😨 scary) instead${singleGlyphButtons ? "" : ", and never add a GLYPH just to attach an adjective"}.
 
-**OPERATOR** — an optional \`op\` of "past" / "future" / "question" tags the WHOLE SENTENCE. It never adds a GLYPH; the visual is unchanged.
+**CONNECTOR / SPATIAL** — a glyph (after the first) may carry a \`join\` to bind it to the previous glyph: a logical connector ("and"/"or"/"but"/"if"/"because") or a spatial relation ("to"/"from"/"in"/"out"/"on"/"under"/"over"/"through"). \`[{sym:"🍎"},{join:"or",sym:"🍌"}]\` (apple or banana), \`[{sym:"go"},{join:"to",sym:"🏫"}]\` (go to school). The join binds FORWARD (lives on the glyph it introduces) and consumes no slot. Plain adjacency already means "and/then".
+
+**OPERATOR** — an optional \`op\` of "past" / "future" / "question" tags the WHOLE SENTENCE. It never adds a GLYPH; the visual is unchanged. Question words = a single-GLYPH SENTENCE of a base + \`op:"question"\`: \`person\`→who, \`place\`→where, \`time\`→when, \`thing\`→what, \`cause\`→why, \`use\`→how; or any concrete \`sym\` + \`op:"question"\` for "which X". Put the actual question in the spoken field.
 </glyph_syntax>${allowGenerate ? genRules : `
 
 <no_generation>
@@ -212,6 +222,11 @@ export function glyphItemJsonSchema(opts: { allowGenerate?: boolean } = {}): Rec
       type: "array",
       items: { type: "string" },
       description: `MODIFIER keys from <bundled_icons> only (e.g. "color_red", "big", "two", "my"). NEVER invent modifiers — they render as a dot.`,
+    },
+    join: {
+      type: "string",
+      enum: ["and", "or", "but", "if", "because", "to", "from", "in", "out", "on", "under", "over", "through"],
+      description: `Optional forward-binding join to the PREVIOUS glyph (omit on the first): a logical CONNECTOR (and/or/but/if/because) or a SPATIAL relation (to/from/in/out/on/under/over/through). e.g. {sym:"🍌", join:"or"} = "apple or banana"; {sym:"🏫", join:"to"} after go = "go to school".`,
     },
   };
   if (allowGenerate) {

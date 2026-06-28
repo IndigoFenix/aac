@@ -21,6 +21,8 @@ import {
   removeModifier,
   applyRelationalModifier,
   expandAlias,
+  withSlotJoin,
+  SPATIAL_RELATIONS,
   setPayload,
   clearPayload,
   setToneTags,
@@ -56,6 +58,18 @@ describe("parseGlyph", () => {
       modifiers: ["big", "two"],
       unknown: false,
     });
+  });
+
+  it("parses and round-trips a gauge quantifier (cookie.all)", () => {
+    const g = parseGlyph("cookie.all");
+    expect(g.slots[0]).toEqual({ key: "cookie", modifiers: ["all"], unknown: false });
+    expect(serializeGlyph(g)).toBe("cookie.all");
+  });
+
+  it("parses and round-trips a quality modifier (dog.good)", () => {
+    const g = parseGlyph("dog.good");
+    expect(g.slots[0]).toEqual({ key: "dog", modifiers: ["good"], unknown: false });
+    expect(serializeGlyph(g)).toBe("dog.good");
   });
 
   it("parses a single tone tag", () => {
@@ -454,11 +468,68 @@ describe("canResolveGlyph — custom symbols", () => {
   });
 });
 
+describe("connectors (forward-binding joins)", () => {
+  it("parses a connector as a join on the next slot, not a content slot", () => {
+    const g = parseGlyph("apple+or+banana");
+    expect(g.slots.map((s) => s.key)).toEqual(["apple", "banana"]);
+    expect(g.slots[1].join).toBe("or");
+    expect(g.slots[0].join).toBeUndefined();
+    expect(serializeGlyph(g)).toBe("apple+or+banana");
+  });
+
+  it("migrated `because` joins two glyphs", () => {
+    const g = parseGlyph("sad+because+you");
+    expect(g.slots.map((s) => s.key)).toEqual(["sad", "you"]);
+    expect(g.slots[1].join).toBe("because");
+    expect(serializeGlyph(g)).toBe("sad+because+you");
+  });
+
+  it("drops a leading or trailing connector", () => {
+    const lead = parseGlyph("or+apple");
+    expect(lead.slots.map((s) => s.key)).toEqual(["apple"]);
+    expect(lead.slots[0].join).toBeUndefined();
+    const trail = parseGlyph("apple+because");
+    expect(trail.slots.map((s) => s.key)).toEqual(["apple"]);
+    expect(serializeGlyph(trail)).toBe("apple");
+  });
+
+  it("parses a spatial relation as a forward-binding join", () => {
+    const g = parseGlyph("go+to+school");
+    expect(g.slots.map((s) => s.key)).toEqual(["go", "school"]);
+    expect(g.slots[1].join).toBe("to");
+    expect(SPATIAL_RELATIONS.has("to")).toBe(true);
+    expect(serializeGlyph(g)).toBe("go+to+school");
+  });
+
+  it("withSlotJoin sets/clears a join (builder pending-join), ignoring slot 0", () => {
+    let g = parseGlyph("apple+banana");
+    g = withSlotJoin(g, 1, "or");
+    expect(g.slots[1].join).toBe("or");
+    expect(serializeGlyph(g)).toBe("apple+or+banana");
+    g = withSlotJoin(g, 1, undefined);
+    expect(g.slots[1].join).toBeUndefined();
+    g = withSlotJoin(g, 0, "and"); // no-op on the first slot
+    expect(g.slots[0].join).toBeUndefined();
+  });
+});
+
 describe("alias expansion (expandsTo)", () => {
   it("expandAlias resolves a registered alias to head + modifiers", () => {
     expect(expandAlias("tomorrow")).toEqual({ key: "day", modifiers: ["next"] });
     expect(expandAlias("yesterday")).toEqual({ key: "day", modifiers: ["prev"] });
     expect(expandAlias("today")).toEqual({ key: "day", modifiers: ["this"] });
+  });
+
+  it("expandAlias resolves the gender pronouns", () => {
+    expect(expandAlias("he")).toEqual({ key: "person", modifiers: ["male"] });
+    expect(expandAlias("she")).toEqual({ key: "person", modifiers: ["female"] });
+    expect(expandAlias("it")).toEqual({ key: "thing", modifiers: [] });
+  });
+
+  it("parses and round-trips a gendered person (person.male)", () => {
+    const g = parseGlyph("person.male");
+    expect(g.slots[0]).toEqual({ key: "person", modifiers: ["male"], unknown: false });
+    expect(serializeGlyph(g)).toBe("person.male");
   });
 
   it("expandAlias returns null for non-alias keys", () => {

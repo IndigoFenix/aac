@@ -36,6 +36,21 @@ export interface IdleWatchdogInput {
 
 export type IdleDecision = "sleep" | "rest" | "none";
 
+/**
+ * Multiplier applied to the idle rest/sleep thresholds based on the current
+ * energy band. A budget-draining session should go cold (the only zero-cost
+ * state) sooner during quiet gaps, so the thresholds tighten as energy falls:
+ *   - "high":     1     — relaxed defaults (sleep at the full 5 min).
+ *   - "moderate": 0.6   — ~1.7x sooner (300s → 180s).
+ *   - "low":      0.333 — ~3x sooner   (300s → ~100s).
+ * Pure so the coordinator's energy-scaled idle throttle is unit-testable.
+ */
+export function idleThresholdScaleForBand(band: "high" | "moderate" | "low"): number {
+  if (band === "low") return 1 / 3;
+  if (band === "moderate") return 0.6;
+  return 1;
+}
+
 export function decideIdleTransition(input: IdleWatchdogInput): IdleDecision {
   if (!input.ready || input.paused || input.asleep || input.inSocialSession) {
     return "none";

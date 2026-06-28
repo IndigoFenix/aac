@@ -24,6 +24,7 @@ import * as THREE from "three";
 import type { Vec2, WorldSpec } from "./types.js";
 import type { AvatarState, WorldState } from "./engine.js";
 import type { RenderIntent, WorldView, WorldViewDeps } from "./world-view.js";
+import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import {
   DEFAULT_CAMERA_TUNABLES,
   DEFAULT_COMFORT_TUNABLES,
@@ -51,6 +52,91 @@ const MODEL = {
 } as const;
 
 const BACKDROP = "#0f172a";
+
+// Speech-bubble placement/scale. The bubble floats above the face card; its
+// pixel texture maps to world units by PX_PER_WORLD (≈90px ≈ 1 unit, so a
+// 220px-wide bubble is ~2.4 units across — readable at the chase-cam distance).
+const BUBBLE = {
+  headY: 3.0,        // world Y of the bubble's bottom edge (just over the face)
+  pxPerWorld: 64,
+  texDpr: 2,         // oversample the texture so text stays crisp
+  tailPx: 12,        // extra texture height for the downward tail
+} as const;
+
+/**
+ * One avatar's speech bubble: a billboarded sprite whose texture is the shared
+ * 2D bubble drawing. Re-rasterised only when the utterance (or its decoded glyph
+ * count) changes; opacity + position are updated cheaply each frame.
+ */
+class Bubble3D {
+  readonly sprite: THREE.Sprite;
+  private readonly canvas = new OffscreenCanvas(8, 8);
+  private tex: THREE.CanvasTexture;
+  private key = "";
+  private worldW = 1;
+  private worldH = 1;
+
+  constructor() {
+    this.tex = new THREE.CanvasTexture(this.canvas as unknown as HTMLCanvasElement);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: this.tex, transparent: true, depthTest: false, depthWrite: false });
+    this.sprite = new THREE.Sprite(mat);
+    this.sprite.renderOrder = 20; // over avatars/toys
+  }
+
+  /** Redraw the texture only when the content key changes (text + said-time +
+   *  how many glyph images are available, which grows as they decode in). */
+  setContent(text: string, at: number, glyphImages: GlyphImage[]): void {
+    const key = `${at}|${glyphImages.length}|${text}`;
+    if (key === this.key) return;
+    this.key = key;
+    const measureCtx = this.canvas.getContext("2d") as unknown as CanvasRenderingContext2D | null;
+    if (!measureCtx) return;
+    const aspect = glyphImages[0] ? imageAspect(glyphImages[0]) : 0;
+    const layout = layoutBubble(measureCtx, text, aspect);
+    const texW = layout.width;
+    const texH = layout.height + BUBBLE.tailPx;
+    const cw = Math.max(1, Math.round(texW * BUBBLE.texDpr));
+    const ch = Math.max(1, Math.round(texH * BUBBLE.texDpr));
+    // The bubble starts text-only and grows when its glyph image decodes in (async,
+    // a frame or more later). THREE does NOT reallocate a CanvasTexture's GPU storage
+    // when its source canvas changes SIZE — it keeps the old dimensions and the sprite
+    // shows the stale content stretched to the new scale. So on a size change we throw
+    // the texture away and make a fresh one; only an in-place repaint reuses it.
+    const sizeChanged = cw !== this.canvas.width || ch !== this.canvas.height;
+    this.canvas.width = cw;
+    this.canvas.height = ch;
+    const ctx = this.canvas.getContext("2d") as unknown as CanvasRenderingContext2D | null;
+    if (!ctx) return;
+    ctx.setTransform(BUBBLE.texDpr, 0, 0, BUBBLE.texDpr, 0, 0);
+    ctx.clearRect(0, 0, texW, texH);
+    paintBubble(ctx, layout, glyphImages, 1);
+    if (sizeChanged) {
+      this.tex.dispose();
+      this.tex = new THREE.CanvasTexture(this.canvas as unknown as HTMLCanvasElement);
+      this.tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = this.sprite.material as THREE.SpriteMaterial;
+      mat.map = this.tex;
+      mat.needsUpdate = true;
+    } else {
+      this.tex.needsUpdate = true;
+    }
+    this.worldW = texW / BUBBLE.pxPerWorld;
+    this.worldH = texH / BUBBLE.pxPerWorld;
+    this.sprite.scale.set(this.worldW, this.worldH, 1);
+  }
+
+  /** Place above the head at (cx,cz) and fade with `alpha`. */
+  place(cx: number, cz: number, alpha: number): void {
+    this.sprite.position.set(cx, BUBBLE.headY + this.worldH / 2, cz);
+    (this.sprite.material as THREE.SpriteMaterial).opacity = alpha;
+  }
+
+  dispose(): void {
+    this.tex.dispose();
+    (this.sprite.material as THREE.SpriteMaterial).dispose();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pure math (no DOM/GL) — unit-testable.
@@ -334,6 +420,22 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
 // Renderer
 // ---------------------------------------------------------------------------
 
+/**
+ * A pluggable extra layer drawn in the SAME scene as the world (sharing its
+ * camera, ground, and lighting). The world engine knows nothing about what an
+ * overlay contains — this is how an embedded content layer (a goal-tree quest's
+ * zones/figures/items today; the symbol game's demonstration props later) rides
+ * the 3D view without world-engine taking a dependency on it. Coordinates are
+ * world-engine ground coords: a world point (x, y) is the 3D point (x, 0, y).
+ */
+export interface SceneOverlay {
+  /** Called once during construction; add meshes to `scene`. */
+  mount(scene: THREE.Scene): void;
+  /** Called each rendered frame (after world meshes sync, before the draw). */
+  update(dt: number): void;
+  dispose(): void;
+}
+
 export interface World3DRendererOptions {
   localId: string;
   backdrop?: string;
@@ -343,6 +445,8 @@ export interface World3DRendererOptions {
   camera?: Partial<CameraTunables>;
   /** Motion-comfort overrides (merged over DEFAULT_COMFORT_TUNABLES). */
   comfort?: Partial<ComfortTunables>;
+  /** An embedded content layer drawn in the world scene (see SceneOverlay). */
+  overlay?: SceneOverlay;
 }
 
 /** Merge partial camera/comfort overrides over the defaults (nested poses too). */
@@ -385,6 +489,7 @@ export class World3DRenderer {
 
   private readonly avatars = new Map<string, AvatarModel>();
   private readonly toys = new Map<string, { mesh: THREE.Mesh; shadow: THREE.Mesh }>();
+  private readonly bubbles = new Map<string, Bubble3D>();
 
   // --- Motion comfort ---------------------------------------------------------
   private comfort: ComfortTunables;
@@ -415,10 +520,14 @@ export class World3DRenderer {
 
   private readonly disposables: { dispose(): void }[] = [];
 
+  /** Optional embedded content layer (goal-tree quest, symbol-game props, …). */
+  private readonly overlay?: SceneOverlay;
+
   constructor(canvas: HTMLCanvasElement | OffscreenCanvas, spec: WorldSpec, opts: World3DRendererOptions) {
     this.spec = spec;
     this.localId = opts.localId;
     this.modelFactory = opts.modelFactory ?? defaultAvatarModelFactory;
+    this.overlay = opts.overlay;
     this.cameraCfg = mergeCamera(opts.camera);
     this.comfort = mergeComfort(opts.comfort);
     // Start at the overhead "home" pose (the avatar spawns at rest → watch/overhead).
@@ -438,6 +547,7 @@ export class World3DRenderer {
     this.buildLights();
     this.buildGround(backdrop);
     this.buildVignette(backdrop);
+    this.overlay?.mount(this.scene);
 
     // Pre-position the camera over the field centre so a screenToWorld call that
     // lands before the first render (camCenter still null) still casts a sane ray.
@@ -584,12 +694,15 @@ export class World3DRenderer {
     dt: number,
     faceFor: (id: string) => CanvasImageSource | null,
     labelFor: (id: string) => string,
+    glyphFor?: (glyph: string) => CanvasImageSource[] | null,
     intent?: RenderIntent,
   ): void {
     this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId);
     this.syncToys(state, intent?.interactId);
+    this.syncBubbles(state, glyphFor);
     this.updateCamera(state, dt, intent);
     this.updateComfort(state, dt);
+    this.overlay?.update(dt);
 
     // Scene, then the comfort vignette on top (autoClear is off).
     this.renderer.clear();
@@ -693,6 +806,40 @@ export class World3DRenderer {
     }
   }
 
+  /** Add/update/remove a billboarded speech bubble per avatar that has spoken
+   *  recently. Bubbles live directly in the scene (Sprites auto-face the camera). */
+  private syncBubbles(state: WorldState, glyphFor?: (glyph: string) => CanvasImageSource[] | null): void {
+    for (const a of Object.values(state.avatars)) {
+      const say = a.say;
+      const alpha = say ? bubbleAlpha(say.at, state.time) : 0;
+      let bubble = this.bubbles.get(a.id);
+      if (!say || alpha <= 0) {
+        if (bubble) {
+          this.scene.remove(bubble.sprite);
+          bubble.dispose();
+          this.bubbles.delete(a.id);
+        }
+        continue;
+      }
+      if (!bubble) {
+        bubble = new Bubble3D();
+        this.bubbles.set(a.id, bubble);
+        this.scene.add(bubble.sprite);
+      }
+      const glyphs = say.glyph ? glyphFor?.(say.glyph) ?? [] : [];
+      bubble.setContent(say.text, say.at, glyphs);
+      bubble.place(a.x, a.y, alpha);
+    }
+    // Drop bubbles whose avatar left.
+    for (const [id, bubble] of this.bubbles) {
+      if (!state.avatars[id]) {
+        this.scene.remove(bubble.sprite);
+        bubble.dispose();
+        this.bubbles.delete(id);
+      }
+    }
+  }
+
   private updateCamera(state: WorldState, dt: number, intent?: RenderIntent): void {
     const me = state.avatars[this.localId];
     const step = Math.max(0, dt);
@@ -789,6 +936,7 @@ export class World3DRenderer {
   }
 
   dispose(): void {
+    this.overlay?.dispose();
     for (const model of this.avatars.values()) {
       this.scene.remove(model.object);
       model.dispose();
@@ -799,6 +947,11 @@ export class World3DRenderer {
       this.scene.remove(shadow);
     }
     this.toys.clear();
+    for (const bubble of this.bubbles.values()) {
+      this.scene.remove(bubble.sprite);
+      bubble.dispose();
+    }
+    this.bubbles.clear();
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
     this.renderer.dispose();
@@ -816,7 +969,7 @@ export function createWorld3DView(
   spec: WorldSpec,
   opts?: { modelFactory?: AvatarModelFactory; backdrop?: string },
 ): WorldView {
-  const { canvas, localId, faceFor, labelFor } = deps;
+  const { canvas, localId, faceFor, labelFor, glyphFor } = deps;
   const renderer = new World3DRenderer(canvas, spec, {
     localId,
     modelFactory: opts?.modelFactory,
@@ -824,7 +977,7 @@ export function createWorld3DView(
   });
   return {
     screenToWorld: (px, py) => renderer.screenToWorld(px, py),
-    render: (state, dt, intent) => renderer.render(state, dt, faceFor, labelFor, intent),
+    render: (state, dt, intent) => renderer.render(state, dt, faceFor, labelFor, glyphFor, intent),
     resize: (width, height, dpr) => renderer.resize(width, height, dpr),
     setTunables: (t) => renderer.setTunables({ camera: t.camera, comfort: t.comfort }),
     dispose: () => renderer.dispose(),

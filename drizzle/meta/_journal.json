@@ -960,6 +960,20 @@
       "when": 1782238743912,
       "tag": "0136_call_session_game",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1782473716824,
+      "tag": "0137_seizure_detection_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1782631981683,
+      "tag": "0138_live_audio_speaker_default",
+      "breakpoints": true
     }
   ]
 }

@@ -30,3 +30,31 @@ export function getLanguageName(code: string | null | undefined): string {
   if (!code) return "English";
   return LANGUAGE_NAMES[code] ?? code;
 }
+
+// Reverse lookup (lowercased English name → code), so helpers below accept
+// either a code ("he") or a display name ("Hebrew") — the live agents thread a
+// code, but the social peer prompt is handed the resolved NAME.
+const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(LANGUAGE_NAMES).map(([code, name]) => [name.toLowerCase(), code]),
+);
+
+/**
+ * Languages whose SECOND-PERSON address / predicate marks the addressee's
+ * grammatical gender (verbs, pronouns, and/or adjectives), so a prompt must be
+ * told the student's gender to conjugate correctly. Codes only; resolved via
+ * NAME_TO_CODE when a display name is passed. Deliberately EXCLUDES languages
+ * where address is gender-neutral (English, Mandarin, Cantonese, Korean) and
+ * German (2nd-person verbs/predicate adjectives don't inflect for the
+ * addressee's gender), to avoid emitting a pointless directive.
+ */
+const GENDER_MARKING_LANGUAGES = new Set(["he", "ar", "es", "pt", "fr", "ru"]);
+
+/** True when `codeOrName` is a language that marks the addressee's grammatical
+ *  gender (see GENDER_MARKING_LANGUAGES). Accepts a code or an English name. */
+export function languageMarksGender(codeOrName: string | null | undefined): boolean {
+  if (!codeOrName) return false;
+  const s = codeOrName.trim().toLowerCase();
+  if (GENDER_MARKING_LANGUAGES.has(s)) return true;
+  const code = NAME_TO_CODE[s];
+  return code ? GENDER_MARKING_LANGUAGES.has(code) : false;
+}

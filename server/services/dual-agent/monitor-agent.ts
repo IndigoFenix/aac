@@ -270,7 +270,7 @@ export class MonitorAgent {
    * Initialize a new session and create the Interactive Agent's prompt
    * This is called when starting a new dual-agent session
    */
-  async initializeSession(muteState: AACMuteState = 'unmuted', enabledApps: AACAppDefinition[] = []): Promise<{
+  async initializeSession(muteState: AACMuteState = 'unmuted', enabledApps: AACAppDefinition[] = [], onProgress?: (stage: import("./live-relay").StartupStage) => void): Promise<{
     sessionId: string;
     initialContext?: string;
     enhancedSections?: EnhancedPromptSections;
@@ -313,6 +313,9 @@ export class MonitorAgent {
     // skipped the LLM call was removed — `fastInitializeContext` survives only
     // as the degraded fallback inside `thoroughStartup` when the enhancer call
     // fails.)
+    // The enhancer LLM call is the single slowest startup step (~2-4s) — flag
+    // it to the client so the waking-up subtitle reads "planning session".
+    onProgress?.("planningSession");
     const contextResult = await this.thoroughStartup(student);
 
     // Store the session ID if we created one

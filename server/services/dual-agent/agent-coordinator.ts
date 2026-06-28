@@ -24,7 +24,9 @@ import { dualAgentService } from "./dual-agent-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 
-import { ObserverAgent, type ObserverOutputEvent } from "./observer-agent";
+import { ObserverAgent, type ObserverOutputEvent, type ObserverCallbacks, type ObserverStartConfig } from "./observer-agent";
+import { HttpObserverAgent } from "./http-observer-agent";
+import type { IObserverAgent } from "./observer-interface";
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
 import { getContactById, listCallableContacts, resolveContactPersonId } from "../call/callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
@@ -69,7 +71,8 @@ import {
 import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
-import { buildDefaultClientConfig } from "./client-config";
+import { buildDefaultClientConfig, type ClientSeizureConfig } from "./client-config";
+import { coerceSeizureConfig, resolveThresholds } from "@shared/aac/seizure-config";
 import { APP_REGISTRY, getEnabledAppsFromConfig, getAppDefinition } from "./app-registry";
 import type { AppConfig } from "./app-registry";
 import type { AACAppDefinition } from "./types";
@@ -111,6 +114,7 @@ import type {
   AudioRequestEvent,
   AlarmRaisedEvent,
   GestureRecognizedEvent,
+  ObservationModeChangeEvent,
   ThoughtLeakEvent,
 } from "./agent-events";
 import {
@@ -218,11 +222,11 @@ import {
   flowNote,
 } from "./agent-flow-logger";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
-import { smartMergeButtons, type MergeButton } from "./board-merge";
+import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
-import { decideIdleTransition } from "./idle-watchdog";
+import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -502,6 +506,16 @@ function detectBinaryChoiceEscapeKind(
  * each message type so a one-line entry tells the operator what the press
  * carried. Falls back to "(no payload)" for types with no useful detail.
  */
+/** Resolve a student's stored seizureDetection into the client config (resolved
+ *  DSP thresholds + seed baseline). Returns undefined when the feature is off,
+ *  so the client skips the detector entirely. */
+function buildClientSeizureConfig(aacSettings: any): ClientSeizureConfig | undefined {
+  const raw = aacSettings?.seizureDetection;
+  const config = coerceSeizureConfig(raw?.config);
+  if (!config.enabled) return undefined;
+  return { enabled: true, thresholds: resolveThresholds(config), baseline: raw?.baseline ?? null };
+}
+
 function clientMsgSummary(msg: ClientMessage): string {
   switch (msg.type) {
     case "button_press": {
@@ -694,18 +708,32 @@ export class AgentCoordinator {
   // -------------------------------------------------------------------------
   // Agent handles
   // -------------------------------------------------------------------------
-  private observer: ObserverAgent | null = null;
+  private observer: IObserverAgent | null = null;
+  /** Which Observer backend is live right now. "live" = native-audio Gemini
+   *  Live (responsive, costly); "economy" = HTTP gemini-2.5-flash completions
+   *  (wake-on-event, cheap). Default live; the Observer switches via
+   *  set_observation_mode, and the Coordinator force-downgrades to economy at
+   *  low energy. See switchObserverBackend / handleObservationModeChange. */
+  private observerMode: "live" | "economy" = "live";
+  /** Model id used for the economy HTTP backend (also used for its cost
+   *  attribution). Set at init alongside observerModel. */
+  private observerHttpModel = BOARD_MANAGER_DEFAULT_MODEL;
+  /** True while the Coordinator has FORCED economy due to low energy — blocks
+   *  the Observer from going back to live until energy recovers. */
+  private observerForcedEconomy = false;
+  /** Single-flight guard so overlapping switch requests don't race. */
+  private observerSwitchInFlight = false;
   private speaker: ISpeakerAgent | null = null;
   private boardManager: IBoardManagerAgent | null = null;
   /** Selected Speaker implementation. Driven by the per-student
-   *  `liveAudioSpeaker` AAC setting (default false → "http"). The
+   *  `liveAudioSpeaker` AAC setting (default true → "live"). The
    *  AAC_SPEAKER_MODE env var, if set to "http" or "live", overrides
    *  the per-student setting for the whole deployment — useful for
    *  global dev/debug toggling without touching every student row.
    *  HTTP uses Gemini chat completion + streaming TTS; "live" uses the
    *  legacy Gemini Live path with native audio / speak() tool depending
    *  on model. Cached once per session. */
-  private speakerMode: "http" | "live" = "http";
+  private speakerMode: "http" | "live" = "live";
 
   // Per-agent runtime config (rebuilt on transitions; cached here so
   // re-routing decisions don't need to walk back to settings).
@@ -816,6 +844,13 @@ export class AgentCoordinator {
   private lastPressSignature: string | null = null;
   private lastPressAt = 0;
   private pressRepeatCount = 0;
+  // Repeats that landed AFTER the response to the burst's first press had
+  // settled (Speaker idle, no rebuild in flight, no deferred timer) — i.e. the
+  // user re-pressed even though the board/AI had already responded. These are
+  // genuine PERSEVERATION; repeats that land while the system is still busy are
+  // just latency re-presses (the board hadn't visibly updated yet) and don't
+  // count. Only a settled-repeat burst nudges the Speaker (see flushRepeatBurst).
+  private pressSettledRepeatCount = 0;
   private pressBurstFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Deferred-rest mechanism. Observer's `rest()` is a REQUEST, not an
@@ -918,6 +953,25 @@ export class AgentCoordinator {
     return this.economize
       ? { trigger: AWAKE_ECONOMIZE_COMPRESSION_TRIGGER, target: AWAKE_ECONOMIZE_COMPRESSION_TARGET }
       : { trigger: AWAKE_COMPRESSION_TRIGGER, target: AWAKE_COMPRESSION_TARGET };
+  }
+
+  /** The model id the CURRENT Observer backend runs on — the native-audio
+   *  Live model in "live" mode, the cheap text model in "economy" mode. Used
+   *  for cost attribution so each turn bills at the backend's real rates. */
+  private observerActiveModel(): string {
+    return this.observerMode === "economy" ? this.observerHttpModel : this.observerModel;
+  }
+
+  /** Master gate for the Observer cost-saving behaviors added 2026-06-28:
+   *  energy-scaled idle→sleep, the honest energy-budget baseline text, the
+   *  hybrid live/economy backend + `set_observation_mode` tool, and the
+   *  low-energy force-economy throttle + mode hints. DEFAULT OFF — when
+   *  disabled the Observer behaves exactly as before (always Live, legacy idle
+   *  timing, original budget text, no economy tool). Enable per-deployment with
+   *  AAC_OBSERVER_COST_SAVING=true (also accepts "1"/"on"). */
+  private get economyObserverEnabled(): boolean {
+    const v = process.env.AAC_OBSERVER_COST_SAVING?.toLowerCase();
+    return v === "true" || v === "1" || v === "on";
   }
 
   /** True when cost-saving substitutions are allowed (full-attention OFF). */
@@ -1518,8 +1572,30 @@ export class AgentCoordinator {
    * camera keeps streaming. A mid-turn session always has recent activity (AI
    * speech stamps it), so this never cuts into an active response.
    */
+  /** Multiplier applied to the idle rest/sleep thresholds, scaled by remaining
+   *  energy. Full thresholds when energy is healthy; progressively tighter as
+   *  the budget drains so a costly session goes cold faster during quiet gaps.
+   *  Returns 1 when the energy meter is disabled (preserves legacy timing). */
+  private idleThresholdScale(): number {
+    if (!this.economyObserverEnabled || !this.energyMeterEnabled) return 1;
+    const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
+    // low → sleep ~3x sooner (300s→~100s), moderate → ~1.7x sooner (300s→180s),
+    // high → unchanged. Tightening rest+sleep together keeps the rest→sleep
+    // ordering intact. Mapping lives in idle-watchdog (pure, unit-tested).
+    return idleThresholdScaleForBand(energyBand(pct));
+  }
+
   private maybeIdleTransition(): void {
     const idleMs = Date.now() - this.lastEngagementActivityAt;
+    // Energy-scaled throttle: a session that's draining its budget should go
+    // cold (rest → sleep, the only ZERO-cost state) sooner during quiet
+    // stretches. The idle thresholds shrink as energy falls so a low-energy
+    // session sleeps after ~100s of no engagement instead of the full 5 min.
+    // High energy keeps the relaxed defaults. This is the real cap behind the
+    // advisory energy meter — sleeping tears down all Live agents. Wake
+    // semantics are unchanged (any directed speech / press rebuilds), so this
+    // never cuts into an active exchange (engagement resets idleMs).
+    const scale = this.idleThresholdScale();
     const decision = decideIdleTransition({
       idleMs,
       sessionProfile: this.sessionProfile,
@@ -1527,8 +1603,8 @@ export class AgentCoordinator {
       paused: this.paused,
       asleep: this.asleep,
       inSocialSession: Boolean(this.socialPeer || this.socialPeerTransition),
-      restAfterMs: AgentCoordinator.IDLE_REST_MS,
-      sleepAfterMs: AgentCoordinator.IDLE_SLEEP_MS,
+      restAfterMs: Math.round(AgentCoordinator.IDLE_REST_MS * scale),
+      sleepAfterMs: Math.round(AgentCoordinator.IDLE_SLEEP_MS * scale),
     });
 
     if (decision === "sleep") {
@@ -1619,7 +1695,7 @@ export class AgentCoordinator {
         // triggerReason carries the escalation reason (Phase 2: new_face,
         // left_frame, safety, …); gestureContext is the client's serialized
         // face/hand summary (previously dropped on this path).
-        await this.forwardFrameToObserver(msg.data, msg.triggerReason, msg.gestureContext);
+        await this.forwardFrameToObserver(msg.data, msg.triggerReason, msg.gestureContext, msg.motionSignature);
         return;
       case "pcm_audio":
         if (this.paused) return;
@@ -1951,6 +2027,14 @@ export class AgentCoordinator {
     //    gives us the per-agent prompts already built (the service can
     //    branch on useThreeAgentSystem in Task #9 and populate observerPrompt
     //    / speakerPrompt / boardManagerPrompt directly).
+    //
+    //    Startup-progress subtitles: the client shows "connecting" by default
+    //    until our first progress message. We emit one before each slow phase
+    //    so the waking-up indicator reflects what's actually taking time.
+    //    "checkingNotes" covers loading the student record + memory; the
+    //    "planningSession" stage is emitted from inside the Monitor right
+    //    before its (slow) thorough-startup enhancer LLM call.
+    this.send({ type: "startup_progress", stage: "checkingNotes" });
     const state = await dualAgentService.initializeSession(
       msg.studentId,
       this.authedUser.id,
@@ -1960,6 +2044,7 @@ export class AgentCoordinator {
       msg.timezone,
       msg.classroomId,
       msg.gps,
+      (stage) => this.send({ type: "startup_progress", stage }),
     );
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
@@ -1992,8 +2077,13 @@ export class AgentCoordinator {
     // mid-flight (e.g. consent revoked).
     state.onTerminate = (reason) => this.cleanup(`onTerminate: ${reason}`);
 
-    // 2. Resolve voices (used by fallback Speaker path and student-interpret path).
-    await this.resolveVoices();
+    // 2. Resolve voices (used by fallback Speaker path and student-interpret
+    //    path) and fetch the aac_chat LLM config. They're independent — run
+    //    them concurrently rather than back-to-back.
+    const [, aacChat] = await Promise.all([
+      this.resolveVoices(),
+      settingsRepository.getLLMConfig("aac_chat"),
+    ]);
 
     // 3. Determine models. Default both Observer and Speaker to the
     //    `aac_chat` Live model; Board Manager uses the hardcoded fast model.
@@ -2001,8 +2091,11 @@ export class AgentCoordinator {
     //    variants without touching settings — e.g. point Observer at a
     //    half-cascade Live model with stronger function-calling reliability
     //    if the GA native-audio model keeps malforming its tool calls.
-    const aacChat = await settingsRepository.getLLMConfig("aac_chat");
     this.observerModel = process.env.AAC_OBSERVER_MODEL || aacChat.model;
+    // Economy-Observer backend runs a cheap text model (no native-audio
+    // premium); it only emits tool calls, never audio. Defaults to the Board
+    // Manager's fast model; override via AAC_OBSERVER_HTTP_MODEL.
+    this.observerHttpModel = process.env.AAC_OBSERVER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
     this.speakerModel = process.env.AAC_SPEAKER_MODEL || aacChat.model;
     this.useVertex = aacChat.provider === "gemini";
     this.aacChatProvider = aacChat.provider;
@@ -2012,15 +2105,16 @@ export class AgentCoordinator {
     // Manager uses; override via AAC_SPEAKER_HTTP_MODEL when tuning.
     const httpSpeakerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
     // Speaker backend selection.
-    //  - Per-student `liveAudioSpeaker` AAC setting (default false →
-    //    "http"); when true → "live".
+    //  - Per-student `liveAudioSpeaker` AAC setting (default true →
+    //    "live"); only an explicit false → "http". A missing field
+    //    follows the new default (live).
     //  - AAC_SPEAKER_MODE env var (if explicitly set to "http" or "live")
     //    OVERRIDES the per-student setting for the whole deployment —
     //    useful for global dev/debug toggling without touching student
     //    rows. Any other value falls back to the per-student setting
     //    with a warning.
     const studentRowForMode = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.();
-    const liveAudioStudent = !!(studentRowForMode?.aacSettings as any)?.liveAudioSpeaker;
+    const liveAudioStudent = (studentRowForMode?.aacSettings as any)?.liveAudioSpeaker !== false;
     const envOverrideRaw = process.env.AAC_SPEAKER_MODE?.toLowerCase();
     let effectiveSpeakerMode: "http" | "live" = liveAudioStudent ? "live" : "http";
     if (envOverrideRaw === "http" || envOverrideRaw === "live") {
@@ -2057,7 +2151,9 @@ export class AgentCoordinator {
       logLiveSession("AVAILABLE_BOARDS", `at prompt-build: ${state.availableBoards!.length} board(s) — [${state.availableBoards!.map(b => b.key).join(", ")}]`);
     });
 
-    // 4. Build the three prompts.
+    // 4. Build the three prompts. Loading contacts / symbols / boards / apps +
+    //    license checks is the next noticeable wait → "loadingApps" subtitle.
+    this.send({ type: "startup_progress", stage: "loadingApps" });
     const promptInputs = await this.buildPromptInputs();
     const observerPrompt = buildObserverPrompt(promptInputs.observer);
     const speakerPrompt = buildSpeakerPrompt(promptInputs.speaker);
@@ -2091,6 +2187,8 @@ export class AgentCoordinator {
     //    re-derive them with restingMode flipped.
     const observerToolConfig: ObserverToolConfig = {
       definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
+      // Only expose set_observation_mode when the cost-saving system is enabled.
+      economyModeEnabled: this.economyObserverEnabled,
     };
     this.observerToolConfigBase = observerToolConfig;
     // Speaker's tool config wants full AACAppDefinition objects (with
@@ -2114,6 +2212,7 @@ export class AgentCoordinator {
       loadedBoardName: promptInputs.boardManager.loadedBoardName ?? null,
       maxBoardItems: 12,
       language: promptInputs.boardManager.language,
+      studentGender: promptInputs.boardManager.studentGender,
       singleGlyphButtons: promptInputs.boardManager.singleGlyphButtons,
       glyphInputTranslation: promptInputs.boardManager.glyphInputTranslation,
     };
@@ -2140,11 +2239,13 @@ export class AgentCoordinator {
     this.boardManager.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
 
     // 7. Connect Observer + Speaker in parallel. If either fails, tear down.
+    //    This is the final pre-ready wait (Live WS handshakes) → "wakingUp".
+    this.send({ type: "startup_progress", stage: "wakingUp" });
     try {
       await Promise.all([
         this.observer.start({
           systemPrompt: observerPrompt,
-          model: this.observerModel,
+          model: this.observerActiveModel(),
           toolConfig: observerToolConfig,
           useVertex: this.useVertex,
           // Match the single-agent's provider config — same voice, same
@@ -2262,6 +2363,7 @@ export class AgentCoordinator {
         speakerModel: this.speakerModel,
         boardMgrModel: boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : BOARD_MANAGER_DEFAULT_MODEL,
         useDirectAudio: this.useDirectAudio,
+        fullAttention: this.fullAttentionMode,
       });
       flowSystemPrompt("OBSERVER", observerPrompt);
       flowSystemPrompt("SPEAKER", speakerPrompt);
@@ -2288,6 +2390,9 @@ export class AgentCoordinator {
         sceneStateActive: this.capable("sceneState"),
         // Continuous (ungated) raw PCM only when audio attention starts at "live".
         pcmContinuous: this.audioAttention === "live",
+        // Per-student seizure detection: resolved thresholds + seed baseline, or
+        // undefined when the student has the feature off.
+        seizure: buildClientSeizureConfig(studentRow?.aacSettings),
       }),
     });
 
@@ -2469,6 +2574,7 @@ export class AgentCoordinator {
           .map(b => ({ key: b.key, name: b.name, hint: b.hint })),
         definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
         energyBudget: this.buildEnergyBudgetText(this.aacChatProvider),
+        economyModeEnabled: this.economyObserverEnabled,
       },
       speaker: {
         ...base,
@@ -2605,10 +2711,17 @@ export class AgentCoordinator {
     //     persisted once the burst settles (flushRepeatBurst).
     const now = Date.now();
     const signature = msg.buttons.join(AgentCoordinator.PRESS_SIGNATURE_SEP);
+    // "Busy" = the response to the burst's first press is still in progress:
+    // the Speaker is talking, a rebuild is in flight, or the deferred-rebuild
+    // timer is armed. A re-press while busy is a LATENCY re-press (the board
+    // hasn't visibly updated yet) — coalesce it and DON'T spin up another
+    // rebuild. `boardMgrInFlight` is included specifically so re-presses during
+    // a slow board regeneration don't each trigger a fresh regeneration.
+    const busy = this.speakerSpeaking || this.deferredBoardMgrTimer !== null || this.boardMgrInFlight;
     const repeat = isRepeatPress({
       signature,
       lastSignature: this.lastPressSignature,
-      modelResponding: this.speakerSpeaking || this.deferredBoardMgrTimer !== null,
+      modelResponding: busy,
       now,
       lastPressAt: this.lastPressAt,
       windowMs: AgentCoordinator.PRESS_REPEAT_WINDOW_MS,
@@ -2616,7 +2729,10 @@ export class AgentCoordinator {
     this.lastPressAt = now;
     if (repeat) {
       this.pressRepeatCount++;
-      flowNote("COORDINATOR", `Repeated press "${label}" (×${this.pressRepeatCount}) — re-voicing only; Speaker not interrupted.`);
+      // Settled re-press: the response had already landed (not busy) and the
+      // user pressed the same thing again anyway → genuine perseveration.
+      if (!busy) this.pressSettledRepeatCount++;
+      flowNote("COORDINATOR", `Repeated press "${label}" (×${this.pressRepeatCount}${busy ? ", awaiting response" : ", after response settled"}) — re-voicing only; Speaker not interrupted.`);
       if (sentence) {
         flowOutput("COORDINATOR", "ws_send_utterance", sentence);
         this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
@@ -2629,6 +2745,7 @@ export class AgentCoordinator {
     this.flushRepeatBurst();
     this.lastPressSignature = signature;
     this.pressRepeatCount = 1;
+    this.pressSettledRepeatCount = 0;
 
     // 0c. INTERRUPT (Phase C). A fresh press means the student wants the floor —
     //     cut off whatever the AI/peer is currently saying so their own voice
@@ -2875,6 +2992,14 @@ export class AgentCoordinator {
    * was pressed more than once) as a single supervisor-only note, then reset
    * the burst. Routed via writeSupervisorOnly so the Monitor sees the
    * perseveration WITHOUT it polluting Speaker's replayed conversation log.
+   *
+   * When the burst includes a SETTLED repeat (the user re-pressed after the
+   * board/AI had already responded — genuine perseveration, not just latency),
+   * ALSO nudge the companion Speaker live so it varies its reply / actually
+   * engages the request instead of re-emitting the same canned line. The nudge
+   * is companion-only: in social-practice mode the peer consumes user
+   * utterances (not context injections), and while muted the AI stays silent.
+   *
    * Called when a new/different press arrives, when the burst goes quiet
    * (timer), on sleep, and on cleanup.
    */
@@ -2884,13 +3009,21 @@ export class AgentCoordinator {
       this.pressBurstFlushTimer = null;
     }
     const total = this.pressRepeatCount;
+    const settled = this.pressSettledRepeatCount;
     const signature = this.lastPressSignature;
     this.pressRepeatCount = 0;
+    this.pressSettledRepeatCount = 0;
     this.lastPressSignature = null;
     if (total > 1 && signature) {
       const label = signature.split(AgentCoordinator.PRESS_SIGNATURE_SEP).join(", ");
       this.writeSupervisorOnly(formatRepeatNote(label, total));
-      flowNote("COORDINATOR", `Repeat burst settled: "${label}" pressed ${total} times in a row.`);
+      flowNote("COORDINATOR", `Repeat burst settled: "${label}" pressed ${total} times in a row (${settled} after a response).`);
+      if (settled > 0 && !this.socialPeer && this.muteState !== "muted") {
+        this.speaker?.sendContextInjection(
+          `[USER INSISTING] The user pressed "${label}" ${total} times in a row, continuing even after you/the board already responded. They clearly want this — acknowledge their persistence and engage the request directly. Do NOT repeat your earlier reply; say something new (and if you genuinely can't act on it, explain why warmly rather than brushing it off).`,
+        );
+        flowNote("COORDINATOR", `Nudged Speaker about perseveration on "${label}".`);
+      }
     }
   }
 
@@ -3796,6 +3929,9 @@ export class AgentCoordinator {
       case "attention_change":
         this.setAttention(event.modality, event.level, event.reason);
         return;
+      case "observation_mode_change":
+        this.handleObservationModeChange(event);
+        return;
       case "gesture_recognized":
         void this.handleGestureRecognized(event);
         return;
@@ -4612,7 +4748,7 @@ export class AgentCoordinator {
    * fallback; every frame carries the live [PEOPLE PRESENT] block. Used by both
    * the streaming frame_grid path and the immediate initialFrame at connect.
    */
-  private async forwardFrameToObserver(data: string, triggerReason?: string, gestureContext?: string): Promise<void> {
+  private async forwardFrameToObserver(data: string, triggerReason?: string, gestureContext?: string, motionSignature?: string): Promise<void> {
     // Drop frames while the Observer's Live session isn't connected yet (its
     // setupComplete can land a few hundred ms AFTER we mark the session ready).
     // Crucially we DON'T count these — otherwise the stronger startup prompt
@@ -4650,7 +4786,18 @@ export class AgentCoordinator {
     // Observer to check its alarm conditions — Phase 3 safety decoupling.
     const reasonNote = this.economize ? this.buildFrameReasonNote(triggerReason) : "";
     const gestureNote = this.economize && gestureContext ? `\n${gestureContext}` : "";
-    this.observer?.sendFrame(data, `${base}${reasonNote}${peopleNote}${gestureNote}`);
+    // The quantified [MOTION SIGNATURE] (seizure-signature DSP) rides with a
+    // "seizure" escalation regardless of economize — it's the whole point of the
+    // frame, so the Observer judges motion evidence, not just the picture.
+    const motionNote = motionSignature ? `\n${motionSignature}` : "";
+    // Always log a seizure-class escalation distinctly so it's visible in the
+    // session log even in full-attention mode (where reasonNote is suppressed).
+    if (triggerReason === "seizure" || motionSignature) {
+      runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+        logLiveSession("SEIZURE frame → observer", `economize=${this.economize} ${motionSignature ?? `reason=${triggerReason}`}`);
+      });
+    }
+    this.observer?.sendFrame(data, `${base}${reasonNote}${motionNote}${peopleNote}${gestureNote}`);
     if (this.frameCount === 1 || this.frameCount % 50 === 0) {
       runInSessionContext(this.sessionId || "?", this.debugMode, () => {
         logLiveSession("FRAME → observer", `count=${this.frameCount} observerConnected=${this.observer?.isConnected ?? false} startup=${this.startupBehavior}`);
@@ -4674,6 +4821,11 @@ export class AgentCoordinator {
     }
     if (triggerReason === "posture_changed") {
       return `\n[FRAME REASON] posture_changed — the student's body position shifted (e.g. sat up, leaned, slid down). Body-pose readings are coarse for this population, so confirm against what you SEE before reacting; treat it as a prompt to look, not a conclusion.`;
+    }
+    if (triggerReason === "seizure") {
+      // The detail is in the accompanying [MOTION SIGNATURE] line (the DSP's
+      // quantified read). This just frames why the frame arrived.
+      return `\n[FRAME REASON] seizure — the motion detector flagged a pattern that can indicate a seizure (see [MOTION SIGNATURE]). It is COARSE and self-soothing movements mimic it: look, then judge against ${this.currentStudentName ? `[${this.currentStudentName}]'s` : "the student's"} alarm_conditions. Don't alarm on the detector alone.`;
     }
     return `\n[FRAME REASON] ${triggerReason}`;
   }
@@ -4878,7 +5030,7 @@ export class AgentCoordinator {
       // complete and the session can recover.
       await this.observer.reconnectWithConfig({
         systemPrompt: this.observerPrompt,
-        model: this.observerModel,
+        model: this.observerActiveModel(),
         toolConfig: this.observerToolConfigBase,
         useVertex: this.useVertex,
         compressionTriggerTokens: observerTrigger,
@@ -4998,13 +5150,18 @@ export class AgentCoordinator {
     flowNote("COORDINATOR", "Waking from sleep — rebuilding Observer + Speaker.");
     this.send({ type: "sleep_state_change", data: { state: "awake", source: "ai" } });
 
+    // A wake is fresh engagement — return to Live-by-default for responsiveness
+    // (energy also regenerated while asleep). If still low, the next energy tick
+    // re-applies the economy floor.
+    this.observerMode = "live";
+    this.observerForcedEconomy = false;
     this.observer = this.createObserverAgent();
     this.speaker = this.createSpeakerAgent();
     try {
       await Promise.all([
         this.observer.start({
           systemPrompt: this.observerPrompt,
-          model: this.observerModel,
+          model: this.observerActiveModel(),
           toolConfig: this.observerToolConfigBase,
           useVertex: this.useVertex,
           voiceName: this.aiVoiceName,
@@ -5047,18 +5204,114 @@ export class AgentCoordinator {
     this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
   }
 
-  /** Build a fresh ObserverAgent with the standard callback bundle. Used by
-   *  initial start AND by wakeFromSleep() when recreating Observer after a
-   *  sleep teardown (resting keeps Observer alive, so transitionToProfile
-   *  doesn't need this — only the full sleep→awake rebuild does). */
-  private createObserverAgent(): ObserverAgent {
-    const provider = this.aacChatProvider;
-    return new ObserverAgent("gemini", {
+  /** Build a fresh Observer backend with the standard callback bundle. Picks
+   *  the Live (native-audio) or Economy (HTTP gemini-2.5-flash) backend based
+   *  on `this.observerMode`. Used by initial start, wakeFromSleep, AND the
+   *  live↔economy switch. Cost is attributed to the backend's REAL model/
+   *  provider so the cheap path bills at flash rates. The mode is captured at
+   *  build time — a mode change rebuilds the agent, so it never changes under
+   *  a live instance. */
+  private createObserverAgent(): IObserverAgent {
+    const liveProvider = this.aacChatProvider;
+    const isEconomy = this.observerMode === "economy";
+    const usageProvider = isEconomy ? BOARD_MANAGER_DEFAULT_PROVIDER : liveProvider;
+    const usageModel = isEconomy ? this.observerHttpModel : this.observerModel;
+    const callbacks: ObserverCallbacks = {
       onEvent: (e) => this.onObserverEvent(e),
       onError: (err) => console.error("[AgentCoordinator] Observer error:", err),
       onClose: () => console.log("[AgentCoordinator] Observer closed"),
-      onUsage: (usage) => this.trackLiveUsage("observer", provider, this.observerModel, usage),
-    });
+      onUsage: (usage) => this.trackLiveUsage("observer", usageProvider as any, usageModel, usage),
+    };
+    if (isEconomy) {
+      flowNote("COORDINATOR", `Observer mode=economy (HTTP ${this.observerHttpModel})`);
+      return new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks);
+    }
+    flowNote("COORDINATOR", `Observer mode=live (Gemini Live ${this.observerModel})`);
+    return new ObserverAgent("gemini", callbacks);
+  }
+
+  /** Build the ObserverStartConfig for the CURRENT backend (active model +
+   *  awake compression). Shared by the switch path. */
+  private buildObserverStartConfig(): ObserverStartConfig {
+    const comp = this.observerAwakeCompression();
+    return {
+      systemPrompt: this.observerPrompt,
+      model: this.observerActiveModel(),
+      toolConfig: this.observerToolConfigBase,
+      useVertex: this.useVertex,
+      voiceName: this.aiVoiceName,
+      compressionTriggerTokens: comp.trigger,
+      compressionTargetTokens: comp.target,
+    };
+  }
+
+  /**
+   * Switch the Observer between the Live (native-audio) and Economy (HTTP)
+   * backends at runtime. Tears down the current backend, rebuilds the other,
+   * and replays recent conversation history so context survives the swap
+   * (mirrors primeFreshSpeaker / wakeFromSleep). No-op if already in `mode`,
+   * asleep, or not ready. Single-flight via observerSwitchInFlight.
+   */
+  private async switchObserverBackend(mode: "live" | "economy", reason?: string): Promise<void> {
+    if (!this.economyObserverEnabled) return;
+    if (this.observerMode === mode) return;
+    if (this.asleep || this.state !== "ready" || !this.observerPrompt) return;
+    if (this.observerSwitchInFlight) return;
+    this.observerSwitchInFlight = true;
+    const prev = this.observerMode;
+    flowNote("COORDINATOR", `Observer backend switch ${prev} → ${mode}${reason ? ` (${reason})` : ""}`);
+    try {
+      // Snapshot recent dialogue to replay into the fresh backend (cap 20,
+      // same as primeFreshSpeaker) so the switch doesn't lose context.
+      const replayCount = Math.min(20, this.conversationLog.length);
+      const recent = replayCount > 0
+        ? this.conversationLog.slice(-replayCount).map(t => ({
+            role: t.role === "assistant" ? ("model" as const) : ("user" as const),
+            text: t.content,
+          }))
+        : [];
+
+      try { this.observer?.close(); } catch { /* ignore */ }
+      this.observer = null;
+      this.observerMode = mode;
+      const next = this.createObserverAgent();
+      this.observer = next;
+      await next.start(this.buildObserverStartConfig());
+      next.setDebugSessionContext(this.sessionId!, this.debugMode);
+      if (recent.length > 0) next.sendConversationHistory(recent);
+      next.sendContextInjection(
+        mode === "economy"
+          ? `[OBSERVATION MODE] economy — you now wake on events to conserve energy.${reason ? ` (${reason})` : ""}`
+          : `[OBSERVATION MODE] live — full continuous observation.${reason ? ` (${reason})` : ""}`,
+      );
+      runInSessionContext(this.sessionId!, this.debugMode, () => {
+        logLiveSession("OBSERVER_MODE_SWITCH", `${prev} → ${mode}${reason ? ` (${reason})` : ""}`);
+      });
+    } catch (err) {
+      console.error(`[AgentCoordinator] switchObserverBackend(${mode}) failed:`, err);
+      // Leave whatever we have; next event will retry if needed.
+    } finally {
+      this.observerSwitchInFlight = false;
+    }
+  }
+
+  /** Handle the Observer's own set_observation_mode request. Refuses going
+   *  back to "live" while energy is in the low band (the forced-economy floor)
+   *  so the throttle can't be immediately undone. */
+  private handleObservationModeChange(event: ObservationModeChangeEvent): void {
+    if (!this.economyObserverEnabled) return;
+    if (event.mode === "live" && this.energyMeterEnabled) {
+      const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
+      if (energyBand(pct) === "low") {
+        flowNote("COORDINATOR", `Observer requested live but energy is low (${pct}%) — staying economy.`);
+        this.observer?.sendContextInjection(
+          `[OBSERVATION MODE] staying economy — energy is low (${pct}%). You can go live once it recovers.`,
+        );
+        return;
+      }
+    }
+    if (event.mode === "live") this.observerForcedEconomy = false;
+    void this.switchObserverBackend(event.mode, event.reason);
   }
 
   /** Build a fresh SpeakerAgent with the standard callback bundle. Used
@@ -6127,6 +6380,7 @@ export class AgentCoordinator {
     difficulty?: number;
     languageLevel?: LanguageLevel;
     slpConfig: SlpConfig;
+    addresseeGender?: "male" | "female";
   }): SocialPeerSpeakerAgent {
     // Captured for the usage closure — billing must survive teardown races.
     const usageSessionId = this.sessionId ?? "";
@@ -6139,6 +6393,7 @@ export class AgentCoordinator {
       difficulty: opts.difficulty,
       languageLevel: opts.languageLevel,
       slpConfig: opts.slpConfig,
+      addresseeGender: opts.addresseeGender,
       callbacks: {
         onEvent: (e) => this.onSpeakerEvent(e),
         onSpeakText: (text) => this.onSpeakerSpeakText(text),
@@ -6173,6 +6428,7 @@ export class AgentCoordinator {
     difficulty?: number;
     languageLevel?: LanguageLevel;
     slpConfig: SlpConfig;
+    addresseeGender?: "male" | "female";
   }): LiveSocialPeerSpeakerAgent {
     const usageSessionId = this.sessionId ?? "";
     const usageStudentId = this.studentId ?? "";
@@ -6187,6 +6443,7 @@ export class AgentCoordinator {
       difficulty: opts.difficulty,
       languageLevel: opts.languageLevel,
       slpConfig: opts.slpConfig,
+      addresseeGender: opts.addresseeGender,
       compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
       compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
       callbacks: {
@@ -6380,6 +6637,11 @@ export class AgentCoordinator {
       const student = sessionCache?.monitorAgent.getStudent?.();
       const language = student?.primaryLanguage || "en";
       const aac = student?.aacSettings as any;
+      // The STUDENT's grammatical gender — so the peer addresses them with the
+      // correct feminine/masculine forms in gendered languages (Hebrew, etc.).
+      const sg = (student as any)?.gender;
+      const studentGender: "male" | "female" | undefined =
+        sg === "male" || sg === "female" ? sg : undefined;
 
       // Resolve startup params so the peer is tuned to THIS student and the
       // current conversation (gender, personality, shared interests, challenge
@@ -6482,6 +6744,7 @@ export class AgentCoordinator {
             difficulty: peerDifficulty,
             languageLevel: peerLanguageLevel,
             slpConfig: peerSlp,
+            addresseeGender: studentGender,
           })
         : this.buildPeerAgent({
             persona,
@@ -6492,6 +6755,7 @@ export class AgentCoordinator {
             // Goal/locked dimensions + challenge ceiling (clinician defaults
             // narrowed by the AI's optional session focus).
             slpConfig: peerSlp,
+            addresseeGender: studentGender,
           });
       await peer.start();
       this.speaker = peer;
@@ -7471,10 +7735,23 @@ export class AgentCoordinator {
     // If a custom board is loaded (e.g. the home board pushed at init),
     // the client is in "custom board mode" and ignores `board` updates
     // until the custom board is unloaded.
+    const hadCustomBoard = !!this.loadedBoardId;
     if (this.loadedBoardId) {
       this.send({ type: "unload_board", data: {} });
       this.loadedBoardId = null;
     }
+    // Stability gate: if this rebuild yields a board identical to the one already
+    // displayed (same buttons + target), skip the push. Re-sending an identical
+    // board re-renders the grid on the client and RESETS any in-progress dwell —
+    // churn that, for eye-gaze/dwell users, can keep a selection from ever
+    // completing. Skip only when no custom board was just unloaded (that changes
+    // what's shown) and the press target is unchanged (it alters press routing).
+    const newTarget = event.target ?? PARTY_DEVICE;
+    const boardUnchanged =
+      !hadCustomBoard &&
+      this.currentBoardTarget === newTarget &&
+      sameBoard(this.currentBoardButtons, merged as MergeButton[]);
+
     this.currentBoardLabels = merged.map(b => b.label);
     this.currentBoardButtons = merged.map(b => ({ ...b } as MergeButton));
     // Remember who this board's buttons are addressed to. Always default
@@ -7482,11 +7759,16 @@ export class AgentCoordinator {
     // never inherit from a prior transcript speaker. (BoardManager is
     // told to set target explicitly when the user is replying to a
     // person in the room.)
-    this.currentBoardTarget = event.target ?? PARTY_DEVICE;
-    this.send({
-      type: "board",
-      data: buildBoardFromButtons(merged as any),
-    });
+    this.currentBoardTarget = newTarget;
+    if (boardUnchanged) {
+      flowNote("COORDINATOR", `rebuild_board produced a board identical to the current one (${merged.length} buttons) — skipping re-render to avoid resetting dwell.`);
+    } else {
+      this.send({
+        type: "board",
+        data: buildBoardFromButtons(merged as any),
+      });
+      void this.applySymbolPipeline(merged as any);
+    }
     // Experiment (glyphInputTranslation): mirror the translated incoming speech
     // into the header glyph strip. Only sent when BoardManager supplied
     // `input_glyphs` (replies to incoming speech) — on follow-ups it's absent
@@ -7498,7 +7780,6 @@ export class AgentCoordinator {
       // its `fb`.
       void this.generateGlyphPartSymbols(event.inputGlyphs.map(g => g.glyph));
     }
-    void this.applySymbolPipeline(merged as any);
   }
 
   /**
@@ -8148,7 +8429,15 @@ export class AgentCoordinator {
 
     if (bandChanged || recovered) {
       const guidance = bandChanged ? ` ${AgentCoordinator.energyGuidance(band)}` : "";
-      this.observer?.sendContextInjection(`[ENERGY] ${pct}% remaining — ${band}.${guidance}`);
+      // Energy-scaled mode hint: while still running the costly Live backend
+      // with a draining budget, nudge the Observer toward economy observation
+      // (its biggest lever). Fires on band changes / recoveries, so it repeats
+      // periodically as the budget moves rather than once. Omitted at high
+      // energy and when already economy.
+      const modeHint = (this.economyObserverEnabled && this.observerMode === "live" && (band === "moderate" || band === "low"))
+        ? ` Consider set_observation_mode("economy") — staying live is your biggest drain.`
+        : "";
+      this.observer?.sendContextInjection(`[ENERGY] ${pct}% remaining — ${band}.${guidance}${modeHint}`);
       this.lastReportedEnergyPercent = pct;
       this.lastEnergyBand = band;
       runInSessionContext(this.sessionId || "?", this.debugMode, () => {
@@ -8156,6 +8445,28 @@ export class AgentCoordinator {
       });
     } else if (opts.fromCharge && pct < this.lastReportedEnergyPercent) {
       this.lastReportedEnergyPercent = pct;
+    }
+
+    // Hard floor (lever B): the meter is no longer purely advisory. At low
+    // energy, force the cheap economy backend regardless of the Observer's
+    // choice; once energy recovers out of the low band, release the force so
+    // the Observer may go live again on its own (no auto-flip, to avoid churn).
+    this.applyEnergyThrottle(band);
+  }
+
+  /** Enforce the low-energy economy floor. Idempotent; safe to call often. */
+  private applyEnergyThrottle(band: EnergyBand): void {
+    if (!this.economyObserverEnabled) return;
+    if (band === "low") {
+      if (this.observerMode === "live" && !this.observerSwitchInFlight) {
+        this.observerForcedEconomy = true;
+        void this.switchObserverBackend("economy", "energy low — forced");
+      }
+    } else if (this.observerForcedEconomy && band === "high") {
+      // Budget restored — lift the lock. Stay economy until the Observer
+      // chooses to go live (it gets prompted), avoiding low↔high flapping.
+      this.observerForcedEconomy = false;
+      flowNote("COORDINATOR", "Energy recovered — economy lock lifted; Observer may go live.");
     }
   }
 
@@ -8226,6 +8537,13 @@ export class AgentCoordinator {
     const perHour = cfg.perHour;
     const regenPctMin = Math.round((perHour / 60 / cfg.ceiling) * 1000) / 10;
     const refillHrs = perHour > 0 ? Math.round((cfg.ceiling / perHour) * 10) / 10 : 0;
+    // Baseline cost of just keeping a Live observation session warm and acting
+    // on routine scene/speech turns — NOT free. Empirically a native-audio Live
+    // Observer drains ~1.9%/min even at "text" attention with no dials raised,
+    // already well above regen. Surfacing this honestly is what lets the
+    // Observer self-govern (rest sooner) instead of believing watching is free.
+    const baselineUsdPerMin = Number(process.env.AAC_OBSERVER_BASELINE_USD_PER_MIN) || 0.057;
+    const baselinePctMin = Math.round((baselineUsdPerMin / cfg.ceiling) * 1000) / 10;
     // Sustained full-live (both modalities) spend, credits(=USD)/min. Tunable.
     const fullLivePerMin = Number(process.env.AAC_FULL_LIVE_USD_PER_MIN) || 0.89;
     const visualPerMin = fullLivePerMin * 0.6;
@@ -8242,9 +8560,15 @@ export class AgentCoordinator {
     const focusPct = energyCostPercent((1000 * nonTextRate) / 1_000_000, cfg);
     const audioClipPct = energyCostPercent((160 * nonTextRate) / 1_000_000, cfg);
     const pull = Math.max(focusPct, audioClipPct);
+    // The honest baseline line is part of the cost-saving system (default off);
+    // when disabled, keep the original "text attention is essentially free" line
+    // so behavior is unchanged.
+    const baselineLine = this.economyObserverEnabled
+      ? `  - Just staying awake and watching (even on cheap "text" [SCENE]/[HEARD SPEECH]) costs ~${baselinePctMin}%/min — this is the FLOOR, and it already outpaces your ~${regenPctMin}%/min regen. So long awake stretches steadily drain you even when you raise no attention: rest() during quiet gaps and don't stay awake out of habit.`
+      : `  - Default "text" attention (cheap [SCENE]/[HEARD SPEECH]): essentially free — stays within your regen.`;
     return `<energy_budget>
 Rough costs (approximate — your [ENERGY] notes show the real level; budget regenerates ~${regenPctMin}%/min, full refill from empty ~${refillHrs}h):
-  - Default "text" attention (cheap [SCENE]/[HEARD SPEECH]): essentially free — stays within your regen.
+${baselineLine}
   - set_audio_attention("adaptive"): ~${pctMin(audioAdaptivePerMin)}%/min (${emptyIn(audioAdaptivePerMin)}) — gated raw audio, cheaper than live.
   - set_audio_attention("live"): ~${pctMin(audioLivePerMin)}%/min (${emptyIn(audioLivePerMin)}) — continuous, most faithful.
   - set_visual_attention("live"): ~${pctMin(visualPerMin)}%/min (${emptyIn(visualPerMin)}).

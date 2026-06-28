@@ -10,6 +10,7 @@
 // behind a different draw call — this file is the only 2D-specific piece.
 
 import { WORLD_ENGINE_DEFAULTS, type WorldState } from "./engine.js";
+import { bubbleAlpha, imageAspect, layoutBubble, paintBubble } from "./speech-bubble.js";
 
 // ---------------------------------------------------------------------------
 // Camera (pure — world units ↔ screen pixels)
@@ -83,6 +84,8 @@ export interface RenderOptions {
   faceFor?: (id: string) => CanvasImageSource | null;
   /** Display name for a participant — its initial is the coloured-disc fallback. */
   labelFor?: (id: string) => string;
+  /** Symbol images for a participant's last-said composed glyph (bubble strip). */
+  glyphFor?: (glyph: string) => CanvasImageSource[] | null;
 }
 
 const AVATAR_R = WORLD_ENGINE_DEFAULTS.avatarRadius;
@@ -218,6 +221,25 @@ export function renderWorld2D(
       ctx.strokeStyle = "rgba(15,23,42,0.55)";
       ctx.stroke();
     }
+  }
+
+  // Speech bubbles — a second pass so they sit above every body. Constant SCREEN
+  // size (UI-like), positioned just above each speaker's circle; fades out at TTL.
+  for (const id of ids) {
+    const a = state.avatars[id];
+    if (!a.say) continue;
+    const alpha = bubbleAlpha(a.say.at, state.time);
+    if (alpha <= 0) continue;
+    const glyphs = a.say.glyph ? opts.glyphFor?.(a.say.glyph) ?? [] : [];
+    const aspect = glyphs[0] ? imageAspect(glyphs[0]) : 0;
+    const layout = layoutBubble(ctx, a.say.text, aspect);
+    const { sx, sy } = worldToScreen(cam, a.x, a.y);
+    const r = AVATAR_R * cam.scale;
+    ctx.save();
+    // Top-left so the bubble is centred over the head, sitting above the circle.
+    ctx.translate(sx - layout.width / 2, sy - r - 12 - layout.height);
+    paintBubble(ctx, layout, glyphs, alpha);
+    ctx.restore();
   }
 }
 

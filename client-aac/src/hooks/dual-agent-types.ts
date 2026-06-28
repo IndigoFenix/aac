@@ -81,6 +81,12 @@ export interface ClientConfig {
    * `handlePcmChunk` — overrides a vad-gated data-flow to continuous.
    */
   pcmContinuous?: boolean;
+  /**
+   * Per-student seizure detection (resolved DSP thresholds + seed baseline).
+   * Absent / enabled:false → the client skips the motion detector. The shape is
+   * shared (server resolves the clinician's sensitivity choices into thresholds).
+   */
+  seizure?: import("@shared/aac/seizure-config").ClientSeizureConfig;
 }
 
 /**
@@ -341,6 +347,10 @@ export interface UseDualAgentReturn {
   clientConfig: ClientConfig | null;
   isInitialized: boolean;
   isLoading: boolean;
+  /** Server-reported startup phase, shown as the localized subtitle on the
+   *  "waking up" indicator while `isLoading`. Defaults to "connecting" until
+   *  the first `startup_progress` message arrives. */
+  startupStage: "connecting" | "checkingNotes" | "planningSession" | "loadingApps" | "wakingUp";
   error: string | null;
   /** Increments each time a real camera frame/snapshot is sent (frame_grid /
    *  focus_frame) — the avatar blinks on each change. */

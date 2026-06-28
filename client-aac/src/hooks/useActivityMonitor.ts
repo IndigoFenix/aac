@@ -220,7 +220,9 @@ export function useActivityMonitor({
     // frame sends, which also reset lastSendAt) was silently dropping most
     // clips — the main reason STT "rarely" fired. Speech segments are naturally
     // spaced by the VAD and the in-flight guard still serializes them.
-    if (reason !== "speech ended" && now - lastSendAtRef.current < cfg.minIntervalMs) {
+    // "seizure" is exempt too — a safety escalation must go immediately, not be
+    // dropped by the 3s frame throttle.
+    if (reason !== "speech ended" && reason !== "seizure" && now - lastSendAtRef.current < cfg.minIntervalMs) {
       return;
     }
 
