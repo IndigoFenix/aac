@@ -163,7 +163,7 @@ export function InvitePeoplePopup({ title, confirmLabel, excludePersonIds, onCon
         </ScrollArea>
 
         <div className="space-y-3 border-t border-border p-3">
-          <label className="flex cursor-pointer items-start gap-2 text-sm">
+          <label className="flex cursor-pointer items-start gap-2 text-sm" aria-label={t("call.automatic")}>
             <input type="checkbox" className="mt-0.5" checked={autoAccept} onChange={(e) => setAutoAccept(e.target.checked)} />
             <span>
               <span className="font-medium">{t("call.automatic")}</span>

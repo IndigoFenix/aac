@@ -716,7 +716,10 @@ export function VideoCaptionPanel(_props: VideoCaptionPanelProps) {
                 className="w-full max-h-[40vh] rounded bg-black"
                 onTimeUpdate={handleTimeUpdate}
                 data-testid="video-caption-player"
-              />
+              >
+                {/* Captions are rendered via GlyphCaptionOverlay, not a track */}
+                <track kind="captions" />
+              </video>
               <GlyphCaptionOverlay
                 glyph={activeIndex != null ? glyphs[activeIndex] : undefined}
                 fallback={activeIndex != null ? fallbacks[activeIndex] : undefined}

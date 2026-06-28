@@ -35,7 +35,10 @@ export function CallFace() {
           autoPlay
           playsInline
           className="w-full h-full object-cover"
-        />
+        >
+          {/* Live call video has no caption track */}
+          <track kind="captions" />
+        </video>
       ) : (
         // No remote video yet — show the contact's initial (connecting/ringing).
         <div className="flex flex-col items-center justify-center w-full h-full bg-emerald-600 text-white">
