@@ -40,9 +40,39 @@ export interface LedgerCharge {
   label: string;
 }
 
+/**
+ * Per-session charge listeners. Every charge that lands for a session is
+ * announced here so an in-memory consumer — the AgentCoordinator's budget
+ * meter — can track the session's TOTAL spend, including the Monitor (HTTP),
+ * TTS, and standalone-analysis charges that never flow through the live-agent
+ * usage path. Keyed by sessionId; the coordinator registers one per session.
+ * See planning-docs/aac-budget-tiers-spec.md §7.
+ */
+type LedgerChargeListener = (credits: number, category: string | undefined) => void;
+const chargeListeners = new Map<string, LedgerChargeListener>();
+
+/** Subscribe to charges for `sessionId`. Returns an unsubscribe fn. A second
+ *  registration for the same session replaces the first (one coordinator owns
+ *  a session at a time). */
+export function onLedgerCharge(sessionId: string, cb: LedgerChargeListener): () => void {
+  chargeListeners.set(sessionId, cb);
+  return () => { if (chargeListeners.get(sessionId) === cb) chargeListeners.delete(sessionId); };
+}
+
 export async function chargeCreditsToLedger(charge: LedgerCharge): Promise<void> {
   const { sessionId, studentId, userId, credits, label } = charge;
   if (!(credits > 0)) return;
+  // Announce to any in-session listener FIRST — before the DB writes — so the
+  // budget meter sees the charge even if a ledger write transiently fails. The
+  // listener is in-memory and synchronous; isolate its errors so they can never
+  // break charging.
+  if (sessionId) {
+    const listener = chargeListeners.get(sessionId);
+    if (listener) {
+      try { listener(credits, charge.category); }
+      catch (e) { console.error(`[CreditLedger] charge listener failed (${label}):`, e); }
+    }
+  }
   try {
     if (sessionId) {
       await db

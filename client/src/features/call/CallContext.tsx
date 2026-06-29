@@ -9,12 +9,15 @@ import {
   type ReactNode,
 } from "react";
 import { CallClient, type CallClientEvent, type CallState, type IncomingCall } from "@shared/call/call-client";
+import { parseCallDataMessage, type CallDataMessage } from "@shared/call/call-data-messages";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
+import type { ParsedBoardData } from "@shared/schema";
 import type { WorldNetMessage } from "@shared/world-engine/index";
 import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
 import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
 import { proximityRule, solveAudibleFor, audibleRecvIds } from "@shared/social-world/circle-solver";
 import { audibleGains } from "@shared/social-world/media-gate";
+import { createActiveSpeakerDetector } from "@shared/call/active-speaker";
 import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
 import { useAuth } from "@/hooks/useAuth";
 import { useInstitute } from "@/hooks/useInstitute";
@@ -110,6 +113,20 @@ interface CallContextValue {
   getAudibleIds: () => Set<string>;
   /** Per-peer audio gain 0..1 from the proximity media gate (Phase 2). */
   peerGains: Map<string, number>;
+  /** The participant currently speaking (loudest remote stream), or null —
+   *  drives the "auto" video layout. */
+  activeSpeakerId: string | null;
+
+  /** The board the AAC student is currently looking at, mirrored over the call's
+   *  reliable data channel so the clinician can SEE their screen (read-only). */
+  mirroredBoard: MirroredBoardState | null;
+  /** Button id the student is dwelling on right now (gaze hover), or null. */
+  mirroredDwell: string | null;
+  /** Button id of the student's most recent momentary press (for a flash). */
+  mirroredSelection: { buttonId: string; at: number } | null;
+  /** Send a typed message over the call's reliable data channel (e.g. a
+   *  facilitator press on the mirrored board). */
+  sendData: (message: CallDataMessage) => void;
 
   startCallWithContact: (contact: PersonChatContact) => Promise<void>;
   /** Call a student who listed this user as a callable contact (via the contact link).
@@ -126,6 +143,16 @@ interface CallContextValue {
   hangUp: () => void;
   toggleAudio: (enabled: boolean) => void;
   toggleVideo: (enabled: boolean) => void;
+}
+
+/** The mirrored AAC board, plus which peer it came from. */
+export interface MirroredBoardState {
+  fromPersonId: string;
+  board: ParsedBoardData;
+  pageId?: string;
+  mode: "board" | "app";
+  appKind?: string;
+  at: number;
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -153,6 +180,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [lastSelfSpeech, setLastSelfSpeech] = useState<{ text: string; at: number } | null>(null);
   const [game, setGameState] = useState<CallGame | null>(null);
   const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
+  const [mirroredBoard, setMirroredBoard] = useState<MirroredBoardState | null>(null);
+  const [mirroredDwell, setMirroredDwell] = useState<string | null>(null);
+  const [mirroredSelection, setMirroredSelection] = useState<{ buttonId: string; at: number } | null>(null);
   // One world-message fan-out per provider; the active CallGameSurface subscribes.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
@@ -173,6 +203,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setSelfTranscript("");
     setGameState(null);
     setPeerGains(new Map());
+    setMirroredBoard(null);
+    setMirroredDwell(null);
+    setMirroredSelection(null);
     worldHubRef.current.clear();
     npcHubRef.current.clear();
     presenceChannelRef.current.clear();
@@ -280,9 +313,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // surface's conversation layer.
         npcHubRef.current.emit(event.fromPersonId, event.message);
         break;
-      case "data":
-        // Reserved for AAC extras; the clinician UI ignores data-channel messages.
+      case "data": {
+        // The AAC mirrors its board over the reliable channel so the clinician
+        // can see (and, with Interact on, drive) the student's screen.
+        const m = parseCallDataMessage(event.message);
+        if (!m) break;
+        if (m.k === "board-mirror") {
+          setMirroredBoard({ fromPersonId: event.personId, board: m.board, pageId: m.pageId, mode: m.mode, appKind: m.appKind, at: m.at });
+        } else if (m.k === "board-dwell") {
+          setMirroredDwell(m.buttonId);
+        } else if (m.k === "board-selection") {
+          setMirroredSelection({ buttonId: m.buttonId, at: m.at });
+        }
         break;
+      }
     }
   }, [clearStreams]);
 
@@ -452,6 +496,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     clientRef.current?.sendWorldData(msgs);
   }, []);
 
+  const sendData = useCallback((message: CallDataMessage) => {
+    clientRef.current?.sendData(message);
+  }, []);
+
   const sendNpc = useCallback((msg: unknown) => {
     clientRef.current?.sendNpc(msg);
   }, []);
@@ -508,36 +556,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, [circlesOn, selfPersonId]);
 
-  // Remote-audio activity: while any remote stream is making sound (the student
-  // talking / button-press TTS), mark a short "active" window. The Web Speech
-  // echo guard reads this to drop self-transcripts that are really our mic
-  // hearing the call audio through the speakers.
+  // Per-peer audio activity (shared detector). Drives BOTH the active-speaker
+  // spotlight (the "auto" video layout) AND the Web Speech echo guard: while any
+  // remote stream is making sound (the student talking / button-press TTS) we
+  // mark a short "active" window so self-transcripts that are really our mic
+  // hearing the speakers get dropped.
   const remoteActiveUntilRef = useRef(0);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   useEffect(() => {
-    if (callState !== "active" || remoteStreams.size === 0) return;
-    const AudioCtx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    const sources: any[] = [];
-    for (const stream of remoteStreams.values()) {
-      if (stream.getAudioTracks().length === 0) continue;
-      try { const src = ctx.createMediaStreamSource(stream); src.connect(analyser); sources.push(src); } catch { /* ignore */ }
-    }
-    const data = new Uint8Array(analyser.fftSize);
-    const id = setInterval(() => {
-      analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
-      const rms = Math.sqrt(sum / data.length);
-      if (rms > 0.02) remoteActiveUntilRef.current = Date.now() + 1500; // decay past the silence-stop window
-    }, 100);
-    return () => {
-      clearInterval(id);
-      sources.forEach((s) => { try { s.disconnect(); } catch { /* ignore */ } });
-      try { void ctx.close(); } catch { /* ignore */ }
-    };
+    if (callState !== "active" || remoteStreams.size === 0) { setActiveSpeakerId(null); return; }
+    const detector = createActiveSpeakerDetector({
+      onActiveSpeaker: setActiveSpeakerId,
+      onAnyActive: (any) => { if (any) remoteActiveUntilRef.current = Date.now() + 1500; },
+    });
+    if (!detector) return;
+    detector.setStreams(remoteStreams);
+    return () => detector.stop();
   }, [callState, remoteStreams]);
 
   // While the call is active, transcribe the clinician's OWN speech and publish
@@ -645,6 +679,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     presenceChannel: presenceChannelRef.current,
     getAudibleIds,
     peerGains,
+    activeSpeakerId,
+    mirroredBoard,
+    mirroredDwell,
+    mirroredSelection,
+    sendData,
     startCallWithContact,
     startCallToStudent,
     startCallWithPeople,
@@ -658,7 +697,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
-    game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains,
+    game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains, activeSpeakerId,
+    mirroredBoard, mirroredDwell, mirroredSelection, sendData,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 

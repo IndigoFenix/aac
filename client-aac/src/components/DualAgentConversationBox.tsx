@@ -32,6 +32,7 @@ import {
   MonitorSmartphone,
 } from "lucide-react";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
+import { EnergyBar } from "@/components/EnergyBar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useSocialBot } from "@/contexts/SocialBotContext";
 import { useCallOptional } from "@/contexts/CallContext";
@@ -136,6 +137,7 @@ export function DualAgentConversationBox({
     muteState,
     setMuteState,
     lastModeChange,
+    budget,
     videoCaptureEnabled,
     setVideoCaptureEnabled,
     initialize,
@@ -375,6 +377,17 @@ export function DualAgentConversationBox({
       <div className="px-4 py-2">
           {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
+            {/* Token-budget energy bar — left of the cave (right in RTL: it's the
+                first flex child, and the header runs under dir="rtl", so it lands
+                on the right automatically). Only shown once the server has pushed
+                a budget level (economizing sessions). */}
+            {budget && (
+              <EnergyBar
+                percent={budget.percent}
+                band={budget.band}
+                label={`${t('aac.energyBar')}: ${budget.percent}%`}
+              />
+            )}
             {/* Cave (sleep toggle) — left of avatar (right in RTL). Wrapped in a
                 full-height column so its name tag anchors to the header row's
                 bottom while the cave image stays vertically centered. */}

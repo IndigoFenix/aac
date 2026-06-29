@@ -363,6 +363,7 @@ export const de: Translations = {
   },
 
   aac: {
+    energyBar: "KI-Energie",
     voiceLive: "Hört zu",
     glyph: {
       person: "Person",
@@ -758,6 +759,24 @@ export const de: Translations = {
   },
 
   call: {
+    layout: {
+      label: "Layout",
+      spotlight: "Im Fokus",
+      grid: "Raster",
+      compact: "Kompakt",
+      auto: "Auto",
+    },
+    viewBoard: "Ihr Board ansehen",
+    viewVideo: "Video ansehen",
+    interact: "Beim Drücken helfen",
+    interactOn: "Hilfe beenden",
+    shareScreen: "Bildschirm teilen",
+    stopShareScreen: "Teilen beenden",
+    screenLabel: "Bildschirm",
+    guidedPress: "Geführter Druck",
+    bigVideo: "Großes Video",
+    smallVideo: "Kleines Video",
+    noOneElse: "Es ist noch niemand sonst da",
     incoming: "Eingehender Anruf",
     accept: "Ja",
     decline: "Nein",

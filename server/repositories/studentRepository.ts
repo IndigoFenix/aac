@@ -134,6 +134,21 @@ export class StudentRepository {
   }
 
   /**
+   * Persist the multi-window budget-meter state (leaky-bucket {drain,asOf} per
+   * window). Best-effort: a failure is logged but never breaks the live session
+   * — the in-memory meter keeps governing; only cross-session continuity is at
+   * risk. Not sensitive, so it bypasses the external-storage extraction path.
+   * See planning-docs/aac-budget-tiers-spec.md §7.
+   */
+  async updateBudgetMeters(studentId: string, state: Record<string, unknown>): Promise<void> {
+    try {
+      await db.update(students).set({ budgetMeters: state }).where(eq(students.id, studentId));
+    } catch (err) {
+      console.error(`[StudentRepository] updateBudgetMeters(${studentId}) failed:`, err);
+    }
+  }
+
+  /**
    * Get all AAC users linked to a specific user, with AAC settings
    */
   async getStudentsWithAacSettingsByUserId(

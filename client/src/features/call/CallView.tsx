@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, LayoutDashboard, Hand } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { GameJsonEditor } from "./GameJsonEditor";
+import { MirroredBoardView } from "./MirroredBoardView";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
 import { cn } from "@/lib/utils";
 import CallGameSurface from "@shared/social-world/CallGameSurface";
+import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
+import { pickSpotlightId, VIDEO_LAYOUT_MODES, type VideoLayoutMode } from "@shared/call/video-layout";
 import type { CallGame } from "@shared/realtime-events";
+import type { BoardButton } from "@shared/schema";
 import { useCall } from "./CallContext";
 import { fetchSocialGameOptions } from "./api";
 
@@ -85,8 +89,21 @@ export function CallView() {
     publishPresence,
     presenceChannel,
     peerGains,
+    activeSpeakerId,
+    mirroredBoard,
+    mirroredDwell,
+    mirroredSelection,
+    sendData,
   } = useCall();
   const [invitePopupOpen, setInvitePopupOpen] = useState(false);
+  // Multi-participant video layout (spotlight / grid / compact / auto) + the
+  // pinned prominent peer (click a tile to pin).
+  const [layoutMode, setLayoutMode] = useState<VideoLayoutMode>("spotlight");
+  const [pinnedPeer, setPinnedPeer] = useState<string | null>(null);
+  // "See their screen": swap the main area to a read-only render of the
+  // student's mirrored board. "Interact" arms facilitator presses on it.
+  const [viewBoard, setViewBoard] = useState(false);
+  const [interactArmed, setInteractArmed] = useState(false);
   // Live game-JSON editor (testing affordance): edit the running game and reload
   // it for everyone in the call.
   const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
@@ -94,15 +111,6 @@ export function CallView() {
   // Reliable NPC-conversation transport (call:npc) + the brain WS URL.
   const npcTransport = useMemo(() => ({ send: sendNpc, subscribe: npcHub.subscribe.bind(npcHub) }), [sendNpc, npcHub]);
   const npcBrainWsUrl = useMemo(() => resolveCallWsUrl("/ws/social-bot"), []);
-
-  const remoteEntry = useMemo(() => {
-    const first = remoteStreams.entries().next();
-    return first.done ? null : first.value;
-  }, [remoteStreams]);
-  const remoteStream = remoteEntry?.[1] ?? null;
-  // Proximity volume for the displayed peer (1 unless they're fading at the edge
-  // of the circle); applied to the remote <video> below.
-  const remoteGain = remoteEntry ? peerGains.get(remoteEntry[0]) ?? 1 : 1;
 
   // During a game the peers move into a video SIDEBAR (the call panel is the game
   // panel). In a conversation-circle game it shows only the local circle; a plain
@@ -146,35 +154,48 @@ export function CallView() {
     setGameMenuOpen(false);
   }, [startGame]);
 
-  // Callback refs: fire both when the stream changes AND when the (conditionally
-  // mounted) <video> attaches, so srcObject is set even if the stream arrived
-  // before the element mounted.
-  // Output mute: silence ALL audio this window plays (the remote peer + the game's
-  // NPC voices). Distinct from the mic toggle, which mutes what we SEND. Handy for
-  // testing on one machine (mute one window, listen on the other) without feedback.
+  // Output mute: silence ALL audio this window plays (the remote peers + the
+  // game's NPC voices). Distinct from the mic toggle, which mutes what we SEND.
+  // Handy for testing on one machine (mute one window, listen on the other)
+  // without feedback. VideoTileLayout applies it per tile.
   const [outputMuted, setOutputMuted] = useState(false);
-
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  const attachRemote = useCallback((el: HTMLVideoElement | null) => {
-    remoteVideoRef.current = el;
-    if (el) {
-      if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
-      el.volume = remoteGain;
-      el.muted = outputMuted;
-    }
-  }, [remoteStream, remoteGain, outputMuted]);
-  // Keep volume synced as the peer moves through the hysteresis band, and output
-  // mute synced when toggled.
-  useEffect(() => {
-    if (remoteVideoRef.current) remoteVideoRef.current.volume = remoteGain;
-  }, [remoteGain]);
-  useEffect(() => {
-    if (remoteVideoRef.current) remoteVideoRef.current.muted = outputMuted;
-  }, [outputMuted]);
 
   const attachLocal = useCallback((el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== localStream) el.srcObject = localStream;
   }, [localStream]);
+
+  // Tiles for the multi-participant layout (plain video, no game). Speaker
+  // highlight follows the active-speaker detector; gain follows proximity.
+  const videoTiles: VideoTileData[] = useMemo(
+    () => Array.from(remoteStreams.entries()).map(([personId, stream]) => {
+      const p = participants.find((x) => x.personId === personId);
+      return {
+        personId,
+        stream,
+        name: p?.name ?? null,
+        photoUrl: p?.photo ?? null,
+        gain: peerGains.get(personId) ?? 1,
+        muted: outputMuted,
+        speaking: personId === activeSpeakerId,
+      };
+    }),
+    [remoteStreams, participants, peerGains, outputMuted, activeSpeakerId],
+  );
+  const spotlightId = useMemo(
+    () => pickSpotlightId(videoTiles.map((x) => x.personId), { manualPin: pinnedPeer, activeSpeakerId }),
+    [videoTiles, pinnedPeer, activeSpeakerId],
+  );
+
+  // Facilitator press: the clinician pressed a button on the mirrored board.
+  // Routed to the AAC over the reliable channel; the student's own pipeline
+  // voices it (student-voice TTS) and lands it in their sentence builder.
+  const facilitate = useCallback((button: BoardButton, spokenText: string) => {
+    sendData({ k: "facilitator-press", button, spokenText, at: Date.now() });
+  }, [sendData]);
+
+  // The board mirror is only meaningful for a 1:1 student call; offer it when one
+  // has arrived. Dropping out of board view also disarms Interact.
+  const canViewBoard = !!mirroredBoard;
 
   if (callState === "idle") return null;
 
@@ -253,6 +274,28 @@ export function CallView() {
         </div>
       )}
 
+      {/* Video layout picker — when viewing the multi-participant video (not the
+          mirrored board, not a game). Click a mode to re-arrange the tiles. */}
+      {isActive && !game && !viewBoard && videoTiles.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2 px-4 pt-2 pb-1">
+          <span className="me-1 text-xs uppercase tracking-wide text-white/60">{t("call.layout.label")}</span>
+          {VIDEO_LAYOUT_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setLayoutMode(m)}
+              aria-pressed={layoutMode === m}
+              className={cn(
+                "rounded-full px-3 py-1 text-sm font-medium transition",
+                layoutMode === m ? "bg-amber-400 text-gray-900" : "bg-white/15 text-white hover:bg-white/25",
+              )}
+            >
+              {t(`call.layout.${m}`)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Remote / status area. During a game it's a row: [peer sidebar][game]. */}
       <div className="relative flex-1 min-h-0 flex items-stretch">
         {/* Peer video sidebar — only during a game (start side; self-view is at
@@ -277,17 +320,34 @@ export function CallView() {
           </div>
         )}
 
-        {/* Main area: the remote feed (plain call) or the game surface. */}
+        {/* Main area: the mirrored board, the multi-participant video layout, or
+            the game surface. */}
         <div className="relative flex-1 min-h-0 flex items-center justify-center">
-          {isActive && remoteStream && !game ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC call stream; captions cannot be supplied for a real-time peer feed
-            <video
-              ref={attachRemote}
-              autoPlay
-              playsInline
-              className="h-full w-full object-contain"
-              aria-label={activeContactName ?? t("call.remoteVideo")}
-            />
+          {isActive && !game ? (
+            viewBoard && mirroredBoard ? (
+              <MirroredBoardView
+                board={mirroredBoard.board}
+                pageId={mirroredBoard.pageId}
+                dwellId={mirroredDwell}
+                selection={mirroredSelection}
+                interactive={interactArmed}
+                onPress={facilitate}
+                className="h-full w-full"
+              />
+            ) : videoTiles.length > 0 ? (
+              <VideoTileLayout
+                tiles={videoTiles}
+                mode={layoutMode}
+                spotlightId={spotlightId}
+                onPin={(id) => setPinnedPeer((cur) => (cur === id ? null : id))}
+                t={t}
+                className="h-full w-full"
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-xl font-medium">{activeContactName ?? t("call.title")}</div>
+              </div>
+            )
           ) : (
             !game && (
               <div className="flex flex-col items-center gap-4">
@@ -426,6 +486,38 @@ export function CallView() {
         >
           {outputMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </Button>
+
+        {/* See the student's screen (their mirrored board) instead of video. Only
+            offered once a mirror has arrived (a 1:1 student call). */}
+        {isActive && !game && canViewBoard && (
+          <Button
+            type="button"
+            size="icon"
+            variant={viewBoard ? "default" : "secondary"}
+            onClick={() => { setViewBoard((v) => { if (v) setInteractArmed(false); return !v; }); }}
+            aria-label={viewBoard ? t("call.viewVideo") : t("call.viewBoard")}
+            aria-pressed={viewBoard}
+            data-testid="call-toggle-view-board"
+          >
+            <LayoutDashboard className="w-5 h-5" />
+          </Button>
+        )}
+
+        {/* Arm facilitator presses on the mirrored board (guided communication).
+            Only while viewing the board. */}
+        {isActive && !game && viewBoard && (
+          <Button
+            type="button"
+            size="icon"
+            variant={interactArmed ? "default" : "secondary"}
+            onClick={() => setInteractArmed((a) => !a)}
+            aria-label={interactArmed ? t("call.interactOn") : t("call.interact")}
+            aria-pressed={interactArmed}
+            data-testid="call-toggle-interact"
+          >
+            <Hand className="w-5 h-5" />
+          </Button>
+        )}
 
         {/* Start (open the game picker) / end the social game on the call. */}
         {isActive && (

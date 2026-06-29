@@ -235,6 +235,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [muteState, setMuteStateImpl] = useState<"unmuted" | "muted">("unmuted");
   // Last AI-initiated mode change — used to flash the "AI: <mode>" indicator
   const [lastModeChange, setLastModeChange] = useState<{ mode: "companion" | "facilitator" | "standby"; reason?: string; source: "ai"; at: number } | null>(null);
+  // AAC token-budget level for the in-client energy bar (binding window % + band).
+  // null until the server sends the first budget_update (it only does so for
+  // economizing sessions, which are the ones that track a budget).
+  const [budget, setBudget] = useState<{ percent: number; band: "high" | "moderate" | "low"; window: string | null } | null>(null);
 
   // Response mode
   const [responseMode, setResponseModeState] = useState<"fast" | "analyze">("fast");
@@ -844,6 +848,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // context so the data-flow gate (Phase 2) and avatar follow.
           if (msg.data?.level) {
             onSetFidelityRef.current?.(msg.data.level, msg.data.reason);
+          }
+          break;
+
+        case "budget_update":
+          // AAC token-budget level for the in-client energy bar.
+          if (typeof msg.data?.percent === "number") {
+            setBudget({ percent: msg.data.percent, band: msg.data.band, window: msg.data.window ?? null });
           }
           break;
 
@@ -2032,6 +2043,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     muteState,
     setMuteState,
     lastModeChange,
+
+    // AAC token-budget level for the energy bar (null until first push).
+    budget,
 
     // Response mode
     responseMode,

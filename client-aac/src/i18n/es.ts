@@ -363,6 +363,7 @@ export const es: Translations = {
   },
 
   aac: {
+    energyBar: "Energía de la IA",
     voiceLive: "Escuchando",
     glyph: {
       person: "Persona",
@@ -758,6 +759,24 @@ export const es: Translations = {
   },
 
   call: {
+    layout: {
+      label: "Diseño",
+      spotlight: "Destacado",
+      grid: "Cuadrícula",
+      compact: "Compacto",
+      auto: "Automático",
+    },
+    viewBoard: "Ver su tablero",
+    viewVideo: "Ver vídeo",
+    interact: "Ayudar a pulsar",
+    interactOn: "Dejar de ayudar",
+    shareScreen: "Compartir pantalla",
+    stopShareScreen: "Dejar de compartir",
+    screenLabel: "Pantalla",
+    guidedPress: "Pulsación guiada",
+    bigVideo: "Vídeo grande",
+    smallVideo: "Vídeo pequeño",
+    noOneElse: "Aún no hay nadie más aquí",
     incoming: "Llamada entrante",
     accept: "Sí",
     decline: "No",

@@ -146,6 +146,20 @@ export interface VarSpec {
   /** How to seed this var across a grid at creation (grid mode only). Default
    *  'flat' = `initial` everywhere. */
   init?: 'flat' | 'bowl' | 'noise' | 'centerBlob';
+  /** INTEGER-LEVEL var (the idle-safe baseline): the value is always a whole
+   *  number in [min,max] — the author picks the resolution via max (e.g. 0–15 or
+   *  0–255). Transport moves WHOLE UNITS down a gradient and stops exactly when no
+   *  gap ≥ 2 remains, so the field reaches crisp rest with no asymptotic ε-tail
+   *  (unlike continuous scalars). Prefer this + timers for anything idle-safe;
+   *  keep float scalars for non-idle-safe physics. */
+  int?: boolean;
+  /** A COMPUTED flow-accumulation field (a river network) — the engine fills this
+   *  var, rules can't write it. It's the static "stabilise in motion" model: each
+   *  tile's value = its own `source` + everything draining into it from upslope,
+   *  following `potential` (height) downhill; `block` tiles (stone) don't drain.
+   *  Recomputed only when `potential` changes (sculpt/erosion), so a river carries
+   *  a constant flow with ZERO per-step processing. (Sinks accumulate → lakes.) */
+  flow?: { potential: string; source?: number; block?: string };
 }
 
 export interface ClockSpec {

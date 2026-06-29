@@ -143,7 +143,7 @@ resource "aws_acm_certificate" "aac_updates" {
   count    = var.enable_aac_auto_update && var.domain_name != "" ? 1 : 0
   provider = aws.us_east_1
 
-  domain_name       = "${var.aac_update_subdomain}.${var.domain_name}"
+  domain_name       = "${local.aac_update_subdomain_effective}.${var.domain_name}"
   validation_method = "DNS"
 
   lifecycle {
@@ -205,7 +205,7 @@ resource "aws_cloudfront_distribution" "aac_updates" {
 
   # SAN limited to the configured subdomain. Empty domain → no alias,
   # clients reach the distribution via its default *.cloudfront.net URL.
-  aliases = var.domain_name != "" ? ["${var.aac_update_subdomain}.${var.domain_name}"] : []
+  aliases = var.domain_name != "" ? ["${local.aac_update_subdomain_effective}.${var.domain_name}"] : []
 
   origin {
     domain_name              = aws_s3_bucket.aac_updates[0].bucket_regional_domain_name
@@ -274,7 +274,7 @@ resource "aws_route53_record" "aac_updates" {
   count = var.enable_aac_auto_update && var.domain_name != "" ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = "${var.aac_update_subdomain}.${var.domain_name}"
+  name    = "${local.aac_update_subdomain_effective}.${var.domain_name}"
   type    = "A"
 
   alias {

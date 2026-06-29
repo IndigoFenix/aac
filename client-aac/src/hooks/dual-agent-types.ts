@@ -385,6 +385,10 @@ export interface UseDualAgentReturn {
    *  are mapped to companion/facilitator in the interaction_mode_changed handler). */
   lastModeChange: { mode: 'companion' | 'facilitator' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
+  /** AAC token-budget level for the energy bar (binding window % + band), or
+   *  null when no budget is tracked / before the first server push. */
+  budget: { percent: number; band: 'high' | 'moderate' | 'low'; window: string | null } | null;
+
   // Response mode
   responseMode: 'fast' | 'analyze';
   setResponseMode: (mode: 'fast' | 'analyze') => void;

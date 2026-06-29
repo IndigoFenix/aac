@@ -12,7 +12,7 @@
 // Everything here is JSON-serializable so the runtime can live on either
 // side of a transport without change.
 
-import type { GoalNodeType } from "./types.js";
+import type { DemoCue, GoalNodeType } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Space → runtime
@@ -61,6 +61,16 @@ export type SpaceCommand =
   | { type: "clear-obstacle"; nodeId: string }
   /** Remove a collected item instance from the world (fly-to-inventory). */
   | { type: "collect-item"; instanceId: string }
+  /** Play an observe beat's demonstration and label it with the glyph. The space
+   *  animates the cues (scale/move/spawn/…) and shows the glyph; the cue runner
+   *  is renderer-side. */
+  | {
+      type: "demonstrate";
+      nodeId: string;
+      targetGlyph: string;
+      contrastGlyph?: string;
+      cues: DemoCue[];
+    }
   /** Big win moment. */
   | { type: "celebrate"; scope: "game" };
 
@@ -90,5 +100,8 @@ export type RuntimeEvent =
   | { type: "obstacle-locked"; nodeId: string; prompt?: string }
   | { type: "guard-cleared"; nodeId: string }
   | { type: "zone-entered"; zoneId: string; hint?: string }
+  /** An observe beat's demonstration was shown — the AI companion can narrate
+   *  it ("look — the ball got big!") and a report can log the taught glyph. */
+  | { type: "demonstration-shown"; nodeId: string; targetGlyph: string }
   | { type: "objectives-changed"; objectives: ObjectiveSummary[] }
   | { type: "game-won" };

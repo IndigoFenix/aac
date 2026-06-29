@@ -200,6 +200,11 @@ export default function GoalTreePlayerApp() {
           choiceRef.current = null;
           setChoice(null);
           break;
+        case "demonstrate":
+          // Phase-0: announce the taught glyph. The cue runner (animating
+          // scale/move/spawn in-world) is the next rendering step.
+          showToast(`👁 ${command.targetGlyph}`, "intro");
+          break;
         case "clear-obstacle":
         case "celebrate":
           break;
@@ -284,6 +289,13 @@ export default function GoalTreePlayerApp() {
           break;
         case "zone-entered":
           if (event.hint) showToast(event.hint, "intro");
+          break;
+        case "demonstration-shown":
+          sendToParent({
+            type: "player_action",
+            action: "demonstration_shown",
+            meta: { nodeId: event.nodeId, targetGlyph: event.targetGlyph },
+          });
           break;
       }
     }

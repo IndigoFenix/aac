@@ -64,8 +64,20 @@ locals {
 
   # CIDR blocks
   vpc_cidr = var.environment == "prod" ? "10.0.0.0/16" : "10.1.0.0/16"
-  
+
   azs = slice(data.aws_availability_zones.available.names, 0, 2)
+
+  # AAC auto-update feed subdomain. Prod owns the canonical subdomain (e.g.
+  # "updates"); every non-prod environment gets a per-env subdomain
+  # ("updates-staging") so their separate Terraform states don't fight over the
+  # same Route53 record + ACM cert in the shared hosted zone. The desktop client
+  # only ever polls the prod URL (baked into electron-builder.yml), so non-prod
+  # feeds exist purely for testing the update flow in isolation.
+  aac_update_subdomain_effective = (
+    var.environment == "prod"
+    ? var.aac_update_subdomain
+    : "${var.aac_update_subdomain}-${var.environment}"
+  )
 }
 
 data "aws_availability_zones" "available" {

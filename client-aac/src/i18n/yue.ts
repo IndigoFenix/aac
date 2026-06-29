@@ -363,6 +363,7 @@ export const yue: Translations = {
   },
 
   aac: {
+    energyBar: "AI 能量",
     voiceLive: "聆聽緊",
     glyph: {
       person: "人",
@@ -758,6 +759,24 @@ export const yue: Translations = {
   },
 
   call: {
+    layout: {
+      label: "版面",
+      spotlight: "聚焦",
+      grid: "格仔",
+      compact: "精簡",
+      auto: "自動",
+    },
+    viewBoard: "睇佢哋嘅板",
+    viewVideo: "睇片",
+    interact: "幫手撳",
+    interactOn: "停止幫手",
+    shareScreen: "分享螢幕",
+    stopShareScreen: "停止分享",
+    screenLabel: "螢幕",
+    guidedPress: "引導撳掣",
+    bigVideo: "大片",
+    smallVideo: "細片",
+    noOneElse: "仲未有其他人",
     incoming: "嚟電",
     accept: "好",
     decline: "唔好",

@@ -205,7 +205,7 @@ output "aac_update_url" {
   description = "Public HTTPS URL the desktop client polls for `latest.yml`. Set as `publish.url` in electron-builder.yml. Falls back to the raw CloudFront domain when no custom domain is configured."
   value = var.enable_aac_auto_update ? (
     var.domain_name != ""
-    ? "https://${var.aac_update_subdomain}.${var.domain_name}/"
+    ? "https://${local.aac_update_subdomain_effective}.${var.domain_name}/"
     : "https://${aws_cloudfront_distribution.aac_updates[0].domain_name}/"
   ) : null
 }

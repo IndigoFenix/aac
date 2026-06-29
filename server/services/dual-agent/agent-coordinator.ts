@@ -158,6 +158,17 @@ import {
   type EnergyConfig,
   type EnergyBand,
 } from "@shared/aac/energy-meter";
+import {
+  initBudget,
+  applyBudgetCharge,
+  bindingEnergy,
+  worseBand,
+  type BudgetState,
+  type BudgetWindow,
+} from "@shared/aac/budget-meter";
+import { windowsForTier, tierByKey, type BudgetTier } from "@shared/aac/budget-tiers";
+import { studentRepository } from "../../repositories/studentRepository";
+import { onLedgerCharge } from "../credit-ledger";
 import type { ClientConfig } from "./client-config";
 import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
 import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, findMatchingVoice, growVoiceGalleryForEntity, penalizeVoiceMatch, getKnownPeopleForStudent, getVoicePitchProfiles, type FaceMatchResult, type VoiceMatchResult, type KnownPerson, type EntityType, type VoicePitchProfile } from "../biometric/recognition-service";
@@ -933,6 +944,45 @@ export class AgentCoordinator {
   private get energyMeterEnabled(): boolean {
     return this.economize;
   }
+
+  /** Persistent multi-window budget meter (the layer above the per-session
+   *  energy meter). Survives across sessions, bounds MONTHLY spend, and its
+   *  binding (tightest) window drives the throttle ladder. Loaded from
+   *  students.budgetMeters at init, charged alongside the energy meter, and
+   *  persisted (debounced + on close). Active whenever economizing.
+   *  See planning-docs/aac-budget-tiers-spec.md. */
+  private budgetTier: BudgetTier = tierByKey(undefined);
+  private budgetWindows: BudgetWindow[] = [];
+  private budgetState: BudgetState = {};
+  private budgetDirty = false;
+  private lastBudgetSaveAt = 0;
+  /** Last budget binding-band we told the Observer, so a [BUDGET] note fires
+   *  only on a band change (cheap), mirroring the [ENERGY] pattern. */
+  private lastBudgetBand: EnergyBand | null = null;
+  /** Unsubscribe from the ledger charge hook (every session charge → budget). */
+  private budgetChargeUnsub: (() => void) | null = null;
+  /** Last binding budget % pushed to the client's energy bar; -1 = never sent.
+   *  Gates the push so we only message on an actual integer-% change. */
+  private lastSentBudgetPercent = -1;
+  /** Debounce floor for persisting budget state on a charge (a final flush
+   *  always runs on cleanup, so an in-flight debounce can't lose the tail). */
+  private static readonly BUDGET_SAVE_MIN_INTERVAL_MS = 30_000;
+  /** The meter ACCUMULATES + PERSISTS whenever economizing — harmless, and it
+   *  builds the real per-student spend curve we validate tiers against before
+   *  enabling the throttle fleet-wide. */
+  private get budgetMeterEnabled(): boolean {
+    return this.economize;
+  }
+  /** The THROTTLE effects (idle→sleep tightening, economy-backend force, and the
+   *  [BUDGET] Observer notes) are gated behind a master rollout flag, since they
+   *  change live behavior. DEFAULT OFF: the meter still tracks, but nothing
+   *  throttles until AAC_BUDGET_METER is enabled per-deployment (accepts
+   *  "true"/"1"/"on"). Validate the cost delta, then consider defaulting on. */
+  private get budgetThrottleEnabled(): boolean {
+    if (!this.budgetMeterEnabled) return false;
+    const v = process.env.AAC_BUDGET_METER?.toLowerCase();
+    return v === "true" || v === "1" || v === "on";
+  }
   /** Sustained perception attention the Observer controls (set_visual_attention /
    *  set_audio_attention). "text" = cheap text-derived input (scene_state / STT);
    *  "live" = direct camera frames / raw audio. Mapped to clientConfig
@@ -1385,6 +1435,8 @@ export class AgentCoordinator {
     this.stopPingTimer();
     this.stopIdleWatchdog();
     this.stopEnergyTimer();
+    // Persist the final budget tail so the monthly cap carries across sessions.
+    this.flushBudget();
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     if (this.monitorCallDedupTimer) clearTimeout(this.monitorCallDedupTimer);
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
@@ -1408,9 +1460,18 @@ export class AgentCoordinator {
     // conversation. Fire-and-forget; the Monitor pipeline reads from
     // the DB so it doesn't depend on the Live agents staying open.
     // Mirrors legacy LiveRelay.handleSessionClose.
-    this.runFinalMonitorPass().catch(err => {
-      console.error("[AgentCoordinator] Final monitor pass failed:", err);
-    });
+    // Keep the budget charge hook alive until the final pass finishes so the
+    // session-summary HTTP charge is captured too, then unsubscribe. The
+    // late charge persists via recordBudgetDrain → maybePersistBudget (the
+    // debounce is bypassed once closing).
+    this.runFinalMonitorPass()
+      .catch(err => {
+        console.error("[AgentCoordinator] Final monitor pass failed:", err);
+      })
+      .finally(() => {
+        this.budgetChargeUnsub?.();
+        this.budgetChargeUnsub = null;
+      });
 
     // Leave any group conversation room so peers stop delivering to a dead
     // session (and get a "left" notice).
@@ -1577,12 +1638,23 @@ export class AgentCoordinator {
    *  the budget drains so a costly session goes cold faster during quiet gaps.
    *  Returns 1 when the energy meter is disabled (preserves legacy timing). */
   private idleThresholdScale(): number {
-    if (!this.economyObserverEnabled || !this.energyMeterEnabled) return 1;
-    const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
+    // Take the TIGHTER of two independent signals, so whichever budget is more
+    // constrained governs how soon a quiet session goes cold:
+    //  - legacy per-session energy (only behind AAC_OBSERVER_COST_SAVING), and
+    //  - the persistent multi-window budget (active whenever economizing — this
+    //    is what makes idle→sleep a real cost lever by default).
     // low → sleep ~3x sooner (300s→~100s), moderate → ~1.7x sooner (300s→180s),
-    // high → unchanged. Tightening rest+sleep together keeps the rest→sleep
-    // ordering intact. Mapping lives in idle-watchdog (pure, unit-tested).
-    return idleThresholdScaleForBand(energyBand(pct));
+    // high → unchanged (scale 1). At healthy budget this is inert. Mapping lives
+    // in idle-watchdog (pure, unit-tested).
+    const now = Date.now();
+    let scale = 1;
+    if (this.economyObserverEnabled && this.energyMeterEnabled) {
+      scale = Math.min(scale, idleThresholdScaleForBand(energyBand(energyPercent(this.energy, now, this.energyConfig))));
+    }
+    if (this.budgetThrottleEnabled) {
+      scale = Math.min(scale, idleThresholdScaleForBand(bindingEnergy(this.budgetState, this.budgetWindows, now).band));
+    }
+    return scale;
   }
 
   private maybeIdleTransition(): void {
@@ -2332,6 +2404,28 @@ export class AgentCoordinator {
     this.lastReportedEnergyPercent = 100;
     this.drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
     this.startEnergyTimer();
+    // Persistent multi-window budget meter: resolve the tier and LOAD any
+    // carried-over state from students.budgetMeters (regen is applied lazily on
+    // every read, so a load after a quiet stretch already reflects recovery).
+    // Empty/missing state starts every window full.
+    this.budgetTier = tierByKey((studentRow?.aacSettings as any)?.budgetTier);
+    this.budgetWindows = windowsForTier(this.budgetTier);
+    const persisted = (studentRow as any)?.budgetMeters as BudgetState | undefined;
+    this.budgetState = persisted && Object.keys(persisted).length
+      ? persisted
+      : initBudget(this.budgetWindows, Date.now());
+    this.budgetDirty = false;
+    this.lastBudgetSaveAt = Date.now();
+    this.lastBudgetBand = null;
+    // Feed the budget meter from the universal ledger hook: EVERY charge for
+    // this session (live agents, Monitor HTTP, TTS, in-session analysis) lands
+    // in recordBudgetDrain, so the meter reflects true total spend — not just
+    // the live-agent slice the energy meter sees.
+    this.budgetChargeUnsub?.();
+    this.budgetChargeUnsub = this.sessionId
+      ? onLedgerCharge(this.sessionId, (credits) => this.recordBudgetDrain(credits))
+      : null;
+    this.lastSentBudgetPercent = -1;
     // Initial attention mirrors the clientConfig flags below. The Observer can
     // raise/lower these per modality at runtime via set_*_attention.
     //  - visual: cheap scene-state text when supported, else direct frames.
@@ -2395,6 +2489,9 @@ export class AgentCoordinator {
         seizure: buildClientSeizureConfig(studentRow?.aacSettings),
       }),
     });
+
+    // Seed the client's energy bar with the loaded budget level right away.
+    this.maybePushBudget(Date.now());
 
     // Deliver the apps lists to the client. The client populates its Apps
     // board ONLY from a session_snapshot (useLiveSession's session_snapshot
@@ -8413,6 +8510,74 @@ export class AgentCoordinator {
   }
 
   /**
+   * Feed the persistent multi-window budget meter. Unlike the per-session
+   * energy meter (live agents only, for Observer pacing), this tracks TOTAL
+   * session spend, so it's driven by the universal `onLedgerCharge` hook —
+   * EVERY charge that hits the ledger (live agents, Monitor HTTP, TTS, and any
+   * in-session analysis) lands here. Energy paces within the session; the
+   * budget bounds the month.
+   */
+  private recordBudgetDrain(credits: number): void {
+    if (!this.budgetMeterEnabled || !(credits > 0)) return;
+    const now = Date.now();
+    this.budgetState = applyBudgetCharge(this.budgetState, this.budgetWindows, credits, now);
+    this.budgetDirty = true;
+    this.maybePersistBudget(now);
+    this.reportBudget(now);
+    this.maybePushBudget(now);
+  }
+
+  /** Push the binding (tightest) window % + band to the client's energy bar,
+   *  but only when the integer % changed since the last push (charges are
+   *  frequent; the bar is approximate). Sent whenever economizing — it's an
+   *  informational display, independent of the AAC_BUDGET_METER throttle gate.
+   *  A non-economizing session never tracks a budget, so it gets no bar. */
+  private maybePushBudget(now: number): void {
+    if (!this.budgetMeterEnabled) return;
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    if (b.percent === this.lastSentBudgetPercent) return;
+    this.lastSentBudgetPercent = b.percent;
+    this.send({ type: "budget_update", data: { percent: b.percent, band: b.band, window: b.window } });
+  }
+
+  /** Persist budget state at most every BUDGET_SAVE_MIN_INTERVAL_MS while a
+   *  session runs (a charge sets `budgetDirty`). The debounce is bypassed once
+   *  closing/closed so a late teardown charge (e.g. the session-summary HTTP
+   *  call) still persists. `flushBudget()` also runs on cleanup. */
+  private maybePersistBudget(now: number): void {
+    if (!this.budgetDirty || !this.studentId) return;
+    const closing = this.state === "closing" || this.state === "closed";
+    if (!closing && now - this.lastBudgetSaveAt < AgentCoordinator.BUDGET_SAVE_MIN_INTERVAL_MS) return;
+    this.lastBudgetSaveAt = now;
+    this.budgetDirty = false;
+    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState);
+  }
+
+  /** Force-persist the latest budget state (session close). Fire-and-forget;
+   *  the repository swallows + logs failures so cleanup never throws. */
+  private flushBudget(): void {
+    if (!this.budgetDirty || !this.studentId) return;
+    this.budgetDirty = false;
+    this.lastBudgetSaveAt = Date.now();
+    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState);
+  }
+
+  /** The governing throttle band: the WORSE of the per-session energy band and
+   *  the persistent budget's binding-window band. So a session that's fine on
+   *  its own short-term energy still throttles when the month's budget is spent,
+   *  and vice-versa. Returns the band plus the binding budget window (for the
+   *  Observer note). Advisory inputs only — gates nothing mechanically here. */
+  private governingBand(now: number): { band: EnergyBand; budgetWindow: string | null; budgetPercent: number } {
+    const energyPct = energyPercent(this.energy, now, this.energyConfig);
+    const energyB = energyBand(energyPct);
+    if (!this.budgetThrottleEnabled) {
+      return { band: energyB, budgetWindow: null, budgetPercent: 100 };
+    }
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    return { band: worseBand(b.band, energyB), budgetWindow: b.window, budgetPercent: b.percent };
+  }
+
+  /**
    * Recompute energy and, when warranted, push a cheap [ENERGY] context note to
    * the Observer. Reports on (a) a band change — with the band's guidance line —
    * and (b) a recovery of >=1% since the last report — a plain percentage so the
@@ -8451,7 +8616,32 @@ export class AgentCoordinator {
     // energy, force the cheap economy backend regardless of the Observer's
     // choice; once energy recovers out of the low band, release the force so
     // the Observer may go live again on its own (no auto-flip, to avoid churn).
-    this.applyEnergyThrottle(band);
+    // Driven by the GOVERNING band (worse of session energy + persistent
+    // budget), so a spent monthly budget forces economy even when the session's
+    // own short-term energy looks fine.
+    this.applyEnergyThrottle(this.governingBand(now).band);
+  }
+
+  /**
+   * Tell the Observer when the persistent budget's binding window crosses a
+   * band (cheap — only on change, mirroring [ENERGY]). This is the cross-session
+   * signal the per-session [ENERGY] note can't carry: "you're low on your 3-day
+   * budget" even at the start of a fresh session. Advisory; the real throttle
+   * (idle scaling, economy force) is applied separately via governingBand.
+   */
+  private reportBudget(now: number): void {
+    if (!this.budgetThrottleEnabled) return;
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    if (b.band === this.lastBudgetBand) return;
+    this.lastBudgetBand = b.band;
+    if (b.band !== "high" && b.window) {
+      this.observer?.sendContextInjection(
+        `[BUDGET] ${b.percent}% left on your ${b.window} budget — ${AgentCoordinator.budgetGuidance(b.band)}`,
+      );
+    }
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      flowNote("COORDINATOR", `Budget ${b.percent}% (${b.band}) binding=${b.window ?? "none"}`);
+    });
   }
 
   /** Enforce the low-energy economy floor. Idempotent; safe to call often. */
@@ -8474,7 +8664,14 @@ export class AgentCoordinator {
     this.stopEnergyTimer();
     if (!this.energyMeterEnabled) return;
     this.energyTimer = setInterval(
-      () => this.reportEnergy(Date.now(), { fromCharge: false }),
+      () => {
+        const now = Date.now();
+        this.reportEnergy(now, { fromCharge: false });
+        // Passive regen can cross a budget band (recovery during a quiet
+        // stretch) with no charge to trigger it — report + refresh the bar.
+        this.reportBudget(now);
+        this.maybePushBudget(now);
+      },
       AgentCoordinator.ENERGY_TICK_MS,
     );
   }
@@ -8601,6 +8798,17 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       case "high": return "Observe freely.";
       case "moderate": return "Favor the cheap text signals; pull a real image/audio only when it genuinely matters.";
       case "low": return "Minimal observation — lean on text, rest sooner, wake only on clear engagement. NEVER skip a safety concern.";
+    }
+  }
+
+  /** Guidance for the persistent budget's binding window. Distinct from
+   *  energyGuidance: this is about the longer-horizon spend (the month), so it
+   *  leans harder on rationing the expensive Live attention and resting. */
+  private static budgetGuidance(band: EnergyBand): string {
+    switch (band) {
+      case "high": return "Plenty of budget.";
+      case "moderate": return "Pace yourself — favor text, keep Live attention for moments that matter.";
+      case "low": return "Budget nearly spent — stay on cheap text, rest sooner, reserve Live for direct engagement. NEVER skip a safety concern.";
     }
   }
 

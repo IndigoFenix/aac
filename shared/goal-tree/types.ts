@@ -3,11 +3,14 @@
 // Data shapes for the goal-tree game engine (v2 of the AI game generator).
 // See planning-docs/app-generators/game-engine-v2-plan.md.
 //
-// A game is a recursive goal tree built from four node types:
+// A game is a recursive goal tree built from five node types:
 //   reach    — travel to a place
 //   collect  — gather n target items (optionally mixed with distractors)
 //   choose   — pick the correct option (the curriculum carrier)
 //   overcome — a lock whose key is a sub-tree
+//   observe  — travel to a stage and WATCH a scripted demonstration, then it's
+//              labelled with a glyph (the symbol-learning WATCH beat). Always
+//              completable once reached — it teaches, it doesn't gate.
 //
 // The schema is deliberately CLOSED: every field is an enum, a validated
 // reference, a clamped number, or pure flavor text. Mechanics are not
@@ -131,7 +134,56 @@ export interface OvercomeNode extends GoalNodeBase {
   key: GoalNode;
 }
 
-export type GoalNode = ReachNode | CollectNode | ChooseNode | OvercomeNode;
+/**
+ * One scripted beat of a demonstration, played when the child reaches an
+ * observe stage. A CLOSED set of clamped, entity-referencing cues — the same
+ * discipline as the rest of the schema: an LLM can compose cues but cannot
+ * express arbitrary behavior. The cue RUNNER (which animates these in the 3D
+ * world) lives in the renderer; this is just the authored script. Concepts map
+ * to cues per planning-docs/symbol-learning-game-plan.md §6 (e.g. big/small →
+ * scale, go/come → move, more → spawn, happy/sad → emote, hot/cold → glow).
+ */
+export type DemoCue =
+  /** Grow/shrink a prop to `to`× its size (big/small). */
+  | { kind: "scale"; entityId: string; to: number; seconds?: number }
+  /** Translate a prop by (dx,dy) world units (go/come, up/down, fast/slow). */
+  | { kind: "move"; entityId: string; dx: number; dy: number; seconds?: number }
+  /** Multiply a prop into `count` copies (more/again). */
+  | { kind: "spawn"; entityId: string; count: number }
+  /** Show an emotion on a prop's face (happy/sad). */
+  | { kind: "emote"; entityId: string; emotion: "happy" | "sad" }
+  /** Wrap a prop in a warm/cool halo (hot/cold). */
+  | { kind: "glow"; entityId: string; tone: "warm" | "cool" };
+
+/**
+ * Travel to a stage and watch a demonstration that grounds an abstract concept,
+ * then connect it to its glyph. The WATCH beat of the symbol-learning loop.
+ * Like reach it creates a zone with a figure you approach; unlike reach, arriving
+ * plays `demonstrate` and labels it with `targetGlyph`. Never gates progress —
+ * the solver treats it as trivially completable once its zone is reachable.
+ */
+export interface ObserveNode extends GoalNodeBase {
+  type: "observe";
+  /** The registry glyph this beat teaches ("big", "go", "i_me+want+apple"). */
+  targetGlyph: string;
+  /** Optional opposite, staged alongside for contrast ("small"). */
+  contrastGlyph?: string;
+  /** The thing the child approaches to watch (kind: marker | character | item). */
+  stageEntityId: string;
+  /** Theme hint for the stage zone. */
+  zoneHint?: string;
+  /** The scripted demonstration, played on arrival (1..OBSERVE_MAX_CUES cues). */
+  demonstrate: DemoCue[];
+  /** Obstacles on the passage to the stage. All must be cleared. */
+  via?: OvercomeNode[];
+}
+
+export type GoalNode =
+  | ReachNode
+  | CollectNode
+  | ChooseNode
+  | OvercomeNode
+  | ObserveNode;
 export type GoalNodeType = GoalNode["type"];
 
 // ---------------------------------------------------------------------------
@@ -187,3 +239,5 @@ export const GOAL_TREE_MAX_ENTITIES = 80;
 export const CHOOSE_MAX_OPTIONS = 4;
 /** Max items a single collect goal may require. */
 export const COLLECT_MAX_COUNT = 12;
+/** Max cues in a single observe demonstration. */
+export const OBSERVE_MAX_CUES = 12;

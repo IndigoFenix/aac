@@ -13,6 +13,7 @@ import {
   instantiate, stepOne,
   type CellGrid, type SystemSpec,
   GRID_EXAMPLES, diffusion, puddle, dayField, colony, lifecycle, rainlands,
+  intDiffusion, intPuddle, intTerrain, intTerrainSteady, intRivers,
 } from '../src/cell-systems/index.ts';
 
 let passed = 0;
@@ -72,10 +73,15 @@ check('puddle flows downhill, pools in the basin, conserves water', () => {
   assert.ok(Math.hypot(bx - 7.5, by - 7.5) < 4, `pool not central (at ${bx},${by})`);
 });
 
-// 4. The whole grid reaches rest (empty schedule) for every example.
-check('every grid example reaches rest', () => {
+// 4. The idle-safe grid examples reach crisp rest (empty schedule). The
+//    CONTINUOUS-physics specs (rainlands, terrain) are excluded: they're scalar
+//    physics for non-idle-safe play and settle only asymptotically (that's the
+//    motivation for the integer+timer idle-safe baseline) — they're checked for
+//    bounded / no-flood behaviour separately, not for crisp rest.
+const CONTINUOUS_PHYSICS = new Set(['rainlands', 'terrain']);
+check('idle-safe grid examples reach rest', () => {
   for (const spec of GRID_EXAMPLES) {
-    if (spec.clocks?.length) continue; // clock systems cycle forever by design
+    if (spec.clocks?.length || CONTINUOUS_PHYSICS.has(spec.id)) continue;
     const g = createGrid(spec, 12, 12);
     assert.ok(stepGridUntilRest(g, 8000) > 0, `${spec.id} never settled (pending=${pendingCount(g)})`);
   }
@@ -152,27 +158,30 @@ check('coupled grid terminates for randomized parameters', () => {
   }
 });
 
-// 11. The SENSOR foundation: a prominence-driven terrain spec springs BELOW the
-//     peak (the surroundings-aware behaviour the 4-neighbour DSL couldn't do),
-//     greens an oasis, and still reaches rest.
-check('rainlands: prominence sensor springs below the peak and settles', () => {
+// 11. The SENSOR foundation + the flood fix: a prominence-driven terrain spec
+//     springs BELOW the peak, greens an oasis, and — crucially — does NOT flood
+//     (bounded water, peak stays dry) thanks to the prominence cap, open boundary
+//     and depth-proportional percolation. (The continuous model settles only
+//     asymptotically — that's why integer+timer is the idle-safe baseline — so we
+//     assert the structural guarantees that hold over a bounded run, not strict
+//     empty-schedule rest.)
+check('rainlands: springs below the peak, greens, and never floods', () => {
   const g = createGrid(rainlands, 20, 20);
-  // Find the height peak (static centerBlob).
   let peakH = -Infinity, peakI = 0;
   for (let i = 0; i < g.fields.height.length; i++) if (g.fields.height[i] > peakH) { peakH = g.fields.height[i]; peakI = i; }
-  const at = stepGridUntilRest(g, 12000);
-  assert.ok(at > 0, `rainlands never settled (pending=${pendingCount(g)})`);
-  // A spring formed somewhere…
-  let wettest = -1, wi = 0;
-  for (let i = 0; i < g.fields.water.length; i++) if (g.fields.water[i] > wettest) { wettest = g.fields.water[i]; wi = i; }
+  for (let i = 0; i < 4000; i++) worldStep(g);
+  let wettest = -1, wi = 0, wet = 0, green = 0;
+  for (let i = 0; i < g.fields.water.length; i++) {
+    if (g.fields.water[i] > wettest) { wettest = g.fields.water[i]; wi = i; }
+    if (g.fields.water[i] > 0.05) wet++;
+    if (g.fields.plant[i] > 0.05) green++;
+  }
   assert.ok(wettest > 0.05, `no spring water formed (max ${wettest})`);
-  // …and it sits on lower ground than the peak (springs at the foot, not the top).
   assert.ok(g.fields.height[wi] < peakH - 1, `spring should be below the peak (spring h=${g.fields.height[wi]}, peak h=${peakH})`);
   assert.ok(g.fields.water[peakI] < 0.05, `the peak itself should stay dry (water=${g.fields.water[peakI]})`);
-  // The watered ground greened.
-  let green = 0;
-  for (const p of g.fields.plant) if (p > 0.05) green++;
   assert.ok(green > 4, `expected an oasis to green (green tiles=${green})`);
+  assert.ok(wet < g.cols * g.rows * 0.6, `flooded — ${wet}/${g.cols * g.rows} tiles wet`);
+  assert.ok(wettest < 12, `water unboundedly deep (max ${wettest}) — flooding`);
 });
 
 // 12. The rainlands spec also fast-forwards identically (sensors + scaled refs in
@@ -307,6 +316,113 @@ check('period folding handles a huge absence in O(period)', () => {
   gridFastForward(ref, 120 * 5 + 37); // same phase (mod 120), well past the transient
   const stripClock = (g: CellGrid) => gridSnap(g).replace(/"c":\d+/, '');
   assert.equal(stripClock(g), stripClock(ref), 'folded huge state differs from the congruent reference');
+});
+
+// 20. Integer-level transport (the idle-safe baseline): whole-unit diffusion
+//     conserves, SPREADS the blob out into a locally-smooth field (every adjacent
+//     gap ≤ 1 — the stable "no gap ≥ 2" rest), and reaches that rest CRISPLY and
+//     FAST (no asymptotic ε-tail).
+check('integer diffusion conserves, smooths, and halts crisply', () => {
+  const g = createGrid(intDiffusion, 16, 16);
+  for (const v of g.fields.units) assert.ok(Number.isInteger(v), 'int var has a non-integer value');
+  const total0 = totalField(g, 'units');
+  let peak0 = 0; for (const v of g.fields.units) peak0 = Math.max(peak0, v);
+  const at = stepGridUntilRest(g, 2000);
+  assert.ok(at > 0, `integer diffusion never settled (pending=${pendingCount(g)})`);
+  assert.ok(at < 400, `integer diffusion should halt crisply/fast, took ${at} steps`);
+  assert.equal(totalField(g, 'units'), total0, 'integer diffusion lost units (not conserved)');
+  // The blob spread out (peak dropped) …
+  let peak1 = 0; for (const v of g.fields.units) peak1 = Math.max(peak1, v);
+  assert.ok(peak1 < peak0, `blob did not spread (peak ${peak0} → ${peak1})`);
+  // … and the rest state is locally smooth: every cardinal neighbour within 1.
+  let maxGap = 0;
+  for (let y = 0; y < g.rows; y++) for (let x = 0; x < g.cols; x++) {
+    const v = g.fields.units[y * g.cols + x];
+    if (x + 1 < g.cols) maxGap = Math.max(maxGap, Math.abs(v - g.fields.units[y * g.cols + x + 1]));
+    if (y + 1 < g.rows) maxGap = Math.max(maxGap, Math.abs(v - g.fields.units[(y + 1) * g.cols + x]));
+  }
+  assert.ok(maxGap <= 1, `not locally smooth — a neighbour gap of ${maxGap} remains`);
+});
+
+// 21. Integer water pools in the basin (whole units) and halts exactly. Conserved.
+check('integer puddle pools and halts exactly', () => {
+  const g = createGrid(intPuddle, 16, 16);
+  const total0 = totalField(g, 'water');
+  const at = stepGridUntilRest(g, 2000);
+  assert.ok(at > 0, `integer puddle never settled (pending=${pendingCount(g)})`);
+  assert.equal(totalField(g, 'water'), total0, 'integer water not conserved');
+  let best = -1, bx = 0, by = 0;
+  for (let i = 0; i < g.fields.water.length; i++) if (g.fields.water[i] > best) { best = g.fields.water[i]; bx = i % g.cols; by = (i / g.cols) | 0; }
+  assert.ok(Math.hypot(bx - 7.5, by - 7.5) < 5, `pool not central (at ${bx},${by})`);
+});
+
+// 22. The integer terrain (idle-safe default): rain runs off the heights into
+//     water + greenery, the peak stays dry, and it NEVER floods (bounded shallow
+//     water) — on both bounded and toroidal geometry. (Sustained rain ⇒ a bounded
+//     foldable cycle, not strict rest; catch-up == stepping is checked by #6.)
+for (const wrap of [false, true]) {
+  check(`integer terrain: rivers + greenery, never floods (${wrap ? 'torus' : 'bounded'})`, () => {
+    const g = createGrid(intTerrain, 32, 32, wrap);
+    let peakH = -1, pi = 0;
+    for (let i = 0; i < g.fields.height.length; i++) if (g.fields.height[i] > peakH) { peakH = g.fields.height[i]; pi = i; }
+    for (let i = 0; i < 2500; i++) worldStep(g);
+    let wmax = -Infinity, wet = 0, green = 0;
+    for (let i = 0; i < g.fields.water.length; i++) { wmax = Math.max(wmax, g.fields.water[i]); if (g.fields.water[i] > 0) wet++; if (g.fields.plant[i] > 0) green++; }
+    for (const v of g.fields.water) assert.ok(Number.isInteger(v), 'water is not integer');
+    assert.ok(wet > 0, 'no water formed');
+    assert.ok(green > 0, 'no greenery formed');
+    assert.ok(g.fields.water[pi] <= 1, `peak should not pool water (water ${g.fields.water[pi]})`); // rain may transiently land then run off
+    assert.ok(wmax < 12, `water unboundedly deep (max ${wmax}) — flooding`);
+    assert.ok(wet < g.cols * g.rows * 0.7, `flooded — ${wet}/${g.cols * g.rows} wet`);
+  });
+}
+
+// 23. Steady-rain integer terrain (constant per-cell rate, no rain clock): same
+//     result — water + greenery, peak doesn't pool, never floods — and the integer
+//     accumulator keeps it foldable (catch-up == stepping over a big span).
+check('steady-rain integer terrain: water, no flood, foldable', () => {
+  const g = createGrid(intTerrainSteady, 28, 28, false);
+  let peakH = -1, pi = 0;
+  for (let i = 0; i < g.fields.height.length; i++) if (g.fields.height[i] > peakH) { peakH = g.fields.height[i]; pi = i; }
+  for (let i = 0; i < 2500; i++) worldStep(g);
+  let wmax = -Infinity, wet = 0, green = 0;
+  for (let i = 0; i < g.fields.water.length; i++) { wmax = Math.max(wmax, g.fields.water[i]); if (g.fields.water[i] > 0) wet++; if (g.fields.plant[i] > 0) green++; }
+  assert.ok(wet > 0 && green > 0, 'steady rain made no water/greenery');
+  assert.ok(g.fields.water[pi] <= 1, `peak should not pool (water ${g.fields.water[pi]})`);
+  assert.ok(wmax < 12 && wet < g.cols * g.rows * 0.75, `flooded (max ${wmax}, wet ${wet})`);
+  // Foldable: a big fast-forward equals stepping.
+  const a = createGrid(intTerrainSteady, 12, 12), b = createGrid(intTerrainSteady, 12, 12);
+  for (let i = 0; i < 600; i++) worldStep(a);
+  gridFastForward(b, 600);
+  assert.equal(gridSnap(a), gridSnap(b), 'steady-rain terrain fast-forward diverged from stepping');
+});
+
+// 24. Flow-accumulation rivers ("stabilise in motion"): the river field is a
+//     static drainage network (downstream catchment > upstream, total conserved at
+//     outlets), it adds NO dynamics so the world reaches true rest, and it RE-ROUTES
+//     when the terrain is sculpted.
+check('computed rivers: accumulate, reach rest, re-route on sculpt', () => {
+  const g = createGrid(intRivers, 24, 24);
+  // Every tile has at least its own unit of flow; downstream tiles have much more.
+  let maxFlow = 0; for (const v of g.fields.river) maxFlow = Math.max(maxFlow, v);
+  assert.ok(maxFlow > 50, `flow did not accumulate downstream (max ${maxFlow})`);
+  assert.ok(g.fields.river.every(v => Number.isInteger(v) && v >= 1), 'flow not integer / missing base source');
+  // It reaches TRUE rest (the river is static; only plants settle).
+  const at = stepGridUntilRest(g, 4000);
+  assert.ok(at > 0, `rivers world never settled (pending=${pendingCount(g)})`);
+  let green = 0; for (const p of g.fields.plant) if (p > 0) green++;
+  assert.ok(green > 0, 'no greenery along the rivers');
+  // The river field is unchanged by stepping (no per-step water processing).
+  const before = Array.from(g.fields.river);
+  for (let i = 0; i < 50; i++) worldStep(g);
+  assert.ok(g.fields.river.every((v, i) => v === before[i]), 'river field churned between steps (not static)');
+  // Sculpting the terrain re-routes the drainage.
+  for (let i = 0; i < g.cols * g.rows; i++) injectTile(g, i, 'height', 0); // touch height → flowDirty
+  for (let y = 0; y < g.rows; y++) for (let x = 0; x < g.cols; x++) g.fields.height[y * g.cols + x] = x < g.cols / 2 ? 40 : 5; // a cliff
+  g.flowDirty = true;
+  worldStep(g);
+  const rerouted = Array.from(g.fields.river);
+  assert.ok(rerouted.some((v, i) => v !== before[i]), 'river did not re-route after sculpting');
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

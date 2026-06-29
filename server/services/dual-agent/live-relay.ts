@@ -778,6 +778,7 @@ export type ServerMessage =
   | { type: "focus_request"; data: { reason: string } }  // AI requests a high-res focus frame
   | { type: "set_fidelity"; data: { level: "full" | "text"; reason?: string; ttlMs?: number } }  // cost-saving: server drives client perception fidelity (full = stream frames, text = scene_state only). Avatar reflects it (rest eyes on "text").
   | { type: "client_config_update"; config: Partial<ClientConfig> }  // mid-session clientConfig patch (Observer attention dials flip sttActive / sceneStateActive). Client shallow-merges into its clientConfig state.
+  | { type: "budget_update"; data: { percent: number; band: "high" | "moderate" | "low"; window: string | null } }  // AAC token-budget meter: binding (tightest) window % remaining + band, for the in-client energy bar. Sent on init, on the periodic tick, and when the integer % changes.
   | { type: "request_audio_clip"; data: { clipId: string } }  // Phase 1b: Observer asked to re-hear a clip — client replies with audio_clip{clipId} from its ring buffer.
   | { type: "session_snapshot"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot; config: import("@shared/aac-local-storage").AacLocalStorageConfig }
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button

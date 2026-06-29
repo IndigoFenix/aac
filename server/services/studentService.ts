@@ -56,7 +56,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
   "geminiAiVoice", "geminiStudentVoice", "aiVoicePitch", "studentVoicePitch",
   "useLocalTts", "iconTextRatio", "languageLevel", "singleGlyphButtons", "glyphInputTranslation",
-  "fullAttentionMode", "boardManagerLiveModel",
+  "fullAttentionMode", "boardManagerLiveModel", "budgetTier",
   "usePcsSymbols", "signLanguage", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
@@ -64,6 +64,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility", "definedGestures", "seizureDetection",
+  "allowFacilitatorControl",
 ]);
 
 /**

@@ -18,6 +18,7 @@
 //              (placement counts sum exactly to the goal count, so ALL
 //              placements are needed)
 //   overcome — its site is reachable AND its key goal is completed
+//   observe  — its zone is reachable (a demonstration to watch, never a gate)
 //   passage  — crossable once every guard's overcome node is completed
 
 import type { GoalNode, GoalNodeType, GoalTreeGame } from "./types.js";
@@ -78,6 +79,8 @@ export function solveGoalTreeGame(
     switch (node.type) {
       case "reach":
       case "choose":
+      // observe teaches, it never gates — reachable ⇒ completable, like reach.
+      case "observe":
         return true;
       case "collect":
         return (itemZonesByNode.get(node.id) ?? []).every((z) => reachable.has(z));

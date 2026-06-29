@@ -363,6 +363,7 @@ export const ko: Translations = {
   },
 
   aac: {
+    energyBar: "AI 에너지",
     voiceLive: "듣는 중",
     glyph: {
       person: "사람",
@@ -758,6 +759,24 @@ export const ko: Translations = {
   },
 
   call: {
+    layout: {
+      label: "레이아웃",
+      spotlight: "스포트라이트",
+      grid: "그리드",
+      compact: "간단히",
+      auto: "자동",
+    },
+    viewBoard: "보드 보기",
+    viewVideo: "영상 보기",
+    interact: "누르기 돕기",
+    interactOn: "돕기 중지",
+    shareScreen: "화면 공유",
+    stopShareScreen: "공유 중지",
+    screenLabel: "화면",
+    guidedPress: "도움 누름",
+    bigVideo: "큰 영상",
+    smallVideo: "작은 영상",
+    noOneElse: "아직 아무도 없습니다",
     incoming: "수신 전화",
     accept: "예",
     decline: "아니요",

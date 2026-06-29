@@ -23,6 +23,8 @@ import { apiRequest } from '@/lib/queryClient';
 import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
+import { BUDGET_TIERS, tierByKey, windowsForTier } from '@shared/aac/budget-tiers';
+import { budgetReadings, type BudgetState } from '@shared/aac/budget-meter';
 import { type SeizureConfig, type SeizureSensitivity, DEFAULT_SEIZURE_CONFIG, coerceSeizureConfig } from '@shared/aac/seizure-config';
 import { COMPETENCY_LABEL } from '@shared/social-bot/state';
 
@@ -30,6 +32,18 @@ import { COMPETENCY_LABEL } from '@shared/social-bot/state';
 // competency-label map so this list grows automatically as competencies are added.
 const SOCIAL_SKILLS = Object.keys(COMPETENCY_LABEL);
 const DEFAULT_SOCIAL_CEILING = 0.4;
+
+// Compact "~2h 5m" style refill duration for the budget meters. Largest two
+// units, translated unit suffixes passed in (so it stays locale-correct).
+function formatBudgetRefill(mins: number, u: { d: string; h: string; m: string }): string {
+  if (mins <= 0) return '';
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (days > 0) return `~${days}${u.d}${hours > 0 ? ` ${hours}${u.h}` : ''}`;
+  if (hours > 0) return `~${hours}${u.h}${m > 0 ? ` ${m}${u.m}` : ''}`;
+  return `~${m}${u.m}`;
+}
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
@@ -50,6 +64,7 @@ import {
 import {
   MessageSquare,
   Volume2,
+  Gauge,
   Save,
   RotateCcw,
   User,
@@ -226,7 +241,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [autoAacPrompt, setAutoAacPrompt] = useState<string[]>([]);
   const [liveAudioSpeaker, setLiveAudioSpeaker] = useState(true);
   const [fullAttentionMode, setFullAttentionMode] = useState(false);
+  // Allow a clinician on a video call to facilitate button presses on the
+  // student's mirrored board (guided communication). Off by default.
+  const [allowFacilitatorControl, setAllowFacilitatorControl] = useState(false);
   const [boardManagerLiveModel, setBoardManagerLiveModel] = useState(false);
+  // Cost budget tier ("" = inherit the deployment default). The meters below
+  // are computed live from the persisted budget snapshot + the SELECTED tier,
+  // so changing this previews the new caps before saving.
+  const [budgetTier, setBudgetTier] = useState('');
   // Seizure detection — TECHNICAL config for the client motion detectors (master
   // switch + per-detector sensitivity + audio corroboration). The learned
   // baseline lives in the same JSON server-side and is NOT edited here.
@@ -341,7 +363,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? true);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
+      setAllowFacilitatorControl(aac?.allowFacilitatorControl ?? false);
       setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
+      setBudgetTier(aac?.budgetTier || '');
       setSeizureDetection(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
@@ -389,7 +413,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAutoPrompt = toRuleArray(aac?.autoAacPrompt);
       const originalLiveAudioSpeaker = aac?.liveAudioSpeaker ?? true;
       const originalFullAttentionMode = aac?.fullAttentionMode ?? false;
+      const originalAllowFacilitatorControl = aac?.allowFacilitatorControl ?? false;
       const originalBoardManagerLiveModel = aac?.boardManagerLiveModel ?? false;
+      const originalBudgetTier = aac?.budgetTier || '';
       const originalSeizureDetection = JSON.stringify(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
@@ -429,7 +455,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(autoAacPrompt) !== JSON.stringify(originalAutoPrompt) ||
         liveAudioSpeaker !== originalLiveAudioSpeaker ||
         fullAttentionMode !== originalFullAttentionMode ||
+        allowFacilitatorControl !== originalAllowFacilitatorControl ||
         boardManagerLiveModel !== originalBoardManagerLiveModel ||
+        budgetTier !== originalBudgetTier ||
         JSON.stringify(seizureDetection) !== originalSeizureDetection ||
         elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
@@ -464,7 +492,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, boardManagerLiveModel, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -474,7 +502,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt: string[];
       liveAudioSpeaker?: boolean;
       fullAttentionMode?: boolean;
+      allowFacilitatorControl?: boolean;
       boardManagerLiveModel?: boolean;
+      budgetTier?: string | null;
       seizureDetection?: { config: SeizureConfig };
       elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
@@ -535,7 +565,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       autoAacPrompt,
       liveAudioSpeaker,
       fullAttentionMode,
+      allowFacilitatorControl,
       boardManagerLiveModel,
+      budgetTier: budgetTier || null,
       seizureDetection: { config: seizureDetection },
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
@@ -582,7 +614,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
       setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? true);
       setFullAttentionMode(aac?.fullAttentionMode ?? false);
+      setAllowFacilitatorControl(aac?.allowFacilitatorControl ?? false);
       setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
+      setBudgetTier(aac?.budgetTier || '');
       setSeizureDetection(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
@@ -944,29 +978,19 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardContent>
           </CollapsibleSection>
 
-          {/* Voice Settings */}
+          {/* Token Budget — AI cost controls: attention/streaming level, the
+              experimental live Board Manager, and the monthly multi-window
+              spend tier + live usage meters. */}
           <CollapsibleSection
-            icon={<Volume2 className="w-5 h-5" />}
-            title={t('aacSettings.voiceSettings')}
-            description={t('aacSettings.voiceSettingsDesc')}
+            icon={<Gauge className="w-5 h-5" />}
+            title={t('aacSettings.tokenBudget')}
+            description={t('aacSettings.tokenBudgetDesc')}
           >
             <CardContent className="space-y-6">
-              {/* Live Audio Speaker — when on, AI voice comes from Gemini Live
-                  native audio and the ElevenLabs section is hidden. */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('aacSettings.liveAudioSpeakerTitle')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.liveAudioSpeakerDesc')}
-                  </p>
-                </div>
-                <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
-              </div>
-
               {/* Full attention mode — when off (default), the AAC applies the
                   resting input filter even while awake (no heartbeat frames,
                   VAD-gated mic) to cut live-API cost; on = continuous streaming. */}
-              <div className="flex items-center justify-between pt-4 border-t">
+              <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-base font-medium">{t('aacSettings.fullAttentionMode')}</Label>
                   <p className="text-sm text-muted-foreground">
@@ -977,6 +1001,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   checked={fullAttentionMode}
                   onCheckedChange={setFullAttentionMode}
                   data-testid="switch-full-attention-mode"
+                />
+              </div>
+
+              {/* Allow facilitator control — a clinician on a video call may
+                  press buttons on the student's mirrored board (guided
+                  communication). Off by default. */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.allowFacilitatorControl')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowFacilitatorControlDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowFacilitatorControl}
+                  onCheckedChange={setAllowFacilitatorControl}
+                  data-testid="switch-allow-facilitator-control"
                 />
               </div>
 
@@ -995,6 +1036,88 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setBoardManagerLiveModel}
                   data-testid="switch-board-manager-live-model"
                 />
+              </div>
+
+              {/* Cost budget tier + live usage meters. The tier scales the
+                  multi-window spend caps; the meters show how much of each
+                  rolling window remains and roughly when it refills. Computed
+                  from the persisted snapshot + the SELECTED tier, so changing
+                  the tier previews the new caps before saving. */}
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-medium">{t('aacSettings.budgetTier')}</Label>
+                    <p className="text-sm text-muted-foreground">{t('aacSettings.budgetTierDesc')}</p>
+                  </div>
+                  <Select value={budgetTier || '_default'} onValueChange={(v) => setBudgetTier(v === '_default' ? '' : v)}>
+                    <SelectTrigger className="w-full md:w-[220px]" data-testid="select-budget-tier">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_default">
+                        {t('aacSettings.budgetTierDefault')} ({tierByKey('').key.charAt(0).toUpperCase() + tierByKey('').key.slice(1)})
+                      </SelectItem>
+                      {Object.values(BUDGET_TIERS).map((tier) => (
+                        <SelectItem key={tier.key} value={tier.key}>
+                          {tier.key.charAt(0).toUpperCase() + tier.key.slice(1)} — ${tier.priceMonthly}/mo
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{t('aacSettings.budgetMetersTitle')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('aacSettings.budgetMetersDesc')}</p>
+                </div>
+                <div className="space-y-3">
+                  {budgetReadings(
+                    (((student as any)?.budgetMeters ?? {}) as BudgetState),
+                    windowsForTier(tierByKey(budgetTier)),
+                    Date.now(),
+                  ).map((r) => {
+                    const refill = r.refillMinutes <= 0
+                      ? t('aacSettings.budgetFull')
+                      : `${formatBudgetRefill(r.refillMinutes, {
+                          d: t('aacSettings.budgetUnitDay'),
+                          h: t('aacSettings.budgetUnitHour'),
+                          m: t('aacSettings.budgetUnitMinute'),
+                        })} ${t('aacSettings.budgetUntilFull')}`;
+                    const barColor = r.band === 'low' ? 'bg-red-500' : r.band === 'moderate' ? 'bg-amber-500' : 'bg-emerald-500';
+                    return (
+                      <div key={r.key} className="space-y-1" data-testid={`budget-meter-${r.key}`}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{t(`aacSettings.budgetWindow${r.key}`)}</span>
+                          <span className="tabular-nums">{r.percent}% · {refill}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${r.percent}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </CollapsibleSection>
+
+          {/* Voice Settings */}
+          <CollapsibleSection
+            icon={<Volume2 className="w-5 h-5" />}
+            title={t('aacSettings.voiceSettings')}
+            description={t('aacSettings.voiceSettingsDesc')}
+          >
+            <CardContent className="space-y-6">
+              {/* Live Audio Speaker — when on, AI voice comes from Gemini Live
+                  native audio and the ElevenLabs section is hidden. */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.liveAudioSpeakerTitle')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.liveAudioSpeakerDesc')}
+                  </p>
+                </div>
+                <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
               </div>
 
               {/* Gemini Voice Settings */}

@@ -180,6 +180,15 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // room they wait to be invited into).
     enabledByDefault: true,
   },
+  {
+    id: "symbol_learning",
+    name: "Learn Symbols",
+    description: "Opens a 3D learning game that teaches AAC symbols by DEMONSTRATING what they mean — abstract concepts (big/small, and more to come) are shown happening in the world, then the student connects the symbol to what they saw and practices in the sentence builder. ALWAYS use open_app(\"symbol_learning\") when the student wants to learn symbols/words, practice the sentence builder, or asks for the learning game. Built for eyegaze; warmly narrate and celebrate as they watch and answer.",
+    icon: "🔤",
+    // On by default for every student — it's the platform's core learning tool,
+    // not an opt-in extra. Clinicians can disable it per-student via appConfig.
+    enabledByDefault: true,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

@@ -5,6 +5,7 @@
 //   collect  → its `via` obstacles + each placement's `via` obstacles
 //   choose   → (leaf)
 //   overcome → its `key`
+//   observe  → its `via` obstacles
 
 import type { GoalNode, GoalNodeType } from "./types.js";
 
@@ -47,6 +48,9 @@ function* visit(
     case "overcome":
       yield* visit(node.key, node, "key", depth + 1);
       break;
+    case "observe":
+      for (const o of node.via ?? []) yield* visit(o, node, "via", depth + 1);
+      break;
   }
 }
 
@@ -60,7 +64,7 @@ export function measureGoalTree(root: GoalNode): GoalTreeMeasure {
   const measure: GoalTreeMeasure = {
     totalNodes: 0,
     maxDepth: 0,
-    byType: { reach: 0, collect: 0, choose: 0, overcome: 0 },
+    byType: { reach: 0, collect: 0, choose: 0, overcome: 0, observe: 0 },
   };
   for (const { node, depth } of walkGoalTree(root)) {
     measure.totalNodes += 1;

@@ -28,7 +28,7 @@ function PeerVideo({ stream }: { stream: MediaStream }) {
   return <video ref={attach} autoPlay playsInline muted className="w-full h-full object-cover" />;
 }
 
-export function GroupChatHeader() {
+export function GroupChatHeader({ hidden }: { hidden?: boolean } = {}) {
   const { t } = useLanguage();
   const dual = useDualAgentContextOptional();
   const roster = dual?.conversationRoster ?? [];
@@ -62,8 +62,9 @@ export function GroupChatHeader() {
   );
 
   // During a game, peers render as avatars IN the world — the floating face row at
-  // the top is redundant (and overlaps the game), so hide it.
-  if (activeGame || peers.length === 0) return null;
+  // the top is redundant (and overlaps the game), so hide it. Same when the call
+  // has been pulled into the big-video window (the faces are in that layout).
+  if (activeGame || hidden || peers.length === 0) return null;
 
   const myTurn = !!floor?.holder && floor.holder === selfPersonId;
 

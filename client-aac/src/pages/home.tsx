@@ -22,6 +22,7 @@ import { IncomingCallPopup } from "@/components/IncomingCallPopup";
 import { GroupChatHeader } from "@/components/GroupChatHeader";
 import PhoneCallApp from "@/components/PhoneCallApp";
 import { SocialWorldOverlay, SocialGameReporter, SocialWorldPeople } from "@/components/social-world/SocialWorldOverlay";
+import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallVideoLarge } from "@/components/CallVideoOverlay";
 import type { CallGame } from "@shared/realtime-events";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import GameEmbed from "@/components/games/GameEmbed";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
+import { symbolBasicsGame } from "@shared/goal-tree/lessons/symbol-basics";
 import BrowserApp from "@/components/apps/BrowserApp";
 import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
@@ -397,6 +399,18 @@ function renderAppContent(
       />
     );
   }
+  if (activeApp.appId === "symbol_learning") {
+    // Built-in default symbol-learning game: the goal-tree player in 3D, loaded
+    // with the bundled "Big and Small" curriculum (the observe/demonstrate beat).
+    return (
+      <GoalTreeQuestPlayer
+        game={symbolBasicsGame}
+        renderMode="3d"
+        onClose={dismissApp}
+        sendMessageToAi={sendMessageToAi}
+      />
+    );
+  }
   if (activeApp.appId === "custom_app" && activeApp.appData?.definition) {
     return (
       <CustomAppPlayer
@@ -532,6 +546,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Trailing-side host for the other people in the call (opposite the buttons).
   const [peopleHost, setPeopleHost] = useState<HTMLDivElement | null>(null);
   const gameActive = activeSocialGame != null;
+  // Big-video mode: while in a plain call (no game) the student can pull the
+  // people they're talking to into a large window — the same reflow as a game
+  // (board buttons pushed to the side). `callInfo` is lifted out of CallProvider
+  // by CallStateReporter; `videoLarge` is the student's toggle.
+  const [callInfo, setCallInfo] = useState<{ active: boolean; hasRemote: boolean }>({ active: false, hasRemote: false });
+  const [videoLarge, setVideoLarge] = useState(false);
+  const [videoHost, setVideoHost] = useState<HTMLDivElement | null>(null);
+  const videoLargeActive = callInfo.active && callInfo.hasRemote && !gameActive && videoLarge;
+  // Reset the toggle when the call ends so the next call starts in small mode.
+  useEffect(() => { if (!callInfo.active) setVideoLarge(false); }, [callInfo.active]);
   // While a social game is on screen, the (WebGL) renderer competes with the
   // on-device camera-ML for BOTH the GPU (MediaPipe runs on the GPU delegate) and
   // the main thread (each setInterval detection blocks rAF), making the game
@@ -1857,6 +1881,19 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <i className="fas fa-camera text-accent text-lg" />
         </motion.div>
 
+        {/* Enter big-video mode — only in a plain call (no game) with someone on
+            the line. Pulls the people you're talking to into a large window. */}
+        {callInfo.active && callInfo.hasRemote && !gameActive && !videoLarge && (
+          <button
+            type="button"
+            data-dwell="video-large"
+            onClick={() => setVideoLarge(true)}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-emerald-600"
+          >
+            {t("call.bigVideo")}
+          </button>
+        )}
+
         {/* Board Area — fills all remaining space. Plain `flex-row` because
             the document root has `dir="rtl"` for Hebrew/Arabic, and CSS already
             reverses the visual order for us. Forcing `flex-row-reverse` in RTL
@@ -2044,6 +2081,22 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               {/* Nearby people — opposite the button sidebar. Constant width so
                   the game window doesn't jump as people come and go. */}
               <div ref={setPeopleHost} className="h-full flex-shrink-0 w-32" />
+            </>
+          ) : videoLargeActive ? (
+            <>
+              {/* Big-video mode: same reflow as a game — the main board's 8
+                  buttons in 2×4 beside a large window showing the people on the
+                  call (CallVideoLarge portals into videoHost). */}
+              <AppMiniBoard
+                board={prebuiltBoardData || boardData}
+                columns={2}
+                onButtonClick={handleBoardButtonClick}
+                language={currentLanguage}
+                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                suppressLocalSpeech={aiSessionActive}
+                getFaceImage={resolveFaceImage}
+              />
+              <div ref={setVideoHost} className="flex-1 min-w-0 h-full relative" />
             </>
           ) : (
             <>
@@ -2487,10 +2540,26 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <SocialGameReporter onChange={setActiveSocialGame} />
           <SocialWorldOverlay host={gameHost} selfSpeech={gameSelfSpeech} />
           <SocialWorldPeople host={peopleHost} />
+          {/* Call-video: lift call activity to home; mirror the board to the
+              clinician; apply consent-gated facilitator presses; and (when the
+              student pulls the call into the big window) render the people they
+              are talking to via the shared VideoTileLayout. */}
+          <CallStateReporter onChange={setCallInfo} />
+          <CallBoardMirror
+            board={prebuiltBoardData || boardData}
+            pageId={(prebuiltBoardData || boardData)?.currentPageId}
+            mode={activeApp ? "app" : "board"}
+            appKind={activeApp?.appId}
+          />
+          <CallFacilitatorBridge
+            enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
+            onPress={handleBoardButtonClick}
+          />
+          <CallVideoLarge host={videoHost} onShrink={() => setVideoLarge(false)} />
           {/* Group-chat peer faces — side-by-side header during a multi-student
               chat. Dwell/tap a face to focus that peer as the addressee. Renders
               null when not in a group chat. */}
-          <GroupChatHeader />
+          <GroupChatHeader hidden={videoLargeActive} />
           {/* Incoming-call ring — rendered globally so calls ring on any screen. */}
           <IncomingCallPopup />
           <DeviceManagerModal

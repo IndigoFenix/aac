@@ -363,6 +363,7 @@ export const ar: Translations = {
   },
 
   aac: {
+    energyBar: "طاقة الذكاء الاصطناعي",
     voiceLive: "يستمع",
     glyph: {
       person: "\u0634\u062e\u0635",
@@ -758,6 +759,24 @@ export const ar: Translations = {
   },
 
   call: {
+    layout: {
+      label: "التخطيط",
+      spotlight: "العرض المميّز",
+      grid: "شبكة",
+      compact: "مُدمج",
+      auto: "تلقائي",
+    },
+    viewBoard: "عرض لوحتهم",
+    viewVideo: "عرض الفيديو",
+    interact: "المساعدة في الضغط",
+    interactOn: "إيقاف المساعدة",
+    shareScreen: "مشاركة الشاشة",
+    stopShareScreen: "إيقاف المشاركة",
+    screenLabel: "الشاشة",
+    guidedPress: "ضغط موجَّه",
+    bigVideo: "فيديو كبير",
+    smallVideo: "فيديو صغير",
+    noOneElse: "لا أحد آخر هنا بعد",
     incoming: "\u0645\u0643\u0627\u0644\u0645\u0629 \u0648\u0627\u0631\u062f\u0629",
     accept: "\u0646\u0639\u0645",
     decline: "\u0644\u0627",

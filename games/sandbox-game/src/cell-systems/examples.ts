@@ -226,31 +226,31 @@ export const rainlands: SystemSpec = {
   name: 'Rainlands (prominence → springs)',
   description: 'A hill catches rain (prominence sensor); moisture flows down and springs at the foot, greening the slopes.',
   vars: [
-    { name: 'height', min: 0, max: 12, initial: 4, init: 'centerBlob' },
-    { name: 'moisture', min: 0, max: 40, initial: 0, init: 'flat' },
+    { name: 'height', min: 0, max: 24, initial: 12, init: 'centerBlob' }, // baseline 12, peak 24
+    { name: 'moisture', min: 0, max: 20, initial: 0, init: 'flat' },
     { name: 'water', min: 0, max: 40, initial: 0, init: 'flat' },
     { name: 'fertility', min: 0, max: 1, initial: 0, init: 'flat' },
     { name: 'plant', min: 0, max: 1, initial: 0, init: 'flat' },
   ],
-  sensors: [{ name: 'prom', of: 'height', op: 'prominence', radius: 4, weight: 'cosine' }],
+  sensors: [{ name: 'prom', of: 'height', op: 'prominence', radius: 6, weight: 'cosine', cap: 6 }],
   rules: [
-    // Rain: prominent ground accumulates hidden moisture (∝ prominence).
-    { id: 'rain', when: { cmp: '>', left: { sensor: 'prom' }, right: { const: 0.5 } }, trigger: { every: true },
-      effects: [{ change: { scalar: 'moisture', perStep: 0.6, times: { sensor: 'prom' } } }] },
-    { id: 'moist-decay', trigger: { every: true }, effects: [{ add: { scalar: 'moisture', amount: -0.004 } }] },
-    // Hidden water table flows downhill (toward lower ground) — concentrates it
-    // at the foot of the massif.
-    { id: 'moist-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'moisture', potential: 'height', rate: 0.5 } }] },
-    // Spring: where the table breaches the surface (moisture > height·0.9), move it
-    // smoothly into surface water — continuous (proportional) so it settles.
+    // Rain: prominent ground accumulates hidden moisture (∝ capped prominence).
+    { id: 'rain', when: { cmp: '>', left: { sensor: 'prom' }, right: { const: 1 } }, trigger: { every: true },
+      effects: [{ change: { scalar: 'moisture', perStep: 0.3, times: { sensor: 'prom' } } }] },
+    { id: 'moist-decay', trigger: { every: true }, effects: [{ add: { scalar: 'moisture', amount: -0.005 } }] },
+    // Hidden water table flows downhill, concentrating at the massif foot.
+    { id: 'moist-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'moisture', potential: 'height', rate: 0.7 } }] },
+    // Spring: a capped trickle where the table breaches the surface (the foot).
     { id: 'spring', when: { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.9 } }, trigger: { every: true },
       effects: [
-        { change: { scalar: 'moisture', perStep: -0.2, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
-        { change: { scalar: 'water', perStep: 0.2, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
+        { change: { scalar: 'moisture', perStep: -1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 }, cap: 0.15 } },
+        { change: { scalar: 'water', perStep: 1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 }, cap: 0.15 } },
       ] },
-    // Surface water flows down the landscape and pools; evaporates slowly.
-    { id: 'water-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 0.3 } }] },
-    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.12 } }] },
+    // Surface water flows downhill + off the edge (sea), evaporates, and seeps into
+    // the ground proportional to depth (the structural anti-flood sink).
+    { id: 'water-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 0.2, drainEdge: 0 } }] },
+    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.06 } }] },
+    { id: 'seep', trigger: { every: true }, effects: [{ change: { scalar: 'water', perStep: -0.08, times: { scalar: 'water' } } }] },
     // Fertility: watered ground greens, the halo spreads a little and decays back.
     { id: 'wet-soil', when: { cmp: '>', left: { scalar: 'water' }, right: { const: 0.05 } }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 1 }, rate: 0.2 } }] },
@@ -294,15 +294,16 @@ export const terrain: SystemSpec = {
     // Spring = a CAPPED trickle: emit min(0.15, moisture − 0.9·height) per step
     // (perStep 1 makes the factor the raw excess; cap throttles it). Proportional
     // near the breach (settles), capped above (so water inflow can't flood).
-    // Spring = a capped trickle min(springRate, moisture − 0.6·height). The
-    // springRate (0.08) is kept BELOW evaporation (0.12): then total spring inflow
-    // (≤ N·springRate) can never exceed total evaporation (N·evap), so the map can
-    // NEVER fully flood — on bounded OR toroidal geometry. Breach 0.6 (not 0.9) so
-    // moisture surfaces at the foot before it would saturate.
-    { id: 'spring', when: { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.6 } }, trigger: { every: true },
+    // Spring = a capped trickle min(springRate=0.15, moisture − 0.9·height). The
+    // breach 0.9 is the key flood-limiter: it surfaces ONLY where the (downhill-
+    // concentrated) water table exceeds the ground — the foot, not the whole map —
+    // so the number of spring cells stays small and total inflow stays well under
+    // total evaporation + edge drainage. The peak's high breach (0.9·peak) isn't
+    // reached (moisture drained off it), so the peak stays dry.
+    { id: 'spring', when: { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.9 } }, trigger: { every: true },
       effects: [
-        { change: { scalar: 'moisture', perStep: -1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.6 }, cap: 0.08 } },
-        { change: { scalar: 'water', perStep: 1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.6 }, cap: 0.08 } },
+        { change: { scalar: 'moisture', perStep: -1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 }, cap: 0.15 } },
+        { change: { scalar: 'water', perStep: 1, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 }, cap: 0.15 } },
       ] },
     // Water flows downhill, off the map edge (drainEdge: 0 = sea level — the open
     // boundary that stops a closed basin flooding), and evaporates.
@@ -310,7 +311,14 @@ export const terrain: SystemSpec = {
     // Erosion: flowing water carries sand downstream, incising channels (gentle —
     // a slow background grading). Stone doesn't erode.
     { id: 'erode', trigger: { every: true }, effects: [{ erode: { scalar: 'height', by: 'water', rate: 0.04, minFlow: 0.15, minSlope: 0.12, max: 0.03, block: 'solid' } }] },
-    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.12 } }] },
+    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.06 } }] },
+    // Percolation: water also seeps into the ground at a rate PROPORTIONAL to its
+    // depth. A constant sink (evaporation) can be out-paced by enough springs and
+    // flood a closed basin; a proportional sink CANNOT — the deeper the water the
+    // faster it drains, so the total settles at inflow/k for ANY inflow and any
+    // geometry (bounded torus included). This is what makes "never floods"
+    // STRUCTURAL rather than a tuned balance.
+    { id: 'seep', trigger: { every: true }, effects: [{ change: { scalar: 'water', perStep: -0.08, times: { scalar: 'water' } } }] },
     { id: 'wet-soil', when: { all: [{ cmp: '>', left: { scalar: 'water' }, right: { const: 0.05 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 1 }, rate: 0.2 } }] },
     { id: 'fert-spread', trigger: { every: true }, effects: [{ spread: { scalar: 'fertility', rate: 0.1 } }] },
@@ -336,7 +344,219 @@ export const terrain: SystemSpec = {
   },
 };
 
-export const GRID_EXAMPLES: SystemSpec[] = [diffusion, puddle, dayField, colony, rainlands, terrain];
+// --- Integer-level examples (the idle-safe baseline) ------------------------
+
+/** Integer diffusion: a blob of whole units spreads to a (near-)flat field in
+ *  whole-unit steps and stops EXACTLY when no gap ≥ 2 remains — no asymptotic
+ *  ε-tail, so it reaches crisp rest fast. Conserved. */
+export const intDiffusion: SystemSpec = {
+  id: 'int-diffusion',
+  name: 'Integer diffusion',
+  description: 'Whole-unit diffusion: a blob spreads out and halts exactly (the crisp, idle-safe baseline).',
+  vars: [{ name: 'units', min: 0, max: 15, initial: 0, init: 'centerBlob', int: true }],
+  rules: [{ id: 'spread', trigger: { every: true }, effects: [{ spread: { scalar: 'units', rate: 1 } }] }],
+  display: { field: 'units', min: 0, max: 15, from: [20, 24, 40], to: [120, 200, 255] },
+};
+
+/** Integer water flowing down a fixed bowl in whole units — pools in the basin and
+ *  stops exactly. Conserved (closed; no edge drain). The bowl is STEEP (max 60):
+ *  whole-unit transport only moves where the gradient exceeds the quantization
+ *  (gap ≥ 2), so an integer landscape must be tall enough relative to its width —
+ *  a gentle bowl would round to ≤1-per-tile and nothing would flow. */
+export const intPuddle: SystemSpec = {
+  id: 'int-puddle',
+  name: 'Integer puddle',
+  description: 'Whole-unit water flows down a steep bowl, pools in the basin, and halts exactly.',
+  vars: [
+    { name: 'height', min: 0, max: 60, initial: 30, init: 'bowl', int: true },
+    { name: 'water', min: 0, max: 60, initial: 8, init: 'flat', int: true },
+  ],
+  rules: [{ id: 'flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 1 } }] }],
+  display: { field: 'water', min: 0, max: 16, from: [40, 50, 35], to: [60, 150, 230] },
+};
+
+/** INTEGER TERRAIN — the idle-safe default. Everything is whole-unit + clock-paced
+ *  (the integer+timer baseline), so it stays bounded and catches up by folding its
+ *  exact cycle rather than chasing an ε-tail. The bottom of the long-term stack:
+ *  HEIGHT (player-sculpted) → WATER (rain on the heights flows downhill into rivers
+ *  & lakes, draining at the edges + seeping away so it never floods) → PLANTS
+ *  (green spreads where there's water). Stone blocks flow and doesn't erode.
+ *
+ *  Integer note: whole-unit flow needs gradients ≥ 2, so the terrain is "tall"
+ *  (height 0–63) — a steep peak drives crisp rivers; a flat plain just sits. */
+export const intTerrain: SystemSpec = {
+  id: 'int-terrain',
+  name: 'Terrain (integer)',
+  description: 'Idle-safe terrain: sculpt tall land, rain runs off the heights into rivers & lakes, greenery follows the water.',
+  vars: [
+    { name: 'height', min: 0, max: 63, initial: 30, init: 'centerBlob', int: true },
+    { name: 'water', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+  ],
+  sensors: [
+    { name: 'prom', of: 'height', op: 'prominence', radius: 6, weight: 'cosine', cap: 8 },
+    { name: 'nearWater', of: 'water', op: 'max', radius: 1 },
+  ],
+  clocks: [
+    { name: 'rainTick', period: 3 },  // rain pulse cadence
+    { name: 'slowTick', period: 24 }, // evaporation / plant cadence
+  ],
+  rules: [
+    // Rain: prominent ground catches a unit of water every rain pulse (orographic).
+    { id: 'rain', when: { all: [{ cmp: '==', left: { clock: 'rainTick' }, right: { const: 0 } }, { cmp: '>', left: { sensor: 'prom' }, right: { const: 2 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'water', amount: 1 } }] },
+    // Water runs downhill (whole units), off the map edge (sea), blocked by stone.
+    { id: 'flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 1, drainEdge: 0, block: 'solid' } }] },
+    // Percolation: deep water seeps away proportional to depth — the structural
+    // anti-flood sink that works even on a closed (toroidal) map. (Only bites at
+    // depth ≥ ~3, so shallow streams survive while deep pools can't run away.)
+    { id: 'seep', trigger: { every: true }, effects: [{ change: { scalar: 'water', perStep: -0.18, times: { scalar: 'water' } } }] },
+    // Slow evaporation clears shallow, unfed water.
+    { id: 'evap', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '>', left: { scalar: 'water' }, right: { const: 0 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'water', amount: -1 } }] },
+    // Plants: green grows where there's water nearby (not on stone), recedes when dry.
+    { id: 'grow', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '>', left: { sensor: 'nearWater' }, right: { const: 0 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: 1 } }] },
+    { id: 'wither', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '==', left: { sensor: 'nearWater' }, right: { const: 0 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: -1 } }] },
+  ],
+  tools: [
+    { id: 'water', label: 'Water', symbol: '💧', radius: 1.6, paints: [{ scalar: 'water', amount: 45 }] },
+    { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },
+    { id: 'dig', label: 'Dig', symbol: '⛏️', radius: 1.6, paints: [{ scalar: 'height', amount: -70 }] },
+    { id: 'stone', label: 'Stone', symbol: '🪨', radius: 1.2, paints: [{ scalar: 'solid', amount: 40 }] },
+    { id: 'seed', label: 'Seed', symbol: '🌱', radius: 1.0, paints: [{ scalar: 'plant', amount: 30 }] },
+  ],
+  display: {
+    field: 'water',
+    layers: [
+      { field: 'height', shade: true, min: 0, max: 63, from: [120, 100, 70], to: [235, 225, 205] }, // earth → snow
+      { field: 'plant', over: 0.5, min: 0, max: 7, from: [120, 176, 74], to: [28, 110, 46] },
+      { field: 'water', over: 0.5, min: 0, max: 12, from: [99, 178, 220], to: [17, 64, 122] },
+      { field: 'solid', over: 0.5, min: 0, max: 1, from: [130, 130, 135], to: [95, 95, 100] },
+    ],
+  },
+};
+
+/** Like `intTerrain`, but rain is produced at a CONSTANT per-cell RATE instead of
+ *  synchronised pulses — no rain clock. Each tile accumulates rainfall into a
+ *  hidden integer counter at a rate ∝ its prominence, and converts one whole unit
+ *  of water each time the counter fills. Smooth and de-synchronised (high ground
+ *  rains faster), still all-integer so it stays bounded and foldable. Same look:
+ *  rivers off the heights, green base, never floods. */
+export const intTerrainSteady: SystemSpec = {
+  id: 'int-terrain-steady',
+  name: 'Terrain (steady rain)',
+  description: 'Integer terrain with continuous-rate rainfall (no rain pulse): prominence drives a steady drip into rivers.',
+  vars: [
+    { name: 'height', min: 0, max: 63, initial: 30, init: 'centerBlob', int: true },
+    { name: 'water', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+    { name: 'rainAcc', min: 0, max: 40, initial: 0, init: 'flat', int: true }, // hidden rainfall accumulator
+  ],
+  sensors: [
+    { name: 'prom', of: 'height', op: 'prominence', radius: 6, weight: 'cosine', cap: 8 },
+    { name: 'nearWater', of: 'water', op: 'max', radius: 1 },
+  ],
+  clocks: [{ name: 'slowTick', period: 24 }], // evaporation / plant cadence only — no rain tick
+  rules: [
+    // Constant-rate rainfall: the accumulator fills by `prominence` units/step …
+    { id: 'accumulate', when: { cmp: '>', left: { sensor: 'prom' }, right: { const: 1 } }, trigger: { every: true },
+      effects: [{ change: { scalar: 'rainAcc', perStep: 1, times: { sensor: 'prom' } } }] },
+    // … and converts one unit of water each time it crosses the threshold.
+    { id: 'convert', when: { cmp: '>=', left: { scalar: 'rainAcc' }, right: { const: 20 } }, trigger: { every: true },
+      effects: [{ add: { scalar: 'water', amount: 1 } }, { add: { scalar: 'rainAcc', amount: -20 } }] },
+    { id: 'flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 1, drainEdge: 0, block: 'solid' } }] },
+    { id: 'seep', trigger: { every: true }, effects: [{ change: { scalar: 'water', perStep: -0.18, times: { scalar: 'water' } } }] },
+    { id: 'evap', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '>', left: { scalar: 'water' }, right: { const: 0 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'water', amount: -1 } }] },
+    { id: 'grow', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '>', left: { sensor: 'nearWater' }, right: { const: 0 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: 1 } }] },
+    { id: 'wither', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 0 } }, { cmp: '==', left: { sensor: 'nearWater' }, right: { const: 0 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: -1 } }] },
+  ],
+  tools: intTerrain.tools,
+  display: intTerrain.display,
+};
+
+/** STABLE integer water: no perpetual rain or sink, so it reaches a true static
+ *  rest (not a flux that pulses forever). Water is CONSERVED — it just flows down
+ *  and levels into the basins, forming flat lakes that stop exactly; greenery
+ *  rings them and also stops. Sculpt the land + pour water (the tools) and it
+ *  settles into a consistent shape every time. This is the right water model for
+ *  the stack (plants/animals need a STABLE wet region, not a flickering river). */
+export const intLakes: SystemSpec = {
+  id: 'int-lakes',
+  name: 'Lakes (stable water)',
+  description: 'Conserved water levels into static lakes and fully rests — sculpt basins, pour water, watch it settle.',
+  vars: [
+    { name: 'height', min: 0, max: 60, initial: 30, init: 'bowl', int: true }, // a basin
+    { name: 'water', min: 0, max: 40, initial: 3, init: 'flat', int: true },   // a conserved amount, no source/sink
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+  ],
+  sensors: [{ name: 'nearWater', of: 'water', op: 'max', radius: 1 }],
+  rules: [
+    // Water just levels out (no rain, no drain, no seep) → pools in the basins and
+    // stops exactly. Conserved.
+    { id: 'flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 1, block: 'solid' } }] },
+    // Greenery grows beside water up to its cap (then rests), recedes when dry.
+    { id: 'grow', when: { all: [{ cmp: '>', left: { sensor: 'nearWater' }, right: { const: 0 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: 1 } }] },
+    { id: 'wither', when: { cmp: '==', left: { sensor: 'nearWater' }, right: { const: 0 } }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: -1 } }] },
+  ],
+  tools: intTerrain.tools,
+  display: intTerrain.display,
+};
+
+/** "Stabilise in motion": rivers as a COMPUTED flow-accumulation field, not
+ *  simulated water. Each tile's `river` = its rainfall + everything draining into
+ *  it from upslope (steepest descent over `height`). It's a static derived field —
+ *  recomputed only when you sculpt — so a river carries a constant flow with ZERO
+ *  per-step processing, and the world reaches true rest. Sinks accumulate into
+ *  lakes; greenery lines the significant rivers. Sculpt the land and watch the
+ *  whole drainage network instantly re-route. */
+export const intRivers: SystemSpec = {
+  id: 'int-rivers',
+  name: 'Rivers (computed flow)',
+  description: 'Rivers as a static drainage network (flow accumulation) — constant flow, no water sim, re-routes when you sculpt.',
+  vars: [
+    // A basin (bowl): drainage CONVERGES inward into rivers that feed a central
+    // lake — a smooth cone would just diverge radially (no rivers). Sculpt to make
+    // your own valleys/outlets.
+    { name: 'height', min: 0, max: 63, initial: 20, init: 'bowl', int: true },
+    { name: 'river', min: 0, max: 4000, initial: 0, int: true, flow: { potential: 'height', source: 1, block: 'solid' } },
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+  ],
+  rules: [
+    // Greenery lines the significant rivers (and lakes), recedes away from them.
+    { id: 'grow', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 10 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: 1 } }] },
+    { id: 'wither', when: { cmp: '<=', left: { scalar: 'river' }, right: { const: 10 } }, trigger: { every: true },
+      effects: [{ add: { scalar: 'plant', amount: -1 } }] },
+  ],
+  tools: [
+    { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },
+    { id: 'dig', label: 'Dig', symbol: '⛏️', radius: 1.6, paints: [{ scalar: 'height', amount: -70 }] },
+    { id: 'stone', label: 'Stone', symbol: '🪨', radius: 1.2, paints: [{ scalar: 'solid', amount: 40 }] },
+    { id: 'seed', label: 'Seed', symbol: '🌱', radius: 1.0, paints: [{ scalar: 'plant', amount: 30 }] },
+  ],
+  display: {
+    field: 'river',
+    layers: [
+      { field: 'height', shade: true, min: 0, max: 63, from: [120, 100, 70], to: [235, 225, 205] },
+      { field: 'plant', over: 0.5, min: 0, max: 7, from: [120, 176, 74], to: [28, 110, 46] },
+      { field: 'river', over: 10, min: 10, max: 200, from: [120, 180, 220], to: [17, 64, 122] }, // streams → big rivers
+      { field: 'solid', over: 0.5, min: 0, max: 1, from: [130, 130, 135], to: [95, 95, 100] },
+    ],
+  },
+};
+
+export const GRID_EXAMPLES: SystemSpec[] = [intTerrain, intTerrainSteady, intRivers, intLakes, intDiffusion, intPuddle, diffusion, puddle, dayField, colony, rainlands, terrain];
 
 // --- Step 3: entity / relationship worlds -----------------------------------
 

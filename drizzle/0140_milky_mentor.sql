@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "allow_facilitator_control" boolean DEFAULT false NOT NULL;

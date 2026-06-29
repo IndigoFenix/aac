@@ -17,7 +17,7 @@ import { eq } from 'drizzle-orm';
 import { truncateAll, db } from './helpers/db.js';
 import { chatSessions, students, users } from '@shared/schema';
 import { makeUser, makeStudent } from './helpers/factories.js';
-import { chargeCreditsToLedger } from '../services/credit-ledger.js';
+import { chargeCreditsToLedger, onLedgerCharge } from '../services/credit-ledger.js';
 
 async function insertUser(): Promise<string> {
   const user = await makeUser();
@@ -113,5 +113,52 @@ describe('chargeCreditsToLedger', () => {
     expect(user.chatCreditsUsed).toBeCloseTo(0.007, 9);
     const [student] = await db.select().from(students).where(eq(students.id, studentId));
     expect(student.chatCreditsUsed).toBeCloseTo(0.007, 9);
+  });
+});
+
+describe('onLedgerCharge — budget-meter feed', () => {
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  it('notifies the session listener of EVERY charge, regardless of category', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    const seen: Array<{ credits: number; category: string | undefined }> = [];
+    const unsub = onLedgerCharge(sessionId, (credits, category) => seen.push({ credits, category }));
+
+    // The exact mix that used to bypass the meter: live agent, Monitor (HTTP),
+    // and TTS all land in the listener now.
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.20, category: 'observer', label: 'live' });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.06, category: 'monitor', label: 'http' });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.03, category: 'tts', label: 'tts' });
+    unsub();
+
+    expect(seen.map(s => s.category)).toEqual(['observer', 'monitor', 'tts']);
+    const total = seen.reduce((a, s) => a + s.credits, 0);
+    expect(total).toBeCloseTo(0.29, 9); // matches the full session cost
+  });
+
+  it('does not fire for non-positive charges, after unsubscribe, or for other sessions', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+    const otherSession = await insertSession(userId, studentId);
+
+    let count = 0;
+    const unsub = onLedgerCharge(sessionId, () => { count++; });
+
+    await chargeCreditsToLedger({ sessionId, credits: 0, category: 'tts', label: 'zero' });        // non-positive
+    await chargeCreditsToLedger({ sessionId: otherSession, credits: 0.05, label: 'other' });        // different session
+    expect(count).toBe(0);
+
+    await chargeCreditsToLedger({ sessionId, credits: 0.05, label: 'counted' });
+    expect(count).toBe(1);
+
+    unsub();
+    await chargeCreditsToLedger({ sessionId, credits: 0.05, label: 'after-unsub' });
+    expect(count).toBe(1); // unchanged
   });
 });

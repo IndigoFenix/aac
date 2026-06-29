@@ -16,6 +16,8 @@ interface GoalTreeQuestPlayerProps {
   game: GoalTreeGame;
   onClose: () => void;
   sendMessageToAi?: (msg: string) => void;
+  /** "3d" loads the world-engine 3D player (symbol-learning); default 2d. */
+  renderMode?: "2d" | "3d";
 }
 
 /** Suppress identical [GAME] lines repeated within this window. */
@@ -25,6 +27,7 @@ export default function GoalTreeQuestPlayer({
   game,
   onClose,
   sendMessageToAi,
+  renderMode = "2d",
 }: GoalTreeQuestPlayerProps) {
   const lastSentRef = useRef<{ text: string; at: number } | null>(null);
 
@@ -137,7 +140,7 @@ export default function GoalTreeQuestPlayer({
   return (
     <GameEmbed
       gameId="goal-tree-player"
-      src="/games/goal-tree-player/"
+      src={renderMode === "3d" ? "/games/goal-tree-player/?render=3d" : "/games/goal-tree-player/"}
       forwardGaze
       gamePayload={game}
       onMessage={handleMessage}

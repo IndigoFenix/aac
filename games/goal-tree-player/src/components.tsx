@@ -204,6 +204,10 @@ export function ObjectivesBar({
           case "overcome":
             emoji = icon(node.obstacleEntityId);
             break;
+          case "observe":
+            emoji = icon(node.stageEntityId);
+            detail = "👁";
+            break;
         }
         return (
           <span

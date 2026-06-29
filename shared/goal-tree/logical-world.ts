@@ -149,6 +149,21 @@ function buildNode(world: LogicalWorld, node: GoalNode, contextZoneId: string): 
       buildNode(world, node.key, contextZoneId);
       break;
     }
+    case "observe": {
+      // Like reach: a new zone you travel to, with a "stage" figure standing in
+      // it (reusing the marker role — it's a point of interest you approach).
+      // The demonstration plays when the runtime sees the figure touched.
+      const zoneId = addZone(world, "reach", node.id, node.zoneHint);
+      addPassage(world, contextZoneId, zoneId, buildVia(world, node.via, contextZoneId));
+      world.figures.push({
+        zoneId,
+        entityId: node.stageEntityId,
+        role: "marker",
+        forNodeId: node.id,
+      });
+      world.sites[node.id] = zoneId;
+      break;
+    }
   }
 }
 

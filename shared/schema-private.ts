@@ -434,6 +434,11 @@ export const students = pgTable("students", {
   chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+  // Persistent multi-window budget-meter state (the layer above the per-session
+  // energy meter). One leaky-bucket {drain, asOf} per window keyed by window key
+  // (e.g. "3h"/"3d"/"14d"). Survives across sessions so the monthly cap holds.
+  // Shape = shared/aac/budget-meter.ts BudgetState. See planning-docs/aac-budget-tiers-spec.md §7.
+  budgetMeters: jsonb("budget_meters").default({}),
 
   // Stable, clinician-curated description of how this student communicates —
   // verbal abilities, AAC use, vocalization patterns, etc. Backs the
@@ -586,6 +591,13 @@ export const aacSettings = pgTable("aac_settings", {
   // as the inverse `clientConfig.awakeDataSaver` flag.
   fullAttentionMode: boolean("full_attention_mode").default(false).notNull(),
 
+  // Cost budget tier (price plan). Names a budget = a scale factor on the
+  // multi-window meter caps (shared/aac/budget-tiers.ts): "demo" ($30/mo) …
+  // "premium" ($250/mo). Null = the env default tier. The tier governs how much
+  // paid-LLM use a student gets per rolling window before the throttle kicks in.
+  // See planning-docs/aac-budget-tiers-spec.md §4.
+  budgetTier: text("budget_tier"),
+
   // Experimental: run the Board Manager agent on a Gemini Live session
   // (warm, TEXT modality + function calling) instead of stateless HTTP
   // completions, to test board-generation latency. Behavior is identical;
@@ -678,6 +690,11 @@ export const aacSettings = pgTable("aac_settings", {
   // column level (reads coerce via coerceSeizureConfig) — a strict $type union
   // fights drizzle-zod's insert-schema widening.
   seizureDetection: jsonb("seizure_detection"),
+
+  // When true, a clinician on a video call may facilitate button presses on the
+  // student's mirrored board (guided communication). Off by default — facilitator
+  // presses from the call are ignored unless this is enabled per student.
+  allowFacilitatorControl: boolean("allow_facilitator_control").default(false).notNull(),
 
   // Metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),

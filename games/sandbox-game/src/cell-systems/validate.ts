@@ -68,6 +68,12 @@ export function validateSpec(spec: SystemSpec): ValidationResult {
     if (!varNames.has(s.of)) errors.push(`sensor "${s.name}": unknown source var "${s.of}".`);
     if (!(s.radius >= 0)) errors.push(`sensor "${s.name}": radius must be ≥ 0.`);
   }
+  const flowNames = new Set((spec.vars ?? []).filter(v => v.flow).map(v => v.name));
+  for (const v of spec.vars ?? []) {
+    if (!v.flow) continue;
+    if (!varNames.has(v.flow.potential)) errors.push(`flow var "${v.name}": unknown potential "${v.flow.potential}".`);
+    if (v.flow.block && !varNames.has(v.flow.block)) errors.push(`flow var "${v.name}": unknown block "${v.flow.block}".`);
+  }
 
   // --- Reference integrity --------------------------------------------------
   const checkRef = (ref: Ref, where: string) => {
@@ -101,6 +107,7 @@ export function validateSpec(spec: SystemSpec): ValidationResult {
       const w = writeTarget(e);
       if (w) {
         if (clockNames.has(w)) errors.push(`${where}: cannot write clock "${w}" — clocks are autonomous (rule 3).`);
+        else if (flowNames.has(w)) errors.push(`${where}: cannot write flow var "${w}" — it's computed (drainage accumulation).`);
         else if (!varNames.has(w)) errors.push(`${where}: writes unknown var "${w}".`);
       }
       if ('toward' in e) checkRef(e.toward.target, where);

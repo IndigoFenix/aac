@@ -27,6 +27,10 @@
 // AWS credentials are resolved via the standard chain (env vars, ~/.aws/
 // credentials, IAM role on EC2/CI). No credentials are embedded here.
 
+// Load .env (repo root) so AAC_UPDATE_* (and AWS_PROFILE) can live in a file
+// for local publishes instead of being typed inline. In CI these come from the
+// workflow env; dotenv simply no-ops when no .env is present.
+import "dotenv/config";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,27 +62,44 @@ console.log(`[release] target           = s3://${BUCKET ?? "(dry-run)"}/${PREFIX
 // Other byproducts (.yaml metadata, unpacked dir, builder-effective-config.yml)
 // are NOT uploaded — only the three files the updater needs.
 const entries = readdirSync(releaseDir);
-const installer = entries.find((f) => /Setup .*\.exe$/i.test(f));
-const blockmap = installer ? `${installer}.blockmap` : null;
 const manifest = "latest.yml";
 
-if (!installer) {
-  console.error(`[release] no NSIS installer found in ${releaseDir} — did the build step run?`);
-  process.exit(1);
-}
 if (!entries.includes(manifest)) {
-  console.error(`[release] ${manifest} not found in ${releaseDir} — check electron-builder's publish config.`);
+  console.error(`[release] ${manifest} not found in ${releaseDir} — did 'npm run release:aac:build' run?`);
   process.exit(1);
 }
 
-// Sanity: the manifest's `version` field should match package.json. Skipping
-// catches the "forgot to npm version" trap before clients ever poll.
 const manifestText = readFileSync(join(releaseDir, manifest), "utf8");
+
+// Sanity: the manifest's `version` field must match package.json. Catches the
+// "forgot to npm version" trap before clients ever poll.
 const manifestVersionMatch = manifestText.match(/^version:\s*(\S+)/m);
 if (manifestVersionMatch && manifestVersionMatch[1] !== pkg.version) {
   console.error(
     `[release] manifest version (${manifestVersionMatch[1]}) ≠ package.json version (${pkg.version}). ` +
     `Run \`npm version <patch|minor|major>\` and rebuild before publishing.`,
+  );
+  process.exit(1);
+}
+
+// Pick the installer the manifest ITSELF references (its `path:` field) — the
+// exact filename clients will request. release/ accumulates installers from
+// every prior build (electron-builder doesn't prune them), so the old "first
+// *.exe in the directory" match could upload a STALE older version while the
+// manifest pointed at the current one. Driving the choice from the manifest
+// makes the uploaded .exe and latest.yml impossible to mismatch.
+const installerMatch = manifestText.match(/^path:\s*(.+\.exe)\s*$/m);
+const installer = installerMatch ? installerMatch[1].trim() : null;
+const blockmap = installer ? `${installer}.blockmap` : null;
+
+if (!installer) {
+  console.error(`[release] could not read the installer filename from ${manifest}'s 'path:' field.`);
+  process.exit(1);
+}
+if (!entries.includes(installer)) {
+  console.error(
+    `[release] manifest references "${installer}" but it is not in ${releaseDir} — ` +
+    `stale or incomplete build. Re-run 'npm run release:aac:build'.`,
   );
   process.exit(1);
 }

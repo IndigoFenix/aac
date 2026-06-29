@@ -241,7 +241,7 @@ variable "enable_aac_auto_update" {
 }
 
 variable "aac_update_subdomain" {
-  description = "Subdomain under domain_name to serve the AAC update channel from. Final URL = https://<subdomain>.<domain_name>/. Ignored when domain_name is empty (the bucket still gets a CloudFront-only URL output)."
+  description = "Base subdomain under domain_name for the AAC update channel. Prod serves from this verbatim (https://<subdomain>.<domain_name>/); non-prod environments are suffixed with the environment name (e.g. updates-staging) so they don't collide on the shared hosted zone's Route53 record + ACM cert. Ignored when domain_name is empty (the bucket still gets a CloudFront-only URL output)."
   type        = string
   default     = "updates"
 }

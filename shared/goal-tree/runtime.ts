@@ -9,6 +9,8 @@
 //              distractor picks emit gentle feedback only
 //   overcome — touching the obstacle/door clears it iff its key goal is
 //              complete; otherwise it stays locked with a prompt
+//   observe  — touching the stage plays its demonstration + completes (a beat
+//              the child watches; it never gates)
 //
 // State is JSON-serializable; the immutable context (game, world, lookup
 // maps, expanded item instances) is built once per session. All inputs are
@@ -212,6 +214,23 @@ function handleTouchFigure(
       break;
     case "overcome":
       attemptOvercome(ctx, out, node);
+      break;
+    case "observe":
+      // Reaching the stage plays the demonstration, surfaces the taught glyph to
+      // observers/AI, then completes — observe never gates, it just teaches.
+      out.commands.push({
+        type: "demonstrate",
+        nodeId: node.id,
+        targetGlyph: node.targetGlyph,
+        contrastGlyph: node.contrastGlyph,
+        cues: node.demonstrate,
+      });
+      out.events.push({
+        type: "demonstration-shown",
+        nodeId: node.id,
+        targetGlyph: node.targetGlyph,
+      });
+      complete(ctx, out, node);
       break;
     case "collect":
       // Collect has no single figure; nothing to do.

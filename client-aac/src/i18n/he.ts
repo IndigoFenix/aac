@@ -363,6 +363,7 @@ export const he: Translations = {
   },
 
   aac: {
+    energyBar: "אנרגיית ה-AI",
     voiceLive: "מקשיב",
     glyph: {
       person: "אדם",
@@ -758,6 +759,24 @@ export const he: Translations = {
   },
 
   call: {
+    layout: {
+      label: "פריסה",
+      spotlight: "במוקד",
+      grid: "רשת",
+      compact: "קומפקטי",
+      auto: "אוטומטי",
+    },
+    viewBoard: "צפייה בלוח שלהם",
+    viewVideo: "צפייה בווידאו",
+    interact: "עזרה בלחיצה",
+    interactOn: "הפסקת עזרה",
+    shareScreen: "שיתוף מסך",
+    stopShareScreen: "הפסקת שיתוף",
+    screenLabel: "מסך",
+    guidedPress: "לחיצה מודרכת",
+    bigVideo: "וידאו גדול",
+    smallVideo: "וידאו קטן",
+    noOneElse: "אין כאן עדיין אף אחד אחר",
     incoming: "שיחה נכנסת",
     accept: "כן",
     decline: "לא",

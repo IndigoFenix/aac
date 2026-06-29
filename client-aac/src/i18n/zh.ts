@@ -363,6 +363,7 @@ export const zh: Translations = {
   },
 
   aac: {
+    energyBar: "AI 能量",
     voiceLive: "正在聆听",
     glyph: {
       person: "人",
@@ -758,6 +759,24 @@ export const zh: Translations = {
   },
 
   call: {
+    layout: {
+      label: "布局",
+      spotlight: "聚焦",
+      grid: "网格",
+      compact: "紧凑",
+      auto: "自动",
+    },
+    viewBoard: "查看他们的板",
+    viewVideo: "查看视频",
+    interact: "帮助点按",
+    interactOn: "停止帮助",
+    shareScreen: "共享屏幕",
+    stopShareScreen: "停止共享",
+    screenLabel: "屏幕",
+    guidedPress: "引导点按",
+    bigVideo: "大视频",
+    smallVideo: "小视频",
+    noOneElse: "还没有其他人",
     incoming: "来电",
     accept: "是",
     decline: "否",

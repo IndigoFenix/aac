@@ -88,6 +88,7 @@ export default function GoalTreePlayer3D() {
   const sessionRef = useRef<Session | null>(null);
   if (!sessionRef.current) sessionRef.current = makeSession(demoGame());
   const rendererRef = useRef<World3DRenderer | null>(null);
+  const overlayRef = useRef<GoalTreeOverlay3D | null>(null);
 
   // HUD state (low-frequency; the GL canvas never re-renders React).
   const [objectives, setObjectives] = useState<ObjectiveSummary[]>([]);
@@ -130,6 +131,12 @@ export default function GoalTreePlayer3D() {
           choiceRef.current = null;
           setChoice(null);
           break;
+        case "demonstrate":
+          // Animate the cues in-world (scale/move/spawn/emote/glow + glyph
+          // caption) and echo the taught glyph as a toast.
+          overlayRef.current?.playDemonstration(command);
+          showToast(`👁 ${command.targetGlyph}`, "intro");
+          break;
         case "clear-obstacle":
         case "celebrate":
           break;
@@ -170,6 +177,13 @@ export default function GoalTreePlayer3D() {
         case "zone-entered":
           if (event.hint) showToast(event.hint, "intro");
           break;
+        case "demonstration-shown":
+          sendToParent({
+            type: "player_action",
+            action: "demonstration_shown",
+            meta: { nodeId: event.nodeId, targetGlyph: event.targetGlyph },
+          });
+          break;
         case "obstacle-locked":
         case "guard-cleared":
           break;
@@ -200,6 +214,7 @@ export default function GoalTreePlayer3D() {
       localId: PLAYER_ID,
       overlay,
     });
+    overlayRef.current = overlay;
     const dpr = window.devicePixelRatio || 1;
     renderer.resize(canvas.clientWidth, canvas.clientHeight, dpr);
     rendererRef.current = renderer;

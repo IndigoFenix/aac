@@ -1,26 +1,26 @@
 // games/goal-tree-player/src/goaltree-overlay-3d.ts
 //
 // The goal-tree quest drawn as a SceneOverlay inside the world engine's 3D
-// scene (Phase-0 merge spike). It shares the engine's camera, ground, and
-// lighting; it only adds the quest's furniture:
-//   • zone floors  — tinted slabs marking each room,
-//   • doors        — posts on a passage, red while locked,
-//   • figures      — billboard icons for markers / posers / obstacles,
-//   • items        — billboard icons, hidden once collected.
+// scene. It shares the engine's camera, ground, and lighting; it adds the
+// quest's furniture (zone floors, doors, figure/item billboards) AND runs the
+// symbol-learning DEMONSTRATIONS — the renderer-side half of the `observe` beat.
+//
+// When the runtime emits a `demonstrate` command, playDemonstration() stages the
+// cue props near the observe figure and animates the cues (scale/move/spawn/
+// emote/glow) in sequence, with the taught glyph floating above. The cues are a
+// closed, clamped set authored in the goal-tree content (shared/goal-tree/types
+// DemoCue); this file is purely how they LOOK. Everything a demonstration
+// creates is transient — disposed when it finishes.
 //
 // All positions are world-engine ground coords (the embedding.layout Space3D
-// also reads), so content lines up with the avatar with no offset math. This is
-// the goal-tree-SPECIFIC half of the merge; the world engine stays ignorant of
-// it (it only sees the generic SceneOverlay contract). Visuals are deliberately
-// plain — proving the seam, not polishing the art. // TODO(phase1): nicer
-// rooms/props, walls, animated door open, entity images (not just emoji).
+// reads), so content lines up with the avatar with no offset math.
 
 import * as THREE from "three";
 import type { SceneOverlay } from "@shared/world-engine/render3d";
 import type { Layout2D } from "@shared/goal-tree/layout2d";
 import { rectCenter } from "@shared/goal-tree/layout2d";
 import type { LogicalWorld, FigureRole } from "@shared/goal-tree/logical-world";
-import type { EntityDef } from "@shared/goal-tree/types";
+import type { DemoCue, EntityDef } from "@shared/goal-tree/types";
 
 /** The live state the overlay reflects each frame — supplied by the player from
  *  its Space3D + runtime state (no game logic lives here). */
@@ -42,6 +42,14 @@ export interface GoalTreeOverlayDeps {
   getView: () => GoalTreeOverlayView;
 }
 
+/** The fields of a runtime `demonstrate` command the runner needs. */
+export interface DemonstrateCommand {
+  nodeId: string;
+  targetGlyph: string;
+  contrastGlyph?: string;
+  cues: DemoCue[];
+}
+
 const ZONE_TINT: Record<string, string> = {
   start: "#1e3a5f",
   reach: "#14532d",
@@ -53,20 +61,56 @@ const FIGURE_Y = 1.2; // float the icon above the floor
 const ITEM_Y = 0.9;
 const ICON_WORLD = 1.3; // sprite size in world units
 
+// Demonstration tuning.
+const CUE_SECONDS = 1.3; // default per-cue duration
+const DEMO_LINGER = 1.6; // hold the final state + glyph before clearing
+const PROP_Y = 1.35; // height of demonstration props
+const PROP_GAP = 1.9; // spacing between distinct props
+const LABEL_Y = 3.3; // height of the floating glyph label
+
+const smooth = (t: number): number => {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+};
+
+interface AnimProp {
+  base: THREE.Vector3;
+  baseScale: number;
+  primary: THREE.Sprite;
+}
+
+interface DemoStep {
+  cue: DemoCue;
+  start: number;
+  duration: number;
+  prop: AnimProp;
+  /** Cue-specific transient sprites (spawn copies / emote badge / glow halo). */
+  extras: THREE.Sprite[];
+}
+
+interface DemoRun {
+  elapsed: number;
+  total: number;
+  steps: DemoStep[];
+  label: THREE.Sprite;
+  objects: THREE.Object3D[];
+  disposables: { dispose(): void }[];
+}
+
 export class GoalTreeOverlay3D implements SceneOverlay {
   private readonly deps: GoalTreeOverlayDeps;
   private readonly group = new THREE.Group();
   private readonly disposables: { dispose(): void }[] = [];
 
-  /** instanceId → sprite, toggled by `removed`. */
   private readonly itemSprites = new Map<string, THREE.Sprite>();
-  /** passageId → door post, recolored/hidden by `unlocked`. */
   private readonly doorMeshes = new Map<string, THREE.Mesh>();
-  /** nodeId → { sprite, role }; obstacle figures hide once completed. */
   private readonly figureSprites = new Map<
     string,
     { sprite: THREE.Sprite; role: FigureRole }
   >();
+
+  /** Active demonstrations, advanced in update(). */
+  private readonly runs: DemoRun[] = [];
 
   constructor(deps: GoalTreeOverlayDeps) {
     this.deps = deps;
@@ -80,23 +124,23 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     scene.add(this.group);
   }
 
-  /** Reflect runtime/space state: collected items vanish, opened doors clear,
-   *  cleared obstacles disappear. Pure visibility — cheap to run every frame. */
-  update(_dt: number): void {
+  update(dt: number): void {
     const view = this.deps.getView();
     for (const [instanceId, sprite] of this.itemSprites) {
       sprite.visible = !view.removed[instanceId];
     }
     for (const [passageId, mesh] of this.doorMeshes) {
-      const open = !!view.unlocked[passageId];
-      mesh.visible = !open;
+      mesh.visible = !view.unlocked[passageId];
     }
     for (const [nodeId, { sprite, role }] of this.figureSprites) {
       if (role === "obstacle") sprite.visible = !view.completed[nodeId];
     }
+    this.advanceRuns(dt);
   }
 
   dispose(): void {
+    for (const run of this.runs) this.disposeRun(run);
+    this.runs.length = 0;
     this.group.parent?.remove(this.group);
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
@@ -105,7 +149,162 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     this.figureSprites.clear();
   }
 
-  // -- builders --------------------------------------------------------------
+  // -- demonstration runner ---------------------------------------------------
+
+  /** Stage and play an observe beat's demonstration near its figure. */
+  playDemonstration(cmd: DemonstrateCommand): void {
+    const stage = this.deps.layout.figures.find((f) => f.nodeId === cmd.nodeId);
+    if (!stage) return;
+    const center = new THREE.Vector3(stage.pos.x, PROP_Y, stage.pos.y);
+
+    const objects: THREE.Object3D[] = [];
+    const disposables: { dispose(): void }[] = [];
+
+    // One prop per distinct cue entity, laid out in a row over the stage.
+    const propIds = [...new Set(cmd.cues.map((c) => c.entityId))];
+    const props = new Map<string, AnimProp>();
+    propIds.forEach((entityId, i) => {
+      const icon = this.deps.entities.get(entityId)?.iconRef ?? "❔";
+      const sprite = this.makeIconSpriteInto(icon, disposables);
+      const base = new THREE.Vector3(
+        center.x + (i - (propIds.length - 1) / 2) * PROP_GAP,
+        center.y,
+        center.z,
+      );
+      sprite.position.copy(base);
+      this.group.add(sprite);
+      objects.push(sprite);
+      props.set(entityId, { base, baseScale: ICON_WORLD, primary: sprite });
+    });
+
+    // Sequence the cues; each carries its own transient sprites.
+    const steps: DemoStep[] = [];
+    let cursor = 0;
+    for (const cue of cmd.cues) {
+      const prop = props.get(cue.entityId)!;
+      const duration =
+        (cue.kind === "scale" || cue.kind === "move") && cue.seconds
+          ? cue.seconds
+          : CUE_SECONDS;
+      const extras = this.buildCueExtras(cue, prop, disposables);
+      for (const e of extras) {
+        this.group.add(e);
+        objects.push(e);
+      }
+      steps.push({ cue, start: cursor, duration, prop, extras });
+      cursor += duration;
+    }
+
+    const labelText = cmd.contrastGlyph
+      ? `${cmd.targetGlyph}  ↔  ${cmd.contrastGlyph}`
+      : cmd.targetGlyph;
+    const label = this.makeLabelSpriteInto(labelText, disposables);
+    label.position.set(center.x, LABEL_Y, center.z);
+    this.group.add(label);
+    objects.push(label);
+
+    this.runs.push({ elapsed: 0, total: cursor, steps, label, objects, disposables });
+  }
+
+  /** Pre-create a cue's transient sprites (revealed by opacity in advanceRuns). */
+  private buildCueExtras(
+    cue: DemoCue,
+    prop: AnimProp,
+    sink: { dispose(): void }[],
+  ): THREE.Sprite[] {
+    switch (cue.kind) {
+      case "spawn": {
+        const out: THREE.Sprite[] = [];
+        const icon = this.deps.entities.get(cue.entityId)?.iconRef ?? "❔";
+        for (let i = 1; i < cue.count; i++) {
+          const s = this.makeIconSpriteInto(icon, sink);
+          const ang = (i / cue.count) * Math.PI * 2;
+          s.position.set(
+            prop.base.x + Math.cos(ang) * 1.1,
+            prop.base.y,
+            prop.base.z + Math.sin(ang) * 1.1,
+          );
+          s.scale.setScalar(prop.baseScale);
+          (s.material as THREE.SpriteMaterial).opacity = 0;
+          out.push(s);
+        }
+        return out;
+      }
+      case "emote": {
+        const badge = this.makeIconSpriteInto(cue.emotion === "happy" ? "😊" : "😢", sink);
+        badge.position.set(prop.base.x + 0.5, prop.base.y + 0.9, prop.base.z);
+        badge.scale.setScalar(0.8);
+        (badge.material as THREE.SpriteMaterial).opacity = 0;
+        return [badge];
+      }
+      case "glow": {
+        const halo = this.makeHaloSpriteInto(cue.tone, sink);
+        halo.position.copy(prop.base);
+        (halo.material as THREE.SpriteMaterial).opacity = 0;
+        return [halo];
+      }
+      default:
+        return [];
+    }
+  }
+
+  private advanceRuns(dt: number): void {
+    for (let i = this.runs.length - 1; i >= 0; i--) {
+      const run = this.runs[i];
+      run.elapsed += dt;
+
+      // Every step every frame, with a clamped local progress: finished steps
+      // hold their final state, pending ones hold their initial state.
+      for (const step of run.steps) {
+        const t = smooth((run.elapsed - step.start) / step.duration);
+        this.applyStep(step, t);
+      }
+
+      // The glyph fades in quickly, holds, then fades out during the linger.
+      const fadeIn = smooth(run.elapsed / 0.3);
+      const fadeOut = 1 - smooth((run.elapsed - run.total) / DEMO_LINGER);
+      (run.label.material as THREE.SpriteMaterial).opacity = Math.min(fadeIn, fadeOut);
+
+      if (run.elapsed >= run.total + DEMO_LINGER) {
+        this.disposeRun(run);
+        this.runs.splice(i, 1);
+      }
+    }
+  }
+
+  private applyStep(step: DemoStep, t: number): void {
+    const { cue, prop } = step;
+    switch (cue.kind) {
+      case "scale": {
+        const s = prop.baseScale * (1 + (cue.to - 1) * t);
+        prop.primary.scale.set(s, s, 1);
+        break;
+      }
+      case "move":
+        prop.primary.position.set(
+          prop.base.x + cue.dx * t,
+          prop.base.y,
+          prop.base.z + cue.dy * t,
+        );
+        break;
+      case "spawn":
+        step.extras.forEach((s, idx) => {
+          (s.material as THREE.SpriteMaterial).opacity = Math.min(1, Math.max(0, t * cue.count - (idx + 1)));
+        });
+        break;
+      case "emote":
+      case "glow":
+        if (step.extras[0]) (step.extras[0].material as THREE.SpriteMaterial).opacity = t;
+        break;
+    }
+  }
+
+  private disposeRun(run: DemoRun): void {
+    for (const o of run.objects) this.group.remove(o);
+    for (const d of run.disposables) d.dispose();
+  }
+
+  // -- static builders --------------------------------------------------------
 
   private buildZones(): void {
     for (const zone of this.deps.layout.zones) {
@@ -171,9 +370,15 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     }
   }
 
-  /** A billboarded sprite showing an emoji/icon, rasterized to a small canvas
-   *  texture. Sprites always face the camera, so an icon reads from any angle. */
+  // -- sprite factories -------------------------------------------------------
+
   private makeIconSprite(icon: string): THREE.Sprite {
+    return this.makeIconSpriteInto(icon, this.disposables);
+  }
+
+  /** A billboarded sprite showing an emoji/icon, rasterized to a canvas texture.
+   *  `sink` owns the GPU resources (the overlay's, or a transient run's). */
+  private makeIconSpriteInto(icon: string, sink: { dispose(): void }[]): THREE.Sprite {
     const size = 128;
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -191,7 +396,87 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(ICON_WORLD, ICON_WORLD, 1);
     sprite.renderOrder = 10;
-    this.disposables.push(tex, mat);
+    sink.push(tex, mat);
     return sprite;
   }
+
+  /** A glyph caption: text on a rounded card, billboarded over the stage. */
+  private makeLabelSpriteInto(text: string, sink: { dispose(): void }[]): THREE.Sprite {
+    const fontPx = 64;
+    const padX = 28;
+    const measure = document.createElement("canvas").getContext("2d");
+    if (measure) measure.font = `bold ${fontPx}px sans-serif`;
+    const textW = measure ? measure.measureText(text).width : text.length * fontPx * 0.6;
+    const w = Math.ceil(textW + padX * 2);
+    const h = fontPx + padX * 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      roundRect(ctx, 0, 0, w, h, 22);
+      ctx.fill();
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `bold ${fontPx}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, w / 2, h / 2);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    const worldH = 0.9;
+    sprite.scale.set((worldH * w) / h, worldH, 1);
+    sprite.renderOrder = 30;
+    sink.push(tex, mat);
+    return sprite;
+  }
+
+  /** A soft warm/cool radial halo (hot/cold). */
+  private makeHaloSpriteInto(
+    tone: "warm" | "cool",
+    sink: { dispose(): void }[],
+  ): THREE.Sprite {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      const rgb = tone === "warm" ? "255,170,60" : "120,180,255";
+      const grad = ctx.createRadialGradient(size / 2, size / 2, 4, size / 2, size / 2, size / 2);
+      grad.addColorStop(0, `rgba(${rgb},0.9)`);
+      grad.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2.6, 2.6, 1);
+    sprite.renderOrder = 9; // behind the prop
+    sink.push(tex, mat);
+    return sprite;
+  }
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
 }

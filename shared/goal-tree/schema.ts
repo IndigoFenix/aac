@@ -23,6 +23,7 @@ import {
   GOAL_TREE_MAX_DEPTH,
   GOAL_TREE_MAX_ENTITIES,
   GOAL_TREE_MAX_NODES,
+  OBSERVE_MAX_CUES,
 } from "./types.js";
 import { walkGoalTree } from "./walk.js";
 
@@ -36,6 +37,11 @@ const idSchema = z.string().min(1).max(64).regex(
 );
 
 const flavorTextSchema = z.string().min(1).max(400);
+
+// A composed AAC glyph string (e.g. "big", "day.next", "i_me+want+apple").
+// Permissive on the glyph-syntax punctuation (./+/#/:) the registry uses; the
+// runtime/compositor interpret it — the schema just bounds it.
+const glyphStringSchema = z.string().min(1).max(120);
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -69,6 +75,7 @@ export const goalNodeSchema: z.ZodType<GoalNode> = z.lazy(() =>
     collectNodeSchema,
     chooseNodeSchema,
     overcomeNodeSchema,
+    observeNodeSchema,
   ]),
 ) as unknown as z.ZodType<GoalNode>;
 
@@ -126,6 +133,48 @@ const chooseNodeSchema = z.object({
   options: z.array(chooseOptionSchema).min(2).max(CHOOSE_MAX_OPTIONS),
 }).strict();
 
+const demoCueSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("scale"),
+    entityId: idSchema,
+    to: z.number().min(0.1).max(8),
+    seconds: z.number().min(0.1).max(10).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("move"),
+    entityId: idSchema,
+    dx: z.number().min(-50).max(50),
+    dy: z.number().min(-50).max(50),
+    seconds: z.number().min(0.1).max(10).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("spawn"),
+    entityId: idSchema,
+    count: z.number().int().min(1).max(12),
+  }).strict(),
+  z.object({
+    kind: z.literal("emote"),
+    entityId: idSchema,
+    emotion: z.enum(["happy", "sad"]),
+  }).strict(),
+  z.object({
+    kind: z.literal("glow"),
+    entityId: idSchema,
+    tone: z.enum(["warm", "cool"]),
+  }).strict(),
+]);
+
+const observeNodeSchema = z.object({
+  ...goalNodeBaseFields,
+  type: z.literal("observe"),
+  targetGlyph: glyphStringSchema,
+  contrastGlyph: glyphStringSchema.optional(),
+  stageEntityId: idSchema,
+  zoneHint: z.string().min(1).max(120).optional(),
+  demonstrate: z.array(demoCueSchema).min(1).max(OBSERVE_MAX_CUES),
+  via: viaSchema.optional(),
+}).strict();
+
 // ---------------------------------------------------------------------------
 // Top-level game
 // ---------------------------------------------------------------------------
@@ -164,6 +213,8 @@ const KIND_RULES = {
   choosePoser: ["character", "marker"],
   chooseOption: ["item", "character", "marker"],
   obstacle: ["obstacle"],
+  observeStage: ["marker", "character", "item"],
+  demoProp: ["item", "character", "obstacle", "marker"],
 } as const satisfies Record<string, readonly EntityKind[]>;
 
 function validateGameStructure(
@@ -224,6 +275,12 @@ function validateGameStructure(
         break;
       case "overcome":
         checkRef(node.id, "obstacleEntityId", node.obstacleEntityId, "obstacle");
+        break;
+      case "observe":
+        checkRef(node.id, "stageEntityId", node.stageEntityId, "observeStage");
+        for (const cue of node.demonstrate) {
+          checkRef(node.id, "demonstrate", cue.entityId, "demoProp");
+        }
         break;
     }
   }

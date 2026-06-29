@@ -46,6 +46,8 @@ export interface CellGrid {
   armed: Array<Map<number, number>>;
   /** per rule index → per-tile last guard value (for rising-edge arming). */
   lastGuard: Uint8Array[];
+  /** A flow var's potential changed → flow fields need recomputing next step. */
+  flowDirty: boolean;
 }
 
 // --- Compiled lookups ---------------------------------------------------------
@@ -57,6 +59,7 @@ interface TransportEffect {
   rate: number;
   block?: string;
   drainEdge?: number;
+  int?: boolean; // whole-unit transport for integer-level vars
   // erode only:
   by?: string;
   minFlow?: number;
@@ -81,6 +84,12 @@ interface GridCompiled {
    *  must re-wake (the wide, prominence-style coupling). */
   sourceVars: Set<string>;
   maxSensorRadius: number;
+  /** Integer-level vars (committed as whole numbers; whole-unit transport). */
+  intVars: Set<string>;
+  /** Computed flow-accumulation vars (rivers) — engine-filled, never rule-written. */
+  flowVars: { name: string; potential: string; source: number; block?: string; int: boolean }[];
+  /** Potential vars that, when changed, require flow recomputation. */
+  flowPotentials: Set<string>;
 }
 
 const cache = new WeakMap<SystemSpec, GridCompiled>();
@@ -89,13 +98,14 @@ function compile(spec: SystemSpec): GridCompiled {
   const hit = cache.get(spec);
   if (hit) return hit;
   const vars = new Map((spec.vars ?? []).map(v => [v.name, v]));
+  const intVars = new Set((spec.vars ?? []).filter(v => v.int).map(v => v.name));
   const stages = new Map((spec.states ?? []).map(s => [s.name, s]));
   const clocks = new Map((spec.clocks ?? []).map(c => [c.name, c]));
   const rules: RuleMeta[] = spec.rules.map(r => {
     const transports: TransportEffect[] = [];
     for (const e of r.effects) {
-      if ('spread' in e) transports.push({ kind: 'spread', scalar: e.spread.scalar, rate: e.spread.rate });
-      else if ('flowDown' in e) transports.push({ kind: 'flowDown', scalar: e.flowDown.scalar, potential: e.flowDown.potential, rate: e.flowDown.rate, block: e.flowDown.block, drainEdge: e.flowDown.drainEdge });
+      if ('spread' in e) transports.push({ kind: 'spread', scalar: e.spread.scalar, rate: e.spread.rate, int: intVars.has(e.spread.scalar) });
+      else if ('flowDown' in e) transports.push({ kind: 'flowDown', scalar: e.flowDown.scalar, potential: e.flowDown.potential, rate: e.flowDown.rate, block: e.flowDown.block, drainEdge: e.flowDown.drainEdge, int: intVars.has(e.flowDown.scalar) });
       else if ('erode' in e) transports.push({ kind: 'erode', scalar: e.erode.scalar, by: e.erode.by, rate: e.erode.rate, minFlow: e.erode.minFlow, minSlope: e.erode.minSlope, max: e.erode.max, block: e.erode.block });
     }
     return {
@@ -108,9 +118,13 @@ function compile(spec: SystemSpec): GridCompiled {
   const sensors = spec.sensors ?? [];
   const sourceVars = new Set(sensors.map(s => s.of));
   const maxSensorRadius = sensors.reduce((m, s) => Math.max(m, s.radius), 0);
+  const flowVars = (spec.vars ?? []).filter(v => v.flow).map(v => ({
+    name: v.name, potential: v.flow!.potential, source: v.flow!.source ?? 1, block: v.flow!.block, int: !!v.int,
+  }));
+  const flowPotentials = new Set(flowVars.map(f => f.potential));
   const c: GridCompiled = {
     vars, stages, clocks, clockBoundaries: clockBoundaries(spec), rules,
-    sensors, sourceVars, maxSensorRadius,
+    sensors, sourceVars, maxSensorRadius, intVars, flowVars, flowPotentials,
   };
   cache.set(spec, c);
   return c;
@@ -146,6 +160,7 @@ function seedField(v: VarSpec, cols: number, rows: number): Float64Array {
       case 'noise':      val = v.min + span * hashFrac(i); break;
       default:           val = v.initial;                                       // 'flat'
     }
+    if (v.int) val = Math.round(val);
     arr[i] = Math.max(v.min, Math.min(v.max, val));
   }
   return arr;
@@ -166,7 +181,9 @@ export function createGrid(spec: SystemSpec, cols: number, rows: number, wrap = 
     buckets: new Map(), due,
     armed: spec.rules.map(() => new Map()),
     lastGuard: spec.rules.map(() => new Uint8Array(n)),
+    flowDirty: false,
   };
+  recomputeFlows(grid, compile(spec)); // initial river network from the seeded terrain
   // A non-flat seed (or any non-trivial initial) means the grid isn't at rest —
   // wake everything so the scheduler settles it. (A flat grid with no dynamics
   // would just sleep immediately, which is correct.)
@@ -238,6 +255,44 @@ export function pendingCount(grid: CellGrid): number {
 
 export function wakeAll(grid: CellGrid, step: number): void {
   for (let i = 0; i < grid.cols * grid.rows; i++) schedule(grid, i, step);
+}
+
+// --- Flow accumulation (static river networks) --------------------------------
+
+/** Fill a flow-accumulation field: each tile = its `source` + everything draining
+ *  into it from upslope. Process tiles high→low so every upstream tile pushes its
+ *  accumulated catchment to its steepest-descent neighbour before that neighbour
+ *  is processed. Sinks (no lower neighbour) keep their catchment → lakes. O(N log N),
+ *  recomputed only when the terrain changes. Stone carries no flow. */
+function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): Float64Array {
+  const n = grid.cols * grid.rows;
+  const pot = grid.fields[fv.potential];
+  const blk = fv.block ? grid.fields[fv.block] : null;
+  const flow = new Float64Array(n);
+  for (let i = 0; i < n; i++) flow[i] = (blk && blk[i] > 0.5) ? 0 : fv.source;
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => pot[b] - pot[a]);
+  const nb: number[] = [0, 0, 0, 0];
+  for (const c of order) {
+    if (blk && blk[c] > 0.5) { flow[c] = 0; continue; }
+    const k = neighbours(grid, c, nb);
+    let low = -1, lowP = pot[c];
+    for (let j = 0; j < k; j++) { const ni = nb[j]; if (blk && blk[ni] > 0.5) continue; if (pot[ni] < lowP) { lowP = pot[ni]; low = ni; } }
+    if (low >= 0) flow[low] += flow[c]; // route catchment downstream; else a sink (lake)
+  }
+  if (fv.int) for (let i = 0; i < n; i++) flow[i] = Math.round(flow[i]);
+  return flow;
+}
+
+/** Recompute every flow var and wake the tiles whose flow changed (so rules that
+ *  read it — e.g. greenery along rivers — re-evaluate). */
+function recomputeFlows(grid: CellGrid, comp: GridCompiled): void {
+  for (const fv of comp.flowVars) {
+    const out = computeFlow(grid, fv);
+    const cur = grid.fields[fv.name];
+    if (cur) for (let i = 0; i < out.length; i++) if (cur[i] !== out[i]) schedule(grid, i, grid.clock + 1);
+    grid.fields[fv.name] = out;
+  }
+  grid.flowDirty = false;
 }
 
 // --- Sensors (derived neighbourhood fields) -----------------------------------
@@ -315,6 +370,7 @@ function onClockBoundary(grid: CellGrid, comp: GridCompiled): boolean {
 
 export function worldStep(grid: CellGrid): void {
   const comp = compile(grid.spec);
+  if (grid.flowDirty && comp.flowVars.length) recomputeFlows(grid, comp); // refresh river networks after a terrain edit
   const T = grid.clock + 1;
   advanceClocksTo(grid, T);
   if (onClockBoundary(grid, comp)) wakeAll(grid, T); // a global clock crossing wakes all tiles
@@ -413,7 +469,13 @@ function processActive(grid: CellGrid, comp: GridCompiled, active: number[], T: 
   for (const [field, m] of fieldDelta) {
     const v = comp.vars.get(field); if (!v) continue;
     const arr = grid.fields[field];
-    for (const [cell, dv] of m) arr[cell] = Math.max(v.min, Math.min(v.max, arr[cell] + dv));
+    const round = v.int;
+    for (const [cell, dv] of m) {
+      let next = arr[cell] + dv;
+      if (round) next = Math.round(next);
+      arr[cell] = Math.max(v.min, Math.min(v.max, next));
+    }
+    if (comp.flowPotentials.has(field)) grid.flowDirty = true; // e.g. erosion moved height → rivers re-route
   }
   for (const { cell, state, to } of stageSets) {
     if (to > grid.stageIdx[state][cell]) grid.stageIdx[state][cell] = to;
@@ -506,6 +568,36 @@ function doTransport(
     if (amount < SLEEP_EPS) return;
     addDelta(buf, t.scalar, c, -amount);
     addDelta(buf, t.scalar, down, amount);
+    return;
+  }
+
+  // --- Integer-level transport: move WHOLE UNITS to the steepest-descent target,
+  // floor(gap/2) at a time (so the gap can't invert), stopping exactly when no
+  // gap ≥ 2 remains. Conservative; reaches crisp rest with no ε-tail.
+  if (t.int) {
+    const blkI = t.block ? grid.fields[t.block] : null;
+    if (blkI && blkI[c] > 0.5) return;
+    const usePot = t.kind === 'flowDown';
+    const pot = usePot && t.potential ? grid.fields[t.potential] : null;
+    const surf = (idx: number) => (pot ? pot[idx] : 0) + arr[idx];
+    const mySurf = surf(c);
+    let low = -1, lowSurf = mySurf;
+    for (let j = 0; j < k; j++) {
+      const nIdx = nbScratch[j];
+      if (blkI && blkI[nIdx] > 0.5) continue;
+      const s = surf(nIdx);
+      if (s < lowSurf) { lowSurf = s; low = nIdx; }
+    }
+    // Open boundary (flowDown only): the edge is a target at the sea level.
+    let edgeTarget = false;
+    if (usePot && t.drainEdge !== undefined && !grid.wrap && k < 4 && t.drainEdge < lowSurf) { lowSurf = t.drainEdge; edgeTarget = true; low = -1; }
+    if (!edgeTarget && low < 0) return;
+    const gap = mySurf - lowSurf;
+    if (gap < 2) return;
+    const m = Math.min(arr[c], Math.floor(gap / 2)); // ≤ available, ≤ half-gap (no inversion)
+    if (m <= 0) return;
+    addDelta(buf, t.scalar, c, -m);
+    if (!edgeTarget) addDelta(buf, t.scalar, low, m); // else off-map (drained)
     return;
   }
 
@@ -658,7 +750,10 @@ export function injectTile(grid: CellGrid, cell: number, scalar: string, amount:
   if (!arr) return;
   const v = compile(grid.spec).vars.get(scalar);
   if (!v) return;
-  arr[cell] = Math.max(v.min, Math.min(v.max, arr[cell] + amount));
+  let next = arr[cell] + amount;
+  if (v.int) next = Math.round(next);
+  arr[cell] = Math.max(v.min, Math.min(v.max, next));
+  if (compile(grid.spec).flowPotentials.has(scalar)) grid.flowDirty = true; // terrain edit → rivers re-route
   const nb: number[] = [0, 0, 0, 0];
   schedule(grid, cell, grid.clock + 1);
   const k = neighbours(grid, cell, nb);
@@ -729,6 +824,7 @@ export function deserializeGrid(json: string): CellGrid | null {
       lastGuard: p.lastGuard
         ? p.lastGuard.map((a: number[]) => Uint8Array.from(a))
         : p.spec.rules.map(() => new Uint8Array(n)),
+      flowDirty: false,
     };
     const flat: number[] = p.buckets ?? [];
     for (let k = 0; k + 1 < flat.length; k += 2) schedule(grid, flat[k + 1], Math.max(grid.clock + 1, flat[k]));

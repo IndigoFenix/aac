@@ -17,7 +17,7 @@ import SystemToolbar from './SystemToolbar';
 import DebugPanel from './DebugPanel';
 import CellSystemEditor from './CellSystemEditor';
 import { applyOverrides, resetOverrides } from './debug-config';
-import { terrain, type SystemSpec, type ToolSpec } from './cell-systems';
+import { intTerrain, type SystemSpec, type ToolSpec } from './cell-systems';
 import type { ToolId } from './types';
 
 const GAME_ID = 'sandbox-game';
@@ -42,7 +42,7 @@ export default function SandboxGameApp() {
   // alongside the hand-coded terrain. `activeSpec` defaults to the terrain spec
   // and can be replaced from the Cell System Lab.
   const [mode, setMode] = useState<'terrain' | 'systems' | 'world'>('terrain');
-  const [activeSpec, setActiveSpec] = useState<SystemSpec>(terrain);
+  const [activeSpec, setActiveSpec] = useState<SystemSpec>(intTerrain);
   const { getGrid, resetGrid, skipTime: skipSystem, wrap: sysWrap, toggleWrap: toggleSysWrap } = useSystemGrid(activeSpec, studentKey);
   const { getWorld, resetWorld, skipTime: skipWorld } = useWorld(studentKey);
   const [selectedSysTool, setSelectedSysTool] = useState<string | null>(activeSpec.tools?.[0]?.id ?? null);

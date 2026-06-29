@@ -361,6 +361,7 @@ export const en = {
   },
 
   aac: {
+    energyBar: "AI energy",
     voiceLive: "Listening",
     glyph: {
       person: "Person",
@@ -756,6 +757,24 @@ export const en = {
   },
 
   call: {
+    layout: {
+      label: "Layout",
+      spotlight: "Spotlight",
+      grid: "Grid",
+      compact: "Compact",
+      auto: "Auto",
+    },
+    viewBoard: "See their board",
+    viewVideo: "See video",
+    interact: "Help them press",
+    interactOn: "Stop helping",
+    shareScreen: "Share screen",
+    stopShareScreen: "Stop sharing",
+    screenLabel: "Screen",
+    guidedPress: "Guided press",
+    bigVideo: "Big video",
+    smallVideo: "Small video",
+    noOneElse: "No one else is here yet",
     incoming: "Incoming call",
     accept: "Yes",
     decline: "No",

@@ -98,6 +98,11 @@ interface DualAgentContextType {
   setMuteState: (state: 'unmuted' | 'muted') => void;
   lastModeChange: { mode: 'companion' | 'facilitator' | 'standby'; reason?: string; source: 'ai'; at: number } | null;
 
+  /** AAC token-budget level for the energy bar (binding window % + band).
+   *  null when the session doesn't track a budget (full-attention) or before
+   *  the first server push. */
+  budget: { percent: number; band: 'high' | 'moderate' | 'low'; window: string | null } | null;
+
   // Response mode
   responseMode: 'fast' | 'analyze';
   setResponseMode: (mode: 'fast' | 'analyze') => void;
@@ -1342,6 +1347,7 @@ function ProviderShell({
     muteState: agent.muteState,
     setMuteState: agent.setMuteState,
     lastModeChange: agent.lastModeChange,
+    budget: agent.budget,
 
     responseMode: agent.responseMode,
     setResponseMode: agent.setResponseMode,

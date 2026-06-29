@@ -29,11 +29,13 @@ import {
   type IncomingCall,
 } from "@shared/call/call-client";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
+import { parseCallDataMessage, type CallDataMessage, type FacilitatorPressMessage } from "@shared/call/call-data-messages";
 import type { WorldNetMessage } from "@shared/world-engine/index";
 import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
 import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
 import { proximityRule, solveAudibleFor, audibleRecvIds } from "@shared/social-world/circle-solver";
 import { audibleGains } from "@shared/social-world/media-gate";
+import { createActiveSpeakerDetector } from "@shared/call/active-speaker";
 import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
 import { API_BASE_URL } from "@/lib/api-base";
 import { apiGet } from "@/lib/queryClient";
@@ -134,6 +136,10 @@ interface CallContextValue {
   stopGame: () => void;
   /** Broadcast world state over the call's unreliable "world" channel. */
   sendWorld: (msgs: WorldNetMessage[]) => void;
+  /** Send a typed message over the call's reliable data channel (board mirror). */
+  sendData: (message: CallDataMessage) => void;
+  /** Latest facilitator press from a clinician (dedup on `.at`), or null. */
+  facilitatorPress: FacilitatorPressMessage | null;
   /** Fan-out of inbound peer world messages (fed by the CallClient). */
   worldHub: CallWorldHub;
   /** Broadcast an NPC-conversation message over the reliable `call:npc` relay. */
@@ -151,6 +157,8 @@ interface CallContextValue {
    *  of range are disconnected entirely (absent here); connected peers in the
    *  hysteresis band fade. Tiles apply it as element volume. */
   peerGains: Map<string, number>;
+  /** The participant currently speaking (loudest remote stream), or null. */
+  activeSpeakerId: string | null;
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -178,6 +186,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [game, setGameState] = useState<CallGame | null>(null);
   const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
+  // Latest facilitator press from a clinician on the mirrored board. A bridge in
+  // home consumes it (dedup on `at`) and routes it through the student's own
+  // press pipeline — gated by a per-student consent flag.
+  const [facilitatorPress, setFacilitatorPress] = useState<FacilitatorPressMessage | null>(null);
+  // The participant currently speaking (loudest remote stream) — drives the
+  // "auto" large-video layout.
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   // Inbound world-message fan-out for the mounted CallGameSurface.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
@@ -324,9 +339,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         npcHubRef.current.emit(event.fromPersonId, event.message);
         break;
       case "mediaState":
-      case "data":
-        // Remote media-state + data-channel extras unused by the AAC call UI.
+        // Remote media-state unused by the AAC call UI.
         break;
+      case "data": {
+        // The clinician can facilitate a button press on the mirrored board.
+        const m = parseCallDataMessage(event.message);
+        if (m?.k === "facilitator-press") setFacilitatorPress(m);
+        break;
+      }
     }
   }, [clearStreams, resolveContactByPerson]);
 
@@ -435,6 +455,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     clientRef.current?.sendWorldData(msgs);
   }, []);
 
+  const sendData = useCallback((message: CallDataMessage) => {
+    clientRef.current?.sendData(message);
+  }, []);
+
   const sendNpc = useCallback((msg: unknown) => {
     clientRef.current?.sendNpc(msg);
   }, []);
@@ -492,6 +516,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }, MEDIA_GATE_INTERVAL_MS);
     return () => clearInterval(id);
   }, [circlesOn, selfPersonId]);
+
+  // Per-peer audio activity → active speaker (for the "auto" large-video layout).
+  useEffect(() => {
+    if (callState !== "active" || remoteStreams.size === 0) { setActiveSpeakerId(null); return; }
+    const detector = createActiveSpeakerDetector({ onActiveSpeaker: setActiveSpeakerId });
+    if (!detector) return;
+    detector.setStreams(remoteStreams);
+    return () => detector.stop();
+  }, [callState, remoteStreams]);
 
   const accept = useCallback(async () => {
     const client = clientRef.current;
@@ -637,6 +670,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     startGame,
     stopGame,
     sendWorld,
+    sendData,
+    facilitatorPress,
     worldHub: worldHubRef.current,
     sendNpc,
     npcHub: npcHubRef.current,
@@ -644,12 +679,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
     presenceChannel: presenceChannelRef.current,
     getAudibleIds,
     peerGains,
+    activeSpeakerId,
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, activeContact,
     error, audioEnabled, videoEnabled, contacts, contactsLoading, refreshContacts,
     startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
-    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendNpc,
-    publishPresence, getAudibleIds, peerGains,
+    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, sendNpc,
+    publishPresence, getAudibleIds, peerGains, activeSpeakerId,
   ]);
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

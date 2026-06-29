@@ -363,6 +363,7 @@ export const ru: Translations = {
   },
 
   aac: {
+    energyBar: "Энергия ИИ",
     voiceLive: "Слушает",
     glyph: {
       person: "\u0427\u0435\u043b\u043e\u0432\u0435\u043a",
@@ -758,6 +759,24 @@ export const ru: Translations = {
   },
 
   call: {
+    layout: {
+      label: "Макет",
+      spotlight: "В центре",
+      grid: "Сетка",
+      compact: "Компактно",
+      auto: "Авто",
+    },
+    viewBoard: "Посмотреть их доску",
+    viewVideo: "Смотреть видео",
+    interact: "Помочь нажать",
+    interactOn: "Перестать помогать",
+    shareScreen: "Демонстрация экрана",
+    stopShareScreen: "Остановить показ",
+    screenLabel: "Экран",
+    guidedPress: "Направляемое нажатие",
+    bigVideo: "Большое видео",
+    smallVideo: "Маленькое видео",
+    noOneElse: "Здесь пока больше никого нет",
     incoming: "\u0412\u0445\u043e\u0434\u044f\u0449\u0438\u0439 \u0432\u044b\u0437\u043e\u0432",
     accept: "\u0414\u0430",
     decline: "\u041d\u0435\u0442",
