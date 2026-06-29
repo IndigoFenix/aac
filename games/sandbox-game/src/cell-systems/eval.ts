@@ -87,7 +87,9 @@ export function ownEffectDelta(view: CellView, e: Effect): OwnDelta {
       : typeof e.change.offset === 'number' ? e.change.offset
       : refVal(view, e.change.offset);
     const factor = (e.change.times ? refVal(view, e.change.times) : 1) - off;
-    return { kind: 'scalar', scalar: e.change.scalar, delta: e.change.perStep * factor };
+    let delta = e.change.perStep * factor;
+    if (e.change.cap !== undefined) delta = Math.max(-e.change.cap, Math.min(e.change.cap, delta));
+    return { kind: 'scalar', scalar: e.change.scalar, delta };
   }
   if ('setStage' in e) return { kind: 'stage', state: e.setStage.state, to: e.setStage.to };
   return null; // spread / flowDown — cross-cell, not an own-delta

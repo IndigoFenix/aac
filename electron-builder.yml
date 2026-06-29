@@ -47,5 +47,5 @@ nsis:
 # beta / stable channels or per-tenant release feeds.
 publish:
   provider: generic
-  url: ${env.AAC_UPDATE_URL:https://updates.aivota.com/aac/win/}
+  url: ${env.AAC_UPDATE_URL:https://updates.aivota.ai/aac/win/}
   channel: latest

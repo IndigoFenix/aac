@@ -134,6 +134,24 @@ resource "aws_iam_role_policy" "github_actions" {
           "arn:aws:s3:::${local.name_prefix}-terraform-state/*"
         ]
       },
+      # AAC desktop auto-update feed — the release-aac.yml workflow uploads the
+      # installer (.exe), its .blockmap, and latest.yml here. ARN is constructed
+      # by string so this grant is valid whether or not enable_aac_auto_update
+      # has provisioned the bucket yet (PutObject to a non-existent bucket is
+      # simply unused). The bucket's own policy only allows CloudFront to READ;
+      # same-account writes are authorized via this IAM grant.
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.name_prefix}-aac-updates-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${local.name_prefix}-aac-updates-${data.aws_caller_identity.current.account_id}/*"
+        ]
+      },
       # Terraform state locking (DynamoDB)
       {
         Effect = "Allow"

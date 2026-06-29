@@ -140,7 +140,9 @@ function seedField(v: VarSpec, cols: number, rows: number): Float64Array {
     let val: number;
     switch (v.init) {
       case 'bowl':       val = v.min + span * (0.15 + 0.6 * r); break;          // basin: low centre, high rim
-      case 'centerBlob': val = v.min + span * Math.exp(-(dist * dist) / (2 * sigma * sigma)); break; // a localised peak
+      // A hill rising from the var's `initial` BASELINE to its max — so the land
+      // sits above any sea level (drainEdge) and water pools on it / drains at edges.
+      case 'centerBlob': val = v.initial + (v.max - v.initial) * Math.exp(-(dist * dist) / (2 * sigma * sigma)); break;
       case 'noise':      val = v.min + span * hashFrac(i); break;
       default:           val = v.initial;                                       // 'flat'
     }

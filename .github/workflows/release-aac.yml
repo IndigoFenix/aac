@@ -1,0 +1,97 @@
+name: Release AAC Desktop
+
+# Builds the Aivota AAC Windows installer (Electron + NSIS) and publishes it
+# to the auto-update feed (S3 bucket fronted by CloudFront at
+# https://updates.aivota.ai/aac/win/). Installed clients pick up the new
+# version on their next poll (<=4h) or relaunch.
+#
+# This is SEPARATE from deploy-lambda.yml — that workflow deploys the backend
+# server and (via Terraform) created the empty update bucket. It does NOT build
+# the desktop app. Releasing the app happens here.
+#
+# Trigger: push a version tag, e.g.
+#   npm version patch         # bumps package.json + creates tag vX.Y.Z
+#   git push origin main --follow-tags
+# The tag must match package.json's version (the publish script enforces this).
+# workflow_dispatch is also allowed for manual re-runs.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # GitHub OIDC -> AWS role assumption
+  contents: read
+
+# Never let two releases publish concurrently — latest.yml must reflect a
+# single, fully-uploaded build.
+concurrency:
+  group: release-aac
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish installer
+    # NSIS + the Windows-only gaze sidecar (32-bit node.exe, koffi win32
+    # prebuilds) require a Windows runner. This mirrors the local dev box.
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The publish script hard-fails if latest.yml's version != package.json,
+      # so catch a tag/version mismatch early with a clear message.
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          echo "package.json version = $PKG"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$PKG" != "$TAG" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME (=$TAG) does not match package.json version $PKG. Run 'npm version <patch|minor|major>' so the tag and version agree, then push the tag."
+              exit 1
+            fi
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-aac-release
+          aws-region: il-central-1
+
+      # Derive the bucket from the assumed account so we never hardcode the
+      # account id. The OIDC role is the prod account, so this always targets
+      # the production update feed.
+      - name: Resolve update bucket
+        shell: bash
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "AAC_UPDATE_BUCKET=aivota-prod-aac-updates-${ACCOUNT}" >> "$GITHUB_ENV"
+          echo "Resolved bucket: aivota-prod-aac-updates-${ACCOUNT}"
+
+      # release:aac = release:aac:build (electron-build + sidecar + electron-builder)
+      #             + release:aac:publish (upload .exe + .blockmap + latest.yml to S3)
+      # The build self-fetches the voice model and 32-bit sidecar runtime.
+      - name: Build installer + publish to S3
+        env:
+          AAC_UPDATE_REGION: il-central-1   # bucket lives in il-central-1, NOT the script's us-east-1 default
+        run: npm run release:aac
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Published $(node -p "require('./package.json').version") to s3://${AAC_UPDATE_BUCKET}/aac/win/"
+          echo "Clients poll https://updates.aivota.ai/aac/win/latest.yml"

@@ -62,12 +62,15 @@ export type Effect =
    *  a constant (always safe) or another scalar (creates a dependency edge the
    *  validator checks for feedback loops). Not allowed on a budget var. */
   | { toward: { scalar: string; target: Ref; rate: number } }
-  /** Linear-coupled delta: `scalar += perStep × ((times?value:1) − offset)`.
-   *  This is what lets two variables drive each other (a predator–prey-style
-   *  oscillator). Reading another scalar via `times` creates a dependency edge —
-   *  the validator only permits the resulting feedback loop if it stays within an
-   *  isolated ≤2-variable set (2-D ⇒ provably non-chaotic). */
-  | { change: { scalar: string; perStep: number; times?: Ref; offset?: number | Ref } }
+  /** Linear-coupled delta: `scalar += perStep × ((times?value:1) − offset)`,
+   *  optionally clamped to `±cap`. This is what lets two variables drive each
+   *  other (a predator–prey-style oscillator). With `cap` it's a capped-but-
+   *  smooth trickle (`min(cap, excess)`): proportional near the threshold so it
+   *  settles, throttled above — the way a spring emits at most its flow rate.
+   *  Reading another scalar via `times` creates a dependency edge — the validator
+   *  only permits the resulting feedback loop if it stays within an isolated
+   *  ≤2-variable set (2-D ⇒ provably non-chaotic). */
+  | { change: { scalar: string; perStep: number; times?: Ref; offset?: number | Ref; cap?: number } }
   /** Move a discrete stage to `to`. The validator requires `to` be at or after
    *  the current stage in the declared order (forward-only ⇒ a finite DAG). */
   | { setStage: { state: string; to: string } }
