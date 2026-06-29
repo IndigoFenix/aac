@@ -974,14 +974,15 @@ export class AgentCoordinator {
     return this.economize;
   }
   /** The THROTTLE effects (idle→sleep tightening, economy-backend force, and the
-   *  [BUDGET] Observer notes) are gated behind a master rollout flag, since they
-   *  change live behavior. DEFAULT OFF: the meter still tracks, but nothing
-   *  throttles until AAC_BUDGET_METER is enabled per-deployment (accepts
-   *  "true"/"1"/"on"). Validate the cost delta, then consider defaulting on. */
+   *  [BUDGET] Observer notes) are gated behind a master flag separate from
+   *  accumulation. DEFAULT ON for an economizing session — set AAC_BUDGET_METER
+   *  ="false" (also accepts "0"/"off") to keep tracking/persisting the budget
+   *  while disabling the throttle effects. Still requires `budgetMeterEnabled`
+   *  (economize); a full-attention session never throttles on budget. */
   private get budgetThrottleEnabled(): boolean {
     if (!this.budgetMeterEnabled) return false;
     const v = process.env.AAC_BUDGET_METER?.toLowerCase();
-    return v === "true" || v === "1" || v === "on";
+    return !(v === "false" || v === "0" || v === "off");
   }
   /** Sustained perception attention the Observer controls (set_visual_attention /
    *  set_audio_attention). "text" = cheap text-derived input (scene_state / STT);
@@ -1015,13 +1016,13 @@ export class AgentCoordinator {
   /** Master gate for the Observer cost-saving behaviors added 2026-06-28:
    *  energy-scaled idle→sleep, the honest energy-budget baseline text, the
    *  hybrid live/economy backend + `set_observation_mode` tool, and the
-   *  low-energy force-economy throttle + mode hints. DEFAULT OFF — when
-   *  disabled the Observer behaves exactly as before (always Live, legacy idle
-   *  timing, original budget text, no economy tool). Enable per-deployment with
-   *  AAC_OBSERVER_COST_SAVING=true (also accepts "1"/"on"). */
+   *  low-energy force-economy throttle + mode hints. DEFAULT ON — set
+   *  AAC_OBSERVER_COST_SAVING="false" (also accepts "0"/"off") to restore the
+   *  legacy behavior (always Live, legacy idle timing, original budget text, no
+   *  economy tool). */
   private get economyObserverEnabled(): boolean {
     const v = process.env.AAC_OBSERVER_COST_SAVING?.toLowerCase();
-    return v === "true" || v === "1" || v === "on";
+    return !(v === "false" || v === "0" || v === "off");
   }
 
   /** True when cost-saving substitutions are allowed (full-attention OFF). */
