@@ -56,6 +56,7 @@ interface TransportEffect {
   potential?: string;
   rate: number;
   block?: string;
+  drainEdge?: number;
   // erode only:
   by?: string;
   minFlow?: number;
@@ -94,7 +95,7 @@ function compile(spec: SystemSpec): GridCompiled {
     const transports: TransportEffect[] = [];
     for (const e of r.effects) {
       if ('spread' in e) transports.push({ kind: 'spread', scalar: e.spread.scalar, rate: e.spread.rate });
-      else if ('flowDown' in e) transports.push({ kind: 'flowDown', scalar: e.flowDown.scalar, potential: e.flowDown.potential, rate: e.flowDown.rate, block: e.flowDown.block });
+      else if ('flowDown' in e) transports.push({ kind: 'flowDown', scalar: e.flowDown.scalar, potential: e.flowDown.potential, rate: e.flowDown.rate, block: e.flowDown.block, drainEdge: e.flowDown.drainEdge });
       else if ('erode' in e) transports.push({ kind: 'erode', scalar: e.erode.scalar, by: e.erode.by, rate: e.erode.rate, minFlow: e.erode.minFlow, minSlope: e.erode.minSlope, max: e.erode.max, block: e.erode.block });
     }
     return {
@@ -130,13 +131,16 @@ function seedField(v: VarSpec, cols: number, rows: number): Float64Array {
   const span = v.max - v.min;
   const cx = (cols - 1) / 2, cy = (rows - 1) / 2;
   const maxR = Math.hypot(cx, cy) || 1;
+  // A fixed-size hill (sigma in TILES) so prominence is the same on any grid size.
+  const sigma = Math.max(3, Math.min(cols, rows) / 6);
   for (let i = 0; i < n; i++) {
     const x = i % cols, y = (i / cols) | 0;
-    const r = Math.hypot(x - cx, y - cy) / maxR;
+    const dist = Math.hypot(x - cx, y - cy);
+    const r = dist / maxR;
     let val: number;
     switch (v.init) {
       case 'bowl':       val = v.min + span * (0.15 + 0.6 * r); break;          // basin: low centre, high rim
-      case 'centerBlob': val = v.min + span * Math.exp(-(r * r) / 0.25); break; // broad lump in the middle
+      case 'centerBlob': val = v.min + span * Math.exp(-(dist * dist) / (2 * sigma * sigma)); break; // a localised peak
       case 'noise':      val = v.min + span * hashFrac(i); break;
       default:           val = v.initial;                                       // 'flat'
     }
@@ -257,13 +261,16 @@ function computeSensor(grid: CellGrid, ofArr: Float64Array, i: number, s: Sensor
       if (v < mn) mn = v;
     }
   }
+  let out: number;
   switch (s.op) {
-    case 'mean': return wtot ? wsum / wtot : 0;
-    case 'prominence': return ofArr[i] - (wtot ? wsum / wtot : 0);
-    case 'max': return mx === -Infinity ? 0 : mx;
-    case 'min': return mn === Infinity ? 0 : mn;
-    case 'sum': return sum;
+    case 'mean': out = wtot ? wsum / wtot : 0; break;
+    case 'prominence': out = ofArr[i] - (wtot ? wsum / wtot : 0); break;
+    case 'max': out = mx === -Infinity ? 0 : mx; break;
+    case 'min': out = mn === Infinity ? 0 : mn; break;
+    case 'sum': out = sum; break;
   }
+  if (s.cap !== undefined) out = Math.max(-s.cap, Math.min(s.cap, out));
+  return out;
 }
 
 /** Precompute each sensor's value for a set of tiles (the active set), so rule
@@ -523,13 +530,19 @@ function doTransport(
   const pot = t.potential ? grid.fields[t.potential] : null;
   const surface = (pot ? pot[c] : 0) + val;
   let total = 0;
-  const targets: number[] = [], offers: number[] = [];
+  const targets: number[] = [], offers: number[] = []; // target -1 = off-map drain (the sea)
   for (let j = 0; j < k; j++) {
     const nIdx = nbScratch[j];
     if (blk && blk[nIdx] > 0.5) continue; // don't flow into a wall
     const nSurface = (pot ? pot[nIdx] : 0) + arr[nIdx];
     const drop = surface - nSurface;
     if (drop > 0) { const o = rate * drop; targets.push(nIdx); offers.push(o); total += o; }
+  }
+  // Open boundary: a bounded-grid edge tile sheds flow off-map above the sea level,
+  // so inflow has an OUTLET and can't pile up and flood. (k<4 ⇒ on the edge.)
+  if (t.drainEdge !== undefined && !grid.wrap) {
+    const edgeDrop = surface - t.drainEdge;
+    for (let s = 0; s < 4 - k; s++) if (edgeDrop > 0) { const o = rate * edgeDrop; targets.push(-1); offers.push(o); total += o; }
   }
   if (total < SLEEP_EPS) return;
   const scale = total > val ? val / total : 1; // never send more than is here

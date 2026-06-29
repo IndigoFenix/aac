@@ -466,12 +466,13 @@ jobs:
         run: |
           echo "Enabling migrations for deployment cold start..."
           # Temporarily set RUN_MIGRATIONS=true, invoke to trigger cold start with migrations
+          # Build --environment as JSON (not shorthand) so values containing commas/? (e.g. TURN_URLS) are preserved
           aws lambda update-function-configuration \
             --function-name $FUNCTION \
-            --environment "Variables={$(aws lambda get-function-configuration \
+            --environment "$(aws lambda get-function-configuration \
               --function-name $FUNCTION \
               --query 'Environment.Variables' \
-              --output json | jq -r 'to_entries | map("\(.key)=\(.value)") | join(",")'),RUN_MIGRATIONS=true}" \
+              --output json | jq -c '{Variables: (. + {RUN_MIGRATIONS: "true"})}')" \
             --query 'FunctionName' --output text
           aws lambda wait function-updated --function-name $FUNCTION
 
@@ -487,12 +488,13 @@ jobs:
           fi
 
           # Remove RUN_MIGRATIONS so normal cold starts skip migrations
+          # Build --environment as JSON (not shorthand) so values containing commas/? (e.g. TURN_URLS) are preserved
           aws lambda update-function-configuration \
             --function-name $FUNCTION \
-            --environment "Variables={$(aws lambda get-function-configuration \
+            --environment "$(aws lambda get-function-configuration \
               --function-name $FUNCTION \
               --query 'Environment.Variables' \
-              --output json | jq -r 'del(.RUN_MIGRATIONS) | to_entries | map("\(.key)=\(.value)") | join(",")'),RUN_MIGRATIONS=false}" \
+              --output json | jq -c '{Variables: (. + {RUN_MIGRATIONS: "false"})}')" \
             --query 'FunctionName' --output text
           aws lambda wait function-updated --function-name $FUNCTION
           echo "Migrations complete, RUN_MIGRATIONS disabled"

@@ -278,22 +278,26 @@ export const terrain: SystemSpec = {
     { name: 'plant', min: 0, max: 1, initial: 0, init: 'flat' },
     { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat' },
   ],
-  sensors: [{ name: 'prom', of: 'height', op: 'prominence', radius: 4, weight: 'cosine' }],
+  // Prominence is CAPPED so even a tall, steep peak catches only bounded "rain" —
+  // inflow can't outrun evaporation + drainage and flood the map.
+  sensors: [{ name: 'prom', of: 'height', op: 'prominence', radius: 4, weight: 'cosine', cap: 6 }],
   rules: [
     { id: 'rain', when: { cmp: '>', left: { sensor: 'prom' }, right: { const: 0.5 } }, trigger: { every: true },
-      effects: [{ change: { scalar: 'moisture', perStep: 0.6, times: { sensor: 'prom' } } }] },
-    { id: 'moist-decay', trigger: { every: true }, effects: [{ add: { scalar: 'moisture', amount: -0.004 } }] },
+      effects: [{ change: { scalar: 'moisture', perStep: 0.08, times: { sensor: 'prom' } } }] },
+    { id: 'moist-decay', trigger: { every: true }, effects: [{ add: { scalar: 'moisture', amount: -0.01 } }] },
     { id: 'moist-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'moisture', potential: 'height', rate: 0.5, block: 'solid' } }] },
     { id: 'spring', when: { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.9 } }, trigger: { every: true },
       effects: [
-        { change: { scalar: 'moisture', perStep: -0.2, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
-        { change: { scalar: 'water', perStep: 0.2, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
+        { change: { scalar: 'moisture', perStep: -0.12, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
+        { change: { scalar: 'water', perStep: 0.12, times: { scalar: 'moisture' }, offset: { scalar: 'height', scale: 0.9 } } },
       ] },
-    { id: 'water-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 0.3, block: 'solid' } }] },
+    // Water flows downhill, off the map edge (drainEdge: 0 = sea level — the outlet
+    // that stops a closed basin flooding), and evaporates.
+    { id: 'water-flow', trigger: { every: true }, effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 0.3, block: 'solid', drainEdge: 0 } }] },
     // Erosion: flowing water carries sand downstream, incising channels (gentle —
     // a slow background grading). Stone doesn't erode.
     { id: 'erode', trigger: { every: true }, effects: [{ erode: { scalar: 'height', by: 'water', rate: 0.04, minFlow: 0.15, minSlope: 0.12, max: 0.03, block: 'solid' } }] },
-    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.12 } }] },
+    { id: 'evap', trigger: { every: true }, effects: [{ add: { scalar: 'water', amount: -0.15 } }] },
     { id: 'wet-soil', when: { all: [{ cmp: '>', left: { scalar: 'water' }, right: { const: 0.05 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 1 }, rate: 0.2 } }] },
     { id: 'fert-spread', trigger: { every: true }, effects: [{ spread: { scalar: 'fertility', rate: 0.1 } }] },

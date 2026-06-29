@@ -86,8 +86,12 @@ export type Effect =
    *  given) + the scalar itself — water running downhill over a landscape, pooling
    *  in minima. `potential` names a (typically static) var; omit it to level the
    *  scalar against its own surface. `block` names a var that, where > 0.5, makes a
-   *  tile a wall for this flow: it neither sends nor receives (e.g. solid stone). */
-  | { flowDown: { scalar: string; potential?: string; rate: number; block?: string } }
+   *  tile a wall for this flow: it neither sends nor receives (e.g. solid stone).
+   *  `drainEdge` (bounded grids only) gives the world an OUTLET: a boundary tile
+   *  also sheds flow off-map whenever its surface exceeds this "sea level", so
+   *  inflow can't pile up and flood — water leaves to the sea. Without it the flow
+   *  is conservative (the only sink is whatever consumes the scalar elsewhere). */
+  | { flowDown: { scalar: string; potential?: string; rate: number; block?: string; drainEdge?: number } }
   /** Erosion: flowing `by` (water) carries `scalar` (the SUBSTRATE itself, e.g.
    *  height) one cell DOWNSTREAM — incising channels and building deltas. Moves to
    *  the steepest-descent neighbour by SURFACE (scalar + by), only where `by` >
@@ -178,6 +182,9 @@ export interface SensorSpec {
   /** Kernel for mean/prominence: 'box' (uniform) or 'cosine' (smooth edge,
    *  avoids a hard ripple at the radius). Default 'box'. */
   weight?: 'box' | 'cosine';
+  /** Clamp the sensor's output to [−cap, cap]. For prominence this bounds how much
+   *  "rain" a tall steep peak can catch, so inflow stays finite for any terrain. */
+  cap?: number;
 }
 
 /** One render layer (composite painting for the main grid). Layers draw in order;
