@@ -2281,7 +2281,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
 
-              {/* Sandbox Farm */}
+              {/* Sandbox */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🌱</span>

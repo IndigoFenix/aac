@@ -22,18 +22,18 @@ export interface AppConfig {
  */
 export const APP_REGISTRY: AACAppDefinition[] = [
   {
+    id: "phone_call",
+    name: "Phone Call",
+    description: "Opens a list of the student's callable contacts so they can place a live video call to someone who is online. Use open_app(phone_call) when the student wants to call a person but you are not sure who, or wants to browse who is available. To call a specific known person directly, prefer the call_person tool instead.",
+    icon: "☎️",
+    enabledByDefault: false,
+  },
+  {
     id: "youtube",
     name: "YouTube",
     description: "Opens an interactive YouTube video player on the user's screen. When permitted channels are configured (the channel list appears in the system prompt with their recent video titles), prefer calling open_app(youtube) WITHOUT `data` — this opens a channel browser where the student picks a video themselves. Only pass a `data` string when the student's request clearly matches one of the actual video titles shown; the search uses title matching, so a generic topic like 'animals' will miss and fall back to the browser anyway. When NO permitted channels are configured (unrestricted search via API key), always pass a descriptive query in `data`.",
     icon: "▶️",
     enabledByDefault: false,
-  },
-  {
-    id: "phone_call",
-    name: "Phone Call",
-    description: "Opens a list of the student's callable contacts so they can place a live video call to someone who is online. Use open_app(phone_call) when the student wants to call a person but you are not sure who, or wants to browse who is available. To call a specific known person directly, prefer the call_person tool instead.",
-    icon: "☎️",
-    enabledByDefault: true,
   },
   {
     id: "spotify",
@@ -54,22 +54,57 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     id: "music",
     name: "Music Maker",
     description: "Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano.",
-    icon: "🎵",
+    icon: "🎹",
     enabledByDefault: true,
-  },
-  {
-    id: "sandbox_game",
-    name: "Sandbox Farm",
-    description: "Opens an idle farming sandbox game on the user's screen. The user places soil, water, seeds, and flowers on a grid and watches them grow over time. ALWAYS use open_app to launch this when the user wants to play the farm game, garden game, or sandbox game.",
-    icon: "🌱",
-    enabledByDefault: false,
   },
   {
     id: "bubbles_game",
     name: "Bubbles",
     description: "Opens a bubble-popping reflex game designed to train hand-eye coordination. Bubbles float around and the student pops them by tapping. Difficulty adjusts automatically. ALWAYS use open_app to launch this when the user wants to play the bubbles game, pop bubbles, or practice coordination.",
     icon: "🫧",
+    enabledByDefault: true,
+  },
+  {
+    id: "musical_microbes",
+    name: "Musical Microbes",
+    description: "Opens a calm music-making sandbox where the student places tiny organisms (pulsers, responders, harmonizers, echoers, silencers) that interact to make generative music. Works with eyegaze, touch, or mouse. ALWAYS use open_app to launch this when the user wants to make music with the circles.",
+    icon: "🎶",
+    enabledByDefault: true,
+  },
+  {
+    id: "space_trader",
+    name: "Space Trader",
+    description: "Opens a space-trading puzzle game designed for eyegaze controls. The student steers a ship to mine asteroids, complete trade chains, and capture the Star across escalating difficulty levels. ALWAYS use open_app to launch this when the user wants to play the space trader game, the space game, or the trader puzzle.",
+    icon: "🚀",
     enabledByDefault: false,
+    startup: {
+      appId: "space_trader",
+      guidance:
+        "Space Trader is an eyegaze steering puzzle: the student flies a ship to mine asteroids and complete trade " +
+        "chains across escalating levels. Choose `startLevel` (0–6): 0 for a first-timer or anyone who needs an easy " +
+        "win; pick a higher level ONLY if the conversation shows the student has played before, asked for a harder " +
+        "challenge, or is clearly capable. When unsure, choose 0.",
+      paramsSchema: {
+        type: "object",
+        properties: {
+          startLevel: {
+            type: "integer",
+            minimum: 0,
+            maximum: 6,
+            description: "Starting difficulty level, 0 (easiest) to 6.",
+          },
+        },
+        required: ["startLevel"],
+      },
+      defaults: { startLevel: 0 },
+    },
+  },
+  {
+    id: "sandbox_game",
+    name: "Sandbox",
+    description: "Opens an idle sandbox game on the user's screen. The user shapes the landscape and watches as a world emerges from their actions. ALWAYS use open_app to launch this when the user wants to play the sandbox game.",
+    icon: "🪏",
+    enabledByDefault: true,
   },
   {
     id: "social_trainer",
@@ -135,41 +170,6 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     },
   },
   {
-    id: "space_trader",
-    name: "Space Trader",
-    description: "Opens a space-trading puzzle game designed for eyegaze controls. The student steers a ship to mine asteroids, complete trade chains, and capture the Star across escalating difficulty levels. ALWAYS use open_app to launch this when the user wants to play the space trader game, the space game, or the trader puzzle.",
-    icon: "🚀",
-    enabledByDefault: false,
-    startup: {
-      appId: "space_trader",
-      guidance:
-        "Space Trader is an eyegaze steering puzzle: the student flies a ship to mine asteroids and complete trade " +
-        "chains across escalating levels. Choose `startLevel` (0–6): 0 for a first-timer or anyone who needs an easy " +
-        "win; pick a higher level ONLY if the conversation shows the student has played before, asked for a harder " +
-        "challenge, or is clearly capable. When unsure, choose 0.",
-      paramsSchema: {
-        type: "object",
-        properties: {
-          startLevel: {
-            type: "integer",
-            minimum: 0,
-            maximum: 6,
-            description: "Starting difficulty level, 0 (easiest) to 6.",
-          },
-        },
-        required: ["startLevel"],
-      },
-      defaults: { startLevel: 0 },
-    },
-  },
-  {
-    id: "musical_microbes",
-    name: "Musical Microbes",
-    description: "Opens a calm music-making sandbox where the student places tiny organisms (pulsers, responders, harmonizers, echoers, silencers) that interact to make generative music — a hidden scale keeps it always in tune, so there are no wrong notes. Works with eyegaze, touch, or mouse. ALWAYS use open_app to launch this when the user wants to make music with the microbes, play the musical garden, or asks for the microbes game.",
-    icon: "🎶",
-    enabledByDefault: false,
-  },
-  {
     id: "social_world",
     name: "Play with friends",
     description: "Opens a shared multiplayer 'social world' where the student meets up with their contacts as avatars on a simple field and plays with physics toys (e.g. kicking a ball around). It runs inside a live video chat: opening it starts a chat with a friend and turns it into the game, or — if the student is already in a chat — attaches the game to that call so everyone in it can play. Use open_app(social_world) when the student wants to play WITH other people, meet friends, or hang out together — distinct from the single-player games and from a plain 1:1 video call (phone_call).",
@@ -178,7 +178,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // with no toggle): it must be openable so the student can START a game and
     // invite friends (the game is a property of the chat, not a pre-existing
     // room they wait to be invited into).
-    enabledByDefault: true,
+    enabledByDefault: false,
   },
   {
     id: "symbol_learning",
@@ -187,7 +187,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🔤",
     // On by default for every student — it's the platform's core learning tool,
     // not an opt-in extra. Clinicians can disable it per-student via appConfig.
-    enabledByDefault: true,
+    enabledByDefault: false,
   },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
