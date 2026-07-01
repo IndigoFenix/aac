@@ -6,11 +6,11 @@
 // [GAME] text (same channel CustomAppPlayer uses), with entity/goal ids
 // resolved to their player-facing labels so the AI can talk about them.
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { GameMessage } from "@shared/games-bridge";
+import { useCallback, useEffect, useMemo, useRef, type Ref } from "react";
+import type { BoardOption, GameMessage } from "@shared/games-bridge";
 import type { GoalTreeGame } from "@shared/goal-tree/types";
 import { walkGoalTree } from "@shared/goal-tree/walk";
-import GameEmbed from "./GameEmbed";
+import GameEmbed, { type GameEmbedHandle } from "./GameEmbed";
 
 interface GoalTreeQuestPlayerProps {
   game: GoalTreeGame;
@@ -18,6 +18,10 @@ interface GoalTreeQuestPlayerProps {
   sendMessageToAi?: (msg: string) => void;
   /** "3d" loads the world-engine 3D player (symbol-learning); default 2d. */
   renderMode?: "2d" | "3d";
+  /** Ref to the embed so the host can push `board_option_selected` to the game. */
+  gameRef?: Ref<GameEmbedHandle>;
+  /** Fired when the game locks/releases the response board (see GameEmbed). */
+  onBoardOptions?: (options: BoardOption[] | null) => void;
 }
 
 /** Suppress identical [GAME] lines repeated within this window. */
@@ -28,6 +32,8 @@ export default function GoalTreeQuestPlayer({
   onClose,
   sendMessageToAi,
   renderMode = "2d",
+  gameRef,
+  onBoardOptions,
 }: GoalTreeQuestPlayerProps) {
   const lastSentRef = useRef<{ text: string; at: number } | null>(null);
 
@@ -139,11 +145,13 @@ export default function GoalTreeQuestPlayer({
 
   return (
     <GameEmbed
+      ref={gameRef}
       gameId="goal-tree-player"
       src={renderMode === "3d" ? "/games/goal-tree-player/?render=3d" : "/games/goal-tree-player/"}
       forwardGaze
       gamePayload={game}
       onMessage={handleMessage}
+      onBoardOptions={onBoardOptions}
       onClose={onClose}
     />
   );

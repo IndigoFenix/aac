@@ -23,12 +23,14 @@ import { rectCenter, rectContains, type Vec2 } from "@shared/goal-tree/layout2d.
 import {
   applySpace3DCommand,
   createSpace3DState,
+  detectSpace3D,
   embedLayoutInWorld,
+  makeWallConstraint,
   PLAYER_ID,
-  tickSpace3D,
   type Space3DState,
   type WorldEmbedding,
 } from "@shared/goal-tree/space3d.js";
+import { createWorldState, steerAvatar, type WorldState } from "@shared/world-engine/engine.js";
 import { picnicGame } from "./helpers/goal-tree-fixtures.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,8 @@ interface Session {
   ctx: RuntimeContext;
   world: LogicalWorld;
   embedding: WorldEmbedding;
+  /** The engine WorldState the avatar lives in (the host owns this in the app). */
+  world3d: WorldState;
   rState: RuntimeState;
   sState: Space3DState;
   events: RuntimeEvent[];
@@ -56,8 +60,9 @@ function createSession(): Session {
     ctx: createRuntimeContext(game, world),
     world,
     embedding,
+    world3d: createWorldState(embedding.spec, PLAYER_ID, 0),
     rState: createRuntimeState(),
-    sState: createSpace3DState(embedding, world),
+    sState: createSpace3DState(world),
     events: [],
   };
   dispatch(session, { type: "start" });
@@ -76,8 +81,14 @@ function dispatch(session: Session, input: SpaceInput): void {
 const DT = 0.05;
 
 function tick(session: Session, aim: Vec2 | null): void {
-  const result = tickSpace3D(session.embedding.layout, session.sState, { aim }, DT);
-  for (const input of result.inputs) dispatch(session, input);
+  // Simulate one host frame: engine locomotion (constrained by the quest walls)
+  // then quest proximity detection — exactly what runWorldHost + onFrame do.
+  const constraint = makeWallConstraint(session.embedding.layout, session.sState);
+  steerAvatar(session.world3d, PLAYER_ID, aim, DT, undefined, constraint);
+  const me = session.world3d.avatars[PLAYER_ID];
+  for (const input of detectSpace3D(session.embedding.layout, session.sState, { x: me.x, y: me.y }, DT)) {
+    dispatch(session, input);
+  }
 }
 
 /** Steer toward `aim` until the predicate holds (or sim-time runs out). */
@@ -157,7 +168,7 @@ describe("goal-tree Space3D (world-engine merge spike)", () => {
 
   it("places the avatar at the (translated) spawn", () => {
     const session = createSession();
-    const a = session.sState.world.avatars[PLAYER_ID];
+    const a = session.world3d.avatars[PLAYER_ID];
     expect(a.x).toBeCloseTo(session.embedding.layout.spawn.x, 5);
     expect(a.y).toBeCloseTo(session.embedding.layout.spawn.y, 5);
   });
@@ -167,7 +178,7 @@ describe("goal-tree Space3D (world-engine merge spike)", () => {
     // Steer straight at the picnic (across the locked bridge) for 12s. The solid
     // door must keep the avatar out of the picnic room — no walking through it.
     steerUntil(session, throughPoint(session, P_PICNIC, Z_PICNIC), () => false, 12);
-    const a = session.sState.world.avatars[PLAYER_ID];
+    const a = session.world3d.avatars[PLAYER_ID];
     expect(rectContains(zoneRect(session, Z_PICNIC), { x: a.x, y: a.y })).toBe(false);
     expect(session.rState.completed["picnic"]).toBeUndefined();
     expect(session.rState.won).toBe(false);

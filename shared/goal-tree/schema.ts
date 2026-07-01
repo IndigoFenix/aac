@@ -57,6 +57,7 @@ const entityDefSchema = z.object({
   iconRef: z.string().min(1).optional(),
   imageKey: z.string().min(1).optional(),
   symbolPath: z.string().min(1).optional(),
+  glyph: glyphStringSchema.optional(),
   tags: z.array(z.string().min(1)).optional(),
   lines: z.array(flavorTextSchema).max(8).optional(),
 }).strict();
@@ -76,6 +77,7 @@ export const goalNodeSchema: z.ZodType<GoalNode> = z.lazy(() =>
     chooseNodeSchema,
     overcomeNodeSchema,
     observeNodeSchema,
+    transportNodeSchema,
   ]),
 ) as unknown as z.ZodType<GoalNode>;
 
@@ -119,20 +121,8 @@ const collectNodeSchema = z.object({
   via: viaSchema.optional(),
 }).strict();
 
-const chooseOptionSchema = z.object({
-  entityId: idSchema,
-  correct: z.boolean().optional(),
-  feedback: flavorTextSchema.optional(),
-}).strict();
-
-const chooseNodeSchema = z.object({
-  ...goalNodeBaseFields,
-  type: z.literal("choose"),
-  posedByEntityId: idSchema,
-  prompt: flavorTextSchema,
-  options: z.array(chooseOptionSchema).min(2).max(CHOOSE_MAX_OPTIONS),
-}).strict();
-
+// Declared before chooseNodeSchema so `choose.onCorrect` can reference it
+// (top-level consts evaluate in order; referencing it later would hit the TDZ).
 const demoCueSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("scale"),
@@ -164,6 +154,21 @@ const demoCueSchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
+const chooseOptionSchema = z.object({
+  entityId: idSchema,
+  correct: z.boolean().optional(),
+  feedback: flavorTextSchema.optional(),
+}).strict();
+
+const chooseNodeSchema = z.object({
+  ...goalNodeBaseFields,
+  type: z.literal("choose"),
+  posedByEntityId: idSchema,
+  prompt: flavorTextSchema,
+  options: z.array(chooseOptionSchema).min(2).max(CHOOSE_MAX_OPTIONS),
+  onCorrect: z.array(demoCueSchema).min(1).max(OBSERVE_MAX_CUES).optional(),
+}).strict();
+
 const observeNodeSchema = z.object({
   ...goalNodeBaseFields,
   type: z.literal("observe"),
@@ -172,6 +177,17 @@ const observeNodeSchema = z.object({
   stageEntityId: idSchema,
   zoneHint: z.string().min(1).max(120).optional(),
   demonstrate: z.array(demoCueSchema).min(1).max(OBSERVE_MAX_CUES),
+  via: viaSchema.optional(),
+}).strict();
+
+const transportNodeSchema = z.object({
+  ...goalNodeBaseFields,
+  type: z.literal("transport"),
+  objectEntityId: idSchema,
+  distractorEntityIds: z.array(idSchema).optional(),
+  destEntityId: idSchema,
+  relation: z.enum(["on", "in", "under"]).optional(),
+  zoneHint: z.string().min(1).max(120).optional(),
   via: viaSchema.optional(),
 }).strict();
 
@@ -215,6 +231,8 @@ const KIND_RULES = {
   obstacle: ["obstacle"],
   observeStage: ["marker", "character", "item"],
   demoProp: ["item", "character", "obstacle", "marker"],
+  transportObject: ["item"],
+  transportDest: ["marker", "item"],
 } as const satisfies Record<string, readonly EntityKind[]>;
 
 function validateGameStructure(
@@ -282,6 +300,19 @@ function validateGameStructure(
           checkRef(node.id, "demonstrate", cue.entityId, "demoProp");
         }
         break;
+      case "transport": {
+        checkRef(node.id, "objectEntityId", node.objectEntityId, "transportObject");
+        checkRef(node.id, "destEntityId", node.destEntityId, "transportDest");
+        const seenCarry = new Set<string>([node.objectEntityId]);
+        for (const id of node.distractorEntityIds ?? []) {
+          if (seenCarry.has(id)) {
+            issue(`transport "${node.id}" lists "${id}" as both the target and a distractor (or twice)`);
+          }
+          seenCarry.add(id);
+          checkRef(node.id, "distractorEntityIds", id, "transportObject");
+        }
+        break;
+      }
     }
   }
 
@@ -362,6 +393,10 @@ function validateChooseNode(
     issue(
       `choose "${node.id}" has ${correctCount} correct options — exactly 1 required`,
     );
+  }
+  // onCorrect payoff cues reference props the same way an observe demo does.
+  for (const cue of node.onCorrect ?? []) {
+    checkRef(node.id, "onCorrect", cue.entityId, "demoProp");
   }
 }
 

@@ -21,6 +21,19 @@
 
 import type { BoardButton, ParsedBoardData } from "../schema";
 
+/** A fixed quick-action button (the bottom row on the AAC), serialized so the
+ *  clinician's mirror can show it with the student's own label + icon. */
+export interface MirrorQuickButton {
+  id: string;
+  label: string;
+  /** Emoji / single-char icon (most quick buttons). */
+  emoji?: string;
+  /** Background color (hex). */
+  color?: string;
+  /** Highlighted state (e.g. Word Finder while guessing). */
+  active?: boolean;
+}
+
 /** The board the student is currently looking at, re-rendered read-only on the
  *  clinician side. Sent on every board / page / tier change (low frequency). */
 export interface BoardMirrorMessage {
@@ -32,6 +45,13 @@ export interface BoardMirrorMessage {
   mode: "board" | "app";
   /** When mode === "app", a label for what's showing (e.g. "social_world"). */
   appKind?: string;
+  /** The student device's reading direction — the clinician renders the mirror
+   *  in this direction regardless of the clinician UI's own language. */
+  rtl?: boolean;
+  /** The context-sidebar buttons the student sees beside the board. */
+  contextButtons?: BoardButton[];
+  /** The bottom quick-action row the student sees. */
+  quickButtons?: MirrorQuickButton[];
   at: number;
 }
 
@@ -61,12 +81,23 @@ export interface FacilitatorPressMessage {
   at: number;
 }
 
-/** A getDisplayMedia screen-share track was added (on) or removed (off). The
- *  receiver maps `trackId` to the inbound track so it can be shown distinctly. */
+/** A getDisplayMedia screen capture was started (on) or stopped (off). `streamId`
+ *  is the captured MediaStream's id — the MSID is signaled, so the receiver's
+ *  inbound `stream.id` matches it, letting the screen be told apart from the
+ *  camera (both arrive as separate `ontrack` streams for the same peer). */
 export interface ScreenShareMessage {
   k: "screen-share";
   on: boolean;
-  trackId: string;
+  streamId: string;
+  at: number;
+}
+
+/** The clinician asks the AAC to start (on) or stop (off) sharing its screen.
+ *  The AAC responds by calling getDisplayMedia — the student device is the one
+ *  being viewed, so the capture must originate there. */
+export interface ScreenRequestMessage {
+  k: "screen-request";
+  on: boolean;
   at: number;
 }
 
@@ -75,7 +106,8 @@ export type CallDataMessage =
   | BoardDwellMessage
   | BoardSelectionMessage
   | FacilitatorPressMessage
-  | ScreenShareMessage;
+  | ScreenShareMessage
+  | ScreenRequestMessage;
 
 /** Narrow an unknown data-channel payload to a CallDataMessage, or null. Keeps
  *  the receivers (both CallContexts) from having to trust the wire. */
@@ -92,6 +124,9 @@ export function parseCallDataMessage(raw: unknown): CallDataMessage | null {
         pageId: typeof v.pageId === "string" ? v.pageId : undefined,
         mode: v.mode === "app" ? "app" : "board",
         appKind: typeof v.appKind === "string" ? v.appKind : undefined,
+        rtl: typeof v.rtl === "boolean" ? v.rtl : undefined,
+        contextButtons: Array.isArray(v.contextButtons) ? (v.contextButtons as BoardButton[]) : undefined,
+        quickButtons: Array.isArray(v.quickButtons) ? (v.quickButtons as MirrorQuickButton[]) : undefined,
         at: typeof v.at === "number" ? v.at : 0,
       };
     }
@@ -121,8 +156,12 @@ export function parseCallDataMessage(raw: unknown): CallDataMessage | null {
     }
     case "screen-share": {
       const v = raw as Partial<ScreenShareMessage>;
-      if (typeof v.trackId !== "string") return null;
-      return { k: "screen-share", on: !!v.on, trackId: v.trackId, at: typeof v.at === "number" ? v.at : 0 };
+      if (typeof v.streamId !== "string") return null;
+      return { k: "screen-share", on: !!v.on, streamId: v.streamId, at: typeof v.at === "number" ? v.at : 0 };
+    }
+    case "screen-request": {
+      const v = raw as Partial<ScreenRequestMessage>;
+      return { k: "screen-request", on: !!v.on, at: typeof v.at === "number" ? v.at : 0 };
     }
     default:
       return null;

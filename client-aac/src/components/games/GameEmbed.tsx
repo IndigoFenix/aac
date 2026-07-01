@@ -24,6 +24,7 @@ import {
 import {
   onGameMessage,
   sendToGame,
+  type BoardOption,
   type GameMessage,
   type PlatformMessageInput,
 } from "@shared/games-bridge";
@@ -76,10 +77,17 @@ export interface GameEmbedProps {
    * game reads what it understands and ignores the rest.
    */
   initParams?: Record<string, unknown>;
+  /**
+   * Fired when the game locks the AAC response board to a set of options
+   * (`set_board_options`) or releases it (`clear_board_options` → null). The host
+   * shows them as the side SENTENCE BUTTONs and, on a press, sends
+   * `board_option_selected` back down via this embed's imperative `send`.
+   */
+  onBoardOptions?: (options: BoardOption[] | null) => void;
 }
 
 const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed(
-  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false, gamePayload, initParams },
+  { gameId, src, className, onMessage, onClose, forwardAiTextToGame = true, allowedOrigins, forwardGaze = false, gamePayload, initParams, onBoardOptions },
   ref,
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -139,12 +147,16 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
           dualAgent.sendContextOnly(formatSurface(msg.surface));
         }
 
+        // Board lock: the game pins (or releases) the AAC response board options.
+        if (msg.type === "set_board_options") onBoardOptions?.(msg.options);
+        else if (msg.type === "clear_board_options") onBoardOptions?.(null);
+
         onMessage?.(msg);
       },
       allowedOrigins,
     );
     return () => off();
-  }, [allowedOrigins, dualAgent, formatSurface, onClose, onMessage]);
+  }, [allowedOrigins, dualAgent, formatSurface, onClose, onMessage, onBoardOptions]);
 
   // Once the game says it's ready, send an `init` message. Carries locale and
   // (eventually) a license token. The token plumbing is wired but no minting
@@ -233,9 +245,10 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
         src={resolvedSrc}
         title={`Aivota game: ${gameId}`}
         // Sandbox keeps games to themselves but allows scripts and same-origin
-        // (so cookies/session reach the gated /games/ static handler) plus
-        // pointer-lock for fullscreen-style games. No top-navigation.
-        sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+        // (so cookies/session reach the gated /games/ static handler), forms (so
+        // the games auth/login form can submit) plus pointer-lock for
+        // fullscreen-style games. No top-navigation.
+        sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
         allow="autoplay; fullscreen"
         className="h-full w-full border-0 block bg-black"
       />

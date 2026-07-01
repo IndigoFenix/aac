@@ -33,6 +33,10 @@ export interface RenderIntent {
   /** The entity the local player is about to INTERACT with (toy/peer/NPC), for a
    *  highlight. Undefined when the gaze isn't resting on anything engageable. */
   interactId?: string;
+  /** When set, the 3D camera slews to FACE this world point regardless of `aim`
+   *  (used during an NPC conversation, where the avatar is frozen but the view
+   *  turns to the speaker). Null/undefined = normal aim-driven heading. */
+  faceTarget?: Vec2 | null;
 }
 
 /** World units shown across the smaller screen dimension by a follow camera. The

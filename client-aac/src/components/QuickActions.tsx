@@ -19,6 +19,45 @@ interface QuickActionsProps {
   inSentenceBuilder?: boolean;
 }
 
+/** A serialized quick-action button for the call board-mirror (read-only). */
+export interface QuickActionMirror {
+  id: string;
+  label: string;
+  emoji?: string;
+  color?: string;
+  active?: boolean;
+}
+
+/** Build the quick-action row descriptor (same decisions as the rendered row),
+ *  for streaming to a clinician's mirrored view. Pure — no JSX. */
+export function quickActionsMirror(
+  opts: { boardMode: "ai" | "db"; hasActiveApp?: boolean; currentTier?: "home" | "context" | "latest"; isGuessingMode?: boolean; inSentenceBuilder?: boolean; showSpeakSlot?: boolean },
+  t: (k: string) => string,
+  isRTL: boolean,
+): QuickActionMirror[] {
+  const { boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, inSentenceBuilder = false, showSpeakSlot = true } = opts;
+  const out: QuickActionMirror[] = [];
+  out.push(boardMode === "ai"
+    ? { id: "more", label: t("quickActions.more"), emoji: "➕", color: "#E5E7EB" }
+    : { id: "back", label: t("quickActions.back"), emoji: "◀", color: "#E5E7EB" });
+  out.push({ id: "yes", label: t("quickActions.yes"), emoji: "✓", color: "#D1FAE5" });
+  out.push({ id: "no", label: t("quickActions.no"), emoji: "✗", color: "#FEE2E2" });
+  out.push(
+    hasActiveApp ? { id: "exit", label: t("quickActions.exit"), emoji: "✖️", color: "#FCA5A5" }
+    : isGuessingMode || currentTier === "home" ? { id: "home", label: t("quickActions.back"), emoji: "↩️", color: "#C4B5FD" }
+    : currentTier === "context" ? { id: "home", label: t("quickActions.home"), emoji: "🏠", color: "#DBEAFE" }
+    : { id: "home", label: t("quickActions.board"), emoji: "📋", color: "#E0E7FF" });
+  if (boardMode === "ai" && !hasActiveApp && !inSentenceBuilder) {
+    out.push({ id: "guess", label: t("quickActions.guess"), emoji: "🔍", color: isGuessingMode ? "#C4B5FD" : "#EDE9FE", active: isGuessingMode });
+  }
+  if (showSpeakSlot) {
+    out.push(inSentenceBuilder
+      ? { id: "speak", label: t("quickActions.back"), emoji: isRTL ? "▶" : "◀", color: "#E5E7EB" }
+      : { id: "speak", label: t("quickActions.speak"), emoji: "💬", color: "#FEF3C7" });
+  }
+  return out;
+}
+
 export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, onSpeak, inSentenceBuilder = false }: QuickActionsProps) {
   const { t, isRTL } = useLanguage();
 

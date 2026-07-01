@@ -756,6 +756,20 @@ export const yue: Translations = {
     title: "應用程式",
     empty: "未啟用任何應用程式。",
     starting: "正在啟動…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "打電話",
+      spotify: "Spotify",
+      drawing: "畫畫",
+      music: "音樂製作",
+      sandbox_game: "沙盒農場",
+      bubbles_game: "泡泡",
+      social_trainer: "社交訓練",
+      space_trader: "太空商人",
+      musical_microbes: "音樂微生物",
+      social_world: "同朋友一齊玩",
+      symbol_learning: "學習符號",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const yue: Translations = {
     bigVideo: "大片",
     smallVideo: "細片",
     noOneElse: "仲未有其他人",
+    screenSharing: "正在分享你嘅螢幕",
     incoming: "嚟電",
     accept: "好",
     decline: "唔好",

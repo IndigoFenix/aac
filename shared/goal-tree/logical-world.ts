@@ -164,6 +164,15 @@ function buildNode(world: LogicalWorld, node: GoalNode, contextZoneId: string): 
       world.sites[node.id] = zoneId;
       break;
     }
+    case "transport": {
+      // A new zone you travel to; the carry OBJECT + destination container are
+      // materialized there as real world-engine objects by the player (not
+      // goal-tree figures), so no figure is placed here — just the zone.
+      const zoneId = addZone(world, "reach", node.id, node.zoneHint);
+      addPassage(world, contextZoneId, zoneId, buildVia(world, node.via, contextZoneId));
+      world.sites[node.id] = zoneId;
+      break;
+    }
   }
 }
 

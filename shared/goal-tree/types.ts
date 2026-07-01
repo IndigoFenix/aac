@@ -11,6 +11,8 @@
 //   observe  — travel to a stage and WATCH a scripted demonstration, then it's
 //              labelled with a glyph (the symbol-learning WATCH beat). Always
 //              completable once reached — it teaches, it doesn't gate.
+//   transport— carry an object to a destination (the "move A→B" puzzle). Always
+//              completable once its zone is reached — it teaches, it doesn't gate.
 //
 // The schema is deliberately CLOSED: every field is an enum, a validated
 // reference, a clamped number, or pure flavor text. Mechanics are not
@@ -38,6 +40,14 @@ export interface EntityDef {
   imageKey?: string;
   /** Custom symbol path (same resolution as AAC boards). */
   symbolPath?: string;
+  /**
+   * A composed AAC glyph SENTENCE this entity renders as — the same syntax the
+   * compositor/registry use ("want.not", "give + ball"). Used by the
+   * symbol-learning game so a `choose` option can display a composed glyph and
+   * be locked to the AAC response board as a BoardOption. Optional; ordinary
+   * games leave it unset and fall back to label/iconRef.
+   */
+  glyph?: string;
   /** Semantic tags ("red", "animal") — used by semantic lint and reports. */
   tags?: string[];
   /** Flavor dialogue lines for characters (pre-rendered via TTS). */
@@ -117,6 +127,16 @@ export interface ChooseNode extends GoalNodeBase {
   prompt: string;
   /** 2–4 options, exactly one correct. */
   options: ChooseOption[];
+  /**
+   * Cues played as a PAYOFF when the correct option is chosen — the contingency
+   * beat of the symbol game ("press MORE → a bubble pops out"). The same CLOSED,
+   * entity-referencing DemoCue set the observe beat uses (deliberately NOT the
+   * full SpaceCommand union: a closed cue set can't reference a bad passage/
+   * instance and so can't express brokenness). Delivered to the space via the
+   * existing `demonstrate` command. Optional; omit for a pure pick-the-answer
+   * beat. See planning-docs/symbol-learning-game-plan.md §4.1/§7.
+   */
+  onCorrect?: DemoCue[];
 }
 
 /**
@@ -178,12 +198,46 @@ export interface ObserveNode extends GoalNodeBase {
   via?: OvercomeNode[];
 }
 
+/** Where a transported object must end up on its destination container. */
+export type TransportRelation = "on" | "in" | "under";
+
+/**
+ * Carry an object to a destination — the "move object A→B" puzzle. The child
+ * picks up `objectEntityId` (a carryable world object placed in the node's zone)
+ * and puts it down on/in/under `destEntityId` (a container placed there too). The
+ * player materializes both as real world-engine objects; completing it means the
+ * object was placed on the destination (with `relation` if specified). Never
+ * gates by itself — solvable once its zone is reachable.
+ */
+export interface TransportNode extends GoalNodeBase {
+  type: "transport";
+  /** The carryable object to move (kind: item). */
+  objectEntityId: string;
+  /**
+   * Optional WRONG carryables placed alongside the target — turns "carry A→B"
+   * into "carry the RIGHT one" selection (kind: item). The player materializes
+   * them as carryables too; only `objectEntityId` landing on the destination
+   * completes the beat, and a wrong one is gently DECLINED (ejected to carry
+   * again) — never a fail state. Omit for a plain single-object transport.
+   */
+  distractorEntityIds?: string[];
+  /** The destination container to place it on/in/under (kind: marker). */
+  destEntityId: string;
+  /** Required placement relation; omit to accept any slot the destination offers. */
+  relation?: TransportRelation;
+  /** Theme hint for the puzzle zone. */
+  zoneHint?: string;
+  /** Obstacles on the passage to the puzzle zone. All must be cleared. */
+  via?: OvercomeNode[];
+}
+
 export type GoalNode =
   | ReachNode
   | CollectNode
   | ChooseNode
   | OvercomeNode
-  | ObserveNode;
+  | ObserveNode
+  | TransportNode;
 export type GoalNodeType = GoalNode["type"];
 
 // ---------------------------------------------------------------------------

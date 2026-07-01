@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import GameEmbed from "@/components/games/GameEmbed";
 import SocialWorldCanvas from "@/components/social-world/SocialWorldCanvas";
+import SymbolGameSandbox from "@/components/games/SymbolGameSandbox";
 import { CameraProvider } from "@/components/CameraProvider";
 import { MultiCameraProvider } from "@/hooks/useMultiCamera";
 import LoginModal from "@/components/LoginModal";
@@ -67,6 +68,14 @@ function MainApp() {
         <SocialWorldCanvas />
       </div>
     );
+  }
+
+  // Dev/test bypass: the symbol-learning game with its AAC button-board
+  // interface but NO live AI session, reachable at /symbol-game with no
+  // auth/student selection. The game judges itself client-side; the AI is only
+  // ever a narration companion, so it's fully playable standalone.
+  if (window.location.pathname.replace(/\/$/, "").endsWith("/symbol-game")) {
+    return <SymbolGameSandbox />;
   }
 
   // Direct routes that embed a /games/<id>/ iframe. These bypass auth/student

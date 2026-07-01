@@ -9,6 +9,18 @@ export interface BridgeMessageBase {
   __aivotaGameBridge: true;
 }
 
+/**
+ * One locked option a game pins onto the AAC's response board (a SENTENCE
+ * BUTTON). The student presses it like any board button; the platform reports the
+ * `id` back via `board_option_selected`. `glyph` is an optional composed AAC
+ * glyph string so the button renders as the real symbol the student is learning.
+ */
+export interface BoardOption {
+  id: string;
+  label: string;
+  glyph?: string;
+}
+
 // ── Platform → Game ─────────────────────────────────────────────────────────
 
 export type PlatformMessage = BridgeMessageBase & (
@@ -35,6 +47,12 @@ export type PlatformMessage = BridgeMessageBase & (
   | { type: "load_game"; game: unknown }
   | { type: "pause" }
   | { type: "resume" }
+  /**
+   * The student pressed one of the options the game pinned via `set_board_options`.
+   * `id` is the option's id. Sent only while options are locked; clearing them
+   * stops further reports.
+   */
+  | { type: "board_option_selected"; id: string }
   | { type: "request_close" }
 );
 
@@ -52,6 +70,15 @@ export type GameMessage = BridgeMessageBase & (
    * JSON-serializable shape — game and AI co-evolve without a schema.
    */
   | { type: "ai_observation"; surface: unknown }
+  /**
+   * Lock the AAC response board (the side SENTENCE BUTTONs) to these options so
+   * the student answers a puzzle on the REAL communication board — teaching its
+   * use. `prompt` is the question being asked (for context / narration). The
+   * platform reports a press back as `board_option_selected`. Re-sending replaces
+   * the set; `clear_board_options` releases it back to the AI.
+   */
+  | { type: "set_board_options"; options: BoardOption[]; prompt?: string }
+  | { type: "clear_board_options" }
   | { type: "request_close" }
 );
 

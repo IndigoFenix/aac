@@ -20,6 +20,8 @@ interface AppMiniBoardProps {
   /** Number of columns. 1 (default) = the narrow context strip; >1 = a wider
    *  panel (e.g. the main board's 8 buttons in 2×4 during a game). */
   columns?: number;
+  /** Button id a remote clinician is hovering (their "cursor") — ringed. */
+  highlightButtonId?: string | null;
 }
 
 // Icon/text sizing for a 4-row column — mirrors DynamicBoard's formula so the
@@ -27,7 +29,7 @@ interface AppMiniBoardProps {
 const ICON_FONT = "clamp(1rem, calc((100dvh - 10.5rem) / 4 * 0.45), 6rem)";
 const TEXT_FONT = "clamp(0.5rem, calc((100dvh - 10.5rem) / 4 * 0.10), 1.25rem)";
 
-export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage, columns = 1 }: AppMiniBoardProps) {
+export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage, columns = 1, highlightButtonId }: AppMiniBoardProps) {
   const { speak } = useTextToSpeech();
 
   // 4 rows per column; the narrow strip is 1 col (4 buttons), the game panel is
@@ -63,7 +65,8 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             variant="board"
             button={button}
             onClick={() => handleClick(button)}
-            borderClassName="border-gray-200"
+            borderClassName={highlightButtonId && button.id === highlightButtonId ? "ring-4 ring-sky-400 border-gray-200" : "border-gray-200"}
+            extraButtonProps={{ "data-mirror-id": button.id }}
             getFaceImage={getFaceImage ?? undefined}
             iconFontSize={ICON_FONT}
             textFontSize={TEXT_FONT}

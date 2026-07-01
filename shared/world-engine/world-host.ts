@@ -1,38 +1,44 @@
-// shared/social-world/world-host.ts
+// shared/world-engine/world-host.ts
 //
-// The framework-free heart of the social-world client: the per-frame loop that
-// drives input → aim → sim → networking → render. Extracted from
-// SocialWorldCanvas so the SAME loop runs in two places:
-//   • on the main thread (the React component wires DOM events + the call net), and
-//   • inside a Web Worker on an OffscreenCanvas (the bridge posts inputs in and
+// The framework-free heart of the world engine: the per-frame loop that drives
+// input → aim → sim → (optional) networking → render. Lives in the engine so any
+// surface — the single-player goal-tree player, a future game, or the social
+// world — gets the full feel (physics, camera, gaze, dialogue bubbles, NPC
+// bodies) by injecting a WorldView + clock, with transport optional. It runs in
+// two places:
+//   • on the main thread (a React component wires DOM events + a call net), and
+//   • inside a Web Worker on an OffscreenCanvas (a bridge posts inputs in and
 //     outbound net messages out).
 //
 // It owns NO DOM and NO transport: a `WorldView` (injected) does the drawing +
 // screen→world mapping, a `scheduleFrame`/`now` clock drives it, and inbound peer
 // state is fed in via methods while outbound rides the injected `net` callbacks.
-// That keeps this module pure enough to live on either side of the worker boundary.
+// Multiplayer specifics (presence relay, NPC conversation brains, the call mesh)
+// stay in shared/social-world; this only knows the generic transport seam below.
 
 import {
   addLocalAvatar,
-  applyInbound,
   applyRemoteAvatar,
-  collectOutbound,
+  carryObject,
+  CARRY_HOLD,
   createWorldState,
+  objectAllows,
+  placeCarriedObject,
   removeAvatar,
-  sayMessage,
   setAvatarSpeech,
   smoothRemoteAvatars,
   steerAvatar,
   tickWorld,
-  type Vec2,
-  type WorldNetMessage,
-  type WorldSpec,
+  type MoveConstraint,
   type WorldState,
-} from "../world-engine/index.js";
-import type { WorldView } from "../world-engine/world-view.js";
-import { createGazeInterpreter } from "../world-engine/gaze-intent.js";
-import { approachAim, pickEntity } from "../world-engine/interact.js";
-import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "../world-engine/world-tunables.js";
+} from "./engine.js";
+import { createDwellTracker } from "./dwell.js";
+import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
+import type { Vec2, WorldSpec } from "./types.js";
+import type { WorldView } from "./world-view.js";
+import { createGazeInterpreter } from "./gaze-intent.js";
+import { approachAim, pickEntity } from "./interact.js";
+import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "./world-tunables.js";
 import {
   createNpcController,
   DEFAULT_CONVERSATION_RADIUS,
@@ -40,7 +46,26 @@ import {
   type NpcEngagement,
   type NpcProximity,
 } from "./npc-controller.js";
-import type { WorldPresence } from "./world-presence.js";
+
+/**
+ * A relayed avatar position — the generic packet the host publishes/applies for a
+ * networked peer. Multiplayer code (shared/social-world/world-presence) carries a
+ * richer `WorldPresence` (it also feeds the conversation-circle solver); that type
+ * is structurally a superset, so it flows through these methods unchanged.
+ */
+export interface PresencePacket {
+  personId: string;
+  x: number;
+  y: number;
+  /** Facing unit vector. */
+  fx: number;
+  fy: number;
+  /** Velocity (world units/sec) for smoothing/extrapolation. */
+  vx: number;
+  vy: number;
+  /** Storey level (0 = ground). Optional on the wire; defaults to 0. */
+  floor?: number;
+}
 
 const SEND_INTERVAL_MS = 1000 / 15; // ~15 Hz mesh world-state (toys/possession + avatar)
 const PRESENCE_INTERVAL_MS = 1000 / 8; // ~8 Hz relay position (cheap, position-only)
@@ -49,7 +74,7 @@ const PRESENCE_INTERVAL_MS = 1000 / 8; // ~8 Hz relay position (cheap, position-
  *  main thread, or a postMessage bridge in the worker). Absent ⇒ single-player. */
 export interface WorldHostNet {
   send: (msgs: WorldNetMessage[]) => void;
-  publishPresence?: (p: WorldPresence) => void;
+  publishPresence?: (p: PresencePacket) => void;
 }
 
 export interface WorldHostDeps {
@@ -79,6 +104,20 @@ export interface WorldHostDeps {
   now: () => number;
   /** Initial gaze/camera/comfort tunables (debug menu). Defaults applied if omitted. */
   tunables?: WorldTunables;
+  /** Constrain avatar movement — the LOCAL player and any hosted NPC bodies slide
+   *  along its solids (e.g. a goal-tree quest's walls). Its `walkable` closure is
+   *  read every step, so it can reflect changing world state (a door that opened).
+   *  Omit for open-field worlds (the social field). */
+  constraint?: MoveConstraint;
+  /** Called each frame AFTER the local + NPC ticks and remote smoothing, BEFORE
+   *  render — the seam where a single-player game layer reads avatar positions and
+   *  injects its own logic (e.g. quest proximity detection → runtime inputs). */
+  onFrame?: (state: WorldState, dt: number) => void;
+  /** Enable the CARRY interaction: dwell on a nearby carryable object to pick it
+   *  up; while carrying, steering is suspended and dwelling on a spot moves the
+   *  OBJECT there and puts it down (onto a container's slot under that spot, or on
+   *  the ground). Omit to disable carry. */
+  carry?: { reach?: number; dwellMs?: number };
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -86,13 +125,23 @@ export interface WorldHost {
   /** Inbound mesh messages (toys/possession + avatars when no relay). */
   applyNetInbound(msgs: WorldNetMessage[]): void;
   /** Inbound relayed presence (a remote avatar position). */
-  applyPresence(p: WorldPresence): void;
+  applyPresence(p: PresencePacket): void;
   /** A peer left / was pruned. */
   applyPresenceLeave(personId: string): void;
   /** Pointer moved to a canvas-relative CSS pixel. */
   setPointer(px: number, py: number): void;
   /** Pointer left the surface (avatar coasts to a stop). */
   clearPointer(): void;
+  /** Enter/leave an NPC conversation: while a target is set the local avatar is
+   *  FROZEN (steering suspended) and the camera slews to FACE the target world
+   *  point. Pass null to leave. Driven by the game layer (e.g. dwell-to-talk). */
+  setConversation(target: Vec2 | null): void;
+  /** This frame's settled gaze — the fixated ground point (`committedWorld`, null
+   *  mid-saccade), how settled it is (`unsettled`: 0 settled … 1 flicking), and the
+   *  current CARRY dwell progress (`dwellProgress`: 0 idle … 1 about to fire). The
+   *  game layer hit-tests committedWorld to detect dwell on a figure / empty ground
+   *  and reads dwellProgress to draw a dwell-timer indicator. */
+  getGaze(): { committedWorld: Vec2 | null; unsettled: number; dwellProgress: number };
   /** Logical size (CSS px) + DPR changed. */
   resize(width: number, height: number, dpr: number): void;
   /** The local user spoke: show a speech bubble over the local avatar and broadcast
@@ -187,7 +236,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         height: spec.manifold.height,
         rng: npcRng,
       });
-      steerAvatar(state, ctrl.npcId, aim, dt);
+      steerAvatar(state, ctrl.npcId, aim, dt, undefined, deps.constraint);
     }
   };
 
@@ -198,6 +247,23 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let lastSend = 0;
   let lastPresence = 0;
   let pendingEvents: ReturnType<typeof tickWorld>["events"] = [];
+
+  // Carry interaction (dwell to pick up / put down). One LENIENT dwell tracker
+  // serves both: its must-exit latch is what stops a stare from picking-up and
+  // putting-down the same object every frame.
+  const carryReach = deps.carry?.reach ?? 1.6;
+  const carryDwellMs = deps.carry?.dwellMs ?? 650;
+  const carryDwell = createDwellTracker({ dwellMs: carryDwellMs, tolerance: 1.6, graceMs: 450 });
+  let carryDwellProgress = 0;
+  // Conversation: when set, the avatar is frozen and the camera faces this point.
+  let conversationTarget: Vec2 | null = null;
+  // This frame's settled gaze, exposed to the game layer via getGaze().
+  let lastCommitted: Vec2 | null = null;
+  let lastUnsettled = 1;
+  let lastDwellProgress = 0;
+  /** The object this peer is currently carrying, or undefined. */
+  const carriedId = (): string | undefined =>
+    Object.values(state.objects).find((o) => o.carriedBy === localId)?.id;
 
   const frame = (dt: number, now: number): void => {
     // Interpret the raw pointer into an aim EACH frame against the (moving) camera:
@@ -225,13 +291,57 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         interactId = hit.id;
       }
     }
-    const { events } = tickWorld(state, { aim }, dt);
+
+    // CARRY: dwell on a nearby carryable to pick it up; while carrying, you steer
+    // it WITH you (stopping ~CARRY_HOLD short of the drop point so the held object
+    // leads onto the spot), then a lenient dwell on the spot sets it down. The
+    // shared dwell tracker's must-exit latch prevents an instant pick→drop loop.
+    carryDwellProgress = 0;
+    if (deps.carry && me) {
+      const carrying = carriedId();
+      const fix = intent.committedWorld; // the fixation point (null mid-saccade)
+      if (carrying) {
+        interactId = carrying;
+        if (fix) {
+          const dx = fix.x - me.x;
+          const dy = fix.y - me.y;
+          const d = Math.hypot(dx, dy);
+          aim = d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
+        }
+        const res = carryDwell.step(fix ? { x: fix.x, y: fix.y } : null, dt * 1000);
+        carryDwellProgress = res.progress;
+        if (res.fired) {
+          const a = carryDwell.anchor();
+          if (a) placeCarriedObject(state, carrying, a);
+        }
+      } else {
+        const target = fix ? pickEntity(fix, state, localId, tunables.interact) : null;
+        const obj = target?.kind === "object" ? state.objects[target.id] : undefined;
+        const near = !!obj && Math.hypot(obj.x - me.x, obj.y - me.y) <= carryReach && objectAllows(state.spec, obj.id, "carry");
+        if (near && obj) interactId = obj.id;
+        const res = carryDwell.step(near && obj ? { x: obj.x, y: obj.y } : null, dt * 1000);
+        carryDwellProgress = res.progress;
+        if (res.fired && near && obj) carryObject(state, obj.id, localId);
+      }
+    }
+
+    // Expose the settled gaze + carry-dwell progress for the game layer (onFrame).
+    lastCommitted = intent.committedWorld;
+    lastUnsettled = intent.unsettled;
+    lastDwellProgress = carryDwellProgress;
+    // CONVERSATION: freeze the avatar while talking (the camera faces the speaker,
+    // applied via the render intent below). Mirrors the carry steering-suspension.
+    if (conversationTarget) aim = null;
+
+    const { events } = tickWorld(state, { aim }, dt, undefined, deps.constraint);
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
     // local tick so controllers see this frame's player position.
     advanceNpcs(dt);
     emitProximityIfChanged();
     // Glide remote avatars between the ~8–15 Hz packets (dead-reckon + ease).
     smoothRemoteAvatars(state, dt);
+    // Game layer hook (single-player quest logic): runs on the final frame state.
+    deps.onFrame?.(state, dt);
 
     if (net) {
       if (events.length) pendingEvents.push(...events);
@@ -245,6 +355,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
             x: local.x, y: local.y,
             fx: local.fx, fy: local.fy,
             vx: local.vx, vy: local.vy,
+            floor: local.floor,
           });
         }
         lastPresence = now;
@@ -259,7 +370,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       }
     }
 
-    view.render(state, dt, { aim, sitting: intent.sitting, interactId });
+    view.render(state, dt, { aim, sitting: intent.sitting, interactId, faceTarget: conversationTarget });
   };
 
   const loop = (now: number): void => {
@@ -277,7 +388,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     applyPresence(p) {
       if (p.personId === localId) return; // never let the relay move our own avatar
-      applyRemoteAvatar(state, { id: p.personId, x: p.x, y: p.y, fx: p.fx, fy: p.fy, vx: p.vx, vy: p.vy });
+      applyRemoteAvatar(state, { id: p.personId, x: p.x, y: p.y, fx: p.fx, fy: p.fy, vx: p.vx, vy: p.vy, floor: p.floor ?? 0 });
     },
     applyPresenceLeave(personId) {
       removeAvatar(state, personId);
@@ -287,6 +398,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     clearPointer() {
       pointer = null;
+    },
+    setConversation(target) {
+      conversationTarget = target;
+    },
+    getGaze() {
+      return { committedWorld: lastCommitted, unsettled: lastUnsettled, dwellProgress: lastDwellProgress };
     },
     resize(width, height, dpr) {
       view.resize(width, height, dpr);

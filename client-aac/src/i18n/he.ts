@@ -756,6 +756,20 @@ export const he: Translations = {
     title: "אפליקציות",
     empty: "אין אפליקציות פעילות.",
     starting: "מתחיל…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "שיחת טלפון",
+      spotify: "Spotify",
+      drawing: "ציור",
+      music: "יוצר מוזיקה",
+      sandbox_game: "חוות ארגז חול",
+      bubbles_game: "בועות",
+      social_trainer: "מאמן חברתי",
+      space_trader: "סוחר החלל",
+      musical_microbes: "חיידקים מוזיקליים",
+      social_world: "משחקים עם חברים",
+      symbol_learning: "לימוד סמלים",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const he: Translations = {
     bigVideo: "וידאו גדול",
     smallVideo: "וידאו קטן",
     noOneElse: "אין כאן עדיין אף אחד אחר",
+    screenSharing: "המסך שלך משותף",
     incoming: "שיחה נכנסת",
     accept: "כן",
     decline: "לא",

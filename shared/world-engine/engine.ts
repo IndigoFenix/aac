@@ -18,7 +18,20 @@
 // config.optimisticPossession so a touch grabs a free ball locally (the request
 // event is still emitted for the server to confirm/deny later).
 
-import type { SoccerBallSpec, ToyKind, Vec2, WorldSpec } from "./types.js";
+import type {
+  BuildingSpec,
+  ContainRelation,
+  DoorSpec,
+  ObjectInteraction,
+  ObjectShape,
+  ObjectSpec,
+  PushSpec,
+  Rect,
+  StairSpec,
+  StructureSpec,
+  Vec2,
+  WorldSpec,
+} from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Runtime state
@@ -34,6 +47,10 @@ export interface AvatarState {
   /** Velocity, world units/sec. */
   vx: number;
   vy: number;
+  /** Storey level: 0 = ground floor; fractional while on stairs (a ramp between
+   *  integer floors). The renderer lifts the body by floor × floor-height; the
+   *  structural constraint only enforces walls on the avatar's (rounded) floor. */
+  floor: number;
   // --- Remote render-smoothing target (REMOTE avatars only) -----------------
   // x/y/fx/fy/vx/vy above are the SMOOTHED display values the renderer draws;
   // these t* fields are the latest values the NETWORK reported. smoothRemoteAvatars
@@ -48,41 +65,74 @@ export interface AvatarState {
   /** Seconds since the last network packet — caps dead-reckoning so a peer whose
    *  packets stop (e.g. a backgrounded tab) freezes instead of gliding away. */
   tAge?: number;
-  /** Ephemeral speech bubble shown over the avatar's head. DISPLAY-ONLY — not part
-   *  of the deterministic sim (tickWorld never reads or writes it), so it can ride
-   *  the same render path without perturbing physics. Set locally when this peer
-   *  speaks (setAvatarSpeech) and on remotes from the "say" net message; the
-   *  renderer fades it out `at` + a TTL. */
-  say?: AvatarSpeech;
 }
 
-/** An utterance to surface over an avatar. `text` is the spoken line; `glyph` is
- *  the composed AAC glyph string for a symbol rendering of it (absent for plain
- *  speech, e.g. a clinician's STT). `at` is LOCAL sim-time seconds (state.time)
- *  when it was applied, so the renderer can fade it on its own clock — never the
- *  speaker's wall clock, which differs per machine. */
-export interface AvatarSpeech {
+/**
+ * A display-only speech bubble in the world — the ONE caption channel, used the
+ * same way for a remote player's utterance and an in-game character's line.
+ * `tickWorld` never reads it (display-only), so it can't perturb physics. Add via
+ * showWorldBubble(); the renderer floats it over the anchor and fades it out at
+ * `at` + `ttl`.
+ */
+export interface WorldBubble {
+  /** Where the bubble floats: tracking an AVATAR each frame, or a fixed world
+   *  POINT (a non-avatar character, object, or caption). */
+  anchor:
+    | { kind: "avatar"; id: string }
+    | { kind: "point"; x: number; y: number };
+  /** The spoken / captioned line. */
   text: string;
+  /** Composed AAC glyph string for a symbol rendering (absent = plain text). */
   glyph?: string;
+  /** LOCAL sim-time (state.time) when shown — the renderer fades it on its own
+   *  clock, never the speaker's wall clock (which differs per machine). */
   at: number;
+  /** Total seconds visible before it fully fades out. */
+  ttl: number;
 }
 
-export interface ToyState {
+/** Default bubble lifetime (sim-seconds) when a caller doesn't specify one.
+ *  Matches speech-bubble.ts BUBBLE_TTL_SECONDS (kept here so the headless engine
+ *  needn't import the canvas module). */
+export const BUBBLE_DEFAULT_TTL = 6;
+
+export interface ObjectState {
   id: string;
-  kind: ToyKind;
+  shape: ObjectShape;
   x: number;
   y: number;
   vx: number;
   vy: number;
-  /** Participant currently controlling the toy, or null if free. */
+  /** Storey the object rests on (a carried object inherits its carrier's floor). */
+  floor: number;
+  // --- push (possession-dribble) — only meaningful for "push" objects ---------
+  /** Participant currently controlling (dribbling) the object, or null if free. */
   possessedBy: string | null;
-  /** Participant responsible for simulating the toy while it rolls free; null
+  /** Participant responsible for simulating the object while it rolls free; null
    *  once at rest (the server then holds it). */
   freeRollOwner: string | null;
   /** Last controller — blocked from instantly re-grabbing after a kick. */
   lastPossessor: string | null;
-  /** Sim-time before which `lastPossessor` may not re-grab this toy. */
+  /** Sim-time before which `lastPossessor` may not re-grab this object. */
   grabCooldownUntil: number;
+  // --- carry — only meaningful for "carry" objects ----------------------------
+  /** Avatar currently carrying this object (it follows them), or null. */
+  carriedBy: string | null;
+  // --- containment ------------------------------------------------------------
+  /** When placed on/in/under a container, where it rests; null when free. */
+  containedIn: { objectId: string; relation: ContainRelation } | null;
+}
+
+/**
+ * Live state of a `door` structure. `open` is the eased swing amount, 0 (closed
+ * & solid) → 1 (open & passable); `locked` blocks it from ever opening until
+ * cleared (by unlockDoor or its key object). Derived locally each tick from
+ * avatar positions, so it carries no network identity of its own.
+ */
+export interface DoorState {
+  id: string;
+  open: number;
+  locked: boolean;
 }
 
 export interface WorldState {
@@ -90,7 +140,12 @@ export interface WorldState {
   /** This peer's participant id (its avatar is the one tickWorld advances). */
   localId: string;
   avatars: Record<string, AvatarState>;
-  toys: Record<string, ToyState>;
+  objects: Record<string, ObjectState>;
+  /** Live door swing/lock state, keyed by door id (only `door` structures). */
+  doors: Record<string, DoorState>;
+  /** Display-only speech bubbles, keyed by a caller-chosen id (re-using a key
+   *  replaces that bubble). The single caption channel — see showWorldBubble. */
+  bubbles: Record<string, WorldBubble>;
   time: number;
 }
 
@@ -115,12 +170,12 @@ export interface MoveConstraint {
 }
 
 export type WorldEvent =
-  /** Local peer wants this free toy — the server confirms via applyPossession. */
-  | { type: "possession-request"; toyId: string; participantId: string }
-  /** Local peer released a toy (stop or kick); it now rolls free. */
-  | { type: "possession-released"; toyId: string; participantId: string; at: number }
-  /** A free-rolled toy this peer owned came to rest. */
-  | { type: "toy-rest"; toyId: string };
+  /** Local peer wants this free object — the server confirms via applyPossession. */
+  | { type: "possession-request"; objectId: string; participantId: string }
+  /** Local peer released an object (stop or kick); it now rolls free. */
+  | { type: "possession-released"; objectId: string; participantId: string; at: number }
+  /** A free-rolled object this peer owned came to rest. */
+  | { type: "object-rest"; objectId: string };
 
 export interface WorldTickResult {
   state: WorldState;
@@ -170,6 +225,13 @@ export interface WorldEngineConfig {
   /** Max seconds to dead-reckon a remote avatar past its last packet before
    *  freezing the target (stops a stale/backgrounded peer gliding off). */
   maxExtrapSec: number;
+  /** Door swing ease rate (1/sec): how fast a door opens/closes toward its target. */
+  doorSwingRate: number;
+  /** A door is passable once its `open` reaches this (its leaf has swung clear). */
+  doorPassThreshold: number;
+  /** Default avatar→door-center distance that triggers opening, when a DoorSpec
+   *  omits `openRadius`. Added to half the door's width at runtime. */
+  doorOpenMargin: number;
 }
 
 export const WORLD_ENGINE_DEFAULTS: WorldEngineConfig = {
@@ -191,6 +253,9 @@ export const WORLD_ENGINE_DEFAULTS: WorldEngineConfig = {
   smoothPosRate: 12,
   smoothVelRate: 10,
   maxExtrapSec: 0.25,
+  doorSwingRate: 6,
+  doorPassThreshold: 0.5,
+  doorOpenMargin: 1.4,
 };
 
 // ---------------------------------------------------------------------------
@@ -232,25 +297,36 @@ export function createWorldState(
     fy: Math.sin(facing),
     vx: 0,
     vy: 0,
+    floor: 0,
   };
 
-  const toys: Record<string, ToyState> = {};
-  for (const t of spec.toys) {
-    toys[t.id] = {
-      id: t.id,
-      kind: t.kind,
-      x: t.x,
-      y: t.y,
+  const objects: Record<string, ObjectState> = {};
+  for (const o of spec.objects) {
+    objects[o.id] = {
+      id: o.id,
+      shape: o.shape,
+      x: o.x,
+      y: o.y,
       vx: 0,
       vy: 0,
+      floor: 0,
       possessedBy: null,
       freeRollOwner: null,
       lastPossessor: null,
       grabCooldownUntil: 0,
+      carriedBy: null,
+      containedIn: null,
     };
   }
 
-  return { spec, localId, avatars: { [localId]: avatar }, toys, time: 0 };
+  const doors: Record<string, DoorState> = {};
+  for (const s of spec.structures ?? []) {
+    if (s.kind === "door") {
+      doors[s.id] = { id: s.id, open: 0, locked: s.locked ?? false };
+    }
+  }
+
+  return { spec, localId, avatars: { [localId]: avatar }, objects, doors, bubbles: {}, time: 0 };
 }
 
 /**
@@ -274,6 +350,7 @@ export function addLocalAvatar(
     fy: Math.sin(facing),
     vx: 0,
     vy: 0,
+    floor: 0,
   };
   state.avatars[id] = a;
   return a;
@@ -298,7 +375,13 @@ export function steerAvatar(
   const a = state.avatars[id];
   if (!a) return;
   const step = Math.min(Math.max(dt, 0), config.maxStep);
-  if (step > 0) advanceAvatar(a, aim, state.spec, config, step, constraint);
+  // NPC bodies respect walls/doors too — compose the engine's structural
+  // constraint (scoped to the NPC's storey) with any external one, then re-derive
+  // its floor so an NPC can use stairs as well.
+  if (step > 0) {
+    advanceAvatar(a, aim, state.spec, config, step, effectiveConstraint(state, constraint, config, a.floor));
+    updateAvatarFloor(state, a);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -324,13 +407,20 @@ export function tickWorld(
   // Pre-update possessor speed feeds the hard-brake ("kick") release test.
   const prevSpeed = local ? Math.hypot(local.vx, local.vy) : 0;
 
+  // Doors ease open/shut from the avatars' CURRENT positions, then locomotion
+  // runs under the engine's structural constraint (walls + closed doors) composed
+  // with any external one — so a door that just swung open is passable this step.
+  tickDoors(state, step, config);
   if (local && step > 0) {
-    advanceAvatar(local, input.aim, state.spec, config, step, constraint);
+    // Collide against the avatar's CURRENT storey, move, then re-derive its floor
+    // (a stairway it stepped onto ramps it up/down).
+    advanceAvatar(local, input.aim, state.spec, config, step, effectiveConstraint(state, constraint, config, local.floor));
+    updateAvatarFloor(state, local);
   }
   state.time += step;
 
-  for (const toy of Object.values(state.toys)) {
-    simulateToy(toy, state, local, prevSpeed, step, config, events);
+  for (const obj of Object.values(state.objects)) {
+    simulateObject(obj, state, local, prevSpeed, step, config, events);
   }
 
   return { state, events };
@@ -458,11 +548,16 @@ function advanceAvatar(
 }
 
 // ---------------------------------------------------------------------------
-// Toy simulation — soccer-ball possession-dribble
+// Object simulation — carried / contained / push (possession-dribble)
 // ---------------------------------------------------------------------------
 
-function simulateToy(
-  toy: ToyState,
+/** Distance ahead of a carrier a carried object is held. Exported so the host can
+ *  steer the carrier to stop this far SHORT of a drop point, so the held object
+ *  ends up OVER the point rather than on top of the avatar. */
+export const CARRY_HOLD = 1.0;
+
+function simulateObject(
+  obj: ObjectState,
   state: WorldState,
   local: AvatarState | undefined,
   prevPossessorSpeed: number,
@@ -470,105 +565,493 @@ function simulateToy(
   config: WorldEngineConfig,
   events: WorldEvent[],
 ): void {
-  const spec = toySpecFor(state.spec, toy.id);
+  const spec = objectSpecFor(state.spec, obj.id);
 
-  // 1. Acquisition: a free ball the local avatar is MOVING into (and isn't on
+  // Carried: held a step ahead of the carrier, no physics.
+  if (obj.carriedBy) {
+    const carrier = state.avatars[obj.carriedBy];
+    if (carrier) {
+      obj.x = carrier.x + carrier.fx * CARRY_HOLD;
+      obj.y = carrier.y + carrier.fy * CARRY_HOLD;
+      obj.floor = carrier.floor;
+    }
+    obj.vx = 0;
+    obj.vy = 0;
+    return;
+  }
+
+  // Contained: snap to its container's position (relation = render placement).
+  if (obj.containedIn) {
+    const container = state.objects[obj.containedIn.objectId];
+    if (container) {
+      obj.x = container.x;
+      obj.y = container.y;
+      obj.floor = container.floor;
+    }
+    obj.vx = 0;
+    obj.vy = 0;
+    return;
+  }
+
+  // Push (possession-dribble) — only for objects that allow it.
+  const push = spec.push;
+  if (!spec.interactions.includes("push") || !push) return;
+
+  // 1. Acquisition: a free object the local avatar is MOVING into (and isn't on
   //    cooldown for) may be grabbed. The request is always emitted; the local
   //    optimistic grab is what makes single-peer play feel instant.
   const localSpeed = local ? Math.hypot(local.vx, local.vy) : 0;
   if (
     local &&
-    toy.possessedBy === null &&
+    obj.possessedBy === null &&
     localSpeed >= config.grabMinSpeed &&
-    canGrab(toy, local, spec, state.time)
+    canGrab(obj, local, push.touchRadius, state.time)
   ) {
-    events.push({ type: "possession-request", toyId: toy.id, participantId: local.id });
+    events.push({ type: "possession-request", objectId: obj.id, participantId: local.id });
     if (config.optimisticPossession) {
-      toy.possessedBy = local.id;
-      toy.freeRollOwner = null;
-      toy.vx = 0;
-      toy.vy = 0;
+      obj.possessedBy = local.id;
+      obj.freeRollOwner = null;
+      obj.vx = 0;
+      obj.vy = 0;
     }
   }
 
   // 2. Simulate only what THIS peer owns.
-  if (toy.possessedBy === state.localId && local) {
-    dribbleOrRelease(toy, local, prevPossessorSpeed, step, state.time, spec, config, events);
-  } else if (toy.possessedBy === null && toy.freeRollOwner === state.localId) {
-    freeRoll(toy, state.spec, spec, config, step, events);
+  if (obj.possessedBy === state.localId && local) {
+    dribbleOrRelease(obj, local, prevPossessorSpeed, step, state.time, push, config, events);
+  } else if (obj.possessedBy === null && obj.freeRollOwner === state.localId) {
+    freeRoll(obj, state.spec, push, spec.radius, config, step, events);
   }
-  // Otherwise the toy is owned by a remote peer (or resting under server
-  // ownership) — applyRemoteToy / applyPossession update it, not the tick.
+  // Otherwise the object is owned by a remote peer (or resting under server
+  // ownership) — applyRemoteObject / applyPossession update it, not the tick.
 }
 
 function dribbleOrRelease(
-  toy: ToyState,
+  obj: ObjectState,
   possessor: AvatarState,
   prevSpeed: number,
   step: number,
   now: number,
-  spec: SoccerBallSpec,
+  push: PushSpec,
   config: WorldEngineConfig,
   events: WorldEvent[],
 ): void {
   const speed = Math.hypot(possessor.vx, possessor.vy);
 
   // Two release triggers:
-  //   • stop — possessor slowed below the ball's releaseSpeed (drops at feet),
-  //   • kick — possessor braked hard while still moving (ball keeps the speed).
-  const stopped = speed < spec.releaseSpeed;
+  //   • stop — possessor slowed below releaseSpeed (drops at feet),
+  //   • kick — possessor braked hard while still moving (object keeps the speed).
+  const stopped = speed < push.releaseSpeed;
   const decel = step > 0 ? (prevSpeed - speed) / step : 0;
   const kicked = !stopped && decel > config.kickDecel;
 
   if (stopped || kicked) {
-    // Ball leaves with the possessor's current velocity: a hard-braked kick
-    // keeps real speed; a gentle stop leaves it nearly still.
-    toy.vx = possessor.vx;
-    toy.vy = possessor.vy;
-    toy.possessedBy = null;
-    toy.freeRollOwner = possessor.id;
-    toy.lastPossessor = possessor.id;
-    toy.grabCooldownUntil = now + config.grabCooldown;
+    // It leaves with the possessor's current velocity: a hard-braked kick keeps
+    // real speed; a gentle stop leaves it nearly still.
+    obj.vx = possessor.vx;
+    obj.vy = possessor.vy;
+    obj.possessedBy = null;
+    obj.freeRollOwner = possessor.id;
+    obj.lastPossessor = possessor.id;
+    obj.grabCooldownUntil = now + config.grabCooldown;
     events.push({
       type: "possession-released",
-      toyId: toy.id,
+      objectId: obj.id,
       participantId: possessor.id,
       at: now,
     });
     return;
   }
 
-  // Carry the ball one dribbleDistance ahead of the possessor along its
-  // facing, moving with it.
-  toy.x = possessor.x + possessor.fx * spec.dribbleDistance;
-  toy.y = possessor.y + possessor.fy * spec.dribbleDistance;
-  toy.vx = possessor.vx;
-  toy.vy = possessor.vy;
+  // Carry it one dribbleDistance ahead of the possessor along its facing.
+  obj.x = possessor.x + possessor.fx * push.dribbleDistance;
+  obj.y = possessor.y + possessor.fy * push.dribbleDistance;
+  obj.vx = possessor.vx;
+  obj.vy = possessor.vy;
 }
 
 function freeRoll(
-  toy: ToyState,
+  obj: ObjectState,
   world: WorldSpec,
-  spec: SoccerBallSpec,
+  push: PushSpec,
+  radius: number,
   config: WorldEngineConfig,
   step: number,
   events: WorldEvent[],
 ): void {
   // Exponential per-second friction decay.
-  const decay = Math.pow(spec.friction, step);
-  toy.vx *= decay;
-  toy.vy *= decay;
+  const decay = Math.pow(push.friction, step);
+  obj.vx *= decay;
+  obj.vy *= decay;
 
-  toy.x += toy.vx * step;
-  toy.y += toy.vy * step;
-  bounceOffWalls(toy, world, spec.radius, config.wallRestitution);
+  obj.x += obj.vx * step;
+  obj.y += obj.vy * step;
+  bounceOffWalls(obj, world, radius, config.wallRestitution);
 
-  if (Math.hypot(toy.vx, toy.vy) < config.restSpeed) {
-    toy.vx = 0;
-    toy.vy = 0;
-    toy.freeRollOwner = null; // server now holds it at rest
-    events.push({ type: "toy-rest", toyId: toy.id });
+  if (Math.hypot(obj.vx, obj.vy) < config.restSpeed) {
+    obj.vx = 0;
+    obj.vy = 0;
+    obj.freeRollOwner = null; // server now holds it at rest
+    events.push({ type: "object-rest", objectId: obj.id });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Carry + containment — explicit verbs a game layer triggers (e.g. on dwell)
+// ---------------------------------------------------------------------------
+
+/** Pick up a carryable object (it then follows `by`). False if it can't be
+ *  carried or is already held. Clears any push/containment it was in. */
+export function carryObject(state: WorldState, objectId: string, by: string): boolean {
+  const obj = state.objects[objectId];
+  if (!obj || obj.carriedBy) return false;
+  if (!objectSpecFor(state.spec, objectId).interactions.includes("carry")) return false;
+  obj.possessedBy = null;
+  obj.freeRollOwner = null;
+  obj.containedIn = null;
+  obj.carriedBy = by;
+  obj.vx = 0;
+  obj.vy = 0;
+  return true;
+}
+
+/** Put a carried object down at a world point (free on the ground). */
+export function dropObject(state: WorldState, objectId: string, x: number, y: number): void {
+  const obj = state.objects[objectId];
+  if (!obj) return;
+  obj.carriedBy = null;
+  obj.containedIn = null;
+  obj.x = x;
+  obj.y = y;
+  obj.vx = 0;
+  obj.vy = 0;
+}
+
+/** Place an object on/in/under a container, if it offers that relation and has
+ *  spare capacity there. False otherwise (caller can fall back to dropObject). */
+export function placeInContainer(
+  state: WorldState,
+  objectId: string,
+  containerId: string,
+  relation: ContainRelation,
+): boolean {
+  if (objectId === containerId) return false;
+  const obj = state.objects[objectId];
+  const container = state.objects[containerId];
+  if (!obj || !container) return false;
+  const slot = objectSpecFor(state.spec, containerId).contains?.find((s) => s.relation === relation);
+  if (!slot) return false;
+  const used = Object.values(state.objects).filter(
+    (o) => o.containedIn?.objectId === containerId && o.containedIn.relation === relation,
+  ).length;
+  if (used >= (slot.capacity ?? 1)) return false;
+  obj.possessedBy = null;
+  obj.freeRollOwner = null;
+  obj.carriedBy = null;
+  obj.containedIn = { objectId: containerId, relation };
+  return true;
+}
+
+/** Whether the spec allows `interaction` on object `id`. */
+export function objectAllows(spec: WorldSpec, id: string, interaction: ObjectInteraction): boolean {
+  return spec.objects.find((o) => o.id === id)?.interactions.includes(interaction) ?? false;
+}
+
+/** The container object whose footprint covers `point` (excluding `exclude`), or
+ *  null. Box footprint = a square of ±radius; sphere = within radius. */
+export function containerAt(state: WorldState, point: Vec2, exclude?: string): ObjectState | null {
+  for (const obj of Object.values(state.objects)) {
+    if (obj.id === exclude) continue;
+    const spec = state.spec.objects.find((o) => o.id === obj.id);
+    if (!spec?.contains?.length) continue;
+    const r = spec.radius;
+    const inside =
+      obj.shape === "box"
+        ? Math.abs(point.x - obj.x) <= r && Math.abs(point.y - obj.y) <= r
+        : Math.hypot(point.x - obj.x, point.y - obj.y) <= r;
+    if (inside) return obj;
+  }
+  return null;
+}
+
+/** Put a carried object down at `point`: into the container under that point (the
+ *  first relation it offers with spare room), else free on the ground. */
+export function placeCarriedObject(state: WorldState, objectId: string, point: Vec2): void {
+  const container = containerAt(state, point, objectId);
+  if (container) {
+    const slots = state.spec.objects.find((o) => o.id === container.id)?.contains ?? [];
+    for (const slot of slots) {
+      if (placeInContainer(state, objectId, container.id, slot.relation)) return;
+    }
+  }
+  dropObject(state, objectId, point.x, point.y);
+}
+
+// ---------------------------------------------------------------------------
+// Structures — engine-owned collision (walls + doors)
+// ---------------------------------------------------------------------------
+
+/** Shortest distance from point `p` to the segment a→b (a capsule's centerline).
+ *  The wall/door collision test compares this to thickness/2 + the avatar radius. */
+export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/** The distance at which an avatar opens a door — its spec's `openRadius`, else
+ *  half the door's width plus a margin (so it triggers a bit before you arrive). */
+function doorOpenRadius(s: DoorSpec, config: WorldEngineConfig): number {
+  if (s.openRadius !== undefined) return s.openRadius;
+  return Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) / 2 + config.doorOpenMargin;
+}
+
+/**
+ * True if an avatar of `radius` on storey `floor` may stand at `p` given the
+ * spec's structures: a wall (always) and a closed door (open < doorPassThreshold)
+ * block within thickness/2 + radius of their centerline. A structure with a
+ * `floor` set only blocks an avatar on that (rounded) storey; one without blocks
+ * on every storey. Stairs are never solid. No structures ⇒ always true.
+ */
+export function structuresWalkable(
+  state: WorldState,
+  p: Vec2,
+  radius: number,
+  floor = 0,
+  config: WorldEngineConfig = WORLD_ENGINE_DEFAULTS,
+): boolean {
+  const structures = state.spec.structures;
+  if (!structures) return true;
+  const onFloor = Math.round(floor);
+  for (const s of structures) {
+    if (s.kind === "stairs") continue; // walkable — it changes your floor, not blocks
+    if (s.floor !== undefined && s.floor !== onFloor) continue; // a different storey's wall
+    if (s.kind === "wall") {
+      if (pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) return false;
+    } else {
+      const open = state.doors[s.id]?.open ?? 0;
+      if (open < config.doorPassThreshold && pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** The spec's structures as a MoveConstraint for an avatar on `floor` (live —
+ *  reads door state each call), or undefined when the world has none. */
+export function makeStructureConstraint(
+  state: WorldState,
+  floor = 0,
+  config: WorldEngineConfig = WORLD_ENGINE_DEFAULTS,
+): MoveConstraint | undefined {
+  if (!state.spec.structures?.length) return undefined;
+  return { walkable: (p, r) => structuresWalkable(state, p, r, floor, config) };
+}
+
+/** Combine constraints into one that requires ALL to agree (a point is walkable
+ *  iff every constraint says so). Undefined inputs are dropped; returns undefined
+ *  if none remain (open-field motion). */
+export function combineConstraints(
+  ...cs: (MoveConstraint | undefined)[]
+): MoveConstraint | undefined {
+  const list = cs.filter((c): c is MoveConstraint => !!c);
+  if (list.length === 0) return undefined;
+  if (list.length === 1) return list[0];
+  return { walkable: (p, r) => list.every((c) => c.walkable(p, r)) };
+}
+
+/** The constraint locomotion actually moves under: the engine's structural one
+ *  (scoped to the moving avatar's storey) composed with whatever the caller (a
+ *  goal-tree quest, terrain) supplied. */
+function effectiveConstraint(
+  state: WorldState,
+  external: MoveConstraint | undefined,
+  config: WorldEngineConfig,
+  floor = 0,
+): MoveConstraint | undefined {
+  return combineConstraints(external, makeStructureConstraint(state, floor, config));
+}
+
+// ---------------------------------------------------------------------------
+// Floors — stairs ramp the avatar's storey level
+// ---------------------------------------------------------------------------
+
+function rectContainsPoint(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+}
+
+/** The fractional floor an avatar at (x,y) is on if it's standing on a stairway
+ *  (interpolated along the stair's ascent axis), else null. When stairwells stack
+ *  (multi-storey buildings put each flight in the same footprint), pick the flight
+ *  whose floor span brackets the avatar's CURRENT storey, so going 1→2 takes the
+ *  1→2 flight, not the 0→1 one underneath it. */
+function avatarFloorOnStairs(state: WorldState, x: number, y: number, currentFloor: number): number | null {
+  const here = (state.spec.structures ?? []).filter(
+    (s): s is StairSpec => s.kind === "stairs" && rectContainsPoint(s.rect, x, y),
+  );
+  if (!here.length) return null;
+  const cur = Math.round(currentFloor);
+  const s =
+    here.find((f) => Math.min(f.fromFloor, f.toFloor) <= cur && cur <= Math.max(f.fromFloor, f.toFloor)) ?? here[0];
+  let p: number;
+  switch (s.axis) {
+    case "+x": p = (x - s.rect.x) / s.rect.w; break;
+    case "-x": p = 1 - (x - s.rect.x) / s.rect.w; break;
+    case "+y": p = (y - s.rect.y) / s.rect.h; break;
+    default: p = 1 - (y - s.rect.y) / s.rect.h; break; // "-y"
+  }
+  p = p < 0 ? 0 : p > 1 ? 1 : p;
+  return s.fromFloor + (s.toFloor - s.fromFloor) * p;
+}
+
+/** Set the avatar's storey from its position: a fractional ramp while on a
+ *  stairway, else snapped to the integer floor it last reached (a landing). Runs
+ *  each tick after locomotion, for the local player and hosted NPCs alike. */
+export function updateAvatarFloor(state: WorldState, avatar: AvatarState): void {
+  const onStair = avatarFloorOnStairs(state, avatar.x, avatar.y, avatar.floor);
+  avatar.floor = onStair !== null ? onStair : Math.round(avatar.floor);
+}
+
+// ---------------------------------------------------------------------------
+// Buildings — sugar that lowers into perimeter wall/door/stairs structures
+// ---------------------------------------------------------------------------
+
+/** Walls + a door for one perimeter edge from P→Q, with `gaps` (doorways measured
+ *  along the edge) cut out as door leaves and the spans between them as walls. */
+function edgeStructures(
+  bid: string,
+  edge: string,
+  P: Vec2,
+  Q: Vec2,
+  gaps: { offset: number; width: number; locked?: boolean }[],
+  thickness: number,
+): StructureSpec[] {
+  const L = Math.hypot(Q.x - P.x, Q.y - P.y);
+  const dx = (Q.x - P.x) / L;
+  const dy = (Q.y - P.y) / L;
+  const at = (s: number): Vec2 => ({ x: P.x + dx * s, y: P.y + dy * s });
+  const out: StructureSpec[] = [];
+  let cursor = 0;
+  let wi = 0;
+  let di = 0;
+  for (const g of [...gaps].sort((a, b) => a.offset - b.offset)) {
+    const gs = Math.max(0, Math.min(L, g.offset - g.width / 2));
+    const ge = Math.max(0, Math.min(L, g.offset + g.width / 2));
+    if (gs - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(gs), thickness });
+    out.push({ kind: "door", id: `${bid}_${edge}_d${di++}`, a: at(gs), b: at(ge), thickness, ...(g.locked ? { locked: true } : {}) });
+    cursor = ge;
+  }
+  if (L - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(L), thickness });
+  return out;
+}
+
+/** Lower a building into its collision structures: four perimeter edges (with
+ *  doorways cut to doors) and, when multi-storey, one stairway per floor gap. The
+ *  perimeter is full-height (no `floor` ⇒ blocks every storey); the floors/roof
+ *  are render-only (see the renderer). */
+export function buildingStructures(b: BuildingSpec): StructureSpec[] {
+  const { x, y, w, h } = b.footprint;
+  const t = b.wallThickness;
+  const NW: Vec2 = { x, y };
+  const NE: Vec2 = { x: x + w, y };
+  const SW: Vec2 = { x, y: y + h };
+  const SE: Vec2 = { x: x + w, y: y + h };
+  const byEdge: Record<string, { offset: number; width: number; locked?: boolean }[]> = {
+    north: [], south: [], east: [], west: [],
+  };
+  for (const d of b.doorways ?? []) byEdge[d.edge].push(d);
+  const out: StructureSpec[] = [
+    ...edgeStructures(b.id, "north", NW, NE, byEdge.north, t),
+    ...edgeStructures(b.id, "south", SW, SE, byEdge.south, t),
+    ...edgeStructures(b.id, "west", NW, SW, byEdge.west, t),
+    ...edgeStructures(b.id, "east", NE, SE, byEdge.east, t),
+  ];
+  if ((b.stairs ?? b.floors > 1) && b.floors > 1) {
+    const sw = 2;
+    const sh = Math.min(4, Math.max(2, h - 2 * t - 1));
+    for (let f = 0; f < b.floors - 1; f++) {
+      out.push({
+        kind: "stairs",
+        id: `${b.id}_stair${f}`,
+        rect: { x: x + t + 0.5 + f * (sw + 0.5), y: y + t + 0.5, w: sw, h: sh },
+        fromFloor: f,
+        toFloor: f + 1,
+        axis: "+y",
+      });
+    }
+  }
+  return out;
+}
+
+/** Lower every building in the spec into perimeter structures, appended to any
+ *  hand-authored ones. Idempotent only if called once — certifyWorldSpec runs it
+ *  after validation, so the engine always sees a ready spec. */
+export function expandWorldBuildings(spec: WorldSpec): WorldSpec {
+  if (!spec.buildings?.length) return spec;
+  const generated: StructureSpec[] = [];
+  for (const b of spec.buildings) generated.push(...buildingStructures(b));
+  return { ...spec, structures: [...(spec.structures ?? []), ...generated] };
+}
+
+/** True if (x,y) is within a building's footprint. */
+export function insideBuilding(b: BuildingSpec, x: number, y: number): boolean {
+  const { x: bx, y: by, w, h } = b.footprint;
+  return x >= bx && x <= bx + w && y >= by && y <= by + h;
+}
+
+/** The building whose footprint contains (x,y), or null — used by the renderer to
+ *  decide when to fade the floors above an occupant. */
+export function buildingAt(state: WorldState, x: number, y: number): BuildingSpec | null {
+  for (const b of state.spec.buildings ?? []) if (insideBuilding(b, x, y)) return b;
+  return null;
+}
+
+/** Ease every door toward open (an avatar is within range and it isn't locked)
+ *  or shut (nobody near). A locked door opens for an avatar carrying its key
+ *  object (which permanently unlocks it). Runs once per tick, before locomotion. */
+function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): void {
+  const structures = state.spec.structures;
+  if (!structures) return;
+  const avatars = Object.values(state.avatars);
+  for (const s of structures) {
+    if (s.kind !== "door") continue;
+    const door = state.doors[s.id];
+    if (!door) continue;
+    const cx = (s.a.x + s.b.x) / 2;
+    const cy = (s.a.y + s.b.y) / 2;
+    const radius = doorOpenRadius(s, config);
+    let near = false;
+    for (const a of avatars) {
+      if (Math.hypot(a.x - cx, a.y - cy) > radius) continue;
+      near = true;
+      if (door.locked && s.keyObjectId && state.objects[s.keyObjectId]?.carriedBy === a.id) {
+        door.locked = false; // the key turns the lock
+      }
+    }
+    const target = !door.locked && near ? 1 : 0;
+    if (step > 0) {
+      door.open += (target - door.open) * (1 - Math.exp(-config.doorSwingRate * step));
+    }
+    if (Math.abs(target - door.open) < 0.01) door.open = target;
+  }
+}
+
+/** Unlock a door (a game layer calls this when the player meets its condition —
+ *  the engine-level analog of "used the key"). No-op for an unknown id. */
+export function unlockDoor(state: WorldState, doorId: string): void {
+  const d = state.doors[doorId];
+  if (d) d.locked = false;
+}
+
+/** Re-lock a door (it will shut and stay solid until unlocked again). */
+export function lockDoor(state: WorldState, doorId: string): void {
+  const d = state.doors[doorId];
+  if (d) d.locked = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -579,9 +1062,13 @@ function freeRoll(
  * Write a remote peer's avatar from a network packet. The reported values become
  * the SMOOTHING TARGET (t*); the displayed x/y/fx/fy are advanced toward it by
  * smoothRemoteAvatars each render frame, so motion stays fluid between packets.
- * On first sight the display snaps to the reported pose.
+ * On first sight the display snaps to the reported pose. `floor` is optional on
+ * the packet (older peers / the presence relay may omit it) and defaults to 0.
  */
-export function applyRemoteAvatar(state: WorldState, avatar: AvatarState): void {
+export function applyRemoteAvatar(
+  state: WorldState,
+  avatar: Omit<AvatarState, "floor"> & { floor?: number },
+): void {
   if (avatar.id === state.localId) return; // never let the network move us
   const cur = state.avatars[avatar.id];
   if (!cur) {
@@ -590,6 +1077,7 @@ export function applyRemoteAvatar(state: WorldState, avatar: AvatarState): void 
       x: avatar.x, y: avatar.y,
       fx: avatar.fx, fy: avatar.fy,
       vx: avatar.vx, vy: avatar.vy,
+      floor: avatar.floor ?? 0,
       tx: avatar.x, ty: avatar.y,
       tvx: avatar.vx, tvy: avatar.vy,
       tfx: avatar.fx, tfy: avatar.fy,
@@ -600,6 +1088,8 @@ export function applyRemoteAvatar(state: WorldState, avatar: AvatarState): void 
     cur.tvx = avatar.vx; cur.tvy = avatar.vy;
     cur.tfx = avatar.fx; cur.tfy = avatar.fy;
     cur.tAge = 0;
+    // Floor isn't smoothed — it's a discrete level; snap the displayed avatar to it.
+    cur.floor = avatar.floor ?? cur.floor;
   }
 }
 
@@ -644,71 +1134,112 @@ export function smoothRemoteAvatars(
   }
 }
 
-/** Remove a peer who left the room. */
+/** Remove a peer who left the room (and any speech bubble anchored to them). */
 export function removeAvatar(state: WorldState, id: string): void {
   if (id === state.localId) return;
   delete state.avatars[id];
+  delete state.bubbles[`speech:${id}`];
+}
+
+/** The bubble key an avatar's own speech occupies. */
+function avatarSpeechKey(id: string): string {
+  return `speech:${id}`;
 }
 
 /**
- * Attach (or clear) an avatar's speech bubble. DISPLAY-ONLY: stamps `at` with the
- * local sim time so the renderer fades it on its own clock. No-ops for an unknown
- * id (a "say" can race ahead of the avatar's first position packet — losing that
- * rare first-frame bubble is preferable to materialising a positionless avatar).
- * Blank text clears any existing bubble.
+ * Show (or replace) a world speech bubble under `key`. THE single caption entry
+ * point — a remote player's utterance and an in-game character's line go through
+ * the same call and render identically. Re-using a key updates that bubble in
+ * place. Display-only: `tickWorld` never reads bubbles, so this can't perturb the
+ * sim. Blank text clears the key. `at` is stamped with the local sim time.
+ */
+export function showWorldBubble(
+  state: WorldState,
+  key: string,
+  spec: { anchor: WorldBubble["anchor"]; text: string; glyph?: string; ttl?: number },
+): void {
+  const text = spec.text.trim();
+  if (!text) {
+    delete state.bubbles[key];
+    return;
+  }
+  state.bubbles[key] = {
+    anchor: spec.anchor,
+    text,
+    glyph: spec.glyph,
+    at: state.time,
+    ttl: spec.ttl ?? BUBBLE_DEFAULT_TTL,
+  };
+}
+
+/** Remove a world bubble by key. */
+export function clearWorldBubble(state: WorldState, key: string): void {
+  delete state.bubbles[key];
+}
+
+/**
+ * Attach (or clear) an AVATAR's speech bubble — a thin wrapper over the unified
+ * showWorldBubble that anchors to the avatar (so the bubble tracks it as it
+ * moves). The networked "say" path and the local speaker both call this. No-ops
+ * for an unknown id (a "say" can race ahead of the avatar's first position
+ * packet). Blank text clears it.
  */
 export function setAvatarSpeech(
   state: WorldState,
   id: string,
   speech: { text: string; glyph?: string } | null,
 ): void {
-  const a = state.avatars[id];
-  if (!a) return;
+  if (!state.avatars[id]) return;
+  const key = avatarSpeechKey(id);
   if (!speech || !speech.text.trim()) {
-    delete a.say;
+    clearWorldBubble(state, key);
     return;
   }
-  a.say = { text: speech.text, glyph: speech.glyph, at: state.time };
+  showWorldBubble(state, key, {
+    anchor: { kind: "avatar", id },
+    text: speech.text,
+    glyph: speech.glyph,
+  });
 }
 
-/** Write a toy's position from the peer that currently owns it. */
-export function applyRemoteToy(
+/** Write an object's position from the peer that currently owns it. */
+export function applyRemoteObject(
   state: WorldState,
-  toyId: string,
-  patch: Partial<Pick<ToyState, "x" | "y" | "vx" | "vy">>,
+  objectId: string,
+  patch: Partial<Pick<ObjectState, "x" | "y" | "vx" | "vy">>,
 ): void {
-  const toy = state.toys[toyId];
-  if (!toy) return;
-  // Ignore remote position while WE own the toy — our sim is authoritative for it.
-  if (toy.possessedBy === state.localId || toy.freeRollOwner === state.localId) return;
-  Object.assign(toy, patch);
+  const obj = state.objects[objectId];
+  if (!obj) return;
+  // Ignore remote position while WE own it — our sim is authoritative for it.
+  if (obj.possessedBy === state.localId || obj.freeRollOwner === state.localId) return;
+  Object.assign(obj, patch);
 }
 
 /**
  * Commit a server possession decision. participantId = grantee, or null to
- * free the toy. This is the authoritative source once a real server arbiter
+ * free the object. This is the authoritative source once a real server arbiter
  * exists; until then the optimistic local grab stands in for it.
  */
 export function applyPossession(
   state: WorldState,
-  toyId: string,
+  objectId: string,
   participantId: string | null,
   at: number,
   grabCooldown = WORLD_ENGINE_DEFAULTS.grabCooldown,
 ): void {
-  const toy = state.toys[toyId];
-  if (!toy) return;
+  const obj = state.objects[objectId];
+  if (!obj) return;
   if (participantId === null) {
-    if (toy.possessedBy !== null) {
-      toy.lastPossessor = toy.possessedBy;
-      toy.grabCooldownUntil = at + grabCooldown;
+    if (obj.possessedBy !== null) {
+      obj.lastPossessor = obj.possessedBy;
+      obj.grabCooldownUntil = at + grabCooldown;
     }
-    toy.possessedBy = null;
+    obj.possessedBy = null;
   } else {
-    toy.possessedBy = participantId;
-    toy.freeRollOwner = null;
-    toy.vx = 0;
-    toy.vy = 0;
+    obj.possessedBy = participantId;
+    obj.freeRollOwner = null;
+    obj.vx = 0;
+    obj.vy = 0;
   }
 }
 
@@ -717,14 +1248,14 @@ export function applyPossession(
 // ---------------------------------------------------------------------------
 
 function canGrab(
-  toy: ToyState,
+  obj: ObjectState,
   avatar: AvatarState,
-  spec: SoccerBallSpec,
+  touchRadius: number,
   now: number,
 ): boolean {
-  if (now < toy.grabCooldownUntil && toy.lastPossessor === avatar.id) return false;
-  const d = Math.hypot(toy.x - avatar.x, toy.y - avatar.y);
-  return d <= spec.touchRadius;
+  if (now < obj.grabCooldownUntil && obj.lastPossessor === avatar.id) return false;
+  const d = Math.hypot(obj.x - avatar.x, obj.y - avatar.y);
+  return d <= touchRadius;
 }
 
 function clampToManifold(a: AvatarState, spec: WorldSpec, radius: number): void {
@@ -736,19 +1267,19 @@ function clampToManifold(a: AvatarState, spec: WorldSpec, radius: number): void 
 }
 
 function bounceOffWalls(
-  toy: ToyState,
+  obj: ObjectState,
   spec: WorldSpec,
   radius: number,
   restitution: number,
 ): void {
   const { width, height } = spec.manifold;
-  if (toy.x < radius) { toy.x = radius; toy.vx = Math.abs(toy.vx) * restitution; }
-  if (toy.x > width - radius) { toy.x = width - radius; toy.vx = -Math.abs(toy.vx) * restitution; }
-  if (toy.y < radius) { toy.y = radius; toy.vy = Math.abs(toy.vy) * restitution; }
-  if (toy.y > height - radius) { toy.y = height - radius; toy.vy = -Math.abs(toy.vy) * restitution; }
+  if (obj.x < radius) { obj.x = radius; obj.vx = Math.abs(obj.vx) * restitution; }
+  if (obj.x > width - radius) { obj.x = width - radius; obj.vx = -Math.abs(obj.vx) * restitution; }
+  if (obj.y < radius) { obj.y = radius; obj.vy = Math.abs(obj.vy) * restitution; }
+  if (obj.y > height - radius) { obj.y = height - radius; obj.vy = -Math.abs(obj.vy) * restitution; }
 }
 
-function toySpecFor(spec: WorldSpec, toyId: string): SoccerBallSpec {
-  // createWorldState only ever builds toys present in the spec, so this holds.
-  return spec.toys.find((x) => x.id === toyId) as SoccerBallSpec;
+function objectSpecFor(spec: WorldSpec, objectId: string): ObjectSpec {
+  // createWorldState only ever builds objects present in the spec, so this holds.
+  return spec.objects.find((x) => x.id === objectId) as ObjectSpec;
 }

@@ -206,17 +206,18 @@ export function paintBubble(
   ctx.globalAlpha = 1;
 }
 
-/** How long a bubble stays up (sim-seconds) and how long it fades at the end. */
+/** Default time a bubble stays up (sim-seconds) and how long it fades at the end. */
 export const BUBBLE_TTL_SECONDS = 6;
 export const BUBBLE_FADE_SECONDS = 1;
 
 /** Opacity 0..1 for a bubble said at `at` given the current sim time, or 0 once
- *  expired. Full opacity until the last BUBBLE_FADE_SECONDS, then eases out. */
-export function bubbleAlpha(sayAt: number, now: number): number {
+ *  expired. Full opacity until the last BUBBLE_FADE_SECONDS, then eases out. `ttl`
+ *  (sim-seconds) is the total visible duration — caller-chosen per bubble. */
+export function bubbleAlpha(sayAt: number, now: number, ttl: number = BUBBLE_TTL_SECONDS): number {
   const age = now - sayAt;
   if (age < 0) return 1;
-  if (age >= BUBBLE_TTL_SECONDS) return 0;
-  const fadeStart = BUBBLE_TTL_SECONDS - BUBBLE_FADE_SECONDS;
+  if (age >= ttl) return 0;
+  const fadeStart = ttl - Math.min(BUBBLE_FADE_SECONDS, ttl);
   if (age <= fadeStart) return 1;
-  return 1 - (age - fadeStart) / BUBBLE_FADE_SECONDS;
+  return 1 - (age - fadeStart) / Math.min(BUBBLE_FADE_SECONDS, ttl);
 }

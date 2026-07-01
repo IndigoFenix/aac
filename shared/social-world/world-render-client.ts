@@ -8,7 +8,7 @@
 
 import type { Vec2, WorldNetMessage, WorldSpec } from "../world-engine/index.js";
 import type { WorldTunables } from "../world-engine/world-tunables.js";
-import type { NpcEngagement, NpcProximity } from "./npc-controller.js";
+import type { NpcEngagement, NpcProximity } from "../world-engine/npc-controller.js";
 import type { WorldPresence } from "./world-presence.js";
 import type { MainToWorker, WorkerToMain } from "./world-render-protocol.js";
 

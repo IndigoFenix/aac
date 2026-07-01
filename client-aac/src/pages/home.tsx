@@ -22,7 +22,8 @@ import { IncomingCallPopup } from "@/components/IncomingCallPopup";
 import { GroupChatHeader } from "@/components/GroupChatHeader";
 import PhoneCallApp from "@/components/PhoneCallApp";
 import { SocialWorldOverlay, SocialGameReporter, SocialWorldPeople } from "@/components/social-world/SocialWorldOverlay";
-import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallVideoLarge } from "@/components/CallVideoOverlay";
+import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallVideoLarge, CallCursorReporter, CallPeerCursorReporter, CallScreenShareIndicator } from "@/components/CallVideoOverlay";
+import { quickActionsMirror } from "@/components/QuickActions";
 import type { CallGame } from "@shared/realtime-events";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,33 @@ import SpotifyApp from "@/components/apps/SpotifyApp";
 import GameEmbed from "@/components/games/GameEmbed";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
 import { symbolBasicsGame } from "@shared/goal-tree/lessons/symbol-basics";
+import { type GameEmbedHandle } from "@/components/games/GameEmbed";
+import type { BoardOption } from "@shared/games-bridge";
+
+/** Build a one-page response board from a game's locked options, laid out 2×4 so
+ *  2–4 choices read large. Each option's id is preserved as the button id so a
+ *  press maps straight back to `board_option_selected`. */
+function lockedBoardFrom(options: BoardOption[]): ParsedBoardData {
+  return {
+    name: "Choose",
+    grid: { rows: 4, cols: 2 },
+    pages: [
+      {
+        id: "game-locked",
+        name: "Choose",
+        buttons: options.slice(0, 8).map((o, i) => ({
+          id: o.id,
+          row: Math.floor(i / 2),
+          col: i % 2,
+          label: o.label,
+          spokenText: o.label,
+          glyph: o.glyph,
+          action: { type: "speak" as const, text: o.label },
+        })),
+      },
+    ],
+  };
+}
 import BrowserApp from "@/components/apps/BrowserApp";
 import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
@@ -313,6 +341,8 @@ function renderAppContent(
   sendMessageToAi?: (msg: string) => void,
   permittedWebsites?: PermittedWebsite[],
   sendContextOnlyToAi?: (text: string) => void,
+  gameRef?: React.Ref<GameEmbedHandle>,
+  onBoardOptions?: (options: BoardOption[] | null) => void,
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube") {
@@ -396,6 +426,8 @@ function renderAppContent(
         game={activeApp.appData.game}
         onClose={dismissApp}
         sendMessageToAi={sendMessageToAi}
+        gameRef={gameRef}
+        onBoardOptions={onBoardOptions}
       />
     );
   }
@@ -408,6 +440,8 @@ function renderAppContent(
         renderMode="3d"
         onClose={dismissApp}
         sendMessageToAi={sendMessageToAi}
+        gameRef={gameRef}
+        onBoardOptions={onBoardOptions}
       />
     );
   }
@@ -553,6 +587,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [callInfo, setCallInfo] = useState<{ active: boolean; hasRemote: boolean }>({ active: false, hasRemote: false });
   const [videoLarge, setVideoLarge] = useState(false);
   const [videoHost, setVideoHost] = useState<HTMLDivElement | null>(null);
+  // Button id the clinician is hovering on their mirror — highlighted on the
+  // student's real board so they see the clinician's "cursor".
+  const [peerCursorId, setPeerCursorId] = useState<string | null>(null);
   const videoLargeActive = callInfo.active && callInfo.hasRemote && !gameActive && videoLarge;
   // Reset the toggle when the call ends so the next call starts in small mode.
   useEffect(() => { if (!callInfo.active) setVideoLarge(false); }, [callInfo.active]);
@@ -593,6 +630,26 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Active app state (bridged from DualAgentContext)
   const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
   const dismissAppRef = useRef<() => void>(() => {});
+
+  // A game can LOCK the response board to its own options (set_board_options) so
+  // the student answers a puzzle on the real SENTENCE BUTTONs. While locked, the
+  // side board shows these instead of the AI's, and a press routes back to the
+  // game (board_option_selected) rather than the normal AI press flow.
+  const gameEmbedRef = useRef<GameEmbedHandle>(null);
+  const [gameLockedBoard, setGameLockedBoard] = useState<ParsedBoardData | null>(null);
+  const gameLockedBoardRef = useRef<ParsedBoardData | null>(null);
+  const handleBoardOptions = useCallback((options: BoardOption[] | null) => {
+    const board = options && options.length ? lockedBoardFrom(options) : null;
+    gameLockedBoardRef.current = board;
+    setGameLockedBoard(board);
+  }, []);
+  // Drop any lock when the app/game closes.
+  useEffect(() => {
+    if (!activeApp) {
+      gameLockedBoardRef.current = null;
+      setGameLockedBoard(null);
+    }
+  }, [activeApp]);
   // When a game ends, close the "Play with friends" launcher app if it was open,
   // so the student returns to their normal board (not the picker).
   const prevGameActiveRef = useRef(false);
@@ -1333,6 +1390,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
+    // A game has the board locked to its options → this press is the student
+    // answering its puzzle on the real board. Route it to the game instead of the
+    // AI press flow (teaches the button board; the game judges correctness).
+    const locked = gameLockedBoardRef.current;
+    if (locked && locked.pages[0]?.buttons.some((b) => b.id === button.id)) {
+      gameEmbedRef.current?.send({ type: "board_option_selected", id: button.id });
+      return;
+    }
+
     console.debug("[guessing] board press:", button.label, "| buttonType:", (button as any).buttonType, "| suggestionKey:", (button as any).suggestionKey);
 
     // Word Finder entry button (set by AI via button_type: "wordfinder").
@@ -2075,6 +2141,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 suppressLocalSpeech={aiSessionActive}
                 getFaceImage={resolveFaceImage}
+                highlightButtonId={peerCursorId}
               />
               {/* Game window — the game surface is portaled in here. */}
               <div ref={setGameHost} className="flex-1 min-w-0 h-full relative" />
@@ -2095,6 +2162,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 suppressLocalSpeech={aiSessionActive}
                 getFaceImage={resolveFaceImage}
+                highlightButtonId={peerCursorId}
               />
               <div ref={setVideoHost} className="flex-1 min-w-0 h-full relative" />
             </>
@@ -2127,13 +2195,19 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 }
               : null;
             return (
+              // When a game locks the board, its options take over the side
+              // SENTENCE BUTTONs (2 cols so 2–4 choices read large).
               <AppMiniBoard
-                board={sidebarBoard}
+                board={gameLockedBoard ?? sidebarBoard}
+                columns={gameLockedBoard ? 2 : 1}
                 onButtonClick={handleBoardButtonClick}
                 language={currentLanguage}
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-                suppressLocalSpeech={aiSessionActive}
+                // While locked, voice the student's pick (teach the board) even
+                // during an AI session, which normally suppresses local speech.
+                suppressLocalSpeech={gameLockedBoard ? false : aiSessionActive}
                 getFaceImage={resolveFaceImage}
+                highlightButtonId={peerCursorId}
               />
             );
           })()}
@@ -2150,6 +2224,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 (msg) => sendMessageFnRef.current?.(msg),
                 (userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || [],
                 (text) => sendContextOnlyFnRef.current?.(text),
+                gameEmbedRef,
+                handleBoardOptions,
               )}
             </div>
           ) : boardMode === 'ai' ? (
@@ -2159,6 +2235,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 boardPatch={prebuiltBoardData ? null : boardPatchData}
                 symbolUpdate={prebuiltBoardData ? null : symbolUpdateData}
                 aiButtonPress={aiButtonPressData}
+                highlightButtonId={peerCursorId}
                 onButtonClick={handleBoardButtonClick}
                 onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
                 onNavigate={handleBoardNavigate}
@@ -2550,11 +2627,42 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             pageId={(prebuiltBoardData || boardData)?.currentPageId}
             mode={activeApp ? "app" : "board"}
             appKind={activeApp?.appId}
+            rtl={direction === "rtl"}
+            contextButtons={contextButtons.map((b, i) => ({
+              id: `ctx-${i}`,
+              row: i,
+              col: 0,
+              label: b.label,
+              iconRef: b.iconRef,
+              symbolPath: b.symbolPath,
+              imageKey: b.imageKey,
+              glyph: b.glyph,
+              glyphFallback: b.glyphFallback,
+              sentence: b.sentence,
+              buttonType: b.buttonType as BoardButton["buttonType"],
+            }))}
+            quickButtons={quickActionsMirror(
+              {
+                boardMode,
+                hasActiveApp: !!activeApp && activeApp.appId !== "social_trainer",
+                currentTier,
+                isGuessingMode,
+                inSentenceBuilder: showConstructionBoard,
+                showSpeakSlot: true,
+              },
+              t,
+              direction === "rtl",
+            )}
           />
           <CallFacilitatorBridge
             enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
             onPress={handleBoardButtonClick}
           />
+          {/* Cursor sharing: stream the student's gaze/pointer to the clinician,
+              and lift the clinician's cursor down to highlight the student's board. */}
+          <CallCursorReporter />
+          <CallPeerCursorReporter onChange={setPeerCursorId} />
+          <CallScreenShareIndicator />
           <CallVideoLarge host={videoHost} onShrink={() => setVideoLarge(false)} />
           {/* Group-chat peer faces — side-by-side header during a multi-student
               chat. Dwell/tap a face to focus that peer as the addressee. Renders

@@ -18,10 +18,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
+import type { MirrorQuickButton } from "@shared/call/call-data-messages";
 import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
 import { pickSpotlightId, type VideoLayoutMode } from "@shared/call/video-layout";
 import { useCall } from "@/contexts/CallContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { useBoardMirror } from "@/hooks/useBoardMirror";
 
 /** Lifts call activity to home (mirrors SocialGameReporter). */
@@ -33,9 +35,75 @@ export function CallStateReporter({ onChange }: { onChange: (s: { active: boolea
 }
 
 /** Streams the student's current board to the clinician over the data channel. */
-export function CallBoardMirror({ board, pageId, mode, appKind }: { board: ParsedBoardData | null; pageId?: string; mode?: "board" | "app"; appKind?: string }) {
+export function CallBoardMirror({ board, pageId, mode, appKind, rtl, contextButtons, quickButtons }: {
+  board: ParsedBoardData | null; pageId?: string; mode?: "board" | "app"; appKind?: string;
+  rtl?: boolean; contextButtons?: BoardButton[]; quickButtons?: MirrorQuickButton[];
+}) {
   const { active, sendData } = useCall();
-  useBoardMirror({ active, sendData, board, pageId, mode, appKind });
+  useBoardMirror({ active, sendData, board, pageId, mode, appKind, rtl, contextButtons, quickButtons });
+  return null;
+}
+
+/** A small always-visible banner while this device is sharing its screen — so
+ *  the student / facilitator can see (and is reminded) that the screen is live. */
+export function CallScreenShareIndicator() {
+  const { screenSharing } = useCall();
+  const { t } = useLanguage();
+  if (!screenSharing) return null;
+  return (
+    <div className="pointer-events-none fixed top-2 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-rose-600/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg">
+      {t("call.screenSharing")}
+    </div>
+  );
+}
+
+/** Lifts the clinician's hovered button id (their "cursor") up to home so it can
+ *  highlight that button on the student's real board. */
+export function CallPeerCursorReporter({ onChange }: { onChange: (buttonId: string | null) => void }) {
+  const { peerDwellId } = useCall();
+  useEffect(() => { onChange(peerDwellId); }, [peerDwellId, onChange]);
+  return null;
+}
+
+/** Streams where the STUDENT is looking/pointing to the clinician (board-dwell),
+ *  so the clinician's mirror highlights it. Maps the dwell-target / pointer to a
+ *  board button via its `data-mirror-id`; only sends when the button changes. */
+export function CallCursorReporter() {
+  const { active, sendData } = useCall();
+  const { dwellTarget } = useEyeTrackingDwell();
+  const lastRef = useRef<string | null>(null);
+  const lastMoveRef = useRef(0);
+
+  const send = (id: string | null) => {
+    if (id === lastRef.current) return;
+    lastRef.current = id;
+    sendData({ k: "board-dwell", buttonId: id, at: Date.now() });
+  };
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  // Pointer / touch (covers mouse, touch, and switch users).
+  useEffect(() => {
+    if (!active) return;
+    const onMove = (e: PointerEvent) => {
+      const now = Date.now();
+      if (now - lastMoveRef.current < 80) return;
+      lastMoveRef.current = now;
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const btn = el?.closest("[data-mirror-id]") as HTMLElement | null;
+      sendRef.current(btn?.getAttribute("data-mirror-id") ?? null);
+    };
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [active]);
+
+  // Eye-gaze dwell target.
+  useEffect(() => {
+    if (!active) return;
+    const btn = dwellTarget?.element?.closest?.("[data-mirror-id]") as HTMLElement | null;
+    if (btn) sendRef.current(btn.getAttribute("data-mirror-id"));
+  }, [active, dwellTarget]);
+
   return null;
 }
 

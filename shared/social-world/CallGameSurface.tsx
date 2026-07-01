@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CallGame } from "../realtime-events.js";
 import type { NpcSpec, Vec2, WorldNetMessage } from "../world-engine/index.js";
 import { getWorldSpec } from "../world-engine/specs/index.js";
-import type { NpcProximity } from "./npc-controller.js";
+import type { NpcProximity } from "../world-engine/npc-controller.js";
 import type { WorldPresence, WorldPresenceChannel } from "./world-presence.js";
 import SocialWorldCanvas from "./SocialWorldCanvas";
 import NpcConversationDock from "./NpcConversationDock";

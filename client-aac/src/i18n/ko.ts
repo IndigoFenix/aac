@@ -756,6 +756,20 @@ export const ko: Translations = {
     title: "앱",
     empty: "활성화된 앱이 없습니다.",
     starting: "시작 중…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "전화 걸기",
+      spotify: "Spotify",
+      drawing: "그리기",
+      music: "음악 만들기",
+      sandbox_game: "샌드박스 농장",
+      bubbles_game: "비눗방울",
+      social_trainer: "사회성 훈련",
+      space_trader: "우주 무역상",
+      musical_microbes: "음악 미생물",
+      social_world: "친구들과 놀기",
+      symbol_learning: "기호 배우기",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const ko: Translations = {
     bigVideo: "큰 영상",
     smallVideo: "작은 영상",
     noOneElse: "아직 아무도 없습니다",
+    screenSharing: "화면 공유 중",
     incoming: "수신 전화",
     accept: "예",
     decline: "아니요",

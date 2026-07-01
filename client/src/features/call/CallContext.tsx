@@ -9,9 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import { CallClient, type CallClientEvent, type CallState, type IncomingCall } from "@shared/call/call-client";
-import { parseCallDataMessage, type CallDataMessage } from "@shared/call/call-data-messages";
+import { parseCallDataMessage, type CallDataMessage, type MirrorQuickButton } from "@shared/call/call-data-messages";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
-import type { ParsedBoardData } from "@shared/schema";
+import type { BoardButton, ParsedBoardData } from "@shared/schema";
 import type { WorldNetMessage } from "@shared/world-engine/index";
 import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
 import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
@@ -127,6 +127,12 @@ interface CallContextValue {
   /** Send a typed message over the call's reliable data channel (e.g. a
    *  facilitator press on the mirrored board). */
   sendData: (message: CallDataMessage) => void;
+  /** Inbound screen-share streams (getDisplayMedia), keyed by personId. */
+  screenStreams: Map<string, MediaStream>;
+  /** Whether a screen-share has been requested/active for this call. */
+  screenRequested: boolean;
+  /** Ask the AAC to start (true) / stop (false) sharing its screen. */
+  requestScreenShare: (on: boolean) => void;
 
   startCallWithContact: (contact: PersonChatContact) => Promise<void>;
   /** Call a student who listed this user as a callable contact (via the contact link).
@@ -152,6 +158,12 @@ export interface MirroredBoardState {
   pageId?: string;
   mode: "board" | "app";
   appKind?: string;
+  /** Student device reading direction — render the mirror this way. */
+  rtl?: boolean;
+  /** Context-sidebar buttons the student sees beside the board. */
+  contextButtons?: BoardButton[];
+  /** Bottom quick-action row the student sees. */
+  quickButtons?: MirrorQuickButton[];
   at: number;
 }
 
@@ -183,6 +195,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [mirroredBoard, setMirroredBoard] = useState<MirroredBoardState | null>(null);
   const [mirroredDwell, setMirroredDwell] = useState<string | null>(null);
   const [mirroredSelection, setMirroredSelection] = useState<{ buttonId: string; at: number } | null>(null);
+  // Inbound screen-share streams (getDisplayMedia), kept separate from camera
+  // streams. A peer's screen arrives as its own `ontrack` stream; we classify by
+  // the stream id announced over the data channel.
+  const [screenStreams, setScreenStreams] = useState<Map<string, MediaStream>>(new Map());
+  const screenStreamIdsRef = useRef<Set<string>>(new Set());
+  const [screenRequested, setScreenRequested] = useState(false);
   // One world-message fan-out per provider; the active CallGameSurface subscribes.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
@@ -206,6 +224,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setMirroredBoard(null);
     setMirroredDwell(null);
     setMirroredSelection(null);
+    setScreenStreams(new Map());
+    setScreenRequested(false);
+    screenStreamIdsRef.current.clear();
     worldHubRef.current.clear();
     npcHubRef.current.clear();
     presenceChannelRef.current.clear();
@@ -234,11 +255,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setLocalStream(event.stream);
         break;
       case "remoteStream":
-        setRemoteStreams((prev) => {
-          const next = new Map(prev);
-          next.set(event.personId, event.stream);
-          return next;
-        });
+        // A peer's screen-share arrives as its own stream; route it to
+        // screenStreams (classified by the announced stream id) so it doesn't
+        // overwrite their camera. Unknown streams default to the camera; a later
+        // screen-share notice reclassifies if needed.
+        if (screenStreamIdsRef.current.has(event.stream.id)) {
+          setScreenStreams((prev) => new Map(prev).set(event.personId, event.stream));
+        } else {
+          setRemoteStreams((prev) => {
+            const next = new Map(prev);
+            next.set(event.personId, event.stream);
+            return next;
+          });
+        }
         break;
       case "mediaState":
         setRemoteMedia((prev) => {
@@ -249,6 +278,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         break;
       case "peerLeft":
         setRemoteStreams((prev) => {
+          const next = new Map(prev);
+          next.delete(event.personId);
+          return next;
+        });
+        setScreenStreams((prev) => {
           const next = new Map(prev);
           next.delete(event.personId);
           return next;
@@ -319,11 +353,36 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const m = parseCallDataMessage(event.message);
         if (!m) break;
         if (m.k === "board-mirror") {
-          setMirroredBoard({ fromPersonId: event.personId, board: m.board, pageId: m.pageId, mode: m.mode, appKind: m.appKind, at: m.at });
+          setMirroredBoard({ fromPersonId: event.personId, board: m.board, pageId: m.pageId, mode: m.mode, appKind: m.appKind, rtl: m.rtl, contextButtons: m.contextButtons, quickButtons: m.quickButtons, at: m.at });
         } else if (m.k === "board-dwell") {
           setMirroredDwell(m.buttonId);
         } else if (m.k === "board-selection") {
           setMirroredSelection({ buttonId: m.buttonId, at: m.at });
+        } else if (m.k === "screen-share") {
+          if (m.on) {
+            screenStreamIdsRef.current.add(m.streamId);
+            setScreenRequested(true);
+            // The stream may already have arrived (classified as camera) — move it.
+            setRemoteStreams((prevCam) => {
+              const cam = new Map(prevCam);
+              for (const [pid, s] of cam) {
+                if (s.id === m.streamId) {
+                  cam.delete(pid);
+                  setScreenStreams((prev) => new Map(prev).set(pid, s));
+                  break;
+                }
+              }
+              return cam;
+            });
+          } else {
+            screenStreamIdsRef.current.delete(m.streamId);
+            setScreenRequested(false);
+            setScreenStreams((prev) => {
+              const next = new Map(prev);
+              for (const [pid, s] of next) { if (s.id === m.streamId) { next.delete(pid); break; } }
+              return next;
+            });
+          }
         }
         break;
       }
@@ -498,6 +557,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const sendData = useCallback((message: CallDataMessage) => {
     clientRef.current?.sendData(message);
+  }, []);
+
+  const requestScreenShare = useCallback((on: boolean) => {
+    setScreenRequested(on);
+    clientRef.current?.requestScreenShare(on);
   }, []);
 
   const sendNpc = useCallback((msg: unknown) => {
@@ -684,6 +748,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     mirroredDwell,
     mirroredSelection,
     sendData,
+    screenStreams,
+    screenRequested,
+    requestScreenShare,
     startCallWithContact,
     startCallToStudent,
     startCallWithPeople,
@@ -698,7 +765,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains, activeSpeakerId,
-    mirroredBoard, mirroredDwell, mirroredSelection, sendData,
+    mirroredBoard, mirroredDwell, mirroredSelection, sendData, screenStreams, screenRequested, requestScreenShare,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 

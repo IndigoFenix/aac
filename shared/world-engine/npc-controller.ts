@@ -1,4 +1,4 @@
-// shared/social-world/npc-controller.ts
+// shared/world-engine/npc-controller.ts
 //
 // The STEERING brain for an AI-driven NPC — its body, not its mind. Given the
 // world around it each frame, a controller returns a single steering AIM (a world
@@ -14,13 +14,8 @@
 // Behaviors are deliberately tiny and parameter-free beyond the spec: the value of
 // an NPC here is presence + plausible motion, not pathfinding.
 
-import {
-  WORLD_ENGINE_DEFAULTS,
-  type AvatarState,
-  type NpcMovement,
-  type NpcSpec,
-  type Vec2,
-} from "../world-engine/index.js";
+import { WORLD_ENGINE_DEFAULTS, type AvatarState } from "./engine.js";
+import type { NpcMovement, NpcSpec, Vec2 } from "./types.js";
 
 /** Everything a controller needs to decide where to move this frame. */
 export interface NpcControlCtx {

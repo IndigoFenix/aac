@@ -13,6 +13,7 @@ export * from "./net.js";
 
 import type { WorldSpec } from "./types.js";
 import { validateWorldSpec } from "./schema.js";
+import { expandWorldBuildings } from "./engine.js";
 
 export type WorldCertification =
   | { ok: true; spec: WorldSpec }
@@ -28,5 +29,6 @@ export function certifyWorldSpec(input: unknown): WorldCertification {
   if (!validated.ok) {
     return { ok: false, stage: "schema", errors: validated.errors };
   }
-  return { ok: true, spec: validated.data };
+  // Lower buildings into perimeter structures so the engine sees a ready spec.
+  return { ok: true, spec: expandWorldBuildings(validated.data) };
 }

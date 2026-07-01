@@ -42,6 +42,9 @@ export class PeerMesh {
   private peers = new Map<string, PeerState>();
   private iceServers: RTCIceServer[] = [];
   private localStream: MediaStream | null = null;
+  // Extra outgoing tracks beyond the camera/mic stream (e.g. a screen-share),
+  // kept so peers that connect LATER also receive them. Keyed by track.
+  private extraTracks = new Map<MediaStreamTrack, MediaStream>();
 
   constructor(private opts: PeerMeshOptions) {}
 
@@ -67,6 +70,27 @@ export class PeerMesh {
     return Array.from(this.peers.keys());
   }
 
+  /** Add an extra outgoing track (in its own stream) to every peer — used for a
+   *  screen-share alongside the camera. Renegotiation follows automatically.
+   *  Remembered so peers that join later also get it. */
+  addTrack(track: MediaStreamTrack, stream: MediaStream): void {
+    this.extraTracks.set(track, stream);
+    for (const peer of this.peers.values()) {
+      if (!peer.pc.getSenders().some((s) => s.track === track)) {
+        try { peer.pc.addTrack(track, stream); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  /** Remove a previously-added extra track from every peer. */
+  removeTrack(track: MediaStreamTrack): void {
+    this.extraTracks.delete(track);
+    for (const peer of this.peers.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track === track);
+      if (sender) { try { peer.pc.removeTrack(sender); } catch { /* ignore */ } }
+    }
+  }
+
   /** Open (or reuse) a connection to a remote peer. */
   connect(remotePersonId: string): void {
     this.ensurePeer(remotePersonId);
@@ -84,6 +108,10 @@ export class PeerMesh {
 
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) pc.addTrack(track, this.localStream);
+    }
+    // Extra tracks (e.g. an in-progress screen-share) so late joiners get them.
+    for (const [track, stream] of this.extraTracks) {
+      try { pc.addTrack(track, stream); } catch { /* ignore */ }
     }
 
     // Impolite peer owns both channels; polite peer receives them. Creating

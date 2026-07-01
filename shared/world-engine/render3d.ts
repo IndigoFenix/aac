@@ -21,8 +21,8 @@
 // headless server never pulls it in.
 
 import * as THREE from "three";
-import type { Vec2, WorldSpec } from "./types.js";
-import type { AvatarState, WorldState } from "./engine.js";
+import type { BuildingSpec, StructureSpec, Vec2, WorldSpec } from "./types.js";
+import { buildingAt, type AvatarState, type WorldState } from "./engine.js";
 import type { RenderIntent, WorldView, WorldViewDeps } from "./world-view.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import {
@@ -52,6 +52,54 @@ const MODEL = {
 } as const;
 
 const BACKDROP = "#0f172a";
+
+// Structure geometry (world units). Walls + door leaves are vertical boxes; a
+// door's leaf swings up to DOOR_SWING radians about its hinge as it opens.
+const STRUCTURE = {
+  wallHeight: 2.6,
+  doorHeight: 2.1,
+  wallColor: 0x9ca3af,
+  doorColor: 0xb45309,
+  doorLockedColor: 0x7c2d12,
+} as const;
+const DOOR_SWING = Math.PI * 0.55;
+
+/** World height of one storey — the renderer lifts a body/object on floor `f` by
+ *  `f * FLOOR_HEIGHT`. Purely a render constant (the engine keeps floor unitless). */
+export const FLOOR_HEIGHT = 3.0;
+/** Opacity of a faded-out upper storey (roof/slab/wall/object above the occupant
+ *  while inside a building and the camera is overhead). */
+const FADE_OPACITY = 0.07;
+
+/** A billboarded emoji sprite floated over a world object (an `ObjectSpec.iconRef`)
+ *  so carryable props read as what they ARE. OffscreenCanvas so it builds in the
+ *  render worker. Caller positions the sprite and disposes tex+mat. */
+function makeEmojiSprite(emoji: string): { sprite: THREE.Sprite; tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial } {
+  const SIZE = 128;
+  const canvas = new OffscreenCanvas(SIZE, SIZE);
+  const c = canvas.getContext("2d");
+  if (c) {
+    c.clearRect(0, 0, SIZE, SIZE);
+    c.font = "96px sans-serif";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(emoji, SIZE / 2, SIZE / 2 + 6);
+  }
+  const tex = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.2, 1.2, 1.2);
+  return { sprite, tex, mat };
+}
+
+/** Show/hide an element by floor-fade. Faded ⇒ near-transparent + no depth write
+ *  (so it doesn't occlude what's behind it); restored to fully opaque otherwise. */
+function setFaded(mat: THREE.MeshStandardMaterial, faded: boolean): void {
+  mat.transparent = faded;
+  mat.opacity = faded ? FADE_OPACITY : 1;
+  mat.depthWrite = !faded;
+}
 
 // Speech-bubble placement/scale. The bubble floats above the face card; its
 // pixel texture maps to world units by PX_PER_WORLD (≈90px ≈ 1 unit, so a
@@ -126,9 +174,10 @@ class Bubble3D {
     this.sprite.scale.set(this.worldW, this.worldH, 1);
   }
 
-  /** Place above the head at (cx,cz) and fade with `alpha`. */
-  place(cx: number, cz: number, alpha: number): void {
-    this.sprite.position.set(cx, BUBBLE.headY + this.worldH / 2, cz);
+  /** Place above the head at (cx,cz), lifted by `yOffset` (the anchor's storey
+   *  elevation), and fade with `alpha`. */
+  place(cx: number, cz: number, alpha: number, yOffset = 0): void {
+    this.sprite.position.set(cx, BUBBLE.headY + yOffset + this.worldH / 2, cz);
     (this.sprite.material as THREE.SpriteMaterial).opacity = alpha;
   }
 
@@ -488,7 +537,14 @@ export class World3DRenderer {
   private readonly _scratch = new THREE.Vector3();
 
   private readonly avatars = new Map<string, AvatarModel>();
-  private readonly toys = new Map<string, { mesh: THREE.Mesh; shadow: THREE.Mesh }>();
+  private readonly objectMeshes = new Map<string, { mesh: THREE.Mesh; shadow: THREE.Mesh }>();
+  /** Walls (static) + doors (a hinge pivot whose yaw tracks the door's `open`). */
+  private readonly structureMeshes = new Map<
+    string,
+    { object: THREE.Object3D; door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial } }
+  >();
+  /** Per-building render meshes: upper floor slabs (by storey) + a roof. */
+  private readonly buildingMeshes = new Map<string, { slabs: { floor: number; mesh: THREE.Mesh }[]; roof: THREE.Mesh }>();
   private readonly bubbles = new Map<string, Bubble3D>();
 
   // --- Motion comfort ---------------------------------------------------------
@@ -697,8 +753,17 @@ export class World3DRenderer {
     glyphFor?: (glyph: string) => CanvasImageSource[] | null,
     intent?: RenderIntent,
   ): void {
+    // Overhead floor-fade: when the local avatar is INSIDE a building and the
+    // camera is in (or near) the overhead pose, fade everything on a storey above
+    // it so it doesn't occlude the player. null ⇒ no fade.
+    const me = state.avatars[this.localId];
+    const overhead = this.travelCommit < 0.4;
+    const fadeAbove = me && overhead && buildingAt(state, me.x, me.y) ? me.floor : null;
+
     this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId);
-    this.syncToys(state, intent?.interactId);
+    this.syncStructures(state, fadeAbove);
+    this.syncObjects(state, intent?.interactId, fadeAbove);
+    this.syncBuildings(state, fadeAbove);
     this.syncBubbles(state, glyphFor);
     this.updateCamera(state, dt, intent);
     this.updateComfort(state, dt);
@@ -743,7 +808,7 @@ export class World3DRenderer {
         this.avatars.set(a.id, model);
         this.scene.add(model.object);
       }
-      model.object.position.set(a.x, 0, a.y);
+      model.object.position.set(a.x, a.floor * FLOOR_HEIGHT, a.y);
       model.update(
         {
           state: a,
@@ -769,13 +834,150 @@ export class World3DRenderer {
     }
   }
 
-  private syncToys(state: WorldState, interactId?: string): void {
-    for (const toy of Object.values(state.toys)) {
-      const spec = state.spec.toys.find((t) => t.id === toy.id);
-      const radius = spec?.radius ?? 0.5;
-      let entry = this.toys.get(toy.id);
+  /** Build each structure's mesh once, then (for doors) swing its leaf to match the
+   *  live `open`. Walls are static; door pivots rotate from state.doors[id].open. */
+  private syncStructures(state: WorldState, fadeAbove: number | null): void {
+    const structures = state.spec.structures;
+    if (!structures) return;
+    for (const s of structures) {
+      let entry = this.structureMeshes.get(s.id);
       if (!entry) {
-        const geom = new THREE.SphereGeometry(radius, 24, 16);
+        entry = this.buildStructure(s);
+        this.structureMeshes.set(s.id, entry);
+        this.scene.add(entry.object);
+      }
+      if (entry.door) {
+        const door = state.doors[s.id];
+        const open = door?.open ?? 0;
+        entry.door.pivot.rotation.y = entry.door.thetaClosed + open * DOOR_SWING;
+        // A still-locked door reads in a darker, "barred" colour.
+        entry.door.leafMat.color.setHex(door?.locked ? STRUCTURE.doorLockedColor : STRUCTURE.doorColor);
+      }
+      // A wall/door tagged to a storey above the occupant fades (exterior, floorless
+      // walls never do); stairs never fade.
+      const sFloor = s.kind === "stairs" ? undefined : s.floor;
+      const faded = fadeAbove !== null && sFloor !== undefined && sFloor > fadeAbove;
+      const mat = entry.door
+        ? entry.door.leafMat
+        : ((entry.object as THREE.Mesh).material as THREE.MeshStandardMaterial);
+      setFaded(mat, faded);
+    }
+  }
+
+  /** Build each building's floor slabs + roof once, then fade the storeys above the
+   *  occupant (and always the roof) while the overhead floor-fade is active. */
+  private syncBuildings(state: WorldState, fadeAbove: number | null): void {
+    const buildings = state.spec.buildings;
+    if (!buildings) return;
+    for (const b of buildings) {
+      let entry = this.buildingMeshes.get(b.id);
+      if (!entry) {
+        entry = this.buildBuilding(b);
+        this.buildingMeshes.set(b.id, entry);
+        for (const s of entry.slabs) this.scene.add(s.mesh);
+        this.scene.add(entry.roof);
+      }
+      for (const { floor, mesh } of entry.slabs) {
+        setFaded(mesh.material as THREE.MeshStandardMaterial, fadeAbove !== null && floor > fadeAbove);
+      }
+      // Inside + overhead ⇒ lift the roof so you can see down into the building.
+      setFaded(entry.roof.material as THREE.MeshStandardMaterial, fadeAbove !== null);
+    }
+  }
+
+  private buildBuilding(b: BuildingSpec): { slabs: { floor: number; mesh: THREE.Mesh }[]; roof: THREE.Mesh } {
+    const { x, y, w, h } = b.footprint;
+    const cx = x + w / 2;
+    const cz = y + h / 2;
+    const slabs: { floor: number; mesh: THREE.Mesh }[] = [];
+    // Upper-storey floor planes (the ground storey is the field itself).
+    for (let f = 1; f < b.floors; f++) {
+      const geom = new THREE.PlaneGeometry(w, h);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 1, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(cx, f * FLOOR_HEIGHT, cz);
+      this.disposables.push(geom, mat);
+      slabs.push({ floor: f, mesh });
+    }
+    const roofGeom = new THREE.PlaneGeometry(w, h);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 1, side: THREE.DoubleSide });
+    const roof = new THREE.Mesh(roofGeom, roofMat);
+    roof.rotation.x = -Math.PI / 2;
+    roof.position.set(cx, b.floors * FLOOR_HEIGHT, cz);
+    this.disposables.push(roofGeom, roofMat);
+    return { slabs, roof };
+  }
+
+  /** A wall = an oriented box on the segment; a door = a hinged leaf box pivoted at
+   *  its hinge endpoint (yaw updated each frame in syncStructures). World (x,y) → (x,0,y). */
+  private buildStructure(
+    s: StructureSpec,
+  ): { object: THREE.Object3D; door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial } } {
+    if (s.kind === "stairs") {
+      // A tilted slab spanning the footprint, inclined so it rises one storey
+      // along its ascent axis (read as a ramp; steps are a later refinement).
+      const rise = (s.toFloor - s.fromFloor) * FLOOR_HEIGHT;
+      const alongY = s.axis === "+y" || s.axis === "-y";
+      const run = alongY ? s.rect.h : s.rect.w;
+      const slope = Math.hypot(run, rise);
+      const geom = new THREE.BoxGeometry(alongY ? s.rect.w : slope, 0.25, alongY ? slope : s.rect.h);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9, metalness: 0 });
+      const ramp = new THREE.Mesh(geom, mat);
+      ramp.position.set(
+        s.rect.x + s.rect.w / 2,
+        ((s.fromFloor + s.toFloor) / 2) * FLOOR_HEIGHT,
+        s.rect.y + s.rect.h / 2,
+      );
+      const angle = Math.atan2(rise, run);
+      if (alongY) ramp.rotation.x = (s.axis === "+y" ? -1 : 1) * angle;
+      else ramp.rotation.z = (s.axis === "+x" ? 1 : -1) * angle;
+      this.disposables.push(geom, mat);
+      return { object: ramp };
+    }
+    const dx = s.b.x - s.a.x;
+    const dz = s.b.y - s.a.y;
+    const len = Math.hypot(dx, dz);
+    const floorY = (s.floor ?? 0) * FLOOR_HEIGHT;
+    if (s.kind === "wall") {
+      const geom = new THREE.BoxGeometry(len, STRUCTURE.wallHeight, s.thickness);
+      const mat = new THREE.MeshStandardMaterial({ color: STRUCTURE.wallColor, roughness: 0.9, metalness: 0 });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set((s.a.x + s.b.x) / 2, STRUCTURE.wallHeight / 2 + floorY, (s.a.y + s.b.y) / 2);
+      // Align the box's +X (length) axis with the segment: yaw mapping +X→(dx,dz).
+      mesh.rotation.y = Math.atan2(-dz, dx);
+      this.disposables.push(geom, mat);
+      return { object: mesh };
+    }
+    // Door: hinge at the chosen endpoint, leaf extends toward the other.
+    const hinge = s.hinge === "b" ? s.b : s.a;
+    const other = s.hinge === "b" ? s.a : s.b;
+    const hdx = other.x - hinge.x;
+    const hdz = other.y - hinge.y;
+    const thetaClosed = Math.atan2(-hdz, hdx);
+    const pivot = new THREE.Group();
+    pivot.position.set(hinge.x, floorY, hinge.y);
+    pivot.rotation.y = thetaClosed;
+    const geom = new THREE.BoxGeometry(len, STRUCTURE.doorHeight, s.thickness);
+    const leafMat = new THREE.MeshStandardMaterial({ color: STRUCTURE.doorColor, roughness: 0.7, metalness: 0 });
+    const leaf = new THREE.Mesh(geom, leafMat);
+    // Centre the box so its near edge sits at the hinge and it spans toward `other`.
+    leaf.position.set(len / 2, STRUCTURE.doorHeight / 2, 0);
+    pivot.add(leaf);
+    this.disposables.push(geom, leafMat);
+    return { object: pivot, door: { pivot, thetaClosed, leafMat } };
+  }
+
+  private syncObjects(state: WorldState, interactId?: string, fadeAbove: number | null = null): void {
+    for (const obj of Object.values(state.objects)) {
+      const spec = state.spec.objects.find((o) => o.id === obj.id);
+      const radius = spec?.radius ?? 0.5;
+      let entry = this.objectMeshes.get(obj.id);
+      if (!entry) {
+        const geom =
+          obj.shape === "box"
+            ? new THREE.BoxGeometry(radius * 2, radius * 2, radius * 2)
+            : new THREE.SphereGeometry(radius, 24, 16);
         const mat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.5, metalness: 0 });
         const mesh = new THREE.Mesh(geom, mat);
         const shadowGeom = new THREE.CircleGeometry(radius * 1.1, 20);
@@ -786,56 +988,75 @@ export class World3DRenderer {
         this.scene.add(mesh);
         this.scene.add(shadow);
         this.disposables.push(geom, mat, shadowGeom, shadowMat);
+        // An emoji icon floats over the object so carryables read as what they
+        // are (cookie vs apple) — needed for "carry the right one" selection.
+        if (spec?.iconRef) {
+          const icon = makeEmojiSprite(spec.iconRef);
+          icon.sprite.position.set(0, radius + 0.7, 0);
+          mesh.add(icon.sprite);
+          this.disposables.push(icon.tex, icon.mat);
+        }
         entry = { mesh, shadow };
-        this.toys.set(toy.id, entry);
+        this.objectMeshes.set(obj.id, entry);
       }
-      entry.mesh.position.set(toy.x, radius, toy.y);
-      entry.shadow.position.set(toy.x, 0.02, toy.y);
-      // Possession tint on the ball's emissive so the owner is readable; an
-      // INTERACT highlight (the local gaze resting on a FREE toy) pulses cyan.
+      // Containment lifts/lowers the object so on/in/under read as relations.
+      let y = radius;
+      if (obj.containedIn) {
+        const cr = state.spec.objects.find((o) => o.id === obj.containedIn!.objectId)?.radius ?? 0.5;
+        if (obj.containedIn.relation === "on") y = cr * 2 + radius;
+        else if (obj.containedIn.relation === "in") y = cr;
+        // "under" stays on the ground (beneath the container's top).
+      }
+      const floorY = obj.floor * FLOOR_HEIGHT;
+      entry.mesh.position.set(obj.x, y + floorY, obj.y);
+      entry.shadow.position.set(obj.x, 0.02 + floorY, obj.y);
+      // Possession tint marks the owner; an INTERACT highlight (gaze on a free
+      // object) pulses cyan.
       const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-      if (toy.possessedBy) {
-        mat.emissive = colorForId(toy.possessedBy);
+      if (obj.possessedBy) {
+        mat.emissive = colorForId(obj.possessedBy);
         mat.emissiveIntensity = 0.35;
-      } else if (toy.id === interactId) {
+      } else if (obj.id === interactId) {
         mat.emissive.set("#38bdf8");
         mat.emissiveIntensity = 0.35 + 0.2 * Math.sin(state.time * 5);
       } else {
         mat.emissiveIntensity = 0;
       }
+      // Floor-fade objects sitting on a storey above the occupant; hide their shadow.
+      const faded = fadeAbove !== null && obj.floor > fadeAbove;
+      setFaded(mat, faded);
+      entry.shadow.visible = !faded;
     }
   }
 
-  /** Add/update/remove a billboarded speech bubble per avatar that has spoken
-   *  recently. Bubbles live directly in the scene (Sprites auto-face the camera). */
+  /** Draw every live world bubble (state.bubbles), keyed by its caller id and
+   *  floated over its anchor — an avatar (tracked each frame) or a fixed world
+   *  point (a character/object/caption). One path for networked utterances and
+   *  in-game speech alike. Bubbles live directly in the scene (auto-billboarded). */
   private syncBubbles(state: WorldState, glyphFor?: (glyph: string) => CanvasImageSource[] | null): void {
-    for (const a of Object.values(state.avatars)) {
-      const say = a.say;
-      const alpha = say ? bubbleAlpha(say.at, state.time) : 0;
-      let bubble = this.bubbles.get(a.id);
-      if (!say || alpha <= 0) {
-        if (bubble) {
-          this.scene.remove(bubble.sprite);
-          bubble.dispose();
-          this.bubbles.delete(a.id);
-        }
-        continue;
-      }
+    const live = new Set<string>();
+    for (const [key, b] of Object.entries(state.bubbles)) {
+      const pos = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id] : b.anchor;
+      const alpha = pos ? bubbleAlpha(b.at, state.time, b.ttl) : 0;
+      if (alpha <= 0 || !pos) continue;
+      live.add(key);
+      let bubble = this.bubbles.get(key);
       if (!bubble) {
         bubble = new Bubble3D();
-        this.bubbles.set(a.id, bubble);
+        this.bubbles.set(key, bubble);
         this.scene.add(bubble.sprite);
       }
-      const glyphs = say.glyph ? glyphFor?.(say.glyph) ?? [] : [];
-      bubble.setContent(say.text, say.at, glyphs);
-      bubble.place(a.x, a.y, alpha);
+      const glyphs = b.glyph ? glyphFor?.(b.glyph) ?? [] : [];
+      const floor = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id]?.floor ?? 0 : 0;
+      bubble.setContent(b.text, b.at, glyphs);
+      bubble.place(pos.x, pos.y, alpha, floor * FLOOR_HEIGHT);
     }
-    // Drop bubbles whose avatar left.
-    for (const [id, bubble] of this.bubbles) {
-      if (!state.avatars[id]) {
+    // Drop sprites whose bubble expired or was removed.
+    for (const [key, bubble] of this.bubbles) {
+      if (!live.has(key)) {
         this.scene.remove(bubble.sprite);
         bubble.dispose();
-        this.bubbles.delete(id);
+        this.bubbles.delete(key);
       }
     }
   }
@@ -884,17 +1105,27 @@ export class World3DRenderer {
     // on the avatar (gd ≤ moveThreshold), or with no aim — so a watcher's glances
     // never rotate the world. Turn rate is capped BOTH by the gaze-distance rule
     // (near gaze ⇒ fast pivot, far gaze ⇒ slow reveal) AND comfort.maxYawSpeed.
+    // A `faceTarget` (NPC conversation) OVERRIDES the aim: the avatar is frozen
+    // (aim null) but the view slews to face the speaker, bypassing the gaze gate.
+    const faceTarget = intent?.faceTarget ?? null;
+    let tgtAngle: number | null = null;
+    let facing = false;
+    if (faceTarget && this.camCenter) {
+      const dx = faceTarget.x - this.camCenter.x;
+      const dz = faceTarget.y - this.camCenter.z;
+      if (Math.hypot(dx, dz) > 1e-3) { tgtAngle = Math.atan2(dx, dz); facing = true; }
+    } else if (!sitting && haveDir && gazeDistance > cam.moveThreshold) {
+      tgtAngle = Math.atan2(aimx, aimz);
+    }
     let appliedYaw = 0;
-    if (!sitting && haveDir && gazeDistance > cam.moveThreshold) {
+    if (tgtAngle !== null) {
       const cur = Math.atan2(this.camForward.x, this.camForward.z);
-      const tgt = Math.atan2(aimx, aimz);
-      let delta = Math.atan2(Math.sin(tgt - cur), Math.cos(tgt - cur)); // shortest turn
+      let delta = Math.atan2(Math.sin(tgtAngle - cur), Math.cos(tgtAngle - cur)); // shortest turn
       if (Math.abs(delta) < this.comfort.yawDeadband) delta = 0;
       let stepAngle = delta * (1 - Math.exp(-cam.yawStiffness * step));
-      const effMax = Math.min(
-        this.comfort.maxYawSpeed,
-        cam.yawDistGain / Math.max(gazeDistance, cam.yawDistMin),
-      );
+      const effMax = facing
+        ? this.comfort.maxYawSpeed
+        : Math.min(this.comfort.maxYawSpeed, cam.yawDistGain / Math.max(gazeDistance, cam.yawDistMin));
       const maxStep = effMax * step;
       if (stepAngle > maxStep) stepAngle = maxStep;
       else if (stepAngle < -maxStep) stepAngle = -maxStep;
@@ -942,11 +1173,20 @@ export class World3DRenderer {
       model.dispose();
     }
     this.avatars.clear();
-    for (const { mesh, shadow } of this.toys.values()) {
+    for (const { mesh, shadow } of this.objectMeshes.values()) {
       this.scene.remove(mesh);
       this.scene.remove(shadow);
     }
-    this.toys.clear();
+    this.objectMeshes.clear();
+    for (const { object } of this.structureMeshes.values()) {
+      this.scene.remove(object);
+    }
+    this.structureMeshes.clear();
+    for (const { slabs, roof } of this.buildingMeshes.values()) {
+      for (const s of slabs) this.scene.remove(s.mesh);
+      this.scene.remove(roof);
+    }
+    this.buildingMeshes.clear();
     for (const bubble of this.bubbles.values()) {
       this.scene.remove(bubble.sprite);
       bubble.dispose();
@@ -967,11 +1207,12 @@ export class World3DRenderer {
 export function createWorld3DView(
   deps: WorldViewDeps,
   spec: WorldSpec,
-  opts?: { modelFactory?: AvatarModelFactory; backdrop?: string },
+  opts?: { modelFactory?: AvatarModelFactory; backdrop?: string; overlay?: SceneOverlay },
 ): WorldView {
   const { canvas, localId, faceFor, labelFor, glyphFor } = deps;
   const renderer = new World3DRenderer(canvas, spec, {
     localId,
+    overlay: opts?.overlay,
     modelFactory: opts?.modelFactory,
     backdrop: opts?.backdrop,
   });

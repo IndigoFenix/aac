@@ -208,6 +208,10 @@ export function ObjectivesBar({
             emoji = icon(node.stageEntityId);
             detail = "👁";
             break;
+          case "transport":
+            emoji = icon(node.objectEntityId);
+            detail = "📦→";
+            break;
         }
         return (
           <span

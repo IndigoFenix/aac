@@ -30,17 +30,15 @@ export const socialFieldNpcsSpec: WorldSpec = {
     { id: "west", x: 28, y: 30, facing: 0 },
     { id: "east", x: 52, y: 30, facing: Math.PI },
   ],
-  toys: [
+  objects: [
     {
       id: "ball",
-      kind: "soccer_ball",
       x: 40,
       y: 30,
+      shape: "sphere",
       radius: 0.5,
-      dribbleDistance: 1.0,
-      friction: 0.25,
-      releaseSpeed: 0.6,
-      touchRadius: 1.2,
+      interactions: ["push"],
+      push: { dribbleDistance: 1.0, friction: 0.25, releaseSpeed: 0.6, touchRadius: 1.2 },
     },
   ],
   npcs: [

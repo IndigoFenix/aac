@@ -11,6 +11,8 @@
 //              complete; otherwise it stays locked with a prompt
 //   observe  — touching the stage plays its demonstration + completes (a beat
 //              the child watches; it never gates)
+//   transport— completes on a `place-object` input (the player detects the object
+//              placed on the destination); a carry puzzle, it never gates
 //
 // State is JSON-serializable; the immutable context (game, world, lookup
 // maps, expanded item instances) is built once per session. All inputs are
@@ -159,6 +161,14 @@ export function applyRuntimeInput(
         out.commands.push({ type: "dismiss-choice", nodeId: input.nodeId });
       }
       break;
+    case "place-object": {
+      // The player placed a transport node's object correctly → complete it.
+      const node = ctx.nodeById.get(input.nodeId);
+      if (node?.type === "transport" && !out.state.completed[node.id]) {
+        complete(ctx, out, node);
+      }
+      break;
+    }
     case "enter-zone": {
       const zone = ctx.world.zones.find((z) => z.id === input.zoneId);
       out.events.push({ type: "zone-entered", zoneId: input.zoneId, hint: zone?.hint });
@@ -325,6 +335,17 @@ function handleSelectOption(
   if (option.correct === true) {
     out.state.activeChoiceNodeId = null;
     out.commands.push({ type: "dismiss-choice", nodeId });
+    // Contingency payoff: play the onCorrect cues via the existing demonstrate
+    // command, labelled with the chosen option's glyph (if it carries one).
+    if (node.onCorrect?.length) {
+      const chosen = ctx.game.entities.find((e) => e.id === entityId);
+      out.commands.push({
+        type: "demonstrate",
+        nodeId,
+        targetGlyph: chosen?.glyph ?? "",
+        cues: node.onCorrect,
+      });
+    }
     complete(ctx, out, node);
   } else {
     if (option.feedback) narrate(out, "feedback", option.feedback, nodeId);

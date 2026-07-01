@@ -18,7 +18,7 @@
 
 import {
   applyRemoteAvatar,
-  applyRemoteToy,
+  applyRemoteObject,
   removeAvatar,
   setAvatarSpeech,
   WORLD_ENGINE_DEFAULTS,
@@ -31,8 +31,8 @@ import {
 // ---------------------------------------------------------------------------
 
 export type WorldNetMessage =
-  | { t: "avatar"; id: string; x: number; y: number; fx: number; fy: number; vx: number; vy: number }
-  | { t: "toy"; id: string; x: number; y: number; vx: number; vy: number }
+  | { t: "avatar"; id: string; x: number; y: number; fx: number; fy: number; vx: number; vy: number; floor?: number }
+  | { t: "object"; id: string; x: number; y: number; vx: number; vy: number }
   | { t: "grab"; id: string; by: string }
   | { t: "release"; id: string; by: string; at: number }
   | { t: "rest"; id: string }
@@ -81,24 +81,26 @@ export function collectOutbound(
       x: a.x, y: a.y,
       fx: a.fx, fy: a.fy,
       vx: a.vx, vy: a.vy,
+      ...(a.floor ? { floor: a.floor } : {}),
     });
   }
 
-  // Stream the position of every toy this peer is authoritative for.
-  for (const toy of Object.values(state.toys)) {
-    if (toy.possessedBy === me || toy.freeRollOwner === me) {
-      out.push({ t: "toy", id: toy.id, x: toy.x, y: toy.y, vx: toy.vx, vy: toy.vy });
+  // Stream the position of every object this peer is authoritative for (pushing,
+  // free-rolling, or carrying it — so a carried object isn't frozen for peers).
+  for (const obj of Object.values(state.objects)) {
+    if (obj.possessedBy === me || obj.freeRollOwner === me || obj.carriedBy === me) {
+      out.push({ t: "object", id: obj.id, x: obj.x, y: obj.y, vx: obj.vx, vy: obj.vy });
     }
   }
 
   // Discrete events → possession messages.
   for (const ev of tickEvents) {
     if (ev.type === "possession-request") {
-      out.push({ t: "grab", id: ev.toyId, by: ev.participantId });
+      out.push({ t: "grab", id: ev.objectId, by: ev.participantId });
     } else if (ev.type === "possession-released") {
-      out.push({ t: "release", id: ev.toyId, by: ev.participantId, at: ev.at });
-    } else if (ev.type === "toy-rest") {
-      out.push({ t: "rest", id: ev.toyId });
+      out.push({ t: "release", id: ev.objectId, by: ev.participantId, at: ev.at });
+    } else if (ev.type === "object-rest") {
+      out.push({ t: "rest", id: ev.objectId });
     }
   }
 
@@ -126,11 +128,12 @@ export function applyInbound(
         x: msg.x, y: msg.y,
         fx: msg.fx, fy: msg.fy,
         vx: msg.vx, vy: msg.vy,
+        floor: msg.floor ?? 0,
       });
       break;
 
-    case "toy":
-      applyRemoteToy(state, msg.id, { x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy });
+    case "object":
+      applyRemoteObject(state, msg.id, { x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy });
       break;
 
     case "grab":
@@ -138,30 +141,30 @@ export function applyInbound(
       break;
 
     case "release": {
-      const toy = state.toys[msg.id];
-      if (!toy) break;
-      // Honor the release of whoever we believe holds the toy (or our own stale
+      const obj = state.objects[msg.id];
+      if (!obj) break;
+      // Honor the release of whoever we believe holds it (or our own stale
       // belief that we do). The releaser keeps simulating the free-roll.
-      if (toy.possessedBy === msg.by || toy.possessedBy === state.localId) {
-        if (toy.possessedBy === state.localId) {
-          toy.grabCooldownUntil = msg.at + opts.grabCooldown;
+      if (obj.possessedBy === msg.by || obj.possessedBy === state.localId) {
+        if (obj.possessedBy === state.localId) {
+          obj.grabCooldownUntil = msg.at + opts.grabCooldown;
         }
-        toy.possessedBy = null;
-        toy.freeRollOwner = msg.by;
-        toy.lastPossessor = msg.by;
+        obj.possessedBy = null;
+        obj.freeRollOwner = msg.by;
+        obj.lastPossessor = msg.by;
       }
       break;
     }
 
     case "rest": {
-      const toy = state.toys[msg.id];
-      if (!toy) break;
+      const obj = state.objects[msg.id];
+      if (!obj) break;
       // Only accept a remote "at rest" if we aren't the one simulating it.
-      if (toy.possessedBy !== state.localId && toy.freeRollOwner !== state.localId) {
-        toy.possessedBy = null;
-        toy.freeRollOwner = null;
-        toy.vx = 0;
-        toy.vy = 0;
+      if (obj.possessedBy !== state.localId && obj.freeRollOwner !== state.localId) {
+        obj.possessedBy = null;
+        obj.freeRollOwner = null;
+        obj.vx = 0;
+        obj.vy = 0;
       }
       break;
     }
@@ -182,31 +185,31 @@ export function sayMessage(id: string, text: string, glyph?: string): WorldNetMe
 }
 
 /**
- * A remote peer claims a toy. Deterministic precedence: a free toy is always
- * taken; a contested toy goes to the lower participant id, so every peer
+ * A remote peer claims an object. Deterministic precedence: a free object is
+ * always taken; a contested one goes to the lower participant id, so every peer
  * converges on the same owner without a server. A peer that loses the local
- * toy gets a brief re-grab cooldown to stop ping-ponging.
+ * object gets a brief re-grab cooldown to stop ping-ponging.
  */
 function applyRemoteGrab(
   state: WorldState,
-  toyId: string,
+  objectId: string,
   by: string,
   opts: NetOptions,
 ): void {
-  const toy = state.toys[toyId];
-  if (!toy) return;
-  const current = toy.possessedBy;
+  const obj = state.objects[objectId];
+  if (!obj) return;
+  const current = obj.possessedBy;
 
   const remoteWins = current === null || by < current;
   if (!remoteWins) return;
 
   if (current === state.localId) {
     // We just lost possession we thought we had — back off briefly.
-    toy.lastPossessor = state.localId;
-    toy.grabCooldownUntil = state.time + opts.grabCooldown;
+    obj.lastPossessor = state.localId;
+    obj.grabCooldownUntil = state.time + opts.grabCooldown;
   }
-  toy.possessedBy = by;
-  toy.freeRollOwner = null;
-  toy.vx = 0;
-  toy.vy = 0;
+  obj.possessedBy = by;
+  obj.freeRollOwner = null;
+  obj.vx = 0;
+  obj.vy = 0;
 }

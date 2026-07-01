@@ -754,6 +754,20 @@ export const en = {
     title: "Apps",
     empty: "No apps are enabled.",
     starting: "Starting…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "Phone Call",
+      spotify: "Spotify",
+      drawing: "Drawing",
+      music: "Music Maker",
+      sandbox_game: "Sandbox Farm",
+      bubbles_game: "Bubbles",
+      social_trainer: "Social Trainer",
+      space_trader: "Space Trader",
+      musical_microbes: "Musical Microbes",
+      social_world: "Play with friends",
+      symbol_learning: "Learn Symbols",
+    },
   },
 
   call: {
@@ -775,6 +789,7 @@ export const en = {
     bigVideo: "Big video",
     smallVideo: "Small video",
     noOneElse: "No one else is here yet",
+    screenSharing: "Sharing your screen",
     incoming: "Incoming call",
     accept: "Yes",
     decline: "No",

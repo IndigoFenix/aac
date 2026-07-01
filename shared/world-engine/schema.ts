@@ -14,10 +14,13 @@ import { z } from "zod";
 import type { WorldSpec } from "./types.js";
 import {
   WORLD_MANIFOLD_MAX,
+  WORLD_MAX_BUILDINGS,
+  WORLD_MAX_FLOORS,
   WORLD_MAX_NPCS,
+  WORLD_MAX_OBJECTS,
   WORLD_MAX_PLAYERS,
   WORLD_MAX_SPAWNS,
-  WORLD_MAX_TOYS,
+  WORLD_MAX_STRUCTURES,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -67,23 +70,104 @@ const spawnSchema = z
   })
   .strict();
 
-const soccerBallSchema = z
+// Possession-dribble tuning (a "push" object). Retained-per-second `friction`
+// excludes the endpoints so it neither freezes instantly (0) nor rolls forever (1).
+const pushSchema = z
   .object({
-    id: idSchema,
-    kind: z.literal("soccer_ball"),
-    x: finite,
-    y: finite,
-    radius: positive.max(50),
     dribbleDistance: positive.max(50),
-    // Retained-per-second fraction; exclude the endpoints so a ball neither
-    // freezes instantly (0) nor rolls forever (1).
     friction: z.number().gt(0).lt(1),
     releaseSpeed: z.number().finite().nonnegative().max(100),
     touchRadius: positive.max(50),
   })
   .strict();
 
-const toySchema = z.discriminatedUnion("kind", [soccerBallSchema]);
+const containmentSlotSchema = z
+  .object({
+    relation: z.enum(["on", "in", "under"]),
+    capacity: z.number().int().min(1).max(20).optional(),
+  })
+  .strict();
+
+const objectSchema = z
+  .object({
+    id: idSchema,
+    x: finite,
+    y: finite,
+    shape: z.enum(["sphere", "box"]),
+    radius: positive.max(50),
+    iconRef: z.string().min(1).optional(),
+    // May be empty for a pure container (e.g. a table you neither push nor carry).
+    interactions: z.array(z.enum(["push", "carry"])).max(2),
+    push: pushSchema.optional(),
+    contains: z.array(containmentSlotSchema).min(1).max(8).optional(),
+  })
+  .strict();
+
+// Structures — walls, doors, stairs. A point (Vec2) is just two finite numbers.
+const pointSchema = z.object({ x: finite, y: finite }).strict();
+const floorSchema = z.number().int().min(0).max(64);
+const rectSchema = z
+  .object({ x: finite, y: finite, w: positive.max(WORLD_MANIFOLD_MAX), h: positive.max(WORLD_MANIFOLD_MAX) })
+  .strict();
+
+const wallSchema = z
+  .object({
+    kind: z.literal("wall"),
+    id: idSchema,
+    a: pointSchema,
+    b: pointSchema,
+    thickness: positive.max(50),
+    floor: floorSchema.optional(),
+  })
+  .strict();
+
+const doorSchema = z
+  .object({
+    kind: z.literal("door"),
+    id: idSchema,
+    a: pointSchema,
+    b: pointSchema,
+    thickness: positive.max(50),
+    hinge: z.enum(["a", "b"]).optional(),
+    openRadius: positive.max(WORLD_MANIFOLD_MAX).optional(),
+    locked: z.boolean().optional(),
+    keyObjectId: idSchema.optional(),
+    floor: floorSchema.optional(),
+  })
+  .strict();
+
+const stairsSchema = z
+  .object({
+    kind: z.literal("stairs"),
+    id: idSchema,
+    rect: rectSchema,
+    fromFloor: floorSchema,
+    toFloor: floorSchema,
+    axis: z.enum(["+x", "-x", "+y", "-y"]),
+  })
+  .strict();
+
+const structureSchema = z.discriminatedUnion("kind", [wallSchema, doorSchema, stairsSchema]);
+
+const buildingDoorwaySchema = z
+  .object({
+    edge: z.enum(["north", "south", "east", "west"]),
+    offset: z.number().finite().nonnegative().max(WORLD_MANIFOLD_MAX),
+    width: positive.max(WORLD_MANIFOLD_MAX),
+    locked: z.boolean().optional(),
+  })
+  .strict();
+
+const buildingSchema = z
+  .object({
+    id: idSchema,
+    footprint: rectSchema,
+    floors: z.number().int().min(1).max(WORLD_MAX_FLOORS),
+    wallThickness: positive.max(50),
+    doorways: z.array(buildingDoorwaySchema).max(8).optional(),
+    stairs: z.boolean().optional(),
+  })
+  .strict();
 
 // NPC persona mirrors the social_trainer app params. `archetypeHint`/`scenario`/
 // `targetSkills` are free strings here on purpose: the social brain owns their
@@ -149,7 +233,9 @@ const worldSpecSchemaBase = z
     manifold: manifoldSchema,
     terrain: terrainSchema,
     spawns: z.array(spawnSchema).min(1).max(WORLD_MAX_SPAWNS),
-    toys: z.array(toySchema).max(WORLD_MAX_TOYS),
+    objects: z.array(objectSchema).max(WORLD_MAX_OBJECTS),
+    structures: z.array(structureSchema).max(WORLD_MAX_STRUCTURES).optional(),
+    buildings: z.array(buildingSchema).max(WORLD_MAX_BUILDINGS).optional(),
     npcs: z.array(npcSchema).max(WORLD_MAX_NPCS).optional(),
     multiplayer: multiplayerSchema,
     content: contentSchema,
@@ -181,23 +267,81 @@ function validateWorldStructure(
     }
   }
 
-  // Unique toy ids (across all kinds) + inside the manifold.
-  const toyIds = new Set<string>();
-  for (const t of spec.toys) {
-    if (toyIds.has(t.id)) issue(`duplicate toy id: ${t.id}`);
-    toyIds.add(t.id);
-    if (!inBounds(t.x, t.y)) {
-      issue(`toy "${t.id}" at (${t.x}, ${t.y}) is outside the manifold`);
+  // Unique object ids + inside the manifold; a "push" object needs push tuning.
+  const objectIds = new Set<string>();
+  for (const o of spec.objects) {
+    if (objectIds.has(o.id)) issue(`duplicate object id: ${o.id}`);
+    objectIds.add(o.id);
+    if (!inBounds(o.x, o.y)) {
+      issue(`object "${o.id}" at (${o.x}, ${o.y}) is outside the manifold`);
+    }
+    if (o.interactions.includes("push") && !o.push) {
+      issue(`object "${o.id}" allows "push" but has no push tuning`);
+    }
+    if (o.interactions.length === 0 && !o.contains) {
+      issue(`object "${o.id}" has no interactions and is not a container`);
     }
   }
 
-  // NPC ids must be unique AND distinct from spawn/toy ids: at runtime an NPC is
-  // an avatar, and its id rides the same wire namespace as toys and (potentially)
-  // spawn-derived references, so a clash would make a message ambiguous.
+  // Structures: unique ids (distinct from objects too, since a door's keyObjectId
+  // and the renderer key on these namespaces), endpoints in bounds, a non-degenerate
+  // segment, and a door key that points at a real CARRYable object.
+  const carryObjectIds = new Set(
+    spec.objects.filter((o) => o.interactions.includes("carry")).map((o) => o.id),
+  );
+  const structureIds = new Set<string>();
+  for (const s of spec.structures ?? []) {
+    if (structureIds.has(s.id)) issue(`duplicate structure id: ${s.id}`);
+    if (objectIds.has(s.id)) issue(`structure id "${s.id}" collides with an object id`);
+    structureIds.add(s.id);
+    if (s.kind === "stairs") {
+      const { x, y, w, h } = s.rect;
+      if (!inBounds(x, y) || !inBounds(x + w, y + h)) {
+        issue(`stairs "${s.id}" footprint is outside the manifold`);
+      }
+      if (s.fromFloor === s.toFloor) {
+        issue(`stairs "${s.id}" connects a floor to itself`);
+      }
+    } else {
+      if (!inBounds(s.a.x, s.a.y) || !inBounds(s.b.x, s.b.y)) {
+        issue(`structure "${s.id}" has an endpoint outside the manifold`);
+      }
+      if (Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) < 1e-3) {
+        issue(`structure "${s.id}" is degenerate (a and b coincide)`);
+      }
+      if (s.kind === "door" && s.keyObjectId && !carryObjectIds.has(s.keyObjectId)) {
+        issue(`door "${s.id}" keyObjectId "${s.keyObjectId}" is not a carryable object`);
+      }
+    }
+  }
+
+  // Buildings: unique ids; footprint in bounds; each doorway fits its edge (so a
+  // generated door doesn't run off the wall). Generated structure ids are prefixed
+  // by the building id, so a unique building id keeps them from colliding.
+  const buildingIds = new Set<string>();
+  for (const b of spec.buildings ?? []) {
+    if (buildingIds.has(b.id)) issue(`duplicate building id: ${b.id}`);
+    if (structureIds.has(b.id)) issue(`building id "${b.id}" collides with a structure id`);
+    buildingIds.add(b.id);
+    const { x, y, w, h } = b.footprint;
+    if (!inBounds(x, y) || !inBounds(x + w, y + h)) {
+      issue(`building "${b.id}" footprint is outside the manifold`);
+    }
+    for (const d of b.doorways ?? []) {
+      const edgeLen = d.edge === "north" || d.edge === "south" ? w : h;
+      if (d.offset - d.width / 2 < 0 || d.offset + d.width / 2 > edgeLen) {
+        issue(`building "${b.id}" ${d.edge} doorway (offset ${d.offset}, width ${d.width}) doesn't fit its edge`);
+      }
+    }
+  }
+
+  // NPC ids must be unique AND distinct from spawn/object ids: at runtime an NPC
+  // is an avatar, and its id rides the same wire namespace as objects and
+  // (potentially) spawn-derived references, so a clash would make a message ambiguous.
   const npcIds = new Set<string>();
   for (const n of spec.npcs ?? []) {
     if (npcIds.has(n.id)) issue(`duplicate npc id: ${n.id}`);
-    if (toyIds.has(n.id)) issue(`npc id "${n.id}" collides with a toy id`);
+    if (objectIds.has(n.id)) issue(`npc id "${n.id}" collides with an object id`);
     if (spawnIds.has(n.id)) issue(`npc id "${n.id}" collides with a spawn id`);
     npcIds.add(n.id);
     if (!inBounds(n.x, n.y)) {

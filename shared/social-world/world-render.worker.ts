@@ -16,7 +16,7 @@
 import { getWorldSpec, socialFieldSpec } from "../world-engine/specs/index.js";
 import { createWorld2DView } from "../world-engine/world-view.js";
 import { createWorld3DView } from "../world-engine/render3d.js";
-import { runWorldHost, type WorldHost } from "./world-host.js";
+import { runWorldHost, type WorldHost } from "../world-engine/world-host.js";
 import type { MainToWorker, WorkerToMain } from "./world-render-protocol.js";
 
 const post = (msg: WorkerToMain, transfer?: Transferable[]) =>

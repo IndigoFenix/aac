@@ -756,6 +756,20 @@ export const ar: Translations = {
     title: "\u062a\u0637\u0628\u064a\u0642\u0627\u062a",
     empty: "\u0644\u0627 \u062a\u0648\u062c\u062f \u062a\u0637\u0628\u064a\u0642\u0627\u062a \u0645\u0641\u0639\u0651\u0644\u0629.",
     starting: "\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u0634\u063a\u064a\u0644\u2026",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "\u0645\u0643\u0627\u0644\u0645\u0629 \u0647\u0627\u062a\u0641\u064a\u0629",
+      spotify: "Spotify",
+      drawing: "\u0627\u0644\u0631\u0633\u0645",
+      music: "\u0635\u0627\u0646\u0639 \u0627\u0644\u0645\u0648\u0633\u064a\u0642\u0649",
+      sandbox_game: "\u0645\u0632\u0631\u0639\u0629 \u0627\u0644\u0631\u0645\u0644",
+      bubbles_game: "\u0641\u0642\u0627\u0639\u0627\u062a",
+      social_trainer: "\u0627\u0644\u0645\u062f\u0631\u0628 \u0627\u0644\u0627\u062c\u062a\u0645\u0627\u0639\u064a",
+      space_trader: "\u062a\u0627\u062c\u0631 \u0627\u0644\u0641\u0636\u0627\u0621",
+      musical_microbes: "\u0645\u064a\u0643\u0631\u0648\u0628\u0627\u062a \u0645\u0648\u0633\u064a\u0642\u064a\u0629",
+      social_world: "\u0627\u0644\u0644\u0639\u0628 \u0645\u0639 \u0627\u0644\u0623\u0635\u062f\u0642\u0627\u0621",
+      symbol_learning: "\u062a\u0639\u0644\u0651\u0645 \u0627\u0644\u0631\u0645\u0648\u0632",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const ar: Translations = {
     bigVideo: "فيديو كبير",
     smallVideo: "فيديو صغير",
     noOneElse: "لا أحد آخر هنا بعد",
+    screenSharing: "تتم مشاركة شاشتك",
     incoming: "\u0645\u0643\u0627\u0644\u0645\u0629 \u0648\u0627\u0631\u062f\u0629",
     accept: "\u0646\u0639\u0645",
     decline: "\u0644\u0627",

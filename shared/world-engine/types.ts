@@ -22,13 +22,29 @@ export interface Vec2 {
   y: number;
 }
 
+/** An axis-aligned rectangle in world units (origin at its min corner). */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 // ---------------------------------------------------------------------------
 // Spec enums (reserved members are documented but not yet schema-valid)
 // ---------------------------------------------------------------------------
 
 export type ManifoldKind = "flat"; // "sphere" reserved for a later milestone
 export type TerrainKind = "flat";
-export type ToyKind = "soccer_ball";
+/** An object's visual + collision form. "sphere" = a ball; "box" = a crate/table. */
+export type ObjectShape = "sphere" | "box";
+/** How a player may interact with an object:
+ *   • "push"  — move into it to dribble/kick it around (the soccer-ball behavior),
+ *   • "carry" — pick it up (it follows you), then put it down at a dwelled spot. */
+export type ObjectInteraction = "push" | "carry";
+/** Where a held object rests when placed in/on a container — basic relational
+ *  concepts a learning game can teach. A table offers "on" and "under". */
+export type ContainRelation = "on" | "in" | "under";
 export type ContentKind = "sandbox"; // "goal-tree" reserved (embed via Space)
 export type MultiplayerAuthority = "distributed";
 
@@ -73,28 +89,160 @@ export interface SpawnSpec {
 }
 
 /**
- * Soccer-ball toy. Possession-dribble behavior: whoever touches it controls it
- * while moving; a hard stop or a sharp brake releases it carrying the player's
- * velocity, so the "kick" is emergent rather than a separate verb. All params
- * are clamped by the schema.
+ * Possession-dribble tuning for a "push" object (the soccer-ball behavior):
+ * whoever touches it controls it while moving; a hard stop or a sharp brake
+ * releases it carrying the player's velocity, so the "kick" is emergent rather
+ * than a separate verb. All params are clamped by the schema. Present only when
+ * an object's interactions include "push".
  */
-export interface SoccerBallSpec {
-  id: string;
-  kind: "soccer_ball";
-  x: number;
-  y: number;
-  /** Collision/visual radius, world units. */
-  radius: number;
-  /** Distance ahead of the possessor the ball is carried. */
+export interface PushSpec {
+  /** Distance ahead of the possessor the object is carried. */
   dribbleDistance: number;
   /** Fraction of velocity RETAINED per second while rolling free (0..1). */
   friction: number;
-  /** A possessor slower than this (units/sec) drops the ball. */
+  /** A possessor slower than this (units/sec) drops the object. */
   releaseSpeed: number;
-  /** An avatar within this distance of a FREE ball may take possession. */
+  /** An avatar within this distance of a FREE object may take possession. */
   touchRadius: number;
 }
-export type ToySpec = SoccerBallSpec;
+
+/** One containment slot a container object offers — a relation (on/in/under) and
+ *  how many held objects can occupy it. A table = [{relation:"on"},{relation:"under"}]. */
+export interface ContainmentSlot {
+  relation: ContainRelation;
+  /** Max objects in this slot. Defaults to 1. */
+  capacity?: number;
+}
+
+/**
+ * A world object — the generalized primitive that replaces the soccer-ball toy.
+ * Its `shape` is how it looks/collides and its `interactions` are what the player
+ * can do with it (push it around, or carry it and put it down). A container also
+ * declares `contains` slots — what can be placed on/in/under it.
+ */
+export interface ObjectSpec {
+  id: string;
+  x: number;
+  y: number;
+  shape: ObjectShape;
+  /** Collision/visual radius, world units (a box's half-extent). */
+  radius: number;
+  /**
+   * Optional emoji drawn as a billboarded sprite floating over the object, so
+   * carryable props read as what they ARE (a cookie, an apple) rather than
+   * identical boxes — needed for "carry the right one" selection. Render-only;
+   * never affects the sim.
+   */
+  iconRef?: string;
+  /** What the player may do with it (≥1). */
+  interactions: ObjectInteraction[];
+  /** Possession-dribble tuning — used only when interactions include "push". */
+  push?: PushSpec;
+  /** Containment slots, for a container (a table). Omit for plain objects. */
+  contains?: ContainmentSlot[];
+}
+
+// ---------------------------------------------------------------------------
+// Structures — static collision geometry the engine owns
+// ---------------------------------------------------------------------------
+
+/**
+ * A structure is fixed collision geometry the ENGINE builds a MoveConstraint
+ * from — unlike `objects`, which are movable (push/carry/contain). v1 ships the
+ * two floor-less kinds: a `wall` (a solid segment) and a `door` (a wall segment
+ * with a gate that swings open on approach). Buildings + stairs (which need a
+ * vertical floor index) are a later phase.
+ */
+export type StructureKind = "wall" | "door" | "stairs";
+
+/** A solid wall: anything within `thickness`/2 of the centerline segment a→b is
+ *  impassable (a capsule, so corners are rounded by the avatar radius). */
+export interface WallSpec {
+  kind: "wall";
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  /** Full wall thickness, world units. */
+  thickness: number;
+  /** Floor this wall exists on. Omit ⇒ it blocks on EVERY floor (a full-height
+   *  exterior wall); set it to confine the wall to one storey's interior. */
+  floor?: number;
+}
+
+/**
+ * A door — a wall segment with a leaf that swings open. It blocks like a wall
+ * while CLOSED and is passable while OPEN; the engine eases it open whenever an
+ * avatar is within `openRadius` (and it isn't locked) and shut again once nobody
+ * is near, so it "swings out as you walk through, then closes."
+ */
+export interface DoorSpec {
+  kind: "door";
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  thickness: number;
+  /** Endpoint the leaf is hinged at (swings about it). Defaults to "a". */
+  hinge?: "a" | "b";
+  /** An avatar within this distance of the door's center opens it. Defaults to
+   *  a sensible multiple of the door's width. */
+  openRadius?: number;
+  /** Starts locked — stays solid (a wall) until unlocked. */
+  locked?: boolean;
+  /** A carryable object id that acts as this door's key: an avatar carrying it
+   *  into `openRadius` unlocks the door (then it opens like any other). */
+  keyObjectId?: string;
+  /** Floor the door sits on. Omit ⇒ all floors (see WallSpec.floor). */
+  floor?: number;
+}
+
+/**
+ * A stairway — the floor-changer. It isn't solid; standing on its `rect` ramps
+ * the avatar's `floor` from `fromFloor` (at the start edge) to `toFloor` (at the
+ * end edge) as it crosses along `axis`. Step off the top and you're on the upper
+ * floor; off the bottom, the lower. Generated inside multi-storey buildings.
+ */
+export interface StairSpec {
+  kind: "stairs";
+  id: string;
+  rect: Rect;
+  fromFloor: number;
+  toFloor: number;
+  /** Direction of ASCENT across the footprint: floor reaches `toFloor` at this
+   *  edge. e.g. "+y" ⇒ low at rect.y, high at rect.y + rect.h. */
+  axis: "+x" | "-x" | "+y" | "-y";
+}
+
+export type StructureSpec = WallSpec | DoorSpec | StairSpec;
+
+/** A gap in a building's perimeter where a door is generated. `offset` is the
+ *  distance along the edge (from its start corner: N/S run +x, W/E run +y). */
+export interface BuildingDoorway {
+  edge: "north" | "south" | "east" | "west";
+  offset: number;
+  width: number;
+  locked?: boolean;
+}
+
+/**
+ * A building — a multi-storey enclosure. It is sugar over the structural layer:
+ * `expandWorldBuildings` turns each one into real perimeter wall + door
+ * structures (minus its doorways) and, when `floors` > 1, a stairway per storey,
+ * so collision stays uniform. The renderer additionally draws its floor slabs +
+ * roof and fades floors above the occupant when the camera is overhead, so you
+ * can see a player who has walked inside.
+ */
+export interface BuildingSpec {
+  id: string;
+  footprint: Rect;
+  /** Number of storeys (≥1). */
+  floors: number;
+  /** Exterior wall thickness, world units. */
+  wallThickness: number;
+  doorways?: BuildingDoorway[];
+  /** Auto-generate a stairway connecting each storey. Defaults to true when
+   *  floors > 1; set false to place stairs by hand as `structures`. */
+  stairs?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // NPCs — AI-driven inhabitants of the world
@@ -146,7 +294,7 @@ export interface NpcPersonaSpec {
 
 /**
  * An AI-driven inhabitant of the world. In the sim it is just an avatar whose
- * steering aim comes from an NpcController (shared/social-world/npc-controller.ts)
+ * steering aim comes from an NpcController (shared/world-engine/npc-controller.ts)
  * instead of a pointer — so it networks and renders exactly like a player. Its
  * persona drives the social brain (Phase 2); its behavior drives its body.
  */
@@ -185,9 +333,15 @@ export interface WorldSpec {
   manifold: ManifoldSpec;
   terrain: TerrainSpec;
   spawns: SpawnSpec[];
-  toys: ToySpec[];
+  objects: ObjectSpec[];
+  /** Static collision geometry (walls + doors + stairs). Optional; the engine
+   *  derives a MoveConstraint from it and composes it with any external one. */
+  structures?: StructureSpec[];
+  /** Multi-storey enclosures. `expandWorldBuildings` lowers each into perimeter
+   *  structures; the renderer draws slabs/roof + the overhead floor-fade. */
+  buildings?: BuildingSpec[];
   /** AI-driven inhabitants. Optional (most worlds have none). Hosted by exactly
-   *  one peer at runtime — see shared/social-world/world-host.ts. */
+   *  one peer at runtime — see shared/world-engine/world-host.ts. */
   npcs?: NpcSpec[];
   multiplayer: MultiplayerSpec;
   content: ContentSpec;
@@ -198,7 +352,13 @@ export interface WorldSpec {
 // ---------------------------------------------------------------------------
 
 export const WORLD_MAX_SPAWNS = 16;
-export const WORLD_MAX_TOYS = 32;
+export const WORLD_MAX_OBJECTS = 32;
+/** Walls + doors + stairs. A building expands into several of these, so the cap
+ *  is generous. */
+export const WORLD_MAX_STRUCTURES = 128;
+export const WORLD_MAX_BUILDINGS = 16;
+/** Max storeys in one building. */
+export const WORLD_MAX_FLOORS = 8;
 /** Each NPC is hosted + voiced (a live social session) on one peer; keep the
  *  count low so a single host can drive them all. */
 export const WORLD_MAX_NPCS = 8;

@@ -5,9 +5,10 @@
 // Space3D … later") and the world-engine's reserved `ContentKind: "goal-tree"`
 // ("embed via Space"). It is the headless half of the Phase-0 merge spike:
 //
-//   • locomotion is the world engine's — the avatar moves by the same gaze→aim
-//     "arrive" steering a sandbox world uses (engine.steerAvatar), in the SAME
-//     ground coordinates, so a quest plays with the social world's 3D feel;
+//   • locomotion is the world engine's — the avatar is driven by runWorldHost
+//     (the SAME per-frame loop the social world uses), constrained by the quest
+//     walls (makeWallConstraint). Space3D no longer runs its own tick; the engine
+//     owns movement and Space3D only supplies the wall constraint + detection;
 //   • the quest runtime is UNCHANGED — Space3D feeds it the same SpaceInput
 //     (enter-zone / pick-item / touch-figure / touch-door) and applies the same
 //     SpaceCommand (unlock-passage / collect-item) as Space2D. The reducer,
@@ -30,13 +31,10 @@ import type { Layout2D, Rect, Vec2 } from "./layout2d.js";
 import { dist, rectCenter, rectContains } from "./layout2d.js";
 import type { LogicalWorld } from "./logical-world.js";
 import type { SpaceCommand, SpaceInput } from "./space.js";
-import type { WorldSpec } from "../world-engine/types.js";
-import {
-  createWorldState,
-  steerAvatar,
-  type MoveConstraint,
-  type WorldState,
-} from "../world-engine/engine.js";
+import type { GoalTreeGame, TransportRelation } from "./types.js";
+import { walkGoalTree } from "./walk.js";
+import type { ObjectSpec, WorldSpec } from "../world-engine/types.js";
+import type { MoveConstraint } from "../world-engine/engine.js";
 
 /** The single local avatar id Space3D drives. */
 export const PLAYER_ID = "player";
@@ -108,12 +106,117 @@ export function embedLayoutInWorld(layout: Layout2D): WorldEmbedding {
     },
     terrain: { kind: "flat" },
     spawns: [{ id: "spawn", x: translated.spawn.x, y: translated.spawn.y }],
-    toys: [],
+    objects: [],
     multiplayer: { maxPlayers: 1, authority: "distributed" },
     content: { kind: "sandbox" },
   };
 
   return { spec, layout: translated };
+}
+
+// ---------------------------------------------------------------------------
+// Transport puzzles: world objects placed in a transport node's zone
+// ---------------------------------------------------------------------------
+
+/** A transport puzzle's runtime handles: the carry object(s) + their destination
+ *  container, and the node that completes when the TARGET lands on it. */
+export interface TransportPlacement {
+  nodeId: string;
+  /** World id of the TARGET carryable — the one that completes the beat. */
+  objectId: string;
+  /** World ids of WRONG carryables (selection beats); empty for plain transport. */
+  distractorObjectIds: string[];
+  destId: string;
+  relation?: TransportRelation;
+  /** Composed glyph of the wanted item, for a selection beat — the player shows
+   *  it as a bubble over the destination ("bring THIS here"). Absent for a plain
+   *  single-object transport. */
+  wantGlyph?: string;
+}
+
+export interface TransportObjects {
+  /** World-engine objects to add to the embedded WorldSpec (carryables + container). */
+  objects: ObjectSpec[];
+  placements: TransportPlacement[];
+}
+
+/**
+ * Materialize each `transport` node's carryable(s) and destination CONTAINER as
+ * real world-engine objects in the node's (translated) zone. A selection beat
+ * (the node has `distractorEntityIds`) fans the target + distractors as a row of
+ * carryables; the destination shows the TARGET's icon, so "bring the matching
+ * one" reads with no words. The player adds `objects` to the embedded WorldSpec
+ * and watches `placements` to know when the target lands (→ place-object) or a
+ * distractor lands (→ decline + carry-again).
+ */
+export function buildTransportObjects(
+  game: GoalTreeGame,
+  world: LogicalWorld,
+  layout: Layout2D,
+): TransportObjects {
+  const entityOf = (entityId: string) => game.entities.find((e) => e.id === entityId);
+  const iconOf = (entityId: string): string | undefined => entityOf(entityId)?.iconRef;
+
+  const objects: ObjectSpec[] = [];
+  const placements: TransportPlacement[] = [];
+  for (const { node } of walkGoalTree(game.root)) {
+    if (node.type !== "transport") continue;
+    const rect = layout.zones.find((z) => z.zoneId === world.sites[node.id])?.rect;
+    if (!rect) continue;
+
+    const objectId = `obj_${node.id}`;
+    const destId = `dest_${node.id}`;
+    const distractorIds = (node.distractorEntityIds ?? []).map((_, i) => `${objectId}_d${i}`);
+
+    // Carryables fanned across the lower band of the zone, well separated so each
+    // can be dwell-selected on its own.
+    const carry: { id: string; iconRef?: string }[] = [
+      { id: objectId, iconRef: iconOf(node.objectEntityId) },
+      ...(node.distractorEntityIds ?? []).map((eid, i) => ({ id: distractorIds[i]!, iconRef: iconOf(eid) })),
+    ];
+    const n = carry.length;
+    const x0 = rect.x + 1.6;
+    const span = Math.max(0, rect.w - 3.2);
+    const cyCarry = rect.y + rect.h * 0.34;
+    carry.forEach((c, i) => {
+      const x = n === 1 ? rect.x + rect.w * 0.5 : x0 + (span * i) / (n - 1);
+      objects.push({
+        id: c.id,
+        x,
+        y: cyCarry,
+        shape: "box",
+        radius: 0.45,
+        interactions: ["carry"],
+        ...(c.iconRef ? { iconRef: c.iconRef } : {}),
+      });
+    });
+
+    // Destination shows its OWN icon (a basket/recipient) — NEVER a clone of the
+    // item, so a recipient never wears the item's face. For a selection beat the
+    // wanted item is communicated by a glyph bubble over it (the player draws it).
+    const destIcon = iconOf(node.destEntityId);
+    const wantGlyph = distractorIds.length ? entityOf(node.objectEntityId)?.glyph : undefined;
+    objects.push({
+      id: destId,
+      x: rect.x + rect.w * 0.5,
+      y: rect.y + rect.h * 0.74,
+      shape: "box",
+      radius: 1.0,
+      interactions: [],
+      contains: [{ relation: node.relation ?? "on" }],
+      ...(destIcon ? { iconRef: destIcon } : {}),
+    });
+
+    placements.push({
+      nodeId: node.id,
+      objectId,
+      distractorObjectIds: distractorIds,
+      destId,
+      relation: node.relation,
+      ...(wantGlyph ? { wantGlyph } : {}),
+    });
+  }
+  return { objects, placements };
 }
 
 // ---------------------------------------------------------------------------
@@ -139,8 +242,6 @@ export const SPACE3D_DEFAULTS: Space3DConfig = {
 };
 
 export interface Space3DState {
-  /** The world-engine sim; the avatar (PLAYER_ID) lives in here. */
-  world: WorldState;
   /** Last zone the avatar registered as entering. */
   zoneId: string;
   /** Passages opened by the runtime (unguarded ones start open). */
@@ -153,24 +254,14 @@ export interface Space3DState {
   time: number;
 }
 
-export interface Space3DTickResult {
-  state: Space3DState;
-  inputs: SpaceInput[];
-}
-
-export function createSpace3DState(
-  embedding: WorldEmbedding,
-  world: LogicalWorld,
-): Space3DState {
+export function createSpace3DState(world: LogicalWorld): Space3DState {
   const unlocked: Record<string, true> = {};
   for (const passage of world.passages) {
     if (passage.guards.length === 0) unlocked[passage.id] = true;
   }
-  const ws = createWorldState(embedding.spec, PLAYER_ID, 0);
-  const a = ws.avatars[PLAYER_ID];
+  // The avatar spawns at layout.spawn, which is inside the start zone.
   return {
-    world: ws,
-    zoneId: zoneAt(embedding.layout, { x: a.x, y: a.y }) ?? world.startZoneId,
+    zoneId: world.startZoneId,
     unlocked,
     removed: {},
     inPickRadius: {},
@@ -201,43 +292,44 @@ export function applySpace3DCommand(
 }
 
 // ---------------------------------------------------------------------------
-// Tick: locomotion (world engine) + proximity detection (→ SpaceInput)
+// Locomotion seam: a wall constraint the host applies to engine movement
 // ---------------------------------------------------------------------------
 
-export interface Space3DControl {
-  /** Gaze/pointer aim in world (ground) coordinates, or null to coast to rest. */
-  aim: Vec2 | null;
+/**
+ * The quest's walls as an engine MoveConstraint: zone interiors + currently-open
+ * doors are walkable, locked doors solid. The `walkable` closure reads the live
+ * `state.unlocked`, so a door that opens becomes passable immediately. The host
+ * (runWorldHost) applies it to the avatar's locomotion — Space3D no longer runs
+ * its own tick; the engine owns movement.
+ */
+export function makeWallConstraint(layout: Layout2D, state: Space3DState): MoveConstraint {
+  return { walkable: (p, r) => walkableInLayout(layout, state.unlocked, p, r) };
 }
 
-export function tickSpace3D(
+// ---------------------------------------------------------------------------
+// Detection: per-frame proximity → SpaceInput (called from the host's onFrame)
+// ---------------------------------------------------------------------------
+
+/**
+ * Edge-triggered proximity detection against the avatar's CURRENT position,
+ * producing the same SpaceInput the runtime consumes. Walls already keep the
+ * avatar away from content in an unopened room, so this is plain proximity. `dt`
+ * advances the door-cooldown clock.
+ */
+export function detectSpace3D(
   layout: Layout2D,
   state: Space3DState,
-  control: Space3DControl,
+  pos: Vec2,
   dt: number,
   config: Space3DConfig = SPACE3D_DEFAULTS,
-): Space3DTickResult {
-  // Locomotion is the world engine's "arrive" steering, now CONSTRAINED by the
-  // quest's walls: zone interiors + currently-open doors are walkable, locked
-  // doors are solid. The engine slides the avatar along them. Mutates the avatar
-  // in place (engine sims own their state).
-  const constraint: MoveConstraint = {
-    walkable: (p, r) => walkableInLayout(layout, state.unlocked, p, r),
-  };
-  steerAvatar(state.world, PLAYER_ID, control.aim, dt, undefined, constraint);
+): SpaceInput[] {
   state.time += Math.max(0, dt);
-
   const inputs: SpaceInput[] = [];
-  const a = state.world.avatars[PLAYER_ID];
-  const pos: Vec2 = { x: a.x, y: a.y };
-
-  // Detection is plain proximity now — walls already prevent the avatar from
-  // getting near content in a room it hasn't opened.
   detectZoneChange(layout, state, pos, inputs);
   detectItemPickups(layout, state, pos, config, inputs);
   detectFigureTouches(layout, state, pos, config, inputs);
   detectDoorTouches(layout, state, pos, config, inputs);
-
-  return { state, inputs };
+  return inputs;
 }
 
 // ---------------------------------------------------------------------------

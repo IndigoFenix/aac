@@ -22,13 +22,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Vec2, WorldNetMessage, WorldSpec } from "../world-engine/index.js";
-import type { NpcEngagement, NpcProximity } from "./npc-controller.js";
+import type { NpcEngagement, NpcProximity } from "../world-engine/npc-controller.js";
 import type { WorldPresence } from "./world-presence.js";
 import { getWorldSpec, socialFieldSpec } from "../world-engine/specs/index.js";
 import { createWorld2DView, type WorldView } from "../world-engine/world-view.js";
 import { createWorld3DView } from "../world-engine/render3d.js";
 import { cloneWorldTunables, type WorldTunables } from "../world-engine/world-tunables.js";
-import { runWorldHost } from "./world-host.js";
+import { runWorldHost } from "../world-engine/world-host.js";
 import { WorldRenderClient, supportsOffscreenRender } from "./world-render-client.js";
 import WorldDebugPanel from "./WorldDebugPanel";
 

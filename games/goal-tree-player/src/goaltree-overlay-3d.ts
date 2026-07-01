@@ -66,7 +66,6 @@ const CUE_SECONDS = 1.3; // default per-cue duration
 const DEMO_LINGER = 1.6; // hold the final state + glyph before clearing
 const PROP_Y = 1.35; // height of demonstration props
 const PROP_GAP = 1.9; // spacing between distinct props
-const LABEL_Y = 3.3; // height of the floating glyph label
 
 const smooth = (t: number): number => {
   const c = Math.min(1, Math.max(0, t));
@@ -92,7 +91,6 @@ interface DemoRun {
   elapsed: number;
   total: number;
   steps: DemoStep[];
-  label: THREE.Sprite;
   objects: THREE.Object3D[];
   disposables: { dispose(): void }[];
 }
@@ -195,15 +193,10 @@ export class GoalTreeOverlay3D implements SceneOverlay {
       cursor += duration;
     }
 
-    const labelText = cmd.contrastGlyph
-      ? `${cmd.targetGlyph}  ↔  ${cmd.contrastGlyph}`
-      : cmd.targetGlyph;
-    const label = this.makeLabelSpriteInto(labelText, disposables);
-    label.position.set(center.x, LABEL_Y, center.z);
-    this.group.add(label);
-    objects.push(label);
-
-    this.runs.push({ elapsed: 0, total: cursor, steps, label, objects, disposables });
+    // The glyph CAPTION is drawn by the engine's unified world bubble (the player
+    // calls showWorldBubble over the stage) — not here — so it uses the same path
+    // as character/remote speech. The overlay only animates the cue props.
+    this.runs.push({ elapsed: 0, total: cursor, steps, objects, disposables });
   }
 
   /** Pre-create a cue's transient sprites (revealed by opacity in advanceRuns). */
@@ -259,11 +252,6 @@ export class GoalTreeOverlay3D implements SceneOverlay {
         const t = smooth((run.elapsed - step.start) / step.duration);
         this.applyStep(step, t);
       }
-
-      // The glyph fades in quickly, holds, then fades out during the linger.
-      const fadeIn = smooth(run.elapsed / 0.3);
-      const fadeOut = 1 - smooth((run.elapsed - run.total) / DEMO_LINGER);
-      (run.label.material as THREE.SpriteMaterial).opacity = Math.min(fadeIn, fadeOut);
 
       if (run.elapsed >= run.total + DEMO_LINGER) {
         this.disposeRun(run);
@@ -400,40 +388,6 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     return sprite;
   }
 
-  /** A glyph caption: text on a rounded card, billboarded over the stage. */
-  private makeLabelSpriteInto(text: string, sink: { dispose(): void }[]): THREE.Sprite {
-    const fontPx = 64;
-    const padX = 28;
-    const measure = document.createElement("canvas").getContext("2d");
-    if (measure) measure.font = `bold ${fontPx}px sans-serif`;
-    const textW = measure ? measure.measureText(text).width : text.length * fontPx * 0.6;
-    const w = Math.ceil(textW + padX * 2);
-    const h = fontPx + padX * 2;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      roundRect(ctx, 0, 0, w, h, 22);
-      ctx.fill();
-      ctx.fillStyle = "#0f172a";
-      ctx.font = `bold ${fontPx}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(text, w / 2, h / 2);
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    const worldH = 0.9;
-    sprite.scale.set((worldH * w) / h, worldH, 1);
-    sprite.renderOrder = 30;
-    sink.push(tex, mat);
-    return sprite;
-  }
-
   /** A soft warm/cool radial halo (hot/cold). */
   private makeHaloSpriteInto(
     tone: "warm" | "cool",
@@ -461,22 +415,4 @@ export class GoalTreeOverlay3D implements SceneOverlay {
     sink.push(tex, mat);
     return sprite;
   }
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
 }

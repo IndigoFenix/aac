@@ -24,6 +24,9 @@ interface DynamicBoardProps {
   symbolUpdate?: { buttonLabel: string; symbolPath: string } | null;
   /** AI pressed a navigation button — navigate to target page */
   aiButtonPress?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: BoardButton[] } | null;
+  /** Button id a remote clinician is hovering on their mirrored view (their
+   *  "cursor") — ringed so the student sees where the clinician is pointing. */
+  highlightButtonId?: string | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
   onBack?: () => void;
   /** Called when user or AI navigates to a different page within a multi-page board */
@@ -143,6 +146,7 @@ export default function DynamicBoard({
   boardPatch,
   symbolUpdate,
   aiButtonPress,
+  highlightButtonId,
   onButtonClick,
   onBack,
   onNavigate,
@@ -603,7 +607,10 @@ export default function DynamicBoard({
       );
     }
 
-    const borderClass = isGuessButton
+    // A clinician hovering this button on their mirrored view rings it so the
+    // student sees the clinician's "cursor".
+    const cursorRing = highlightButtonId && button.id === highlightButtonId ? "ring-4 ring-sky-400 " : "";
+    const borderClass = cursorRing + (isGuessButton
       ? "border-amber-400 border-2 ring-2 ring-amber-300/50"
       : isSuggestionButton
       ? "border-violet-400 border-2 ring-2 ring-violet-300/40"
@@ -615,7 +622,7 @@ export default function DynamicBoard({
       ? "border-blue-400 border-2"
       : isBackButton
         ? "border-amber-400 border-2"
-        : "border-gray-200";
+        : "border-gray-200");
 
     // Special META buttons (wordfinder, more) — the AI sets `buttonType` on
     // a regular button in rebuild_board / add_board_button to mark it.
@@ -636,6 +643,7 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
+          data-mirror-id={button.id}
           data-testid={`board-${kind}`}
           key={`btn-${kind}-${index}`}
           initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
@@ -665,6 +673,7 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
+          data-mirror-id={button.id}
           key={`btn-${button.label}-${index}`}
           initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -698,6 +707,7 @@ export default function DynamicBoard({
         button={button}
         onClick={() => handleButtonClick(button)}
         borderClassName={borderClass}
+        extraButtonProps={{ "data-mirror-id": button.id }}
         getFaceImage={getFaceImage ?? undefined}
         iconFontSize={iconFontSize}
         textFontSize={textFontSize}

@@ -140,6 +140,10 @@ interface CallContextValue {
   sendData: (message: CallDataMessage) => void;
   /** Latest facilitator press from a clinician (dedup on `.at`), or null. */
   facilitatorPress: FacilitatorPressMessage | null;
+  /** Button id the clinician is hovering (their cursor), or null — highlight it. */
+  peerDwellId: string | null;
+  /** True while this device is sharing its screen (clinician requested it). */
+  screenSharing: boolean;
   /** Fan-out of inbound peer world messages (fed by the CallClient). */
   worldHub: CallWorldHub;
   /** Broadcast an NPC-conversation message over the reliable `call:npc` relay. */
@@ -190,9 +194,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // home consumes it (dedup on `at`) and routes it through the student's own
   // press pipeline — gated by a per-student consent flag.
   const [facilitatorPress, setFacilitatorPress] = useState<FacilitatorPressMessage | null>(null);
+  // Button id the clinician is hovering on their mirrored view — highlighted on
+  // the student's real board so they see the clinician's "cursor".
+  const [peerDwellId, setPeerDwellId] = useState<string | null>(null);
   // The participant currently speaking (loudest remote stream) — drives the
   // "auto" large-video layout.
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  // True while this device is sharing its screen (clinician-requested).
+  const [screenSharing, setScreenSharing] = useState(false);
   // Inbound world-message fan-out for the mounted CallGameSurface.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
@@ -222,6 +231,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setRemoteStreams(new Map());
     setGameState(null);
     setPeerGains(new Map());
+    setScreenSharing(false);
     pendingGameRef.current = null;
     worldHubRef.current.clear();
     npcHubRef.current.clear();
@@ -342,9 +352,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // Remote media-state unused by the AAC call UI.
         break;
       case "data": {
-        // The clinician can facilitate a button press on the mirrored board.
+        // The clinician can facilitate a button press on the mirrored board,
+        // share where their cursor is hovering (board-dwell), and ask the student
+        // device to share its screen (screen-request).
         const m = parseCallDataMessage(event.message);
         if (m?.k === "facilitator-press") setFacilitatorPress(m);
+        else if (m?.k === "board-dwell") setPeerDwellId(m.buttonId);
+        else if (m?.k === "screen-request") {
+          if (m.on) {
+            clientRef.current?.startScreenShare()
+              .then(() => setScreenSharing(true))
+              .catch((err) => console.warn("[CallContext] screen share denied:", err));
+          } else {
+            clientRef.current?.stopScreenShare();
+            setScreenSharing(false);
+          }
+        }
         break;
       }
     }
@@ -672,6 +695,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     sendWorld,
     sendData,
     facilitatorPress,
+    peerDwellId,
+    screenSharing,
     worldHub: worldHubRef.current,
     sendNpc,
     npcHub: npcHubRef.current,
@@ -684,7 +709,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, activeContact,
     error, audioEnabled, videoEnabled, contacts, contactsLoading, refreshContacts,
     startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
-    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, sendNpc,
+    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, peerDwellId, screenSharing, sendNpc,
     publishPresence, getAudibleIds, peerGains, activeSpeakerId,
   ]);
 

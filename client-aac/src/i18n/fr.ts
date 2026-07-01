@@ -756,6 +756,20 @@ export const fr: Translations = {
     title: "Applications",
     empty: "Aucune application activée.",
     starting: "Démarrage…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "Appel téléphonique",
+      spotify: "Spotify",
+      drawing: "Dessin",
+      music: "Créateur de musique",
+      sandbox_game: "Ferme bac à sable",
+      bubbles_game: "Bulles",
+      social_trainer: "Entraîneur social",
+      space_trader: "Marchand de l'espace",
+      musical_microbes: "Microbes musicaux",
+      social_world: "Jouer avec des amis",
+      symbol_learning: "Apprendre les symboles",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const fr: Translations = {
     bigVideo: "Grande vidéo",
     smallVideo: "Petite vidéo",
     noOneElse: "Personne d’autre n’est là pour l’instant",
+    screenSharing: "Partage de votre écran",
     incoming: "Appel entrant",
     accept: "Oui",
     decline: "Non",

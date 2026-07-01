@@ -64,7 +64,8 @@ export default function BubbleTest3D() {
         last = now;
         // Keep the bubble fresh: hold sim time within the bubble TTL window.
         state.time = 1.0;
-        state.avatars.me.say!.at = 0.5;
+        const bub = state.bubbles["speech:me"];
+        if (bub) bub.at = 0.5;
         view.render(state, dt);
         raf = requestAnimationFrame(loop);
       };

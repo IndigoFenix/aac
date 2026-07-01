@@ -756,6 +756,20 @@ export const zh: Translations = {
     title: "应用",
     empty: "未启用任何应用程序。",
     starting: "正在启动…",
+    appNames: {
+      youtube: "YouTube",
+      phone_call: "打电话",
+      spotify: "Spotify",
+      drawing: "绘画",
+      music: "音乐制作",
+      sandbox_game: "沙盒农场",
+      bubbles_game: "泡泡",
+      social_trainer: "社交训练",
+      space_trader: "太空商人",
+      musical_microbes: "音乐微生物",
+      social_world: "和朋友一起玩",
+      symbol_learning: "学习符号",
+    },
   },
 
   call: {
@@ -777,6 +791,7 @@ export const zh: Translations = {
     bigVideo: "大视频",
     smallVideo: "小视频",
     noOneElse: "还没有其他人",
+    screenSharing: "正在共享你的屏幕",
     incoming: "来电",
     accept: "是",
     decline: "否",

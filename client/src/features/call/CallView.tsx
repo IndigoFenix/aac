@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, LayoutDashboard, Hand } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, LayoutDashboard, Hand, MonitorUp } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { GameJsonEditor } from "./GameJsonEditor";
 import { MirroredBoardView } from "./MirroredBoardView";
@@ -94,6 +94,9 @@ export function CallView() {
     mirroredDwell,
     mirroredSelection,
     sendData,
+    screenStreams,
+    screenRequested,
+    requestScreenShare,
   } = useCall();
   const [invitePopupOpen, setInvitePopupOpen] = useState(false);
   // Multi-participant video layout (spotlight / grid / compact / auto) + the
@@ -197,6 +200,15 @@ export function CallView() {
   // has arrived. Dropping out of board view also disarms Interact.
   const canViewBoard = !!mirroredBoard;
 
+  // Inbound screen-share (getDisplayMedia) from the student, when present.
+  const screenStream = useMemo(() => {
+    const first = screenStreams.values().next();
+    return first.done ? null : first.value;
+  }, [screenStreams]);
+  const attachScreen = useCallback((el: HTMLVideoElement | null) => {
+    if (el && el.srcObject !== screenStream) el.srcObject = screenStream;
+  }, [screenStream]);
+
   if (callState === "idle") return null;
 
   const isConnecting = callState === "ringing-out" || callState === "connecting";
@@ -276,7 +288,7 @@ export function CallView() {
 
       {/* Video layout picker — when viewing the multi-participant video (not the
           mirrored board, not a game). Click a mode to re-arrange the tiles. */}
-      {isActive && !game && !viewBoard && videoTiles.length > 0 && (
+      {isActive && !game && !viewBoard && !screenStream && videoTiles.length > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-2 px-4 pt-2 pb-1">
           <span className="me-1 text-xs uppercase tracking-wide text-white/60">{t("call.layout.label")}</span>
           {VIDEO_LAYOUT_MODES.map((m) => (
@@ -328,12 +340,24 @@ export function CallView() {
               <MirroredBoardView
                 board={mirroredBoard.board}
                 pageId={mirroredBoard.pageId}
+                rtl={mirroredBoard.rtl}
+                contextButtons={mirroredBoard.contextButtons}
+                quickButtons={mirroredBoard.quickButtons}
                 dwellId={mirroredDwell}
                 selection={mirroredSelection}
                 interactive={interactArmed}
                 onPress={facilitate}
+                onHover={(buttonId) => sendData({ k: "board-dwell", buttonId, at: Date.now() })}
                 className="h-full w-full"
               />
+            ) : screenStream ? (
+              <div className="relative h-full w-full">
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live screen-share feed */}
+                <video ref={attachScreen} autoPlay playsInline muted className="h-full w-full object-contain" aria-label={t("call.screenLabel")} />
+                <div className="absolute top-2 start-2 rounded bg-sky-600/90 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+                  {t("call.screenLabel")}
+                </div>
+              </div>
             ) : videoTiles.length > 0 ? (
               <VideoTileLayout
                 tiles={videoTiles}
@@ -500,6 +524,22 @@ export function CallView() {
             data-testid="call-toggle-view-board"
           >
             <LayoutDashboard className="w-5 h-5" />
+          </Button>
+        )}
+
+        {/* Ask the student device to share its real screen (getDisplayMedia) —
+            for anything the board mirror can't show. */}
+        {isActive && !game && (
+          <Button
+            type="button"
+            size="icon"
+            variant={screenRequested ? "default" : "secondary"}
+            onClick={() => requestScreenShare(!screenRequested)}
+            aria-label={screenRequested ? t("call.stopShareScreen") : t("call.shareScreen")}
+            aria-pressed={screenRequested}
+            data-testid="call-toggle-screen-share"
+          >
+            <MonitorUp className="w-5 h-5" />
           </Button>
         )}
 

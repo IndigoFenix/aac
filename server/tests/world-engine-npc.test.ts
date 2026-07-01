@@ -17,9 +17,9 @@ import {
   type WorldSpec,
 } from "@shared/world-engine/index.js";
 import { socialFieldNpcsSpec, socialFieldSpec } from "@shared/world-engine/specs/index.js";
-import { createNpcController } from "@shared/social-world/npc-controller.js";
-import type { NpcProximity } from "@shared/social-world/npc-controller.js";
-import { runWorldHost } from "@shared/social-world/world-host.js";
+import { createNpcController } from "@shared/world-engine/npc-controller.js";
+import type { NpcProximity } from "@shared/world-engine/npc-controller.js";
+import { runWorldHost } from "@shared/world-engine/world-host.js";
 import type { WorldView } from "@shared/world-engine/world-view.js";
 
 const DT = 1 / 60;

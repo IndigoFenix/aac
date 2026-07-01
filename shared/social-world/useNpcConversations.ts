@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NEUTRAL_FACE, type FaceAppearance, type FaceTarget } from "../social-bot/ProceduralFace";
 import type { NpcSpec } from "../world-engine/index.js";
-import type { NpcEngagement } from "./npc-controller.js";
+import type { NpcEngagement } from "../world-engine/npc-controller.js";
 import { NpcVoicePlayer } from "./npc-voice-player.js";
 import { electNpcOwner, initParams, modeToPull, type ConvMode } from "./npc-conversation-logic.js";
 

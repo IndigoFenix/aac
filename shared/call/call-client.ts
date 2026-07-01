@@ -104,6 +104,7 @@ export class CallClient {
   private incoming: IncomingCall | null = null;
   private mesh: PeerMesh;
   private localStream: MediaStream | null = null;
+  private screenStream: MediaStream | null = null;
   private currentGame: CallGame | null = null;
   private ringTimer: ReturnType<typeof setTimeout> | null = null;
   // Clinician (non-student) conversation-room membership for the call.
@@ -293,6 +294,44 @@ export class CallClient {
   /** Send an AAC extra (utterance text/glyph, pose) over the reliable channel. */
   sendData(message: unknown): void {
     this.mesh.sendData(message);
+  }
+
+  // ---------- Screen share (getDisplayMedia) ----------
+  // The screen is added as an EXTRA outgoing video track (its own MediaStream)
+  // alongside the camera, so it arrives at peers as a SEPARATE `ontrack` stream.
+  // We announce its stream id over the reliable channel so the receiver can tell
+  // the screen apart from the camera (both share the same personId).
+
+  /** True while this client is capturing+sending its screen. */
+  isScreenSharing(): boolean { return !!this.screenStream; }
+
+  /** Begin capturing this device's screen and send it into the call. No-op
+   *  outside a call or if already sharing. Throws if the user denies capture. */
+  async startScreenShare(): Promise<void> {
+    if (!this.call || this.screenStream) return;
+    const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true, audio: false });
+    this.screenStream = stream;
+    const track = stream.getVideoTracks()[0];
+    if (!track) { this.stopScreenShare(); return; }
+    // The user can stop sharing from the browser's own UI — mirror that here.
+    track.addEventListener("ended", () => this.stopScreenShare());
+    this.mesh.addTrack(track, stream);
+    this.sendData({ k: "screen-share", on: true, streamId: stream.id, at: Date.now() });
+  }
+
+  /** Stop capturing/sending the screen. */
+  stopScreenShare(): void {
+    if (!this.screenStream) return;
+    const stream = this.screenStream;
+    this.screenStream = null;
+    for (const t of stream.getVideoTracks()) this.mesh.removeTrack(t);
+    for (const t of stream.getTracks()) t.stop();
+    this.sendData({ k: "screen-share", on: false, streamId: stream.id, at: Date.now() });
+  }
+
+  /** Ask the OTHER side to start/stop sharing their screen (clinician → AAC). */
+  requestScreenShare(on: boolean): void {
+    this.sendData({ k: "screen-request", on, at: Date.now() });
   }
 
   /** Broadcast high-frequency world state over the unreliable channel. Dropped
@@ -552,6 +591,10 @@ export class CallClient {
     }
     this.conversationJoined = false;
     this.mesh.closeAll();
+    if (this.screenStream) {
+      for (const t of this.screenStream.getTracks()) t.stop();
+      this.screenStream = null;
+    }
     if (this.localStream) {
       for (const t of this.localStream.getTracks()) t.stop();
       this.localStream = null;

@@ -31,6 +31,8 @@ export type SpaceInput =
   | { type: "select-option"; nodeId: string; entityId: string }
   /** Player closed the choice panel without answering (walk away & retry). */
   | { type: "cancel-choice"; nodeId: string }
+  /** A transport node's object was placed correctly on its destination. */
+  | { type: "place-object"; nodeId: string }
   /** Player crossed into a zone (flavor/AI context only). */
   | { type: "enter-zone"; zoneId: string };
 

@@ -20,7 +20,7 @@ import type { WorldState } from "./engine.js";
 import { WORLD_ENGINE_DEFAULTS } from "./engine.js";
 import { DEFAULT_INTERACT_TUNABLES, type InteractTunables } from "./world-tunables.js";
 
-export type InteractKind = "toy" | "avatar";
+export type InteractKind = "object" | "avatar";
 
 export interface PickedEntity {
   id: string;
@@ -43,12 +43,12 @@ export function pickEntity(
   let best: PickedEntity | null = null;
   let bestD = Infinity;
 
-  for (const toy of Object.values(state.toys)) {
-    const spec = state.spec.toys.find((t) => t.id === toy.id);
-    const pickR = Math.max(cfg.toyPickRadius, spec?.touchRadius ?? 0);
-    const d = Math.hypot(toy.x - point.x, toy.y - point.y);
+  for (const obj of Object.values(state.objects)) {
+    const spec = state.spec.objects.find((o) => o.id === obj.id);
+    const pickR = Math.max(cfg.toyPickRadius, spec?.push?.touchRadius ?? 0);
+    const d = Math.hypot(obj.x - point.x, obj.y - point.y);
     if (d <= pickR && d < bestD) {
-      best = { id: toy.id, kind: "toy", x: toy.x, y: toy.y };
+      best = { id: obj.id, kind: "object", x: obj.x, y: obj.y };
       bestD = d;
     }
   }
@@ -79,7 +79,7 @@ export function approachAim(
   kind: InteractKind,
   cfg: InteractTunables = DEFAULT_INTERACT_TUNABLES,
 ): Vec2 {
-  if (kind === "toy") return { x: target.x, y: target.y };
+  if (kind === "object") return { x: target.x, y: target.y };
 
   const dx = target.x - avatar.x;
   const dy = target.y - avatar.y;

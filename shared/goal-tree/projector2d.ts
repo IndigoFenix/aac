@@ -64,19 +64,23 @@ export interface Projector2DConfig {
 }
 
 export const PROJECTOR2D_DEFAULTS: Projector2DConfig = {
+  // Rooms are sized so each space comfortably CONTAINS its content (figures +
+  // items + the poser) with room to walk between them — icons are ~1.3 world
+  // units, so separation/margin are scaled to leave a real gap. Enlarged from
+  // the original 10×8 prototype per the symbol-game layout pass.
   zoneSizes: {
-    start: { w: 10, h: 10 },
-    reach: { w: 10, h: 8 },
-    collect: { w: 10, h: 8 },
-    pocket: { w: 6, h: 6 },
+    start: { w: 14, h: 14 },
+    reach: { w: 14, h: 12 },
+    collect: { w: 14, h: 12 },
+    pocket: { w: 9, h: 9 },
   },
   crowdedAt: 6,
-  crowdedSize: { w: 13, h: 11 },
-  margin: 1.3,
-  minSeparation: 1.7,
-  doorLength: 2,
+  crowdedSize: { w: 18, h: 15 },
+  margin: 1.8,
+  minSeparation: 2.4,
+  doorLength: 3,
   doorThickness: 1,
-  doorClearance: 1.6,
+  doorClearance: 2,
   distractorRatio: 0.5,
   distractorMin: 2,
   distractorMax: 4,

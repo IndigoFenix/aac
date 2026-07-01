@@ -146,18 +146,89 @@ export function renderWorld2D(
   ctx.lineWidth = 2;
   ctx.strokeRect(origin.sx, origin.sy, fieldW, fieldH);
 
-  // Toys.
-  for (const toy of Object.values(state.toys)) {
-    const spec = state.spec.toys.find((t) => t.id === toy.id);
+  // Building footprints (top-down can't show storeys — just outline the shell;
+  // its perimeter walls/doors render via the expanded structures below).
+  for (const b of state.spec.buildings ?? []) {
+    const o = worldToScreen(cam, b.footprint.x, b.footprint.y);
+    ctx.fillStyle = "rgba(148,163,184,0.12)";
+    ctx.fillRect(o.sx, o.sy, b.footprint.w * cam.scale, b.footprint.h * cam.scale);
+  }
+
+  // Structures (walls + doors) — under objects/avatars. A wall is a thick capped
+  // line; a door is a leaf hinged at one end, swung open by its live `open`.
+  for (const s of state.spec.structures ?? []) {
+    if (s.kind === "stairs") {
+      // Footprint rect with hatch lines; top-down can't show the rise.
+      const o = worldToScreen(cam, s.rect.x, s.rect.y);
+      const w = s.rect.w * cam.scale;
+      const h = s.rect.h * cam.scale;
+      ctx.fillStyle = "rgba(100,116,139,0.5)";
+      ctx.fillRect(o.sx, o.sy, w, h);
+      ctx.strokeStyle = "rgba(226,232,240,0.7)";
+      ctx.lineWidth = 1;
+      const along = s.axis === "+y" || s.axis === "-y";
+      const steps = 5;
+      ctx.beginPath();
+      for (let i = 1; i < steps; i++) {
+        if (along) { const yy = o.sy + (h * i) / steps; ctx.moveTo(o.sx, yy); ctx.lineTo(o.sx + w, yy); }
+        else { const xx = o.sx + (w * i) / steps; ctx.moveTo(xx, o.sy); ctx.lineTo(xx, o.sy + h); }
+      }
+      ctx.stroke();
+      continue;
+    }
+    const a = worldToScreen(cam, s.a.x, s.a.y);
+    const b = worldToScreen(cam, s.b.x, s.b.y);
+    const lw = Math.max(2, s.thickness * cam.scale);
+    ctx.lineCap = "round";
+    if (s.kind === "wall") {
+      ctx.strokeStyle = "#9ca3af";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.stroke();
+    } else {
+      const open = state.doors[s.id]?.open ?? 0;
+      const locked = state.doors[s.id]?.locked ?? false;
+      const hinge = s.hinge === "b" ? b : a;
+      const other = s.hinge === "b" ? a : b;
+      const len = Math.hypot(other.sx - hinge.sx, other.sy - hinge.sy);
+      const ang = Math.atan2(other.sy - hinge.sy, other.sx - hinge.sx) + open * (Math.PI * 0.55);
+      // Frame slot (where the closed leaf would sit) in faint grey.
+      ctx.strokeStyle = "rgba(156,163,175,0.4)";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.stroke();
+      // The leaf.
+      ctx.strokeStyle = locked ? "#7c2d12" : "#b45309";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(hinge.sx, hinge.sy);
+      ctx.lineTo(hinge.sx + Math.cos(ang) * len, hinge.sy + Math.sin(ang) * len);
+      ctx.stroke();
+    }
+  }
+  ctx.lineCap = "butt";
+
+  // Objects — drawn by shape (sphere → circle, box → square).
+  for (const obj of Object.values(state.objects)) {
+    const spec = state.spec.objects.find((o) => o.id === obj.id);
     const r = (spec?.radius ?? 0.5) * cam.scale;
-    const { sx, sy } = worldToScreen(cam, toy.x, toy.y);
-    ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    const { sx, sy } = worldToScreen(cam, obj.x, obj.y);
     ctx.fillStyle = "#fafafa";
-    ctx.fill();
     ctx.lineWidth = Math.max(2, r * 0.25);
-    ctx.strokeStyle = toy.possessedBy ? colorForId(toy.possessedBy) : "#222";
-    ctx.stroke();
+    ctx.strokeStyle = obj.possessedBy ? colorForId(obj.possessedBy) : "#222";
+    if (obj.shape === "box") {
+      ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+      ctx.strokeRect(sx - r, sy - r, r * 2, r * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   // Avatars (local last so it sits on top). Each is a circle bearing the user's
@@ -224,16 +295,17 @@ export function renderWorld2D(
   }
 
   // Speech bubbles — a second pass so they sit above every body. Constant SCREEN
-  // size (UI-like), positioned just above each speaker's circle; fades out at TTL.
-  for (const id of ids) {
-    const a = state.avatars[id];
-    if (!a.say) continue;
-    const alpha = bubbleAlpha(a.say.at, state.time);
+  // size (UI-like), floated over each bubble's anchor; fades out at its TTL. One
+  // path for networked utterances and in-game character/caption speech alike.
+  for (const b of Object.values(state.bubbles)) {
+    const pos = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id] : b.anchor;
+    if (!pos) continue;
+    const alpha = bubbleAlpha(b.at, state.time, b.ttl);
     if (alpha <= 0) continue;
-    const glyphs = a.say.glyph ? opts.glyphFor?.(a.say.glyph) ?? [] : [];
+    const glyphs = b.glyph ? opts.glyphFor?.(b.glyph) ?? [] : [];
     const aspect = glyphs[0] ? imageAspect(glyphs[0]) : 0;
-    const layout = layoutBubble(ctx, a.say.text, aspect);
-    const { sx, sy } = worldToScreen(cam, a.x, a.y);
+    const layout = layoutBubble(ctx, b.text, aspect);
+    const { sx, sy } = worldToScreen(cam, pos.x, pos.y);
     const r = AVATAR_R * cam.scale;
     ctx.save();
     // Top-left so the bubble is centred over the head, sitting above the circle.
