@@ -81,6 +81,7 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     pcmDebug,
     voiceEnabled,
     micActive,
+    budget,
   } = useDualAgentContext();
   // "Listening" = audio is actively reaching the model: the VAD gate is open on
   // a heard voice/sound, or it's streaming continuously (live audio). Drives the
@@ -108,20 +109,28 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     lastModeChange?.mode === "facilitator" && lastModeChange.source === "ai";
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
 
+  // Token-budget floors (the single cost signal): the avatar shows how "tired"
+  // it is. Low band (<25%) → resting eyes; the deep floor (<10%, where the
+  // Speaker never wakes) → asleep eyes always, even while the board is still
+  // active. Matches the server-side band ladder (agent-coordinator budget throttle).
+  const lowBudget = !!budget && budget.band === "low";
+  const veryLowBudget = !!budget && budget.percent < 10;
+
   const sleepState = attentiveness?.sleepState;
   const isSleepingStateRaw =
-    noSession || sleepState === "hibernation" || sleepState === "asleep";
-  // "rest" eyes mean "the AI isn't taking in live frames right now". Two cases
-  // drive this: (1) the RESTING sleep-state, and (2) text-first perception
-  // fidelity while awake (cost-saving, full-attention OFF) — the AI is awake
-  // but running on cheap signals, not streaming frames. NOT tied to the AI's
-  // standby behavioral mode (that stays visually distinct via the ear state
+    noSession || sleepState === "hibernation" || sleepState === "asleep" || veryLowBudget;
+  // "rest" eyes mean "the AI isn't taking in live frames right now". Cases that
+  // drive this: (1) the RESTING sleep-state, (2) text-first perception fidelity
+  // while awake (cost-saving, full-attention OFF), and (3) the low token-budget
+  // band (<25%) — the AI is tired and running on cheap signals. NOT tied to the
+  // AI's standby behavioral mode (that stays visually distinct via the ear state
   // below; its eyes read as awake/open).
   const isRestingStateRaw =
     !noSession &&
     (sleepState === "resting" ||
       sleepState === "waking" ||
-      attentiveness?.fidelity === "text");
+      attentiveness?.fidelity === "text" ||
+      lowBudget);
 
   // Was the fullscreen overlay visible (sleep- or wake-phase) at the live
   // moment? Used as the snapshot value if an error appears next.

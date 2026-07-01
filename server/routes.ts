@@ -2179,6 +2179,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.resendInvite(req, res)
   );
+  // Admin-managed AAC token-budget settings, reached via the Licenses panel:
+  // a license → its institute's students → each student's budget + usage.
+  app.get("/api/admin/licenses/:id/students", requireAuth, requireAdminSection("licenses"), (req, res) =>
+    licenseController.listLicenseStudents(req, res)
+  );
+  app.get("/api/admin/students/:studentId/budget", requireAuth, requireAdminSection("licenses"), (req, res) =>
+    licenseController.getStudentBudget(req, res)
+  );
+  app.patch("/api/admin/students/:studentId/budget", requireAuth, requireAdminSection("licenses"), (req, res) =>
+    licenseController.updateStudentBudget(req, res)
+  );
 
   // Identity providers
   app.get("/api/admin/identity-providers", requireAuth, requireAdminSection("identity-providers"), (req, res) =>

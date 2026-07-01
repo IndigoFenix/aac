@@ -727,7 +727,8 @@ export type ClientMessage =
   | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
   | { type: "social_trainer_peer_said"; text: string }                  // SocialBot peer just spoke — server composes the per-turn context
   | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string } // SocialBot session ended — server composes the debrief
-  | { type: "social_peer_reconfigure"; params: import("@shared/social-bot/debug").SocialPeerParams }; // DEBUG-only: restart the social peer with fully custom parameters
+  | { type: "social_peer_reconfigure"; params: import("@shared/social-bot/debug").SocialPeerParams } // DEBUG-only: restart the social peer with fully custom parameters
+  | { type: "debug_set_budget"; percent: number }; // DEBUG-only: slam the in-memory budget to `percent` (all windows) + re-push/re-throttle, for testing the throttle ladder without editing the DB
 
 /** Messages from server → client */
 /** Pre-`initialized` startup phases, surfaced to the client as a localized

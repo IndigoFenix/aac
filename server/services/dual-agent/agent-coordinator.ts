@@ -149,13 +149,8 @@ function estimateWavSeconds(buf: Buffer): number {
   }
 }
 import {
-  initEnergy,
-  applyCharge,
-  energyPercent,
-  energyBand,
   energyCostPercent,
   minutesToEmpty,
-  type EnergyState,
   type EnergyConfig,
   type EnergyBand,
 } from "@shared/aac/energy-meter";
@@ -163,7 +158,6 @@ import {
   initBudget,
   applyBudgetCharge,
   bindingEnergy,
-  worseBand,
   type BudgetState,
   type BudgetWindow,
 } from "@shared/aac/budget-meter";
@@ -937,43 +931,45 @@ export class AgentCoordinator {
   private knownNamePhrases: string[] | null = null;
   private knownNamePhrasesAt = 0;
 
-  /** Phase 4 energy meter: a regenerating drain fed by live-agent charges, used
-   *  to give the Observer a cost-aware signal. Reset at session init. */
-  private energy: EnergyState = { drain: 0, asOf: 0 };
+  /** The SINGLE cost signal is the persistent money budget (`bindingEnergy` over
+   *  `budgetWindows`, below) — there is no separate per-session meter. The
+   *  Observer/Speaker still experience it as "energy/tiredness" (the [ENERGY]
+   *  note + the <energy> prompt framing), but the number they see IS the money
+   *  budget's binding-window %. `lastEnergyBand` / `lastReportedEnergyPercent`
+   *  track what we last told the Observer so recovery is reported when the %
+   *  climbs >=1 above the last, and drains lower it silently. */
   private lastEnergyBand: EnergyBand | null = null;
-  /** Last energy % we actually told the Observer. Recovery is reported when the
-   *  live % climbs >=1 above this; drains lower it silently so the next recovery
-   *  is measured from the recent low. */
   private lastReportedEnergyPercent = 100;
-  /** Periodic recompute so passive regeneration (recovery during quiet stretches,
-   *  when no charge fires) still reaches the Observer. */
+  /** Periodic recompute so passive regeneration during quiet stretches (no
+   *  charge to trigger it) still reaches the Observer and re-drives the throttle. */
   private energyTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly ENERGY_TICK_MS = 15_000;
-  private readonly energyConfig: EnergyConfig = {
-    // $3 reservoir, regenerating $1/hr → a full empty→full recovery takes 3h
-    // and ~$1/hr is the break-even observation spend. Credits are 1:1 USD.
-    ceiling: Number(process.env.AAC_ENERGY_CEILING) || 3,
-    perHour: Number(process.env.AAC_ENERGY_PER_HOUR) || 1,
-  };
-  /** Energy governance is active whenever economizing. */
-  private get energyMeterEnabled(): boolean {
-    return this.economize;
-  }
+  /** Wall-clock of the last worthwhile OBSERVER activity (a transcript() or a
+   *  meaningful update_context) — resets the low-band sleep timer alongside real
+   *  engagement, so a session where the Observer is actively transcribing an
+   *  in-person exchange doesn't sleep out from under it. See maybeIdleTransition. */
+  private lastObservationActivityAt = 0;
 
-  /** Persistent multi-window budget meter (the layer above the per-session
-   *  energy meter). Survives across sessions, bounds MONTHLY spend, and its
-   *  binding (tightest) window drives the throttle ladder. Loaded from
-   *  students.budgetMeters at init, charged alongside the energy meter, and
-   *  persisted (debounced + on close). Active whenever economizing.
-   *  See planning-docs/aac-budget-tiers-spec.md. */
+  /** Persistent multi-window budget meter — the SINGLE cost signal. Survives
+   *  across sessions, bounds MONTHLY spend, and its binding (tightest) window %
+   *  is both the level the AI sees (as [ENERGY]) and what drives the throttle
+   *  ladder. Loaded from students.budgetMeters at init, charged via the universal
+   *  ledger hook, and persisted (debounced + on close). Active whenever
+   *  economizing. See planning-docs/aac-budget-tiers-spec.md. */
   private budgetTier: BudgetTier = tierByKey(undefined);
   private budgetWindows: BudgetWindow[] = [];
   private budgetState: BudgetState = {};
   private budgetDirty = false;
   private lastBudgetSaveAt = 0;
-  /** Last budget binding-band we told the Observer, so a [BUDGET] note fires
-   *  only on a band change (cheap), mirroring the [ENERGY] pattern. */
-  private lastBudgetBand: EnergyBand | null = null;
+  /** True while the Speaker has been told it's tired (low band, <25%) so it acts
+   *  tired and keeps replies brief. Dedups the inject/lift so we message it only
+   *  on the transition; re-applied to a freshly-rebuilt Speaker (primeFreshSpeaker). */
+  private budgetSpeakerTiredActive = false;
+  /** Set when a drop into the low band wanted to force the economy Observer
+   *  backend but the AI was mid-sentence — the switch (a full Observer rebuild)
+   *  is deferred to the next idle boundary (onSpeakerSpeechEnd) so it never cuts
+   *  a sentence, then lands the moment it's not busy. */
+  private economySwitchPendingIdle = false;
   /** Unsubscribe from the ledger charge hook (every session charge → budget). */
   private budgetChargeUnsub: (() => void) | null = null;
   /** Last binding budget % pushed to the client's energy bar; -1 = never sent.
@@ -982,6 +978,14 @@ export class AgentCoordinator {
   /** Debounce floor for persisting budget state on a charge (a final flush
    *  always runs on cleanup, so an in-flight debounce can't lose the tail). */
   private static readonly BUDGET_SAVE_MIN_INTERVAL_MS = 30_000;
+  /** Band floors on the budget binding %. Below SPEAKER_SLEEP the Speaker never
+   *  wakes (board-only presence — economy Observer + HTTP board still run so the
+   *  student can press buttons and stay monitored); at/below SHUTDOWN all STT +
+   *  LLM stop entirely (nothing but the budget regenerating while idle). The
+   *  low band (<25%, energyBand "low") additionally forces the Observer to its
+   *  cheap HTTP backend + the budget-scaled sleep timer + a tired Speaker. */
+  private static readonly BUDGET_SPEAKER_SLEEP_PERCENT = 10;
+  private static readonly BUDGET_SHUTDOWN_PERCENT = 0;
   /** The meter ACCUMULATES + PERSISTS whenever economizing — harmless, and it
    *  builds the real per-student spend curve we validate tiers against before
    *  enabling the throttle fleet-wide. */
@@ -1016,9 +1020,32 @@ export class AgentCoordinator {
    *  tier (Phase 5.1) to cut the per-turn re-billing of the running context.
    *  Used at initial connect, profile transitions, and wake-from-sleep. */
   private observerAwakeCompression(): { trigger: number; target: number } {
+    // Low band (<25%): all agents drop to SHORT-MEMORY (the tighter resting
+    // compression) to cut the per-turn context re-billing. Applies on the
+    // frequent low-band rebuilds (the budget-scaled sleep timer tears agents
+    // down often), so no disruptive mid-turn reconnect is needed.
+    if (this.lowBandActive()) {
+      return { trigger: RESTING_COMPRESSION_TRIGGER, target: RESTING_COMPRESSION_TARGET };
+    }
     return this.economize
       ? { trigger: AWAKE_ECONOMIZE_COMPRESSION_TRIGGER, target: AWAKE_ECONOMIZE_COMPRESSION_TARGET }
       : { trigger: AWAKE_COMPRESSION_TRIGGER, target: AWAKE_COMPRESSION_TARGET };
+  }
+
+  /** Speaker compression tiers — SHORT-MEMORY (resting tier) in the low band,
+   *  otherwise the normal awake tier. Mirrors observerAwakeCompression. */
+  private speakerCompression(): { trigger: number; target: number } {
+    return this.lowBandActive()
+      ? { trigger: RESTING_COMPRESSION_TRIGGER, target: RESTING_COMPRESSION_TARGET }
+      : { trigger: AWAKE_COMPRESSION_TRIGGER, target: AWAKE_COMPRESSION_TARGET };
+  }
+
+  /** True when the single cost signal (budget binding %) is in the low band
+   *  (<25%) and the throttle is active — the trigger for short-memory mode, the
+   *  tired Speaker, forced-HTTP Observer, and the budget-scaled sleep timer. */
+  private lowBandActive(): boolean {
+    return this.budgetThrottleEnabled
+      && bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).band === "low";
   }
 
   /** The model id the CURRENT Observer backend runs on — the native-audio
@@ -1655,40 +1682,54 @@ export class AgentCoordinator {
    * camera keeps streaming. A mid-turn session always has recent activity (AI
    * speech stamps it), so this never cuts into an active response.
    */
-  /** Multiplier applied to the idle rest/sleep thresholds, scaled by remaining
-   *  energy. Full thresholds when energy is healthy; progressively tighter as
-   *  the budget drains so a costly session goes cold faster during quiet gaps.
-   *  Returns 1 when the energy meter is disabled (preserves legacy timing). */
+  /** Multiplier applied to the idle rest/sleep thresholds for the MODERATE
+   *  band (25–66%): sleep ~1.7x sooner (300s→180s) so a drawn-down session goes
+   *  cold faster during quiet gaps. High = 1 (relaxed default). The LOW band
+   *  (<25%) does NOT use this — it uses the budget-scaled sleep timer in
+   *  maybeIdleTransition — so we clamp "low" to the moderate multiplier here.
+   *  Returns 1 when the throttle is disabled (preserves legacy timing). */
   private idleThresholdScale(): number {
-    // Take the TIGHTER of two independent signals, so whichever budget is more
-    // constrained governs how soon a quiet session goes cold:
-    //  - legacy per-session energy (only behind AAC_OBSERVER_COST_SAVING), and
-    //  - the persistent multi-window budget (active whenever economizing — this
-    //    is what makes idle→sleep a real cost lever by default).
-    // low → sleep ~3x sooner (300s→~100s), moderate → ~1.7x sooner (300s→180s),
-    // high → unchanged (scale 1). At healthy budget this is inert. Mapping lives
-    // in idle-watchdog (pure, unit-tested).
-    const now = Date.now();
-    let scale = 1;
-    if (this.economyObserverEnabled && this.energyMeterEnabled) {
-      scale = Math.min(scale, idleThresholdScaleForBand(energyBand(energyPercent(this.energy, now, this.energyConfig))));
-    }
-    if (this.budgetThrottleEnabled) {
-      scale = Math.min(scale, idleThresholdScaleForBand(bindingEnergy(this.budgetState, this.budgetWindows, now).band));
-    }
-    return scale;
+    if (!this.budgetThrottleEnabled) return 1;
+    const band = bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).band;
+    return idleThresholdScaleForBand(band === "low" ? "moderate" : band);
   }
 
   private maybeIdleTransition(): void {
-    const idleMs = Date.now() - this.lastEngagementActivityAt;
-    // Energy-scaled throttle: a session that's draining its budget should go
-    // cold (rest → sleep, the only ZERO-cost state) sooner during quiet
-    // stretches. The idle thresholds shrink as energy falls so a low-energy
-    // session sleeps after ~100s of no engagement instead of the full 5 min.
-    // High energy keeps the relaxed defaults. This is the real cap behind the
-    // advisory energy meter — sleeping tears down all Live agents. Wake
-    // semantics are unchanged (any directed speech / press rebuilds), so this
-    // never cuts into an active exchange (engagement resets idleMs).
+    const now = Date.now();
+    const idleMs = now - this.lastEngagementActivityAt;
+    const band = this.budgetThrottleEnabled
+      ? bindingEnergy(this.budgetState, this.budgetWindows, now).band
+      : "high";
+
+    // Low band (<25%): a budget-scaled SLEEP TIMER replaces the fixed
+    // rest→sleep timing. Duration = clamp(budget% × 2, ≥ SPEAKER_SLEEP floor)
+    // seconds — 50s at 25% down to ~20s at 10% and below. It's reset by real
+    // engagement OR a worthwhile Observer transcript/observation
+    // (lastObservationActivityAt), and on expiry the session goes STRAIGHT to
+    // sleep (skipping resting). Sleep tears down the Live agents, keeps the
+    // WS + board alive, and ignores ambient speech/frames — so a noisy room
+    // can't keep re-waking it (only a deliberate press/tap does).
+    if (band === "low") {
+      if (this.state !== "ready" || this.paused || this.asleep
+          || this.socialPeer || this.socialPeerTransition) return;
+      const pct = bindingEnergy(this.budgetState, this.budgetWindows, now).percent;
+      const sleepMs = Math.max(AgentCoordinator.BUDGET_SPEAKER_SLEEP_PERCENT, pct * 2) * 1000;
+      const lastActivity = Math.max(this.lastEngagementActivityAt, this.lastObservationActivityAt);
+      if (now - lastActivity >= sleepMs) {
+        flowNote(
+          "COORDINATOR",
+          `Low-budget sleep timer (${Math.round(sleepMs / 1000)}s @ ${pct}%) expired — entering full sleep.`,
+        );
+        this.send({ type: "sleep_state_change", data: { state: "asleep", source: "system" } });
+        this.enterSleep();
+      }
+      return;
+    }
+
+    // Moderate/high: the standard idle-watchdog (rest → sleep), moderate-scaled.
+    // Sleeping tears down all Live agents; wake semantics are unchanged (any
+    // directed speech / press rebuilds), so this never cuts into an active
+    // exchange (engagement resets idleMs).
     const scale = this.idleThresholdScale();
     const decision = decideIdleTransition({
       idleMs,
@@ -2067,6 +2108,11 @@ export class AgentCoordinator {
         // from the client debug dialog. Self-guards on debugMode + active session.
         void this.applyPeerReconfigure(msg.params);
         return;
+      case "debug_set_budget":
+        // DEBUG-only: slam the in-memory budget to a target % for testing the
+        // throttle ladder without editing the DB. Self-guards on debugMode.
+        this.debugSetBudgetPercent(msg.percent);
+        return;
       case "social_trainer_started":
         // Client-initiated launch (apps surface / debug helper). The
         // AI-initiated path arrives via routeAppOpen("social_trainer").
@@ -2271,7 +2317,25 @@ export class AgentCoordinator {
     // Cache symbol settings so the post-rebuild generation pass can apply
     // the right policy (generate? prefer approved/unapproved?).
     const sessionCache = dualAgentService.getSessionCache(this.sessionId!);
-    const studentRowAac = sessionCache?.monitorAgent.getStudent?.()?.aacSettings;
+    const studentRow = sessionCache?.monitorAgent.getStudent?.();
+    const studentRowAac = studentRow?.aacSettings;
+    // Load the cost gate + the single budget signal BEFORE building the agents,
+    // so STARTUP honors the current band (not just wake): <25% comes up on the
+    // economy Observer + short-memory + tired Speaker, and <10% board-only (no
+    // Speaker, no greeting). ≤0% all-stop is enforced on the first sleep→wake.
+    this.fullAttentionMode = !!((studentRowAac as any)?.fullAttentionMode);
+    this.budgetTier = tierByKey((studentRowAac as any)?.budgetTier);
+    this.budgetWindows = windowsForTier(this.budgetTier);
+    {
+      const persistedBudget = (studentRow as any)?.budgetMeters as BudgetState | undefined;
+      this.budgetState = persistedBudget && Object.keys(persistedBudget).length
+        ? persistedBudget
+        : initBudget(this.budgetWindows, Date.now());
+    }
+    const startupBudgetPct = this.budgetThrottleEnabled
+      ? bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).percent
+      : 100;
+    const startupBoardOnly = startupBudgetPct < AgentCoordinator.BUDGET_SPEAKER_SLEEP_PERCENT;
     this.symbolSettings = {
       generateSymbols: !!studentRowAac?.generateSymbols,
       useApprovedSymbols: !!studentRowAac?.useApprovedSymbols,
@@ -2314,8 +2378,17 @@ export class AgentCoordinator {
     this.boardManagerToolConfig = bmToolConfig;
 
     // 6. Construct agent handles.
+    // Startup band floor (mirrors doWakeFromSleep): <25% → economy Observer +
+    // short-memory (+ tired Speaker, applied post-ready); <10% → board-only, no
+    // native-audio Speaker + no greeting. observerAwakeCompression/speakerCompression
+    // pick up short-memory automatically via lowBandActive().
+    this.observerMode = startupBudgetPct < 25 ? "economy" : "live";
+    this.observerForcedEconomy = startupBudgetPct < 25;
     this.observer = this.createObserverAgent();
-    this.speaker = this.createSpeakerAgent();
+    this.speaker = startupBoardOnly ? null : this.createSpeakerAgent();
+    if (startupBoardOnly) {
+      flowNote("COORDINATOR", `Startup at ${startupBudgetPct}% (<10%) — board-only: economy Observer, no Speaker, no greeting.`);
+    }
     // Board Manager backend selection (mirrors the Speaker live/http pattern):
     //  - Per-student `boardManagerLiveModel` AAC setting (default false → HTTP).
     //  - AAC_BOARD_MANAGER_MODE env var ("http"|"live") OVERRIDES the per-student
@@ -2337,31 +2410,35 @@ export class AgentCoordinator {
     //    This is the final pre-ready wait (Live WS handshakes) → "wakingUp".
     this.send({ type: "startup_progress", stage: "wakingUp" });
     try {
-      await Promise.all([
-        this.observer.start({
+      const agentStarts: Promise<void>[] = [];
+      if (this.observer) {
+        agentStarts.push(this.observer.start({
           systemPrompt: observerPrompt,
           model: this.observerActiveModel(),
           toolConfig: observerToolConfig,
-          useVertex: this.useVertex,
           // Match the single-agent's provider config — same voice, same
           // compression thresholds. Observer doesn't emit audio to the
           // client (no audio sink), but the native-audio model expects
           // a voice configured in AUDIO modality.
+          useVertex: this.useVertex,
           voiceName: this.aiVoiceName,
           compressionTriggerTokens: this.observerAwakeCompression().trigger,
           compressionTargetTokens: this.observerAwakeCompression().target,
-        }),
-        this.speaker.start({
+        }));
+      }
+      if (this.speaker) {
+        agentStarts.push(this.speaker.start({
           systemPrompt: speakerPrompt,
           model: this.speakerModel,
           toolConfig: speakerToolConfig,
           useVertex: this.useVertex,
           voiceName: this.aiVoiceName,
           useDirectAudio: this.useDirectAudio,
-          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
-          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
-        }),
-      ]);
+          compressionTriggerTokens: this.speakerCompression().trigger,
+          compressionTargetTokens: this.speakerCompression().target,
+        }));
+      }
+      await Promise.all(agentStarts);
     } catch (err) {
       const detail = (err as Error).message || String(err);
       console.error("[AgentCoordinator] agent connect failed:", err);
@@ -2378,8 +2455,8 @@ export class AgentCoordinator {
     // 7a. Bind debug logging context on the Live agents so provider-side
     //     events (RAW_MSG, SERVER → toolCall, etc.) get attributed to
     //     this session_debug_logs row.
-    this.observer.setDebugSessionContext(this.sessionId, this.debugMode);
-    this.speaker.setDebugSessionContext(this.sessionId, this.debugMode);
+    this.observer?.setDebugSessionContext(this.sessionId, this.debugMode);
+    this.speaker?.setDebugSessionContext(this.sessionId, this.debugMode);
     // Live Board Manager attributes its provider-side logs too (no-op on HTTP).
     this.boardManager?.setDebugSessionContext?.(this.sessionId, this.debugMode, "BOARD_MGR");
 
@@ -2391,11 +2468,15 @@ export class AgentCoordinator {
     //     keeps Speaker aligned from turn one.
     flowNote("COORDINATOR", `Initial mode = ${this.currentInteractionMode}`);
     const initialModeRendered = `[MODE] ${this.currentInteractionMode} (session start)`;
-    this.speaker.sendContextInjection(initialModeRendered);
-    this.observer.sendContextInjection(initialModeRendered);
+    this.speaker?.sendContextInjection(initialModeRendered);
+    this.observer?.sendContextInjection(initialModeRendered);
+    // Seed the Observer with the CURRENT budget level (carried over from prior
+    // sessions) — the system prompt only carries drain RATES, not levels, so a
+    // session that resumes already low would otherwise start blind.
+    this.primeFreshObserver();
 
     // Tell the Speaker who it can video-call (callable contacts + online flags).
-    void this.injectCallableContacts();
+    if (this.speaker) void this.injectCallableContacts();
 
     // 7d. Reset the rest debounce window now that the session is actually
     //     ready. The class-field initializer set lastEngagementActivityAt
@@ -2416,34 +2497,19 @@ export class AgentCoordinator {
     //     rows — including the three SYSTEM_PROMPTs — get dropped or orphaned
     //     under "?" and never show for the real session. (logLiveSession is
     //     file-only, so its wrap only fixes the file tag.)
-    const studentRow = sessionCache?.monitorAgent.getStudent?.();
-    // Per-student master gate for the whole cost-saving system. OFF (default) →
-    // economize (text-first, client STT, scene_state, energy throttling, all
-    // capability-gated). ON → raw full-fidelity streaming, no substitutions.
-    this.fullAttentionMode = !!((studentRow?.aacSettings as any)?.fullAttentionMode);
-    // Start the energy meter full as of session start (Phase 4).
-    this.energy = initEnergy(Date.now());
-    this.lastEnergyBand = "high";
+    // Cost gate + the single budget signal were loaded ABOVE, before the agents
+    // were built, so startup honors the band. Here we just reset the per-session
+    // trackers and start the level/throttle tick.
     this.lastReportedEnergyPercent = 100;
     this.drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
-    this.startEnergyTimer();
-    // Persistent multi-window budget meter: resolve the tier and LOAD any
-    // carried-over state from students.budgetMeters (regen is applied lazily on
-    // every read, so a load after a quiet stretch already reflects recovery).
-    // Empty/missing state starts every window full.
-    this.budgetTier = tierByKey((studentRow?.aacSettings as any)?.budgetTier);
-    this.budgetWindows = windowsForTier(this.budgetTier);
-    const persisted = (studentRow as any)?.budgetMeters as BudgetState | undefined;
-    this.budgetState = persisted && Object.keys(persisted).length
-      ? persisted
-      : initBudget(this.budgetWindows, Date.now());
     this.budgetDirty = false;
     this.lastBudgetSaveAt = Date.now();
-    this.lastBudgetBand = null;
+    this.lastEnergyBand = null;
+    this.budgetSpeakerTiredActive = false;
+    this.startEnergyTimer();
     // Feed the budget meter from the universal ledger hook: EVERY charge for
     // this session (live agents, Monitor HTTP, TTS, in-session analysis) lands
-    // in recordBudgetDrain, so the meter reflects true total spend — not just
-    // the live-agent slice the energy meter sees.
+    // in recordBudgetDrain, so the meter reflects true total spend.
     this.budgetChargeUnsub?.();
     this.budgetChargeUnsub = this.sessionId
       ? onLedgerCharge(this.sessionId, (credits) => this.recordBudgetDrain(credits))
@@ -2513,8 +2579,11 @@ export class AgentCoordinator {
       }),
     });
 
-    // Seed the client's energy bar with the loaded budget level right away.
+    // Seed the client's energy bar with the loaded budget level right away, and
+    // apply the low-band Speaker-tired floor now (not 15s later) if we came up
+    // in the low band with a Speaker.
     this.maybePushBudget(Date.now());
+    this.applyBudgetFloors(Date.now());
 
     // Deliver the apps lists to the client. The client populates its Apps
     // board ONLY from a session_snapshot (useLiveSession's session_snapshot
@@ -4032,9 +4101,13 @@ export class AgentCoordinator {
 
     switch (event.type) {
       case "transcribed":
+        // A worthwhile transcript resets the low-band sleep timer (the Observer
+        // is actively working an in-person exchange — don't sleep out from under it).
+        this.noteObservationActivity();
         this.routeTranscribed(event);
         return;
       case "context_update":
+        this.noteObservationActivity();
         this.enqueueContextUpdate(event);
         return;
       case "engagement_change":
@@ -4804,6 +4877,13 @@ export class AgentCoordinator {
     this.startupPending = false;
     this.clearStartupTimers();
 
+    // No Speaker (budget board-only floor, <10%) → no voiced greeting / wake
+    // behavior. Come up quietly; the board still works and the avatar reads asleep.
+    if (!this.speaker) {
+      flowNote("COORDINATOR", "Startup greeting suppressed — board-only (no Speaker) at low budget.");
+      return;
+    }
+
     const canGreet = this.startupBehavior === "contextual" && !this.socialPeer;
     const greet = canGreet && (identified || this.studentIsActiveUser());
     if (greet) {
@@ -4991,6 +5071,15 @@ export class AgentCoordinator {
     }
   }
 
+  /** Stamp worthwhile OBSERVER activity (a transcript / meaningful observation).
+   *  Distinct from engagement: it does NOT clear the pending rest timer or count
+   *  as the user interacting, but it DOES reset the low-band budget-scaled sleep
+   *  timer (maybeIdleTransition) so an actively-observed in-person exchange isn't
+   *  cut short at low budget. */
+  private noteObservationActivity(): void {
+    this.lastObservationActivityAt = Date.now();
+  }
+
   /** Observer asked to enter rest. If the last engagement activity was
    *  more than REST_DEBOUNCE_MS ago, transition immediately; otherwise
    *  schedule it for when the timer expires. The schedule is canceled
@@ -5173,9 +5262,17 @@ export class AgentCoordinator {
         // invoke after wake. No-op on the HTTP path.
         try { this.boardManager?.close?.(); } catch { /* ignore */ }
       } else {
-        // target === "awake" — bring Speaker back online. Already running
-        // means we're recovering from a partial transition — leave it alone.
-        if (!this.speaker) {
+        // target === "awake" — bring Speaker back online, UNLESS the budget is
+        // in the board-only floor (<10%): the paid Live Speaker stays down and
+        // only the board answers. Already running means we're recovering from a
+        // partial transition — leave it alone.
+        const boardOnly = this.budgetThrottleEnabled
+          && bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).percent < AgentCoordinator.BUDGET_SPEAKER_SLEEP_PERCENT;
+        if (boardOnly) {
+          flowNote("COORDINATOR", "Wake to resting→awake at <10% — board-only, Speaker stays down.");
+          try { this.speaker?.close(); } catch { /* ignore */ }
+          this.speaker = null;
+        } else if (!this.speaker) {
           this.speaker = this.createSpeakerAgent();
           await this.speaker.start({
             systemPrompt: this.speakerPrompt,
@@ -5184,8 +5281,8 @@ export class AgentCoordinator {
             useVertex: this.useVertex,
             voiceName: this.aiVoiceName,
             useDirectAudio: this.useDirectAudio,
-            compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
-            compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+            compressionTriggerTokens: this.speakerCompression().trigger,
+            compressionTargetTokens: this.speakerCompression().target,
           });
           this.speaker.setDebugSessionContext(this.sessionId!, this.debugMode);
         }
@@ -5229,9 +5326,11 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", `Replaying [SESSION SUMMARY] (${this.currentSessionSummary.length} chars) to fresh Speaker`);
       this.speaker.sendContextInjection(`[SESSION SUMMARY]\n${this.currentSessionSummary}`);
     }
-    // 2. Last N conversation turns (capped at 20 so history doesn't blow
-    //    the new session's context window).
-    const replayCount = Math.min(20, this.conversationLog.length);
+    // 2. Last N conversation turns — capped at 20, or tightened to 6 in the
+    //    low band (short-memory mode) so the rebuilt Speaker re-bills less
+    //    context each turn while the budget is drawn down.
+    const replayCap = this.lowBandActive() ? 6 : 20;
+    const replayCount = Math.min(replayCap, this.conversationLog.length);
     if (replayCount > 0) {
       const recent = this.conversationLog.slice(-replayCount).map(t => ({
         role: t.role === "assistant" ? ("model" as const) : ("user" as const),
@@ -5248,6 +5347,33 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", "Re-broadcasting active guessing state to fresh Speaker");
       this.broadcastGuessingStateToAgents();
     }
+    // 4. Re-apply the tired instruction — the flag survives Speaker teardown,
+    //    so a Speaker rebuilt while still in the low band must be told it's tired.
+    if (this.budgetSpeakerTiredActive) {
+      this.speaker.sendContextInjection(AgentCoordinator.SPEAKER_TIRED_NOTE);
+    }
+  }
+
+  /**
+   * Re-inject the CURRENT budget (and, when drawn down, energy) status into a
+   * freshly (re)started Observer. Without this a wake / backend-switch produces
+   * an Observer that knows only the drain RATES (from its system prompt) but
+   * not the current LEVELS — and a band change that crossed while it was torn
+   * down (e.g. into the low band during sleep) is otherwise never re-sent, so
+   * the Observer flies blind and would happily go back to live. Mirrors
+   * primeFreshSpeaker. Cheap (0–2 short injections); skipped when healthy.
+   */
+  private primeFreshObserver(): void {
+    if (!this.observer || !this.budgetMeterEnabled) return;
+    const now = Date.now();
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    if (b.band !== "high") {
+      this.observer.sendContextInjection(
+        `[ENERGY] ${b.percent}% remaining — ${b.band}. ${AgentCoordinator.energyGuidance(b.band)}`,
+      );
+      this.lastReportedEnergyPercent = b.percent;
+    }
+    this.lastEnergyBand = b.band;
   }
 
   /**
@@ -5271,14 +5397,69 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", "wakeFromSleep skipped — agents were never initialized.");
       return;
     }
-    flowNote("COORDINATOR", "Waking from sleep — rebuilding Observer + Speaker.");
+    const pct = this.budgetThrottleEnabled
+      ? bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).percent
+      : 100;
+
+    // <0% — ALL-STOP. The budget is truly exhausted (passive mode wasn't cheap
+    // enough to hold the line). Refuse to wake ANY paid service: no Observer, no
+    // Speaker, no board LLM. Tell the client to stop streaming STT/frames and
+    // stay asleep. It recovers on its own as the budget regenerates while idle
+    // (nothing spends while asleep). A deliberate press still voices its own TTS.
+    if (pct <= AgentCoordinator.BUDGET_SHUTDOWN_PERCENT) {
+      flowNote("COORDINATOR", "Budget exhausted (≤0%) — all-stop: refusing to wake any STT/LLM service.");
+      this.send({ type: "client_config_update", config: { sttActive: false, sceneStateActive: false, pcmContinuous: false } });
+      runInSessionContext(this.sessionId!, this.debugMode, () => {
+        logLiveSession("WAKE_REFUSED", "budget exhausted (≤0%) — all-stop");
+      });
+      return; // stays asleep
+    }
+
     this.send({ type: "sleep_state_change", data: { state: "awake", source: "ai" } });
 
-    // A wake is fresh engagement — return to Live-by-default for responsiveness
-    // (energy also regenerated while asleep). If still low, the next energy tick
-    // re-applies the economy floor.
-    this.observerMode = "live";
-    this.observerForcedEconomy = false;
+    // <10% — BOARD-ONLY. Refuse the paid Live Speaker: wake a cheap economy
+    // Observer (safety monitoring + transcription) and the HTTP board only. The
+    // student can still press buttons (voiced in their own TTS) and get response
+    // boards; the AI voice is paused until the budget recovers. See
+    // BUDGET_SPEAKER_SLEEP_PERCENT.
+    if (pct < AgentCoordinator.BUDGET_SPEAKER_SLEEP_PERCENT) {
+      flowNote("COORDINATOR", `Budget ${pct}% (<10%) — waking board-only (economy Observer, no Speaker).`);
+      this.observerMode = "economy";
+      this.observerForcedEconomy = true;
+      this.observer = this.createObserverAgent();
+      try {
+        await this.observer.start(this.buildObserverStartConfig());
+      } catch (err) {
+        console.error("[AgentCoordinator] board-only wake failed:", err);
+        try { this.observer?.close(); } catch {}
+        this.observer = null;
+        return; // asleep stays true — next user action retries
+      }
+      this.observer.setDebugSessionContext(this.sessionId!, this.debugMode);
+      this.speaker = null;
+      this.sessionProfile = "awake";
+      this.asleep = false;
+      this.speakerSpeaking = false;
+      this.noteEngagementActivity();
+      this.primeFreshObserver();
+      this.observer.sendContextInjection(
+        `[ENERGY] Nearly out of budget — running board-only to conserve. Keep monitoring for safety; the AI voice is paused until it recovers.`,
+      );
+      this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
+      runInSessionContext(this.sessionId!, this.debugMode, () => {
+        logLiveSession("WAKE_FROM_SLEEP_DONE", "board-only (<10%): economy Observer, no Speaker");
+      });
+      return;
+    }
+
+    flowNote("COORDINATOR", "Waking from sleep — rebuilding Observer + Speaker.");
+
+    // A wake is fresh engagement. In the LOW band (<25%) come back on the cheap
+    // HTTP Observer + short-memory compression directly (avoids a live→economy
+    // churn right after wake); otherwise Live-by-default for responsiveness.
+    const lowBand = pct < 25;
+    this.observerMode = lowBand ? "economy" : "live";
+    this.observerForcedEconomy = lowBand;
     this.observer = this.createObserverAgent();
     this.speaker = this.createSpeakerAgent();
     try {
@@ -5299,8 +5480,8 @@ export class AgentCoordinator {
           useVertex: this.useVertex,
           voiceName: this.aiVoiceName,
           useDirectAudio: this.useDirectAudio,
-          compressionTriggerTokens: AWAKE_COMPRESSION_TRIGGER,
-          compressionTargetTokens: AWAKE_COMPRESSION_TARGET,
+          compressionTriggerTokens: this.speakerCompression().trigger,
+          compressionTargetTokens: this.speakerCompression().target,
         }),
       ]);
     } catch (err) {
@@ -5323,6 +5504,10 @@ export class AgentCoordinator {
     });
 
     this.primeFreshSpeaker();
+    // Re-seed the fresh Observer with the current budget/energy level — a band
+    // change that crossed while asleep was never delivered to the torn-down
+    // Observer, so without this it would wake blind and go back to live.
+    this.primeFreshObserver();
     // Re-open the Live Board Manager session (closed on sleep) so the first
     // post-wake board build doesn't pay connect latency. No-op on HTTP.
     this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
@@ -5408,6 +5593,9 @@ export class AgentCoordinator {
           ? `[OBSERVATION MODE] economy — you now wake on events to conserve energy.${reason ? ` (${reason})` : ""}`
           : `[OBSERVATION MODE] live — full continuous observation.${reason ? ` (${reason})` : ""}`,
       );
+      // Seed the freshly-built backend with the current budget/energy level so
+      // it doesn't lose the throttle context across the swap.
+      this.primeFreshObserver();
       runInSessionContext(this.sessionId!, this.debugMode, () => {
         logLiveSession("OBSERVER_MODE_SWITCH", `${prev} → ${mode}${reason ? ` (${reason})` : ""}`);
       });
@@ -5419,17 +5607,18 @@ export class AgentCoordinator {
     }
   }
 
-  /** Handle the Observer's own set_observation_mode request. Refuses going
-   *  back to "live" while energy is in the low band (the forced-economy floor)
-   *  so the throttle can't be immediately undone. */
+  /** Handle the Observer's own set_observation_mode request. Refuses going back
+   *  to "live" while the budget is in the LOW band (<25%) — the forced-HTTP
+   *  floor — so the Observer can't undo it. At ≥25% the Observer is free to
+   *  choose (per the existing floors, only <25% forces the cheap backend). */
   private handleObservationModeChange(event: ObservationModeChangeEvent): void {
     if (!this.economyObserverEnabled) return;
-    if (event.mode === "live" && this.energyMeterEnabled) {
-      const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
-      if (energyBand(pct) === "low") {
-        flowNote("COORDINATOR", `Observer requested live but energy is low (${pct}%) — staying economy.`);
+    if (event.mode === "live" && this.budgetThrottleEnabled) {
+      const b = bindingEnergy(this.budgetState, this.budgetWindows, Date.now());
+      if (b.band === "low") {
+        flowNote("COORDINATOR", `Observer requested live but budget ${b.percent}% (low) — staying economy.`);
         this.observer?.sendContextInjection(
-          `[OBSERVATION MODE] staying economy — energy is low (${pct}%). You can go live once it recovers.`,
+          `[OBSERVATION MODE] staying economy — budget ${b.percent}% (low). You can go live once it recovers above 25%.`,
         );
         return;
       }
@@ -5795,6 +5984,18 @@ export class AgentCoordinator {
       });
     } else if (skipMonitorHeartbeat) {
       flowNote("MONITOR", "turn-end heartbeat skipped (economize + resting)");
+    }
+
+    // Apply a low-band economy-backend switch that was deferred while the AI was
+    // speaking (Issue: drop to lower-band behavior at the next idle boundary, not
+    // mid-sentence). Runs LAST so the [AI to USER] echo above reaches the current
+    // Observer before the swap (which then replays history to the fresh backend).
+    if (this.economySwitchPendingIdle && this.economyObserverEnabled) {
+      this.economySwitchPendingIdle = false;
+      if (this.observerMode === "live" && !this.observerSwitchInFlight) {
+        flowNote("COORDINATOR", "AI idle — applying deferred low-budget economy switch.");
+        void this.switchObserverBackend("economy", "low budget — deferred switch (AI now idle)");
+      }
     }
   }
 
@@ -8531,42 +8732,26 @@ export class AgentCoordinator {
         usage,
         `${agent}:${model}`,  // attribution label — used for the cost LOG only
       )
-      // Feed the energy meter (Phase 4) with the credits actually charged. The
-      // live agents are the cost the Observer governs, so its energy reflects
-      // exactly the spend its observation decisions drive. Also attribute the
-      // charge by agent so the next [HEARD SPEECH] can tell the Observer what
-      // the recent exchange cost (esp. the Speaker, which it doesn't "see").
+      // Attribute the charge by agent so the next [HEARD SPEECH] can tell the
+      // Observer what the recent exchange cost (esp. the Speaker, which it never
+      // "sees"). The budget itself is fed separately via the universal ledger
+      // hook (recordBudgetDrain) — this only feeds the per-transcript note.
       .then(credits => {
         if (credits > 0) {
           if (agent === "speaker") this.drainSinceTranscript.speaker += credits;
           else if (agent === "board-manager") this.drainSinceTranscript.boardManager += credits;
           else this.drainSinceTranscript.observer += credits;
         }
-        this.recordEnergyDrain(credits);
       })
       .catch(err => console.error(`[AgentCoordinator] trackLiveUsage(${agent}) failed:`, err));
   }
 
   /**
-   * Add a live-agent charge to the energy meter and, when the band changes,
-   * tell the Observer (cheap context injection, only on transitions — not every
-   * charge). Energy is advisory: it informs the Observer's judgment, it does NOT
-   * gate anything mechanically, so safety/escalation are never suppressed.
-   */
-  private recordEnergyDrain(credits: number): void {
-    if (!this.energyMeterEnabled || !(credits > 0)) return;
-    const now = Date.now();
-    this.energy = applyCharge(this.energy, credits, now, this.energyConfig.perHour);
-    this.reportEnergy(now, { fromCharge: true });
-  }
-
-  /**
-   * Feed the persistent multi-window budget meter. Unlike the per-session
-   * energy meter (live agents only, for Observer pacing), this tracks TOTAL
-   * session spend, so it's driven by the universal `onLedgerCharge` hook —
-   * EVERY charge that hits the ledger (live agents, Monitor HTTP, TTS, and any
-   * in-session analysis) lands here. Energy paces within the session; the
-   * budget bounds the month.
+   * Feed the persistent multi-window budget meter — the single cost signal. Fed
+   * by the universal `onLedgerCharge` hook, so EVERY charge that hits the ledger
+   * (live agents, Monitor HTTP, TTS, in-session analysis) lands here. Also the
+   * point where a drain re-reports the level and re-drives the throttle (so a
+   * cost spike doesn't wait for the next tick).
    */
   private recordBudgetDrain(credits: number): void {
     if (!this.budgetMeterEnabled || !(credits > 0)) return;
@@ -8574,8 +8759,50 @@ export class AgentCoordinator {
     this.budgetState = applyBudgetCharge(this.budgetState, this.budgetWindows, credits, now);
     this.budgetDirty = true;
     this.maybePersistBudget(now);
-    this.reportBudget(now);
+    // Re-report the level and re-drive the throttle right away — a drain can
+    // cross a band between the 15s ticks, and we don't want the response
+    // delayed up to a full tick. reportEnergy also applies the throttle + floors.
+    this.reportEnergy(now, { fromCharge: true });
     this.maybePushBudget(now);
+  }
+
+  /**
+   * DEBUG-only: force the in-memory budget so every window (and thus the binding
+   * %) reads `percent`, with `asOf=now` so regen won't immediately undo it, then
+   * re-report the level, re-push the bar, and re-drive the throttle. Lets the
+   * debug panel exercise the whole throttle ladder (avatar eyes, bar, forced-HTTP
+   * Observer, tired Speaker, sleep timer, board-only, all-stop) live — without
+   * DB edits or waiting out the 30-min session cache. Gated on debugMode; no-op
+   * outside an economizing session (no budget tracked). NOTE: real charges keep
+   * flowing, so the forced level drifts as the session spends — set it again to
+   * re-pin. It also persists on the next debounce, so a live session will
+   * overwrite the DB with the forced value.
+   */
+  private debugSetBudgetPercent(percent: number): void {
+    if (!this.debugMode) {
+      flowNote("COORDINATOR", "debug_set_budget ignored — not in debug mode");
+      return;
+    }
+    if (!this.budgetMeterEnabled || this.budgetWindows.length === 0) {
+      flowNote("COORDINATOR", "debug_set_budget ignored — no budget tracked (full-attention session)");
+      return;
+    }
+    const now = Date.now();
+    const clamped = Math.max(0, Math.min(100, percent));
+    const next: BudgetState = {};
+    for (const w of this.budgetWindows) {
+      next[w.key] = { drain: Math.max(0, w.cfg.ceiling * (1 - clamped / 100)), asOf: now };
+    }
+    this.budgetState = next;
+    this.budgetDirty = true;
+    flowNote("COORDINATOR", `debug_set_budget → all windows forced to ${clamped}%`);
+    // Reset the report/push trackers so the [ENERGY] note + bar fire even if the
+    // integer band didn't change.
+    this.lastSentBudgetPercent = -1;
+    this.lastReportedEnergyPercent = 100;
+    this.reportEnergy(now, { fromCharge: true });
+    this.maybePushBudget(now);
+    this.maybePersistBudget(now);
   }
 
   /** Push the binding (tightest) window % + band to the client's energy bar,
@@ -8613,114 +8840,115 @@ export class AgentCoordinator {
     void studentRepository.updateBudgetMeters(this.studentId, this.budgetState);
   }
 
-  /** The governing throttle band: the WORSE of the per-session energy band and
-   *  the persistent budget's binding-window band. So a session that's fine on
-   *  its own short-term energy still throttles when the month's budget is spent,
-   *  and vice-versa. Returns the band plus the binding budget window (for the
-   *  Observer note). Advisory inputs only — gates nothing mechanically here. */
-  private governingBand(now: number): { band: EnergyBand; budgetWindow: string | null; budgetPercent: number } {
-    const energyPct = energyPercent(this.energy, now, this.energyConfig);
-    const energyB = energyBand(energyPct);
-    if (!this.budgetThrottleEnabled) {
-      return { band: energyB, budgetWindow: null, budgetPercent: 100 };
-    }
-    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
-    return { band: worseBand(b.band, energyB), budgetWindow: b.window, budgetPercent: b.percent };
-  }
-
   /**
-   * Recompute energy and, when warranted, push a cheap [ENERGY] context note to
-   * the Observer. Reports on (a) a band change — with the band's guidance line —
-   * and (b) a recovery of >=1% since the last report — a plain percentage so the
-   * Observer can tell its budget is replenishing. A drain that doesn't cross a
+   * Push the single cost level (the money budget's binding-window %) to the
+   * Observer as an [ENERGY] note and re-drive the throttle. The AI experiences
+   * the budget as "energy/tiredness", so the note keeps that framing while the
+   * number IS the budget. Reports on (a) a band change — with guidance — and
+   * (b) a recovery of >=1% since the last report; a drain that doesn't cross a
    * band lowers the baseline SILENTLY, so the next recovery is measured from the
-   * recent low rather than a stale high. Advisory only; gates nothing.
+   * recent low. A note that can't be delivered (Observer torn down) isn't lost —
+   * a freshly-rebuilt Observer is re-seeded via primeFreshObserver.
    */
   private reportEnergy(now: number, opts: { fromCharge: boolean }): void {
-    if (!this.energyMeterEnabled) return;
-    const pct = energyPercent(this.energy, now, this.energyConfig);
-    const band = energyBand(pct);
+    if (!this.budgetMeterEnabled) return;
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    const pct = b.percent;
+    const band = b.band;
     const bandChanged = band !== this.lastEnergyBand;
     const recovered = pct - this.lastReportedEnergyPercent >= 1;
 
-    if (bandChanged || recovered) {
+    if ((bandChanged || recovered) && this.observer) {
       const guidance = bandChanged ? ` ${AgentCoordinator.energyGuidance(band)}` : "";
-      // Energy-scaled mode hint: while still running the costly Live backend
-      // with a draining budget, nudge the Observer toward economy observation
-      // (its biggest lever). Fires on band changes / recoveries, so it repeats
-      // periodically as the budget moves rather than once. Omitted at high
-      // energy and when already economy.
-      const modeHint = (this.economyObserverEnabled && this.observerMode === "live" && (band === "moderate" || band === "low"))
-        ? ` Consider set_observation_mode("economy") — staying live is your biggest drain.`
-        : "";
-      this.observer?.sendContextInjection(`[ENERGY] ${pct}% remaining — ${band}.${guidance}${modeHint}`);
+      this.observer.sendContextInjection(`[ENERGY] ${pct}% remaining — ${band}.${guidance}`);
       this.lastReportedEnergyPercent = pct;
-      this.lastEnergyBand = band;
       runInSessionContext(this.sessionId || "?", this.debugMode, () => {
         flowNote("COORDINATOR", `Energy ${pct}% (${band})${bandChanged ? " — band change" : " — recovery"}`);
       });
     } else if (opts.fromCharge && pct < this.lastReportedEnergyPercent) {
       this.lastReportedEnergyPercent = pct;
     }
+    // Track the band even when the note wasn't delivered (Observer null) so the
+    // flowNote fires once per band change; primeFreshObserver re-seeds a fresh
+    // Observer with the current level regardless.
+    if (bandChanged) this.lastEnergyBand = band;
 
-    // Hard floor (lever B): the meter is no longer purely advisory. At low
-    // energy, force the cheap economy backend regardless of the Observer's
-    // choice; once energy recovers out of the low band, release the force so
-    // the Observer may go live again on its own (no auto-flip, to avoid churn).
-    // Driven by the GOVERNING band (worse of session energy + persistent
-    // budget), so a spent monthly budget forces economy even when the session's
-    // own short-term energy looks fine.
-    this.applyEnergyThrottle(this.governingBand(now).band);
+    // Apply the mechanical throttle: low band (<25%) forces the cheap HTTP
+    // Observer + tired Speaker; the budget-scaled sleep timer + <10%/<0% floors
+    // live in maybeIdleTransition / doWakeFromSleep.
+    this.applyEnergyThrottle(band);
+    this.applyBudgetFloors(now);
   }
 
-  /**
-   * Tell the Observer when the persistent budget's binding window crosses a
-   * band (cheap — only on change, mirroring [ENERGY]). This is the cross-session
-   * signal the per-session [ENERGY] note can't carry: "you're low on your 3-day
-   * budget" even at the start of a fresh session. Advisory; the real throttle
-   * (idle scaling, economy force) is applied separately via governingBand.
-   */
-  private reportBudget(now: number): void {
-    if (!this.budgetThrottleEnabled) return;
-    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
-    if (b.band === this.lastBudgetBand) return;
-    this.lastBudgetBand = b.band;
-    if (b.band !== "high" && b.window) {
-      this.observer?.sendContextInjection(
-        `[BUDGET] ${b.percent}% left on your ${b.window} budget — ${AgentCoordinator.budgetGuidance(b.band)}`,
-      );
-    }
-    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-      flowNote("COORDINATOR", `Budget ${b.percent}% (${b.band}) binding=${b.window ?? "none"}`);
-    });
-  }
-
-  /** Enforce the low-energy economy floor. Idempotent; safe to call often. */
+  /** Enforce the economy-backend floor. Force the cheap HTTP Observer as soon
+   *  as the governing budget/energy leaves the healthy band (the Observer's
+   *  native-audio Live session is the single biggest drain, so we don't wait
+   *  for the low band to shed it); release once it recovers to high. Idempotent;
+   *  safe to call often. */
   private applyEnergyThrottle(band: EnergyBand): void {
     if (!this.economyObserverEnabled) return;
     if (band === "low") {
+      // <25%: force the cheap HTTP Observer backend regardless of its own
+      // choice (the native-audio Live session is the single biggest drain).
       if (this.observerMode === "live" && !this.observerSwitchInFlight) {
         this.observerForcedEconomy = true;
-        void this.switchObserverBackend("economy", "energy low — forced");
+        // Don't tear the Observer down mid-sentence: if the AI is speaking,
+        // defer the switch to the next idle boundary (onSpeakerSpeechEnd) so it
+        // lands the moment it's not busy rather than cutting the reply.
+        if (this.isAiSpeaking()) {
+          this.economySwitchPendingIdle = true;
+          flowNote("COORDINATOR", "Low budget — economy switch deferred until the AI finishes speaking.");
+        } else {
+          this.economySwitchPendingIdle = false;
+          void this.switchObserverBackend("economy", "low budget (<25%) — forced HTTP");
+        }
       }
-    } else if (this.observerForcedEconomy && band === "high") {
-      // Budget restored — lift the lock. Stay economy until the Observer
-      // chooses to go live (it gets prompted), avoiding low↔high flapping.
+    } else if (this.observerForcedEconomy) {
+      // Recovered out of the low band (≥25%) — lift the lock; the Observer may
+      // go live again on its own (it gets prompted). Above 25% is unthrottled
+      // on the backend, per the existing floors.
       this.observerForcedEconomy = false;
-      flowNote("COORDINATOR", "Energy recovered — economy lock lifted; Observer may go live.");
+      this.economySwitchPendingIdle = false;
+      flowNote("COORDINATOR", "Budget recovered above 25% — economy lock lifted; Observer may go live.");
     }
   }
 
+  /**
+   * Speaker-side low-band floor: at <25% the Speaker is told it's TIRED so it
+   * acts tired and keeps replies brief (the avatar's resting eyes are the
+   * client half, pass 2). Dedup'd to the transition and re-applied to a rebuilt
+   * Speaker (primeFreshSpeaker). Lifted when the budget recovers out of the low
+   * band. The deeper floors (<10% Speaker never wakes, <0% all-stop) are enforced
+   * on wake in doWakeFromSleep. No-op while asleep / not ready.
+   */
+  private applyBudgetFloors(now: number): void {
+    if (!this.budgetThrottleEnabled || this.asleep || this.state !== "ready") return;
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    const wantTired = b.band === "low";
+    if (wantTired && !this.budgetSpeakerTiredActive) {
+      this.budgetSpeakerTiredActive = true;
+      this.speaker?.sendContextInjection(AgentCoordinator.SPEAKER_TIRED_NOTE);
+      flowNote("COORDINATOR", `Budget ${b.percent}% (low) — Speaker set to tired.`);
+    } else if (this.budgetSpeakerTiredActive && b.band !== "low") {
+      this.budgetSpeakerTiredActive = false;
+      this.speaker?.sendContextInjection(`[ENERGY] You've rested and have energy again — speak normally.`);
+      flowNote("COORDINATOR", "Budget recovered out of low — Speaker tired-mode lifted.");
+    }
+  }
+
+  /** The tired-Speaker instruction injected at the low band. */
+  private static readonly SPEAKER_TIRED_NOTE =
+    `[ENERGY] You're tired — low on energy. Keep replies short and a little sleepy; reply when addressed but don't start new topics or chatter proactively until you've rested.`;
+
   private startEnergyTimer(): void {
     this.stopEnergyTimer();
-    if (!this.energyMeterEnabled) return;
+    if (!this.budgetMeterEnabled) return;
     this.energyTimer = setInterval(
       () => {
         const now = Date.now();
+        // Passive regen can cross a band during a quiet stretch with no charge
+        // to trigger it — recompute the level + throttle and refresh the bar.
         this.reportEnergy(now, { fromCharge: false });
-        // Passive regen can cross a budget band (recovery during a quiet
-        // stretch) with no charge to trigger it — report + refresh the bar.
-        this.reportBudget(now);
         this.maybePushBudget(now);
       },
       AgentCoordinator.ENERGY_TICK_MS,
@@ -8780,8 +9008,11 @@ export class AgentCoordinator {
    * Observer also learns empirically from its [ENERGY] notes.
    */
   private buildEnergyBudgetText(provider: string): string {
-    if (!this.energyMeterEnabled) return "";
-    const cfg = this.energyConfig;
+    if (!this.budgetMeterEnabled) return "";
+    // Rates are expressed against the binding (tightest) budget window, so they
+    // track the same % the [ENERGY] note shows. Rough by design.
+    const cfg = this.bindingWindowCfg(Date.now());
+    if (!(cfg.ceiling > 0)) return "";
     const perHour = cfg.perHour;
     const regenPctMin = Math.round((perHour / 60 / cfg.ceiling) * 1000) / 10;
     const refillHrs = perHour > 0 ? Math.round((cfg.ceiling / perHour) * 10) / 10 : 0;
@@ -8826,40 +9057,40 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
 </energy_budget>`;
   }
 
+  /** EnergyConfig of the current binding (tightest) budget window, for rate/%
+   *  math that should track the same % the [ENERGY] note shows. Falls back to a
+   *  zero-ceiling cfg when no windows are loaded (throttle disabled). */
+  private bindingWindowCfg(now: number): EnergyConfig {
+    const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    const w = this.budgetWindows.find(win => win.key === b.window);
+    return w?.cfg ?? { ceiling: 0, perHour: 0 };
+  }
+
   /** Compact energy status appended to each [HEARD SPEECH] turn — current level
-   *  plus what the exchange since the last transcript cost, with the Speaker's
-   *  share called out (the Observer never "sees" the Speaker spend otherwise).
-   *  Resets the per-transcript accumulator. */
+   *  (the budget binding %) plus what the exchange since the last transcript
+   *  cost as a % of that window, with the Speaker's share called out (the
+   *  Observer never "sees" the Speaker spend otherwise). Resets the accumulator. */
   private buildTranscriptEnergyNote(): string {
-    if (!this.energyMeterEnabled) return "";
-    const pct = energyPercent(this.energy, Date.now(), this.energyConfig);
+    if (!this.budgetMeterEnabled) return "";
+    const now = Date.now();
+    const cfg = this.bindingWindowCfg(now);
+    const pct = bindingEnergy(this.budgetState, this.budgetWindows, now).percent;
     const d = this.drainSinceTranscript;
     this.drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
-    const totalPct = energyCostPercent(d.observer + d.speaker + d.boardManager, this.energyConfig);
+    const totalPct = energyCostPercent(d.observer + d.speaker + d.boardManager, cfg);
     if (totalPct < 0.1) return `[ENERGY ${pct}%]`;
-    const speakerPct = energyCostPercent(d.speaker, this.energyConfig);
+    const speakerPct = energyCostPercent(d.speaker, cfg);
     const speakerNote = speakerPct >= 0.1 ? `, speaker ${speakerPct}%` : "";
     return `[ENERGY ${pct}% | since last −${totalPct}%${speakerNote}]`;
   }
 
   /** One-line cost-aware reminder per band (the full rationale is in the
-   *  Observer's <energy> prompt block). */
+   *  Observer's <energy> prompt block). The band is the money budget's. */
   private static energyGuidance(band: EnergyBand): string {
     switch (band) {
       case "high": return "Observe freely.";
       case "moderate": return "Favor the cheap text signals; pull a real image/audio only when it genuinely matters.";
-      case "low": return "Minimal observation — lean on text, rest sooner, wake only on clear engagement. NEVER skip a safety concern.";
-    }
-  }
-
-  /** Guidance for the persistent budget's binding window. Distinct from
-   *  energyGuidance: this is about the longer-horizon spend (the month), so it
-   *  leans harder on rationing the expensive Live attention and resting. */
-  private static budgetGuidance(band: EnergyBand): string {
-    switch (band) {
-      case "high": return "Plenty of budget.";
-      case "moderate": return "Pace yourself — favor text, keep Live attention for moments that matter.";
-      case "low": return "Budget nearly spent — stay on cheap text, rest sooner, reserve Live for direct engagement. NEVER skip a safety concern.";
+      case "low": return "Budget nearly spent — minimal observation, lean on text, wake only on clear engagement. NEVER skip a safety concern.";
     }
   }
 

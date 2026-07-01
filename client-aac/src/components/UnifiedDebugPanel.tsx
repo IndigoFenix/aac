@@ -2,7 +2,7 @@
 // Single draggable, resizable debug panel with collapsible sections
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity, Play, Pause, User } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity, Play, Pause, User, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -331,6 +331,7 @@ export default function UnifiedDebugPanel({
       sessionLog: stored.sessionLog ?? false,
       dwell: stored.dwell ?? false,
       seizure: stored.seizure ?? true,
+      budget: stored.budget ?? true,
     };
   });
 
@@ -553,6 +554,55 @@ export default function UnifiedDebugPanel({
                   ) : (
                     <div className="text-[10px] italic text-gray-400">nothing transcribed yet</div>
                   )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ===== Token Budget (throttle testing) ===== */}
+          <div>
+            <SectionHeader
+              title="Token Budget"
+              icon={<Gauge className="w-3.5 h-3.5" />}
+              isOpen={sections.budget}
+              onClick={() => toggleSection("budget")}
+              badge={ctx.budget ? (
+                <Badge className={`${ctx.budget.band === "high" ? "bg-green-500" : ctx.budget.band === "moderate" ? "bg-yellow-500" : "bg-red-500"} text-white text-[9px] px-1`}>
+                  {ctx.budget.percent}%
+                </Badge>
+              ) : (
+                <Badge className="bg-gray-400 text-white text-[9px] px-1">n/a</Badge>
+              )}
+            />
+            {sections.budget && (
+              <div className="p-2 space-y-2 text-xs">
+                <div className="text-[11px]">
+                  {ctx.budget ? (
+                    <>
+                      Binding window <span className="font-mono">{ctx.budget.window ?? "?"}</span> —{" "}
+                      <span className="font-medium">{ctx.budget.percent}%</span> ({ctx.budget.band})
+                    </>
+                  ) : (
+                    <span className="italic text-gray-400">No budget tracked (full-attention session, or before first push).</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Force the live budget to test the throttle ladder. Real charges keep draining it — re-set to re-pin.
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[100, 50, 24, 20, 9, 4, 0].map(pct => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => ctx.debugSetBudget(pct)}
+                      className="px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-medium"
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[9px] text-gray-400 leading-tight">
+                  ≥25% normal · &lt;25% resting eyes + HTTP Observer + tired Speaker + sleep timer · &lt;10% asleep + board-only · 0% all-stop
                 </div>
               </div>
             )}

@@ -1454,6 +1454,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "context_injection", text });
   }, [wsSend]);
 
+  /** DEBUG-only: force the server-side budget to `percent` so the throttle
+   *  ladder (avatar eyes, energy bar, forced-HTTP Observer, tired Speaker, sleep
+   *  timer, board-only, all-stop) can be exercised live. Server self-guards on
+   *  debugMode. */
+  const debugSetBudget = useCallback((percent: number) => {
+    wsSend({ type: "debug_set_budget", percent });
+  }, [wsSend]);
+
   // Diagnostics: tell the server when the mic activates/deactivates. The server
   // only logs this to the session history (never injects it into a live agent),
   // so it's safe to call on every transition. No-ops if the socket isn't open.
@@ -2103,6 +2111,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     initialize,
     sendMessage,
     sendContextOnly,
+    debugSetBudget,
     sendMicState,
     sendCallActive,
     sendConversationRoom,

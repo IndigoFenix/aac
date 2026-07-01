@@ -3,8 +3,36 @@
 
 import type { Request, Response } from "express";
 import { licenseService } from "../services/licenseService";
+import { studentService } from "../services/studentService";
+import { studentRepository } from "../repositories";
 import { licensePermissionsSchema } from "@shared/license-permissions";
+import type { StudentWithAacSettings } from "@shared/schema";
 import { z } from "zod";
+
+/** Shape a student's admin-managed budget settings + live usage snapshot for
+ *  the Licenses → students budget UI. Tier lives on aacSettings; the meter
+ *  snapshot lives on the students row (budgetMeters). */
+function toBudgetSummary(student: StudentWithAacSettings) {
+  const aac = (student.aacSettings ?? {}) as Record<string, any>;
+  return {
+    id: student.id,
+    firstName: student.firstName ?? null,
+    lastName: student.lastName ?? null,
+    name: student.name ?? null,
+    budgetTier: (aac.budgetTier as string | null) ?? null,
+    fullAttentionMode: aac.fullAttentionMode ?? false,
+    boardManagerLiveModel: aac.boardManagerLiveModel ?? false,
+    allowFacilitatorControl: aac.allowFacilitatorControl ?? false,
+    budgetMeters: ((student as any).budgetMeters ?? {}) as Record<string, unknown>,
+  };
+}
+
+const updateBudgetSchema = z.object({
+  budgetTier: z.string().nullable().optional(),
+  fullAttentionMode: z.boolean().optional(),
+  boardManagerLiveModel: z.boolean().optional(),
+  allowFacilitatorControl: z.boolean().optional(),
+});
 
 const createLicenseSchema = z.object({
   name: z.string().optional(),
@@ -154,6 +182,77 @@ class LicenseController {
     } catch (error: any) {
       console.error("Error deleting license:", error);
       res.status(500).json({ message: "Failed to delete license" });
+    }
+  }
+
+  /** GET /api/admin/licenses/:id/students — all students in the license's
+   *  institute, with their budget settings + live usage snapshot. */
+  async listLicenseStudents(req: Request, res: Response): Promise<void> {
+    try {
+      const license = await licenseService.getLicenseById(req.params.id);
+      if (!license) {
+        res.status(404).json({ message: "License not found" });
+        return;
+      }
+      if (!license.instituteId) {
+        // Unassigned license (pending invite) — no institute, no students yet.
+        res.json({ students: [], instituteId: null });
+        return;
+      }
+      const students = await studentRepository.getStudentsWithAacSettingsByInstituteId(
+        license.instituteId,
+      );
+      res.json({
+        students: students.map(toBudgetSummary),
+        instituteId: license.instituteId,
+      });
+    } catch (error: any) {
+      console.error("Error listing license students:", error);
+      res.status(500).json({ message: "Failed to fetch students" });
+    }
+  }
+
+  /** GET /api/admin/students/:studentId/budget — one student's budget settings. */
+  async getStudentBudget(req: Request, res: Response): Promise<void> {
+    try {
+      const student = await studentRepository.getStudentWithAacSettings(req.params.studentId);
+      if (!student) {
+        res.status(404).json({ message: "Student not found" });
+        return;
+      }
+      res.json({ budget: toBudgetSummary(student) });
+    } catch (error: any) {
+      console.error("Error fetching student budget:", error);
+      res.status(500).json({ message: "Failed to fetch student budget" });
+    }
+  }
+
+  /** PATCH /api/admin/students/:studentId/budget — set admin-managed budget
+   *  fields (bypasses the clinician-path strip via allowAdminOnlyAacFields). */
+  async updateStudentBudget(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = updateBudgetSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
+        return;
+      }
+      // Normalize: empty tier string → null (inherit the deployment default).
+      const updates: Record<string, any> = { ...parsed.data };
+      if (updates.budgetTier === "") updates.budgetTier = null;
+
+      const updated = await studentService.updateStudent(
+        req.params.studentId,
+        updates,
+        { allowAdminOnlyAacFields: true },
+      );
+      if (!updated) {
+        res.status(404).json({ message: "Student not found" });
+        return;
+      }
+      res.json({ budget: toBudgetSummary(updated) });
+    } catch (error: any) {
+      console.error("Error updating student budget:", error);
+      res.status(500).json({ message: "Failed to update student budget" });
     }
   }
 

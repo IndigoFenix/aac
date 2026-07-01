@@ -13,6 +13,8 @@ import { SessionHistory } from '@/components/admin/SessionHistory';
 import { CostUsageDashboard } from '@/components/admin/CostUsageDashboard';
 import { ContactInquiries } from '@/components/admin/ContactInquiries';
 import { LicenseList } from '@/components/admin/LicenseList';
+import { LicenseStudents } from '@/components/admin/LicenseStudents';
+import { StudentBudgetPanel } from '@/components/admin/StudentBudgetPanel';
 import { ActivityLog } from '@/components/admin/ActivityLog';
 import { IdentityProviderList } from '@/components/admin/IdentityProviderList';
 import { DeepAnalysisAdmin } from '@/components/admin/DeepAnalysisAdmin';
@@ -41,6 +43,8 @@ export function AdminDashboard() {
   const [location, navigate] = useLocation();
   const [, params] = useRoute('/admin/library/:topicId');
   const [, crmCustomerParams] = useRoute('/admin/crm/customers/:customerId');
+  const [, licenseStudentParams] = useRoute('/admin/licenses/:licenseId/students/:studentId');
+  const [, licenseStudentsParams] = useRoute('/admin/licenses/:licenseId/students');
   const { direction } = useLanguage();
   const { user } = useAuth();
   const adminPermissions = user?.adminPermissions;
@@ -158,6 +162,17 @@ export function AdminDashboard() {
     }
 
     if (activeSection === 'licenses') {
+      if (licenseStudentParams?.licenseId && licenseStudentParams?.studentId) {
+        return (
+          <StudentBudgetPanel
+            licenseId={licenseStudentParams.licenseId}
+            studentId={licenseStudentParams.studentId}
+          />
+        );
+      }
+      if (licenseStudentsParams?.licenseId) {
+        return <LicenseStudents licenseId={licenseStudentsParams.licenseId} />;
+      }
       return <LicenseList />;
     }
 

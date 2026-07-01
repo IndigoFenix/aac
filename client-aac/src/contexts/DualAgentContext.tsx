@@ -115,6 +115,7 @@ interface DualAgentContextType {
   initialize: () => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  debugSetBudget: (percent: number) => void;
   sendBoardExit: (label: string, instruction: string) => void;
   voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   /** Send a sentence-builder glyph to the AI for interpretation via the `interpret` tool. */
@@ -1169,6 +1170,12 @@ function DualAgentProviderInner({
     []
   );
 
+  const liveAgentDebugSetBudgetRef = useRef(liveAgent.debugSetBudget);
+  liveAgentDebugSetBudgetRef.current = liveAgent.debugSetBudget;
+  const debugSetBudget = useCallback((percent: number) => {
+    liveAgentDebugSetBudgetRef.current(percent);
+  }, []);
+
   const liveAgentSendVoiceRef = useRef(liveAgent.sendVoice);
   liveAgentSendVoiceRef.current = liveAgent.sendVoice;
 
@@ -1226,6 +1233,7 @@ function DualAgentProviderInner({
       setOnUnloadBoard={setOnUnloadBoard}
       sendMessage={sendMessage}
       sendContextOnly={sendContextOnly}
+      debugSetBudget={debugSetBudget}
       sendBoardExit={liveAgent.sendBoardExit}
       voiceButtons={voiceButtons}
       stopVoiceRecording={stopVoiceRecording}
@@ -1261,6 +1269,7 @@ interface ProviderShellProps {
   setOnUnloadBoard: (callback: (() => void) | null) => void;
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  debugSetBudget: (percent: number) => void;
   sendBoardExit: (label: string, instruction: string) => void;
   voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
@@ -1304,6 +1313,7 @@ function ProviderShell({
   setOnUnloadBoard,
   sendMessage,
   sendContextOnly,
+  debugSetBudget,
   sendBoardExit,
   voiceButtons,
   stopVoiceRecording,
@@ -1358,6 +1368,7 @@ function ProviderShell({
     initialize: agent.initialize,
     sendMessage,
     sendContextOnly,
+    debugSetBudget,
     sendBoardExit,
     voiceButtons,
     playGlyph: agent.playGlyph,

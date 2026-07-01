@@ -171,6 +171,39 @@ export class StudentRepository {
   }
 
   /**
+   * Get all active AAC users enrolled in a given institute, with AAC settings.
+   * Admin-only view (Licenses → students budget management) — no per-user
+   * visibility joins. Student rows are hydrated so externalized name fields
+   * are populated for display.
+   */
+  async getStudentsWithAacSettingsByInstituteId(
+    instituteId: string
+  ): Promise<StudentWithAacSettings[]> {
+    const rows = await db
+      .selectDistinctOn([students.id], { student: students, aac: aacSettings })
+      .from(instituteStudents)
+      .innerJoin(students, eq(instituteStudents.studentId, students.id))
+      .leftJoin(aacSettings, eq(students.id, aacSettings.studentId))
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.isActive, true),
+          eq(students.isActive, true)
+        )
+      )
+      .orderBy(students.id, desc(students.createdAt));
+
+    const hydrated = await hydrateRecords(
+      "students",
+      rows.map((r) => r.student)
+    );
+    return hydrated.map((student, i) => ({
+      ...student,
+      aacSettings: rows[i].aac,
+    }));
+  }
+
+  /**
    * Get all AAC users linked to a specific user
    */
   async getStudentsByUserId(userId: string): Promise<Student[]> {

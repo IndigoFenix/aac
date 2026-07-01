@@ -37,6 +37,7 @@ import {
   MoreHorizontal,
   Mail,
   HeadsetIcon,
+  Gauge,
 } from 'lucide-react';
 import {
   useLicenses,
@@ -47,6 +48,7 @@ import { LicenseForm } from './LicenseForm';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/hooks/useAuth';
 import { apiRequest } from '@/lib/queryClient';
+import { useLocation } from 'wouter';
 
 function getStatusInfo(license: AdminLicense): { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } {
   if (license.suspendedAt) return { label: 'Suspended', variant: 'destructive' };
@@ -72,6 +74,7 @@ function getPermissionsSummary(permissions: any): string {
 export function LicenseList() {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const [, navigate] = useLocation();
   const { user, refetchUser } = useAuth();
   const { data: licenses, isLoading, error } = useLicenses();
   const { deleteLicense, resendInvite } = useLicenseMutations();
@@ -200,7 +203,12 @@ export function LicenseList() {
                   : license.userEmail || license.inviteEmail || '-';
 
                 return (
-                  <TableRow key={license.id}>
+                  <TableRow
+                    key={license.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/admin/licenses/${license.id}/students`)}
+                    data-testid={`row-license-${license.id}`}
+                  >
                     <TableCell className="font-medium">
                       {license.name || '-'}
                     </TableCell>
@@ -235,7 +243,7 @@ export function LicenseList() {
                         {getPermissionsSummary(license.permissions)}
                       </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" aria-label="More actions">
@@ -243,6 +251,10 @@ export function LicenseList() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => navigate(`/admin/licenses/${license.id}/students`)}>
+                            <Gauge className="w-4 h-4 me-2" />
+                            {t('admin.budget.manageBudgets')}
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(license)}>
                             <Pencil className="w-4 h-4 me-2" />
                             {t('common.edit')}

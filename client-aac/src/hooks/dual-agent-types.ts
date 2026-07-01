@@ -441,6 +441,9 @@ export interface UseDualAgentReturn {
   initialize: () => Promise<void>;
   sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  /** DEBUG-only: force the server-side budget to `percent` to exercise the
+   *  throttle ladder live (server gates on debugMode). */
+  debugSetBudget: (percent: number) => void;
   /** Diagnostics: report mic activate/deactivate to the server (logged to chat history, not sent to any live agent). */
   sendMicState: (active: boolean, reason?: string) => void;
   /** Tell the server a live video call started/ended — drives facilitator mode.

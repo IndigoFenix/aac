@@ -44,6 +44,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import type { PersistedBaseline } from "@shared/aac/seizure-config";
+import { ADMIN_ONLY_AAC_FIELDS } from "@shared/aac/admin-budget-fields";
 import { eq, inArray } from "drizzle-orm";
 import { deleteExternalData, type EntityRef } from "../external-storage";
 
@@ -223,11 +224,19 @@ export class StudentService {
    */
   async updateStudent(
     studentId: string,
-    updates: Record<string, any>
+    updates: Record<string, any>,
+    opts: { allowAdminOnlyAacFields?: boolean } = {}
   ): Promise<StudentWithAacSettings | undefined> {
     const parsedNames = this.parseStudentNames(updates);
     const merged = { ...parsedNames, ...updates };
     const { studentUpdates, aacUpdates } = splitUpdateBody(merged);
+
+    // The Token Budget fields are admin-managed (Licenses panel). Strip them
+    // from the normal clinician update path so only the admin endpoint can set
+    // them — a crafted PATCH /api/students/:id can't bypass the UI move.
+    if (!opts.allowAdminOnlyAacFields) {
+      for (const field of ADMIN_ONLY_AAC_FIELDS) delete aacUpdates[field];
+    }
 
     // Update student fields if any
     if (Object.keys(studentUpdates).length > 0) {

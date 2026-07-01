@@ -791,3 +791,72 @@ export function useLicenseMutations() {
     resendInvite,
   };
 }
+
+// =============================================================================
+// STUDENT BUDGET HOOKS (admin — Licenses panel)
+// =============================================================================
+
+export interface StudentBudget {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  name: string | null;
+  budgetTier: string | null;
+  fullAttentionMode: boolean;
+  boardManagerLiveModel: boolean;
+  allowFacilitatorControl: boolean;
+  // Persisted leaky-bucket snapshot ({drain,asOf} per window key). Fed to
+  // budgetReadings() alongside the tier's windows to render live usage meters.
+  budgetMeters: Record<string, any>;
+}
+
+export interface UpdateStudentBudgetData {
+  budgetTier?: string | null;
+  fullAttentionMode?: boolean;
+  boardManagerLiveModel?: boolean;
+  allowFacilitatorControl?: boolean;
+}
+
+/** Students in a license's institute, with their budget settings + usage. */
+export function useLicenseStudents(licenseId: string | undefined) {
+  return useQuery({
+    enabled: !!licenseId,
+    queryKey: ['/api/admin/licenses', licenseId, 'students'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/admin/licenses/${licenseId}/students`);
+      const data = await res.json();
+      return data as { students: StudentBudget[]; instituteId: string | null };
+    },
+  });
+}
+
+/** A single student's admin-managed budget settings + usage snapshot. */
+export function useStudentBudget(studentId: string | undefined) {
+  return useQuery({
+    enabled: !!studentId,
+    queryKey: ['/api/admin/students', studentId, 'budget'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/admin/students/${studentId}/budget`);
+      const data = await res.json();
+      return data.budget as StudentBudget;
+    },
+  });
+}
+
+export function useStudentBudgetMutations() {
+  const queryClient = useQueryClient();
+
+  const updateBudget = useMutation({
+    mutationFn: async ({ studentId, data }: { studentId: string; data: UpdateStudentBudgetData }) => {
+      const res = await apiRequest('PATCH', `/api/admin/students/${studentId}/budget`, data);
+      const result = await res.json();
+      return result.budget as StudentBudget;
+    },
+    onSuccess: (_, { studentId }) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/students', studentId, 'budget'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/licenses'] });
+    },
+  });
+
+  return { updateBudget };
+}

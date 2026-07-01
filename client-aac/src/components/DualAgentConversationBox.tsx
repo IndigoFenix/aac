@@ -311,6 +311,12 @@ export function DualAgentConversationBox({
   // the sleep system regardless of state. Eyegaze dwell vs touch vs click are
   // distinguished for the message text and the always-wake trigger source.
   const handleAvatarClick = useCallback((e: React.MouseEvent) => {
+    // Deep token-budget floor (<10%): the Speaker never wakes and the avatar
+    // stays asleep even when tapped (board-only presence). A tap must NOT wake
+    // the session here — button presses still work (separate path), but the AI
+    // voice is paused until the budget recovers.
+    if (budget && budget.percent < 10) return;
+
     const isEyegaze = dwellMode === 'eyegaze';
     attentiveness?.triggerAlwaysWake(isEyegaze ? 'avatarEyegaze' : 'avatarTap');
 
@@ -322,7 +328,7 @@ export function DualAgentConversationBox({
     } else {
       sendMessage("[system: the user clicked you]");
     }
-  }, [muteState, isInitialized, dwellMode, sendMessage, attentiveness]);
+  }, [muteState, isInitialized, dwellMode, sendMessage, attentiveness, budget]);
 
   // Cave click: user-only mute toggle. Muted → unmute & greet. Unmuted → mute & stop audio.
   // Either direction is a clear user-initiated engagement event, so it always-wakes

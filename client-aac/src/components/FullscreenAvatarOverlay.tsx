@@ -43,6 +43,7 @@ function computePhase(
   isLoading: boolean,
   sleepState: SleepState | undefined,
   errorFrozenOverlayVisible: boolean | null,
+  faceLost: boolean,
 ): Phase {
   // During a connection error, the upstream signals (isInitialized/isLoading)
   // cycle as retries fire. Lock the overlay to the snapshot captured by the
@@ -51,10 +52,19 @@ function computePhase(
   if (errorFrozenOverlayVisible === false) return "awake";
   if (isLoading) return "wake";
   if (!isInitialized) return "sleep";
-  if (sleepState === "asleep") return "sleep";
+  // Asleep with the student still in frame: DON'T fade the screen — keep the
+  // board usable (they can tap to wake / press buttons) with just the header
+  // avatar showing sleeping eyes. Only fade to the fullscreen "Sleeping…"
+  // overlay once the face is LOST (nobody there to use the board). Default with
+  // no camera/face detection → faceLost=true → the original fade, unchanged.
+  if (sleepState === "asleep") return faceLost ? "sleep" : "awake";
   if (sleepState === "waking") return "wake";
   return "awake";
 }
+
+/** A face is "present" while its engagement contribution hasn't decayed away
+ *  (~8s half-life). Below this it's treated as lost. */
+const FACE_PRESENT_MIN_CONTRIBUTION = 0.05;
 
 function initialStageFor(phase: Phase): Stage {
   if (phase === "sleep") return "sleeping";
@@ -69,11 +79,16 @@ export function FullscreenAvatarOverlay() {
   const { t } = useLanguage();
 
   const sleepState = attentiveness?.sleepState;
+  // "Face lost" = the face engagement contribution has decayed to ~nothing (no
+  // camera, no detection, or the student left frame). Keeps the board visible
+  // while asleep as long as they're still there.
+  const faceLost = (attentiveness?.engagementScore?.contributions?.face ?? 0) < FACE_PRESENT_MIN_CONTRIBUTION;
   const phase = computePhase(
     isInitialized,
     isLoading,
     sleepState,
     sprite.errorFrozenOverlayVisible,
+    faceLost,
   );
 
   const [stage, setStage] = useState<Stage>(() => initialStageFor(phase));
