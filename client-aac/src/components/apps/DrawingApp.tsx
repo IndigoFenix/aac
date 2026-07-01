@@ -19,14 +19,18 @@ const COLORS = [
 const BRUSH_SIZE = 12;
 const ERASER_SIZE = 32;
 
-// Eyegaze canvas-dwell constants
-const DWELL_RADIUS = 40;       // px — jitter tolerance for canvas dwell zone
-const RING_SIZE = 60;           // px — diameter of progress ring
-const RING_STROKE = 4;          // px — ring stroke width
-const RING_R = (RING_SIZE - RING_STROKE) / 2;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_R;
-const RING_COLOR = "rgba(59, 130, 246, 0.8)";
-const CANVAS_DWELL_MS = 2000;   // ms — dwell time for canvas pen toggle
+// Eyegaze speed-based drawing constants.
+// In eyegaze mode the pen follows the gaze and draws only while the gaze glides
+// SLOWLY. Holding still or flicking across the canvas quickly does NOT draw — so
+// the student controls the pen purely with how fast they move their eyes, with
+// no dwell/toggle to fight jitter.
+const DRAW_MIN_SPEED = 60;    // px/s — at or below this the gaze is "holding still" → no draw
+const DRAW_MAX_SPEED = 700;   // px/s — at or above this the gaze is "moving fast" → no draw
+const SPEED_SMOOTHING = 0.5;  // 0..1 weight on the previous speed sample (EMA to damp gaze jitter)
+// Before a stroke "takes", the gaze must travel this far while in the slow-draw
+// band. This rejects the brief pass through the band as a fast flick decelerates
+// (which otherwise dropped a stray dot right where the gaze came to rest).
+const DRAW_COMMIT_DISTANCE = 24; // px
 
 interface DrawingAppProps {
   onClose: () => void;
@@ -45,12 +49,18 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
   const { gazePosition, mode: dwellMode } = useEyeTrackingDwell();
   const [gazeDrawing, setGazeDrawing] = useState(false);
   const gazeDrawingRef = useRef(false);
-  const [canvasDwellProgress, setCanvasDwellProgress] = useState(0);
-  const [canvasDwellPos, setCanvasDwellPos] = useState<{ x: number; y: number } | null>(null);
   const [gazeCanvasPos, setGazeCanvasPos] = useState<{ x: number; y: number } | null>(null);
-  const canvasDwellStartRef = useRef(0);
-  const canvasDwellCenterRef = useRef<{ x: number; y: number } | null>(null);
   const gazeLastCanvasPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Pending-stroke accumulation: where the slow-draw band was entered, the last
+  // sample, and the distance travelled so far — a stroke only commits once this
+  // distance passes DRAW_COMMIT_DISTANCE.
+  const pendingStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingLastRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingDistRef = useRef(0);
+  // Previous gaze sample in screen space (+ timestamp) and the smoothed speed,
+  // used to decide "slow enough to draw".
+  const gazeLastScreenRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const speedEmaRef = useRef(0);
   const gazePosRef = useRef(gazePosition);
   gazePosRef.current = gazePosition;
 
@@ -153,29 +163,37 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  // ── Eyegaze canvas dwell + drawing interval ──
+  // ── Eyegaze speed-based drawing interval ──
+  // The pen tracks the gaze and lays down ink only while the gaze moves slowly.
+  // Moving fast (a saccade to look elsewhere) or holding still both lift the pen,
+  // so drawing is controlled entirely by gaze speed — no dwell/toggle.
   useEffect(() => {
-    if (dwellMode === "off") {
-      setCanvasDwellProgress(0);
-      setCanvasDwellPos(null);
-      setGazeCanvasPos(null);
-      canvasDwellStartRef.current = 0;
-      canvasDwellCenterRef.current = null;
+    const stopDrawing = () => {
       gazeLastCanvasPosRef.current = null;
-      gazeDrawingRef.current = false;
-      setGazeDrawing(false);
+      pendingStartRef.current = null;
+      pendingLastRef.current = null;
+      pendingDistRef.current = 0;
+      if (gazeDrawingRef.current) {
+        gazeDrawingRef.current = false;
+        setGazeDrawing(false);
+      }
+    };
+
+    if (dwellMode === "off") {
+      setGazeCanvasPos(null);
+      gazeLastScreenRef.current = null;
+      speedEmaRef.current = 0;
+      stopDrawing();
       return;
     }
 
     const interval = setInterval(() => {
       const gaze = gazePosRef.current;
       if (!gaze) {
-        setCanvasDwellProgress(0);
-        setCanvasDwellPos(null);
         setGazeCanvasPos(null);
-        canvasDwellStartRef.current = 0;
-        canvasDwellCenterRef.current = null;
-        gazeLastCanvasPosRef.current = null;
+        gazeLastScreenRef.current = null;
+        speedEmaRef.current = 0;
+        stopDrawing();
         return;
       }
 
@@ -183,76 +201,68 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
 
+      // Gaze speed in screen space (px/s), smoothed to tame tracker jitter.
+      const now = Date.now();
+      const prev = gazeLastScreenRef.current;
+      let speed = 0;
+      if (prev) {
+        const dt = Math.max(1, now - prev.t);
+        const dist = Math.hypot(gaze.x - prev.x, gaze.y - prev.y);
+        speed = dist / (dt / 1000);
+        speedEmaRef.current = speedEmaRef.current * SPEED_SMOOTHING + speed * (1 - SPEED_SMOOTHING);
+      } else {
+        speedEmaRef.current = 0;
+      }
+      gazeLastScreenRef.current = { x: gaze.x, y: gaze.y, t: now };
+      const smoothed = speedEmaRef.current;
+
       const isOverCanvas =
         gaze.x >= rect.left && gaze.x <= rect.right &&
         gaze.y >= rect.top && gaze.y <= rect.bottom;
 
       if (!isOverCanvas) {
-        setCanvasDwellProgress(0);
-        setCanvasDwellPos(null);
         setGazeCanvasPos(null);
-        canvasDwellStartRef.current = 0;
-        canvasDwellCenterRef.current = null;
-        gazeLastCanvasPosRef.current = null;
+        stopDrawing();
         return;
       }
 
       const canvasPos = { x: gaze.x - rect.left, y: gaze.y - rect.top };
       setGazeCanvasPos(canvasPos);
 
-      // Draw line if pen is down
-      if (gazeDrawingRef.current) {
-        if (gazeLastCanvasPosRef.current) {
-          drawRef.current(gazeLastCanvasPosRef.current, canvasPos);
-        }
-        gazeLastCanvasPosRef.current = canvasPos;
-      }
+      // Draw only in the "slow glide" band: not (nearly) still, not fast.
+      const shouldDraw =
+        prev !== null && smoothed >= DRAW_MIN_SPEED && smoothed <= DRAW_MAX_SPEED;
 
-      // Canvas dwell logic (pen toggle)
-      const now = Date.now();
-      const center = canvasDwellCenterRef.current;
-
-      if (!center) {
-        canvasDwellCenterRef.current = { x: gaze.x, y: gaze.y };
-        canvasDwellStartRef.current = now;
-        setCanvasDwellPos(canvasPos);
-        setCanvasDwellProgress(0);
-        return;
-      }
-
-      const dx = gaze.x - center.x;
-      const dy = gaze.y - center.y;
-      if (Math.sqrt(dx * dx + dy * dy) > DWELL_RADIUS) {
-        // Gaze wandered — reset dwell at new position
-        canvasDwellCenterRef.current = { x: gaze.x, y: gaze.y };
-        canvasDwellStartRef.current = now;
-        setCanvasDwellPos(canvasPos);
-        setCanvasDwellProgress(0);
-        return;
-      }
-
-      const progress = Math.min(1, (now - canvasDwellStartRef.current) / CANVAS_DWELL_MS);
-      setCanvasDwellPos(canvasPos);
-      setCanvasDwellProgress(progress);
-
-      if (progress >= 1) {
-        // Toggle pen up/down
-        const newDrawing = !gazeDrawingRef.current;
-        gazeDrawingRef.current = newDrawing;
-        setGazeDrawing(newDrawing);
-
-        if (newDrawing) {
+      if (shouldDraw) {
+        if (gazeDrawingRef.current) {
+          // Committed stroke — keep laying down ink along the gaze path.
+          if (gazeLastCanvasPosRef.current) {
+            drawRef.current(gazeLastCanvasPosRef.current, canvasPos);
+          }
           gazeLastCanvasPosRef.current = canvasPos;
-          drawRef.current(canvasPos, canvasPos); // dot at start
+        } else if (!pendingStartRef.current) {
+          // Just entered the slow band — start accumulating, but draw nothing yet.
+          pendingStartRef.current = canvasPos;
+          pendingLastRef.current = canvasPos;
+          pendingDistRef.current = 0;
         } else {
-          gazeLastCanvasPosRef.current = null;
+          const last = pendingLastRef.current ?? canvasPos;
+          pendingDistRef.current += Math.hypot(canvasPos.x - last.x, canvasPos.y - last.y);
+          pendingLastRef.current = canvasPos;
+          if (pendingDistRef.current >= DRAW_COMMIT_DISTANCE) {
+            // The stroke has "taken": commit it, inking from where the slow
+            // movement began through to here (so the lead-in isn't lost).
+            drawRef.current(pendingStartRef.current, canvasPos);
+            gazeLastCanvasPosRef.current = canvasPos;
+            pendingStartRef.current = null;
+            pendingLastRef.current = null;
+            pendingDistRef.current = 0;
+            gazeDrawingRef.current = true;
+            setGazeDrawing(true);
+          }
         }
-
-        // Reset dwell
-        canvasDwellCenterRef.current = null;
-        canvasDwellStartRef.current = 0;
-        setCanvasDwellProgress(0);
-        setCanvasDwellPos(null);
+      } else {
+        stopDrawing();
       }
     }, 50);
 
@@ -277,28 +287,26 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
           onPointerCancel={handlePointerUp}
         />
 
-        {/* Eyegaze: canvas dwell ring */}
-        {canvasDwellProgress > 0 && canvasDwellPos && (
+        {/* Eyegaze: idle brush ring at gaze position (pen up — move slowly to draw) */}
+        {!gazeDrawing && gazeCanvasPos && dwellMode !== "off" && (
           <svg
             className="absolute pointer-events-none"
             style={{
-              left: canvasDwellPos.x - RING_SIZE / 2,
-              top: canvasDwellPos.y - RING_SIZE / 2,
-              width: RING_SIZE,
-              height: RING_SIZE,
+              left: gazeCanvasPos.x - 20,
+              top: gazeCanvasPos.y - 20,
+              width: 40,
+              height: 40,
             }}
           >
             <circle
-              cx={RING_SIZE / 2}
-              cy={RING_SIZE / 2}
-              r={RING_R}
+              cx={20}
+              cy={20}
+              r={16}
               fill="none"
-              stroke={RING_COLOR}
-              strokeWidth={RING_STROKE}
-              strokeDasharray={RING_CIRCUMFERENCE}
-              strokeDashoffset={RING_CIRCUMFERENCE * (1 - canvasDwellProgress)}
-              transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
-              strokeLinecap="round"
+              stroke={isEraser ? "#9CA3AF" : activeColor}
+              strokeWidth={2}
+              strokeDasharray="3 4"
+              opacity={0.5}
             />
           </svg>
         )}

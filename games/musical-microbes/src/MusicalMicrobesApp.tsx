@@ -96,6 +96,12 @@ export default function MusicalMicrobesApp() {
   const dwellMsRef = useRef(DEFAULT_DWELL_MS);
   // Visual brightness, eased toward the light switch's target (0 dark, 1 lit).
   const lightLevelRef = useRef(0);
+  // Overlay ring that shows dwell progress on the palette buttons. The canvas
+  // has its own in-draw dwell ring; the [data-dwell] buttons had no feedback, so
+  // we drive this ring imperatively from the palette dwell loop (no per-frame
+  // React re-render of the whole component).
+  const dwellRingRef = useRef<SVGSVGElement | null>(null);
+  const dwellRingCircleRef = useRef<SVGCircleElement | null>(null);
 
   // UI state mirrored into refs so the rAF loop and pointer handlers read the
   // latest value without re-subscribing.
@@ -388,16 +394,50 @@ export default function MusicalMicrobesApp() {
     let hoverEl: HTMLElement | null = null;
     let hoverStart = 0;
     let fired = false;
+
+    const hideRing = () => {
+      if (dwellRingRef.current) dwellRingRef.current.style.display = 'none';
+    };
+    // Draw a filling arc over the hovered button, sized to the button itself.
+    const showRing = (el: HTMLElement, progress: number) => {
+      const svg = dwellRingRef.current;
+      const circle = dwellRingCircleRef.current;
+      if (!svg || !circle) return;
+      const rect = el.getBoundingClientRect();
+      const stroke = 4;
+      const size = Math.min(rect.width, rect.height);
+      const r = size / 2 - stroke / 2;
+      if (r <= 0) { hideRing(); return; }
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const circ = 2 * Math.PI * r;
+      svg.style.display = 'block';
+      svg.style.left = `${cx - size / 2}px`;
+      svg.style.top = `${cy - size / 2}px`;
+      svg.style.width = `${size}px`;
+      svg.style.height = `${size}px`;
+      circle.setAttribute('cx', `${size / 2}`);
+      circle.setAttribute('cy', `${size / 2}`);
+      circle.setAttribute('r', `${r}`);
+      circle.setAttribute('stroke-dasharray', `${circ}`);
+      circle.setAttribute('stroke-dashoffset', `${circ * (1 - progress)}`);
+      circle.setAttribute('transform', `rotate(-90 ${size / 2} ${size / 2})`);
+    };
+
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const gaze = gazeRef.current;
-      if (controlModeRef.current === 'off' || gaze.mode === 'off' || gaze.x < 0) { hoverEl = null; fired = false; return; }
+      if (controlModeRef.current === 'off' || gaze.mode === 'off' || gaze.x < 0) { hoverEl = null; fired = false; hideRing(); return; }
       const hit = document.elementFromPoint(gaze.x, gaze.y) as HTMLElement | null;
       const dwellEl = hit ? (hit.closest('[data-dwell]') as HTMLElement | null) : null;
       if (dwellEl !== hoverEl) { hoverEl = dwellEl; hoverStart = now; fired = false; }
-      if (!dwellEl) return;
-      if (!fired && now - hoverStart >= dwellMsRef.current) {
+      if (!dwellEl) { hideRing(); return; }
+      if (fired) { hideRing(); return; }
+      const progress = Math.min(1, (now - hoverStart) / dwellMsRef.current);
+      showRing(dwellEl, progress);
+      if (now - hoverStart >= dwellMsRef.current) {
         fired = true;
+        hideRing();
         dwellEl.click();
       }
     };
@@ -405,6 +445,9 @@ export default function MusicalMicrobesApp() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  // Icon-only palette button. Labels are dropped so every control fits in a
+  // two-column grid with no scrollbar (eyegaze can't drive a scrollbar); the
+  // name lives on aria-label / title for hover + assistive tech.
   const toolBtn = (id: Tool, label: string, node: React.ReactNode) => (
     <button
       data-dwell
@@ -414,21 +457,22 @@ export default function MusicalMicrobesApp() {
         if (observingRef.current) setObserving(false);
       }}
       aria-label={label}
-      className={`flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold transition-transform active:scale-95 ${
+      title={label}
+      className={`flex items-center justify-center aspect-square rounded-2xl transition-transform active:scale-95 ${
         tool === id && !observing
           ? 'bg-white/20 ring-2 ring-white/80 text-white'
           : 'bg-white/5 text-slate-300 hover:bg-white/10'
       }`}
     >
       {node}
-      <span>{label}</span>
     </button>
   );
 
   return (
     <div className="h-full w-full flex bg-[#07112b] text-slate-100 select-none overflow-hidden">
-      {/* Palette / parking strip */}
-      <div className="shrink-0 w-24 flex flex-col gap-2 p-2 bg-black/30 backdrop-blur border-r border-white/10 overflow-y-auto">
+      {/* Palette / parking strip — two icon-only columns so every control fits
+          without a scrollbar (unusable by eyegaze). */}
+      <div className="shrink-0 w-28 grid grid-cols-2 auto-rows-min content-start gap-2 p-2 bg-black/30 backdrop-blur border-r border-white/10">
         {toolBtn(
           'pulser',
           'Pulser',
@@ -456,52 +500,52 @@ export default function MusicalMicrobesApp() {
         )}
         {toolBtn('eraser', 'Erase', <Eraser size={26} />)}
 
-        <div className="my-1 border-t border-white/10" />
+        <div className="col-span-2 my-1 border-t border-white/10" />
 
         <button
           data-dwell
           onClick={() => setObserving(o => !o)}
           aria-label="Observe mode"
-          className={`flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold transition-transform active:scale-95 ${
+          title={observing ? 'Looking' : 'Observe'}
+          className={`flex items-center justify-center aspect-square rounded-2xl transition-transform active:scale-95 ${
             observing ? 'bg-amber-400/30 ring-2 ring-amber-300 text-amber-100' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
           <Eye size={26} />
-          <span>{observing ? 'Looking' : 'Observe'}</span>
         </button>
 
         <button
           data-dwell
           onClick={toggleLights}
           aria-label={lightsOn ? 'Turn the lights off so the microbes wake up' : 'Turn the lights on so the microbes sleep'}
-          className={`flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold transition-transform active:scale-95 ${
+          title={lightsOn ? 'Lights on' : 'Lights off'}
+          className={`flex items-center justify-center aspect-square rounded-2xl transition-transform active:scale-95 ${
             lightsOn
               ? 'bg-amber-300/30 ring-2 ring-amber-200 text-amber-100'
               : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
           {lightsOn ? <Lightbulb size={26} /> : <Moon size={26} />}
-          <span>{lightsOn ? 'Lights on' : 'Lights off'}</span>
         </button>
 
         <button
           data-dwell
           onClick={handleUndo}
           aria-label="Undo"
-          className="flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10 transition-transform active:scale-95"
+          title="Undo"
+          className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 text-slate-300 hover:bg-white/10 transition-transform active:scale-95"
         >
           <Undo2 size={26} />
-          <span>Undo</span>
         </button>
 
         <button
           data-dwell
           onClick={handleClear}
           aria-label="Clear all"
-          className="flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10 transition-transform active:scale-95"
+          title="Clear all"
+          className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 text-slate-300 hover:bg-white/10 transition-transform active:scale-95"
         >
           <Trash2 size={26} />
-          <span>Clear</span>
         </button>
 
         {isEmbedded && (
@@ -509,10 +553,10 @@ export default function MusicalMicrobesApp() {
             data-dwell
             onClick={() => sendToParent({ type: 'request_close' })}
             aria-label="Close"
-            className="mt-auto flex flex-col items-center gap-1 rounded-2xl px-3 py-3 text-xs font-semibold bg-red-600/80 text-white hover:bg-red-600 transition-transform active:scale-95"
+            title="Close"
+            className="col-span-2 flex items-center justify-center rounded-2xl py-3 bg-red-600/80 text-white hover:bg-red-600 transition-transform active:scale-95"
           >
             <X size={26} />
-            <span>Close</span>
           </button>
         )}
       </div>
@@ -528,6 +572,17 @@ export default function MusicalMicrobesApp() {
           {count} {count === 1 ? 'microbe' : 'microbes'}
         </div>
       </div>
+
+      {/* Dwell-progress ring for the palette buttons (positioned imperatively). */}
+      <svg ref={dwellRingRef} className="pointer-events-none fixed z-50" style={{ display: 'none' }}>
+        <circle
+          ref={dwellRingCircleRef}
+          fill="none"
+          stroke="rgba(255,255,255,0.95)"
+          strokeWidth={4}
+          strokeLinecap="round"
+        />
+      </svg>
     </div>
   );
 }
