@@ -5543,28 +5543,27 @@ export class AgentCoordinator {
    * every frame.
    */
   private routeAlarm(event: AlarmRaisedEvent): void {
-    // Perception gate for EMERGENCIES only. An emergency must rest on RECENT
-    // REAL PERCEPTION — a camera image the Observer actually saw, OR audio it
-    // actually heard — not a coarse text-only [SCENE] posture label or STT
-    // transcript (unreliable for this population; a mislabelled "lying" has
-    // fired false alarms). If neither a real frame nor heard audio reached the
-    // Observer within the window, SUPPRESS: don't signal the caretaker, force a
-    // focus frame, and tell the Observer to LOOK/LISTEN and re-raise only if it
-    // truly confirms the emergency. Alerts are not gated — they're often
-    // legitimately text/conversation-based (frustration, repeated asking).
-    const sensed = { lastRealFrameAt: this.lastRealFrameAt, lastRealAudioAt: this.lastAudioInputAt };
-    if (shouldSuppressEmergency(event.level, sensed, Date.now(), EMERGENCY_ALARM_FRAME_WINDOW_MS)) {
-      const lastSensedAt = Math.max(sensed.lastRealFrameAt, sensed.lastRealAudioAt);
-      const sinceSensed = lastSensedAt === 0
-        ? "no image or heard audio this session"
-        : `${Date.now() - lastSensedAt}ms since the last image/heard audio`;
-      flowNote("COORDINATOR", `Emergency alarm SUPPRESSED (no recent real perception — ${sinceSensed}): ${event.reason}`);
+    // Visual-confirmation gate for EMERGENCIES only. An emergency must rest on a
+    // real camera image the Observer actually SAW recently — not a coarse
+    // text-only [SCENE] posture label or an inference synthesised from earlier
+    // text (unreliable for this population; a mislabelled "lying" has fired
+    // false alarms). Audio does NOT count: lastAudioInputAt is bumped by the
+    // cheap STT text path too, so it's fresh whenever the mic is on and would
+    // defeat the gate. If no real frame reached the Observer within the window,
+    // SUPPRESS: don't signal the caretaker, force a focus frame, and tell the
+    // Observer to LOOK and re-raise only if it truly confirms the emergency.
+    // Alerts are not gated — they're often legitimately text/conversation-based.
+    if (shouldSuppressEmergency(event.level, this.lastRealFrameAt, Date.now(), EMERGENCY_ALARM_FRAME_WINDOW_MS)) {
+      const sinceFrame = this.lastRealFrameAt === 0
+        ? "no image this session"
+        : `${Date.now() - this.lastRealFrameAt}ms since the last image`;
+      flowNote("COORDINATOR", `Emergency alarm SUPPRESSED (no recent visual frame — ${sinceFrame}): ${event.reason}`);
       this.logEvent("OBSERVER(alarm-suppressed)", event);
       // Force a look so the Observer can actually confirm before it can alarm.
       this.send({ type: "focus_request", data: { reason: "confirm possible emergency" } });
       const who = this.currentStudentName ? `[${this.currentStudentName}]` : "the student";
       this.observer?.sendContextInjection(
-        `[EMERGENCY ALARM SUPPRESSED] You raised an emergency ("${event.reason}") but no recent real perception backed it — this rested on text-only observation (e.g. the coarse [SCENE] posture label or an STT transcript), which is often INACCURATE for ${who} (a wheelchair / atypical posture is easily misread as "lying"). A focus frame has been requested so you can LOOK; you can also request_audio or raise audio attention to actually HEAR. Then raise emergency_alarm AGAIN if — and only if — you genuinely SEE or HEAR the emergency. If it's benign, note it and do NOT alarm.`,
+        `[EMERGENCY ALARM SUPPRESSED] Your emergency ("${event.reason}") had no recent camera image behind it — only text (e.g. the coarse [SCENE] posture label), often wrong for ${who}. A focus frame was requested: look, then re-raise emergency_alarm ONLY if you actually SEE the emergency. If it's benign, note it and don't alarm.`,
       );
       return;
     }
