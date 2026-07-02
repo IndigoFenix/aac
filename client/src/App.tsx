@@ -334,6 +334,16 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/licenses/:licenseId/students/:studentId">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/licenses/:licenseId/students">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin/licenses">
         <SystemAdminRoute>
           <AdminDashboard />
