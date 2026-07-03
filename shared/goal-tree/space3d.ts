@@ -31,7 +31,8 @@ import type { Layout2D, Rect, Vec2 } from "./layout2d.js";
 import { dist, rectCenter, rectContains } from "./layout2d.js";
 import type { LogicalWorld } from "./logical-world.js";
 import type { SpaceCommand, SpaceInput } from "./space.js";
-import type { GoalTreeGame, TransportRelation } from "./types.js";
+import type { GoalTreeGame, StationKind, TransportRelation } from "./types.js";
+import { STATION_KINDS } from "./types.js";
 import { walkGoalTree } from "./walk.js";
 import type { ObjectSpec, WorldSpec } from "../world-engine/types.js";
 import type { MoveConstraint } from "../world-engine/engine.js";
@@ -217,6 +218,228 @@ export function buildTransportObjects(
     });
   }
   return { objects, placements };
+}
+
+// ---------------------------------------------------------------------------
+// Converse items: physical carry objects + vendor stock behind a counter
+// ---------------------------------------------------------------------------
+
+/** One converse item materialized as a REAL world carry object. */
+export interface ConverseWorldItem {
+  /** World object id. For a prop this IS the runtime instance id, so the player
+   *  can dispatch `pick-item` with it when the object is picked up. */
+  objectId: string;
+  entityId: string;
+  forNodeId: string;
+  /** prop = loose in the room (pickable); stock = the NPC's own (owned, granted
+   *  by dialogue — the vendor fetches and hands it over). */
+  kind: "prop" | "stock";
+  /** Where it sits (a stock item's fetch-errand target). */
+  pos: Vec2;
+}
+
+export interface ConverseObjects {
+  /** World-engine objects to add to the embedded spec (items + counters). */
+  objects: ObjectSpec[];
+  items: ConverseWorldItem[];
+  /** Per-creature staging: where it stands (home) and stows items (stockpile). */
+  staging: { nodeId: string; home: Vec2; stockpile: Vec2 }[];
+  /** Placement-need containers (fulfill `needPlacedInEntityId`), staged in the
+   *  creature's zone — the player watches drops INTO these (containedIn). */
+  dests: { nodeId: string; entityId: string; objectId: string }[];
+  /** Transformation stations (fulfill `stationKinds`) — the player watches
+   *  drops ON these and applies the state swap. */
+  stations: { nodeId: string; kind: StationKind; objectId: string; applies: string; removes: string }[];
+}
+
+/** Minimal instance shape (mirrors the runtime's ItemInstance expansion). */
+export interface ConverseInstanceRef {
+  id: string;
+  entityId: string;
+  forNodeId: string;
+}
+
+/**
+ * Materialize every converse node's items as REAL world objects (directive:
+ * items use the carry template — holding one means having it):
+ *   • props (walk-over placements) become loose carryables at their projected
+ *     spots — the player layer dispatches `pick-item` when one is picked up;
+ *   • `receive`-granted entities become STOCK: carryables parked BEHIND the
+ *     NPC, with a counter box between NPC and room — ownership (player layer)
+ *     makes them un-grabbable until the dialogue grants them.
+ */
+export function buildConverseObjects(
+  game: GoalTreeGame,
+  instances: ConverseInstanceRef[],
+  world: LogicalWorld,
+  layout: Layout2D,
+): ConverseObjects {
+  const iconOf = (entityId: string): string | undefined =>
+    game.entities.find((e) => e.id === entityId)?.iconRef;
+  // Composed variants (descriptors — "ball.big") render their GLYPH as the
+  // floating icon; plain items keep the emoji (identical and cheaper).
+  const glyphOf = (entityId: string): string | undefined => {
+    const g = game.entities.find((e) => e.id === entityId)?.glyph;
+    return g && g.includes(".") ? g : undefined;
+  };
+  const objects: ObjectSpec[] = [];
+  const items: ConverseWorldItem[] = [];
+  const staging: ConverseObjects["staging"] = [];
+  const dests: ConverseObjects["dests"] = [];
+  const stations: ConverseObjects["stations"] = [];
+
+  const converseNodes = [...walkGoalTree(game.root)]
+    .map((v) => v.node)
+    .filter((n) => n.type === "converse" || n.type === "fulfill");
+  const converseIds = new Set(converseNodes.map((n) => n.id));
+
+  // -- props: the projected item instances, as carryables at the same spots
+  for (const inst of instances) {
+    if (!converseIds.has(inst.forNodeId)) continue;
+    const pos = layout.items.find((i) => i.instanceId === inst.id)?.pos;
+    if (!pos) continue;
+    objects.push({
+      id: inst.id,
+      x: pos.x,
+      y: pos.y,
+      shape: "sphere",
+      radius: 0.5,
+      interactions: ["carry"],
+      ...(iconOf(inst.entityId) ? { iconRef: iconOf(inst.entityId) } : {}),
+      ...(glyphOf(inst.entityId) ? { glyph: glyphOf(inst.entityId) } : {}),
+    });
+    items.push({ objectId: inst.id, entityId: inst.entityId, forNodeId: inst.forNodeId, kind: "prop", pos });
+  }
+
+  // -- stock + counters, staged around the NPC figure
+  for (const node of converseNodes) {
+    if (node.type !== "converse" && node.type !== "fulfill") continue;
+    const fig = layout.figures.find((f) => f.nodeId === node.id);
+    const zoneRect = layout.zones.find((z) => z.zoneId === world.sites[node.id])?.rect;
+    if (!fig || !zoneRect) continue;
+
+    const props = new Set(node.propEntityIds ?? []);
+    const stockIds: string[] = [];
+    if (node.type === "fulfill") {
+      // A fulfill creature's stock is declared directly; bound KEEPSAKES stand
+      // in the same display row (ownership + bind make them un-grantable).
+      for (const id of [...(node.stockEntityIds ?? []), ...(node.boundEntityIds ?? [])]) {
+        if (!props.has(id) && !stockIds.includes(id)) stockIds.push(id);
+      }
+    } else {
+      // A converse node's stock is whatever its dialogue can grant.
+      for (const turn of node.turns) {
+        for (const opt of turn.options) {
+          for (const id of opt.receive ?? []) {
+            if (!props.has(id) && !stockIds.includes(id)) stockIds.push(id);
+          }
+        }
+      }
+    }
+
+    // "Behind" = away from the room center; the counter sits in front. The
+    // STOCKPILE (where the creature stows what it's given) sits behind too,
+    // offset sideways from the stock row; HOME is where it stands. Every
+    // staged point is CLAMPED into the zone with walking clearance — a spot
+    // in the wall would wedge the NPC's errand forever.
+    const c = rectCenter(zoneRect);
+    let dx = fig.pos.x - c.x;
+    let dy = fig.pos.y - c.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-3) { dx = 0; dy = -1; } else { dx /= d; dy /= d; }
+    const px = -dy; // perpendicular, to fan multiple stock items
+    const py = dx;
+    const M = 1.0; // wall clearance for staged points
+    const inZone = (p: Vec2): Vec2 => ({
+      x: Math.min(zoneRect.x + zoneRect.w - M, Math.max(zoneRect.x + M, p.x)),
+      y: Math.min(zoneRect.y + zoneRect.h - M, Math.max(zoneRect.y + M, p.y)),
+    });
+    // Spacing: staged points sit WELL apart (stockpile off to one side, stock
+    // row on the other) so dwell-picking one thing never fights its neighbors.
+    staging.push({
+      nodeId: node.id,
+      home: { x: fig.pos.x, y: fig.pos.y },
+      stockpile: inZone({
+        x: fig.pos.x + dx * 2.6 - px * (((stockIds.length + 1) / 2) * 2.0 + 1.2),
+        y: fig.pos.y + dy * 2.6 - py * (((stockIds.length + 1) / 2) * 2.0 + 1.2),
+      }),
+    });
+    // Placement-need container: an open box IN FRONT of the creature, offset
+    // to the side so it never overlaps the counter or the dwell-to-talk spot.
+    // Same shape as a transport destination — drops land `in` it.
+    if (node.type === "fulfill" && node.needPlacedInEntityId) {
+      const at = inZone({ x: fig.pos.x - dx * 2.0 + px * 2.4, y: fig.pos.y - dy * 2.0 + py * 2.4 });
+      const objectId = `dest_${node.id}`;
+      objects.push({
+        id: objectId,
+        x: at.x,
+        y: at.y,
+        shape: "box",
+        radius: 1.0,
+        interactions: [],
+        contains: [{ relation: "in" }],
+        ...(iconOf(node.needPlacedInEntityId) ? { iconRef: iconOf(node.needPlacedInEntityId) } : {}),
+      });
+      dests.push({ nodeId: node.id, entityId: node.needPlacedInEntityId, objectId });
+    }
+    // Transformation stations: reusable affordances IN FRONT of the creature,
+    // fanned to the side opposite the placement container. Items dropped ON
+    // one get their state swapped (the player layer watches containedIn).
+    if (node.type === "fulfill" && node.stationKinds?.length) {
+      node.stationKinds.forEach((kind: StationKind, i: number) => {
+        const def = STATION_KINDS[kind];
+        const at = inZone({
+          x: fig.pos.x - dx * 2.0 - px * (2.4 + i * 2.2),
+          y: fig.pos.y - dy * 2.0 - py * (2.4 + i * 2.2),
+        });
+        const objectId = `station_${node.id}_${kind}`;
+        objects.push({
+          id: objectId,
+          x: at.x,
+          y: at.y,
+          shape: "box",
+          radius: 0.9,
+          interactions: [],
+          contains: [{ relation: "on" }],
+          iconRef: def.iconRef,
+        });
+        stations.push({ nodeId: node.id, kind, objectId, applies: def.applies, removes: def.removes });
+      });
+    }
+    if (!stockIds.length) continue;
+
+    const counterAt = inZone({ x: fig.pos.x - dx * 1.8, y: fig.pos.y - dy * 1.8 });
+    objects.push({
+      id: `counter_${node.id}`,
+      x: counterAt.x,
+      y: counterAt.y,
+      shape: "box",
+      radius: 0.9,
+      interactions: [],
+    });
+
+    stockIds.forEach((entityId, i) => {
+      const spread = (i - (stockIds.length - 1) / 2) * 2.0;
+      const pos = inZone({
+        x: fig.pos.x + dx * 2.4 + px * spread,
+        y: fig.pos.y + dy * 2.4 + py * spread,
+      });
+      const objectId = `stock_${node.id}_${entityId}`;
+      objects.push({
+        id: objectId,
+        x: pos.x,
+        y: pos.y,
+        shape: "sphere",
+        radius: 0.5,
+        interactions: ["carry"],
+        ...(iconOf(entityId) ? { iconRef: iconOf(entityId) } : {}),
+        ...(glyphOf(entityId) ? { glyph: glyphOf(entityId) } : {}),
+      });
+      items.push({ objectId, entityId, forNodeId: node.id, kind: "stock", pos });
+    });
+  }
+
+  return { objects, items, staging, dests, stations };
 }
 
 // ---------------------------------------------------------------------------

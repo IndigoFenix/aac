@@ -40,29 +40,36 @@ export function pickEntity(
   localId: string,
   cfg: InteractTunables = DEFAULT_INTERACT_TUNABLES,
 ): PickedEntity | null {
-  let best: PickedEntity | null = null;
-  let bestD = Infinity;
-
+  // ITEM PRIORITY: an object and a creature can occupy the same spot (an item on a
+  // creature's tile). A gaze dwelling there should engage the ITEM — so an object
+  // within pick range always wins over a co-located creature. The carried item is
+  // excluded (you can't re-target what you're already holding — picking it as the
+  // fixation feeds a placement loop).
+  let bestObj: PickedEntity | null = null;
+  let bestObjD = Infinity;
   for (const obj of Object.values(state.objects)) {
+    if (obj.carriedBy) continue;
     const spec = state.spec.objects.find((o) => o.id === obj.id);
     const pickR = Math.max(cfg.toyPickRadius, spec?.push?.touchRadius ?? 0);
     const d = Math.hypot(obj.x - point.x, obj.y - point.y);
-    if (d <= pickR && d < bestD) {
-      best = { id: obj.id, kind: "object", x: obj.x, y: obj.y };
-      bestD = d;
+    if (d <= pickR && d < bestObjD) {
+      bestObj = { id: obj.id, kind: "object", x: obj.x, y: obj.y };
+      bestObjD = d;
     }
   }
+  if (bestObj) return bestObj;
 
+  let bestAv: PickedEntity | null = null;
+  let bestAvD = Infinity;
   for (const a of Object.values(state.avatars)) {
     if (a.id === localId) continue;
     const d = Math.hypot(a.x - point.x, a.y - point.y);
-    if (d <= cfg.avatarPickRadius && d < bestD) {
-      best = { id: a.id, kind: "avatar", x: a.x, y: a.y };
-      bestD = d;
+    if (d <= cfg.avatarPickRadius && d < bestAvD) {
+      bestAv = { id: a.id, kind: "avatar", x: a.x, y: a.y };
+      bestAvD = d;
     }
   }
-
-  return best;
+  return bestAv;
 }
 
 /**

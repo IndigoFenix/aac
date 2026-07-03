@@ -21,7 +21,7 @@ import { validateGoalTreeGame } from "./schema.js";
 import { buildLogicalWorld, type LogicalWorld } from "./logical-world.js";
 import { solveGoalTreeGame, type SolvedGame } from "./solver.js";
 import type { Layout2D } from "./layout2d.js";
-import { projectLayout2D, validateLayout2D } from "./projector2d.js";
+import { projectGameLayout, validateLayout2D } from "./projector2d.js";
 
 export type CertificationResult =
   | {
@@ -64,7 +64,7 @@ export function certifyGoalTreeGame(input: unknown): CertificationResult {
     };
   }
 
-  const layout = projectLayout2D(validated.data, world);
+  const layout = projectGameLayout(validated.data, world);
   const layoutErrors = validateLayout2D(validated.data, world, layout);
   if (layoutErrors.length > 0) {
     return { ok: false, stage: "layout", errors: layoutErrors };

@@ -263,6 +263,21 @@ export interface IdentifiedVoice {
   sampleCount?: number;
 }
 
+/**
+ * Backend "busy" state streamed from the server `processing` message. Each flag
+ * is true while the corresponding agent is working on something the child is
+ * waiting on. Drives the subtle ambient processing indicators. Mirrors
+ * `ProcessingActivity` in `server/services/dual-agent/live-relay.ts`.
+ */
+export interface ProcessingState {
+  /** Speaker agent is composing a reply (until it speaks or stays silent). */
+  speaker: boolean;
+  /** Board Manager is rebuilding the board (until rebuilt / no-change). */
+  board: boolean;
+  /** A composed sentence (glyph_press) is being interpreted into speech. */
+  interpret: boolean;
+}
+
 /** Data for an active add-on app */
 export interface ActiveAppData {
   appId: string;
@@ -432,6 +447,14 @@ export interface UseDualAgentReturn {
    *  (Speaker emitted a private_note). Consumers use it as a key to
    *  retrigger a question-mark animation next to the avatar. */
   thinkingPulse: number;
+  /** Backend-busy flags streamed from the server (Speaker/Board/interpret).
+   *  Drives the subtle ambient processing indicators. All-false when idle. */
+  processing: ProcessingState;
+  /** True while the STUDENT voice is actively playing (audio tag "utterance").
+   *  Marks the moment a button press / composed sentence starts being voiced —
+   *  used to flip the per-button indicator to "speaking" and to close the
+   *  sentence builder exactly when the interpreted sentence begins. */
+  voicingStudent: boolean;
 
   // Monitor status
   monitorError: string | null;

@@ -310,7 +310,7 @@ export function renderWorld2D(
     ctx.save();
     // Top-left so the bubble is centred over the head, sitting above the circle.
     ctx.translate(sx - layout.width / 2, sy - r - 12 - layout.height);
-    paintBubble(ctx, layout, glyphs, alpha);
+    paintBubble(ctx, layout, glyphs, alpha, b.style ?? "speech");
     ctx.restore();
   }
 }

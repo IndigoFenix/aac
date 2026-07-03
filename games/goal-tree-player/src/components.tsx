@@ -212,6 +212,14 @@ export function ObjectivesBar({
             emoji = icon(node.objectEntityId);
             detail = "📦→";
             break;
+          case "converse":
+            emoji = icon(node.npcEntityId);
+            detail = "💬";
+            break;
+          case "fulfill":
+            emoji = icon(node.npcEntityId);
+            detail = node.needItemEntityId ? icon(node.needItemEntityId) : "💬";
+            break;
         }
         return (
           <span
@@ -257,6 +265,35 @@ export function WinOverlay({ title, gazeRef, dwellMs, onReplay }: WinOverlayProp
       >
         🔁
       </DwellButton>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Satchel — the bottom icon strip of items the player is holding
+// ---------------------------------------------------------------------------
+
+export interface SatchelBarProps {
+  /** entity id → count currently held (the runtime inventory). */
+  satchel: Record<string, number>;
+  entities: Map<string, EntityDef>;
+}
+
+/** Bottom-centered strip mirroring the runtime SATCHEL (directive: while the
+ *  player is carrying a collectible, its icon shows at the bottom of the
+ *  screen — the multi-item exchange affordance). */
+export function SatchelBar({ satchel, entities }: SatchelBarProps) {
+  const held = Object.entries(satchel).filter(([, n]) => n > 0);
+  if (!held.length) return null;
+  return (
+    <div className="satchel-bar">
+      <span className="satchel-icon">🎒</span>
+      {held.map(([entityId, count]) => (
+        <span key={entityId} className="satchel-chip">
+          {entities.get(entityId)?.iconRef ?? "❔"}
+          {count > 1 && <small>×{count}</small>}
+        </span>
+      ))}
     </div>
   );
 }

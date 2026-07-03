@@ -304,6 +304,14 @@ export const en = {
     guessingMode: "Guessing...",
   },
 
+  processing: {
+    preparingVoice: "Getting ready…",
+    speaking: "Speaking…",
+    thinking: "Thinking…",
+    updatingBoard: "Updating buttons…",
+    interpreting: "Saying it…",
+    suggesting: "Finding words…",
+  },
   construction: {
     tabsLabel: "Sentence categories",
     glyphPreviewLabel: "Sentence preview",
@@ -411,6 +419,7 @@ export const en = {
       want: "Want",
       give: "Give",
       take: "Take",
+      trade: "Trade",
       receive: "Receive",
       have: "Have",
       make: "Make",

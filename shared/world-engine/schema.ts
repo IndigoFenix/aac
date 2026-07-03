@@ -110,6 +110,8 @@ const rectSchema = z
   .object({ x: finite, y: finite, w: positive.max(WORLD_MANIFOLD_MAX), h: positive.max(WORLD_MANIFOLD_MAX) })
   .strict();
 
+const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
 const wallSchema = z
   .object({
     kind: z.literal("wall"),
@@ -118,6 +120,7 @@ const wallSchema = z
     b: pointSchema,
     thickness: positive.max(50),
     floor: floorSchema.optional(),
+    color: colorSchema.optional(),
   })
   .strict();
 
@@ -133,6 +136,7 @@ const doorSchema = z
     locked: z.boolean().optional(),
     keyObjectId: idSchema.optional(),
     floor: floorSchema.optional(),
+    color: colorSchema.optional(),
   })
   .strict();
 
@@ -166,6 +170,7 @@ const buildingSchema = z
     wallThickness: positive.max(50),
     doorways: z.array(buildingDoorwaySchema).max(8).optional(),
     stairs: z.boolean().optional(),
+    color: colorSchema.optional(),
   })
   .strict();
 

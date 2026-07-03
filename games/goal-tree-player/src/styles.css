@@ -238,3 +238,33 @@ body,
     opacity: 1;
   }
 }
+
+/* Satchel — bottom strip of held items (mirrors the runtime inventory). */
+.satchel-bar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  pointer-events: none;
+  z-index: 5;
+}
+.satchel-icon {
+  font-size: 20px;
+}
+.satchel-chip {
+  font-size: 26px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.satchel-chip small {
+  font-size: 12px;
+  color: #e2e8f0;
+}

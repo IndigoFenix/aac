@@ -40,6 +40,24 @@ export interface GoalTreeOverlayDeps {
   entities: Map<string, EntityDef>;
   /** Pulled once per frame in update(). */
   getView: () => GoalTreeOverlayView;
+  /**
+   * Node ids whose poser is EMBODIED as a real world-engine NPC (capsule body +
+   * icon head) — the overlay skips their floating figure sprite so the
+   * character isn't drawn twice.
+   */
+  embodiedNodeIds?: Set<string>;
+  /**
+   * Item instance ids materialized as REAL world carry objects (converse props)
+   * — the overlay skips their floating sprite so the item isn't drawn twice.
+   */
+  skipInstanceIds?: Set<string>;
+  /**
+   * How a LOCKED passage is marked. "box" (default) draws the classic red slab
+   * across the doorway. "badge" floats a padlock sprite instead — used when the
+   * world has real building doors (the engine renders the physical leaf; the
+   * slab would z-fight it).
+   */
+  doorStyle?: "box" | "badge";
 }
 
 /** The fields of a runtime `demonstrate` command the runner needs. */
@@ -101,7 +119,7 @@ export class GoalTreeOverlay3D implements SceneOverlay {
   private readonly disposables: { dispose(): void }[] = [];
 
   private readonly itemSprites = new Map<string, THREE.Sprite>();
-  private readonly doorMeshes = new Map<string, THREE.Mesh>();
+  private readonly doorMeshes = new Map<string, THREE.Object3D>();
   private readonly figureSprites = new Map<
     string,
     { sprite: THREE.Sprite; role: FigureRole }
@@ -317,6 +335,17 @@ export class GoalTreeOverlay3D implements SceneOverlay {
 
   private buildDoors(): void {
     for (const door of this.deps.layout.doors) {
+      const c = rectCenter(door.rect);
+      if (this.deps.doorStyle === "badge") {
+        // Real building doors exist — just float a padlock over a locked one,
+        // above the roofline (3 m walls + lintel would occlude it lower down).
+        const badge = this.makeIconSprite("🔒");
+        badge.scale.set(0.9, 0.9, 1);
+        badge.position.set(c.x, 3.6, c.y);
+        this.group.add(badge);
+        this.doorMeshes.set(door.passageId, badge);
+        continue;
+      }
       const geo = new THREE.BoxGeometry(
         Math.max(0.3, door.rect.w),
         1.6,
@@ -324,7 +353,6 @@ export class GoalTreeOverlay3D implements SceneOverlay {
       );
       const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color("#b91c1c") });
       const mesh = new THREE.Mesh(geo, mat);
-      const c = rectCenter(door.rect);
       mesh.position.set(c.x, 0.8, c.y);
       this.group.add(mesh);
       this.doorMeshes.set(door.passageId, mesh);
@@ -337,6 +365,7 @@ export class GoalTreeOverlay3D implements SceneOverlay {
       this.deps.world.figures.map((f) => [f.forNodeId, f.role]),
     );
     for (const figure of this.deps.layout.figures) {
+      if (this.deps.embodiedNodeIds?.has(figure.nodeId)) continue;
       const icon = this.deps.entities.get(figure.entityId)?.iconRef ?? "❔";
       const sprite = this.makeIconSprite(icon);
       sprite.position.set(figure.pos.x, FIGURE_Y, figure.pos.y);
@@ -350,6 +379,7 @@ export class GoalTreeOverlay3D implements SceneOverlay {
 
   private buildItems(): void {
     for (const item of this.deps.layout.items) {
+      if (this.deps.skipInstanceIds?.has(item.instanceId)) continue;
       const icon = this.deps.entities.get(item.entityId)?.iconRef ?? "❔";
       const sprite = this.makeIconSprite(icon);
       sprite.position.set(item.pos.x, ITEM_Y, item.pos.y);

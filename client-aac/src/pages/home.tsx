@@ -70,9 +70,9 @@ function lockedBoardFrom(options: BoardOption[]): ParsedBoardData {
           row: Math.floor(i / 2),
           col: i % 2,
           label: o.label,
-          spokenText: o.label,
+          spokenText: o.spokenText ?? o.label,
           glyph: o.glyph,
-          action: { type: "speak" as const, text: o.label },
+          action: { type: "speak" as const, text: o.spokenText ?? o.label },
         })),
       },
     ],
@@ -125,7 +125,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -162,8 +162,16 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   /** Lift the social-trainer peer face (home-board "Practice friend" button)
    *  out of the provider so the top-level board (rendered outside it) can show it. */
   onSocialFaceChange?: (data: { preview: import("@/hooks/dual-agent-types").SocialPeerPreview | null; session: import("@/hooks/dual-agent-types").SocialSessionInfo | null }) => void;
+  /** Backend-busy flags (Speaker / Board / interpret) lifted out of the
+   *  provider so the top-level board (rendered outside it) can show the
+   *  subtle ambient processing indicators. */
+  onProcessingChange?: (processing: import("@/hooks/dual-agent-types").ProcessingState) => void;
+  /** True while the student voice is actively playing — lifted out so the
+   *  pressed-button indicator can flip to "speaking" and the builder can
+   *  close exactly when the interpreted sentence starts. */
+  onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -172,6 +180,14 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   useEffect(() => {
     onSeizureConfigChange?.(seizureConfig);
   }, [seizureConfig, onSeizureConfigChange]);
+
+  useEffect(() => {
+    onProcessingChange?.(processing);
+  }, [processing, onProcessingChange]);
+
+  useEffect(() => {
+    onVoicingStudentChange?.(voicingStudent);
+  }, [voicingStudent, onVoicingStudentChange]);
 
   useEffect(() => {
     onVoiceReady((buttons: string[], sentences?: Record<string, string>) => voiceButtons(buttons, sentences));
@@ -563,6 +579,66 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [aiSessionActive, setAiSessionActive] = useState(false);
   const [isGuessingMode, setIsGuessingMode] = useState(false);
   const [showConstructionBoard, setShowConstructionBoard] = useState(false);
+  // Backend-busy state lifted out of the provider (Home renders outside it) to
+  // drive the subtle ambient processing indicators.
+  const [serverProcessing, setServerProcessing] = useState<import("@/hooks/dual-agent-types").ProcessingState>({ speaker: false, board: false, interpret: false });
+  const [voicingStudent, setVoicingStudent] = useState(false);
+  // The button the child just pressed, shown with an ambient processing →
+  // speaking cue until its voice finishes. `id` matches BoardButton.id.
+  const [busyButton, setBusyButton] = useState<{ id: string; phase: "processing" | "speaking" } | null>(null);
+  // True from the moment Play is pressed in the sentence builder until the
+  // interpreted sentence starts being voiced (or a timeout). Keeps the builder
+  // open with the Play button in a waiting state instead of closing instantly.
+  const [interpretAwaiting, setInterpretAwaiting] = useState(false);
+
+  // Per-button cue phase transitions: processing → speaking (when the student
+  // voice starts) → cleared (when it ends). See handleBoardButtonClick.
+  useEffect(() => {
+    if (!busyButton) return;
+    if (voicingStudent && busyButton.phase === "processing") {
+      setBusyButton(b => (b ? { ...b, phase: "speaking" } : b));
+    } else if (!voicingStudent && busyButton.phase === "speaking") {
+      setBusyButton(null);
+    }
+  }, [voicingStudent, busyButton]);
+
+  // Backstop so the per-button cue never sticks if the voice never starts
+  // (server error, repeat-press coalescing) or an utterance runs unusually long.
+  useEffect(() => {
+    if (!busyButton) return;
+    const t = setTimeout(() => setBusyButton(null), busyButton.phase === "processing" ? 8000 : 15000);
+    return () => clearTimeout(t);
+  }, [busyButton]);
+
+  // Close the sentence builder exactly when the interpreted sentence starts
+  // being voiced. Tracks the server's `interpret` busy flag so a rejected /
+  // silent interpret (no voice at all) still closes the waiting builder.
+  const interpretSeenBusyRef = useRef(false);
+  useEffect(() => {
+    if (!interpretAwaiting) { interpretSeenBusyRef.current = false; return; }
+    if (voicingStudent) {
+      // The response voice began — this is the "close on response" moment.
+      setInterpretAwaiting(false);
+      setShowConstructionBoard(false);
+      return;
+    }
+    if (serverProcessing.interpret) {
+      interpretSeenBusyRef.current = true;
+    } else if (interpretSeenBusyRef.current) {
+      // Interpret lit up and then cleared without ever voicing (rejected /
+      // produced nothing) — don't leave the builder hanging.
+      setInterpretAwaiting(false);
+      setShowConstructionBoard(false);
+    }
+  }, [interpretAwaiting, voicingStudent, serverProcessing.interpret]);
+
+  // Hard timeout so the builder never gets stuck in the waiting state if
+  // neither a voice nor an interpret-cleared signal ever arrives.
+  useEffect(() => {
+    if (!interpretAwaiting) return;
+    const t = setTimeout(() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }, 15000);
+    return () => clearTimeout(t);
+  }, [interpretAwaiting]);
   // Static apps page overlay — opened by the home "Apps" button (intercepted
   // client-side, not forwarded to the AI). Closes when the user picks an app
   // (which then triggers the existing launchApp flow) or hits Back/Home.
@@ -1486,6 +1562,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
     if (voiceFnRef.current) {
+      // Ambient per-button cue: "processing" until the student voice starts,
+      // then "speaking" until it finishes (driven by voicingStudent). A
+      // timeout backstops the case where no voice ever plays (server error /
+      // repeat-press coalescing). Only the AI path streams utterance audio;
+      // the local `speak` fallback below has no such signal.
+      if (button.id) setBusyButton({ id: button.id, phase: "processing" });
       voiceFnRef.current([spokenText], sentences);
       setRecentButtonPresses([]);
     } else {
@@ -1937,6 +2019,61 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           )}
         </AnimatePresence>
 
+        {/* Ambient backend-busy cues — deliberately subtle (this population is
+            easily distracted by motion). They reassure the child that the
+            system heard them and is working, without pulling gaze. */}
+        {/* Board Manager rebuilding: a slight pulsing outline along the BOTTOM
+            of the header (top of the board content). `top` mirrors <main>'s own
+            variable padding-top, which reserves the header space (incl. the
+            taller glyph-caption strip when showing), so it always lands right
+            under the header.
+
+            Pure CSS, ALWAYS mounted: visibility is a CSS opacity transition of
+            the busy flag (not a React mount/unmount), so a settled flag just
+            fades the line to 0 and leaves it there — no AnimatePresence remount
+            to strand a half-finished ("jagged") pulse. A light band ripples
+            along the line (`board-busy-ripple`); the 500ms fade also absorbs the
+            Board Manager's sub-second busy flickers within a beat. */}
+        <div
+          role="status"
+          aria-label={t("processing.updatingBoard")}
+          aria-hidden={!serverProcessing.board}
+          className="absolute left-0 right-0 z-10 pointer-events-none transition-opacity duration-500"
+          style={{
+            opacity: serverProcessing.board ? 1 : 0,
+            top: gameActive
+              ? 0
+              : glyphStripActive
+                ? `calc(6rem + ${GLYPH_STRIP_REM}rem)`
+                : showConversation
+                  ? "6rem"   // pt-24
+                  : "1rem",  // pt-4
+          }}
+        >
+          <div className="h-[7px] w-full board-busy-ripple" />
+        </div>
+
+        {/* Speaker composing a reply: soft breathing dots, top-center, until it
+            speaks or decides to stay silent. Distinct from the one-shot
+            thinkingPulse the avatar uses for a private_note. */}
+        <AnimatePresence>
+          {serverProcessing.speaker && (
+            <motion.div
+              key="speaker-busy"
+              role="status"
+              aria-label={t("processing.thinking")}
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex gap-1"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 0.7, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+            >
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="w-2 h-2 rounded-full bg-accent animate-pulse" style={{ animationDelay: `${i * 0.2}s` }} />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Camera Status Indicator */}
         <motion.div
           className="absolute top-4 left-4 opacity-60 z-20"
@@ -2118,13 +2255,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                   // back to direct TTS only if the bridge hasn't wired up yet.
                   if (playGlyphFnRef.current) {
                     playGlyphFnRef.current(glyphString);
+                    // Don't close yet: interpretation takes a beat (Board
+                    // Manager LLM turn → interpret() → first TTS chunk). Keep
+                    // the builder open with the Play button in a waiting state
+                    // and close it exactly when the interpreted sentence starts
+                    // being voiced (see the interpretAwaiting effect below).
+                    setInterpretAwaiting(true);
                   } else {
                     console.warn("[home] playGlyph unavailable, falling back to direct TTS");
                     speak(glyphString, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+                    setShowConstructionBoard(false);
                   }
-                  setShowConstructionBoard(false);
                 }}
-                onClose={() => setShowConstructionBoard(false)}
+                awaitingInterpret={interpretAwaiting}
+                onClose={() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }}
               />
             </div>
           )}
@@ -2142,6 +2286,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 suppressLocalSpeech={aiSessionActive}
                 getFaceImage={resolveFaceImage}
                 highlightButtonId={peerCursorId}
+                busyButtonId={busyButton?.id ?? null}
+                busyPhase={busyButton?.phase ?? null}
               />
               {/* Game window — the game surface is portaled in here. */}
               <div ref={setGameHost} className="flex-1 min-w-0 h-full relative" />
@@ -2163,6 +2309,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 suppressLocalSpeech={aiSessionActive}
                 getFaceImage={resolveFaceImage}
                 highlightButtonId={peerCursorId}
+                busyButtonId={busyButton?.id ?? null}
+                busyPhase={busyButton?.phase ?? null}
               />
               <div ref={setVideoHost} className="flex-1 min-w-0 h-full relative" />
             </>
@@ -2208,6 +2356,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 suppressLocalSpeech={gameLockedBoard ? false : aiSessionActive}
                 getFaceImage={resolveFaceImage}
                 highlightButtonId={peerCursorId}
+                busyButtonId={busyButton?.id ?? null}
+                busyPhase={busyButton?.phase ?? null}
               />
             );
           })()}
@@ -2236,6 +2386,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 symbolUpdate={prebuiltBoardData ? null : symbolUpdateData}
                 aiButtonPress={aiButtonPressData}
                 highlightButtonId={peerCursorId}
+                busyButtonId={busyButton?.id ?? null}
+                busyPhase={busyButton?.phase ?? null}
                 onButtonClick={handleBoardButtonClick}
                 onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
                 onNavigate={handleBoardNavigate}
@@ -2554,6 +2706,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onBinaryChoiceChange={(options, escapeKind, inputGlyphs, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyphs(inputGlyphs); dismissBinaryChoiceRef.current = dismiss; }}
             onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
             onSeizureConfigChange={setServerSeizure}
+            onProcessingChange={setServerProcessing}
+            onVoicingStudentChange={setVoicingStudent}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onEnabledAppsChange={setEnabledApps}

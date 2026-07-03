@@ -9,6 +9,7 @@ import { AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { SentenceButton } from "@/components/SentenceButton";
+import { ButtonBusyIndicator, type ButtonBusyPhase } from "@/components/ButtonBusyIndicator";
 
 interface AppMiniBoardProps {
   board: ParsedBoardData | null;
@@ -22,6 +23,10 @@ interface AppMiniBoardProps {
   columns?: number;
   /** Button id a remote clinician is hovering (their "cursor") — ringed. */
   highlightButtonId?: string | null;
+  /** Button id the child just pressed — shows an ambient processing/speaking cue. */
+  busyButtonId?: string | null;
+  /** Which phase of the busy cue to show on `busyButtonId`. */
+  busyPhase?: ButtonBusyPhase | null;
 }
 
 // Icon/text sizing for a 4-row column — mirrors DynamicBoard's formula so the
@@ -29,7 +34,7 @@ interface AppMiniBoardProps {
 const ICON_FONT = "clamp(1rem, calc((100dvh - 10.5rem) / 4 * 0.45), 6rem)";
 const TEXT_FONT = "clamp(0.5rem, calc((100dvh - 10.5rem) / 4 * 0.10), 1.25rem)";
 
-export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage, columns = 1, highlightButtonId }: AppMiniBoardProps) {
+export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage, columns = 1, highlightButtonId, busyButtonId, busyPhase }: AppMiniBoardProps) {
   const { speak } = useTextToSpeech();
 
   // 4 rows per column; the narrow strip is 1 col (4 buttons), the game panel is
@@ -71,6 +76,7 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             iconFontSize={ICON_FONT}
             textFontSize={TEXT_FONT}
             entering={false}
+            cornerIndicator={busyPhase && busyButtonId && button.id === busyButtonId ? <ButtonBusyIndicator phase={busyPhase} /> : undefined}
           />
         ))}
       </AnimatePresence>

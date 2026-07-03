@@ -43,6 +43,7 @@ import type {
   CallDirective,
   ChatPeer,
   FloorCue,
+  ProcessingState,
   UseDualAgentReturn,
 } from "./dual-agent-types";
 import { CLIENT_CAPABILITIES } from "./dual-agent-types";
@@ -319,6 +320,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // prop so each new "thinking" cue restarts the question-mark
   // animation cleanly, even if two notes fire back-to-back.
   const [thinkingPulse, setThinkingPulse] = useState(0);
+  // Backend-busy flags from the server `processing` message (Speaker turn /
+  // Board Manager rebuild / sentence interpret). Drive the subtle ambient
+  // processing indicators.
+  const [processing, setProcessing] = useState<ProcessingState>({ speaker: false, board: false, interpret: false });
 
   // Binary-choice overlay state — non-null array of two options shows the
   // overlay. Yes/No questions go through this same path now (the canonical
@@ -815,6 +820,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           if (msg.active) setThinkingPulse((n) => n + 1);
           break;
 
+        case "processing":
+          // Backend-busy envelope: an agent started/finished work the child
+          // is waiting on. Update just that flag; the UI shows a subtle
+          // ambient cue per activity.
+          if (msg.activity === "speaker" || msg.activity === "board" || msg.activity === "interpret") {
+            setProcessing((prev) =>
+              prev[msg.activity as keyof ProcessingState] === !!msg.active
+                ? prev
+                : { ...prev, [msg.activity]: !!msg.active },
+            );
+          }
+          break;
+
         case "interaction_mode_changed":
           // AI changed its own behavioral mode (companion / facilitator /
           // standby). This NEVER affects the user-controlled muteState —
@@ -1040,6 +1058,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           setReconnecting(true);
           setError(null);
+          // Any in-flight backend work is interrupted by the reconnect — drop
+          // the ambient processing cues so they don't stick (the server can't
+          // send a clearing `processing:false` across a dropped connection).
+          setProcessing({ speaker: false, board: false, interpret: false });
           break;
 
         case "reconnected":
@@ -1057,11 +1079,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setSessionId(msg.sessionId);
           setReconnecting(false);
           setError(null);
+          setProcessing({ speaker: false, board: false, interpret: false });
           break;
 
         case "error":
           setError(msg.data);
           setIsLoading(false);
+          setProcessing({ speaker: false, board: false, interpret: false });
           break;
 
         case "rate_limited":
@@ -2086,6 +2110,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     emote,
     speakingVolume: audioPlayer.currentTag === "avatar" ? audioPlayer.speakingVolume : 0,
     thinkingPulse,
+    processing,
+    // True while the STUDENT voice is actively playing — marks the moment a
+    // button press / composed sentence starts being voiced.
+    voicingStudent: audioPlayer.isPlaying && audioPlayer.currentTag === "utterance",
 
     // Monitor status
     monitorError,

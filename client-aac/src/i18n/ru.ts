@@ -306,6 +306,14 @@ export const ru: Translations = {
     guessingMode: "\u0423\u0433\u0430\u0434\u044b\u0432\u0430\u043d\u0438\u0435...",
   },
 
+  processing: {
+    preparingVoice: "Подготовка…",
+    speaking: "Говорит…",
+    thinking: "Думает…",
+    updatingBoard: "Обновление кнопок…",
+    interpreting: "Произносит…",
+    suggesting: "Поиск слов…",
+  },
   construction: {
     tabsLabel: "Категории предложения",
     glyphPreviewLabel: "Предпросмотр предложения",
@@ -413,6 +421,7 @@ export const ru: Translations = {
       want: "\u0425\u043e\u0442\u0435\u0442\u044c",
       give: "\u0414\u0430\u0442\u044c",
       take: "\u0412\u0437\u044f\u0442\u044c",
+      trade: "Обменять",
       receive: "\u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c",
       have: "\u0418\u043c\u0435\u0442\u044c",
       make: "\u0414\u0435\u043b\u0430\u0442\u044c",

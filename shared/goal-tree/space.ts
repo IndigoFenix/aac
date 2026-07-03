@@ -33,6 +33,8 @@ export type SpaceInput =
   | { type: "cancel-choice"; nodeId: string }
   /** A transport node's object was placed correctly on its destination. */
   | { type: "place-object"; nodeId: string }
+  /** A fulfill node's creature had its need satisfied (creature sim, play-side). */
+  | { type: "fulfill-need"; nodeId: string }
   /** Player crossed into a zone (flavor/AI context only). */
   | { type: "enter-zone"; zoneId: string };
 
@@ -95,6 +97,10 @@ export type RuntimeEvent =
   | { type: "narrate"; kind: NarrationKind; text: string; nodeId?: string }
   | { type: "goal-completed"; nodeId: string; nodeType: GoalNodeType }
   | { type: "item-collected"; nodeId: string; entityId: string; have: number; need: number }
+  /** An item entered the player's SATCHEL (a converse prop pickup or a `receive`). */
+  | { type: "item-acquired"; nodeId: string; entityId: string }
+  /** The player handed a satchel item to an NPC (a converse `give`). */
+  | { type: "item-given"; nodeId: string; entityId: string }
   /** A distractor was picked — gentle feedback, never failure. */
   | { type: "distractor-picked"; entityId: string }
   | { type: "wrong-choice"; nodeId: string; entityId: string; feedback?: string }

@@ -1,29 +1,43 @@
 // shared/goal-tree/projector2d.ts
 //
 // Map projection: LogicalWorld → Layout2D, plus clinician layout overrides
-// and the layout validator. Three exports, one lifecycle:
+// and the layout validator. Exports, one lifecycle:
 //
-//   projectLayout2D        — deterministic default geometry
+//   projectGameLayout      — the projector games actually use: VILLAGE
+//                            geometry for star-shaped worlds, east-icicle
+//                            fallback for deeper trees
+//   projectLayout2D        — the deterministic east-icicle geometry
+//   projectVillage2D       — plaza + houses geometry (null when the zone
+//                            graph isn't a star)
 //   applyLayout2DOverrides — sparse hand-edit diff on top of the projection
 //   validateLayout2D       — invariants any layout (projected or edited)
 //                            must satisfy before reaching a student
 //
-// Projection algorithm ("east icicle"): the zone graph is a tree, so each
-// zone's rect height equals its subtree band (own height, or the sum of its
-// children's bands if larger) and children stack top-to-bottom on the
-// parent's east edge in passage order. Non-overlap holds by construction:
-// sibling subtrees occupy disjoint vertical bands, children sit strictly
-// east of the parent column. Doors are centered on each child's shared
-// edge segment.
+// East-icicle algorithm: the zone graph is a tree, so each zone's rect height
+// equals its subtree band (own height, or the sum of its children's bands if
+// larger) and children stack top-to-bottom on the parent's east edge in
+// passage order. Non-overlap holds by construction: sibling subtrees occupy
+// disjoint vertical bands, children sit strictly east of the parent column.
+// Doors are centered on each child's shared edge segment.
+//
+// Village algorithm: when EVERY non-start zone hangs directly off the start
+// zone (the shape the symbol-game quest generators emit), the start zone
+// becomes a central PLAZA and each child zone a HOUSE footprint attached to
+// one of its four edges, spread along it — the geometric bones the world
+// engine's buildings are later raised on. Seeded (meta.seed): house order,
+// edge assignment, and small size jitter vary per seed while every rect stays
+// derived, so the same seed reproduces the same village.
 //
 // Determinism & stability: pure arithmetic over construction-ordered arrays
-// — same world, same layout. Inside a zone, content is placed on a
-// golden-angle spiral in a fixed order (figures, target items, distractors),
-// so APPENDING content never moves earlier placements. Structural edits can
-// still shift sibling bands; clinician overrides pin what matters and
-// orphaned overrides drop silently.
+// (+ an explicit seeded rng for the village) — same world + seed, same
+// layout. Inside a zone, content is placed on a golden-angle spiral in a
+// fixed order (figures, target items, distractors), so APPENDING content
+// never moves earlier placements. Structural edits can still shift sibling
+// bands; clinician overrides pin what matters and orphaned overrides drop
+// silently.
 
 import type { GoalTreeGame } from "./types.js";
+import { hashSeed, mulberry32 } from "../prng.js";
 import type { LogicalWorld, ZoneKind } from "./logical-world.js";
 import type {
   DoorLayout,
@@ -126,20 +140,8 @@ function planDistractors(
   return out;
 }
 
-export function projectLayout2D(
-  game: GoalTreeGame,
-  world: LogicalWorld,
-  config: Projector2DConfig = PROJECTOR2D_DEFAULTS,
-): Layout2D {
-  // Children per zone, in passage (construction) order.
-  const children = new Map<string, { zoneId: string; passageId: string }[]>();
-  for (const passage of world.passages) {
-    const list = children.get(passage.from) ?? [];
-    list.push({ zoneId: passage.to, passageId: passage.id });
-    children.set(passage.from, list);
-  }
-
-  // Content tallies drive zone sizing (step-wise, for stability).
+/** Content expansion + per-zone tallies — zone sizing reads these. */
+function planContent(game: GoalTreeGame, world: LogicalWorld, config: Projector2DConfig) {
   const ctx = createRuntimeContext(game, world);
   const distractorPlan = planDistractors(world, config);
   const tally = new Map<string, number>();
@@ -153,6 +155,89 @@ export function projectLayout2D(
     if ((tally.get(zoneId) ?? 0) > config.crowdedAt) return config.crowdedSize;
     return config.zoneSizes[kindByZone.get(zoneId) ?? "reach"];
   };
+  return { ctx, distractorPlan, sizeOf };
+}
+
+type ContentPlan = ReturnType<typeof planContent>;
+
+/** Shared content pass: spawn at the start-zone center, then figures, target
+ *  items, distractors on the spiral — identical for every zone geometry. */
+function placeContent(
+  world: LogicalWorld,
+  plan: ContentPlan,
+  zoneRects: Map<string, Rect>,
+  doors: DoorLayout[],
+  config: Projector2DConfig,
+): Pick<Layout2D, "figures" | "items" | "spawn"> {
+  // Door centers per zone (content keeps doorways clear on both sides).
+  const passageEnds = new Map(world.passages.map((p) => [p.id, p]));
+  const doorCentersByZone = new Map<string, Vec2[]>();
+  for (const door of doors) {
+    const passage = passageEnds.get(door.passageId);
+    if (!passage) continue;
+    const center = rectCenter(door.rect);
+    for (const zoneId of [passage.from, passage.to]) {
+      const list = doorCentersByZone.get(zoneId) ?? [];
+      list.push(center);
+      doorCentersByZone.set(zoneId, list);
+    }
+  }
+
+  // Spawn first (content avoids it), then figures, targets, distractors —
+  // appending content never moves earlier placements.
+  const spawn = rectCenter(zoneRects.get(world.startZoneId)!);
+  const occupiedByZone = new Map<string, Vec2[]>([[world.startZoneId, [spawn]]]);
+  const placeInZone = (zoneId: string): Vec2 => {
+    const rect = zoneRects.get(zoneId)!;
+    const occupied = occupiedByZone.get(zoneId) ?? [];
+    occupiedByZone.set(zoneId, occupied);
+    const doorCenters = doorCentersByZone.get(zoneId) ?? [];
+    const pos = findSpot(rect, occupied, doorCenters, config);
+    occupied.push(pos);
+    return pos;
+  };
+
+  const figures: FigureLayout[] = world.figures.map((figure) => ({
+    nodeId: figure.forNodeId,
+    entityId: figure.entityId,
+    pos: placeInZone(figure.zoneId),
+  }));
+
+  const items: ItemLayout[] = [];
+  for (const instance of plan.ctx.instances) {
+    items.push({
+      instanceId: instance.id,
+      entityId: instance.entityId,
+      pos: placeInZone(instance.zoneId),
+    });
+  }
+  for (const distractor of plan.distractorPlan) {
+    items.push({
+      instanceId: distractor.instanceId,
+      entityId: distractor.entityId,
+      pos: placeInZone(distractor.zoneId),
+      distractor: true,
+    });
+  }
+
+  return { figures, items, spawn };
+}
+
+export function projectLayout2D(
+  game: GoalTreeGame,
+  world: LogicalWorld,
+  config: Projector2DConfig = PROJECTOR2D_DEFAULTS,
+): Layout2D {
+  // Children per zone, in passage (construction) order.
+  const children = new Map<string, { zoneId: string; passageId: string }[]>();
+  for (const passage of world.passages) {
+    const list = children.get(passage.from) ?? [];
+    list.push({ zoneId: passage.to, passageId: passage.id });
+    children.set(passage.from, list);
+  }
+
+  const plan = planContent(game, world, config);
+  const { sizeOf } = plan;
 
   // Subtree bands (post-order).
   const band = new Map<string, number>();
@@ -194,55 +279,122 @@ export function projectLayout2D(
   };
   place(world.startZoneId, 0, 0);
 
-  // Door centers per zone (content keeps doorways clear on both sides).
-  const passageEnds = new Map(world.passages.map((p) => [p.id, p]));
-  const doorCentersByZone = new Map<string, Vec2[]>();
-  for (const door of doors) {
-    const passage = passageEnds.get(door.passageId);
-    if (!passage) continue;
-    const center = rectCenter(door.rect);
-    for (const zoneId of [passage.from, passage.to]) {
-      const list = doorCentersByZone.get(zoneId) ?? [];
-      list.push(center);
-      doorCentersByZone.set(zoneId, list);
-    }
-  }
-
-  // Spawn first (content avoids it), then figures, targets, distractors —
-  // appending content never moves earlier placements.
-  const spawn = rectCenter(zoneRects.get(world.startZoneId)!);
-  const occupiedByZone = new Map<string, Vec2[]>([[world.startZoneId, [spawn]]]);
-  const placeInZone = (zoneId: string): Vec2 => {
-    const rect = zoneRects.get(zoneId)!;
-    const occupied = occupiedByZone.get(zoneId) ?? [];
-    occupiedByZone.set(zoneId, occupied);
-    const doorCenters = doorCentersByZone.get(zoneId) ?? [];
-    const pos = findSpot(rect, occupied, doorCenters, config);
-    occupied.push(pos);
-    return pos;
-  };
-
-  const figures: FigureLayout[] = world.figures.map((figure) => ({
-    nodeId: figure.forNodeId,
-    entityId: figure.entityId,
-    pos: placeInZone(figure.zoneId),
+  const zones: ZoneLayout[] = world.zones.map((zone) => ({
+    zoneId: zone.id,
+    rect: zoneRects.get(zone.id)!,
   }));
 
-  const items: ItemLayout[] = [];
-  for (const instance of ctx.instances) {
-    items.push({
-      instanceId: instance.id,
-      entityId: instance.entityId,
-      pos: placeInZone(instance.zoneId),
-    });
+  return { zones, doors, ...placeContent(world, plan, zoneRects, doors, config) };
+}
+
+// ---------------------------------------------------------------------------
+// Village projection (star-shaped worlds: plaza + houses)
+// ---------------------------------------------------------------------------
+
+/** Gap between neighboring houses on one plaza edge. */
+const VILLAGE_GAP = 2.5;
+/** Keep-away from the plaza corners, so houses on adjacent edges never meet. */
+const VILLAGE_CORNER = 2.5;
+
+/**
+ * Project a STAR-shaped world (every non-start zone a direct child of start)
+ * as a village: the start zone is a central plaza, each child zone a house
+ * footprint attached to one of the plaza's four edges with its door on the
+ * shared edge. Returns null when the world isn't a star — callers fall back
+ * to the east-icicle projection. `rng` drives house order, edge assignment
+ * and size jitter; seed it (see projectGameLayout) for reproducible villages.
+ */
+export function projectVillage2D(
+  game: GoalTreeGame,
+  world: LogicalWorld,
+  config: Projector2DConfig = PROJECTOR2D_DEFAULTS,
+  rng: () => number = Math.random,
+): Layout2D | null {
+  const kids = world.passages
+    .filter((p) => p.from === world.startZoneId)
+    .map((p) => ({ zoneId: p.to, passageId: p.id }));
+  if (kids.length === 0 || kids.length !== world.zones.length - 1) return null;
+
+  const plan = planContent(game, world, config);
+
+  // Seeded house order + a little outward size jitter (never shrinking below
+  // the content-driven size, so the spiral placement always fits).
+  const order = [...kids];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j]!, order[i]!];
   }
-  for (const distractor of distractorPlan) {
-    items.push({
-      instanceId: distractor.instanceId,
-      entityId: distractor.entityId,
-      pos: placeInZone(distractor.zoneId),
-      distractor: true,
-    });
+  const houses = order.map((kid) => {
+    const base = plan.sizeOf(kid.zoneId);
+    return {
+      ...kid,
+      w: base.w + Math.floor(rng() * 3),
+      h: base.h + Math.floor(rng() * 3),
+    };
+  });
+
+  // Distribute around the plaza; edges fill round-robin so 2–5 houses spread
+  // out instead of stacking on one side.
+  type Edge = "south" | "east" | "north" | "west";
+  const EDGES: Edge[] = ["south", "east", "north", "west"];
+  const byEdge = new Map<Edge, typeof houses>(EDGES.map((e) => [e, []]));
+  houses.forEach((h, i) => byEdge.get(EDGES[i % 4]!)!.push(h));
+
+  // The plaza must fit its longest edge row (and stay a comfortable square).
+  const along = (h: { w: number; h: number }, edge: Edge) =>
+    edge === "south" || edge === "north" ? h.w : h.h;
+  let side = Math.max(config.zoneSizes.start.w, config.zoneSizes.start.h);
+  for (const edge of EDGES) {
+    const row = byEdge.get(edge)!;
+    if (!row.length) continue;
+    const len =
+      row.reduce((acc, h) => acc + along(h, edge), 0) +
+      VILLAGE_GAP * (row.length - 1) +
+      VILLAGE_CORNER * 2;
+    side = Math.max(side, len);
+  }
+
+  const zoneRects = new Map<string, Rect>([
+    [world.startZoneId, { x: 0, y: 0, w: side, h: side }],
+  ]);
+  const doors: DoorLayout[] = [];
+  for (const edge of EDGES) {
+    const row = byEdge.get(edge)!;
+    if (!row.length) continue;
+    const rowLen =
+      row.reduce((acc, h) => acc + along(h, edge), 0) + VILLAGE_GAP * (row.length - 1);
+    let cursor = (side - rowLen) / 2;
+    for (const house of row) {
+      const rect: Rect =
+        edge === "south"
+          ? { x: cursor, y: side, w: house.w, h: house.h }
+          : edge === "north"
+            ? { x: cursor, y: -house.h, w: house.w, h: house.h }
+            : edge === "east"
+              ? { x: side, y: cursor, w: house.w, h: house.h }
+              : { x: -house.w, y: cursor, w: house.w, h: house.h };
+      zoneRects.set(house.zoneId, rect);
+
+      // The door sits on the shared edge, centered on the house's span,
+      // straddling it (half in the plaza, half in the house) exactly like the
+      // icicle doors — validateLayout2D's reach-into-both-zones check holds.
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      const t = config.doorThickness;
+      const l = config.doorLength;
+      doors.push({
+        passageId: house.passageId,
+        rect:
+          edge === "south"
+            ? { x: cx - l / 2, y: side - t / 2, w: l, h: t }
+            : edge === "north"
+              ? { x: cx - l / 2, y: -t / 2, w: l, h: t }
+              : edge === "east"
+                ? { x: side - t / 2, y: cy - l / 2, w: t, h: l }
+                : { x: -t / 2, y: cy - l / 2, w: t, h: l },
+      });
+      cursor += along(house, edge) + VILLAGE_GAP;
+    }
   }
 
   const zones: ZoneLayout[] = world.zones.map((zone) => ({
@@ -250,7 +402,23 @@ export function projectLayout2D(
     rect: zoneRects.get(zone.id)!,
   }));
 
-  return { zones, doors, figures, items, spawn };
+  return { zones, doors, ...placeContent(world, plan, zoneRects, doors, config) };
+}
+
+/**
+ * The projector games use: village geometry for star worlds, east-icicle for
+ * everything else. Seeded from `meta.seed` (falling back to a stable hash of
+ * the zone ids), so certification, the client, and tests all derive the SAME
+ * layout for the same game.
+ */
+export function projectGameLayout(
+  game: GoalTreeGame,
+  world: LogicalWorld,
+  config: Projector2DConfig = PROJECTOR2D_DEFAULTS,
+): Layout2D {
+  const seed = game.meta.seed ?? hashSeed(game.meta.title, ...world.zones.map((z) => z.id));
+  const village = projectVillage2D(game, world, config, mulberry32(hashSeed(seed, "village")));
+  return village ?? projectLayout2D(game, world, config);
 }
 
 /**

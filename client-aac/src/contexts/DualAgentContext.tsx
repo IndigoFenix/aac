@@ -2,7 +2,7 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, UseDualAgentReturn } from "@/hooks/dual-agent-types";
+import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, ProcessingState, UseDualAgentReturn } from "@/hooks/dual-agent-types";
 import { STT_ENGINE, STT_MODE } from "@/hooks/dual-agent-types";
 import { analyzeVoicePitch } from "@/lib/voiceFeatures";
 import { useLiveSession } from "@/hooks/useLiveSession";
@@ -174,6 +174,12 @@ interface DualAgentContextType {
    *  question-mark animations off this so each note re-triggers the
    *  pop-in. */
   thinkingPulse: number;
+  /** Backend-busy flags (Speaker turn / Board rebuild / interpret) for the
+   *  subtle ambient processing indicators. All-false when idle. */
+  processing: ProcessingState;
+  /** True while the student voice is actively playing (a button press or a
+   *  composed sentence is being voiced). */
+  voicingStudent: boolean;
 
   // Binary-choice overlay — two AI-supplied SENTENCE BUTTON options + an
   // implicit "Neither". Yes/no questions are surfaced through this same
@@ -1408,6 +1414,8 @@ function ProviderShell({
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,
     thinkingPulse: agent.thinkingPulse,
+    processing: agent.processing,
+    voicingStudent: agent.voicingStudent,
 
     binaryChoiceOptions: agent.binaryChoiceOptions,
     binaryChoiceEscapeKind: (agent as any).binaryChoiceEscapeKind ?? null,

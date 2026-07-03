@@ -306,6 +306,14 @@ export const ar: Translations = {
     guessingMode: "\u062a\u062e\u0645\u064a\u0646...",
   },
 
+  processing: {
+    preparingVoice: "جارٍ التحضير…",
+    speaking: "يتحدث…",
+    thinking: "يفكر…",
+    updatingBoard: "يتم تحديث الأزرار…",
+    interpreting: "يقولها…",
+    suggesting: "يبحث عن الكلمات…",
+  },
   construction: {
     tabsLabel: "فئات الجملة",
     glyphPreviewLabel: "معاينة الجملة",
@@ -413,6 +421,7 @@ export const ar: Translations = {
       want: "\u0623\u0631\u064a\u062f",
       give: "\u0623\u0639\u0637\u064a",
       take: "\u0622\u062e\u0630",
+      trade: "أبادل",
       receive: "\u064a\u0633\u062a\u0644\u0645",
       have: "\u0644\u062f\u064a",
       make: "\u064a\u0635\u0646\u0639",

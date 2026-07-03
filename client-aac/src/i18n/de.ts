@@ -306,6 +306,14 @@ export const de: Translations = {
     guessingMode: "Raten...",
   },
 
+  processing: {
+    preparingVoice: "Wird vorbereitet…",
+    speaking: "Spricht…",
+    thinking: "Denkt nach…",
+    updatingBoard: "Tasten werden aktualisiert…",
+    interpreting: "Wird gesagt…",
+    suggesting: "Wörter werden gesucht…",
+  },
   construction: {
     tabsLabel: "Satzkategorien",
     glyphPreviewLabel: "Satzvorschau",
@@ -413,6 +421,7 @@ export const de: Translations = {
       want: "Wollen",
       give: "Geben",
       take: "Nehmen",
+      trade: "Tauschen",
       receive: "Empfangen",
       have: "Haben",
       make: "Machen",

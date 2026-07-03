@@ -49,7 +49,16 @@ describe("goal-tree walk", () => {
     const m = measureGoalTree(picnicGame().root);
     expect(m.totalNodes).toBe(5);
     expect(m.maxDepth).toBe(5);
-    expect(m.byType).toEqual({ reach: 1, collect: 1, choose: 1, overcome: 2 });
+    expect(m.byType).toEqual({
+      reach: 1,
+      collect: 1,
+      choose: 1,
+      overcome: 2,
+      observe: 0,
+      transport: 0,
+      converse: 0,
+      fulfill: 0,
+    });
   });
 });
 
@@ -304,6 +313,10 @@ describe("goal-tree solver", () => {
       collect: 1,
       choose: 1,
       overcome: 2,
+      observe: 0,
+      transport: 0,
+      converse: 0,
+      fulfill: 0,
     });
     expect(result.stats.estimatedTravelLegs).toBeGreaterThan(0);
   });

@@ -798,7 +798,14 @@ export type ServerMessage =
   | { type: "social_peer_state"; data: import("@shared/social-bot/state").BotStatePayload }  // three-agent path: per-turn director state (face target + mode + rapport) while a social session is active
   | { type: "social_peer_preview"; data: { appearance: import("@shared/social-bot/ProceduralFace").FaceAppearance; characterName: string; expressiveness: number } }  // home-board "Practice friend" button: the peer face shown before a session starts (same persona the session will use)
   | { type: "social_peer_debug"; data: import("@shared/social-bot/debug").SocialPeerDebugSnapshot }  // DEBUG-only: full director internals + editable params, per turn + at session start
+  | { type: "processing"; activity: ProcessingActivity; active: boolean }  // backend-busy indicator: a server agent started/finished work the child is waiting on (Speaker turn, Board Manager rebuild, sentence interpret). Client shows a subtle ambient cue.
   | { type: "complete"; data?: any };
+
+/** Which backend activity a `processing` envelope refers to:
+ *  - "speaker": Speaker agent is composing a reply (until it speaks or stays silent)
+ *  - "board":   Board Manager is rebuilding (until board_rebuilt / board_no_change)
+ *  - "interpret": a composed sentence (glyph_press) is being interpreted into speech */
+export type ProcessingActivity = "speaker" | "board" | "interpret";
 
 /** Server-owned social-training session lifecycle (three-agent path).
  *  "started" carries everything the client needs to render the peer's

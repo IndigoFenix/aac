@@ -89,6 +89,10 @@ export interface WorldBubble {
   at: number;
   /** Total seconds visible before it fully fades out. */
   ttl: number;
+  /** Visual variant: "speech" (default — solid border, triangle tail) or
+   *  "thought" (dashed border, circle tail) for something WISHED rather than
+   *  said — the Request-c inference scaffold. */
+  style?: "speech" | "thought";
 }
 
 /** Default bubble lifetime (sim-seconds) when a caller doesn't specify one.
@@ -430,6 +434,15 @@ export function tickWorld(
 // Avatar locomotion (steer toward the aim point; ease to a stop near it)
 // ---------------------------------------------------------------------------
 
+/** Minimum speed (world units/sec) at which the avatar re-aims its FACING from
+ *  velocity. Below it, facing is held — so brake/gaze jitter near a stop can't flip
+ *  the heading (and a carried item's placement) back and forth. */
+const FACE_SPEED_MIN = 0.15;
+/** Max facing turn rate (rad/sec). Caps how fast the heading can rotate toward its
+ *  desired direction, so no single frame can produce a 180° flip (≈0.5s for a full
+ *  reversal at 12 rad/s — still snappy for real turns). */
+const FACE_TURN_RATE = 12;
+
 function advanceAvatar(
   a: AvatarState,
   aim: Vec2 | null,
@@ -458,8 +471,11 @@ function advanceAvatar(
       braking = true;
       const s = Math.hypot(a.vx, a.vy);
       if (s > 1e-4) {
-        ax = (-a.vx / s) * config.steerAccel;
-        ay = (-a.vy / s) * config.steerAccel;
+        // Clamp the brake so it can't push velocity PAST zero (which would flip its
+        // sign — and thus facing — every frame near a stop; see FACE_SPEED_MIN).
+        const brake = step > 0 ? Math.min(config.steerAccel, s / step) : config.steerAccel;
+        ax = (-a.vx / s) * brake;
+        ay = (-a.vy / s) * brake;
       }
       if (d > 1e-4) faceAim = { x: dirx, y: diry };
     } else {
@@ -483,8 +499,11 @@ function advanceAvatar(
     braking = true;
     const s = Math.hypot(a.vx, a.vy);
     if (s > 1e-4) {
-      ax = (-a.vx / s) * config.steerAccel;
-      ay = (-a.vy / s) * config.steerAccel;
+      // Clamp so braking lands exactly on zero rather than overshooting into a
+      // sign-flip (the source of the per-frame 180° facing flip near a stop).
+      const brake = step > 0 ? Math.min(config.steerAccel, s / step) : config.steerAccel;
+      ax = (-a.vx / s) * brake;
+      ay = (-a.vy / s) * brake;
     }
   }
 
@@ -533,18 +552,34 @@ function advanceAvatar(
   }
   clampToManifold(a, spec, config.avatarRadius);
 
-  // Facing: toward the aim when stopped on top of it; else follows velocity
-  // while moving; else retained.
+  // Facing: DESIRED heading = toward the aim when parked on it, else velocity while
+  // genuinely MOVING (speed-gated so a near-stationary avatar ignores brake/gaze
+  // jitter), else keep current. Then TURN toward it at a capped angular rate. The
+  // cap is the real safeguard: a physical avatar can't spin 180° in one frame, so a
+  // jittery target (a gaze resting on/near the avatar, whose direction flips frame
+  // to frame) can only nudge the heading, never flip it — which is what made a held
+  // item (positioned at carrier.f·CARRY_HOLD) snap front↔back every frame.
+  let tfx = a.fx;
+  let tfy = a.fy;
   if (faceAim) {
-    a.fx = faceAim.x;
-    a.fy = faceAim.y;
+    tfx = faceAim.x;
+    tfy = faceAim.y;
   } else {
     const moving = Math.hypot(a.vx, a.vy);
-    if (moving > 1e-3) {
-      a.fx = a.vx / moving;
-      a.fy = a.vy / moving;
+    if (moving > FACE_SPEED_MIN) {
+      tfx = a.vx / moving;
+      tfy = a.vy / moving;
     }
   }
+  const curAng = Math.atan2(a.fy, a.fx);
+  const tgtAng = Math.atan2(tfy, tfx);
+  let dAng = Math.atan2(Math.sin(tgtAng - curAng), Math.cos(tgtAng - curAng));
+  const maxTurn = FACE_TURN_RATE * step;
+  if (dAng > maxTurn) dAng = maxTurn;
+  else if (dAng < -maxTurn) dAng = -maxTurn;
+  const nAng = curAng + dAng;
+  a.fx = Math.cos(nAng);
+  a.fy = Math.sin(nAng);
 }
 
 // ---------------------------------------------------------------------------
@@ -930,11 +965,13 @@ function edgeStructures(
   Q: Vec2,
   gaps: { offset: number; width: number; locked?: boolean }[],
   thickness: number,
+  color?: string,
 ): StructureSpec[] {
   const L = Math.hypot(Q.x - P.x, Q.y - P.y);
   const dx = (Q.x - P.x) / L;
   const dy = (Q.y - P.y) / L;
   const at = (s: number): Vec2 => ({ x: P.x + dx * s, y: P.y + dy * s });
+  const tint = color ? { color } : {};
   const out: StructureSpec[] = [];
   let cursor = 0;
   let wi = 0;
@@ -942,11 +979,13 @@ function edgeStructures(
   for (const g of [...gaps].sort((a, b) => a.offset - b.offset)) {
     const gs = Math.max(0, Math.min(L, g.offset - g.width / 2));
     const ge = Math.max(0, Math.min(L, g.offset + g.width / 2));
-    if (gs - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(gs), thickness });
-    out.push({ kind: "door", id: `${bid}_${edge}_d${di++}`, a: at(gs), b: at(ge), thickness, ...(g.locked ? { locked: true } : {}) });
+    if (gs - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(gs), thickness, ...tint });
+    // The door carries the building color too — it tints the LINTEL the
+    // renderer raises above the leaf, so the doorway wall matches its house.
+    out.push({ kind: "door", id: `${bid}_${edge}_d${di++}`, a: at(gs), b: at(ge), thickness, ...(g.locked ? { locked: true } : {}), ...tint });
     cursor = ge;
   }
-  if (L - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(L), thickness });
+  if (L - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(L), thickness, ...tint });
   return out;
 }
 
@@ -966,10 +1005,10 @@ export function buildingStructures(b: BuildingSpec): StructureSpec[] {
   };
   for (const d of b.doorways ?? []) byEdge[d.edge].push(d);
   const out: StructureSpec[] = [
-    ...edgeStructures(b.id, "north", NW, NE, byEdge.north, t),
-    ...edgeStructures(b.id, "south", SW, SE, byEdge.south, t),
-    ...edgeStructures(b.id, "west", NW, SW, byEdge.west, t),
-    ...edgeStructures(b.id, "east", NE, SE, byEdge.east, t),
+    ...edgeStructures(b.id, "north", NW, NE, byEdge.north, t, b.color),
+    ...edgeStructures(b.id, "south", SW, SE, byEdge.south, t, b.color),
+    ...edgeStructures(b.id, "west", NW, SW, byEdge.west, t, b.color),
+    ...edgeStructures(b.id, "east", NE, SE, byEdge.east, t, b.color),
   ];
   if ((b.stairs ?? b.floors > 1) && b.floors > 1) {
     const sw = 2;
@@ -1156,10 +1195,18 @@ function avatarSpeechKey(id: string): string {
 export function showWorldBubble(
   state: WorldState,
   key: string,
-  spec: { anchor: WorldBubble["anchor"]; text: string; glyph?: string; ttl?: number },
+  spec: {
+    anchor: WorldBubble["anchor"];
+    text: string;
+    glyph?: string;
+    ttl?: number;
+    style?: WorldBubble["style"];
+  },
 ): void {
   const text = spec.text.trim();
-  if (!text) {
+  // Blank text clears the key — UNLESS a glyph rides along (a glyph-only
+  // bubble is a legitimate symbol-first caption; it renders without a text row).
+  if (!text && !spec.glyph) {
     delete state.bubbles[key];
     return;
   }
@@ -1169,6 +1216,7 @@ export function showWorldBubble(
     glyph: spec.glyph,
     at: state.time,
     ttl: spec.ttl ?? BUBBLE_DEFAULT_TTL,
+    ...(spec.style ? { style: spec.style } : {}),
   };
 }
 

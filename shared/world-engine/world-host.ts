@@ -44,6 +44,7 @@ import {
   DEFAULT_CONVERSATION_RADIUS,
   type NpcController,
   type NpcEngagement,
+  type NpcErrand,
   type NpcProximity,
 } from "./npc-controller.js";
 
@@ -116,8 +117,20 @@ export interface WorldHostDeps {
   /** Enable the CARRY interaction: dwell on a nearby carryable object to pick it
    *  up; while carrying, steering is suspended and dwelling on a spot moves the
    *  OBJECT there and puts it down (onto a container's slot under that spot, or on
-   *  the ground). Omit to disable carry. */
-  carry?: { reach?: number; dwellMs?: number };
+   *  the ground). Omit to disable carry.
+   *  `canPick` vetoes a completed pick-dwell (item OWNERSHIP: the vendor's stock
+   *  is visible but not takeable); `onPickDenied` fires instead of the pick so the
+   *  game layer can show the refusal (❌ + the owner's "mine!" bubble). */
+  carry?: {
+    reach?: number;
+    dwellMs?: number;
+    canPick?: (objectId: string) => boolean;
+    onPickDenied?: (objectId: string) => void;
+  };
+  /** Extra dwell-to-select progress (0..1) to fold into the gaze-cursor spark's
+   *  bloom — for a game-layer dwell the host doesn't own (e.g. the conversation
+   *  start/cancel dwell). Read each frame just before render. */
+  cursorProgress?: () => number;
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -136,12 +149,19 @@ export interface WorldHost {
    *  FROZEN (steering suspended) and the camera slews to FACE the target world
    *  point. Pass null to leave. Driven by the game layer (e.g. dwell-to-talk). */
   setConversation(target: Vec2 | null): void;
-  /** This frame's settled gaze — the fixated ground point (`committedWorld`, null
-   *  mid-saccade), how settled it is (`unsettled`: 0 settled … 1 flicking), and the
-   *  current CARRY dwell progress (`dwellProgress`: 0 idle … 1 about to fire). The
-   *  game layer hit-tests committedWorld to detect dwell on a figure / empty ground
-   *  and reads dwellProgress to draw a dwell-timer indicator. */
-  getGaze(): { committedWorld: Vec2 | null; unsettled: number; dwellProgress: number };
+  /** This frame's settled gaze — the EFFECTIVE fixation point (`committedWorld`:
+   *  the looked-at entity's position when the gaze rests on one on screen, else
+   *  the fixated ground point; null mid-saccade), what it rests on (`hover`, from
+   *  the screen-space pick), how settled it is (`unsettled`: 0 settled … 1
+   *  flicking), and the current CARRY dwell progress (`dwellProgress`: 0 idle …
+   *  1 about to fire). The game layer hit-tests committedWorld to detect dwell on
+   *  a figure / empty ground and reads dwellProgress for the dwell indicator. */
+  getGaze(): {
+    committedWorld: Vec2 | null;
+    hover: { kind: "avatar" | "object"; id: string } | null;
+    unsettled: number;
+    dwellProgress: number;
+  };
   /** Logical size (CSS px) + DPR changed. */
   resize(width: number, height: number, dpr: number): void;
   /** The local user spoke: show a speech bubble over the local avatar and broadcast
@@ -150,6 +170,9 @@ export interface WorldHost {
   /** Bias a hosted NPC's body from its live conversation (mind → body). No-op for
    *  an unknown id or a peer that doesn't host that NPC. */
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void;
+  /** Send a hosted NPC on a scripted waypoint errand (vendor fetch-and-deliver);
+   *  null cancels. No-op for an unknown id or a peer that doesn't host it. */
+  setNpcErrand(npcId: string, errand: NpcErrand | null): void;
   /** Live-update the gaze interpreter + camera/comfort tunables (debug menu). */
   setTunables(t: WorldTunables): void;
   start(): void;
@@ -259,6 +282,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let conversationTarget: Vec2 | null = null;
   // This frame's settled gaze, exposed to the game layer via getGaze().
   let lastCommitted: Vec2 | null = null;
+  let lastHover: { kind: "avatar" | "object"; id: string } | null = null;
   let lastUnsettled = 1;
   let lastDwellProgress = 0;
   /** The object this peer is currently carrying, or undefined. */
@@ -278,14 +302,60 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       dt,
       nowMs: now,
     });
+    // SCREEN SNAP: the ACTUAL gaze (raw pixel) resting on a rendered entity —
+    // a speech bubble, an avatar's body/sprite, an object's mesh — decouples the
+    // EFFECTIVE gaze from the ground point under the pixel: it becomes that
+    // entity's position. A bubble resolves to its SPEAKER (so looking at what's
+    // being said means looking at who says it, and the camera drops to the
+    // shoulder view framing both). Gated on a settled gaze like INTERACT, so a
+    // saccade sweeping across entities never snaps.
+    let snap: { kind: "avatar" | "object"; id: string; x: number; y: number } | null = null;
+    let snapFromBubble = false;
+    /** The gaze is resting on the LOCAL player itself. You can't engage yourself
+     *  (that's the WATCH/sit path), but the spark cursor should still mark you. */
+    let hoverSelf = false;
+    if (pointer && view.pickScreen && me && intent.unsettled < INTERACT_SETTLE_MAX) {
+      const hit = view.pickScreen(pointer.x, pointer.y, { includeLocal: true });
+      if (hit) {
+        if (hit.kind === "bubble") {
+          const anchor = state.bubbles[hit.id]?.anchor;
+          if (anchor?.kind === "avatar" && anchor.id !== localId && state.avatars[anchor.id]) {
+            const av = state.avatars[anchor.id]!;
+            snap = { kind: "avatar", id: anchor.id, x: av.x, y: av.y };
+            snapFromBubble = true;
+          } else if (anchor && anchor.kind === "point") {
+            // A point-anchored caption (over an object/spot): gaze goes there.
+            const under = pickEntity({ x: anchor.x, y: anchor.y }, state, localId, tunables.interact);
+            snap = under
+              ? { kind: under.kind, id: under.id, x: under.x, y: under.y }
+              : null;
+            snapFromBubble = !!snap;
+          }
+        } else if (hit.kind === "avatar" && hit.id === localId) {
+          hoverSelf = true;
+        } else if (hit.kind === "object" && hit.id === carriedId()) {
+          // The item you're carrying is NOT a target — ignore it, so it never
+          // becomes the fixation (which fed a place-loop / facing jitter).
+        } else {
+          const pos = hit.kind === "avatar" ? state.avatars[hit.id] : state.objects[hit.id];
+          if (pos) snap = { kind: hit.kind, id: hit.id, x: pos.x, y: pos.y };
+        }
+      }
+    }
+    /** The settled gaze the world logic works from — snapped to the looked-at
+     *  entity when there is one, else the fixated ground point. */
+    const effFix: Vec2 | null = snap ? { x: snap.x, y: snap.y } : intent.committedWorld;
+
     // INTERACT (P3): a SETTLED gaze resting on an entity re-targets the aim to
     // engage it (toy → walk in; person → approach to talking distance + face). The
     // engine is unchanged — it just receives the engaging aim instead of the raw
     // ground point. interactId is forwarded so the renderer can highlight the target.
+    // A screen snap IS the pick (exact in every rig pose); the ground-point
+    // proximity pick stays as the fallback for the overhead view.
     let aim: Vec2 | null = intent.aim;
     let interactId: string | undefined;
-    if (me && !intent.sitting && intent.committedWorld && intent.unsettled < INTERACT_SETTLE_MAX) {
-      const hit = pickEntity(intent.committedWorld, state, localId, tunables.interact);
+    if (me && !intent.sitting && effFix && intent.unsettled < INTERACT_SETTLE_MAX) {
+      const hit = snap ?? pickEntity(effFix, state, localId, tunables.interact);
       if (hit) {
         aim = approachAim({ x: me.x, y: me.y }, { x: hit.x, y: hit.y }, hit.kind, tunables.interact);
         interactId = hit.id;
@@ -299,16 +369,29 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     carryDwellProgress = 0;
     if (deps.carry && me) {
       const carrying = carriedId();
-      const fix = intent.committedWorld; // the fixation point (null mid-saccade)
+      const fix = effFix; // the effective fixation point (null mid-saccade)
       if (carrying) {
         interactId = carrying;
+        let withinPlaceReach = false;
         if (fix) {
           const dx = fix.x - me.x;
           const dy = fix.y - me.y;
           const d = Math.hypot(dx, dy);
           aim = d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
+          // Placement is an ARM'S-REACH act: the put-down dwell only accumulates
+          // once the avatar has walked close enough to set the object there —
+          // dwelling on a distant spot steers toward it, never teleports the
+          // object to it. NEVER place while the gaze rests on a CREATURE — that's
+          // what dumped items onto creatures' tiles; giving an item is a dialogue
+          // act, not a drop. (The avatar still approaches; only the drop is blocked.)
+          // Check the creature via pickEntity too, not just snap: the held item can
+          // SHADOW the creature in the screen pick (item-priority), so snap may miss
+          // it — pickEntity excludes the carried item and finds the creature under it.
+          const overCreature =
+            snap?.kind === "avatar" || pickEntity(fix, state, localId, tunables.interact)?.kind === "avatar";
+          withinPlaceReach = !overCreature && d <= carryReach + CARRY_HOLD + 0.4;
         }
-        const res = carryDwell.step(fix ? { x: fix.x, y: fix.y } : null, dt * 1000);
+        const res = carryDwell.step(withinPlaceReach && fix ? { x: fix.x, y: fix.y } : null, dt * 1000);
         carryDwellProgress = res.progress;
         if (res.fired) {
           const a = carryDwell.anchor();
@@ -321,17 +404,29 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         if (near && obj) interactId = obj.id;
         const res = carryDwell.step(near && obj ? { x: obj.x, y: obj.y } : null, dt * 1000);
         carryDwellProgress = res.progress;
-        if (res.fired && near && obj) carryObject(state, obj.id, localId);
+        if (res.fired && near && obj) {
+          // Ownership veto: a completed pick-dwell on someone else's item is
+          // DENIED (the attempt still "happened" — the game layer shows why).
+          if (deps.carry.canPick?.(obj.id) === false) deps.carry.onPickDenied?.(obj.id);
+          else carryObject(state, obj.id, localId);
+        }
       }
     }
 
-    // Expose the settled gaze + carry-dwell progress for the game layer (onFrame).
-    lastCommitted = intent.committedWorld;
+    // Expose the settled EFFECTIVE gaze + what it rests on + carry-dwell progress
+    // for the game layer (onFrame).
+    lastCommitted = effFix;
+    lastHover = snap ? { kind: snap.kind, id: snap.id } : null;
     lastUnsettled = intent.unsettled;
     lastDwellProgress = carryDwellProgress;
     // CONVERSATION: freeze the avatar while talking (the camera faces the speaker,
     // applied via the render intent below). Mirrors the carry steering-suspension.
     if (conversationTarget) aim = null;
+    // Gaze resting on a speech bubble — or on the speaker while conversing —
+    // asks the camera for the over-the-shoulder framing (player + speaker both
+    // visible; the overhead pose puts the camera between them).
+    const wantShoulder =
+      snapFromBubble || (!!conversationTarget && snap?.kind === "avatar");
 
     const { events } = tickWorld(state, { aim }, dt, undefined, deps.constraint);
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
@@ -370,7 +465,26 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       }
     }
 
-    view.render(state, dt, { aim, sitting: intent.sitting, interactId, faceTarget: conversationTarget });
+    view.render(state, dt, {
+      aim,
+      sitting: intent.sitting,
+      interactId,
+      faceTarget: conversationTarget,
+      shoulder: wantShoulder,
+      // The spark cursor tracks the genuine gaze fixation (`effFix`) + what it
+      // rests on (`snap`), NOT `interactId`/`aim` — so it never sticks to the
+      // carried item or the conversation partner. Its bloom is the dwell-select
+      // progress (carry pick/place + any game-layer dwell).
+      cursor: {
+        point: effFix ?? intent.aim,
+        ...(snap
+          ? { hoverId: snap.id, hoverKind: snap.kind }
+          : hoverSelf
+            ? { hoverId: localId, hoverKind: "avatar" as const }
+            : {}),
+        selectProgress: Math.max(carryDwellProgress, deps.cursorProgress?.() ?? 0),
+      },
+    });
   };
 
   const loop = (now: number): void => {
@@ -403,7 +517,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       conversationTarget = target;
     },
     getGaze() {
-      return { committedWorld: lastCommitted, unsettled: lastUnsettled, dwellProgress: lastDwellProgress };
+      return {
+        committedWorld: lastCommitted,
+        hover: lastHover,
+        unsettled: lastUnsettled,
+        dwellProgress: lastDwellProgress,
+      };
     },
     resize(width, height, dpr) {
       view.resize(width, height, dpr);
@@ -418,6 +537,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     setNpcEngagement(npcId, engagement) {
       npcById.get(npcId)?.setEngagement(engagement);
+    },
+    setNpcErrand(npcId, errand) {
+      npcById.get(npcId)?.setErrand(errand);
     },
     setTunables(t) {
       tunables = t;

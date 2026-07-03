@@ -41,7 +41,7 @@ export const POOLS: Record<string, PoolDef> = {
       { id: "rabbit", label: "Rabbit", iconRef: "🐰", symbol: "rabbit" },
       { id: "bear", label: "Bear", iconRef: "🐻", symbol: "bear" },
       { id: "frog", label: "Frog", iconRef: "🐸", symbol: "frog" },
-      { id: "puppy", label: "Puppy", iconRef: "🐶", symbol: "puppy", glyphStatus: "queued" },
+      { id: "dog", label: "Dog", iconRef: "🐶", symbol: "dog", glyphStatus: "queued" },
     ],
   },
   container: {

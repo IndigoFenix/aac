@@ -12,6 +12,7 @@ import { z } from "zod";
 import type {
   ChooseNode,
   CollectNode,
+  ConverseNode,
   EntityDef,
   EntityKind,
   GoalNode,
@@ -20,6 +21,11 @@ import type {
 import {
   CHOOSE_MAX_OPTIONS,
   COLLECT_MAX_COUNT,
+  CONVERSE_MAX_LINES,
+  CONVERSE_MAX_OPTIONS,
+  CONVERSE_MAX_PROPS,
+  CONVERSE_MAX_TURNS,
+  FULFILL_MAX_ITEMS,
   GOAL_TREE_MAX_DEPTH,
   GOAL_TREE_MAX_ENTITIES,
   GOAL_TREE_MAX_NODES,
@@ -78,6 +84,8 @@ export const goalNodeSchema: z.ZodType<GoalNode> = z.lazy(() =>
     overcomeNodeSchema,
     observeNodeSchema,
     transportNodeSchema,
+    converseNodeSchema,
+    fulfillNodeSchema,
   ]),
 ) as unknown as z.ZodType<GoalNode>;
 
@@ -191,6 +199,68 @@ const transportNodeSchema = z.object({
   via: viaSchema.optional(),
 }).strict();
 
+const converseConditionSchema = z.object({
+  kind: z.enum(["carrying", "not-carrying", "knows", "given"]),
+  entityId: idSchema,
+}).strict();
+
+const converseLineSchema = z.object({
+  when: z.array(converseConditionSchema).min(1).max(4).optional(),
+  glyph: glyphStringSchema,
+}).strict();
+
+const converseOptionSchema = z.object({
+  entityId: idSchema,
+  when: z.array(converseConditionSchema).min(1).max(4).optional(),
+  give: z.array(idSchema).min(1).max(2).optional(),
+  receive: z.array(idSchema).min(1).max(2).optional(),
+  reveal: z.array(idSchema).min(1).max(2).optional(),
+  cues: z.array(demoCueSchema).min(1).max(OBSERVE_MAX_CUES).optional(),
+  next: idSchema.optional(),
+  completes: z.boolean().optional(),
+}).strict();
+
+const converseTurnSchema = z.object({
+  id: idSchema,
+  lines: z.array(converseLineSchema).min(1).max(CONVERSE_MAX_LINES),
+  options: z.array(converseOptionSchema).min(1).max(CONVERSE_MAX_OPTIONS),
+}).strict();
+
+const converseNodeSchema = z.object({
+  ...goalNodeBaseFields,
+  type: z.literal("converse"),
+  npcEntityId: idSchema,
+  entry: idSchema,
+  turns: z.array(converseTurnSchema).min(1).max(CONVERSE_MAX_TURNS),
+  propEntityIds: z.array(idSchema).min(1).max(CONVERSE_MAX_PROPS).optional(),
+  zoneHint: z.string().min(1).max(120).optional(),
+  via: viaSchema.optional(),
+}).strict();
+
+const fulfillNodeSchema = z.object({
+  ...goalNodeBaseFields,
+  type: z.literal("fulfill"),
+  npcEntityId: idSchema,
+  needItemEntityId: idSchema.optional(),
+  needItemEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  needValue: z.number().int().min(1).max(9).optional(),
+  needPlacedInEntityId: idSchema.optional(),
+  needForNodeId: idSchema.optional(),
+  needItemState: z.enum(["hot", "cold"]).optional(),
+  stationKinds: z.array(z.enum(["fire", "water"])).min(1).max(2).optional(),
+  likeEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  stockEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  propEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  playerDebt: z.number().int().min(1).max(9).optional(),
+  announce: z.enum(["before", "after", "never"]).optional(),
+  boundEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  thoughtScaffold: z.boolean().optional(),
+  needLocationKnown: z.boolean().optional(),
+  knowsItemEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
+  zoneHint: z.string().min(1).max(120).optional(),
+  via: viaSchema.optional(),
+}).strict();
+
 // ---------------------------------------------------------------------------
 // Top-level game
 // ---------------------------------------------------------------------------
@@ -207,6 +277,8 @@ const metaSchema = z.object({
   theme: z.string().min(1).max(120),
   aiCompanion: aiCompanionSchema.optional(),
   learningGoals: z.array(z.string().min(1).max(200)).max(10).optional(),
+  syntax: z.enum(["a", "b", "c"]).optional(),
+  seed: z.number().int().nonnegative().max(0xffffffff).optional(),
 }).strict();
 
 const goalTreeGameSchemaBase = z.object({
@@ -233,6 +305,9 @@ const KIND_RULES = {
   demoProp: ["item", "character", "obstacle", "marker"],
   transportObject: ["item"],
   transportDest: ["marker", "item"],
+  converseNpc: ["character", "marker"],
+  converseOption: ["item", "character", "marker"],
+  converseItem: ["item"],
 } as const satisfies Record<string, readonly EntityKind[]>;
 
 function validateGameStructure(
@@ -273,6 +348,13 @@ function validateGameStructure(
   const seenNodeIds = new Set<string>();
   let totalNodes = 0;
   let maxDepth = 0;
+  // Entities consumed by a converse `give`, per node — an item may be consumed
+  // by at most ONE converse node, or handing it to the wrong NPC could strand
+  // another quest (the one softlock the satchel model admits).
+  const giveConsumers = new Map<string, Set<string>>();
+  // On-behalf needs reference OTHER fulfill nodes — checked after the walk.
+  const fulfillNodeIds = new Set<string>();
+  const onBehalfRefs: { from: string; to: string }[] = [];
 
   for (const { node, depth } of walkGoalTree(game.root as GoalNode)) {
     totalNodes += 1;
@@ -313,6 +395,110 @@ function validateGameStructure(
         }
         break;
       }
+      case "converse":
+        validateConverseNode(node, issue, checkRef, giveConsumers);
+        break;
+      case "fulfill": {
+        fulfillNodeIds.add(node.id);
+        checkRef(node.id, "npcEntityId", node.npcEntityId, "converseNpc");
+        const own = new Set<string>();
+        const checkList = (field: string, ids: string[] | undefined) => {
+          const placement =
+            field === "stockEntityIds" || field === "propEntityIds" || field === "boundEntityIds";
+          for (const id of ids ?? []) {
+            checkRef(node.id, field, id, "converseItem");
+            if (placement) {
+              // stock + props are physical placements — no double-placing.
+              // (likes + known locations are relations, not placements.)
+              if (own.has(id)) issue(`fulfill "${node.id}" places item "${id}" twice`);
+              own.add(id);
+              const holders = giveConsumers.get(`fulfill:${id}`) ?? new Set<string>();
+              holders.add(node.id);
+              giveConsumers.set(`fulfill:${id}`, holders);
+            }
+          }
+        };
+        checkList("stockEntityIds", node.stockEntityIds);
+        checkList("propEntityIds", node.propEntityIds);
+        checkList("boundEntityIds", node.boundEntityIds); // physical placement too
+        checkList("likeEntityIds", node.likeEntityIds);
+        checkList("knowsItemEntityIds", node.knowsItemEntityIds);
+        if (node.needItemEntityId) {
+          checkRef(node.id, "needItemEntityId", node.needItemEntityId, "converseItem");
+          if (node.stockEntityIds?.includes(node.needItemEntityId)) {
+            issue(`fulfill "${node.id}" needs "${node.needItemEntityId}" but already stocks it`);
+          }
+        }
+        {
+          // Multi-item needs: distinct further instances, none stocked here.
+          const allNeeds = new Set(node.needItemEntityId ? [node.needItemEntityId] : []);
+          for (const id of node.needItemEntityIds ?? []) {
+            checkRef(node.id, "needItemEntityIds", id, "converseItem");
+            if (allNeeds.has(id)) issue(`fulfill "${node.id}" needs item "${id}" twice`);
+            allNeeds.add(id);
+            if (node.stockEntityIds?.includes(id)) {
+              issue(`fulfill "${node.id}" needs "${id}" but already stocks it`);
+            }
+          }
+          if (node.needItemEntityIds?.length && !node.needItemEntityId) {
+            issue(`fulfill "${node.id}" lists further need items without needItemEntityId`);
+          }
+        }
+        if (node.needPlacedInEntityId) {
+          checkRef(node.id, "needPlacedInEntityId", node.needPlacedInEntityId, "converseItem");
+          if (!node.needItemEntityId) {
+            issue(`fulfill "${node.id}" sets needPlacedInEntityId without a need`);
+          }
+          if (
+            node.needPlacedInEntityId === node.needItemEntityId ||
+            node.needItemEntityIds?.includes(node.needPlacedInEntityId)
+          ) {
+            issue(`fulfill "${node.id}" wants an item placed inside itself`);
+          }
+          // The container is a physical placement in this creature's zone.
+          const holders = giveConsumers.get(`fulfill:${node.needPlacedInEntityId}`) ?? new Set<string>();
+          holders.add(node.id);
+          giveConsumers.set(`fulfill:${node.needPlacedInEntityId}`, holders);
+        }
+        if (node.needForNodeId) {
+          if (!node.needItemEntityId) {
+            issue(`fulfill "${node.id}" sets needForNodeId without a need`);
+          }
+          if (node.needForNodeId === node.id) {
+            issue(`fulfill "${node.id}" wants an item delivered to itself — use a plain need`);
+          }
+          if (node.needPlacedInEntityId) {
+            issue(`fulfill "${node.id}" mixes needPlacedInEntityId with needForNodeId — pick one`);
+          }
+          onBehalfRefs.push({ from: node.id, to: node.needForNodeId });
+        }
+        if (node.needItemState && !node.needItemEntityId) {
+          issue(`fulfill "${node.id}" sets needItemState without a need`);
+        }
+        if (node.needLocationKnown === false && !node.needItemEntityId) {
+          issue(`fulfill "${node.id}" sets needLocationKnown without a need`);
+        }
+        break;
+      }
+    }
+  }
+
+  for (const ref of onBehalfRefs) {
+    if (!fulfillNodeIds.has(ref.to)) {
+      issue(`fulfill "${ref.from}" needForNodeId references "${ref.to}", which is not a fulfill node`);
+    }
+  }
+
+  for (const [entityId, consumers] of giveConsumers) {
+    if (consumers.size > 1) {
+      const isPlacement = entityId.startsWith("fulfill:");
+      issue(
+        isPlacement
+          ? `item "${entityId.slice(8)}" is placed by more than one fulfill node ` +
+            `(${[...consumers].join(", ")}) — one physical item cannot be in two rooms`
+          : `item "${entityId}" is consumed (give) by more than one converse node ` +
+            `(${[...consumers].join(", ")}) — giving it to the wrong NPC could strand the other quest`,
+      );
     }
   }
 
@@ -397,6 +583,133 @@ function validateChooseNode(
   // onCorrect payoff cues reference props the same way an observe demo does.
   for (const cue of node.onCorrect ?? []) {
     checkRef(node.id, "onCorrect", cue.entityId, "demoProp");
+  }
+}
+
+function validateConverseNode(
+  node: ConverseNode,
+  issue: (message: string) => void,
+  checkRef: (
+    nodeId: string,
+    field: string,
+    entityId: string,
+    rule: keyof typeof KIND_RULES,
+  ) => void,
+  giveConsumers: Map<string, Set<string>>,
+): void {
+  checkRef(node.id, "npcEntityId", node.npcEntityId, "converseNpc");
+
+  // -- turns: unique ids; entry + next refs resolve
+  const turnById = new Map(node.turns.map((t) => [t.id, t]));
+  const seenTurnIds = new Set<string>();
+  for (const turn of node.turns) {
+    if (seenTurnIds.has(turn.id)) {
+      issue(`converse "${node.id}" repeats turn id "${turn.id}"`);
+    }
+    seenTurnIds.add(turn.id);
+  }
+  if (!turnById.has(node.entry)) {
+    issue(`converse "${node.id}" entry "${node.entry}" is not a turn id`);
+  }
+
+  for (const turn of node.turns) {
+    // -- lines: the last must be unconditional so the turn can always render
+    const last = turn.lines[turn.lines.length - 1];
+    if (last?.when?.length) {
+      issue(`converse "${node.id}" turn "${turn.id}" — the last line must be unconditional`);
+    }
+    for (const line of turn.lines) {
+      for (const cond of line.when ?? []) {
+        checkRef(node.id, `turn "${turn.id}" line condition`, cond.entityId, "converseItem");
+      }
+    }
+
+    // -- options: unique board entities; ≥1 unconditional; carrying-only gates;
+    //    give entities must be gated on carrying them; transfers reference items
+    const seenOptions = new Set<string>();
+    let unconditional = 0;
+    for (const opt of turn.options) {
+      if (seenOptions.has(opt.entityId)) {
+        issue(`converse "${node.id}" turn "${turn.id}" repeats option entity "${opt.entityId}"`);
+      }
+      seenOptions.add(opt.entityId);
+      checkRef(node.id, `turn "${turn.id}" option`, opt.entityId, "converseOption");
+      if (!opt.when?.length) unconditional += 1;
+      for (const cond of opt.when ?? []) {
+        if (cond.kind === "not-carrying") {
+          issue(
+            `converse "${node.id}" turn "${turn.id}" option "${opt.entityId}" is gated on ` +
+              `"not-carrying" — options may only use monotone gates (carrying/knows/given); ` +
+              `lines may use not-carrying`,
+          );
+        }
+        checkRef(node.id, `turn "${turn.id}" option condition`, cond.entityId, "converseItem");
+      }
+      const carried = new Set((opt.when ?? []).filter((c) => c.kind === "carrying").map((c) => c.entityId));
+      for (const id of opt.give ?? []) {
+        checkRef(node.id, `turn "${turn.id}" give`, id, "converseItem");
+        if (!carried.has(id)) {
+          issue(
+            `converse "${node.id}" turn "${turn.id}" option "${opt.entityId}" gives "${id}" ` +
+              `without a matching {carrying ${id}} condition`,
+          );
+        }
+        const consumers = giveConsumers.get(id) ?? new Set<string>();
+        consumers.add(node.id);
+        giveConsumers.set(id, consumers);
+      }
+      for (const id of opt.receive ?? []) {
+        checkRef(node.id, `turn "${turn.id}" receive`, id, "converseItem");
+      }
+      for (const id of opt.reveal ?? []) {
+        checkRef(node.id, `turn "${turn.id}" reveal`, id, "converseItem");
+      }
+      for (const cue of opt.cues ?? []) {
+        checkRef(node.id, `turn "${turn.id}" cues`, cue.entityId, "demoProp");
+      }
+      if (opt.next !== undefined && !turnById.has(opt.next)) {
+        issue(
+          `converse "${node.id}" turn "${turn.id}" option "${opt.entityId}" points at ` +
+            `unknown turn "${opt.next}"`,
+        );
+      }
+    }
+    if (unconditional === 0) {
+      issue(`converse "${node.id}" turn "${turn.id}" has no unconditional option — the board could render empty`);
+    }
+  }
+
+  // -- props: unique items
+  const seenProps = new Set<string>();
+  for (const id of node.propEntityIds ?? []) {
+    if (seenProps.has(id)) {
+      issue(`converse "${node.id}" lists prop "${id}" more than once`);
+    }
+    seenProps.add(id);
+    checkRef(node.id, "propEntityIds", id, "converseItem");
+  }
+
+  // -- a completing option must be structurally reachable from entry (the
+  //    solver additionally proves it reachable under item conditions)
+  const visited = new Set<string>();
+  const queue = [node.entry];
+  let completable = false;
+  while (queue.length) {
+    const turn = turnById.get(queue.pop()!);
+    if (!turn || visited.has(turn.id)) continue;
+    visited.add(turn.id);
+    for (const opt of turn.options) {
+      if (opt.completes) completable = true;
+      if (opt.next && !visited.has(opt.next)) queue.push(opt.next);
+    }
+  }
+  if (!completable) {
+    issue(`converse "${node.id}" has no completing option reachable from entry "${node.entry}"`);
+  }
+  for (const turn of node.turns) {
+    if (!visited.has(turn.id)) {
+      issue(`converse "${node.id}" turn "${turn.id}" is unreachable from entry "${node.entry}"`);
+    }
   }
 }
 

@@ -37,6 +37,35 @@ export interface RenderIntent {
    *  (used during an NPC conversation, where the avatar is frozen but the view
    *  turns to the speaker). Null/undefined = normal aim-driven heading. */
   faceTarget?: Vec2 | null;
+  /** Request the over-the-shoulder rig regardless of the travel rules — set when
+   *  the gaze rests on a speech bubble (or the conversation speaker), so both the
+   *  player and the speaker stay framed instead of the overhead top-down. */
+  shoulder?: boolean;
+  /**
+   * The gaze-CURSOR payload for the flying-spark cursor (render3d). Deliberately
+   * separate from `aim`/`interactId` — those get repurposed by the game (steering
+   * re-target, carry suspension, conversation-facing), which would drag the spark
+   * onto the carried item or the person being spoken to. This reflects where the
+   * eyes actually REST and how far a dwell-to-select has progressed, so the spark
+   * can BE the selection indicator (replacing a separate dwell ring).
+   */
+  cursor?: {
+    /** Effective gaze fixation ground point, or null mid-saccade. */
+    point: Vec2 | null;
+    /** Entity the gaze rests on (screen pick), if any — the spark hovers over it. */
+    hoverId?: string;
+    hoverKind?: "avatar" | "object";
+    /** 0..1 dwell-to-select progress at the fixation (carry pick/place + game dwell). */
+    selectProgress?: number;
+  };
+}
+
+/** What the gaze pixel is resting on, resolved in SCREEN space (the rendered
+ *  sprite/mesh, not ground-point proximity) — see WorldView.pickScreen. */
+export interface ScreenPick {
+  kind: "bubble" | "avatar" | "object";
+  /** Avatar/object id, or the bubble's `state.bubbles` key. */
+  id: string;
 }
 
 /** World units shown across the smaller screen dimension by a follow camera. The
@@ -68,6 +97,14 @@ export interface WorldView {
    *  point, or null when the pixel doesn't fall on the ground (e.g. above the 3D
    *  horizon) — null reads as "no aim", so the avatar coasts to a stop. */
   screenToWorld(px: number, py: number): Vec2 | null;
+  /** What the pixel rests on VISUALLY (speech bubble, an avatar's body/sprite, an
+   *  object's mesh) — the host snaps the effective gaze to the hit entity, which
+   *  is what makes entities pickable by looking AT them in the shallow shoulder
+   *  view (where their bodies extend far up-screen from their ground point).
+   *  Optional: the 2D view omits it (its steep camera makes ground-point
+   *  proximity exact already). `includeLocal` returns the local avatar instead of
+   *  passing the ray through it (the spark cursor uses it to hover over the player). */
+  pickScreen?(px: number, py: number, opts?: { includeLocal?: boolean }): ScreenPick | null;
   /** Draw one frame of `state`. `dt` (seconds) drives camera smoothing / animation.
    *  `intent` (optional) lets the camera react to gaze intent (3D); 2D ignores it. */
   render(state: WorldState, dt: number, intent?: RenderIntent): void;

@@ -13,13 +13,25 @@
 //              the child watches; it never gates)
 //   transport— completes on a `place-object` input (the player detects the object
 //              placed on the destination); a carry puzzle, it never gates
+//   converse — touching the NPC opens the dialogue at its entry turn; each turn
+//              re-presents through the SAME present-choice/select-option cycle
+//              a choose uses. Options are filtered by satchel conditions and may
+//              transfer items (give/receive); an option marked `completes`
+//              finishes the goal; closing/cancelling resets to entry
+//              (failure-free, re-approachable)
 //
 // State is JSON-serializable; the immutable context (game, world, lookup
 // maps, expanded item instances) is built once per session. All inputs are
 // idempotent/no-op safe — repeated touches and stale picks cannot corrupt
 // state, which matters for eyegaze input.
 
-import type { GoalNode, GoalTreeGame, OvercomeNode } from "./types.js";
+import type {
+  ConverseCondition,
+  ConverseNode,
+  GoalNode,
+  GoalTreeGame,
+  OvercomeNode,
+} from "./types.js";
 import type { LogicalWorld, PassageSpec } from "./logical-world.js";
 import { walkGoalTree } from "./walk.js";
 import type {
@@ -61,8 +73,16 @@ export interface RuntimeState {
   picked: Record<string, true>;
   /** Collected count per collect node. */
   collectedCount: Record<string, number>;
-  /** Choose node currently presented, if any. */
+  /** Choose OR converse node currently presented, if any. */
   activeChoiceNodeId: string | null;
+  /** Current dialogue turn when the active node is a converse. */
+  converseTurnId: string | null;
+  /** The SATCHEL: items the player holds (converse props picked / `receive`d). */
+  inventory: Record<string, number>;
+  /** Items the player KNOWS about (clued, seen in an entered zone, or once held). */
+  known: Record<string, true>;
+  /** Items the player has handed over at least once (monotone — never un-given). */
+  given: Record<string, true>;
 }
 
 export interface RuntimeResult {
@@ -117,6 +137,10 @@ export function createRuntimeState(): RuntimeState {
     picked: {},
     collectedCount: {},
     activeChoiceNodeId: null,
+    converseTurnId: null,
+    inventory: {},
+    known: {},
+    given: {},
   };
 }
 
@@ -155,9 +179,11 @@ export function applyRuntimeInput(
     case "cancel-choice":
       // Close the panel WITHOUT completing the goal. The choose re-presents
       // when the player returns to the poser, so nothing is lost — this just
-      // frees a player from a confusing/stuck question (failure-free).
+      // frees a player from a confusing/stuck question (failure-free). A
+      // converse resets to its entry turn (conditions re-evaluate on return).
       if (out.state.activeChoiceNodeId === input.nodeId) {
         out.state.activeChoiceNodeId = null;
+        out.state.converseTurnId = null;
         out.commands.push({ type: "dismiss-choice", nodeId: input.nodeId });
       }
       break;
@@ -169,8 +195,22 @@ export function applyRuntimeInput(
       }
       break;
     }
+    case "fulfill-need": {
+      // The creature simulation reports this creature is content → complete.
+      const node = ctx.nodeById.get(input.nodeId);
+      if (node?.type === "fulfill" && !out.state.completed[node.id]) {
+        complete(ctx, out, node);
+      }
+      break;
+    }
     case "enter-zone": {
       const zone = ctx.world.zones.find((z) => z.id === input.zoneId);
+      // Seeing is knowing: items placed in an entered zone become KNOWN (they
+      // are visibly there), satisfying `knows` gates on dialogue options.
+      for (const placement of ctx.world.items) {
+        if (placement.zoneId !== input.zoneId) continue;
+        for (const id of placement.itemEntityIds) out.state.known[id] = true;
+      }
       out.events.push({ type: "zone-entered", zoneId: input.zoneId, hint: zone?.hint });
       break;
     }
@@ -184,6 +224,9 @@ function cloneState(state: RuntimeState): RuntimeState {
     completed: { ...state.completed },
     picked: { ...state.picked },
     collectedCount: { ...state.collectedCount },
+    inventory: { ...state.inventory },
+    known: { ...state.known },
+    given: { ...state.given },
   };
 }
 
@@ -195,6 +238,13 @@ function handleStart(ctx: RuntimeContext, out: RuntimeResult): void {
   if (out.state.started) return;
   out.state.started = true;
   narrate(out, "intro", ctx.game.root.intro, ctx.game.root.id);
+  // A fulfill creature with NO need is already content — complete immediately
+  // (pure vendors gate nothing; their presence is service, not a task).
+  for (const node of ctx.nodeById.values()) {
+    if (node.type === "fulfill" && !node.needItemEntityId && !out.state.completed[node.id]) {
+      complete(ctx, out, node);
+    }
+  }
   pushObjectives(ctx, out);
 }
 
@@ -245,6 +295,118 @@ function handleTouchFigure(
     case "collect":
       // Collect has no single figure; nothing to do.
       break;
+    case "converse":
+      if (out.state.activeChoiceNodeId === node.id) return;
+      out.state.activeChoiceNodeId = node.id;
+      presentConverseTurn(ctx, out, node, node.entry);
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Converse — the deterministic dialogue turn machine
+// ---------------------------------------------------------------------------
+
+function condsHold(conds: ConverseCondition[] | undefined, state: RuntimeState): boolean {
+  return (conds ?? []).every((c) => {
+    switch (c.kind) {
+      case "carrying":
+        return (state.inventory[c.entityId] ?? 0) > 0;
+      case "not-carrying":
+        return (state.inventory[c.entityId] ?? 0) === 0;
+      case "knows":
+        return !!state.known[c.entityId];
+      case "given":
+        return !!state.given[c.entityId];
+    }
+  });
+}
+
+/**
+ * Present one dialogue turn through the SAME present-choice command a choose
+ * uses: the first line whose conditions hold is the prompt, and the options are
+ * filtered by satchel conditions. The schema guarantees a last-unconditional
+ * line and ≥1 unconditional option, so a turn always renders.
+ */
+function presentConverseTurn(
+  ctx: RuntimeContext,
+  out: RuntimeResult,
+  node: ConverseNode,
+  turnId: string,
+): void {
+  const turn = node.turns.find((t) => t.id === turnId);
+  if (!turn) return; // schema-validated games never hit this
+  out.state.converseTurnId = turn.id;
+
+  const line = turn.lines.find((l) => condsHold(l.when, out.state)) ??
+    turn.lines[turn.lines.length - 1]!;
+  const options = turn.options.filter((o) => condsHold(o.when, out.state));
+
+  narrate(out, "prompt", line.glyph, node.id);
+  out.commands.push({
+    type: "present-choice",
+    nodeId: node.id,
+    posedByEntityId: node.npcEntityId,
+    prompt: line.glyph,
+    options: options.map((o) => ({ entityId: o.entityId })),
+  });
+}
+
+function handleConverseSelect(
+  ctx: RuntimeContext,
+  out: RuntimeResult,
+  node: ConverseNode,
+  entityId: string,
+): void {
+  const turn = node.turns.find((t) => t.id === out.state.converseTurnId);
+  if (!turn) return;
+  const option = turn.options.find((o) => o.entityId === entityId);
+  // Stale/hidden presses are ignored — conditions are re-checked at selection.
+  if (!option || !condsHold(option.when, out.state)) return;
+
+  // Transfers. `give` is guarded by its carrying condition (schema rule), but
+  // stay defensive: never let a count go negative.
+  for (const id of option.give ?? []) {
+    if ((out.state.inventory[id] ?? 0) <= 0) return;
+  }
+  for (const id of option.give ?? []) {
+    out.state.inventory[id] = (out.state.inventory[id] ?? 0) - 1;
+    out.state.given[id] = true;
+    out.events.push({ type: "item-given", nodeId: node.id, entityId: id });
+  }
+  for (const id of option.receive ?? []) {
+    out.state.inventory[id] = (out.state.inventory[id] ?? 0) + 1;
+    out.state.known[id] = true;
+    out.events.push({ type: "item-acquired", nodeId: node.id, entityId: id });
+  }
+  for (const id of option.reveal ?? []) {
+    out.state.known[id] = true;
+  }
+
+  // Payoff cues ride the existing demonstrate command, labelled with the
+  // chosen option's glyph (same as choose.onCorrect).
+  if (option.cues?.length) {
+    const chosen = ctx.game.entities.find((e) => e.id === entityId);
+    out.commands.push({
+      type: "demonstrate",
+      nodeId: node.id,
+      targetGlyph: chosen?.glyph ?? "",
+      cues: option.cues,
+    });
+  }
+
+  if (option.completes) {
+    out.state.activeChoiceNodeId = null;
+    out.state.converseTurnId = null;
+    out.commands.push({ type: "dismiss-choice", nodeId: node.id });
+    complete(ctx, out, node);
+  } else if (option.next !== undefined) {
+    presentConverseTurn(ctx, out, node, option.next);
+  } else {
+    // A polite close ("ok"/"bye") — the conversation ends, re-approachable.
+    out.state.activeChoiceNodeId = null;
+    out.state.converseTurnId = null;
+    out.commands.push({ type: "dismiss-choice", nodeId: node.id });
   }
 }
 
@@ -303,6 +465,18 @@ function handlePickItem(
   }
 
   const node = ctx.nodeById.get(instance.forNodeId);
+
+  // A converse prop pickup goes to the SATCHEL (walking over it acquires it),
+  // regardless of the converse goal's completion — leftovers stay pickable.
+  if (node?.type === "converse") {
+    out.state.picked[instanceId] = true;
+    out.state.inventory[instance.entityId] = (out.state.inventory[instance.entityId] ?? 0) + 1;
+    out.state.known[instance.entityId] = true;
+    out.commands.push({ type: "collect-item", instanceId });
+    out.events.push({ type: "item-acquired", nodeId: node.id, entityId: instance.entityId });
+    return;
+  }
+
   if (node?.type !== "collect" || out.state.completed[node.id]) return;
 
   out.state.picked[instanceId] = true;
@@ -327,6 +501,10 @@ function handleSelectOption(
 ): void {
   if (out.state.activeChoiceNodeId !== nodeId) return;
   const node = ctx.nodeById.get(nodeId);
+  if (node?.type === "converse") {
+    handleConverseSelect(ctx, out, node, entityId);
+    return;
+  }
   if (node?.type !== "choose") return;
 
   const option = node.options.find((o) => o.entityId === entityId);

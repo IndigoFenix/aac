@@ -19,6 +19,9 @@ export interface BoardOption {
   id: string;
   label: string;
   glyph?: string;
+  /** Proper per-locale text the board SPEAKS on press (the student's own
+   *  statement, translated). `label`/`glyph` stay language-invariant. */
+  spokenText?: string;
 }
 
 // ── Platform → Game ─────────────────────────────────────────────────────────

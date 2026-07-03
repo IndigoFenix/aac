@@ -7,6 +7,7 @@
 //   overcome → its `key`
 //   observe  → its `via` obstacles
 //   transport→ its `via` obstacles
+//   converse → its `via` obstacles (the dialogue turns are node-internal data)
 
 import type { GoalNode, GoalNodeType } from "./types.js";
 
@@ -55,6 +56,12 @@ function* visit(
     case "transport":
       for (const o of node.via ?? []) yield* visit(o, node, "via", depth + 1);
       break;
+    case "converse":
+      for (const o of node.via ?? []) yield* visit(o, node, "via", depth + 1);
+      break;
+    case "fulfill":
+      for (const o of node.via ?? []) yield* visit(o, node, "via", depth + 1);
+      break;
   }
 }
 
@@ -68,7 +75,7 @@ export function measureGoalTree(root: GoalNode): GoalTreeMeasure {
   const measure: GoalTreeMeasure = {
     totalNodes: 0,
     maxDepth: 0,
-    byType: { reach: 0, collect: 0, choose: 0, overcome: 0, observe: 0, transport: 0 },
+    byType: { reach: 0, collect: 0, choose: 0, overcome: 0, observe: 0, transport: 0, converse: 0, fulfill: 0 },
   };
   for (const { node, depth } of walkGoalTree(root)) {
     measure.totalNodes += 1;

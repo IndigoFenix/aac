@@ -134,6 +134,14 @@ export interface ObjectSpec {
    * never affects the sim.
    */
   iconRef?: string;
+  /**
+   * Composed AAC glyph for the floating icon (e.g. "ball.big"). When set, the
+   * renderer swaps the emoji for the game's glyph-rastered image as soon as it
+   * decodes — variant items (descriptors) must LOOK like their glyph, which a
+   * shared emoji can't show. `iconRef` stays the instant placeholder.
+   * Render-only; never affects the sim.
+   */
+  glyph?: string;
   /** What the player may do with it (≥1). */
   interactions: ObjectInteraction[];
   /** Possession-dribble tuning — used only when interactions include "push". */
@@ -167,6 +175,8 @@ export interface WallSpec {
   /** Floor this wall exists on. Omit ⇒ it blocks on EVERY floor (a full-height
    *  exterior wall); set it to confine the wall to one storey's interior. */
   floor?: number;
+  /** Render tint (hex). Omit ⇒ the renderer's default wall color. */
+  color?: string;
 }
 
 /**
@@ -193,6 +203,10 @@ export interface DoorSpec {
   keyObjectId?: string;
   /** Floor the door sits on. Omit ⇒ all floors (see WallSpec.floor). */
   floor?: number;
+  /** Render tint (hex) for the doorway's LINTEL (the wall band above the leaf)
+   *  — buildings propagate their wall color here. The leaf itself always keeps
+   *  the door colors (incl. the darker locked shade) so it reads as a door. */
+  color?: string;
 }
 
 /**
@@ -242,6 +256,9 @@ export interface BuildingSpec {
   /** Auto-generate a stairway connecting each storey. Defaults to true when
    *  floors > 1; set false to place stairs by hand as `structures`. */
   stairs?: boolean;
+  /** Render tint (hex) for the walls + roof — "the blue house". Propagated to
+   *  the generated wall structures by expandWorldBuildings. */
+  color?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import type { EntityDef, GoalNode, GoalTreeGame } from "@shared/goal-tree/types"
 import { certifyGoalTreeGame } from "@shared/goal-tree/index";
 import type { LogicalWorld } from "@shared/goal-tree/logical-world";
 import { buildLogicalWorld } from "@shared/goal-tree/logical-world";
-import { projectLayout2D } from "@shared/goal-tree/projector2d";
+import { projectGameLayout } from "@shared/goal-tree/projector2d";
 import {
   applyRuntimeInput,
   createRuntimeContext,
@@ -78,7 +78,7 @@ function makeSession(game: GoalTreeGame): Session {
   }
   const world = certified.ok ? certified.world : buildLogicalWorld(game);
   const ctx = createRuntimeContext(game, world);
-  const layout = certified.ok ? certified.layout : projectLayout2D(game, world);
+  const layout = certified.ok ? certified.layout : projectGameLayout(game, world);
   return {
     game,
     world,

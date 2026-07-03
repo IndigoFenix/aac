@@ -306,6 +306,14 @@ export const he: Translations = {
     guessingMode: "מנחש...",
   },
 
+  processing: {
+    preparingVoice: "מתכונן…",
+    speaking: "מדבר…",
+    thinking: "חושב…",
+    updatingBoard: "מעדכן כפתורים…",
+    interpreting: "אומר…",
+    suggesting: "מחפש מילים…",
+  },
   construction: {
     tabsLabel: "קטגוריות משפט",
     glyphPreviewLabel: "תצוגה מקדימה של משפט",
@@ -413,6 +421,7 @@ export const he: Translations = {
       want: "רוצה",
       give: "לתת",
       take: "לקחת",
+      trade: "להחליף",
       receive: "לקבל",
       have: "יש",
       make: "לעשות",

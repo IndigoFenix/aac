@@ -80,6 +80,7 @@ export function createGazeInterpreter(initial: GazeTunables = DEFAULT_GAZE_TUNAB
   // Sitting latch.
   let lastActiveMs = 0; // last time the player showed travel intent
   let sitting = false;
+  let standAccumMs = 0; // sustained far-gaze dwell accrued toward standing up
   let seededClock = false;
 
   const reset = (): void => {
@@ -88,6 +89,7 @@ export function createGazeInterpreter(initial: GazeTunables = DEFAULT_GAZE_TUNAB
     unsettled = 1;
     sinceSlowMs = 0;
     sitting = false;
+    standAccumMs = 0;
     seededClock = false;
   };
 
@@ -152,19 +154,28 @@ export function createGazeInterpreter(initial: GazeTunables = DEFAULT_GAZE_TUNAB
 
     // --- Sitting latch ----------------------------------------------------------
     // "Active" = a settled gaze placed out beyond the sit radius (a real travel
-    // command). That resets the idle timer and breaks a sit; otherwise, after
-    // idleSitMs of only-near / unsettled gaze, latch sitting.
+    // command). While STANDING, that keeps the idle timer alive; after idleSitMs of
+    // only-near / unsettled gaze, latch sitting. While SITTING, a mere glance no
+    // longer stands you: standing takes a sustained far-gaze DWELL (standDwellMs) —
+    // a deliberate "get up and go there" — so you can look around while seated.
     const traveling = settled && gazeDistance > cfg.sitGazeRadius;
-    if (traveling) {
-      lastActiveMs = nowMs;
-      sitting = false;
-    } else if (nowMs - lastActiveMs >= cfg.idleSitMs) {
-      sitting = true;
+    if (!sitting) {
+      if (traveling) lastActiveMs = nowMs;
+      else if (nowMs - lastActiveMs >= cfg.idleSitMs) { sitting = true; standAccumMs = 0; }
+    } else if (traveling) {
+      standAccumMs += dt * 1000;
+      if (standAccumMs >= cfg.standDwellMs) {
+        sitting = false;
+        standAccumMs = 0;
+        lastActiveMs = nowMs;
+      }
+    } else {
+      standAccumMs = 0; // gaze pulled back in / unsettled — reset the stand dwell
     }
 
-    // While sitting, the avatar idles (aim null) until the player issues a fresh
-    // far gaze — which flips `traveling` true above on the SAME frame, so the null
-    // only holds during genuine rest.
+    // While sitting, the avatar idles (aim null) — the camera still tracks the gaze
+    // (committedWorld) so the player can look around; only a completed stand-dwell
+    // (handled above) resumes movement.
     if (sitting) return { aim: null, sitting, gazeDistance, unsettled, committedWorld: world };
 
     return { aim, sitting, gazeDistance, unsettled, committedWorld: world };

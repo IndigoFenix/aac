@@ -167,14 +167,32 @@
   animation: pulse-soft 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Board Manager "rebuilding" outline — a soft light band ripples along the
+   header-bottom line while the board is being rebuilt. */
+@keyframes board-busy-ripple {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.board-busy-ripple {
+  background-image: linear-gradient(
+    90deg,
+    rgba(129, 140, 248, 0.5) 0%,
+    rgba(199, 210, 254, 0.95) 50%,
+    rgba(129, 140, 248, 0.5) 100%
+  );
+  background-size: 200% 100%;
+  animation: board-busy-ripple 1.8s linear infinite;
+}
+
 /* Accessibility improvements */
 @media (prefers-reduced-motion: reduce) {
   .symbol-item {
     transition: none;
   }
-  
+
   .animate-pulse-soft,
-  .animate-spin {
+  .animate-spin,
+  .board-busy-ripple {
     animation: none;
   }
 }

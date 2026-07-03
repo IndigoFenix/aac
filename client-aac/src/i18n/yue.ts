@@ -306,6 +306,14 @@ export const yue: Translations = {
     guessingMode: "估緊...",
   },
 
+  processing: {
+    preparingVoice: "準備緊…",
+    speaking: "講緊…",
+    thinking: "諗緊…",
+    updatingBoard: "更新緊掣…",
+    interpreting: "講緊…",
+    suggesting: "搵緊詞語…",
+  },
   construction: {
     tabsLabel: "句子類別",
     glyphPreviewLabel: "句子預覽",
@@ -413,6 +421,7 @@ export const yue: Translations = {
       want: "想要",
       give: "俾",
       take: "攞",
+      trade: "交換",
       receive: "收到",
       have: "有",
       make: "整",

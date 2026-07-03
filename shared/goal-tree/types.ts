@@ -3,7 +3,7 @@
 // Data shapes for the goal-tree game engine (v2 of the AI game generator).
 // See planning-docs/app-generators/game-engine-v2-plan.md.
 //
-// A game is a recursive goal tree built from five node types:
+// A game is a recursive goal tree built from these node types:
 //   reach    — travel to a place
 //   collect  — gather n target items (optionally mixed with distractors)
 //   choose   — pick the correct option (the curriculum carrier)
@@ -13,6 +13,11 @@
 //              completable once reached — it teaches, it doesn't gate.
 //   transport— carry an object to a destination (the "move A→B" puzzle). Always
 //              completable once its zone is reached — it teaches, it doesn't gate.
+//   converse — a deterministic multi-turn NPC dialogue TREE (the symbol game's
+//              quest conversations). Each turn re-uses the choose presentation
+//              (present-choice / select-option); options may be gated on what
+//              the player carries and may transfer items (give/receive). See
+//              planning-docs/symbol-learning-game-plan-2.md §7b.
 //
 // The schema is deliberately CLOSED: every field is an enum, a validated
 // reference, a clamped number, or pure flavor text. Mechanics are not
@@ -231,13 +236,208 @@ export interface TransportNode extends GoalNodeBase {
   via?: OvercomeNode[];
 }
 
+// ---------------------------------------------------------------------------
+// Converse — deterministic multi-turn NPC dialogue (the quest conversation)
+// ---------------------------------------------------------------------------
+
+/**
+ * A condition on the player's SATCHEL (the runtime's item inventory, filled by
+ * walking over converse props or by `receive` effects). Evaluated by the
+ * runtime when a turn is presented and when an option is selected.
+ */
+export type ConverseCondition =
+  | { kind: "carrying"; entityId: string }
+  | { kind: "not-carrying"; entityId: string }
+  /** The player KNOWS about the item — revealed by a clue, seen in a room, or once held. */
+  | { kind: "knows"; entityId: string }
+  /** The item was (at some point) handed over via a `give` — monotone, never un-given. */
+  | { kind: "given"; entityId: string };
+
+/**
+ * One candidate NPC utterance for a turn. The FIRST line whose conditions all
+ * hold is spoken (bubble + board prompt); the last line of every turn must be
+ * unconditional so a turn can always render.
+ */
+export interface ConverseLine {
+  when?: ConverseCondition[];
+  /** The utterance as a composed glyph SENTENCE (doubles as the display text until i18n). */
+  glyph: string;
+}
+
+/**
+ * One player response on the board. Selecting it applies its transfers, plays
+ * its cues, then either advances to `next`, closes the conversation (no
+ * `next`), or completes the whole converse goal (`completes`). There is no
+ * "wrong" option — every visible option is real communication (pillar: any
+ * press is communication; re-model, never punish).
+ */
+export interface ConverseOption {
+  /** What the option shows on the board (kind: item | character | marker). */
+  entityId: string;
+  /**
+   * Availability gate. Only MONOTONE kinds are allowed here (schema-enforced):
+   * `carrying`, `knows`, `given`. A `not-carrying`-gated option could become
+   * permanently unavailable once an item is picked up, which the solver cannot
+   * reason about — lines may use it, options may not.
+   */
+  when?: ConverseCondition[];
+  /** Item entities handed TO the NPC (each must also appear in a `carrying` condition). */
+  give?: string[];
+  /** Item entities granted to the player's satchel. */
+  receive?: string[];
+  /** Item entities REVEALED to the player (clue effect — satisfies `knows`). */
+  reveal?: string[];
+  /** Payoff cues (same closed DemoCue set as observe/choose.onCorrect). */
+  cues?: DemoCue[];
+  /** Next turn id; omit to close the conversation (re-approachable, failure-free). */
+  next?: string;
+  /** Selecting this completes the converse goal (after effects/cues). */
+  completes?: boolean;
+}
+
+/** One node of the dialogue graph: an NPC utterance + the player's responses. */
+export interface ConverseTurn {
+  /** Unique within this converse node. */
+  id: string;
+  /** Candidate NPC lines; first match speaks; last must be unconditional. */
+  lines: ConverseLine[];
+  /** 1..CONVERSE_MAX_OPTIONS board options; ≥1 must be unconditional. */
+  options: ConverseOption[];
+}
+
+/**
+ * A deterministic multi-turn NPC dialogue — the symbol game's quest
+ * conversation. Like observe it creates its own zone (the NPC's room) with the
+ * NPC standing in it; the runtime re-presents a fresh `present-choice` per
+ * turn, so the space/player treats each turn exactly like a choose question.
+ * Closing or cancelling resets to `entry` on re-approach; conditions are
+ * re-evaluated then, so "come back once you have the item" branches work.
+ * Completes only via an option marked `completes` — then the NPC goes inert.
+ */
+export interface ConverseNode extends GoalNodeBase {
+  type: "converse";
+  /** The NPC posing the dialogue (kind: character | marker). */
+  npcEntityId: string;
+  /** Entry turn id. */
+  entry: string;
+  turns: ConverseTurn[];
+  /**
+   * Item entities scattered in this node's zone as pickups (they enter the
+   * satchel by walking over them) — the quest's "the thing you need is lying
+   * nearby" placement. Each id appears once and must be kind item.
+   */
+  propEntityIds?: string[];
+  /** Theme hint for the NPC's zone. */
+  zoneHint?: string;
+  /** Obstacles on the passage to the NPC's room. */
+  via?: OvercomeNode[];
+}
+
+// ---------------------------------------------------------------------------
+// Fulfill — a creature with a need (the need-based dialogue system's goal)
+// ---------------------------------------------------------------------------
+
+/**
+ * The closed catalog of transformation STATIONS (Item Transformations b) —
+ * physical world affordances that swap an item's STATE when it lands on them.
+ * Kinds follow the village-systems elements (fire = heat/cook/dry, water =
+ * cool/clean/wet); only the pair whose state glyphs ship in the registry is
+ * active — clean/dirty and wet/dry join when their modifiers land.
+ */
+export const STATION_KINDS = {
+  fire: { applies: "hot", removes: "cold", iconRef: "🔥", label: "Campfire" },
+  water: { applies: "cold", removes: "hot", iconRef: "🛁", label: "Water tub" },
+} as const;
+export type StationKind = keyof typeof STATION_KINDS;
+
+/**
+ * A CREATURE and the goal of making it content. This is the goal-tree face of
+ * the need-based system (planning-docs/symbol-learning-game/creature-needs.md):
+ * the node carries the creature's SEED (need, likes, displayed stock, loose
+ * props, initial debt) as closed data, the game layer reconstructs the creature
+ * world from these nodes and runs the dialogue as a PROJECTION of its state,
+ * and the node completes when the creature's need is fulfilled (a `fulfill-need`
+ * input from the game layer; instantly completable when it has no need).
+ *
+ * Like observe/converse it creates its own zone with the NPC standing in it.
+ * The static solver treats it like transport (reachable ⇒ completable — the
+ * behavioral guarantee comes from the symbol-game SIMULATION certifier, which
+ * plays the generated world with the same rules the client runs).
+ */
+export interface FulfillNode extends GoalNodeBase {
+  type: "fulfill";
+  /** The creature (kind: character | marker). */
+  npcEntityId: string;
+  /** What it needs (kind: item). Absent = a content creature (pure vendor). */
+  needItemEntityId?: string;
+  /** FURTHER needed item instances (kind: item) — a multi-item need ("bring me
+   *  3 apples"): one need per instance, the creature is content only when ALL
+   *  fulfill. Requires needItemEntityId (which counts as the first). */
+  needItemEntityIds?: string[];
+  /** Worth of the need (default 3). */
+  needValue?: number;
+  /** STATE need (Task b): the need fulfills when the needed item is physically
+   *  PLACED in this container (kind: item; staged in the creature's zone by
+   *  the space layer), not when the creature receives it. */
+  needPlacedInEntityId?: string;
+  /** ON-BEHALF need (Task c): the need fulfills when the creature of THIS
+   *  fulfill node (the recipient) has the item — "give the ball to Bear" —
+   *  not when this creature receives it. Mutually exclusive with
+   *  needPlacedInEntityId. */
+  needForNodeId?: string;
+  /** TRANSFORMED-state requirement (Item Transformations b): the need only
+   *  accepts the item once a station has put this state on it ("hot"/"cold" —
+   *  a STATION_KINDS `applies` value). The untransformed offer is declined
+   *  with "{item} + {state}.not". */
+  needItemState?: string;
+  /** Transformation STATIONS staged in this creature's zone (physical
+   *  affordances, not creatures): dropping an item on one applies its state.
+   *  Reusable — any item, any number of times. */
+  stationKinds?: StationKind[];
+  /** Items it values at baseline — receiving one creates a debt (kind: item). */
+  likeEntityIds?: string[];
+  /** Possessions on DISPLAY behind its counter — visible, owned, requestable (kind: item). */
+  stockEntityIds?: string[];
+  /** Loose unclaimed items scattered in its room (kind: item). */
+  propEntityIds?: string[];
+  /** Initial debt to the player (the rental/free vendor's "you may take one"). */
+  playerDebt?: number;
+  /** Does it volunteer its need unprompted ("before", default), only when
+   *  asked ("after"), or NEVER ("never" — Request c: it just looks sad, and
+   *  the player must INFER the want from evidence and offer it)? */
+  announce?: "before" | "after" | "never";
+  /** Possessions the creature KEEPS (bound from the start): displayed beside
+   *  it but never granted — "that's mine". With announce "never" a same-kind
+   *  keepsake is the inference EVIDENCE (the sad bear's beloved apple). */
+  boundEntityIds?: string[];
+  /** Request-c scaffold: float the hidden want in a THOUGHT bubble over the
+   *  creature (the low-phase errorless aid; fades to evidence-only when the
+   *  phase layer lands). Only meaningful with announce "never". */
+  thoughtScaffold?: boolean;
+  /** Does the creature know WHERE its need item is at start? Default true (the
+   *  puzzle-mode always-know rule — its where-is always yields a clue). false =
+   *  ask-around missions: it answers "I don't know"; seed the fact on another
+   *  creature via knowsItemEntityIds so the clue chain still exists. */
+  needLocationKnown?: boolean;
+  /** Items whose LOCATION this creature knows at start, beyond its own
+   *  possessions (kind: item) — the clues it can give when asked where-is.
+   *  Knowledge, not placement: the items live in other creatures' rooms. */
+  knowsItemEntityIds?: string[];
+  /** Theme hint for the creature's zone. */
+  zoneHint?: string;
+  /** Obstacles on the passage to the creature's room. */
+  via?: OvercomeNode[];
+}
+
 export type GoalNode =
   | ReachNode
   | CollectNode
   | ChooseNode
   | OvercomeNode
   | ObserveNode
-  | TransportNode;
+  | TransportNode
+  | ConverseNode
+  | FulfillNode;
 export type GoalNodeType = GoalNode["type"];
 
 // ---------------------------------------------------------------------------
@@ -261,6 +461,15 @@ export interface GoalTreeGameMeta {
   aiCompanion?: AiCompanion;
   /** Human-readable learning goals, for clinician reports. */
   learningGoals?: string[];
+  /** Dialogue SYNTAX level the player renders creature lines/acts at:
+   *  "a" = single glyphs, "b" = two, "c" = full sentences (≈3). Default "b". */
+  syntax?: "a" | "b" | "c";
+  /**
+   * The uint32 seed the game was generated from. Downstream procedural stages
+   * (village layout, buildings, house colors) derive their randomness from it,
+   * so one seed reproduces the whole world end to end.
+   */
+  seed?: number;
 }
 
 export interface GoalTreeGame {
@@ -295,3 +504,13 @@ export const CHOOSE_MAX_OPTIONS = 4;
 export const COLLECT_MAX_COUNT = 12;
 /** Max cues in a single observe demonstration. */
 export const OBSERVE_MAX_CUES = 12;
+/** Max dialogue turns in a single converse node. */
+export const CONVERSE_MAX_TURNS = 16;
+/** Max board options per converse turn (the response board fits 8; 6 keeps them large). */
+export const CONVERSE_MAX_OPTIONS = 6;
+/** Max candidate NPC lines per converse turn. */
+export const CONVERSE_MAX_LINES = 4;
+/** Max prop pickups a converse node scatters in its zone. */
+export const CONVERSE_MAX_PROPS = 6;
+/** Max items in each of a fulfill node's lists (likes/stock/props). */
+export const FULFILL_MAX_ITEMS = 6;

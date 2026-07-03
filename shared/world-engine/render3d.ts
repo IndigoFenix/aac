@@ -22,9 +22,10 @@
 
 import * as THREE from "three";
 import type { BuildingSpec, StructureSpec, Vec2, WorldSpec } from "./types.js";
-import { buildingAt, type AvatarState, type WorldState } from "./engine.js";
-import type { RenderIntent, WorldView, WorldViewDeps } from "./world-view.js";
+import { buildingAt, insideBuilding, type AvatarState, type WorldState } from "./engine.js";
+import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world-view.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
+import { buildObjectModel, type ObjectModel } from "./object-models.js";
 import {
   DEFAULT_CAMERA_TUNABLES,
   DEFAULT_COMFORT_TUNABLES,
@@ -45,18 +46,23 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 const MODEL = {
   bodyRadius: 0.45,
-  /** Cylinder length of the capsule (total height = length + 2·radius = 1.8). */
+  /** Cylinder length of the capsule (total height = length + 2·radius = 1.8 m). */
   bodyLength: 0.9,
-  faceY: 2.1,
-  faceRadius: 0.62,
+  /** The face disc sits ON the capsule's head region (not floated above it), so
+   *  the whole figure keeps a realistic ~1.8 m human height. */
+  faceY: 1.5,
+  faceRadius: 0.34,
 } as const;
 
 const BACKDROP = "#0f172a";
 
-// Structure geometry (world units). Walls + door leaves are vertical boxes; a
-// door's leaf swings up to DOOR_SWING radians about its hinge as it opens.
+// Structure geometry. World units are METERS — the default avatar is a 1.8 m
+// capsule, so buildings use real-house dimensions: 3 m storeys (walls reach the
+// slab/roof above them; keep wallHeight == FLOOR_HEIGHT) and 2.1 m door leaves
+// with a wall lintel filling the rest of the doorway. A door's leaf swings up
+// to DOOR_SWING radians about its hinge as it opens.
 const STRUCTURE = {
-  wallHeight: 2.6,
+  wallHeight: 3.0,
   doorHeight: 2.1,
   wallColor: 0x9ca3af,
   doorColor: 0xb45309,
@@ -64,12 +70,22 @@ const STRUCTURE = {
 } as const;
 const DOOR_SWING = Math.PI * 0.55;
 
-/** World height of one storey — the renderer lifts a body/object on floor `f` by
- *  `f * FLOOR_HEIGHT`. Purely a render constant (the engine keeps floor unitless). */
+/** World height of one storey (meters) — the renderer lifts a body/object on
+ *  floor `f` by `f * FLOOR_HEIGHT`. Purely a render constant (the engine keeps
+ *  floor unitless). */
 export const FLOOR_HEIGHT = 3.0;
-/** Opacity of a faded-out upper storey (roof/slab/wall/object above the occupant
- *  while inside a building and the camera is overhead). */
+/** Ray-depth (world units) within which a picked OBJECT is treated as "at the same
+ *  spot" as a creature and wins the pick — item-priority for co-located entities. */
+const PICK_ITEM_MARGIN = 1.5;
+/** Opacity a faded-out plane settles at (roof/slab/storey wall/object of the
+ *  OCCUPIED building sitting between the occupant and the camera). */
 const FADE_OPACITY = 0.07;
+/** Ease rate (1/s) of the see-inside fade — clears the view in ~a third of a
+ *  second but still reads as a fade, never a pop. */
+const FADE_RATE = 9;
+/** A plane starts fading a little BEFORE the camera actually rises past it, so
+ *  the reveal leads the camera instead of trailing it. */
+const CAM_FADE_MARGIN = 0.4;
 
 /** A billboarded emoji sprite floated over a world object (an `ObjectSpec.iconRef`)
  *  so carryable props read as what they ARE. OffscreenCanvas so it builds in the
@@ -93,19 +109,67 @@ function makeEmojiSprite(emoji: string): { sprite: THREE.Sprite; tex: THREE.Canv
   return { sprite, tex, mat };
 }
 
-/** Show/hide an element by floor-fade. Faded ⇒ near-transparent + no depth write
- *  (so it doesn't occlude what's behind it); restored to fully opaque otherwise. */
-function setFaded(mat: THREE.MeshStandardMaterial, faded: boolean): void {
-  mat.transparent = faded;
-  mat.opacity = faded ? FADE_OPACITY : 1;
-  mat.depthWrite = !faded;
+/** A billboarded sprite from a PRE-COMPOSED glyph image (`ObjectSpec.glyph`,
+ *  resolved by the game's glyphFor) — variant items (ball.big vs ball.small)
+ *  must read as their composed glyph, which a shared emoji can't show. */
+function makeGlyphIconSprite(img: GlyphImage): { sprite: THREE.Sprite; tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial } {
+  const H = 128;
+  const aspect = Math.min(imageAspect(img) || 1, 2);
+  const W = Math.max(1, Math.round(H * aspect));
+  const canvas = new OffscreenCanvas(W, H);
+  const c = canvas.getContext("2d");
+  if (c) c.drawImage(img, 0, 0, W, H);
+  const tex = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.3 * aspect, 1.3, 1);
+  return { sprite, tex, mat };
 }
 
-// Speech-bubble placement/scale. The bubble floats above the face card; its
-// pixel texture maps to world units by PX_PER_WORLD (≈90px ≈ 1 unit, so a
-// 220px-wide bubble is ~2.4 units across — readable at the chase-cam distance).
+/**
+ * The local avatar's occupancy, for the see-inside fade: which building it is
+ * in, which storey it stands on, and how high the camera sits. Null when the
+ * avatar is outdoors — nothing fades.
+ */
+interface FadeContext {
+  building: BuildingSpec;
+  floor: number;
+  camY: number;
+}
+
+/** Does the OCCUPIED building's horizontal plane at `planeY` block the camera's
+ *  view of the occupant? It must lie above the occupant AND at/below the camera
+ *  — a ceiling the camera hasn't risen past yet hides nothing. */
+function planeBlocks(fade: FadeContext, planeY: number): boolean {
+  return planeY > fade.floor * FLOOR_HEIGHT + 0.1 && fade.camY > planeY - CAM_FADE_MARGIN;
+}
+
+/** EASE an element toward faded (near-transparent, no depth write, so it stops
+ *  occluding what's behind it) or back to opaque. Depth write flips early
+ *  (~0.6) so a half-faded roof already reveals the room. */
+function fadeToward(
+  mat: THREE.Material & { opacity: number },
+  faded: boolean,
+  dt: number,
+): void {
+  const target = faded ? FADE_OPACITY : 1;
+  if (mat.opacity !== target) {
+    const k = 1 - Math.exp(-FADE_RATE * Math.max(0, dt));
+    const next = mat.opacity + (target - mat.opacity) * k;
+    mat.opacity = Math.abs(next - target) < 0.004 ? target : next;
+  }
+  mat.transparent = mat.opacity < 0.999;
+  mat.depthWrite = mat.opacity > 0.6;
+}
+
+// Speech-bubble placement/scale. The bubble floats above the speaker in SCREEN
+// space (offset along the camera's up vector from the head anchor) so it never
+// covers the speaker — physical +Y offsets project onto the speaker under the
+// steep overhead camera. Its pixel texture maps to world units by pxPerWorld.
 const BUBBLE = {
-  headY: 3.0,        // world Y of the bubble's bottom edge (just over the face)
+  headY: 2.0,        // world Y of the head anchor the screen-up offset starts from
+  clearance: 0.9,    // gap (world units, along screen-up) between head and bubble edge
   pxPerWorld: 64,
   texDpr: 2,         // oversample the texture so text stays crisp
   tailPx: 12,        // extra texture height for the downward tail
@@ -134,8 +198,8 @@ class Bubble3D {
 
   /** Redraw the texture only when the content key changes (text + said-time +
    *  how many glyph images are available, which grows as they decode in). */
-  setContent(text: string, at: number, glyphImages: GlyphImage[]): void {
-    const key = `${at}|${glyphImages.length}|${text}`;
+  setContent(text: string, at: number, glyphImages: GlyphImage[], variant: "speech" | "thought" = "speech"): void {
+    const key = `${at}|${glyphImages.length}|${variant}|${text}`;
     if (key === this.key) return;
     this.key = key;
     const measureCtx = this.canvas.getContext("2d") as unknown as CanvasRenderingContext2D | null;
@@ -158,7 +222,7 @@ class Bubble3D {
     if (!ctx) return;
     ctx.setTransform(BUBBLE.texDpr, 0, 0, BUBBLE.texDpr, 0, 0);
     ctx.clearRect(0, 0, texW, texH);
-    paintBubble(ctx, layout, glyphImages, 1);
+    paintBubble(ctx, layout, glyphImages, 1, variant);
     if (sizeChanged) {
       this.tex.dispose();
       this.tex = new THREE.CanvasTexture(this.canvas as unknown as HTMLCanvasElement);
@@ -174,10 +238,18 @@ class Bubble3D {
     this.sprite.scale.set(this.worldW, this.worldH, 1);
   }
 
-  /** Place above the head at (cx,cz), lifted by `yOffset` (the anchor's storey
-   *  elevation), and fade with `alpha`. */
-  place(cx: number, cz: number, alpha: number, yOffset = 0): void {
-    this.sprite.position.set(cx, BUBBLE.headY + yOffset + this.worldH / 2, cz);
+  /** Place above the speaker in SCREEN space: anchor at the head over (cx,cz)
+   *  (lifted by `yOffset`, the anchor's storey elevation), then offset along
+   *  `up` — the camera's up vector, i.e. screen-up — so the bubble reads above
+   *  the speaker from every rig pose (a physical +Y offset sits ON the speaker
+   *  under the near-top-down overhead camera). Fade with `alpha`. */
+  place(cx: number, cz: number, alpha: number, yOffset: number, up: THREE.Vector3): void {
+    const lift = BUBBLE.clearance + this.worldH / 2;
+    this.sprite.position.set(
+      cx + up.x * lift,
+      BUBBLE.headY + yOffset + up.y * lift,
+      cz + up.z * lift,
+    );
     (this.sprite.material as THREE.SpriteMaterial).opacity = alpha;
   }
 
@@ -220,6 +292,136 @@ export function screenRayToGround(
   const hit = raycaster.ray.intersectPlane(plane, out);
   if (!hit) return null;
   return { x: hit.x, y: hit.z };
+}
+
+/** Soft radial glow (white core → warm gold → transparent) for the gaze spark.
+ *  OffscreenCanvas so it builds in the render worker. */
+function makeSparkTexture(): THREE.CanvasTexture {
+  const S = 64;
+  const canvas = new OffscreenCanvas(S, S);
+  const c = canvas.getContext("2d");
+  if (c) {
+    const g = c.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.3, "rgba(255,224,150,0.9)");
+    g.addColorStop(1, "rgba(255,190,80,0)");
+    c.fillStyle = g;
+    c.fillRect(0, 0, S, S);
+  }
+  const tex = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * The GAZE SPARK — the player's cursor reimagined as a small flying light that
+ * LEADS the avatar. It chases the effective gaze point (the same `aim` the engine
+ * steers toward) and, when the gaze rests on a creature or object, lifts to hover
+ * over that target. Purely cosmetic: it reflects intent the engine already computed
+ * and never feeds back into the simulation.
+ *
+ * Tuned for MOTION COMFORT (this population is motion/flicker-sensitive):
+ *   • It chases its target near-instantly, so it doesn't streak across the field
+ *     on a gaze jump — while moving it only parallaxes with the camera, like any
+ *     world object.
+ *   • It's a DIM, steady marker while moving, and BLOOMS brighter the longer it
+ *     rests still on one spot (`dwell`). No flicker (the 3–20 Hz band is a
+ *     discomfort/photosensitivity trigger).
+ *   • Its point light rises ONLY with that dwell — i.e. only once the spark is
+ *     stationary — so the light's shading never sweeps across the scene.
+ */
+const SPARK = {
+  /** Seconds of stillness to bloom from dim to full. */
+  dwellFull: 0.45,
+  dimOpacity: 0.3,
+  fullOpacity: 0.95,
+  scaleMin: 0.5,
+  scaleMax: 0.78,
+  /** Point-light intensity at full dwell (0 while moving). */
+  maxLight: 1.3,
+  /** Squared world distance under which the spark counts as "at rest". */
+  restDist2: 0.06 * 0.06,
+} as const;
+
+class GazeSpark {
+  readonly group = new THREE.Group();
+  private readonly sprite: THREE.Sprite;
+  private readonly light: THREE.PointLight;
+  private readonly mat: THREE.SpriteMaterial;
+  private readonly tex: THREE.CanvasTexture;
+  private readonly pos = new THREE.Vector3();
+  private readonly target = new THREE.Vector3();
+  private shown = false;
+  /** Eased presence 0..1 — fades the spark in/out as the gaze appears/leaves. */
+  private amp = 0;
+  /** Seconds the spark has been at rest — drives the brightness bloom; drops fast
+   *  once it starts moving again. */
+  private dwell = 0;
+  /** 0..1 dwell-to-SELECT progress fed from the game (carry pick/place, converse
+   *  dwell). Blooms the spark like the old dwell ring's fill, so it reads as the
+   *  selection indicator over the very item being chosen. */
+  private select = 0;
+
+  constructor() {
+    this.tex = makeSparkTexture();
+    this.mat = new THREE.SpriteMaterial({
+      map: this.tex,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 0,
+    });
+    this.sprite = new THREE.Sprite(this.mat);
+    this.sprite.renderOrder = 18;
+    this.light = new THREE.PointLight(0xffe6a8, 0, 3.5, 2);
+    this.group.add(this.sprite, this.light);
+  }
+
+  /** Aim the spark at a world point. It flies there; `amp` handles fade-in. */
+  setTarget(x: number, y: number, z: number): void {
+    this.target.set(x, y, z);
+    if (!this.shown) this.pos.copy(this.target); // appear at the target, don't streak in
+    this.shown = true;
+  }
+
+  /** 0..1 dwell-to-select progress for this frame (0 when nothing is selecting). */
+  setSelect(p: number): void {
+    this.select = Math.min(1, Math.max(0, p));
+  }
+
+  /** No gaze to represent this frame — fade out in place. */
+  hide(): void {
+    this.shown = false;
+  }
+
+  update(dt: number): void {
+    const step = Math.max(0, dt);
+    this.amp += ((this.shown ? 1 : 0) - this.amp) * (1 - Math.exp(-8 * step));
+    // Snappy chase — a near-locked spark only parallaxes with the camera instead of
+    // streaking across the field on a gaze jump.
+    this.pos.lerp(this.target, 1 - Math.exp(-30 * step));
+    // Bloom brighter the longer it holds still; drop fast the moment it moves.
+    const still = this.pos.distanceToSquared(this.target) < SPARK.restDist2;
+    this.dwell = still
+      ? Math.min(SPARK.dwellFull, this.dwell + step)
+      : Math.max(0, this.dwell - step * 4);
+    const c = this.dwell / SPARK.dwellFull;
+    const stillFocus = c * c * (3 - 2 * c); // smoothstep 0..1
+    // The stronger of "held still" and an explicit dwell-to-select drives the bloom.
+    const focus = Math.max(stillFocus, this.select);
+    this.sprite.position.copy(this.pos);
+    this.light.position.copy(this.pos);
+    this.mat.opacity = this.amp * lerp(SPARK.dimOpacity, SPARK.fullOpacity, focus);
+    this.sprite.scale.setScalar(lerp(SPARK.scaleMin, SPARK.scaleMax, focus));
+    // Light only with focus ⇒ only when stationary ⇒ its shading never sweeps.
+    this.light.intensity = this.amp * focus * SPARK.maxLight;
+  }
+
+  dispose(): void {
+    this.group.parent?.remove(this.group);
+    this.tex.dispose();
+    this.mat.dispose();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +589,9 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
   let animClock = 0;
   const baseRingOpacity = ringMat.opacity;
   const baseFaceY = MODEL.faceY;
+  // Scratch vectors for the per-frame face push-out (no per-frame allocation).
+  const faceOut = new THREE.Vector3();
+  const rootWorld = new THREE.Vector3();
 
   // ── Blob shadow ───────────────────────────────────────────────────────────
   const shadowGeom = new THREE.CircleGeometry(MODEL.bodyRadius * 1.25, 24);
@@ -438,7 +643,6 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
       seatedAmt += ((frame.sitting ? 1 : 0) - seatedAmt) * (1 - Math.exp(-6 * step));
       body.position.y = -0.3 * seatedAmt;
       const bob = Math.sin(animClock * 1.8) * 0.04 * seatedAmt;
-      faceGroup.position.y = baseFaceY - 0.45 * seatedAmt + bob;
 
       // INTERACT highlight: brighten the face ring + a soft scale pulse so the
       // player sees who/what they're about to engage.
@@ -446,8 +650,21 @@ export const defaultAvatarModelFactory: AvatarModelFactory = (id, isLocal) => {
       ringMat.opacity = baseRingOpacity + (1 - baseRingOpacity) * hi;
       ring.scale.setScalar(1 + 0.08 * hi * (0.5 + 0.5 * Math.sin(animClock * 5)));
 
-      // Billboard the face card toward the camera.
+      // Billboard the face card toward the camera, PUSHED OUT past the body:
+      // the card anchors at head height INSIDE the capsule silhouette, so slide
+      // it toward the camera just beyond the surface — from any angle it reads
+      // as the face ON the head instead of being buried in the body.
       faceGroup.quaternion.copy(frame.camera.quaternion);
+      faceOut
+        .copy(frame.camera.position)
+        .sub(root.getWorldPosition(rootWorld))
+        .normalize()
+        .multiplyScalar(MODEL.bodyRadius + 0.1);
+      faceGroup.position.set(
+        faceOut.x,
+        baseFaceY - 0.45 * seatedAmt + bob + faceOut.y,
+        faceOut.z,
+      );
     },
     dispose() {
       capsuleGeom.dispose();
@@ -535,17 +752,41 @@ export class World3DRenderer {
   private readonly raycaster = new THREE.Raycaster();
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly _scratch = new THREE.Vector3();
+  /** Screen-up in world space, recomputed each frame for bubble placement. */
+  private readonly _bubbleUp = new THREE.Vector3(0, 1, 0);
 
   private readonly avatars = new Map<string, AvatarModel>();
-  private readonly objectMeshes = new Map<string, { mesh: THREE.Mesh; shadow: THREE.Mesh }>();
-  /** Walls (static) + doors (a hinge pivot whose yaw tracks the door's `open`). */
+  private readonly objectMeshes = new Map<
+    string,
+    {
+      /** Pick root + positioned node. A real 3D model (a Group) or the generic
+       *  box/sphere Mesh fallback. */
+      mesh: THREE.Object3D;
+      shadow: THREE.Mesh;
+      icon?: THREE.Sprite;
+      glyphKey?: string;
+      /** Every standard material in `mesh` — highlight/fade touch all of them. */
+      materials: THREE.MeshStandardMaterial[];
+      /** The procedural model (present unless this object fell back to box/sphere);
+       *  owns descriptor application, particle animation, and its own disposal. */
+      model?: ObjectModel;
+    }
+  >();
+  /** Walls (static) + doors (a hinge pivot whose yaw tracks the door's `open`).
+   *  `mats` = every material the see-inside fade eases (wall, or leaf+lintel). */
   private readonly structureMeshes = new Map<
     string,
-    { object: THREE.Object3D; door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial } }
+    {
+      object: THREE.Object3D;
+      mats: THREE.MeshStandardMaterial[];
+      door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial };
+    }
   >();
   /** Per-building render meshes: upper floor slabs (by storey) + a roof. */
   private readonly buildingMeshes = new Map<string, { slabs: { floor: number; mesh: THREE.Mesh }[]; roof: THREE.Mesh }>();
   private readonly bubbles = new Map<string, Bubble3D>();
+  /** The player's gaze cursor rendered as a small flying light (see GazeSpark). */
+  private readonly spark = new GazeSpark();
 
   // --- Motion comfort ---------------------------------------------------------
   private comfort: ComfortTunables;
@@ -603,6 +844,7 @@ export class World3DRenderer {
     this.buildLights();
     this.buildGround(backdrop);
     this.buildVignette(backdrop);
+    this.scene.add(this.spark.group);
     this.overlay?.mount(this.scene);
 
     // Pre-position the camera over the field centre so a screenToWorld call that
@@ -736,6 +978,53 @@ export class World3DRenderer {
     return screenRayToGround(this.camera, ndcX, ndcY, this.raycaster, this.groundPlane, this._scratch);
   }
 
+  /** What the pixel rests on VISUALLY — a speech bubble, an avatar's body/head
+   *  sprite, or an object's mesh — nearest hit first. Pick roots are tagged with
+   *  `userData.pick` at creation; a hit resolves by walking up to the tagged
+   *  ancestor, so child meshes/sprites (emoji heads) count as their avatar. */
+  pickScreen(px: number, py: number, opts?: { includeLocal?: boolean }): ScreenPick | null {
+    const ndc = { x: (px / this.vw) * 2 - 1, y: -((py / this.vh) * 2 - 1) };
+    this.raycaster.setFromCamera(ndc as THREE.Vector2, this.camera);
+    const roots: THREE.Object3D[] = [];
+    for (const b of this.bubbles.values()) roots.push(b.sprite);
+    for (const m of this.avatars.values()) roots.push(m.object);
+    for (const { mesh } of this.objectMeshes.values()) roots.push(mesh);
+    // Resolve the nearest pick overall + the nearest OBJECT + nearest (non-local)
+    // AVATAR, so item-priority can prefer a co-located item over a creature.
+    let best: { pick: ScreenPick; dist: number } | null = null;
+    let obj: { pick: ScreenPick; dist: number } | null = null;
+    let av: { pick: ScreenPick; dist: number } | null = null;
+    for (const hit of this.raycaster.intersectObjects(roots, true)) {
+      // A fully-faded bubble sprite still raycasts — skip invisible hits.
+      if (hit.object instanceof THREE.Sprite && (hit.object.material as THREE.SpriteMaterial).opacity <= 0.05) {
+        continue;
+      }
+      let node: THREE.Object3D | null = hit.object;
+      let pick: ScreenPick | undefined;
+      while (node) {
+        const p = node.userData.pick as ScreenPick | undefined;
+        if (p) { pick = p; break; }
+        node = node.parent;
+      }
+      if (!pick) continue;
+      const isLocal = pick.kind === "avatar" && pick.id === this.localId;
+      // The local avatar fills the lower screen in the shoulder view; by default the
+      // ray passes THROUGH it to whatever's behind. Callers wanting to know the gaze
+      // rests on the player (the spark) pass includeLocal.
+      if (isLocal && !opts?.includeLocal) continue;
+      if (!best) best = { pick, dist: hit.distance };
+      if (pick.kind === "object" && !obj) obj = { pick, dist: hit.distance };
+      if (pick.kind === "avatar" && !isLocal && !av) av = { pick, dist: hit.distance };
+    }
+    if (!best) return null;
+    // A directly-gazed bubble wins (it asks for the shoulder framing).
+    if (best.pick.kind === "bubble") return best.pick;
+    // Item priority: an object at ~the same depth as (or nearer than) a creature
+    // wins, so "dwell where an item sits on a creature" engages the item.
+    if (obj && (!av || obj.dist <= av.dist + PICK_ITEM_MARGIN)) return obj.pick;
+    return best.pick;
+  }
+
   /** Live-update the camera/comfort tunables (the debug menu pushes these). */
   setTunables(t: { camera?: CameraTunables; comfort?: ComfortTunables }): void {
     if (t.camera) this.cameraCfg = mergeCamera(t.camera);
@@ -753,20 +1042,29 @@ export class World3DRenderer {
     glyphFor?: (glyph: string) => CanvasImageSource[] | null,
     intent?: RenderIntent,
   ): void {
-    // Overhead floor-fade: when the local avatar is INSIDE a building and the
-    // camera is in (or near) the overhead pose, fade everything on a storey above
-    // it so it doesn't occlude the player. null ⇒ no fade.
+    // See-inside floor fade — purely GEOMETRIC: when the local avatar is inside
+    // a building, fade exactly the planes of THAT building that sit between it
+    // and the camera (roof / slabs / storey walls above the occupant that the
+    // camera has risen past). The camera HEIGHT decides, not the rig pose — an
+    // overhead cam is above every roof, a shoulder cam may or may not be, and
+    // either way only what actually blocks the view fades. Other buildings
+    // never fade. null ⇒ outdoors, nothing fades.
     const me = state.avatars[this.localId];
-    const overhead = this.travelCommit < 0.4;
-    const fadeAbove = me && overhead && buildingAt(state, me.x, me.y) ? me.floor : null;
+    const myBuilding = me ? buildingAt(state, me.x, me.y) : null;
+    const fade: FadeContext | null =
+      me && myBuilding
+        ? { building: myBuilding, floor: me.floor, camY: this.camera.position.y }
+        : null;
 
     this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId);
-    this.syncStructures(state, fadeAbove);
-    this.syncObjects(state, intent?.interactId, fadeAbove);
-    this.syncBuildings(state, fadeAbove);
+    this.syncStructures(state, fade, dt);
+    this.syncObjects(state, intent?.interactId, fade, glyphFor, dt);
+    this.syncBuildings(state, fade, dt);
     this.syncBubbles(state, glyphFor);
     this.updateCamera(state, dt, intent);
     this.updateComfort(state, dt);
+    this.updateSpark(state, intent);
+    this.spark.update(dt);
     this.overlay?.update(dt);
 
     // Scene, then the comfort vignette on top (autoClear is off).
@@ -774,6 +1072,40 @@ export class World3DRenderer {
     this.renderer.render(this.scene, this.camera);
     this.renderer.clearDepth();
     this.renderer.render(this.overlayScene, this.overlayCamera);
+  }
+
+  /** Point the gaze spark at what the player is engaging: hovering over a
+   *  highlighted creature/object, else resting at the effective gaze ground
+   *  point, else fading out (no gaze this frame). Runs after syncObjects so the
+   *  target object's mesh is placed. */
+  private updateSpark(state: WorldState, intent?: RenderIntent): void {
+    const cur = intent?.cursor;
+    if (!cur) {
+      this.spark.hide();
+      return;
+    }
+    this.spark.setSelect(cur.selectProgress ?? 0);
+    // Hover over whatever the gaze RESTS on (a creature's head / an object), else
+    // skim the fixated ground point. Keyed on the cursor payload — NOT interactId —
+    // so it never sticks to the carried item or the person being spoken to.
+    const av = cur.hoverKind === "avatar" && cur.hoverId ? state.avatars[cur.hoverId] : undefined;
+    if (av) {
+      this.spark.setTarget(av.x, BUBBLE.headY + av.floor * FLOOR_HEIGHT + 0.15, av.y);
+      return;
+    }
+    const entry = cur.hoverKind === "object" && cur.hoverId ? this.objectMeshes.get(cur.hoverId) : undefined;
+    if (entry) {
+      const radius = state.spec.objects.find((o) => o.id === cur.hoverId)?.radius ?? 0.5;
+      const p = entry.mesh.position;
+      this.spark.setTarget(p.x, p.y + radius + 0.5, p.z);
+      return;
+    }
+    if (cur.point) {
+      const floorY = (state.avatars[this.localId]?.floor ?? 0) * FLOOR_HEIGHT;
+      this.spark.setTarget(cur.point.x, floorY + 0.45, cur.point.y);
+      return;
+    }
+    this.spark.hide();
   }
 
   /** Drive the vignette from how fast the camera is translating + rotating, so
@@ -805,6 +1137,7 @@ export class World3DRenderer {
       let model = this.avatars.get(a.id);
       if (!model) {
         model = this.modelFactory(a.id, isLocal);
+        model.object.userData.pick = { kind: "avatar", id: a.id } satisfies ScreenPick;
         this.avatars.set(a.id, model);
         this.scene.add(model.object);
       }
@@ -836,7 +1169,7 @@ export class World3DRenderer {
 
   /** Build each structure's mesh once, then (for doors) swing its leaf to match the
    *  live `open`. Walls are static; door pivots rotate from state.doors[id].open. */
-  private syncStructures(state: WorldState, fadeAbove: number | null): void {
+  private syncStructures(state: WorldState, fade: FadeContext | null, dt: number): void {
     const structures = state.spec.structures;
     if (!structures) return;
     for (const s of structures) {
@@ -850,23 +1183,28 @@ export class World3DRenderer {
         const door = state.doors[s.id];
         const open = door?.open ?? 0;
         entry.door.pivot.rotation.y = entry.door.thetaClosed + open * DOOR_SWING;
-        // A still-locked door reads in a darker, "barred" colour.
+        // A still-locked door reads in a darker, "barred" colour. (A building's
+        // color tints the LINTEL, not the leaf — the leaf must read as a door.)
         entry.door.leafMat.color.setHex(door?.locked ? STRUCTURE.doorLockedColor : STRUCTURE.doorColor);
       }
-      // A wall/door tagged to a storey above the occupant fades (exterior, floorless
-      // walls never do); stairs never fade.
+      // A wall/door of a storey ABOVE the occupant, in the occupant's OWN
+      // building, fades once the camera is above that storey. Exterior
+      // (floorless) walls and stairs never fade.
       const sFloor = s.kind === "stairs" ? undefined : s.floor;
-      const faded = fadeAbove !== null && sFloor !== undefined && sFloor > fadeAbove;
-      const mat = entry.door
-        ? entry.door.leafMat
-        : ((entry.object as THREE.Mesh).material as THREE.MeshStandardMaterial);
-      setFaded(mat, faded);
+      const inMyBuilding =
+        !!fade &&
+        s.kind !== "stairs" &&
+        insideBuilding(fade.building, (s.a.x + s.b.x) / 2, (s.a.y + s.b.y) / 2);
+      const faded =
+        !!fade && inMyBuilding && sFloor !== undefined && planeBlocks(fade, sFloor * FLOOR_HEIGHT);
+      for (const mat of entry.mats) fadeToward(mat, faded, dt);
     }
   }
 
-  /** Build each building's floor slabs + roof once, then fade the storeys above the
-   *  occupant (and always the roof) while the overhead floor-fade is active. */
-  private syncBuildings(state: WorldState, fadeAbove: number | null): void {
+  /** Build each building's floor slabs + roof once, then ease exactly the planes
+   *  of the OCCUPIED building that sit between the occupant and the camera —
+   *  a slab above the camera still hides nothing, other buildings never fade. */
+  private syncBuildings(state: WorldState, fade: FadeContext | null, dt: number): void {
     const buildings = state.spec.buildings;
     if (!buildings) return;
     for (const b of buildings) {
@@ -877,11 +1215,19 @@ export class World3DRenderer {
         for (const s of entry.slabs) this.scene.add(s.mesh);
         this.scene.add(entry.roof);
       }
+      const occupied = fade && fade.building.id === b.id ? fade : null;
       for (const { floor, mesh } of entry.slabs) {
-        setFaded(mesh.material as THREE.MeshStandardMaterial, fadeAbove !== null && floor > fadeAbove);
+        fadeToward(
+          mesh.material as THREE.MeshStandardMaterial,
+          !!occupied && planeBlocks(occupied, floor * FLOOR_HEIGHT),
+          dt,
+        );
       }
-      // Inside + overhead ⇒ lift the roof so you can see down into the building.
-      setFaded(entry.roof.material as THREE.MeshStandardMaterial, fadeAbove !== null);
+      fadeToward(
+        entry.roof.material as THREE.MeshStandardMaterial,
+        !!occupied && planeBlocks(occupied, b.floors * FLOOR_HEIGHT),
+        dt,
+      );
     }
   }
 
@@ -901,7 +1247,12 @@ export class World3DRenderer {
       slabs.push({ floor: f, mesh });
     }
     const roofGeom = new THREE.PlaneGeometry(w, h);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 1, side: THREE.DoubleSide });
+    // A colored building's roof carries its tint, darkened — "the blue house"
+    // must read from the overhead camera too, where the roof IS the house.
+    const roofColor = b.color
+      ? new THREE.Color(b.color).multiplyScalar(0.65)
+      : new THREE.Color(0x475569);
+    const roofMat = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 1, side: THREE.DoubleSide });
     const roof = new THREE.Mesh(roofGeom, roofMat);
     roof.rotation.x = -Math.PI / 2;
     roof.position.set(cx, b.floors * FLOOR_HEIGHT, cz);
@@ -911,9 +1262,11 @@ export class World3DRenderer {
 
   /** A wall = an oriented box on the segment; a door = a hinged leaf box pivoted at
    *  its hinge endpoint (yaw updated each frame in syncStructures). World (x,y) → (x,0,y). */
-  private buildStructure(
-    s: StructureSpec,
-  ): { object: THREE.Object3D; door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial } } {
+  private buildStructure(s: StructureSpec): {
+    object: THREE.Object3D;
+    mats: THREE.MeshStandardMaterial[];
+    door?: { pivot: THREE.Group; thetaClosed: number; leafMat: THREE.MeshStandardMaterial };
+  } {
     if (s.kind === "stairs") {
       // A tilted slab spanning the footprint, inclined so it rises one storey
       // along its ascent axis (read as a ramp; steps are a later refinement).
@@ -933,7 +1286,7 @@ export class World3DRenderer {
       if (alongY) ramp.rotation.x = (s.axis === "+y" ? -1 : 1) * angle;
       else ramp.rotation.z = (s.axis === "+x" ? 1 : -1) * angle;
       this.disposables.push(geom, mat);
-      return { object: ramp };
+      return { object: ramp, mats: [mat] };
     }
     const dx = s.b.x - s.a.x;
     const dz = s.b.y - s.a.y;
@@ -941,13 +1294,17 @@ export class World3DRenderer {
     const floorY = (s.floor ?? 0) * FLOOR_HEIGHT;
     if (s.kind === "wall") {
       const geom = new THREE.BoxGeometry(len, STRUCTURE.wallHeight, s.thickness);
-      const mat = new THREE.MeshStandardMaterial({ color: STRUCTURE.wallColor, roughness: 0.9, metalness: 0 });
+      const mat = new THREE.MeshStandardMaterial({
+        color: s.color ? new THREE.Color(s.color) : STRUCTURE.wallColor,
+        roughness: 0.9,
+        metalness: 0,
+      });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set((s.a.x + s.b.x) / 2, STRUCTURE.wallHeight / 2 + floorY, (s.a.y + s.b.y) / 2);
       // Align the box's +X (length) axis with the segment: yaw mapping +X→(dx,dz).
       mesh.rotation.y = Math.atan2(-dz, dx);
       this.disposables.push(geom, mat);
-      return { object: mesh };
+      return { object: mesh, mats: [mat] };
     }
     // Door: hinge at the chosen endpoint, leaf extends toward the other.
     const hinge = s.hinge === "b" ? s.b : s.a;
@@ -955,9 +1312,11 @@ export class World3DRenderer {
     const hdx = other.x - hinge.x;
     const hdz = other.y - hinge.y;
     const thetaClosed = Math.atan2(-hdz, hdx);
+    const group = new THREE.Group();
     const pivot = new THREE.Group();
     pivot.position.set(hinge.x, floorY, hinge.y);
     pivot.rotation.y = thetaClosed;
+    group.add(pivot);
     const geom = new THREE.BoxGeometry(len, STRUCTURE.doorHeight, s.thickness);
     const leafMat = new THREE.MeshStandardMaterial({ color: STRUCTURE.doorColor, roughness: 0.7, metalness: 0 });
     const leaf = new THREE.Mesh(geom, leafMat);
@@ -965,21 +1324,61 @@ export class World3DRenderer {
     leaf.position.set(len / 2, STRUCTURE.doorHeight / 2, 0);
     pivot.add(leaf);
     this.disposables.push(geom, leafMat);
-    return { object: pivot, door: { pivot, thetaClosed, leafMat } };
+    const mats: THREE.MeshStandardMaterial[] = [leafMat];
+    // A real doorway: the leaf is door-height (2.1 m), the wall continues above
+    // it as a LINTEL up to the storey height, tinted like the wall it sits in.
+    const lintelH = STRUCTURE.wallHeight - STRUCTURE.doorHeight;
+    if (lintelH > 0.05) {
+      const lintelGeom = new THREE.BoxGeometry(len, lintelH, s.thickness);
+      const lintelMat = new THREE.MeshStandardMaterial({
+        color: s.color ? new THREE.Color(s.color) : STRUCTURE.wallColor,
+        roughness: 0.9,
+        metalness: 0,
+      });
+      const lintel = new THREE.Mesh(lintelGeom, lintelMat);
+      lintel.position.set(
+        (s.a.x + s.b.x) / 2,
+        STRUCTURE.doorHeight + lintelH / 2 + floorY,
+        (s.a.y + s.b.y) / 2,
+      );
+      lintel.rotation.y = Math.atan2(-dz, dx);
+      group.add(lintel);
+      this.disposables.push(lintelGeom, lintelMat);
+      mats.push(lintelMat);
+    }
+    return { object: group, mats, door: { pivot, thetaClosed, leafMat } };
   }
 
-  private syncObjects(state: WorldState, interactId?: string, fadeAbove: number | null = null): void {
+  private syncObjects(
+    state: WorldState,
+    interactId?: string,
+    fade: FadeContext | null = null,
+    glyphFor?: (glyph: string) => CanvasImageSource[] | null,
+    dt = 0,
+  ): void {
     for (const obj of Object.values(state.objects)) {
       const spec = state.spec.objects.find((o) => o.id === obj.id);
       const radius = spec?.radius ?? 0.5;
       let entry = this.objectMeshes.get(obj.id);
       if (!entry) {
-        const geom =
-          obj.shape === "box"
-            ? new THREE.BoxGeometry(radius * 2, radius * 2, radius * 2)
-            : new THREE.SphereGeometry(radius, 24, 16);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.5, metalness: 0 });
-        const mesh = new THREE.Mesh(geom, mat);
+        // Prefer a real procedural 3D model for the object's identity; FAILSAFE
+        // to the generic box/sphere when there's no recipe (a new/queued type).
+        let mesh: THREE.Object3D;
+        let materials: THREE.MeshStandardMaterial[];
+        const model = buildObjectModel({ iconRef: spec?.iconRef, glyph: spec?.glyph, radius }) ?? undefined;
+        if (model) {
+          mesh = model.object;
+          materials = model.materials;
+        } else {
+          const geom =
+            obj.shape === "box"
+              ? new THREE.BoxGeometry(radius * 2, radius * 2, radius * 2)
+              : new THREE.SphereGeometry(radius, 24, 16);
+          const mat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.5, metalness: 0 });
+          mesh = new THREE.Mesh(geom, mat);
+          materials = [mat];
+          this.disposables.push(geom, mat);
+        }
         const shadowGeom = new THREE.CircleGeometry(radius * 1.1, 20);
         const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
         const shadow = new THREE.Mesh(shadowGeom, shadowMat);
@@ -987,17 +1386,49 @@ export class World3DRenderer {
         shadow.position.y = 0.02;
         this.scene.add(mesh);
         this.scene.add(shadow);
-        this.disposables.push(geom, mat, shadowGeom, shadowMat);
-        // An emoji icon floats over the object so carryables read as what they
-        // are (cookie vs apple) — needed for "carry the right one" selection.
-        if (spec?.iconRef) {
+        this.disposables.push(shadowGeom, shadowMat);
+        entry = { mesh, shadow, materials, model };
+        // A modeled object shows its descriptors PHYSICALLY (color/size/heat), so
+        // it needs no floating symbol. Only the FAILSAFE (generic shape) wears the
+        // emoji icon so it still reads as what it is.
+        if (!model && spec?.iconRef) {
           const icon = makeEmojiSprite(spec.iconRef);
           icon.sprite.position.set(0, radius + 0.7, 0);
           mesh.add(icon.sprite);
           this.disposables.push(icon.tex, icon.mat);
+          entry.icon = icon.sprite;
         }
-        entry = { mesh, shadow };
+        mesh.userData.pick = { kind: "object", id: obj.id } satisfies ScreenPick;
         this.objectMeshes.set(obj.id, entry);
+      }
+      if (entry.model) {
+        // A live glyph change (a transformed item apple.cold → apple.hot, or a
+        // descriptor edit) re-applies color/size/temperature to the model.
+        if (entry.glyphKey !== spec?.glyph) {
+          entry.model.applyDescriptors(spec?.glyph);
+          entry.glyphKey = spec?.glyph;
+        }
+        entry.model.update(state.time);
+        // Carried objects turn to face the way their carrier faces (a recipe's
+        // forward is +X; align it with the possessor's facing vector).
+        if (obj.possessedBy) {
+          const carrier = state.avatars[obj.possessedBy];
+          if (carrier) entry.mesh.rotation.y = Math.atan2(-carrier.fy, carrier.fx);
+        }
+      } else if (spec?.glyph && entry.glyphKey !== spec.glyph && glyphFor) {
+        // Failsafe object: swap the emoji for the composed glyph image once the
+        // game's resolver has decoded it (async), keyed on the glyph string.
+        const images = glyphFor(spec.glyph);
+        const img = images?.[0];
+        if (img) {
+          if (entry.icon) entry.mesh.remove(entry.icon);
+          const icon = makeGlyphIconSprite(img as GlyphImage);
+          icon.sprite.position.set(0, radius + 0.7, 0);
+          entry.mesh.add(icon.sprite);
+          this.disposables.push(icon.tex, icon.mat);
+          entry.icon = icon.sprite;
+          entry.glyphKey = spec.glyph;
+        }
       }
       // Containment lifts/lowers the object so on/in/under read as relations.
       let y = radius;
@@ -1011,20 +1442,27 @@ export class World3DRenderer {
       entry.mesh.position.set(obj.x, y + floorY, obj.y);
       entry.shadow.position.set(obj.x, 0.02 + floorY, obj.y);
       // Possession tint marks the owner; an INTERACT highlight (gaze on a free
-      // object) pulses cyan.
-      const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-      if (obj.possessedBy) {
-        mat.emissive = colorForId(obj.possessedBy);
-        mat.emissiveIntensity = 0.35;
-      } else if (obj.id === interactId) {
-        mat.emissive.set("#38bdf8");
-        mat.emissiveIntensity = 0.35 + 0.2 * Math.sin(state.time * 5);
-      } else {
-        mat.emissiveIntensity = 0;
+      // object) pulses cyan. Applied across every material of the model.
+      // Objects fade with the storey they stand on (same plane rule as slabs),
+      // only inside the occupant's own building.
+      const faded =
+        !!fade &&
+        obj.floor > fade.floor &&
+        insideBuilding(fade.building, obj.x, obj.y) &&
+        fade.camY > obj.floor * FLOOR_HEIGHT - CAM_FADE_MARGIN;
+      for (const mat of entry.materials) {
+        if (obj.possessedBy) {
+          mat.emissive = colorForId(obj.possessedBy);
+          mat.emissiveIntensity = 0.35;
+        } else if (obj.id === interactId) {
+          mat.emissive.set("#38bdf8");
+          mat.emissiveIntensity = 0.35 + 0.2 * Math.sin(state.time * 5);
+        } else {
+          mat.emissiveIntensity = 0;
+        }
+        // Floor-fade objects sitting on a storey above the occupant.
+        fadeToward(mat, faded, dt);
       }
-      // Floor-fade objects sitting on a storey above the occupant; hide their shadow.
-      const faded = fadeAbove !== null && obj.floor > fadeAbove;
-      setFaded(mat, faded);
       entry.shadow.visible = !faded;
     }
   }
@@ -1034,6 +1472,8 @@ export class World3DRenderer {
    *  point (a character/object/caption). One path for networked utterances and
    *  in-game speech alike. Bubbles live directly in the scene (auto-billboarded). */
   private syncBubbles(state: WorldState, glyphFor?: (glyph: string) => CanvasImageSource[] | null): void {
+    // Screen-up in world space, shared by every bubble this frame.
+    const up = this._bubbleUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     const live = new Set<string>();
     for (const [key, b] of Object.entries(state.bubbles)) {
       const pos = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id] : b.anchor;
@@ -1043,13 +1483,14 @@ export class World3DRenderer {
       let bubble = this.bubbles.get(key);
       if (!bubble) {
         bubble = new Bubble3D();
+        bubble.sprite.userData.pick = { kind: "bubble", id: key } satisfies ScreenPick;
         this.bubbles.set(key, bubble);
         this.scene.add(bubble.sprite);
       }
       const glyphs = b.glyph ? glyphFor?.(b.glyph) ?? [] : [];
       const floor = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id]?.floor ?? 0 : 0;
-      bubble.setContent(b.text, b.at, glyphs);
-      bubble.place(pos.x, pos.y, alpha, floor * FLOOR_HEIGHT);
+      bubble.setContent(b.text, b.at, glyphs, b.style ?? "speech");
+      bubble.place(pos.x, pos.y, alpha, floor * FLOOR_HEIGHT, up);
     }
     // Drop sprites whose bubble expired or was removed.
     for (const [key, bubble] of this.bubbles) {
@@ -1065,8 +1506,10 @@ export class World3DRenderer {
     const me = state.avatars[this.localId];
     const step = Math.max(0, dt);
     const cam = this.cameraCfg;
-    const sitting = intent?.sitting ?? false;
-    const aim = intent?.aim ?? null;
+    // The camera's heading follows the GAZE FIXATION (cursor.point), not the engine
+    // `aim`. So it keeps responding to where you look even when the avatar is frozen
+    // — while SITTING (aim null) you can still look around; only the body stays put.
+    const gaze = intent?.cursor?.point ?? intent?.aim ?? null;
 
     // Position: ease the followed centre toward the local avatar.
     const target = this._scratch.set(
@@ -1087,9 +1530,9 @@ export class World3DRenderer {
     let aimx = 0;
     let aimz = 0;
     let haveDir = false;
-    if (me && aim) {
-      const dx = aim.x - me.x;
-      const dz = aim.y - me.y;
+    if (me && gaze) {
+      const dx = gaze.x - me.x;
+      const dz = gaze.y - me.y;
       gazeDistance = Math.hypot(dx, dz);
       if (gazeDistance > 1e-3) {
         aimx = dx / gazeDistance;
@@ -1101,12 +1544,12 @@ export class World3DRenderer {
     // behind. Decides the overhead↔shoulder transition (computed pre-turn).
     const ahead = haveDir ? aimx * this.camForward.x + aimz * this.camForward.z : -1;
 
-    // Heading: ease toward the aim direction. Held while sitting, when the gaze is
-    // on the avatar (gd ≤ moveThreshold), or with no aim — so a watcher's glances
-    // never rotate the world. Turn rate is capped BOTH by the gaze-distance rule
-    // (near gaze ⇒ fast pivot, far gaze ⇒ slow reveal) AND comfort.maxYawSpeed.
-    // A `faceTarget` (NPC conversation) OVERRIDES the aim: the avatar is frozen
-    // (aim null) but the view slews to face the speaker, bypassing the gaze gate.
+    // Heading: ease toward the gaze direction. Held when the gaze is on the avatar
+    // (gd ≤ moveThreshold) or absent — so a watcher's glances never rotate the world
+    // — but NOT gated on sitting (a seated player still looks around). Turn rate is
+    // capped BOTH by the gaze-distance rule (near gaze ⇒ fast pivot, far gaze ⇒ slow
+    // reveal) AND comfort.maxYawSpeed. A `faceTarget` (NPC conversation) OVERRIDES
+    // the gaze: the avatar is frozen but the view slews to face the speaker.
     const faceTarget = intent?.faceTarget ?? null;
     let tgtAngle: number | null = null;
     let facing = false;
@@ -1114,7 +1557,7 @@ export class World3DRenderer {
       const dx = faceTarget.x - this.camCenter.x;
       const dz = faceTarget.y - this.camCenter.z;
       if (Math.hypot(dx, dz) > 1e-3) { tgtAngle = Math.atan2(dx, dz); facing = true; }
-    } else if (!sitting && haveDir && gazeDistance > cam.moveThreshold) {
+    } else if (haveDir && gazeDistance > cam.moveThreshold) {
       tgtAngle = Math.atan2(aimx, aimz);
     }
     let appliedYaw = 0;
@@ -1135,16 +1578,18 @@ export class World3DRenderer {
     }
     this.lastYawSpeed = step > 0 ? Math.abs(appliedYaw) / step : 0;
 
-    // Overhead ↔ shoulder transition (hysteresis bands). Commit to TRAVEL only on a
-    // sustained forward far gaze; drop to OVERHEAD when sitting, stopped, gaze
-    // pulled in, or gaze behind (so "look behind me" lifts to overhead to pivot,
-    // never whips the shoulder cam 180°).
-    const enterTravel =
-      !sitting && haveDir && gazeDistance > cam.travelEnterDist && ahead > cam.travelAheadEnter;
-    const exitTravel =
-      sitting || !haveDir || gazeDistance < cam.travelExitDist || ahead < cam.travelAheadExit;
-    if (enterTravel) this.travelTarget = 1;
-    else if (exitTravel) this.travelTarget = 0;
+    // Over-the-shoulder is the DEFAULT; the camera lifts to overhead ONLY when the
+    // gaze points behind the avatar — so "look behind me" pivots the world from
+    // above instead of whipping the shoulder cam 180°. Two thresholds give a
+    // hysteresis band (travelAheadExit … travelAheadEnter) so a gaze hovering near
+    // straight-across doesn't flip-flop. No aim ⇒ shoulder (there's no "behind").
+    const gazeBehind = haveDir && ahead < cam.travelAheadExit; // clearly behind → overhead
+    const gazeAhead = !haveDir || ahead > cam.travelAheadEnter; // clearly ahead → shoulder
+    // An explicit shoulder REQUEST (gaze on a speech bubble / conversation speaker)
+    // always wins.
+    if (intent?.shoulder || gazeAhead) this.travelTarget = 1;
+    else if (gazeBehind) this.travelTarget = 0;
+    // else: inside the band — hold the current pose.
     this.travelCommit += (this.travelTarget - this.travelCommit) * (1 - Math.exp(-cam.travelEase * step));
 
     // Interpolate the rig pose and (only when it actually moved) the FOV.
@@ -1173,9 +1618,10 @@ export class World3DRenderer {
       model.dispose();
     }
     this.avatars.clear();
-    for (const { mesh, shadow } of this.objectMeshes.values()) {
-      this.scene.remove(mesh);
-      this.scene.remove(shadow);
+    for (const entry of this.objectMeshes.values()) {
+      this.scene.remove(entry.mesh);
+      this.scene.remove(entry.shadow);
+      entry.model?.dispose();
     }
     this.objectMeshes.clear();
     for (const { object } of this.structureMeshes.values()) {
@@ -1192,6 +1638,7 @@ export class World3DRenderer {
       bubble.dispose();
     }
     this.bubbles.clear();
+    this.spark.dispose();
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
     this.renderer.dispose();
@@ -1218,6 +1665,7 @@ export function createWorld3DView(
   });
   return {
     screenToWorld: (px, py) => renderer.screenToWorld(px, py),
+    pickScreen: (px, py) => renderer.pickScreen(px, py),
     render: (state, dt, intent) => renderer.render(state, dt, faceFor, labelFor, glyphFor, intent),
     resize: (width, height, dpr) => renderer.resize(width, height, dpr),
     setTunables: (t) => renderer.setTunables({ camera: t.camera, comfort: t.comfort }),

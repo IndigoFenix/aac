@@ -160,28 +160,50 @@ export function paintBubble(
   layout: BubbleLayout,
   glyphImages: GlyphImage[],
   alpha = 1,
+  variant: "speech" | "thought" = "speech",
 ): void {
   const { style: s, lines, width, height, glyphDrawWidth, glyphDrawHeight, glyphRowHeight } = layout;
   ctx.globalAlpha = alpha;
+  const thought = variant === "thought";
+  const stroke = thought ? "rgba(99,102,241,0.55)" : "rgba(15,23,42,0.18)";
 
-  // Bubble body.
-  roundRectPath(ctx, 0, 0, width, height, 10);
+  // Bubble body — thought bubbles get a rounder, dashed, indigo outline.
+  roundRectPath(ctx, 0, 0, width, height, thought ? 18 : 10);
   ctx.fillStyle = "rgba(255,255,255,0.96)";
   ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = "rgba(15,23,42,0.18)";
+  ctx.lineWidth = thought ? 2 : 1.5;
+  if (thought) ctx.setLineDash([7, 6]);
+  ctx.strokeStyle = stroke;
   ctx.stroke();
+  ctx.setLineDash([]);
 
-  // Little downward tail at the bottom centre, pointing to the head.
-  const tailW = 12;
   const cx = width / 2;
-  ctx.beginPath();
-  ctx.moveTo(cx - tailW / 2, height - 0.5);
-  ctx.lineTo(cx, height + tailW * 0.8);
-  ctx.lineTo(cx + tailW / 2, height - 0.5);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(255,255,255,0.96)";
-  ctx.fill();
+  if (thought) {
+    // Thought tail: two shrinking circles toward the head (fits within the
+    // renderers' tail allowance of ~12px below the body).
+    for (const [r, dy] of [
+      [3.5, 4.5],
+      [2, 9.5],
+    ] as const) {
+      ctx.beginPath();
+      ctx.arc(cx, height + dy, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    }
+  } else {
+    // Little downward tail at the bottom centre, pointing to the head.
+    const tailW = 12;
+    ctx.beginPath();
+    ctx.moveTo(cx - tailW / 2, height - 0.5);
+    ctx.lineTo(cx, height + tailW * 0.8);
+    ctx.lineTo(cx + tailW / 2, height - 0.5);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.fill();
+  }
 
   let y = s.padding;
 

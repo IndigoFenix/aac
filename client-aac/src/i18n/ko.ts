@@ -306,6 +306,14 @@ export const ko: Translations = {
     guessingMode: "추측 중...",
   },
 
+  processing: {
+    preparingVoice: "준비 중…",
+    speaking: "말하는 중…",
+    thinking: "생각 중…",
+    updatingBoard: "버튼 업데이트 중…",
+    interpreting: "말하는 중…",
+    suggesting: "낱말 찾는 중…",
+  },
   construction: {
     tabsLabel: "문장 카테고리",
     glyphPreviewLabel: "문장 미리보기",
@@ -413,6 +421,7 @@ export const ko: Translations = {
       want: "원하다",
       give: "주다",
       take: "받다",
+      trade: "교환하다",
       receive: "받기",
       have: "가지다",
       make: "만들다",

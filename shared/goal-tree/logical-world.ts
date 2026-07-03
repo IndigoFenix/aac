@@ -173,6 +173,54 @@ function buildNode(world: LogicalWorld, node: GoalNode, contextZoneId: string): 
       world.sites[node.id] = zoneId;
       break;
     }
+    case "converse": {
+      // The NPC's room: a new zone with the NPC standing in it as a poser (the
+      // dwell-to-talk conversation trigger), plus any prop pickups scattered
+      // there — each a single-item placement the runtime routes to the SATCHEL
+      // (not a collect count).
+      const zoneId = addZone(world, "reach", node.id, node.zoneHint);
+      addPassage(world, contextZoneId, zoneId, buildVia(world, node.via, contextZoneId));
+      world.figures.push({
+        zoneId,
+        entityId: node.npcEntityId,
+        role: "poser",
+        forNodeId: node.id,
+      });
+      for (const entityId of node.propEntityIds ?? []) {
+        world.items.push({
+          zoneId,
+          forNodeId: node.id,
+          itemEntityIds: [entityId],
+          count: 1,
+        });
+      }
+      world.sites[node.id] = zoneId;
+      break;
+    }
+    case "fulfill": {
+      // The creature's room: a zone with the creature standing in it as a poser
+      // (dwell-to-talk), loose props as single-item placements (the layout
+      // positions them; the player materializes them physically), and stock
+      // staged behind the creature by the space layer (not placements).
+      const zoneId = addZone(world, "reach", node.id, node.zoneHint);
+      addPassage(world, contextZoneId, zoneId, buildVia(world, node.via, contextZoneId));
+      world.figures.push({
+        zoneId,
+        entityId: node.npcEntityId,
+        role: "poser",
+        forNodeId: node.id,
+      });
+      for (const entityId of node.propEntityIds ?? []) {
+        world.items.push({
+          zoneId,
+          forNodeId: node.id,
+          itemEntityIds: [entityId],
+          count: 1,
+        });
+      }
+      world.sites[node.id] = zoneId;
+      break;
+    }
   }
 }
 

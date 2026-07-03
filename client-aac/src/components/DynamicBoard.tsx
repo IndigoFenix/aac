@@ -4,6 +4,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { ButtonBusyIndicator } from "@/components/ButtonBusyIndicator";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
@@ -27,6 +28,10 @@ interface DynamicBoardProps {
   /** Button id a remote clinician is hovering on their mirrored view (their
    *  "cursor") — ringed so the student sees where the clinician is pointing. */
   highlightButtonId?: string | null;
+  /** Button id the child just pressed — shows an ambient processing/speaking cue. */
+  busyButtonId?: string | null;
+  /** Which phase of the busy cue to show on `busyButtonId`. */
+  busyPhase?: import("@/components/ButtonBusyIndicator").ButtonBusyPhase | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
   onBack?: () => void;
   /** Called when user or AI navigates to a different page within a multi-page board */
@@ -147,6 +152,8 @@ export default function DynamicBoard({
   symbolUpdate,
   aiButtonPress,
   highlightButtonId,
+  busyButtonId,
+  busyPhase,
   onButtonClick,
   onBack,
   onNavigate,
@@ -715,8 +722,13 @@ export default function DynamicBoard({
         textFlex={level.textFlex}
         entering={isEntering}
         cornerIndicator={
-          isLinkButton ? (
-            <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>
+          (busyPhase && busyButtonId && button.id === busyButtonId) || isLinkButton ? (
+            <>
+              {busyPhase && busyButtonId && button.id === busyButtonId ? <ButtonBusyIndicator phase={busyPhase} /> : null}
+              {isLinkButton ? (
+                <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>
+              ) : null}
+            </>
           ) : null
         }
       />

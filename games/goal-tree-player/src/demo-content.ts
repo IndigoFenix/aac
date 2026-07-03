@@ -30,7 +30,6 @@ export function demoGame(): GoalTreeGame {
     root: {
       type: "reach",
       id: "picnic",
-      intro: "Let's get to the picnic!",
       outro: "We made it to the picnic!",
       markerEntityId: "picnic_blanket",
       zoneHint: "sunny riverbank",

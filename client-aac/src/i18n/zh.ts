@@ -306,6 +306,14 @@ export const zh: Translations = {
     guessingMode: "猜测中...",
   },
 
+  processing: {
+    preparingVoice: "准备中…",
+    speaking: "说话中…",
+    thinking: "思考中…",
+    updatingBoard: "更新按钮中…",
+    interpreting: "正在说…",
+    suggesting: "查找词语中…",
+  },
   construction: {
     tabsLabel: "句子类别",
     glyphPreviewLabel: "句子预览",
@@ -413,6 +421,7 @@ export const zh: Translations = {
       want: "要",
       give: "给",
       take: "拿",
+      trade: "交换",
       receive: "收到",
       have: "有",
       make: "做",

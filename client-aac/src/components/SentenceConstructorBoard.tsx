@@ -167,6 +167,11 @@ export interface ConstructionPerson {
 export interface SentenceConstructorBoardProps {
   /** Called when the user presses Play with the current glyph string. */
   onPlay?: (glyphString: string) => void;
+  /** True after Play is pressed, until the interpreted sentence starts being
+   *  voiced. Puts the Play button into a waiting state and blocks re-press so
+   *  the user sees the interpretation is underway (the host closes the board
+   *  when the voice begins). */
+  awaitingInterpret?: boolean;
   /** Called when the user dismisses the board. */
   onClose?: () => void;
   /**
@@ -210,7 +215,7 @@ export interface SentenceConstructorBoardProps {
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const { t, isRTL } = useLanguage();
-  const { onClose, onPlay } = props;
+  const { onClose, onPlay, awaitingInterpret = false } = props;
   const ctx = useDualAgentContextOptional();
   // Props take precedence over context — the construction board may render
   // outside the DualAgentProvider subtree (as in the AAC home overlay).
@@ -556,8 +561,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   const handlePlay = useCallback(() => {
     if (displayedGlyph.slots.length === 0) return;
+    if (awaitingInterpret) return;  // already interpreting — ignore repeat presses
     onPlay?.(serializeGlyph(displayedGlyph));
-  }, [displayedGlyph, onPlay]);
+  }, [displayedGlyph, onPlay, awaitingInterpret]);
 
   // Help button state machine (per planning-docs/glyph-system.md):
   //   - Slot selected → re-suggest for that slot (excludes current AI strip).
@@ -667,6 +673,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setAiModifierCandidates(incoming.modifierCandidates);
     setAiThinking(false);
   }, [constructionSuggestions]);
+
+  // Failsafe: if the AI never answers a [CONSTRUCTION STATE] injection (agent
+  // error / dropped turn), stop pulsing the placeholders after a while so the
+  // strip doesn't look permanently "thinking".
+  useEffect(() => {
+    if (!aiThinking) return;
+    const t = setTimeout(() => setAiThinking(false), 12000);
+    return () => clearTimeout(t);
+  }, [aiThinking]);
 
   // Reset AI-strip pagination state when slot is filled or tab changes.
   useEffect(() => {
@@ -1018,11 +1033,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           )}
 
           {/* Play button — disabled when no slots filled. Arrow points
-              along the reading direction so it reads as "forward / go". */}
+              along the reading direction so it reads as "forward / go". While
+              the composed sentence is being interpreted, it shows a spinner and
+              a "wait" label instead of closing instantly (the host closes the
+              board the moment the interpreted sentence starts being voiced). */}
           <ActionButton
-            label={t("construction.play")}
+            label={awaitingInterpret ? t("processing.interpreting") : t("construction.play")}
             icon={isRTL ? "◀" : "▶"}
             primary
+            busy={awaitingInterpret}
             disabled={displayedGlyph.slots.length === 0}
             onPress={handlePlay}
             testId="construction-play"
@@ -1261,8 +1280,20 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             the grid below. The percentage max-h on the img inside requires a
             definite parent height to resolve. */}
         <div className="flex items-stretch gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-[110px]">
-          <span className="self-center text-xl select-none" aria-hidden>
-            ✨
+          {/* ✨ marker — gently pulses with a small caption while the AI is
+              still finding suggestions, so the strip clearly reads as "working"
+              rather than "empty". */}
+          <span
+            className={`self-center flex flex-col items-center justify-center text-xl select-none ${aiThinking ? "animate-pulse" : ""}`}
+            role={aiThinking ? "status" : undefined}
+            aria-label={aiThinking ? t("processing.suggesting") : undefined}
+          >
+            <span aria-hidden>✨</span>
+            {aiThinking && (
+              <span className="text-[9px] leading-none mt-0.5 text-violet-500 dark:text-violet-300 font-medium whitespace-nowrap">
+                {t("processing.suggesting")}
+              </span>
+            )}
           </span>
           {[0, 1, 2, 3].map((i) => {
             const c = aiCandidates[i];
@@ -1442,6 +1473,9 @@ function ActionButton(props: {
   icon: string;
   onPress: () => void;
   disabled?: boolean;
+  /** Render a spinner in place of the icon and block presses (e.g. Play while
+   *  the composed sentence is being interpreted). */
+  busy?: boolean;
   primary?: boolean;
   /** Background color (overrides the default white). Border matches unless borderColor is set. */
   color?: string;
@@ -1457,7 +1491,7 @@ function ActionButton(props: {
       data-testid={props.testId}
       data-active={props.active ? "true" : undefined}
       onClick={props.onPress}
-      disabled={props.disabled}
+      disabled={props.disabled || props.busy}
       whileTap={{ scale: 0.95 }}
       className={[
         "w-24 rounded-xl border-2 flex flex-col items-center justify-center gap-1 px-2 py-2",
@@ -1472,7 +1506,9 @@ function ActionButton(props: {
       style={props.color ? { backgroundColor: props.active && props.color === "#EDE9FE" ? "#C4B5FD" : props.color, borderColor: props.borderColor ?? props.color } : undefined}
     >
       <span className="text-2xl" aria-hidden>
-        {props.icon}
+        {props.busy
+          ? <span className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          : props.icon}
       </span>
       <span className="text-xs font-medium">{props.label}</span>
     </motion.button>

@@ -20,9 +20,16 @@
 //   overcome — its site is reachable AND its key goal is completed
 //   observe  — its zone is reachable (a demonstration to watch, never a gate)
 //   transport— its zone is reachable (a carry puzzle; completion is play-side)
+//   converse — its zone is reachable AND a completing dialogue option is
+//              reachable from the entry turn with every `carrying` condition
+//              satisfiable. Item satisfiability is its own monotone fixpoint:
+//              an entity is ACQUIRABLE when a prop placement's zone is
+//              reachable, or a traversable dialogue option `receive`s it.
+//              (`give` consumption never starves another quest — the schema
+//              forbids two converse nodes consuming the same entity.)
 //   passage  — crossable once every guard's overcome node is completed
 
-import type { GoalNode, GoalNodeType, GoalTreeGame } from "./types.js";
+import type { ConverseNode, GoalNode, GoalNodeType, GoalTreeGame } from "./types.js";
 import { measureGoalTree, walkGoalTree } from "./walk.js";
 import type { LogicalWorld } from "./logical-world.js";
 
@@ -74,6 +81,107 @@ export function solveGoalTreeGame(
   const completed = new Set<string>();
   const plan: SolverStep[] = [];
 
+  // Item-flow half of the fixpoint (converse quests): entities the player can
+  // get into the satchel, and which converse nodes can currently complete.
+  const converseNodes = nodes.filter((n): n is ConverseNode => n.type === "converse");
+  const converseByNode = new Map(converseNodes.map((n) => [n.id, n]));
+  const acquirable = new Set<string>();
+  /** Items the player can come to KNOW about (seen in a reachable zone / revealed / held). */
+  const knowable = new Set<string>();
+  /** Items the player can eventually GIVE somewhere (satisfies `given` gates). */
+  const givable = new Set<string>();
+  const converseCompletable = new Set<string>();
+
+  /** Prop placements → acquirable + knowable (visible), once their zone is reachable. */
+  const growAcquirableFromPlacements = (): boolean => {
+    let grew = false;
+    for (const item of world.items) {
+      if (!converseByNode.has(item.forNodeId)) continue; // collect items aren't satchel items
+      if (!reachable.has(item.zoneId)) continue;
+      for (const id of item.itemEntityIds) {
+        if (!acquirable.has(id)) {
+          acquirable.add(id);
+          grew = true;
+        }
+        if (!knowable.has(id)) {
+          knowable.add(id);
+          grew = true;
+        }
+      }
+    }
+    return grew;
+  };
+
+  /**
+   * Walk one converse's dialogue graph under the current `acquirable` set:
+   * options gated on un-acquirable items are closed, everything else is
+   * traversable. Collects the `receive` grants along the way and whether a
+   * completing option is reachable.
+   */
+  const condSatisfiable = (c: { kind: string; entityId: string }): boolean => {
+    switch (c.kind) {
+      case "carrying":
+        return acquirable.has(c.entityId);
+      case "knows":
+        return knowable.has(c.entityId);
+      case "given":
+        return givable.has(c.entityId);
+      default:
+        return true; // not-carrying is line-only; never gates an option
+    }
+  };
+
+  const analyzeConverse = (
+    node: ConverseNode,
+  ): { grants: string[]; reveals: string[]; gives: string[]; completable: boolean } => {
+    const turnById = new Map(node.turns.map((t) => [t.id, t]));
+    const visited = new Set<string>();
+    const queue = [node.entry];
+    const grants: string[] = [];
+    const reveals: string[] = [];
+    const gives: string[] = [];
+    let completable = false;
+    while (queue.length) {
+      const turn = turnById.get(queue.pop()!);
+      if (!turn || visited.has(turn.id)) continue;
+      visited.add(turn.id);
+      for (const opt of turn.options) {
+        if (!(opt.when ?? []).every(condSatisfiable)) continue;
+        grants.push(...(opt.receive ?? []));
+        reveals.push(...(opt.reveal ?? []));
+        gives.push(...(opt.give ?? []));
+        if (opt.completes) completable = true;
+        if (opt.next && !visited.has(opt.next)) queue.push(opt.next);
+      }
+    }
+    return { grants, reveals, gives, completable };
+  };
+
+  const growAcquirableFromDialogues = (): boolean => {
+    let grew = false;
+    const add = (set: Set<string>, ids: string[]) => {
+      for (const id of ids) {
+        if (!set.has(id)) {
+          set.add(id);
+          grew = true;
+        }
+      }
+    };
+    for (const node of converseNodes) {
+      if (!reachable.has(world.sites[node.id])) continue;
+      const { grants, reveals, gives, completable } = analyzeConverse(node);
+      add(acquirable, grants);
+      add(knowable, grants); // receiving something means knowing it
+      add(knowable, reveals);
+      add(givable, gives);
+      if (completable && !converseCompletable.has(node.id)) {
+        converseCompletable.add(node.id);
+        grew = true;
+      }
+    }
+    return grew;
+  };
+
   const isCompletable = (node: GoalNode): boolean => {
     const site = world.sites[node.id];
     if (!reachable.has(site)) return false;
@@ -83,11 +191,16 @@ export function solveGoalTreeGame(
       // observe + transport teach, never gate — reachable ⇒ completable, like reach.
       case "observe":
       case "transport":
+      // fulfill: completion is play-side (the creature simulation); the REAL
+      // behavioral proof is the symbol-game SIMULATION certifier.
+      case "fulfill":
         return true;
       case "collect":
         return (itemZonesByNode.get(node.id) ?? []).every((z) => reachable.has(z));
       case "overcome":
         return completed.has(node.key.id);
+      case "converse":
+        return converseCompletable.has(node.id);
     }
   };
 
@@ -105,6 +218,12 @@ export function solveGoalTreeGame(
         plan.push({ kind: "zone-opened", zoneId: opened, viaPassageId: passage.id });
         changed = true;
       }
+    }
+
+    // Item flow saturates within the round so a vendor's grant can complete a
+    // giver in the same iteration.
+    while (growAcquirableFromPlacements() || growAcquirableFromDialogues()) {
+      changed = true;
     }
 
     for (const node of nodes) {
@@ -138,7 +257,11 @@ export function solveGoalTreeGame(
   }
   return {
     solvable: false,
-    blocked: explainBlocked(nodes, world, reachable, completed, itemZonesByNode),
+    blocked: explainBlocked(nodes, world, reachable, completed, itemZonesByNode, {
+      carrying: acquirable,
+      knows: knowable,
+      given: givable,
+    }),
     stats,
   };
 }
@@ -153,6 +276,7 @@ function explainBlocked(
   reachable: Set<string>,
   completed: Set<string>,
   itemZonesByNode: Map<string, string[]>,
+  satisfiable: { carrying: Set<string>; knows: Set<string>; given: Set<string> },
 ): BlockedReason[] {
   const blocked: BlockedReason[] = [];
 
@@ -197,6 +321,30 @@ function explainBlocked(
         reason:
           `collect "${node.id}" cannot finish — item zone(s) unreachable: ` +
           unreachableZones.map((z) => `"${z}" (${guardsBlockingZone(z)})`).join(", "),
+      });
+      continue;
+    }
+    if (node.type === "converse") {
+      // Which gates can the player never satisfy? (hold / learn about / have given)
+      const missing = new Set<string>();
+      for (const turn of node.turns) {
+        for (const opt of turn.options) {
+          for (const cond of opt.when ?? []) {
+            if (cond.kind === "not-carrying") continue;
+            const pool = satisfiable[cond.kind as "carrying" | "knows" | "given"];
+            if (pool && !pool.has(cond.entityId)) {
+              missing.add(`${cond.entityId} (${cond.kind})`);
+            }
+          }
+        }
+      }
+      blocked.push({
+        nodeId: node.id,
+        reason:
+          `converse "${node.id}" cannot complete — ` +
+          (missing.size
+            ? `required item gate(s) never satisfiable: ${[...missing].join(", ")}`
+            : `no completing dialogue option is reachable from entry "${node.entry}"`),
       });
     }
   }

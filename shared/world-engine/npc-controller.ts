@@ -50,6 +50,21 @@ export interface NpcProximity {
   distance: number;
 }
 
+/**
+ * A scripted body TASK: walk the waypoints in order, firing `onArrive` at each.
+ * While an errand is active it overrides the NPC's behavior aim (a stationary
+ * vendor walks off to fetch an item, then returns). The game layer performs the
+ * world effects (pick up / put down an object) inside the callbacks — the
+ * controller only steers.
+ */
+export interface NpcErrand {
+  points: Vec2[];
+  /** Fired once when the NPC reaches points[index]. */
+  onArrive?: (index: number) => void;
+  /** Fired after the last point's onArrive; the errand then clears. */
+  onDone?: () => void;
+}
+
 export interface NpcController {
   readonly npcId: string;
   readonly movement: NpcMovement;
@@ -59,6 +74,8 @@ export interface NpcController {
   computeAim(ctx: NpcControlCtx): Vec2 | null;
   /** Phase-2 hook: feed live conversation state in to bias the body. */
   setEngagement(e: NpcEngagement | null): void;
+  /** Run (or cancel with null) a scripted waypoint errand; replaces any current one. */
+  setErrand(e: NpcErrand | null): void;
 }
 
 const DEAD = WORLD_ENGINE_DEFAULTS.aimDeadRadius;
@@ -120,6 +137,11 @@ class BaseController implements NpcController {
   private waypoint: Vec2 | null = null;
   private pauseUntil = 0;
 
+  // Errand state (scripted waypoint task; overrides behavior while active).
+  private errand: NpcErrand | null = null;
+  private errandIndex = 0;
+  private errandWaypointSince = -1;
+
   constructor(spec: NpcSpec) {
     this.npcId = spec.id;
     this.movement = spec.behavior?.movement ?? "wander";
@@ -130,7 +152,47 @@ class BaseController implements NpcController {
     this.engagement = e;
   }
 
+  setErrand(e: NpcErrand | null): void {
+    this.errand = e;
+    this.errandIndex = 0;
+    this.errandWaypointSince = -1;
+  }
+
+  /** Walk the errand's waypoints; fire callbacks on arrival. Returns the aim, or
+   *  null on the frame the errand completes. A waypoint that can't be reached
+   *  within the timeout counts as arrived — an errand may cut a corner, but an
+   *  NPC must NEVER wedge into a wall forever (it would become uninteractable). */
+  private errandAim(ctx: NpcControlCtx): Vec2 | null {
+    const ERRAND_ARRIVE = 0.9;
+    const ERRAND_WAYPOINT_TIMEOUT = 8; // seconds
+    const errand = this.errand!;
+    const pt = errand.points[this.errandIndex];
+    if (!pt) {
+      this.errand = null;
+      return null;
+    }
+    if (this.errandWaypointSince < 0) this.errandWaypointSince = ctx.now;
+    if (
+      dist(ctx.self, pt) <= ERRAND_ARRIVE ||
+      ctx.now - this.errandWaypointSince > ERRAND_WAYPOINT_TIMEOUT
+    ) {
+      errand.onArrive?.(this.errandIndex);
+      if (this.errand !== errand) return null; // a callback replaced/cleared it
+      this.errandIndex += 1;
+      this.errandWaypointSince = ctx.now;
+      if (this.errandIndex >= errand.points.length) {
+        this.errand = null;
+        this.errandIndex = 0;
+        errand.onDone?.();
+        return null;
+      }
+      return errand.points[this.errandIndex] ?? null;
+    }
+    return pt;
+  }
+
   computeAim(ctx: NpcControlCtx): Vec2 | null {
+    if (this.errand) return this.errandAim(ctx);
     switch (this.movement) {
       case "stationary":
         return this.stationaryAim(ctx);

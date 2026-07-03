@@ -40,6 +40,9 @@ export interface GazeTunables {
   /** Milliseconds with no travel intent (aim within sitGazeRadius, or absent)
    *  before the avatar auto-sits (WATCH mode). */
   idleSitMs: number;
+  /** Once SITTING, milliseconds of sustained far-gaze DWELL required to stand up
+   *  and move (a glance away won't do it — standing is a deliberate commitment). */
+  standDwellMs: number;
 }
 
 export const DEFAULT_GAZE_TUNABLES: GazeTunables = {
@@ -50,6 +53,7 @@ export const DEFAULT_GAZE_TUNABLES: GazeTunables = {
   weakenStrength: 0.5,
   sitGazeRadius: 2.5,
   idleSitMs: 2500,
+  standDwellMs: 550,
 };
 
 // ---------------------------------------------------------------------------
@@ -89,12 +93,15 @@ export interface CameraTunables {
   moveThreshold: number;
   // --- Overhead ↔ shoulder transition (hysteresis bands) --------------------
   /** Gaze distance (world units) above which sustained forward gaze commits to
-   *  TRAVEL (shoulder). Must be > travelExitDist. */
+   *  TRAVEL (shoulder). Must be > travelExitDist. Kept SMALL — a gaze even a
+   *  little above the avatar means "going somewhere"; overhead is for rest,
+   *  pivoting, and walking toward the bottom of the screen (the ahead gates). */
   travelEnterDist: number;
   /** Gaze distance below which we drop back to overhead. */
   travelExitDist: number;
   /** dot(aimDir, camForward) above which the gaze counts as "toward the top of the
-   *  screen" (ahead) — required to enter shoulder. */
+   *  screen" (ahead) — required to enter shoulder. Kept low so facing forward even
+   *  a little bit (well shy of straight ahead) commits to travel. */
   travelAheadEnter: number;
   /** dot(aimDir, camForward) below which the gaze counts as "behind" — drops to
    *  overhead (never whips the shoulder cam 180°). */
@@ -104,16 +111,18 @@ export interface CameraTunables {
 }
 
 export const DEFAULT_CAMERA_TUNABLES: CameraTunables = {
-  overhead: { height: 30, back: 3, lookAhead: 3, lookHeight: 0.6, fov: 50 },
-  shoulder: { height: 14, back: 13, lookAhead: 8, lookHeight: 1.2, fov: 50 },
+  // Pulled in ~20–25% for the human-scale (1.8 m) avatars — the old distances
+  // were framed for the larger balloon-headed figures and read too far away.
+  overhead: { height: 24, back: 2.5, lookAhead: 2.5, lookHeight: 0.6, fov: 50 },
+  shoulder: { height: 11, back: 10.5, lookAhead: 6.5, lookHeight: 1.1, fov: 50 },
   follow: 5,
   yawStiffness: 2.2,
   yawDistGain: 4.0,
   yawDistMin: 2.0,
   moveThreshold: 0.35,
-  travelEnterDist: 9,
-  travelExitDist: 5,
-  travelAheadEnter: 0.6,
+  travelEnterDist: 3.5,
+  travelExitDist: 2,
+  travelAheadEnter: 0.15,
   travelAheadExit: -0.1,
   travelEase: 1.5,
 };

@@ -125,7 +125,8 @@ import {
   type DefinedGesture,
 } from "./defined-gestures";
 
-import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities } from "./live-relay";
+import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities, ProcessingActivity } from "./live-relay";
+import { ProcessingIndicators } from "./processing-indicators";
 import { isCapabilityActive } from "./capability-gate";
 import { buildHeardSpeechTurn } from "./speech-text";
 import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
@@ -800,6 +801,14 @@ export class AgentCoordinator {
    *  signal so a re-press DURING a long reply is coalesced, not just one
    *  within the time window. */
   private speakerSpeaking = false;
+
+  // ── Backend-busy processing indicators ───────────────────────────────
+  /** Mirrors the Speaker / Board Manager / interpret busy state to the client
+   *  via `processing` messages so the child sees the system is working on
+   *  their input rather than assuming nothing happened (which invites repeat
+   *  presses). Pure state machine (dedup + backstop timers) — see
+   *  processing-indicators.ts. */
+  private readonly processing = new ProcessingIndicators({ emit: (msg) => this.send(msg) });
 
   // ── Social-training session (peer persona replaces Speaker) ──────────
   /** Active server-owned social-training session. While set, `this.speaker`
@@ -1492,6 +1501,10 @@ export class AgentCoordinator {
     if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
     if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
     if (this.peerPreviewTimer) { clearTimeout(this.peerPreviewTimer); this.peerPreviewTimer = null; }
+    // Drop any lingering processing indicators + their backstop timers so
+    // nothing sticks (the send is a no-op on a closed socket, but this also
+    // cancels the timers).
+    this.clearAllProcessing();
     this.clearStartupTimers();
     // Record any still-open repeat-press burst before the final Monitor pass
     // (runFinalMonitorPass below) so end-of-session perseveration isn't lost.
@@ -1983,6 +1996,10 @@ export class AgentCoordinator {
         //
         // Split the glyph string on '+' to recover the individual GLYPHs;
         // the field is informational (sentence is the canonical payload).
+        // Light the "interpreting" indicator so the SENTENCE BUILDER's Play
+        // button shows it's working until the interpreted sentence is voiced
+        // (cleared in routeInterpretIntent, or by the backstop timer).
+        this.markInterpretBusy();
         this.emitClientEvent({
           type: "sentence_composed",
           source: "client",
@@ -2057,10 +2074,10 @@ export class AgentCoordinator {
         const directive = `[TRANSCRIPT] user → device: "${msg.text}"`;
         if (this.sessionProfile === "resting") {
           flowNote("COORDINATOR", "user_message arrived while resting — waking before routing.");
-          void this.transitionToProfile("awake").then(() => this.speaker?.sendUserTurn(directive));
+          void this.transitionToProfile("awake").then(() => this.speakerRespond(directive));
           return;
         }
-        this.speaker?.sendUserTurn(directive);
+        this.speakerRespond(directive);
         return;
       }
       case "call_active":
@@ -3046,7 +3063,7 @@ export class AgentCoordinator {
     const combined = AgentCoordinator.joinPressSentences(sentences);
     if (!combined) return;
     flowNote("COORDINATOR", `Social peer turn: "${combined}"`);
-    this.speaker?.sendUserTurn(`[USER to YOU] "${combined}"`);
+    this.speakerRespond(`[USER to YOU] "${combined}"`);
     this.scheduleDeferredBoardMgr(lastEvent, "social_press");
   }
 
@@ -3825,7 +3842,7 @@ export class AgentCoordinator {
     const directive = muted
       ? `[GUESSING STATE — muted, do not speak]`
       : this.buildSpeakerGuessingDirective(s);
-    this.speaker?.sendUserTurn(directive);
+    this.speakerRespond(directive);
     // Observer gets a brief one-liner — it doesn't need to ask, just to
     // know we're in word-finder mode so its environment scanning frames
     // detected objects as candidate referents.
@@ -4008,7 +4025,7 @@ export class AgentCoordinator {
             // COMPANION (unchanged): press addressed to the AI — Speaker
             // responds; defer the BM (Speaker's reply triggers REPLIES, with
             // the timer as a fallback).
-            this.speaker?.sendUserTurn(speakerRendered);
+            this.speakerRespond(speakerRendered);
             this.scheduleDeferredBoardMgr(event, "press");
           }
         } else {
@@ -4729,7 +4746,7 @@ export class AgentCoordinator {
       // Peer path: normalize the speaker label to USER — the student's
       // NAME must not reach the peer (no student knowledge), and the
       // director's turn matcher keys on the canonical [USER to YOU] shape.
-      this.speaker?.sendUserTurn(
+      this.speakerRespond(
         this.socialPeer ? `[USER to YOU] "${event.text}"` : rendered,
       );
       this.appendToConversationLog("user", rendered);
@@ -4891,7 +4908,7 @@ export class AgentCoordinator {
       // sendUserTurn (not a context injection) so the Speaker actually voices
       // a reply; the scene context was already injected before this. Board
       // follows with openers.
-      this.speaker?.sendUserTurn(buildStartupGreetingTurn(this.currentStudentName || "the user"));
+      this.speakerRespond(buildStartupGreetingTurn(this.currentStudentName || "the user"));
       this.invokeBoardManager([]);
     } else {
       flowNote("COORDINATOR", `Startup resolved without greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);
@@ -5829,6 +5846,8 @@ export class AgentCoordinator {
       case "remain_silent":
         // Acknowledged. The event is bus-logged for visibility;
         // Coordinator takes no further action — silence is the action.
+        // The turn is over, so drop the "thinking" indicator.
+        this.clearSpeakerBusy();
         return;
       case "thought_leak":
         this.onSpeakerThoughtLeak(event);
@@ -5848,6 +5867,9 @@ export class AgentCoordinator {
     // Lift suppression so the next turn's audio flows normally.
     this.suppressSpeakerAudio = false;
     this.speakerSpeaking = false;
+    // The turn ends here (no real speech reaches the child) — drop the
+    // ambient "thinking" indicator; the corrective below won't re-provoke.
+    this.clearSpeakerBusy();
 
     // Preserve the reasoning for SUPERVISOR channels only (admin log +
     // Monitor queue) — never into agent-visible context. Mirrors the real
@@ -5914,6 +5936,8 @@ export class AgentCoordinator {
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
     this.speakerSpeaking = false;
+    // Speaker turn resolved — drop the ambient "thinking" indicator.
+    this.clearSpeakerBusy();
     // Flush any remaining buffered PCM chunks so the tail of the
     // utterance reaches the client even when the timer hasn't fired yet.
     this.flushSpeakerAudio();
@@ -6420,6 +6444,9 @@ export class AgentCoordinator {
       this.speaker?.sendContextInjection(
         `[INTERPRET REJECTED] interpret() is only valid after a [${T.tagComposed}] turn. The most recent user input was a ${this.lastUserInputType === "button_pressed" ? `[${T.tagPress}] (the device already voiced it; do NOT call interpret)` : "transcript / context update"}. Respond normally instead.`,
       );
+      // Nothing will be voiced — drop the "interpreting" indicator so the
+      // builder doesn't hang (the client also has its own timeout).
+      this.clearInterpretBusy();
       return;
     }
     // Consume the sentence_composed context so a duplicate interpret on
@@ -6427,6 +6454,10 @@ export class AgentCoordinator {
     this.lastUserInputType = "none";
 
     // Stream the user's interpreted sentence through student-voice TTS.
+    // The interpretation resolved and the voice is starting — drop the
+    // "interpreting" indicator (the client also closes the builder the
+    // moment the first utterance-audio chunk plays).
+    this.clearInterpretBusy();
     void this.streamStudentTts(event.sentence, "interpret_intent");
     // Inject OWN_SPEECH (tagged as student-voice) so Observer doesn't
     // transcribe the device speakers as a fresh user statement.
@@ -6454,7 +6485,7 @@ export class AgentCoordinator {
     // Echo back to Speaker.
     this.speaker?.sendContextInjection(`[INTERPRET] (you voiced for the user) ${event.sentence}`);
     // Re-deliver as a [BUTTON PRESS] so Speaker can respond on a later turn.
-    this.speaker?.sendUserTurn(`[${T.tagPress}] "${event.sentence}"`);
+    this.speakerRespond(`[${T.tagPress}] "${event.sentence}"`);
     // Trigger Board Manager rebuild for the follow-up surface.
     this.invokeBoardManager([event]);
   }
@@ -7290,7 +7321,7 @@ export class AgentCoordinator {
       // the peer session, name-tagged) replayed into its context, then
       // hand it the debrief directive.
       await this.restoreCompanionSpeaker();
-      this.speaker!.sendUserTurn(buildSocialDebriefDirective(peerName, analysis, report));
+      this.speakerRespond(buildSocialDebriefDirective(peerName, analysis, report));
     } catch (err) {
       console.error("[AgentCoordinator] endSocialPeerSession failed:", err);
     } finally {
@@ -7617,6 +7648,11 @@ export class AgentCoordinator {
       return;
     }
     this.boardMgrInFlight = true;
+    // Ambient "rebuilding the board" indicator — on past the resting /
+    // in-flight guards, so a resting session never lights it up. Cleared in
+    // the finally, but only when nothing is queued to re-invoke (so a
+    // retry / queued-trigger chain reads as one continuous rebuild, no flicker).
+    this.emitProcessing("board", true);
     // Drain any pending retry triggers (paired with pendingFeedback by
     // queueBoardMgrEmptyResponseRetry / queueBoardMgrFeedback) into the
     // effective triggers. Without this, a new event arriving between a
@@ -7899,8 +7935,16 @@ export class AgentCoordinator {
       if (hasFeedback || hasTriggers) {
         const queued = this.boardMgrPendingTriggers;
         this.boardMgrPendingTriggers = [];
-        // Re-enter via microtask to avoid stack growth.
+        // Re-enter via microtask to avoid stack growth. The "rebuilding" veil
+        // is now cleared on board DELIVERY (onBoardManagerEvent), not here — if
+        // this re-entry produces a fresh board it re-lights on its own invoke
+        // start, and a no-delivery beat (abort/error) leaves whatever the last
+        // start set, so we intentionally don't touch it in this branch.
         Promise.resolve().then(() => this.invokeBoardManager(queued));
+      } else {
+        // Chain settled with nothing queued — make sure the veil is down even
+        // if this beat produced no delivery event (abort / caught error).
+        this.emitProcessing("board", false);
       }
     }
   }
@@ -9633,6 +9677,48 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     } catch (err) {
       console.error("[AgentCoordinator] ws.send failed:", err);
     }
+  }
+
+  // ── Processing indicators ──────────────────────────────────────────
+  // Thin delegators onto the ProcessingIndicators state machine, kept as
+  // named methods so the many call sites read clearly.
+
+  /** Mirror a backend-busy transition to the client (deduped). */
+  private emitProcessing(activity: ProcessingActivity, active: boolean): void {
+    this.processing.set(activity, active);
+  }
+
+  /** Route a turn to the Speaker that expects a spoken (or explicitly
+   *  silent) reply, marking the Speaker busy until it resolves. ALL
+   *  reply-provoking sendUserTurn calls go through here so the ambient
+   *  "thinking" cue brackets the whole turn. (Context injections and
+   *  Observer turns don't provoke a Speaker reply and are left alone.) */
+  private speakerRespond(text: string): void {
+    if (!this.speaker) return;  // no Speaker (resting/torn-down) — don't light the cue for a dropped turn
+    this.processing.markSpeakerBusy();
+    this.speaker.sendUserTurn(text);
+  }
+
+  /** Speaker turn resolved (spoke, stayed silent, or leaked a thought). */
+  private clearSpeakerBusy(): void {
+    this.processing.clearSpeakerBusy();
+  }
+
+  /** A composed sentence (glyph_press) is being interpreted into speech. */
+  private markInterpretBusy(): void {
+    this.processing.markInterpretBusy();
+  }
+
+  /** Interpretation resolved — either it voiced, or the interpret call was
+   *  rejected / never came (timeout). */
+  private clearInterpretBusy(): void {
+    this.processing.clearInterpretBusy();
+  }
+
+  /** Clear every processing indicator (session reset / teardown / fatal
+   *  error) so nothing sticks across a reconnect. */
+  private clearAllProcessing(): void {
+    this.processing.clearAll();
   }
 
   private sendError(text: string): void {
