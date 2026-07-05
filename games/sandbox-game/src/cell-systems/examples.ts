@@ -556,7 +556,211 @@ export const intRivers: SystemSpec = {
   },
 };
 
-export const GRID_EXAMPLES: SystemSpec[] = [intTerrain, intTerrainSteady, intRivers, intLakes, intDiffusion, intPuddle, diffusion, puddle, dayField, colony, rainlands, terrain];
+/** THE CANONICAL WORLDGEN SUBSTRATE (grand-dream world-content.md §1) — the
+ *  intRivers water model (computed drainage: constant flow, zero per-step
+ *  cost, re-routes on sculpt) extended with the fields a layered world
+ *  charters against:
+ *    fertility — the single geology→life bridge: converges toward a target
+ *                set by river access, zeroed above the TREELINE (=40) and on
+ *                stone. Nothing else reads `river` directly.
+ *    plant     — vegetation tracks fertility with lag (fertility made visible).
+ *    ore       — FINITE deposits, written by worldgen (seedOreAboveTreeline)
+ *                above the same treeline — so ore and fertility anti-correlate
+ *                by construction (farm country vs mine country). Inert at
+ *                runtime; mining depletes it externally at the day boundary.
+ *    people    — wild humans as an animal population: logistic growth toward
+ *                fertility-set capacity + diffusion. Founding candidates are
+ *                read off this field (worldgen.findFoundingSites).
+ *  All int vars: per-step deltas round, so `toward` rates stay ≥ 0.25 (a
+ *  smaller rate stalls when rate × gap < 0.5) — fields land within ~1 of
+ *  target and rest crisply. Coupling: river→fertility→{plant, people} is a
+ *  DAG; no loops; every field bounded. */
+export const worldgenSubstrate: SystemSpec = {
+  id: 'worldgen-substrate',
+  name: 'Worldgen substrate',
+  description: 'Height + computed rivers + fertility + vegetation + finite ore + wild people — the canonical layered-world ground.',
+  vars: [
+    { name: 'height', min: 0, max: 63, initial: 20, init: 'bowl', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+    { name: 'river', min: 0, max: 4000, initial: 0, int: true, flow: { potential: 'height', source: 1, block: 'solid' } },
+    { name: 'fertility', min: 0, max: 15, initial: 0, init: 'flat', int: true },
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'ore', min: 0, max: 15, initial: 0, init: 'flat', int: true }, // worldgen writes; runtime only depletes
+    // Sugarscape-style two-resource attraction: lure = max(fertility, ore).
+    // People's carrying capacity follows LURE, not fertility alone — so ore
+    // country grows proto-mining camps the way sugar/spice mountains each
+    // hold their own population, and mine towns can found themselves.
+    { name: 'lure', min: 0, max: 15, initial: 0, init: 'flat', int: true },
+    { name: 'people', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+  ],
+  rules: [
+    // Fertility: a TIGHT band along real streams (grass is earned, not a
+    // carpet — river accumulation > 15 means a genuine watercourse, > 45 a
+    // major one). Disjoint guards, each a convergent `toward`.
+    { id: 'fertile-rich', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 15 }, rate: 0.5 } }] },
+    { id: 'fertile-ok', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '<=', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 8 }, rate: 0.5 } }] },
+    { id: 'barren', when: { any: [{ cmp: '<=', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 0 }, rate: 0.5 } }] },
+    // Vegetation tracks fertility (max 7 ≈ fertility/2).
+    { id: 'greenery', trigger: { every: true },
+      effects: [{ toward: { scalar: 'plant', target: { scalar: 'fertility', scale: 0.5 }, rate: 0.5 } }] },
+    // Lure = max(fertility, ore) via disjoint guards (each side a
+    // convergent toward). This is the Sugarscape landscape: two resources,
+    // each holding its own population.
+    { id: 'lure-ore', when: { cmp: '>', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'lure', target: { scalar: 'ore' }, rate: 0.5 } }] },
+    { id: 'lure-fert', when: { cmp: '<=', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'lure', target: { scalar: 'fertility' }, rate: 0.5 } }] },
+    // Wild people: logistic growth in place toward the land's carrying
+    // capacity (2 × lure) — an animal population that fills the habitable
+    // (or minable) land and rests. NOTE deliberately no `spread`:
+    // diffusion out of attractive tiles into barren ones creates a
+    // perpetual leak→die→regrow boundary flux that never rests. Wandering
+    // needs a fenced transport (spread-with-block, or a crowding-potential
+    // flow) — noted in world-content.md as future engine work.
+    { id: 'multiply', trigger: { every: true },
+      effects: [{ toward: { scalar: 'people', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
+  ],
+  tools: [
+    { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },
+    { id: 'dig', label: 'Dig', symbol: '⛏️', radius: 1.6, paints: [{ scalar: 'height', amount: -70 }] },
+    { id: 'stone', label: 'Stone', symbol: '🪨', radius: 1.2, paints: [{ scalar: 'solid', amount: 40 }] },
+  ],
+  display: {
+    field: 'fertility',
+    layers: [
+      { field: 'height', shade: true, min: 0, max: 63, from: [120, 100, 70], to: [235, 225, 205] },
+      { field: 'plant', over: 0.5, min: 0, max: 7, from: [120, 176, 74], to: [28, 110, 46] },
+      { field: 'river', over: 10, min: 10, max: 200, from: [120, 180, 220], to: [17, 64, 122] },
+      { field: 'ore', over: 0.5, min: 0, max: 15, from: [150, 130, 160], to: [90, 60, 120] },
+      { field: 'solid', over: 0.5, min: 0, max: 1, from: [130, 130, 135], to: [95, 95, 100] },
+    ],
+  },
+};
+
+/** THE OASIS SUBSTRATE — ⚠️ EXPERIMENTAL, not yet calibrated (kept out of
+ *  the lab). The ORIGINAL sandbox's terrain pipeline (the scalar engine at
+ *  games/?game=sandbox-game), ported onto the integer primitives it
+ *  inspired. Three known calibration gaps vs the original, found
+ *  empirically: (1) flowDown LEVELS the moisture table like a lake, where
+ *  the original's one-way fractional advection down pure height keeps it
+ *  draining to the massif foot; (2) whole-unit spring emission can't match
+ *  the original's 0.15/step trickle without flooding or drying; (3) the
+ *  bleed/rain ratio is regime-critical (0.005 vs 0.3 per step). Full
+ *  fidelity likely wants the ORIGINAL engine behind a substrate adapter
+ *  rather than a re-derivation — see world-content.md.
+ *    rain      — prominent ground accumulates rainfall (rainAcc, per-cell
+ *                cadence: no synchronized pulses) into a hidden MOISTURE
+ *                table, not straight onto the surface;
+ *    the table — advects downhill underground (flowDown over height), so
+ *                it concentrates at the massif FOOT;
+ *    springs   — where the table breaches the ground (moisture > 0.9 ×
+ *                height — impossible on the heights, natural at the feet),
+ *                water surfaces at a trickle;
+ *    rivers    — surface water runs downhill, drains at the map edge,
+ *                deep pools seep (streams of depth ≤ 3 persist);
+ *    fertility — a SENSOR halo (mean water over a cosine radius — derived,
+ *                fluxless, settles by construction) writes a graded band
+ *                that HUGS the water: rich beside rivers, damp near a high
+ *                table, desert elsewhere. Grass is earned, not carpeted.
+ *  Plus the layered-world fields (ore/lure/people) unchanged. This is the
+ *  LIVING profile: springs cycle predictably (fold-friendly) rather than
+ *  reaching exact rest — pair with `worldgenSubstrate` (computed rivers,
+ *  true rest) per the scalars-vs-integers profile rule. */
+export const oasisSubstrate: SystemSpec = {
+  id: 'oasis-substrate',
+  name: 'Oasis substrate',
+  description: 'The original sandbox pipeline: rain → water table → springs → rivers → a fertility halo that hugs the water.',
+  vars: [
+    { name: 'height', min: 0, max: 63, initial: 20, init: 'bowl', int: true },
+    { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
+    { name: 'rainAcc', min: 0, max: 40, initial: 0, init: 'flat', int: true },
+    { name: 'moisture', min: 0, max: 24, initial: 0, init: 'flat', int: true },
+    { name: 'water', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+    { name: 'fertility', min: 0, max: 15, initial: 0, init: 'flat', int: true },
+    { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
+    { name: 'ore', min: 0, max: 15, initial: 0, init: 'flat', int: true }, // worldgen writes; runtime only depletes
+    { name: 'lure', min: 0, max: 15, initial: 0, init: 'flat', int: true },
+    { name: 'people', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+  ],
+  sensors: [
+    // Box kernels (no per-neighbour trig): sensors are the hot path.
+    { name: 'prom', of: 'height', op: 'prominence', radius: 4, cap: 6 },
+    { name: 'wet', of: 'water', op: 'mean', radius: 2 },
+  ],
+  // Pacing clocks — the original's flood control, quantized: rain pulses,
+  // springs trickle (springRate ≈ 0.15/step ⇒ 1 unit per ~8 steps), and
+  // the far-field table BLEEDS at the original's moistDecay ≈ 0.005/step
+  // (−1 per 160) so only well-fed massif feet stay above the breach.
+  // Without these the map floods, the halo carpets, everything wakes.
+  clocks: [
+    { name: 'rainTick', period: 4 },
+    { name: 'slowTick', period: 8 },
+    { name: 'bleedTick', period: 160 },
+  ],
+  rules: [
+    // Rain fills the hidden table at a rate ∝ prominence (orographic).
+    { id: 'rain', when: { all: [{ cmp: '==', left: { clock: 'rainTick' }, right: { const: 0 } }, { cmp: '>', left: { sensor: 'prom' }, right: { const: 1 } }] }, trigger: { every: true },
+      effects: [{ change: { scalar: 'rainAcc', perStep: 4, times: { sensor: 'prom' } } }] },
+    { id: 'rain-convert', when: { cmp: '>=', left: { scalar: 'rainAcc' }, right: { const: 20 } }, trigger: { every: true },
+      effects: [{ add: { scalar: 'moisture', amount: 1 } }, { add: { scalar: 'rainAcc', amount: -20 } }] },
+    // The table advects downhill underground → concentrates at the feet —
+    // and bleeds slowly everywhere (flatten the hill, the springs die).
+    { id: 'table-flow', trigger: { every: true },
+      effects: [{ flowDown: { scalar: 'moisture', potential: 'height', rate: 1, block: 'solid' } }] },
+    { id: 'table-bleed', when: { all: [{ cmp: '==', left: { clock: 'bleedTick' }, right: { const: 0 } }, { cmp: '>', left: { scalar: 'moisture' }, right: { const: 0 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'moisture', amount: -1 } }] },
+    // Springs: the table breaches only where the ground is low — at a
+    // TRICKLE, not a torrent.
+    { id: 'spring', when: { all: [{ cmp: '==', left: { clock: 'slowTick' }, right: { const: 4 } }, { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.9 } }] }, trigger: { every: true },
+      effects: [{ add: { scalar: 'water', amount: 1 } }, { add: { scalar: 'moisture', amount: -1 } }] },
+    // Rivers: downhill, off the map edge; deep pools seep, streams persist.
+    { id: 'flow', trigger: { every: true },
+      effects: [{ flowDown: { scalar: 'water', potential: 'height', rate: 1, drainEdge: 0, block: 'solid' } }] },
+    { id: 'seep', trigger: { every: true },
+      effects: [{ change: { scalar: 'water', perStep: -0.15, times: { scalar: 'water' } } }] },
+    // Fertility: a TIGHT graded halo around real water (below the
+    // treeline, off stone). Disjoint tiers; the damp tier reads the high
+    // table (oasis ground darkens before it greens, like the original).
+    { id: 'fertile-rich', when: { all: [{ cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }, { cmp: '>', left: { sensor: 'wet' }, right: { const: 2 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 15 }, rate: 0.5 } }] },
+    { id: 'fertile-ok', when: { all: [{ cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }, { cmp: '>', left: { sensor: 'wet' }, right: { const: 0.6 } }, { cmp: '<=', left: { sensor: 'wet' }, right: { const: 2 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 8 }, rate: 0.5 } }] },
+    { id: 'fertile-damp', when: { all: [{ cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }, { cmp: '>', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.5 } }, { cmp: '<=', left: { sensor: 'wet' }, right: { const: 0.6 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 5 }, rate: 0.5 } }] },
+    { id: 'barren', when: { any: [{ cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }, { all: [{ cmp: '<=', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.5 } }, { cmp: '<=', left: { sensor: 'wet' }, right: { const: 0.6 } }] }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'fertility', target: { const: 0 }, rate: 0.5 } }] },
+    // Vegetation tracks fertility; people track the Sugarscape lure.
+    { id: 'greenery', trigger: { every: true },
+      effects: [{ toward: { scalar: 'plant', target: { scalar: 'fertility', scale: 0.5 }, rate: 0.5 } }] },
+    { id: 'lure-ore', when: { cmp: '>', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'lure', target: { scalar: 'ore' }, rate: 0.5 } }] },
+    { id: 'lure-fert', when: { cmp: '<=', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'lure', target: { scalar: 'fertility' }, rate: 0.5 } }] },
+    { id: 'multiply', trigger: { every: true },
+      effects: [{ toward: { scalar: 'people', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
+  ],
+  tools: [
+    { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },
+    { id: 'dig', label: 'Dig', symbol: '⛏️', radius: 1.6, paints: [{ scalar: 'height', amount: -70 }] },
+    { id: 'water', label: 'Water', symbol: '💧', radius: 1.4, paints: [{ scalar: 'water', amount: 30 }] },
+    { id: 'stone', label: 'Stone', symbol: '🪨', radius: 1.2, paints: [{ scalar: 'solid', amount: 40 }] },
+  ],
+  display: {
+    field: 'water',
+    layers: [
+      { field: 'height', shade: true, min: 0, max: 63, from: [120, 100, 70], to: [235, 225, 205] },
+      { field: 'plant', over: 0.5, min: 0, max: 7, from: [120, 176, 74], to: [28, 110, 46] },
+      { field: 'water', over: 0.5, min: 0, max: 12, from: [99, 178, 220], to: [17, 64, 122] },
+      { field: 'ore', over: 0.5, min: 0, max: 15, from: [150, 130, 160], to: [90, 60, 120] },
+      { field: 'solid', over: 0.5, min: 0, max: 1, from: [130, 130, 135], to: [95, 95, 100] },
+    ],
+  },
+};
+
+export const GRID_EXAMPLES: SystemSpec[] = [worldgenSubstrate, oasisSubstrate, intTerrain, intTerrainSteady, intRivers, intLakes, intDiffusion, intPuddle, diffusion, puddle, dayField, colony, rainlands, terrain];
 
 // --- Step 3: entity / relationship worlds -----------------------------------
 

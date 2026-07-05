@@ -132,7 +132,7 @@ Choosing which tool:
   - One specific new option fits, existing board still useful → \`add_board_button\`.
   - Conversation shifted (different topic/speaker/beat) → \`rebuild_board\`.
   - Ambient observation worth surfacing (object, person entering) → \`add_context_button\`.
-  - Nothing else fits → \`no_change(reason)\`.
+  - Nothing else fits → \`no_change(reason)\`. NEVER while the ${T.board} is EMPTY — an empty screen leaves the user voiceless; build openers instead.
 </role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${boardManagerGuidance ? `\n\n<board_manager_guidance>\n${boardManagerGuidance}\n</board_manager_guidance>` : ""}
 
 <when_to_act>
@@ -173,7 +173,8 @@ The TARGET label on the incoming tagged event decides whether to build a board a
 </when_to_act>
 
 <presence>
-[${studentName}] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit ${T.button}s that would reveal student-private information.${peopleLine ? `\n${peopleLine}` : ""}
+[${studentName}] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit ${T.button}s that would reveal student-private information.
+Identity doubt is NEVER a reason to withhold ${T.button}s — speech targeting USER gets reply options for whoever is at the device.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
 <conversation_register>
@@ -407,6 +408,50 @@ On [GUESSING STATE] the user is finding a word they can't reach directly. Build 
   const base = prompt.replace(/\n{3,}/g, "\n\n").trimEnd();
 
   return { base, builderBlock: builder.block, guessingBlock: guessing.block };
+}
+
+// ===========================================================================
+// SESSION VIOLATION MEMORY — <recent_mistakes> block
+// ===========================================================================
+
+/** Snapshot shape produced by the Coordinator's violation memory (see
+ *  BoardButtonViolation in board-button-validator.ts). */
+export type ViolationMemorySnapshot = Array<{ rule: string; tokens: string[] }>;
+
+/** One terse reminder per rule. Rules with tokens append the offending keys. */
+const VIOLATION_REMINDERS: Record<string, string> = {
+  imagekey_no_fallback: `These are NOT canonical keys — bare use routes to image generation. Wrap in [] AND add an instant fallback, or use an emoji:`,
+  imagekey_in_fallback: `Fallbacks must render instantly — never generate:/unknown keys in a fallback. You used:`,
+  non_canonical_modifier: `These are NOT modifiers — they render as a dot. Use an emoji (\`.😢\`) or a canonical modifier:`,
+  duplicate_glyph: `Two ${T.button}s shared an identical glyph — vary slots or descriptors.`,
+  duplicate_fallback: `Two ${T.button}s shared an identical fallback.`,
+  narrow_prefix: `Malformed [NARROW:<dimension>] — needs BOTH a non-empty dimension AND value.`,
+  contrast_prefix: `Malformed [CONTRAST:<dimension>] — needs a dimension and two "|"-separated poles.`,
+  no_visual: `A ${T.button} had no displayable visual — always give a glyph, emoji, or symbol.`,
+};
+
+/**
+ * Render the session's accumulated validator violations as a
+ * `<recent_mistakes>` block for the invocation CONTEXT (user message — NOT
+ * the system prompt, which must stay byte-stable for the prompt cache).
+ * The Board Manager is stateless, so without this each beat repeats the
+ * same rejected-button mistakes all session.
+ */
+export function renderViolationMemoryBlock(memory: ViolationMemorySnapshot): string {
+  if (memory.length === 0) return "";
+  const lines: string[] = [
+    `<recent_mistakes>`,
+    `${T.button}s you built earlier this session were REJECTED for these violations. Do not repeat them:`,
+  ];
+  for (const v of memory) {
+    const reminder = VIOLATION_REMINDERS[v.rule];
+    if (!reminder) continue;
+    lines.push(v.tokens.length > 0
+      ? `- ${reminder} ${v.tokens.map((t) => `\`${t}\``).join(", ")}`
+      : `- ${reminder}`);
+  }
+  lines.push(`</recent_mistakes>`);
+  return lines.join("\n");
 }
 
 // ===========================================================================

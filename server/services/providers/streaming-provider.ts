@@ -35,6 +35,15 @@ export interface ChatRequest {
   toolChoice?: "auto" | "required" | "none";
   maxTokens?: number;
   temperature?: number;
+  /** Gemini 2.5+ thinking-token budget (0 disables thinking). Thinking tokens
+   *  count against maxTokens, so an unbounded default can starve a forced
+   *  function call of output room (surfaces as MALFORMED_FUNCTION_CALL).
+   *  Ignored by providers without a thinking knob. */
+  thinkingBudget?: number;
+  /** Gemini explicit-cache resource name (from ensurePromptCache). When set,
+   *  the caller must OMIT system messages, tools, and toolChoice — they live
+   *  in the cache and the API rejects a request that re-sends them. */
+  cachedContent?: string;
   /** Abort signal — when triggered, the stream should stop as soon as possible */
   signal?: AbortSignal;
 }

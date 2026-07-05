@@ -198,3 +198,15 @@ export function flowNote(agent: FlowAgent, message: string, profile?: "awake" | 
   appendLine(`[${ts()}] ${tag(agent, profile)} NOTE                      ${compact(message)}`);
   persistFlowToDb(`${agent}:NOTE`, message);
 }
+
+/** One credit charge (Live turn / HTTP completion / TTS / STT). `category`
+ *  is the cost_breakdown key (e.g. "stt", "board-manager:gemini-2.5-flash");
+ *  `detail` is the token/duration summary (prompt=, cacheRead=, seconds=).
+ *  Previously this detail only reached console.log via the credit ledger and
+ *  was unrecoverable from deployed sessions — persisting it here makes
+ *  per-call cost (and cache-hit rates) auditable per session. No PHI. */
+export function flowCost(category: string, credits: number, detail: string): void {
+  const line = `${category} credits=${credits.toFixed(6)} ${detail}`;
+  appendLine(`[${ts()}] ${tag("COORDINATOR")} COST ${compact(line, 500)}`);
+  persistFlowToDb(`COST:${category}`, line);
+}

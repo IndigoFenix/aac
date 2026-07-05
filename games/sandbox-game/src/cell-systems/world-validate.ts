@@ -107,11 +107,44 @@ export function validateWorldSpec(spec: WorldSpec): ValidationResult {
       else if (c.amount > 0) errors.push(`conflict "${id}": cost amount must be ≤ 0 (war is a loss, not a source).`);
     }
   }
+  const flowNetIds = new Set((spec.flownets ?? []).map(f => f.id));
   for (const rd of spec.roads ?? []) {
     if (!edgeVarNames.has(rd.attr)) errors.push(`road "${rd.attr}": not an edge var.`);
-    if (!entityVarNames.has(rd.use)) errors.push(`road "${rd.attr}": use "${rd.use}" is not an entity var.`);
+    if (!entityVarNames.has(rd.use) && !flowNetIds.has(rd.use)) {
+      errors.push(`road "${rd.attr}": use "${rd.use}" is neither an entity var nor a flow net id.`);
+    }
     if (!(rd.rate > 0)) errors.push(`road "${rd.attr}": rate must be > 0.`);
     if (!(rd.decay > 0)) warnings.push(`road "${rd.attr}": decay ≤ 0 — the road never fades when unused.`);
+  }
+
+  // --- Flow networks ----------------------------------------------------------
+  const seenFlowIds = new Set<string>();
+  for (const fn of spec.flownets ?? []) {
+    const id = fn.id || '(unnamed)';
+    if (!fn.id) errors.push(`flow net: id is required.`);
+    else if (seenFlowIds.has(fn.id)) errors.push(`flow net "${id}": duplicate id.`);
+    seenFlowIds.add(fn.id);
+    if (fn.id && entityVarNames.has(fn.id)) {
+      errors.push(`flow net "${id}": id collides with an entity var (roads' \`use\` could not tell them apart).`);
+    }
+    if (!entityVarNames.has(fn.source)) errors.push(`flow net "${id}": source "${fn.source}" is not an entity var.`);
+    if (!entityVarNames.has(fn.demand)) errors.push(`flow net "${id}": demand "${fn.demand}" is not an entity var.`);
+    if (fn.by && !edgeVarNames.has(fn.by)) errors.push(`flow net "${id}": by "${fn.by}" is not an edge var.`);
+    if (fn.drift && !entityVarNames.has(fn.drift)) errors.push(`flow net "${id}": drift "${fn.drift}" is not an entity var.`);
+    if (fn.satisfied && !entityVarNames.has(fn.satisfied)) errors.push(`flow net "${id}": satisfied "${fn.satisfied}" is not an entity var.`);
+  }
+
+  // --- Processes --------------------------------------------------------------
+  const processOutputs = new Set<string>();
+  for (const pr of spec.processes ?? []) {
+    const id = pr.id ?? `${pr.input}→${pr.output}`;
+    if (!entityVarNames.has(pr.input)) errors.push(`process "${id}": input "${pr.input}" is not an entity var.`);
+    if (!entityVarNames.has(pr.output)) errors.push(`process "${id}": output "${pr.output}" is not an entity var.`);
+    if (!(pr.efficiency > 0)) errors.push(`process "${id}": efficiency must be > 0.`);
+    if (pr.capacityBy && !entityVarNames.has(pr.capacityBy)) errors.push(`process "${id}": capacityBy "${pr.capacityBy}" is not an entity var.`);
+    if (pr.input === pr.output) errors.push(`process "${id}": input and output must differ (a process is a pure function, not a feedback).`);
+    if (processOutputs.has(pr.output)) warnings.push(`process "${id}": output "${pr.output}" written by more than one process — later ones win.`);
+    processOutputs.add(pr.output);
   }
 
   if (errors.length) return { ok: false, errors, warnings };
@@ -158,16 +191,60 @@ export function validateWorldSpec(spec: WorldSpec): ValidationResult {
   for (const ex of spec.exchanges ?? []) if (ex.by) link(X(ex.by), E(ex.scalar));
   // A road grows from the |flow| of its `use` scalar (entity → edge).
   for (const rd of spec.roads ?? []) link(E(rd.use), X(rd.attr));
+  // A flow net reads {source, demand, by} and writes drift; a road using
+  // the net inherits those reads. Drift raising a var is transport-like
+  // (bounded by the component's own conservation), so it needs no budget
+  // exemption — but the dependency edges must join the coupling analysis.
+  for (const fn of spec.flownets ?? []) {
+    for (const target of [fn.drift, fn.satisfied]) {
+      if (!target) continue;
+      link(E(fn.source), E(target));
+      link(E(fn.demand), E(target));
+      if (fn.by) link(X(fn.by), E(target));
+    }
+    for (const rd of spec.roads ?? []) {
+      if (rd.use !== fn.id) continue;
+      link(E(fn.source), X(rd.attr));
+      link(E(fn.demand), X(rd.attr));
+      if (fn.by) link(X(fn.by), X(rd.attr));
+    }
+  }
+  // A process couples its reads to its output (a pure combinational node).
+  for (const pr of spec.processes ?? []) {
+    link(E(pr.input), E(pr.output));
+    if (pr.capacityBy) link(E(pr.capacityBy), E(pr.output));
+  }
+
+  // DERIVED vars (process outputs, flow-net `satisfied`) are pure functions
+  // of state — combinational relays, not state. The chaos bound
+  // (Poincaré–Bendixson) counts STATE dimensions, so a loop's size is its
+  // count of non-derived attributes: buildings → output(derived) →
+  // stockpile → buildings is a legal 2-STATE loop even though it touches
+  // three names. (Flow-net `drift` targets integrate — they stay state.)
+  const derived = new Set<string>();
+  for (const pr of spec.processes ?? []) derived.add(E(pr.output));
+  for (const fn of spec.flownets ?? []) if (fn.satisfied) derived.add(E(fn.satisfied));
+  for (const [rules, ctx] of rulesByCtx) {
+    rules.forEach((r, i) => {
+      for (const e of r.effects) {
+        const w = writeTarget(e);
+        if (w && derived.has(ctx === 'entity' ? E(w) : X(w))) {
+          warnings.push(`${ctx} rule ${r.id ?? `#${i}`}: writes derived var "${w}" — a process/flow net overwrites it every step.`);
+        }
+      }
+    });
+  }
 
   for (const scc of tarjanSCC(adj)) {
     const names = scc.map(s => s.slice(2));
-    if (scc.length >= 3) {
+    const stateCount = scc.filter(s => !derived.has(s)).length;
+    if (stateCount >= 3) {
       errors.push(
-        `feedback loop couples ${scc.length} attributes (${names.join(', ')}). Three or more mutually-coupled ` +
+        `feedback loop couples ${stateCount} state attributes (${names.join(', ')}). Three or more mutually-coupled ` +
         `entity/edge attributes can be chaotic (the civilization three-body case) and aren't fast-forwardable — ` +
         `keep relationship feedback pairwise, or make a leg dissipative (budget/decay).`,
       );
-    } else if (scc.length === 2) {
+    } else if (stateCount === 2) {
       warnings.push(`2-attribute feedback loop (${names.join(' ↔ ')}): bounded ⇒ non-chaotic — expect a predictable rise/fall.`);
     }
   }

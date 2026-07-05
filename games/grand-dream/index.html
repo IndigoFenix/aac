@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Grand Dream — Routes Lab</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header id="topbar">
+      <h1>Grand Dream · Routes Lab</h1>
+      <span id="subtitle">PopuSim routes (step&nbsp;1) + dual-layer settlement coupling (step&nbsp;2)</span>
+    </header>
+
+    <main id="layout">
+      <section id="stage">
+        <canvas id="map" width="900" height="600"></canvas>
+        <div id="legend"></div>
+      </section>
+
+      <aside id="panel">
+        <div class="field">
+          <label for="scenario">Scenario</label>
+          <select id="scenario"></select>
+        </div>
+        <p id="scenario-desc" class="desc"></p>
+
+        <div class="field">
+          <label for="trait">Color by trait</label>
+          <select id="trait"></select>
+        </div>
+
+        <div class="controls">
+          <button id="play" data-dwell>▶ Play</button>
+          <button id="step" data-dwell>Step</button>
+          <button id="reset" data-dwell>Reset</button>
+        </div>
+
+        <div class="controls" id="sculpt-tools" style="display:none">
+          <button id="tool-raise" data-dwell>⛰️ Raise</button>
+          <button id="tool-dig" data-dwell>⛏️ Dig</button>
+        </div>
+
+        <div class="field">
+          <label for="speed">Speed <span id="speed-val"></span></label>
+          <input id="speed" type="range" min="1" max="60" value="8" />
+        </div>
+
+        <div class="field">
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" value="12345" />
+        </div>
+
+        <div id="dayline">Day <b id="day">0</b> · total pop <b id="totalpop">0</b></div>
+
+        <table id="stats">
+          <thead><tr><th>Site</th><th>Pop</th><th id="stat-trait-head">trait</th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <details id="checks">
+          <summary>Invariant checks</summary>
+          <ul id="check-list"></ul>
+        </details>
+      </aside>
+    </main>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

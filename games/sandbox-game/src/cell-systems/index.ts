@@ -6,4 +6,5 @@ export * from './grid';
 export * from './entities';
 export * from './validate';
 export * from './world-validate';
+export * from './worldgen';
 export * from './examples';

@@ -23,11 +23,13 @@ import type { FunctionDeclaration, Tool } from "@google/genai";
 import type { LLMProviderKey } from "@shared/llm-options";
 import type { InterlocutorRegister } from "@shared/interlocutor-register";
 import { getChatProvider } from "../providers/provider-factory";
+import { GeminiChatProvider } from "../providers/gemini-chat";
 import type {
   ChatProvider,
   ChatTool,
   ChatMessage as ProviderChatMessage,
   ChatCompletionResult,
+  ChatRequest,
 } from "../providers/streaming-provider";
 import type {
   AgentEvent,
@@ -50,6 +52,7 @@ import {
   type BoardManagerToolConfig,
   invocationActionHint,
   renderEventLine,
+  renderViolationMemoryBlock,
   updateAIResponseTarget,
   buildForceRebuildHint,
   GUESSING_HINT_AFTER_AI_SPEECH,
@@ -164,8 +167,15 @@ export type BoardManagerOutputEvent =
  *  agent ⇒ everything it needs flows in here. */
 export interface BoardManagerInvocationInput {
   /** Pre-built system prompt (from buildBoardManagerPrompt). The
-   *  Coordinator owns prompt lifecycle and re-builds when memory changes. */
+   *  Coordinator owns prompt lifecycle and re-builds when memory changes.
+   *  Keep this the session-stable BASE — per-turn additions go in
+   *  `systemPromptSuffix` so the base stays explicit-cacheable. */
   systemPrompt: string;
+
+  /** Per-turn system-prompt additions (builder/guessing blocks,
+   *  <retry_feedback>). When present the agent inlines base+suffix and
+   *  skips the prompt cache for that turn. */
+  systemPromptSuffix?: string;
 
   /** Tool config — drives which tools are declared (set_board only
    *  appears when availableBoards is non-empty, etc.). */
@@ -198,6 +208,11 @@ export interface BoardManagerInvocationInput {
 
   /** Labels currently in the context sidebar. */
   contextSidebarLabels: string[];
+
+  /** Session-accumulated validator violations (Coordinator-owned). Rendered
+   *  as a <recent_mistakes> block in the invocation context so the stateless
+   *  model stops repeating rejected-button mistakes. */
+  violationMemory?: Array<{ rule: string; tokens: string[] }>;
 
   /** Identifier of a loaded custom board, if any. */
   loadedBoardId?: string | null;
@@ -419,6 +434,17 @@ export function renderInvocationContext(input: BoardManagerInvocationInput): str
       if (rendered) lines.push(rendered);
     }
     lines.push(`</recent_events>`);
+  }
+
+  // Session violation memory — reminds the (stateless) model which validator
+  // rules it already broke this session so error rates decline over time.
+  // Rides the user message, NOT the system prompt (prompt-cache safety).
+  if (input.violationMemory && input.violationMemory.length > 0) {
+    const block = renderViolationMemoryBlock(input.violationMemory);
+    if (block) {
+      lines.push("");
+      lines.push(block);
+    }
   }
 
   // What just happened (the trigger) + an action hint that nudges the
@@ -831,6 +857,13 @@ function parseToolCall(
 // BoardManagerAgent
 // ---------------------------------------------------------------------------
 
+// Default backend — hardcoded to a fast model for the MVP (move to a
+// per-agent settings row in a follow-up). Lives here rather than in the
+// Coordinator so prewarm's prompt-cache key uses the same model string
+// the invocations bill against.
+export const BOARD_MANAGER_DEFAULT_PROVIDER = "gemini" as const;
+export const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
+
 /**
  * Per-session Board Manager handle. Holds the ChatProvider reference but
  * carries no per-invocation state — every `invoke()` call is independent.
@@ -842,9 +875,34 @@ function parseToolCall(
  */
 export class BoardManagerAgent {
   private readonly defaultProvider: ChatProvider;
+  /** Tokens billed by prompt-cache CREATE calls (prewarm or in-invoke) not
+   *  yet folded into a turn's usage. Added to the next invocation's
+   *  promptTokens so the ledger bills cache writes at the normal input rate. */
+  private pendingCacheCreateTokens = 0;
 
   constructor(provider: LLMProviderKey) {
     this.defaultProvider = getChatProvider(provider);
+  }
+
+  /** Create the explicit prompt cache ahead of the first invocation so the
+   *  first board build starts from a warm prefix. Fire-and-forget. */
+  prewarm(systemPrompt: string, toolConfig: BoardManagerToolConfig): void {
+    if (!(this.defaultProvider instanceof GeminiChatProvider)) return;
+    const geminiProvider = this.defaultProvider;
+    const { flatDecls } = buildBoardManagerTooling(toolConfig);
+    const tools: ChatTool[] = flatDecls.map(toChatTool);
+    void geminiProvider
+      .ensurePromptCache({
+        model: BOARD_MANAGER_DEFAULT_MODEL,
+        systemPrompt,
+        tools,
+        toolChoice: "required",
+        displayName: "aac-board-manager",
+      })
+      .then((handle) => {
+        if (handle) this.pendingCacheCreateTokens += handle.createdTokens;
+      })
+      .catch(() => { /* lazily retried on first invoke */ });
   }
 
   async invoke(input: BoardManagerInvocationInput): Promise<BoardManagerInvocationResult> {
@@ -859,10 +917,36 @@ export class BoardManagerAgent {
     // Render the user-role context message.
     const contextMessage = renderInvocationContext(input);
 
-    const messages: ProviderChatMessage[] = [
-      { role: "system", content: input.systemPrompt },
-      { role: "user", content: contextMessage },
-    ];
+    // Explicit prompt cache: the session-stable base prompt + tools are
+    // pinned server-side and re-billed at the cached-input rate (0.25x).
+    // Suffix turns (builder/guessing/retry feedback) alter the system
+    // prompt, so they inline the full prompt and skip the cache — identical
+    // to pre-cache behavior.
+    const suffix = input.systemPromptSuffix?.trim();
+    const fullSystemPrompt = suffix
+      ? `${input.systemPrompt}\n\n${suffix}`
+      : input.systemPrompt;
+    let cachedContent: string | undefined;
+    if (!suffix && provider instanceof GeminiChatProvider) {
+      const handle = await provider.ensurePromptCache({
+        model: input.model,
+        systemPrompt: input.systemPrompt,
+        tools,
+        toolChoice: "required",
+        displayName: "aac-board-manager",
+      });
+      if (handle) {
+        cachedContent = handle.name;
+        this.pendingCacheCreateTokens += handle.createdTokens;
+      }
+    }
+
+    const messages: ProviderChatMessage[] = cachedContent
+      ? [{ role: "user", content: contextMessage }]
+      : [
+          { role: "system", content: fullSystemPrompt },
+          { role: "user", content: contextMessage },
+        ];
 
     // Flow log: what BoardManager is being asked to act on.
     const triggerSummary = input.triggeringEvents.length === 0
@@ -874,51 +958,81 @@ export class BoardManagerAgent {
       : input.triggeringEvents.map(e => renderEventLine(e) || e.type).filter(Boolean).join(" | ");
     flowInput("BOARD_MGR", "trigger", triggerSummary);
 
+    const baseRequest: Omit<ChatRequest, "messages" | "tools" | "toolChoice" | "cachedContent"> = {
+      model: input.model,
+      // Board Manager output is structured tool calls — temperature 0.2
+      // keeps it close to deterministic without making it brittle. The
+      // Coordinator raises it for home-press topic switches so repeated
+      // presses yield varied conversation starters (see `temperature` on
+      // BoardManagerInvocationInput).
+      temperature: input.temperature ?? 0.2,
+      // A rebuild_board call carries 6–8 button strings joined into one
+      // pipe-encoded `user_response_buttons` argument; each is ~80–120
+      // tokens once speech / sentence / fallback / label are populated.
+      // Truncating mid-arg surfaces as MALFORMED_FUNCTION_CALL with no
+      // tool calls returned — and on Gemini 2.5 THINKING tokens count
+      // against this cap too. Unbounded dynamic thinking was measured at
+      // ~1.0-1.2k tokens per call, leaving the 2000 cap a coin flip
+      // (~40% MALFORMED in session 4841ed41). Bound the thinking and
+      // keep the cap generous so the call JSON always has room.
+      maxTokens: 3500,
+      thinkingBudget: 512,
+      signal: input.signal,
+    };
+    // "required" → Gemini functionCallingConfig.mode = "ANY". Forces
+    // the model to emit a tool call every turn. Without this, AUTO
+    // mode lets the model elect plain text on ambiguous beats
+    // (responding to AI speech, no-trigger retries, etc.) and the
+    // result lands as "no tool calls / MALFORMED_FUNCTION_CALL".
+    // BoardManager has NO_CHANGE as a universal fallback in its tool
+    // list, so "required" never traps the model — there's always a
+    // valid call. When a prompt cache is in play, tools + the forced-call
+    // config live in the cache and MUST be omitted from the request.
+    const cachedRequest: ChatRequest = { ...baseRequest, messages, cachedContent };
+    const inlineRequest: ChatRequest = {
+      ...baseRequest,
+      messages: [
+        { role: "system", content: fullSystemPrompt },
+        { role: "user", content: contextMessage },
+      ],
+      tools,
+      toolChoice: "required",
+    };
+
     let result: ChatCompletionResult;
     try {
-      result = await provider.completeChat({
-        model: input.model,
-        messages,
-        tools,
-        // "required" → Gemini functionCallingConfig.mode = "ANY". Forces
-        // the model to emit a tool call every turn. Without this, AUTO
-        // mode lets the model elect plain text on ambiguous beats
-        // (responding to AI speech, no-trigger retries, etc.) and the
-        // result lands as "no tool calls / MALFORMED_FUNCTION_CALL".
-        // BoardManager has NO_CHANGE as a universal fallback in its tool
-        // list, so "required" never traps the model — there's always a
-        // valid call.
-        toolChoice: "required",
-        // Board Manager output is structured tool calls — temperature 0.2
-        // keeps it close to deterministic without making it brittle. The
-        // Coordinator raises it for home-press topic switches so repeated
-        // presses yield varied conversation starters (see `temperature` on
-        // BoardManagerInvocationInput).
-        temperature: input.temperature ?? 0.2,
-        // A rebuild_board call carries 6–8 button strings joined into one
-        // pipe-encoded `user_response_buttons` argument; each is ~80–120
-        // tokens once speech / sentence / fallback / label are populated.
-        // The provider default (500) truncates mid-arg and surfaces as
-        // MALFORMED_FUNCTION_CALL with no tool calls returned. 2000 leaves
-        // room for the largest plausible rebuild + suggestion combo.
-        maxTokens: 2000,
-        signal: input.signal,
-      });
+      result = await provider.completeChat(cachedContent ? cachedRequest : inlineRequest);
     } catch (err) {
-      console.error("[BoardManagerAgent] completion failed:", (err as Error).message);
-      return {
-        events: [],
-        rawToolCalls: [],
-        finishReason: "ERROR",
-      };
+      // A rejected cache handle (expired/deleted server-side between the
+      // ensure and the call) is recoverable: drop it and retry inline once.
+      if (cachedContent && !input.signal?.aborted && provider instanceof GeminiChatProvider) {
+        console.warn("[BoardManagerAgent] cached completion failed — retrying inline:", (err as Error).message);
+        provider.invalidatePromptCache(cachedContent);
+        try {
+          result = await provider.completeChat(inlineRequest);
+        } catch (retryErr) {
+          console.error("[BoardManagerAgent] completion failed:", (retryErr as Error).message);
+          return { events: [], rawToolCalls: [], finishReason: "ERROR" };
+        }
+      } else {
+        console.error("[BoardManagerAgent] completion failed:", (err as Error).message);
+        return { events: [], rawToolCalls: [], finishReason: "ERROR" };
+      }
     }
 
-    return finalizeBoardManagerToolCalls(
+    const finalized = finalizeBoardManagerToolCalls(
       result.toolCalls,
       fusionMap,
       result.usage,
       result.finishReason,
     );
+    // Fold prompt-cache CREATE tokens (billed by Google at the normal input
+    // rate) into this turn's prompt tokens so the ledger charge is accurate.
+    if (this.pendingCacheCreateTokens > 0 && finalized.usage) {
+      finalized.usage.promptTokens += this.pendingCacheCreateTokens;
+      this.pendingCacheCreateTokens = 0;
+    }
+    return finalized;
   }
 }
 

@@ -330,17 +330,15 @@ function computeSensor(grid: CellGrid, ofArr: Float64Array, i: number, s: Sensor
   return out;
 }
 
-/** Precompute each sensor's value for a set of tiles (the active set), so rule
- *  evaluation is a flat lookup. */
-function computeSensors(grid: CellGrid, comp: GridCompiled, cells: number[]): Map<string, Map<number, number>> {
+/** LAZY per-step sensor cache: a sensor value is computed on FIRST READ
+ *  and memoized for the step. Sensors read pre-commit field values, so
+ *  first-read timing cannot change the result — but a rule whose guard
+ *  short-circuits before the sensor ref (a clock gate in front of a
+ *  prominence read) never pays for the kernel. On non-boundary steps
+ *  that's the whole grid's worth of kernels saved. */
+function computeSensors(_grid: CellGrid, comp: GridCompiled, _cells: number[]): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
-  for (const s of comp.sensors) {
-    const ofArr = grid.fields[s.of];
-    if (!ofArr) continue;
-    const m = new Map<number, number>();
-    for (const c of cells) m.set(c, computeSensor(grid, ofArr, c, s));
-    out.set(s.name, m);
-  }
+  for (const s of comp.sensors) out.set(s.name, new Map());
   return out;
 }
 
@@ -351,7 +349,17 @@ function makeView(grid: CellGrid, comp: GridCompiled, sensorVal: Map<string, Map
     i: 0,
     scalar(name) { return grid.fields[name] ? grid.fields[name][this.i] : 0; },
     clockNorm(name) { return (grid.clockPhase[name] ?? 0) / (comp.clocks.get(name)?.period ?? 1); },
-    sensor(name) { return sensorVal.get(name)?.get(this.i) ?? 0; },
+    sensor(name) {
+      const m = sensorVal.get(name);
+      if (!m) return 0;
+      const hit = m.get(this.i);
+      if (hit !== undefined) return hit;
+      const spec = comp.sensors.find(s => s.name === name);
+      const ofArr = spec ? grid.fields[spec.of] : undefined;
+      const val = spec && ofArr ? computeSensor(grid, ofArr, this.i, spec) : 0;
+      m.set(this.i, val);
+      return val;
+    },
     stage(name) { const s = comp.stages.get(name); return s ? s.stages[grid.stageIdx[name][this.i]] : ''; },
     stageRank(state, value) { return comp.stages.get(state)?.stages.indexOf(value) ?? -1; },
   };

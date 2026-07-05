@@ -67,6 +67,13 @@ import type {
  *  context, so dropping older turn-by-turn detail is safe. */
 const HISTORY_TURN_CAP = 60;
 
+/** When over cap, drop this many extra messages in one block. Sliding by
+ *  exactly the overflow shifts the prompt prefix on EVERY call once the cap
+ *  is reached, permanently busting Gemini implicit prefix caching for the
+ *  rest of the session. Chunked trims keep the prefix byte-stable between
+ *  trims. */
+const HISTORY_TRIM_CHUNK = 20;
+
 /** Max tokens per HTTP completion. Speaker replies are short (one or
  *  two sentences) so this is plenty, with margin for tool calls. */
 const MAX_OUTPUT_TOKENS = 600;
@@ -251,8 +258,13 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
 
   private trimHistory(): void {
     if (this.history.length > HISTORY_TURN_CAP) {
-      const drop = this.history.length - HISTORY_TURN_CAP;
+      const drop = this.history.length - HISTORY_TURN_CAP + HISTORY_TRIM_CHUNK;
       this.history.splice(0, drop);
+      // Never leave an orphaned tool ack at the front — its assistant
+      // tool-call message must survive with it or the turn is malformed.
+      while (this.history.length > 0 && this.history[0].role === "tool") {
+        this.history.shift();
+      }
     }
   }
 

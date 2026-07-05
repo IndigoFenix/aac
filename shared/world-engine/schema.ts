@@ -193,6 +193,9 @@ const npcBehaviorSchema = z
   .object({
     movement: z.enum(["stationary", "wander", "approach_nearest"]),
     conversationRadius: positive.max(WORLD_MANIFOLD_MAX).optional(),
+    wanderRadius: positive.max(WORLD_MANIFOLD_MAX).optional(),
+    home: pointSchema.optional(),
+    speed: positive.max(50).optional(),
   })
   .strict();
 

@@ -284,6 +284,30 @@ export interface NpcBehaviorSpec {
    * range the social brain engages over. Defaults to the proximity-circle radius.
    */
   conversationRadius?: number;
+  /**
+   * Tether for `wander` (and the roam fallback of `approach_nearest`): waypoints
+   * are picked within this distance of the NPC's SPAWN point instead of anywhere
+   * on the manifold. Omit for free roam (the pre-existing behavior — right for a
+   * world that IS one place; a streamed large world sets it so villagers stay in
+   * their village).
+   */
+  wanderRadius?: number;
+  /**
+   * Tether ANCHOR for `wanderRadius`. Defaults to the spawn point — right when
+   * an NPC spawns at home. A streamed NPC spawned mid-errand (a villager
+   * embodied on their way to market) sets this to where they live, so once the
+   * errand ends they drift around their own house, not around the spot they
+   * happened to materialize.
+   */
+  home?: Vec2;
+  /**
+   * Walking pace, world units/sec. Defaults to the engine's steerMaxSpeed
+   * (player pace, 5). Townsfolk stroll slower — and a game layer that
+   * projects an NPC's position from a schedule clock (grand-dream's food
+   * errands) sets this to the SAME speed the clock assumes, so the body and
+   * the projection stay in step.
+   */
+  speed?: number;
 }
 
 /**
@@ -380,8 +404,12 @@ export const WORLD_MAX_FLOORS = 8;
  *  count low so a single host can drive them all. */
 export const WORLD_MAX_NPCS = 8;
 export const WORLD_MAX_PLAYERS = 12;
-/** Max world-units per manifold axis. */
-export const WORLD_MANIFOLD_MAX = 10_000;
+/** Max world-units per manifold axis. World units read as METERS (avatar
+ *  radius 0.4, walk speed 5/s), so this admits a ~100 km landmass —
+ *  streamed worlds (grand-dream) put whole regions in one coordinate
+ *  space. Purely a schema sanity bound: nothing in the engine's math
+ *  depends on it, and f64 keeps sub-millimeter precision at this range. */
+export const WORLD_MANIFOLD_MAX = 100_000;
 
 /**
  * `custom_apps.type` discriminator for world-engine apps — the third engine in

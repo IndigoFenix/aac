@@ -1,6 +1,7 @@
 // server/services/providers/gemini-chat.ts
 // Gemini implementation of ChatProvider
 
+import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import type {
   ChatProvider,
@@ -8,10 +9,34 @@ import type {
   ChatCompletionResult,
   StreamChunk,
   ChatMessage,
+  ChatTool,
 } from "./streaming-provider";
+
+/** One live explicit-cache entry (Gemini cachedContents resource). */
+type PromptCacheEntry = {
+  name: string;
+  expireAt: number;
+  lastUsed: number;
+};
+
+/** Refresh a cache's TTL when it has less than this long left at use time. */
+const PROMPT_CACHE_REFRESH_BELOW_MS = 5 * 60 * 1000;
+/** Treat an entry as unusable when it expires sooner than this. */
+const PROMPT_CACHE_MIN_VALID_MS = 60 * 1000;
+const PROMPT_CACHE_TTL = "1800s";
+/** Global LRU bound. Storage bills per token-hour, so keep the set small
+ *  (8 × ~8k tokens ≈ $0.06/hr worst case — negligible, but bounded). */
+const PROMPT_CACHE_MAX_ENTRIES = 8;
+/** Back off creates after a failure so a persistent error (e.g. prompt under
+ *  the 1024-token cache minimum) doesn't add a failing API call per turn. */
+const PROMPT_CACHE_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
 
 export class GeminiChatProvider implements ChatProvider {
   private client: GoogleGenAI;
+  /** Explicit prompt caches, keyed by content hash (model+system+tools).
+   *  Provider is a singleton, so identical prompts share across sessions. */
+  private promptCaches = new Map<string, PromptCacheEntry>();
+  private promptCacheFailedUntil = 0;
 
   constructor() {
     this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
@@ -26,17 +51,134 @@ export class GeminiChatProvider implements ChatProvider {
     { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
   ];
 
+  /**
+   * Get (or create) an explicit Gemini context cache holding a stable
+   * system prompt + tool declarations + forced-call config, for reuse
+   * across many completions. Returns the cachedContents resource name and
+   * the token count billed by the CREATE call (0 on a cache hit) so the
+   * caller can fold creation into its usage accounting. Returns null when
+   * caching is unavailable (recent failure, create error) — the caller
+   * falls back to inlining the prompt.
+   *
+   * NOTE (validated against the live API): a request using `cachedContent`
+   * must NOT set systemInstruction / tools / toolConfig — the API rejects
+   * it. All three live in the cache; pass `cachedContent` on the
+   * ChatRequest and OMIT messages' system role + tools.
+   */
+  async ensurePromptCache(opts: {
+    model: string;
+    systemPrompt: string;
+    tools?: ChatTool[];
+    toolChoice?: "auto" | "required" | "none";
+    displayName?: string;
+  }): Promise<{ name: string; createdTokens: number } | null> {
+    const now = Date.now();
+    if (now < this.promptCacheFailedUntil) return null;
+
+    const { tools, toolConfig } = this.convertTools(opts.tools, opts.toolChoice);
+    const key = createHash("sha256")
+      .update(opts.model).update("\0")
+      .update(opts.systemPrompt).update("\0")
+      .update(JSON.stringify(tools ?? null)).update("\0")
+      .update(JSON.stringify(toolConfig ?? null))
+      .digest("hex");
+
+    const existing = this.promptCaches.get(key);
+    if (existing && existing.expireAt - now > PROMPT_CACHE_MIN_VALID_MS) {
+      existing.lastUsed = now;
+      // Extend the TTL when it's running low — an update is free (no tokens).
+      if (existing.expireAt - now < PROMPT_CACHE_REFRESH_BELOW_MS) {
+        try {
+          const updated = await this.client.caches.update({
+            name: existing.name,
+            config: { ttl: PROMPT_CACHE_TTL },
+          });
+          existing.expireAt = updated.expireTime
+            ? new Date(updated.expireTime).getTime()
+            : now + 1800 * 1000;
+        } catch {
+          this.promptCaches.delete(key);
+          return null; // caller inlines this turn; next turn recreates
+        }
+      }
+      return { name: existing.name, createdTokens: 0 };
+    }
+
+    try {
+      const created = await this.client.caches.create({
+        model: opts.model,
+        config: {
+          systemInstruction: { parts: [{ text: opts.systemPrompt }] },
+          ...(tools ? { tools } : {}),
+          ...(toolConfig ? { toolConfig } : {}),
+          displayName: opts.displayName ?? "chat-prompt-cache",
+          ttl: PROMPT_CACHE_TTL,
+        },
+      });
+      if (!created.name) return null;
+      const entry: PromptCacheEntry = {
+        name: created.name,
+        expireAt: created.expireTime ? new Date(created.expireTime).getTime() : now + 1800 * 1000,
+        lastUsed: now,
+      };
+      this.promptCaches.set(key, entry);
+      this.evictPromptCachesOverCap();
+      const createdTokens = created.usageMetadata?.totalTokenCount ?? 0;
+      console.log(`[GeminiChat] Prompt cache created: ${created.name} (${createdTokens} tokens, ${opts.displayName ?? "unnamed"})`);
+      return { name: entry.name, createdTokens };
+    } catch (err) {
+      console.warn("[GeminiChat] Prompt cache create failed — inlining prompt:", (err as Error).message);
+      this.promptCacheFailedUntil = now + PROMPT_CACHE_FAILURE_COOLDOWN_MS;
+      return null;
+    }
+  }
+
+  /** Drop a cache handle that the API rejected (expired/deleted server-side).
+   *  Best-effort delete; the next ensurePromptCache recreates it. */
+  invalidatePromptCache(name: string): void {
+    for (const [key, entry] of this.promptCaches) {
+      if (entry.name === name) this.promptCaches.delete(key);
+    }
+    this.client.caches.delete({ name }).catch(() => { /* already gone */ });
+  }
+
+  private evictPromptCachesOverCap(): void {
+    while (this.promptCaches.size > PROMPT_CACHE_MAX_ENTRIES) {
+      let oldestKey: string | null = null;
+      let oldestUsed = Infinity;
+      for (const [key, entry] of this.promptCaches) {
+        if (entry.lastUsed < oldestUsed) { oldestUsed = entry.lastUsed; oldestKey = key; }
+      }
+      if (!oldestKey) return;
+      const evicted = this.promptCaches.get(oldestKey)!;
+      this.promptCaches.delete(oldestKey);
+      this.client.caches.delete({ name: evicted.name }).catch(() => { /* ttl cleans up */ });
+    }
+  }
+
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
     const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
 
     const config: any = {
-      systemInstruction,
       temperature: request.temperature ?? 0.7,
       maxOutputTokens: request.maxTokens || 500,
       safetySettings: GeminiChatProvider.SAFETY_SETTINGS,
     };
-    if (tools) config.tools = tools;
-    if (toolConfig) config.toolConfig = toolConfig;
+    if (request.cachedContent) {
+      // systemInstruction / tools / toolConfig live in the cache; the API
+      // rejects a request that sets them alongside cachedContent.
+      config.cachedContent = request.cachedContent;
+      if (systemInstruction || tools || toolConfig) {
+        console.warn("[GeminiChat] cachedContent set — ignoring inline systemInstruction/tools (caller should omit them)");
+      }
+    } else {
+      config.systemInstruction = systemInstruction;
+      if (tools) config.tools = tools;
+      if (toolConfig) config.toolConfig = toolConfig;
+    }
+    if (request.thinkingBudget !== undefined) {
+      config.thinkingConfig = { thinkingBudget: request.thinkingBudget };
+    }
     // Honor caller's AbortSignal so a superseded invocation can be
     // cancelled mid-flight (cancels the local fetch — per SDK docs the
     // server still bills tokens, but our promise rejects immediately so
@@ -53,7 +195,7 @@ export class GeminiChatProvider implements ChatProvider {
       return `${c.role}:[${partTypes}]`;
     }).join(", ");
     const toolNames = tools?.[0]?.functionDeclarations?.map((f: any) => f.name).join(",") || "none";
-    console.log(`[GeminiChat] Request: model=${request.model}, sysInstr=${systemInstruction.length}ch, contents=[${contentSummary}], tools=[${toolNames}], toolConfig=${JSON.stringify(toolConfig)}, maxTokens=${config.maxOutputTokens}`);
+    console.log(`[GeminiChat] Request: model=${request.model}, sysInstr=${systemInstruction.length}ch, cachedContent=${request.cachedContent ?? "none"}, contents=[${contentSummary}], tools=[${toolNames}], toolConfig=${JSON.stringify(toolConfig)}, maxTokens=${config.maxOutputTokens}`);
 
     const response = await this.client.models.generateContent({
       model: request.model,
@@ -101,13 +243,21 @@ export class GeminiChatProvider implements ChatProvider {
     const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
 
     const config: any = {
-      systemInstruction,
       temperature: request.temperature ?? 0.7,
       maxOutputTokens: request.maxTokens || 500,
       safetySettings: GeminiChatProvider.SAFETY_SETTINGS,
     };
-    if (tools) config.tools = tools;
-    if (toolConfig) config.toolConfig = toolConfig;
+    if (request.cachedContent) {
+      // See completeChat — the cache carries systemInstruction/tools.
+      config.cachedContent = request.cachedContent;
+    } else {
+      config.systemInstruction = systemInstruction;
+      if (tools) config.tools = tools;
+      if (toolConfig) config.toolConfig = toolConfig;
+    }
+    if (request.thinkingBudget !== undefined) {
+      config.thinkingConfig = { thinkingBudget: request.thinkingBudget };
+    }
 
     const response = await this.client.models.generateContentStream({
       model: request.model,
@@ -268,25 +418,7 @@ export class GeminiChatProvider implements ChatProvider {
       contents.push({ role: "user", parts: [{ text: "Respond." }] });
     }
 
-    // Convert tools
-    let tools: any = undefined;
-    let toolConfig: any = undefined;
-
-    if (request.tools && request.tools.length > 0) {
-      const functionDeclarations = request.tools.map((t) => ({
-        name: t.function.name,
-        description: t.function.description || "",
-        parameters: this.cleanSchema(t.function.parameters),
-      }));
-      tools = [{ functionDeclarations }];
-
-      // Map tool_choice
-      if (request.toolChoice === "required") {
-        toolConfig = { functionCallingConfig: { mode: "ANY" } };
-      } else if (request.toolChoice === "none") {
-        toolConfig = { functionCallingConfig: { mode: "NONE" } };
-      }
-    }
+    const { tools, toolConfig } = this.convertTools(request.tools, request.toolChoice);
 
     return {
       systemInstruction: systemParts.join("\n\n"),
@@ -294,6 +426,35 @@ export class GeminiChatProvider implements ChatProvider {
       tools,
       toolConfig,
     };
+  }
+
+  /** OpenAI-shaped ChatTool[] → Gemini tools + toolConfig. Shared by
+   *  buildRequest and ensurePromptCache so a cached tool set is byte-
+   *  identical to what an inline request would have sent. */
+  private convertTools(
+    toolsIn?: ChatTool[],
+    toolChoice?: "auto" | "required" | "none",
+  ): { tools: any; toolConfig: any } {
+    let tools: any = undefined;
+    let toolConfig: any = undefined;
+
+    if (toolsIn && toolsIn.length > 0) {
+      const functionDeclarations = toolsIn.map((t) => ({
+        name: t.function.name,
+        description: t.function.description || "",
+        parameters: this.cleanSchema(t.function.parameters),
+      }));
+      tools = [{ functionDeclarations }];
+
+      // Map tool_choice
+      if (toolChoice === "required") {
+        toolConfig = { functionCallingConfig: { mode: "ANY" } };
+      } else if (toolChoice === "none") {
+        toolConfig = { functionCallingConfig: { mode: "NONE" } };
+      }
+    }
+
+    return { tools, toolConfig };
   }
 
   private cleanSchema(schema: any): any {

@@ -87,6 +87,12 @@ export class HttpObserverAgent implements IObserverAgent {
   /** Keep history bounded so a long session's context (and per-turn input cost)
    *  doesn't grow without limit. Coordinator also caps what it replays. */
   private static readonly HISTORY_CAP = 40;
+  /** When over cap, drop this many extra messages in one block. Sliding by
+   *  exactly the overflow shifts the prompt prefix on EVERY call once the cap
+   *  is reached, permanently busting Gemini implicit prefix caching for the
+   *  rest of the session. Chunked trims keep the prefix byte-stable between
+   *  trims. Even → preserves user/assistant turn pairing. */
+  private static readonly TRIM_CHUNK = 12;
   /** Observer tool calls are tiny; this is plenty and guards against a runaway. */
   private static readonly MAX_TOKENS = 1000;
   /** Max buffered context lines awaiting the next turn (calm-room backstop). */
@@ -278,6 +284,12 @@ export class HttpObserverAgent implements IObserverAgent {
         toolChoice: "auto",
         temperature: 0.7,
         maxTokens: HttpObserverAgent.MAX_TOKENS,
+        // Gemini 2.5 thinking tokens count against maxTokens; unbounded
+        // thinking can starve the tool call and surface as
+        // MALFORMED_FUNCTION_CALL (observed session 4a3e209c — same failure
+        // mode fixed on the Board Manager). Observer calls are small
+        // routing judgments; 256 leaves ~750 tokens for the call itself.
+        thinkingBudget: 256,
         signal: abort.signal,
       });
 
@@ -328,7 +340,8 @@ export class HttpObserverAgent implements IObserverAgent {
 
   private trimHistory(): void {
     if (this.history.length > HttpObserverAgent.HISTORY_CAP) {
-      this.history = this.history.slice(-HttpObserverAgent.HISTORY_CAP);
+      const drop = this.history.length - HttpObserverAgent.HISTORY_CAP + HttpObserverAgent.TRIM_CHUNK;
+      this.history.splice(0, drop);
     }
   }
 }

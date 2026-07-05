@@ -14,6 +14,7 @@ import {
   type CellGrid, type SystemSpec,
   GRID_EXAMPLES, diffusion, puddle, dayField, colony, lifecycle, rainlands,
   intDiffusion, intPuddle, intTerrain, intTerrainSteady, intRivers,
+  worldgenSubstrate, seedOreAboveTreeline, findFoundingSites,
 } from '../src/cell-systems/index.ts';
 
 let passed = 0;
@@ -423,6 +424,107 @@ check('computed rivers: accumulate, reach rest, re-route on sculpt', () => {
   worldStep(g);
   const rerouted = Array.from(g.fields.river);
   assert.ok(rerouted.some((v, i) => v !== before[i]), 'river did not re-route after sculpting');
+});
+
+// --- Worldgen substrate (grand-dream world-content.md §1/§5) -------------------
+
+/** A 24×24 two-biome map: a western plateau at height 50 (above the treeline
+ *  of 40) and an eastern valley sloping to an outlet, with a channel along
+ *  y=12 that the drainage concentrates into. Ore is seeded on the plateau. */
+function makeSubstrate(): CellGrid {
+  const g = createGrid(worldgenSubstrate, 24, 24);
+  for (let y = 0; y < 24; y++) {
+    for (let x = 0; x < 24; x++) {
+      const h = x < 6 ? 50 : Math.min(63, Math.max(3, 24 - x) + Math.abs(y - 12));
+      g.fields.height[y * 24 + x] = h;
+    }
+  }
+  g.flowDirty = true;
+  seedOreAboveTreeline(g, { treeline: 40, maxOre: 15, seed: 7 });
+  return g;
+}
+
+// 22. The canonical substrate settles into coherent biomes: fertility hugs the
+//     valley drainage, ore sits above the treeline, and the two NEVER overlap
+//     (the specialization engine is the map itself).
+check('worldgen substrate settles into anti-correlated biomes', () => {
+  const g = makeSubstrate();
+  const at = stepGridUntilRest(g, 4000);
+  assert.ok(at > 0, 'substrate never settled');
+
+  const { fertility, ore, height, plant, people, lure } = g.fields;
+  let fertileTiles = 0, oreTiles = 0, miningCamps = 0;
+  for (let i = 0; i < fertility.length; i++) {
+    if (fertility[i] > 0) {
+      fertileTiles++;
+      assert.ok(height[i] < 40, `fertile tile ${i} above the treeline`);
+      assert.equal(ore[i], 0, `tile ${i} has both fertility and ore`);
+    }
+    if (ore[i] > 0) {
+      oreTiles++;
+      assert.ok(height[i] > 40, `ore tile ${i} below the treeline`);
+      if (people[i] > 0) miningCamps++;
+    }
+    if (plant[i] > 0) assert.ok(fertility[i] > 0, `plants without fertility at ${i}`);
+    // Sugarscape: people live where SOME resource lures them, nowhere else.
+    if (people[i] > 0) assert.ok(lure[i] > 0, `people on land with no lure at ${i}`);
+  }
+  assert.ok(fertileTiles >= 10, `too little fertile land (${fertileTiles})`);
+  assert.ok(oreTiles >= 5, `too few ore veins (${oreTiles})`);
+  // Both resources hold population: valley farmers AND proto-mining camps.
+  assert.ok(miningCamps >= 3, `ore country should hold people (got ${miningCamps} camp tiles)`);
+  let peopleTotal = 0;
+  for (let i = 0; i < people.length; i++) {
+    peopleTotal += people[i];
+    if (lure[i] >= 8) assert.ok(people[i] >= lure[i], `underpopulated attractive tile ${i}`);
+  }
+  assert.ok(peopleTotal > 100, `world too empty (${peopleTotal} people)`);
+});
+
+// 23. Substrate catch-up == stepping (the idle-safety contract, on the real spec).
+check('worldgen substrate fast-forward equals stepping', () => {
+  const a = makeSubstrate();
+  const b = makeSubstrate();
+  for (let i = 0; i < 800; i++) worldStep(a);
+  gridFastForward(b, 800);
+  assert.equal(gridSnap(a), gridSnap(b), 'substrate fast-forward diverged');
+});
+
+// 24. Founding detection: crowds propose cities in BOTH biomes —
+//     deterministic, spaced, blockable, and resource-weighted ranking
+//     (the Sugarscape / future supply-demand hook) steers which biome wins.
+check('founding sites emerge in both biomes; resource weights rank them', () => {
+  const g = makeSubstrate();
+  assert.ok(stepGridUntilRest(g, 4000) > 0, 'substrate never settled');
+
+  const opts = { threshold: 150, radius: 2, minSpacing: 6 };
+  const sites = findFoundingSites(g, opts);
+  assert.ok(sites.length >= 2, `expected candidates in both biomes (got ${sites.length})`);
+  assert.ok(sites.some(s => g.fields.height[s.cell] < 40), 'no valley (farm) candidate');
+  assert.ok(sites.some(s => g.fields.height[s.cell] > 40), 'no highland (mine) candidate');
+  for (const s of sites) assert.ok(s.density >= opts.threshold, 'candidate below the crowd threshold');
+  for (let i = 0; i < sites.length; i++) {
+    for (let j = i + 1; j < sites.length; j++) {
+      const dx = sites[i].x - sites[j].x, dy = sites[i].y - sites[j].y;
+      assert.ok(dx * dx + dy * dy >= opts.minSpacing ** 2, 'candidates too close together');
+    }
+  }
+  assert.equal(JSON.stringify(findFoundingSites(g, opts)), JSON.stringify(sites), 'detection not deterministic');
+
+  // Resource weighting re-ranks: a heavy ore weight puts a mine town first,
+  // a heavy fertility weight puts a farm town first. (This is where the
+  // settlement layer's scarcity signals will plug in.)
+  const oreFirst = findFoundingSites(g, { ...opts, score: [{ field: 'ore', weight: 10 }] });
+  assert.ok(g.fields.height[oreFirst[0].cell] > 40, 'ore weighting should rank a highland site first');
+  const farmFirst = findFoundingSites(g, { ...opts, score: [{ field: 'fertility', weight: 10 }] });
+  assert.ok(g.fields.height[farmFirst[0].cell] < 40, 'fertility weighting should rank a valley site first');
+
+  // A city already sitting on the best spot suppresses its neighborhood.
+  const blocked = findFoundingSites(g, { ...opts, occupied: [[sites[0].x, sites[0].y]] });
+  assert.ok(blocked.every(s => {
+    const dx = s.x - sites[0].x, dy = s.y - sites[0].y;
+    return dx * dx + dy * dy >= opts.minSpacing ** 2;
+  }), 'occupied spacing not respected');
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

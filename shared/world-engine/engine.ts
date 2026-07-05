@@ -1027,6 +1027,26 @@ export function buildingStructures(b: BuildingSpec): StructureSpec[] {
   return out;
 }
 
+/**
+ * Replace the world's structure set at runtime — the STRUCTURE-STREAMING seam.
+ * A large world can't hold every wall in its spec; a streamer swaps in the
+ * structures around the player as they travel. Collision, door auto-open, and
+ * rendering all read `state.spec.structures` live, so the swap takes effect
+ * immediately. Door states are PRESERVED for ids that persist (a door the
+ * player left open stays open), created closed for new doors, and dropped with
+ * removed ones. Local-only: peers stream their own copy from the same seed.
+ */
+export function setWorldStructures(state: WorldState, structures: StructureSpec[]): void {
+  state.spec = { ...state.spec, structures };
+  const doors: Record<string, DoorState> = {};
+  for (const s of structures) {
+    if (s.kind === "door") {
+      doors[s.id] = state.doors[s.id] ?? { id: s.id, open: 0, locked: s.locked ?? false };
+    }
+  }
+  state.doors = doors;
+}
+
 /** Lower every building in the spec into perimeter structures, appended to any
  *  hand-authored ones. Idempotent only if called once — certifyWorldSpec runs it
  *  after validation, so the engine always sees a ready spec. */

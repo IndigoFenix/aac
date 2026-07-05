@@ -19,11 +19,29 @@
 // reaches exact rest (SNAP) and fast-forwards by jumping idle stretches and
 // folding exact cycles, identical to stepping.
 
-import type { WorldSpec, VarSpec, StageSpec, ClockSpec } from './spec';
+import type { WorldSpec, VarSpec, StageSpec, ClockSpec, FlowNetSpec } from './spec';
 import {
   type CellView, evalCond, ownEffectDelta, SNAP_EPS,
   clockBoundaries, nextClockBoundaryStep,
 } from './eval';
+
+/** Derived state of one steady-state flow network (grand-dream §4c): the
+ *  solved edge flow field plus the per-entity imbalance drift. Recomputed
+ *  only when the inputs' fingerprint changes; NOT serialized (rebuilt on
+ *  the first step after load). */
+export interface FlowNetState {
+  /** Signed flow per edge (positive a→b), in scalar units per step. */
+  flows: Float64Array;
+  /** Per-entity drift applied each step (+overproduction share). */
+  residual: Float64Array;
+  /** Per-entity demand actually met (proportional component fill) — the
+   *  chaining output written to FlowNetSpec.satisfied when declared. */
+  satisfied: Float64Array;
+  /** Solved potentials (producers high) — for rendering/debugging. */
+  potential: Float64Array;
+  fingerprint: string;
+  recomputes: number;
+}
 
 export const MAX_WORLD_CATCHUP = 200_000;
 const FOLD_MIN = 2000;
@@ -51,6 +69,14 @@ export interface EntityWorld {
   /** per edge-rule → (edge → fire step). */
   armedEdge: Array<Map<number, number>>;
   lastGuardEdge: Uint8Array[];
+  /** Signed per-edge exchange flow from the LAST EXECUTED step, per scalar
+   *  (positive = a→b). Derived observability for the layer above (grand-dream
+   *  day-boundary coupling reads population flows here); zeroed and refilled
+   *  by every stepWorld call, so after a fast-forward rest-jump it reflects
+   *  the last step that actually ran. Not serialized. */
+  lastFlow: Record<string, Float64Array>;
+  /** Steady-state flow networks by FlowNetSpec id. Derived; not serialized. */
+  flowNet: Record<string, FlowNetState>;
 }
 
 // --- Compiled lookups ---------------------------------------------------------
@@ -117,10 +143,27 @@ export function createWorld(spec: WorldSpec, n: number, edges: [number, number][
     lastGuardEntity: spec.entity.rules.map(() => new Uint8Array(n)),
     armedEdge: (spec.edge?.rules ?? []).map(() => new Map()),
     lastGuardEdge: (spec.edge?.rules ?? []).map(() => new Uint8Array(edgeList.length)),
+    lastFlow: {},
+    flowNet: initFlowNets(spec, n, edgeList.length),
   };
 }
 
 function clamp(v: VarSpec, x: number): number { return Math.max(v.min, Math.min(v.max, x)); }
+
+function initFlowNets(spec: WorldSpec, n: number, edgeCount: number): Record<string, FlowNetState> {
+  const out: Record<string, FlowNetState> = {};
+  for (const fn of spec.flownets ?? []) {
+    out[fn.id] = {
+      flows: new Float64Array(edgeCount),
+      residual: new Float64Array(n),
+      satisfied: new Float64Array(n),
+      potential: new Float64Array(n),
+      fingerprint: '', // ≠ any real fingerprint → solved on the first step
+      recomputes: 0,
+    };
+  }
+  return out;
+}
 
 // --- Views --------------------------------------------------------------------
 
@@ -181,6 +224,7 @@ export function stepWorld(world: EntityWorld): boolean {
   const entTrans = new Map<string, Map<number, number>>(); // exchange (conservative; source-snapped)
   const edgeOwn = new Map<string, Map<number, number>>();
   const entStage: { i: number; state: string; to: number }[] = [];
+  let changed = false;
 
   // 1. Per-entity rules (own effects + timers).
   for (let i = 0; i < world.n; i++) {
@@ -234,14 +278,21 @@ export function stepWorld(world: EntityWorld): boolean {
   }
 
   // 3. EXCHANGE — conservative diffusion of entity scalars along edges. The
-  //    per-edge |flow| is recorded so roads can grow where trade actually happens.
+  //    per-edge |flow| is recorded so roads can grow where trade actually
+  //    happens; the SIGNED flow (a→b positive) is published on world.lastFlow
+  //    for the layer above (day-boundary coupling).
   const flow = new Map<string, Float64Array>();
   for (const ex of spec.exchanges ?? []) {
     const arr = world.scalars[ex.scalar];
     if (!arr) continue;
     const byArr = ex.by ? world.edgeAttr[ex.by] : null;
     let fl = flow.get(ex.scalar);
-    if (!fl) { fl = new Float64Array(world.edges.length); flow.set(ex.scalar, fl); }
+    let signed = world.lastFlow[ex.scalar];
+    if (!signed || signed.length !== world.edges.length) {
+      signed = new Float64Array(world.edges.length);
+      world.lastFlow[ex.scalar] = signed;
+    }
+    if (!fl) { fl = new Float64Array(world.edges.length); flow.set(ex.scalar, fl); signed.fill(0); }
     for (let e = 0; e < world.edges.length; e++) {
       const { a, b } = world.edges[e];
       const deg = Math.max(world.adj[a].length, world.adj[b].length);
@@ -252,16 +303,78 @@ export function stepWorld(world: EntityWorld): boolean {
       add(entTrans, ex.scalar, a, -move);
       add(entTrans, ex.scalar, b, move);
       fl[e] += Math.abs(move);
+      signed[e] += move;
+    }
+  }
+
+  // 3a′. PROCESSES — the Leontief production function (world-content.md §3a):
+  //     output := min(input × efficiency, capacity), written as a DERIVED
+  //     value each step. Pure function of bounded inputs — no dynamics of
+  //     its own. Runs BEFORE flow nets so extraction feeds this step's
+  //     nets; a process reading a net's `satisfied` sees LAST step's value
+  //     (one settle-step per chain stage, by design).
+  for (const pr of spec.processes ?? []) {
+    const inArr = world.scalars[pr.input];
+    const outArr = world.scalars[pr.output];
+    const v = comp.entityVars.get(pr.output);
+    if (!inArr || !outArr || !v) continue;
+    const capArr = pr.capacityBy ? world.scalars[pr.capacityBy] : null;
+    const capRate = pr.capacityRate ?? 1;
+    for (let i = 0; i < world.n; i++) {
+      let out = inArr[i] * pr.efficiency;
+      if (capArr) out = Math.min(out, capArr[i] * capRate);
+      out = clamp(v, out);
+      if (out !== outArr[i]) { outArr[i] = out; changed = true; }
+    }
+  }
+
+  // 3a. FLOW NETWORKS — the steady-state economy (§4c). The edge flow field
+  //     is DERIVED: solved only when its inputs (source, demand, conductance)
+  //     changed since the last solve, constant otherwise — zero marginal cost
+  //     in a settled world, which is what lets a resting world still "move".
+  //     Only the per-component imbalance acts on state, as a uniform drift
+  //     routed through the ordinary own-delta pipeline (clamped ⇒ settles).
+  for (const fn of spec.flownets ?? []) {
+    const st = world.flowNet[fn.id];
+    const src = world.scalars[fn.source];
+    const dem = world.scalars[fn.demand];
+    if (!st || !src || !dem) continue;
+    const byArr = fn.by ? world.edgeAttr[fn.by] : null;
+    let fp = '';
+    for (let i = 0; i < world.n; i++) fp += src[i] + ',' + dem[i] + ';';
+    if (byArr) for (let e = 0; e < world.edges.length; e++) fp += byArr[e] + ';';
+    if (fp !== st.fingerprint) {
+      solveFlowNet(world, st, src, dem, byArr);
+      st.fingerprint = fp;
+      st.recomputes++;
+    }
+    if (fn.drift) {
+      for (let i = 0; i < world.n; i++) {
+        if (st.residual[i] !== 0) add(entOwn, fn.drift, i, st.residual[i]);
+      }
+    }
+    // Demand met, written as a derived value (the chaining output).
+    if (fn.satisfied) {
+      const satArr = world.scalars[fn.satisfied];
+      const sv = comp.entityVars.get(fn.satisfied);
+      if (satArr && sv) {
+        for (let i = 0; i < world.n; i++) {
+          const val = clamp(sv, st.satisfied[i]);
+          if (val !== satArr[i]) { satArr[i] = val; changed = true; }
+        }
+      }
     }
   }
 
   // 3b. ROADS — desire paths: an edge attr grows with the trade |flow| through it
-  //     (bounded source) and decays when unused (dissipative) ⇒ settles.
+  //     (bounded source) and decays when unused (dissipative) ⇒ settles. `use`
+  //     may name an exchange scalar or a flow net: caravans wear in roads too.
   for (const rd of spec.roads ?? []) {
     const fl = flow.get(rd.use);
+    const fnState = world.flowNet[rd.use];
     for (let e = 0; e < world.edges.length; e++) {
-      const grow = (fl ? fl[e] : 0) * rd.rate;
-      add(edgeOwn, rd.attr, e, grow - rd.decay);
+      const used = (fl ? fl[e] : 0) + (fnState ? Math.abs(fnState.flows[e]) : 0);
+      add(edgeOwn, rd.attr, e, used * rd.rate - rd.decay);
     }
   }
 
@@ -280,8 +393,8 @@ export function stepWorld(world: EntityWorld): boolean {
 
   // 5. Commit. Own deltas snap to rest when negligible AND no transport on that
   //    cell (snapping a transported cell would break conservation). Transport is
-  //    already source-snapped, so it only ever clamps here.
-  let changed = false;
+  //    already source-snapped, so it only ever clamps here. (`changed` was
+  //    hoisted — processes and satisfied-writes above also set it.)
   const scalarNames = new Set<string>([...entOwn.keys(), ...entTrans.keys()]);
   for (const name of scalarNames) {
     const v = comp.entityVars.get(name); if (!v) continue;
@@ -328,6 +441,117 @@ function applyEdgeEffects(view: CellView, effects: WorldSpec['entity']['rules'][
   for (const eff of effects) {
     const d = ownEffectDelta(view, eff);
     if (d && d.kind === 'scalar') add(own, d.scalar, e, d.delta); // edges have no stages
+  }
+}
+
+// --- Steady-state flow solver (§4c) --------------------------------------------
+
+/**
+ * Solve one flow network for its steady state: with net supply
+ * s_i = source_i − demand_i and edge conductances c_e, find potentials φ
+ * with L·φ = s̃ (L = conductance-weighted graph Laplacian, s̃ = s minus its
+ * per-component mean, so each component's system is consistent) and read
+ * off flows f_e = c_e·(φ_a − φ_b). This is the electrical-network flow:
+ * supply spreads over ALL paths in proportion to conductance (steepest-
+ * descent routing can't do multi-source/multi-sink — §10 resolved).
+ *
+ * Deterministic Gauss–Seidel relaxation: fixed sweep order, fixed
+ * tolerance, one node per component pinned to φ=0 (kills the constant
+ * null-space). L is an M-matrix ⇒ GS converges; entity graphs are tiny and
+ * recomputes are rare, so cost is irrelevant — determinism is the
+ * constraint. The removed mean IS the residual: each entity's uniform
+ * share of its component's overproduction (+) or shortage (−).
+ */
+function solveFlowNet(
+  world: EntityWorld,
+  st: FlowNetState,
+  src: Float64Array,
+  dem: Float64Array,
+  byArr: Float64Array | null,
+): void {
+  const n = world.n;
+  const edges = world.edges;
+  const m = edges.length;
+
+  const cond = new Float64Array(m);
+  for (let e = 0; e < m; e++) {
+    const c = byArr ? byArr[e] : 1;
+    cond[e] = c > 0 ? c : 0;
+  }
+
+  // Connected components over conductive edges (deterministic BFS by index).
+  const comp = new Int32Array(n).fill(-1);
+  let nComp = 0;
+  const queue: number[] = [];
+  for (let root = 0; root < n; root++) {
+    if (comp[root] !== -1) continue;
+    comp[root] = nComp;
+    queue.length = 0;
+    queue.push(root);
+    while (queue.length > 0) {
+      const i = queue.shift()!;
+      for (const e of world.adj[i]) {
+        if (cond[e] <= 0) continue;
+        const other = edges[e].a === i ? edges[e].b : edges[e].a;
+        if (comp[other] === -1) { comp[other] = nComp; queue.push(other); }
+      }
+    }
+    nComp++;
+  }
+
+  // Per-component mean supply → the uniform residual drift.
+  const sum = new Float64Array(nComp);
+  const cnt = new Int32Array(nComp);
+  for (let i = 0; i < n; i++) { sum[comp[i]] += src[i] - dem[i]; cnt[comp[i]]++; }
+  const pinned = new Int32Array(nComp).fill(-1); // first node of each component
+  for (let i = 0; i < n; i++) if (pinned[comp[i]] === -1) pinned[comp[i]] = i;
+
+  const sTil = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const mean = sum[comp[i]] / cnt[comp[i]];
+    sTil[i] = src[i] - dem[i] - mean;
+    st.residual[i] = mean;
+  }
+
+  // Proportional fill per component: how much of each entity's demand the
+  // network actually meets (the `satisfied` chaining output).
+  const supplyTot = new Float64Array(nComp);
+  const demandTot = new Float64Array(nComp);
+  for (let i = 0; i < n; i++) {
+    supplyTot[comp[i]] += src[i];
+    demandTot[comp[i]] += dem[i];
+  }
+  for (let i = 0; i < n; i++) {
+    const dT = demandTot[comp[i]];
+    const fill = dT > 0 ? Math.min(1, supplyTot[comp[i]] / dT) : 0;
+    st.satisfied[i] = dem[i] * fill;
+  }
+
+  // Gauss–Seidel sweeps on L·φ = s̃.
+  const phi = st.potential;
+  phi.fill(0);
+  const wsum = new Float64Array(n);
+  for (let i = 0; i < n; i++) for (const e of world.adj[i]) wsum[i] += cond[e];
+  for (let iter = 0; iter < 20_000; iter++) {
+    let maxDelta = 0;
+    for (let i = 0; i < n; i++) {
+      if (wsum[i] === 0 || pinned[comp[i]] === i) continue;
+      let acc = sTil[i];
+      for (const e of world.adj[i]) {
+        if (cond[e] <= 0) continue;
+        const other = edges[e].a === i ? edges[e].b : edges[e].a;
+        acc += cond[e] * phi[other];
+      }
+      const next = acc / wsum[i];
+      const d = Math.abs(next - phi[i]);
+      if (d > maxDelta) maxDelta = d;
+      phi[i] = next;
+    }
+    if (maxDelta < 1e-12) break;
+  }
+
+  for (let e = 0; e < m; e++) {
+    st.flows[e] = cond[e] > 0 ? cond[e] * (phi[edges[e].a] - phi[edges[e].b]) : 0;
   }
 }
 
@@ -400,6 +624,94 @@ export function worldFastForward(world: EntityWorld, steps: number): void {
   }
 }
 
+// --- Dynamic roster (world-content.md gate 5: the founding transaction) --------
+
+export interface AddEntityOpts {
+  x?: number;
+  y?: number;
+  /** Initial values for entity scalars (others take the var's `initial`). */
+  scalars?: Record<string, number>;
+  /** Initial stages (others take the state's `initial`). */
+  stages?: Record<string, string>;
+  /** Edges to existing entities, with optional initial edge attrs. */
+  edges?: Array<{ to: number; attrs?: Record<string, number> }>;
+}
+
+/**
+ * Add an entity mid-run — a DAY-BOUNDARY structural event (founding a
+ * settlement). Grows every per-entity array; armed timers keep their
+ * entity-index keys (existing indices are untouched); flow nets reset to
+ * an empty fingerprint so the next step re-solves over the new topology
+ * (it changed, so a re-solve was due regardless). Deterministic. Returns
+ * the new entity's index.
+ */
+export function addEntity(world: EntityWorld, opts: AddEntityOpts = {}): number {
+  const spec = world.spec;
+  const i = world.n;
+
+  for (const v of spec.entity.vars ?? []) {
+    const next = new Float64Array(i + 1);
+    next.set(world.scalars[v.name]);
+    next[i] = clamp(v, opts.scalars?.[v.name] ?? v.initial);
+    world.scalars[v.name] = next;
+  }
+  for (const s of spec.entity.states ?? []) {
+    const next = new Uint8Array(i + 1);
+    next.set(world.stageIdx[s.name]);
+    const want = opts.stages?.[s.name] ?? s.initial;
+    next[i] = Math.max(0, s.stages.indexOf(want));
+    world.stageIdx[s.name] = next;
+  }
+  const pos = new Float64Array(2 * (i + 1));
+  pos.set(world.pos);
+  pos[2 * i] = opts.x ?? 0;
+  pos[2 * i + 1] = opts.y ?? 0;
+  world.pos = pos;
+  world.adj.push([]);
+  world.lastGuardEntity = world.lastGuardEntity.map(a => {
+    const next = new Uint8Array(i + 1);
+    next.set(a);
+    return next;
+  });
+  world.n = i + 1;
+
+  for (const e of opts.edges ?? []) addEdge(world, i, e.to, e.attrs);
+  // addEdge already reset the derived nets; reset again covers the
+  // zero-edge founding too.
+  world.flowNet = initFlowNets(spec, world.n, world.edges.length);
+  world.lastFlow = {};
+  return i;
+}
+
+/**
+ * Add an edge mid-run (a new route between settlements). Same discipline
+ * as addEntity: day-boundary only, derived nets reset for re-solve.
+ * Returns the new edge's index.
+ */
+export function addEdge(world: EntityWorld, a: number, b: number, attrs?: Record<string, number>): number {
+  if (a === b || a < 0 || b < 0 || a >= world.n || b >= world.n) {
+    throw new Error(`addEdge: bad endpoints ${a}–${b}`);
+  }
+  const e = world.edges.length;
+  world.edges.push({ a, b });
+  for (const v of world.spec.edge?.vars ?? []) {
+    const next = new Float64Array(e + 1);
+    next.set(world.edgeAttr[v.name]);
+    next[e] = clamp(v, attrs?.[v.name] ?? v.initial);
+    world.edgeAttr[v.name] = next;
+  }
+  world.adj[a].push(e);
+  world.adj[b].push(e);
+  world.lastGuardEdge = world.lastGuardEdge.map(arr => {
+    const next = new Uint8Array(e + 1);
+    next.set(arr);
+    return next;
+  });
+  world.flowNet = initFlowNets(world.spec, world.n, world.edges.length);
+  world.lastFlow = {};
+  return e;
+}
+
 // --- External input + helpers -------------------------------------------------
 
 export function injectEntity(world: EntityWorld, entity: number, scalar: string, amount: number): void {
@@ -459,6 +771,8 @@ export function deserializeWorld(json: string): EntityWorld | null {
     edges.forEach((e, i) => { adj[e.a].push(i); adj[e.b].push(i); });
     return {
       spec: p.spec, n: p.n, scalars, stageIdx, edgeAttr, edges, adj,
+      lastFlow: {},
+      flowNet: initFlowNets(p.spec, p.n, edges.length),
       pos: Float64Array.from(p.pos ?? []), clockPhase: p.clockPhase ?? {}, clock: p.clock ?? 0,
       armedEntity: (p.armedEntity ?? []).map((e: [number, number][]) => new Map(e)),
       armedEdge: (p.armedEdge ?? []).map((e: [number, number][]) => new Map(e)),

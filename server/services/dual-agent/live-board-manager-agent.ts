@@ -153,10 +153,16 @@ export class LiveBoardManagerAgent implements IBoardManagerAgent {
 
     const { declarations, flatDecls, fusionMap } = buildBoardManagerTooling(input.toolConfig);
     const temperature = input.temperature ?? 0.2;
-    const key = this.computeKey(input.systemPrompt, flatDecls, temperature);
+    // The Coordinator sends the stable base + per-turn suffix separately (for
+    // the HTTP path's prompt cache); the Live path composes them here — a
+    // suffix change flips the key and reconnects, same as when the suffix was
+    // baked into systemPrompt upstream.
+    const suffix = input.systemPromptSuffix?.trim();
+    const systemPrompt = suffix ? `${input.systemPrompt}\n\n${suffix}` : input.systemPrompt;
+    const key = this.computeKey(systemPrompt, flatDecls, temperature);
 
     try {
-      await this.ensureConnected(input.systemPrompt, declarations, temperature, key);
+      await this.ensureConnected(systemPrompt, declarations, temperature, key);
     } catch (err) {
       console.error("[LiveBoardManagerAgent] connect failed:", (err as Error).message);
       flowNote("BOARD_MGR", `Live connect failed: ${(err as Error).message}`);

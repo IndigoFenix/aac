@@ -26,15 +26,19 @@ import {
   placeCarriedObject,
   removeAvatar,
   setAvatarSpeech,
+  setWorldStructures,
   smoothRemoteAvatars,
   steerAvatar,
+  structuresWalkable,
   tickWorld,
+  WORLD_ENGINE_DEFAULTS,
   type MoveConstraint,
+  type WorldEngineConfig,
   type WorldState,
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
-import type { Vec2, WorldSpec } from "./types.js";
+import { WORLD_MAX_NPCS, type NpcSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
 import type { WorldView } from "./world-view.js";
 import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
@@ -167,6 +171,19 @@ export interface WorldHost {
   /** The local user spoke: show a speech bubble over the local avatar and broadcast
    *  it once so peers render it too. `glyph` is the optional composed AAC glyph. */
   say(text: string, glyph?: string): void;
+  /** Spawn a hosted NPC at runtime — the STREAMING seam: a large world can keep
+   *  its concurrent cast under WORLD_MAX_NPCS by spawning inhabitants as the
+   *  player approaches their region and despawning them on leave (the spec then
+   *  carries only ever-present NPCs). Only meaningful on the NPC-hosting peer;
+   *  enforces the same concurrent cap as the spec. False = rejected (not
+   *  hosting / duplicate id / cap). */
+  addNpc(npc: NpcSpec): boolean;
+  /** Despawn a runtime-hosted NPC (body, controller, proximity). False = unknown. */
+  removeNpc(npcId: string): boolean;
+  /** Replace the streamed structure set (walls/doors around the player — see
+   *  engine.setWorldStructures). Collision, door swing, and rendering follow
+   *  immediately; door states persist across swaps for surviving ids. */
+  setStructures(structures: StructureSpec[]): void;
   /** Bias a hosted NPC's body from its live conversation (mind → body). No-op for
    *  an unknown id or a peer that doesn't host that NPC. */
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void;
@@ -221,8 +238,17 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // non-owner receives NPC positions over the relay/mesh and can still tell which
   // NPC its player is standing next to. Emit only when the in-range SET changes.
   const npcRadii = new Map<string, number>();
+  // Per-NPC locomotion override: a spec `speed` walks that body slower (or
+  // faster) than the player's steerMaxSpeed default.
+  const npcConfigs = new Map<string, WorldEngineConfig>();
+  const npcConfig = (n: NpcSpec): void => {
+    if (n.behavior?.speed) {
+      npcConfigs.set(n.id, { ...WORLD_ENGINE_DEFAULTS, steerMaxSpeed: n.behavior.speed });
+    }
+  };
   for (const n of spec.npcs ?? []) {
     npcRadii.set(n.id, n.behavior?.conversationRadius ?? DEFAULT_CONVERSATION_RADIUS);
+    npcConfig(n);
   }
   let lastProximityKey = "";
   const emitProximityIfChanged = (): void => {
@@ -258,8 +284,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         width: spec.manifold.width,
         height: spec.manifold.height,
         rng: npcRng,
+        // The same ground truth locomotion collides against — lets the
+        // controller refuse to aim at blocked ground (wander waypoints).
+        walkable: (p, radius) =>
+          structuresWalkable(state, p, radius, self.floor) &&
+          (deps.constraint?.walkable(p, radius) ?? true),
       });
-      steerAvatar(state, ctrl.npcId, aim, dt, undefined, deps.constraint);
+      steerAvatar(state, ctrl.npcId, aim, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
     }
   };
 
@@ -534,6 +565,38 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // stamps it with state.time so it fades on the local clock.
       setAvatarSpeech(state, localId, { text: line, glyph });
       net?.send([sayMessage(localId, line, glyph)]);
+    },
+    addNpc(npc) {
+      if (!deps.hostNpcs) return false;
+      if (npcIds.has(npc.id) || state.avatars[npc.id]) return false;
+      if (npcIds.size >= WORLD_MAX_NPCS) return false; // same cap as the spec, held concurrently
+      addLocalAvatar(state, npc.id, npc.x, npc.y, npc.facing ?? 0);
+      const ctrl = createNpcController(npc);
+      npcControllers.push(ctrl);
+      npcIds.add(npc.id);
+      npcById.set(npc.id, ctrl);
+      ownedAvatarIds.push(npc.id); // rides the outbound avatar stream like spec NPCs
+      npcRadii.set(npc.id, npc.behavior?.conversationRadius ?? DEFAULT_CONVERSATION_RADIUS);
+      npcConfig(npc);
+      lastProximityKey = "\0"; // cast changed — re-emit proximity next frame
+      return true;
+    },
+    removeNpc(npcId) {
+      if (!npcIds.has(npcId)) return false;
+      npcIds.delete(npcId);
+      npcById.delete(npcId);
+      const ci = npcControllers.findIndex((c) => c.npcId === npcId);
+      if (ci >= 0) npcControllers.splice(ci, 1);
+      const oi = ownedAvatarIds.indexOf(npcId);
+      if (oi >= 0) ownedAvatarIds.splice(oi, 1);
+      npcRadii.delete(npcId);
+      npcConfigs.delete(npcId);
+      removeAvatar(state, npcId);
+      lastProximityKey = "\0";
+      return true;
+    },
+    setStructures(structures) {
+      setWorldStructures(state, structures);
     },
     setNpcEngagement(npcId, engagement) {
       npcById.get(npcId)?.setEngagement(engagement);

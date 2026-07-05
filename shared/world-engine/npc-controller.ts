@@ -30,6 +30,12 @@ export interface NpcControlCtx {
   height: number;
   /** Injected RNG (deterministic in tests; Math.random in the app). */
   rng: () => number;
+  /**
+   * Optional walkability oracle (the host passes the same composed constraint
+   * locomotion moves under). Wander waypoints are rejected when blocked, so an
+   * NPC stops AIMING into buildings instead of merely bouncing off their walls.
+   */
+  walkable?: (p: Vec2, radius: number) => boolean;
 }
 
 /**
@@ -57,8 +63,15 @@ export interface NpcProximity {
  * world effects (pick up / put down an object) inside the callbacks — the
  * controller only steers.
  */
+/** An errand waypoint; `dwell` holds the NPC there (standing) for that many
+ *  seconds after arrival before it walks on — a shopper at a stall, a vendor
+ *  at a shelf. Plain Vec2s remain valid points. */
+export interface NpcErrandPoint extends Vec2 {
+  dwell?: number;
+}
+
 export interface NpcErrand {
-  points: Vec2[];
+  points: NpcErrandPoint[];
   /** Fired once when the NPC reaches points[index]. */
   onArrive?: (index: number) => void;
   /** Fired after the last point's onArrive; the errand then clears. */
@@ -136,16 +149,28 @@ class BaseController implements NpcController {
   // Wander state.
   private waypoint: Vec2 | null = null;
   private pauseUntil = 0;
+  // Wander stuck detection (see wanderAim).
+  private stuckFrom: Vec2 | null = null;
+  private stuckSince = 0;
 
   // Errand state (scripted waypoint task; overrides behavior while active).
   private errand: NpcErrand | null = null;
   private errandIndex = 0;
   private errandWaypointSince = -1;
+  private errandLegDeadline = Infinity;
+  /** When ≥ 0, standing at the current waypoint until this time (dwell). */
+  private errandDwellUntil = -1;
+
+  /** Tether anchor when `wanderRadius` is set: `behavior.home`, else the spawn point. */
+  private readonly home: Vec2;
+  private readonly wanderRadius: number | undefined;
 
   constructor(spec: NpcSpec) {
     this.npcId = spec.id;
     this.movement = spec.behavior?.movement ?? "wander";
     this.conversationRadius = spec.behavior?.conversationRadius ?? DEFAULT_CONVERSATION_RADIUS;
+    this.home = spec.behavior?.home ?? { x: spec.x, y: spec.y };
+    this.wanderRadius = spec.behavior?.wanderRadius;
   }
 
   setEngagement(e: NpcEngagement | null): void {
@@ -156,39 +181,57 @@ class BaseController implements NpcController {
     this.errand = e;
     this.errandIndex = 0;
     this.errandWaypointSince = -1;
+    this.errandDwellUntil = -1;
   }
 
-  /** Walk the errand's waypoints; fire callbacks on arrival. Returns the aim, or
-   *  null on the frame the errand completes. A waypoint that can't be reached
-   *  within the timeout counts as arrived — an errand may cut a corner, but an
-   *  NPC must NEVER wedge into a wall forever (it would become uninteractable). */
+  /** Walk the errand's waypoints; fire callbacks on arrival, stand out a
+   *  waypoint's `dwell` before moving on. Returns the aim, or null on the frame
+   *  the errand completes (and while dwelling). A waypoint that can't be reached
+   *  within its leg budget counts as arrived — an errand may cut a corner, but an
+   *  NPC must NEVER wedge into a wall forever (it would become uninteractable).
+   *  The budget is DISTANCE-AWARE (4 s + 1 s per unit): a slow walker on a long
+   *  leg isn't cut short, a truly blocked one gives up within seconds. */
   private errandAim(ctx: NpcControlCtx): Vec2 | null {
     const ERRAND_ARRIVE = 0.9;
-    const ERRAND_WAYPOINT_TIMEOUT = 8; // seconds
     const errand = this.errand!;
     const pt = errand.points[this.errandIndex];
     if (!pt) {
       this.errand = null;
       return null;
     }
-    if (this.errandWaypointSince < 0) this.errandWaypointSince = ctx.now;
-    if (
-      dist(ctx.self, pt) <= ERRAND_ARRIVE ||
-      ctx.now - this.errandWaypointSince > ERRAND_WAYPOINT_TIMEOUT
-    ) {
+    if (this.errandDwellUntil >= 0) {
+      // Standing at the waypoint (a shopper at the stall).
+      if (ctx.now < this.errandDwellUntil) return null;
+      this.errandDwellUntil = -1;
+      return this.errandAdvance(errand);
+    }
+    if (this.errandWaypointSince < 0) {
+      this.errandWaypointSince = ctx.now;
+      this.errandLegDeadline = ctx.now + 4 + dist(ctx.self, pt);
+    }
+    if (dist(ctx.self, pt) <= ERRAND_ARRIVE || ctx.now > this.errandLegDeadline) {
       errand.onArrive?.(this.errandIndex);
       if (this.errand !== errand) return null; // a callback replaced/cleared it
-      this.errandIndex += 1;
-      this.errandWaypointSince = ctx.now;
-      if (this.errandIndex >= errand.points.length) {
-        this.errand = null;
-        this.errandIndex = 0;
-        errand.onDone?.();
+      if (pt.dwell && pt.dwell > 0) {
+        this.errandDwellUntil = ctx.now + pt.dwell;
         return null;
       }
-      return errand.points[this.errandIndex] ?? null;
+      return this.errandAdvance(errand);
     }
     return pt;
+  }
+
+  /** Step to the next errand waypoint (or finish). */
+  private errandAdvance(errand: NpcErrand): Vec2 | null {
+    this.errandIndex += 1;
+    this.errandWaypointSince = -1; // next call stamps the new leg's budget
+    if (this.errandIndex >= errand.points.length) {
+      this.errand = null;
+      this.errandIndex = 0;
+      errand.onDone?.();
+      return null;
+    }
+    return errand.points[this.errandIndex] ?? null;
   }
 
   computeAim(ctx: NpcControlCtx): Vec2 | null {
@@ -213,6 +256,7 @@ class BaseController implements NpcController {
   /** Roam to random waypoints, pausing on arrival so motion looks unhurried. */
   private wanderAim(ctx: NpcControlCtx): Vec2 | null {
     const ARRIVE = 1.5;
+    const STUCK_SEC = 3; // no ground gained for this long → give up on the waypoint
     if (ctx.now < this.pauseUntil) return null; // standing at a waypoint
     if (this.waypoint && dist(ctx.self, this.waypoint) < ARRIVE) {
       // Arrived — pause a beat, then repick next frame.
@@ -220,7 +264,23 @@ class BaseController implements NpcController {
       this.waypoint = null;
       return null;
     }
-    if (!this.waypoint) this.waypoint = this.pickWaypoint(ctx);
+    if (!this.waypoint) {
+      this.waypoint = this.pickWaypoint(ctx);
+      this.stuckFrom = null;
+    }
+    // Stuck detection: waypoints are picked blind to walls, so an aim
+    // inside a building pins the NPC against a wall FOREVER (errands
+    // time out per waypoint; wander had no such escape). If the body
+    // hasn't gained a meter in STUCK_SEC, drop the waypoint and repick.
+    if (!this.stuckFrom || dist(ctx.self, this.stuckFrom) > 1) {
+      this.stuckFrom = { x: ctx.self.x, y: ctx.self.y };
+      this.stuckSince = ctx.now;
+    } else if (ctx.now - this.stuckSince > STUCK_SEC) {
+      this.waypoint = null;
+      this.stuckFrom = null;
+      this.pauseUntil = ctx.now + 0.5 + ctx.rng();
+      return null;
+    }
     return this.waypoint;
   }
 
@@ -252,11 +312,32 @@ class BaseController implements NpcController {
   }
 
   private pickWaypoint(ctx: NpcControlCtx): Vec2 {
-    const m = 2; // keep clear of the walls
-    return {
-      x: m + ctx.rng() * Math.max(0, ctx.width - 2 * m),
-      y: m + ctx.rng() * Math.max(0, ctx.height - 2 * m),
+    const m = 2; // keep clear of the manifold edge
+    const draw = (): Vec2 => {
+      if (this.wanderRadius !== undefined) {
+        // Tethered roam: a point in the disc around home, clamped in-bounds.
+        const a = ctx.rng() * Math.PI * 2;
+        const r = Math.sqrt(ctx.rng()) * this.wanderRadius;
+        return {
+          x: clamp(this.home.x + Math.cos(a) * r, m, Math.max(m, ctx.width - m)),
+          y: clamp(this.home.y + Math.sin(a) * r, m, Math.max(m, ctx.height - m)),
+        };
+      }
+      return {
+        x: m + ctx.rng() * Math.max(0, ctx.width - 2 * m),
+        y: m + ctx.rng() * Math.max(0, ctx.height - 2 * m),
+      };
     };
+    // With a walkability oracle, refuse to AIM at blocked ground (a waypoint
+    // inside a neighbor's house walks the NPC into the wall — or through an
+    // auto-opening door — until stuck detection fires). A few redraws almost
+    // always find open ground; home is the safe fallback.
+    if (!ctx.walkable) return draw();
+    for (let i = 0; i < 8; i++) {
+      const p = draw();
+      if (ctx.walkable(p, 0.6)) return p;
+    }
+    return { ...this.home };
   }
 }
 

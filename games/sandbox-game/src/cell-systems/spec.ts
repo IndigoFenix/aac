@@ -310,12 +310,64 @@ export interface ConflictSpec {
 export interface RoadSpec {
   /** Edge var to build up (the road strength). */
   attr: string;
-  /** Entity scalar whose per-step exchange |flow| builds the road. */
+  /** Entity scalar whose per-step exchange |flow| builds the road — or a
+   *  FlowNetSpec id, so caravans wear in the roads they travel. */
   use: string;
   /** road += rate · |flow|. */
   rate: number;
   /** road -= decay each step (fades when unused). */
   decay: number;
+}
+
+/** A STEADY-STATE FLOW NETWORK — the generalized river (grand-dream §4c):
+ *  entities inject `source` (production/step) and withdraw `demand`
+ *  (consumption/step); the engine solves the graph for the static edge flow
+ *  field that ships supply to demand, weighted by an optional edge
+ *  conductance (`by`, e.g. road). The field is DERIVED and read-only:
+ *  recomputed only when source/demand/conductance values change, constant
+ *  (zero marginal cost) between recomputes — a settled world "stabilises in
+ *  motion" exactly like a river: caravans are a render of this field, not
+ *  agents. Per-component imbalance (Σsource ≠ Σdemand) lands as a uniform
+ *  per-entity drift on `drift` — an ordinary bounded variable (linear until
+ *  clamp ⇒ still settles). Solver: deterministic Gauss–Seidel relaxation of
+ *  the conductance-weighted graph Laplacian (proportional relaxation to
+ *  fixpoint — the most in-family choice; see unified-world-model §10). */
+export interface FlowNetSpec {
+  id: string;
+  /** Entity var: per-step production injected at each entity. */
+  source: string;
+  /** Entity var: per-step demand withdrawn at each entity. */
+  demand: string;
+  /** Edge var scaling conductance; absent = 1 per edge. Edges with
+   *  conductance ≤ 0 carry no flow (a severed road ships nothing). */
+  by?: string;
+  /** Entity var receiving each entity's share of its component's imbalance
+   *  every step (+overproduction / −shortage). Optional. */
+  drift?: string;
+  /** Entity var receiving the demand actually MET at each entity
+   *  (proportional fill: demand_i × min(1, component supply/demand)),
+   *  written as a derived per-step value. This is what lets processing
+   *  CHAIN on a flow net — without it a delivery evaporates into implied
+   *  consumption. Optional. */
+  satisfied?: string;
+}
+
+/** A PROCESS — the Leontief production function (world-content.md §3a):
+ *  output := min(input × efficiency, capacityBy × capacityRate), written
+ *  each step as a DERIVED value. Like a sensor it has no dynamics of its
+ *  own (a pure function of bounded inputs ⇒ cannot break termination); its
+ *  read→write edges join the coupling analysis. `input` may be a chartered
+ *  substrate scalar (farmland) or a flow net's `satisfied` (chaining);
+ *  `capacityBy` is typically a building-count var — buildings ARE capacity. */
+export interface ProcessSpec {
+  id?: string;
+  input: string;
+  output: string;
+  /** Output per unit input. */
+  efficiency: number;
+  /** Optional capacity cap: output ≤ capacityBy × capacityRate. */
+  capacityBy?: string;
+  capacityRate?: number;
 }
 
 export interface WorldSpec {
@@ -331,4 +383,6 @@ export interface WorldSpec {
   exchanges?: ExchangeSpec[];
   conflicts?: ConflictSpec[];
   roads?: RoadSpec[];
+  flownets?: FlowNetSpec[];
+  processes?: ProcessSpec[];
 }

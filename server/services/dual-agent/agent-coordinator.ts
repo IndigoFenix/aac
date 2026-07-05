@@ -50,6 +50,8 @@ import { HttpSpeakerAgent } from "./http-speaker-agent";
 import type { ISpeakerAgent } from "./speaker-interface";
 import {
   BoardManagerAgent,
+  BOARD_MANAGER_DEFAULT_PROVIDER,
+  BOARD_MANAGER_DEFAULT_MODEL,
   type BoardManagerOutputEvent,
   type BoardManagerInvocationInput,
 } from "./board-manager-agent";
@@ -194,7 +196,7 @@ import { LiveSocialPeerSpeakerAgent } from "../social-bot/live-peer-speaker-agen
 import { authenticateUpgrade } from "../realtime/ws-auth";
 import { parseBoardButtons, parseSinglePipeButton } from "./interactive-agent";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
-import { collectGlyphImageKeys, validateBoardButtons } from "./board-button-validator";
+import { collectGlyphImageKeys, validateBoardButtons, type BoardButtonViolation, type BoardButtonViolationRule } from "./board-button-validator";
 import { expandSuggestionKey, recoverOfferedSuggestionKey } from "./interactive-agent";
 import { isValidSuggestionKey, parseSuggestionKey } from "@shared/guessing-mode/suggestion-registry";
 import {
@@ -240,8 +242,9 @@ import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog
 // to a per-agent settings row in a follow-up.
 // ---------------------------------------------------------------------------
 
-const BOARD_MANAGER_DEFAULT_PROVIDER = "gemini" as const;
-const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
+// BOARD_MANAGER_DEFAULT_PROVIDER / BOARD_MANAGER_DEFAULT_MODEL now live in
+// board-manager-agent.ts (imported above) so the agent's prompt-cache
+// prewarm keys on the same model string the invocations use.
 // Live model used when the per-student `boardManagerLiveModel` AAC setting
 // (or the AAC_BOARD_MANAGER_MODE=live env override) is on.
 //
@@ -1307,6 +1310,15 @@ export class AgentCoordinator {
    *  demanded. With this field, the original triggers are always
    *  merged in for as long as pendingFeedback is set. */
   private boardMgrPendingRetryTriggers: AgentEvent[] = [];
+
+  /** Session-scoped memory of validator violations, keyed by rule with the
+   *  offending tokens deduped. Rendered as <recent_mistakes> in every BM
+   *  invocation CONTEXT (user message — keeps the system prompt cacheable)
+   *  so the stateless model stops repeating the same rejected-button
+   *  mistakes over the course of the session. */
+  private boardMgrViolationMemory = new Map<BoardButtonViolationRule, Set<string>>();
+  /** Cap tokens remembered per rule so the block stays terse. */
+  private static readonly VIOLATION_MEMORY_TOKEN_CAP = 10;
   /** Single-shot flag set by handleGuessingPress / handleGuessingNarrow /
    *  handleGuessingReject and consumed by the very next button_pressed
    *  event. A guessing-intent button press fires TWO server events —
@@ -7727,9 +7739,12 @@ export class AgentCoordinator {
       const hasComposedTrigger = triggeringEvents.some(
         (e) => e.type === "sentence_composed",
       );
-      const composedPrompt = this.boardManagerPromptBase
-        + (this.builderState || hasComposedTrigger ? `\n\n${this.boardManagerBuilderBlock}` : "")
-        + (this.guessingState ? `\n\n${this.boardManagerGuessingBlock}` : "");
+      // Suffix blocks ride SEPARATELY from the base so plain turns (no
+      // suffix — the majority) can hit the agent's explicit prompt cache;
+      // the agent inlines base+suffix itself when a suffix is present.
+      const promptSuffixParts: string[] = [];
+      if (this.builderState || hasComposedTrigger) promptSuffixParts.push(this.boardManagerBuilderBlock);
+      if (this.guessingState) promptSuffixParts.push(this.boardManagerGuessingBlock);
       // Read the home-press directive (set by routeHomeTopicPressInner).
       // Don't clear here — if BM MALFORMEDs or no_changes the first
       // attempt and the retry chain runs, we want the directive on
@@ -7738,10 +7753,12 @@ export class AgentCoordinator {
       // a different home press arrives).
       const forceRebuildDirective = this.pendingForceRebuildDirective;
 
+      if (pendingFeedback) {
+        promptSuffixParts.push(`<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`);
+      }
       const input: BoardManagerInvocationInput = {
-        systemPrompt: pendingFeedback
-          ? `${composedPrompt}\n\n<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`
-          : composedPrompt,
+        systemPrompt: this.boardManagerPromptBase,
+        systemPromptSuffix: promptSuffixParts.length > 0 ? promptSuffixParts.join("\n\n") : undefined,
         toolConfig: dynamicToolConfig,
         triggeringEvents,
         recentEvents: [...this.recentEvents],
@@ -7754,6 +7771,7 @@ export class AgentCoordinator {
           buttonType: b.buttonType,
         })),
         contextSidebarLabels: [...this.contextSidebarLabels],
+        violationMemory: this.boardMgrViolationSnapshot(),
         loadedBoardId: this.loadedBoardId,
         builderState: this.builderState ?? undefined,
         guessingState: this.guessingState ?? undefined,
@@ -7870,11 +7888,17 @@ export class AgentCoordinator {
       // A REAL no_change tool call (model judged the surface fine) on
       // a trigger that genuinely required a rebuild → judgment-error
       // retry. Distinct from malformed: rawToolCalls.length > 0 here.
+      // Skipped when THIS invocation was already a retry (pendingFeedback
+      // set): a conscious no_change after validator feedback means the
+      // model reviewed the corrected surface and declined further changes
+      // — re-queueing it just burns the retry budget on churn (observed as
+      // a second wasted call per beat in session 0b2a3212).
       const beatGotNoChange = triggerDemandsRebuild
         && !producedRebuild
         && !hadFusion
         && onlyNoChange
-        && !isMalformedOrEmpty;
+        && !isMalformedOrEmpty
+        && !pendingFeedback;
       // A home-press force-rebuild directive explicitly forbids no_change
       // (buildForceRebuildHint: "Do NOT call no_change on this turn"). The
       // SILENT home presses (e.g. the "I'm talking" → facilitator button)
@@ -8104,7 +8128,8 @@ export class AgentCoordinator {
       }
     }
 
-    const { buttons: kept, errors } = validateBoardButtons(regular);
+    const { buttons: kept, errors, violations } = validateBoardButtons(regular);
+    this.recordBoardViolations(violations);
     if (errors.length > 0) {
       this.queueBoardMgrFeedback("rebuild_board", errors);
     }
@@ -8268,7 +8293,7 @@ export class AgentCoordinator {
     if (!isSpecial) {
       // Run the same validator path as add_context_button — drop on
       // structural errors and queue feedback.
-      const { buttons: kept, errors } = validateBoardButtons([{
+      const { buttons: kept, errors, violations } = validateBoardButtons([{
         label: b.label,
         glyph: b.glyph,
         glyphFallback: b.glyphFallback,
@@ -8276,6 +8301,7 @@ export class AgentCoordinator {
         iconRef: b.iconRef,
         symbolPath: b.symbolPath,
       }]);
+      this.recordBoardViolations(violations);
       if (errors.length > 0) {
         this.queueBoardMgrFeedback("add_board_button", errors);
       }
@@ -8330,7 +8356,7 @@ export class AgentCoordinator {
     // Same validator — one-button input. Drops on any rule violation
     // and queues feedback for the next invocation.
     const b = event.button;
-    const { buttons: kept, errors } = validateBoardButtons([{
+    const { buttons: kept, errors, violations } = validateBoardButtons([{
       label: b.label,
       glyph: b.glyph,
       glyphFallback: b.glyphFallback,
@@ -8338,6 +8364,7 @@ export class AgentCoordinator {
       iconRef: b.iconRef,
       symbolPath: b.symbolPath,
     }]);
+    this.recordBoardViolations(violations);
     if (errors.length > 0) {
       this.queueBoardMgrFeedback("add_context_button", errors);
     }
@@ -8397,6 +8424,32 @@ export class AgentCoordinator {
     void this.invokeBoardManager([]);
   }
 
+  /** Fold a batch of validator violations into the session memory.
+   *  Tokens dedupe via the per-rule Set; the cap keeps the rendered
+   *  <recent_mistakes> block terse even in a long error-prone session. */
+  private recordBoardViolations(violations: BoardButtonViolation[]): void {
+    for (const v of violations) {
+      let tokens = this.boardMgrViolationMemory.get(v.rule);
+      if (!tokens) {
+        tokens = new Set<string>();
+        this.boardMgrViolationMemory.set(v.rule, tokens);
+      }
+      for (const t of v.tokens) {
+        if (tokens.size >= AgentCoordinator.VIOLATION_MEMORY_TOKEN_CAP) break;
+        tokens.add(t);
+      }
+    }
+  }
+
+  /** Serializable snapshot for BoardManagerInvocationInput.violationMemory. */
+  private boardMgrViolationSnapshot(): Array<{ rule: string; tokens: string[] }> {
+    const out: Array<{ rule: string; tokens: string[] }> = [];
+    for (const [rule, tokens] of this.boardMgrViolationMemory) {
+      out.push({ rule, tokens: [...tokens] });
+    }
+    return out;
+  }
+
   /** Queue validator-error feedback for the next BoardManager
    *  invocation, with a retry cap so a pathological response can't
    *  loop forever. */
@@ -8408,6 +8461,9 @@ export class AgentCoordinator {
       return;
     }
     this.boardMgrPendingFeedback = buildValidatorErrorFeedback(toolName, errors);
+    // Surface the actual rule violations — session 0b2a3212 showed EVERY
+    // rebuild failing validation with the errors invisible in all logs.
+    flowNote("BOARD_MGR", `Validator errors (${toolName}): ${errors.join(" | ")}`);
     // Pair the original triggers with the feedback so subsequent
     // invocations always include the beat the retry is fixing, even if
     // a new event arrives before the retry actually runs.

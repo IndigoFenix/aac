@@ -131,6 +131,26 @@ export function collectInvalidModifiers(glyph: string | undefined): string[] {
  * is expected to retry / patch via a follow-up rebuild_board call when it
  * sees the error array in the tool response.
  */
+/** Rule identifiers for structured violation reporting — used by the
+ *  Coordinator's session-scoped violation memory so the (stateless) Board
+ *  Manager can be reminded which rules it has already broken this session. */
+export type BoardButtonViolationRule =
+  | "narrow_prefix"
+  | "contrast_prefix"
+  | "imagekey_no_fallback"
+  | "imagekey_in_fallback"
+  | "non_canonical_modifier"
+  | "duplicate_glyph"
+  | "duplicate_fallback"
+  | "no_visual";
+
+export interface BoardButtonViolation {
+  rule: BoardButtonViolationRule;
+  /** Render-ready offending tokens (bare keys, `.modifier` forms). Empty
+   *  for structural rules where the rule name alone is the lesson. */
+  tokens: string[];
+}
+
 export function validateBoardButtons<
   T extends {
     label: string;
@@ -140,9 +160,10 @@ export function validateBoardButtons<
     iconRef?: string;
     symbolPath?: string;
   }
->(buttons: T[]): { buttons: T[]; errors: string[] } {
+>(buttons: T[]): { buttons: T[]; errors: string[]; violations: BoardButtonViolation[] } {
   const kept: T[] = [];
   const errors: string[] = [];
+  const violations: BoardButtonViolation[] = [];
   // Track first-seen owners so the error message can name the conflict.
   const seenGlyph = new Map<string, string>();
   const seenFallback = new Map<string, string>();
@@ -162,6 +183,7 @@ export function validateBoardButtons<
         `value (the user's choice, e.g. "comedy"). The visible button label is just ` +
         `the value; the dimension is internal narrowing-state metadata.`
       );
+      violations.push({ rule: "narrow_prefix", tokens: [] });
       continue;
     }
 
@@ -176,6 +198,7 @@ export function validateBoardButtons<
         `dimension AND at least two non-empty poles separated by "|" (e.g. ` +
         `"[CONTRAST:feel] more like a cat | more like a dog"). Only valid on rebuild_board.`
       );
+      violations.push({ rule: "contrast_prefix", tokens: [] });
       continue;
     }
 
@@ -185,6 +208,9 @@ export function validateBoardButtons<
         `Button "${btn.label}" — glyph "${btn.glyph}" contains an imageKey but no fallback was provided. ` +
         `Wrap imageKeys in [] AND supply a fallback built from emojis or canonical registry keys.`
       );
+      const offending = new Set<string>();
+      collectGlyphImageKeys(btn.glyph, offending);
+      violations.push({ rule: "imagekey_no_fallback", tokens: [...offending] });
       continue;
     }
 
@@ -200,6 +226,7 @@ export function validateBoardButtons<
         `\`symbol:ID\`, \`face:ID\`, and canonical modifiers. NEVER \`generate:\` in the fallback. ` +
         `Mirror the shape of the sentence (e.g. \`i_me+want+generate:planet_mars\` → fallback \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept).`
       );
+      violations.push({ rule: "imagekey_in_fallback", tokens: [...fallbackImageKeys] });
       continue;
     }
 
@@ -223,6 +250,10 @@ export function validateBoardButtons<
         `modifiers — they render as a dot. Either use the emoji version of the quality (\`.😢\` instead of \`.sad\`), ` +
         `pick a different HEAD that already encodes the quality (😢 for "sad"), or carry the quality in the speech field only.`
       );
+      violations.push({
+        rule: "non_canonical_modifier",
+        tokens: [...badGlyphMods, ...badFallbackMods].map((m) => `.${stripBrackets(m)}`),
+      });
       continue;
     }
 
@@ -235,6 +266,7 @@ export function validateBoardButtons<
           `Button "${btn.label}" — glyph "${btn.glyph}" is identical to button "${owner}". ` +
           `Each button needs a distinct visual; vary the slots or add descriptors.`
         );
+        violations.push({ rule: "duplicate_glyph", tokens: [] });
         continue;
       }
     }
@@ -248,6 +280,7 @@ export function validateBoardButtons<
           `Button "${btn.label}" — fallback "${btn.glyphFallback}" is identical to button "${owner}". ` +
           `Each fallback must produce a distinct visual.`
         );
+        violations.push({ rule: "duplicate_fallback", tokens: [] });
         continue;
       }
     }
@@ -269,6 +302,7 @@ export function validateBoardButtons<
         `Give it a \`sentence\` (and, if that sentence uses any \`generate:\` SYMBOL, a \`fallback\`), ` +
         `or a single emoji / \`symbol:ID\` / \`face:ID\`. Never leave a ${T.button} with only a label.`
       );
+      violations.push({ rule: "no_visual", tokens: [] });
       continue;
     }
 
@@ -279,5 +313,5 @@ export function validateBoardButtons<
     kept.push(btn);
   }
 
-  return { buttons: kept, errors };
+  return { buttons: kept, errors, violations };
 }

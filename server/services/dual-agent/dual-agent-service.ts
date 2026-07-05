@@ -40,6 +40,7 @@ import { classroomRepository } from "../../repositories/classroomRepository";
 import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
 import { activityLogService } from "../activityLogService";
 import { logLiveSession } from "./dual-agent-logger";
+import { flowCost } from "./agent-flow-logger";
 
 /**
  * Simple promise-based mutex for per-session concurrency control.
@@ -180,6 +181,7 @@ export class DualAgentService {
     category: string,
     modalityBreakdown?: Record<string, number>,
   ): Promise<void> {
+    flowCost(category, credits, logSuffix);
     await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix, modalityBreakdown });
   }
 
