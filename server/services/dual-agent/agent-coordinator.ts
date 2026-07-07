@@ -17,7 +17,8 @@
 import type { IncomingMessage } from "http";
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 
-import { type User } from "@shared/schema";
+import { type User, type PermittedWebsite } from "@shared/schema";
+import { isUrlPermitted } from "@shared/permitted-websites";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
@@ -106,6 +107,7 @@ import type {
   AppOpenRequestedEvent,
   AppCloseRequestedEvent,
   WebsiteOpenRequestedEvent,
+  BoardButtonOpen,
   BoardRebuiltEvent,
   BoardButtonAddedEvent,
   ContextButtonAddedEvent,
@@ -609,6 +611,7 @@ function buildBoardFromButtons(
     suggestionKey?: string;
     narrowDimension?: string;
     narrowValue?: string;
+    open?: BoardButtonOpen;
   }>,
 ): unknown {
   const pageId = `page-${Date.now()}`;
@@ -633,7 +636,11 @@ function buildBoardFromButtons(
         ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
         row: Math.floor(i / cols),
         col: i % cols,
-        action: { type: "speak" as const, text: b.sentence ?? b.speech ?? b.label },
+        action: b.open?.website
+          ? { type: "open_website" as const, url: b.open.website }
+          : b.open?.app
+            ? { type: "open_app" as const, appId: b.open.app }
+            : { type: "speak" as const, text: b.sentence ?? b.speech ?? b.label },
         style: {},
         iconRef: b.iconRef || "fas fa-comment",
         symbolPath: b.symbolPath,
@@ -1385,6 +1392,11 @@ export class AgentCoordinator {
    * against existing ones by glyph/sentence overlap, not just label.
    */
   private currentBoardButtons: MergeButton[] = [];
+  /** Permitted-website allowlist + launchable app ids, mirrored from the
+   *  prompt inputs so `resolveButtonOpen` can re-gate BoardManager-authored
+   *  launch buttons server-side before they reach the client. */
+  private permittedWebsites: PermittedWebsite[] = [];
+  private launchableAppIds = new Set<string>();
   /** Max buttons on the main board. Mirrors maxBoardItems on the
    *  BoardManager tool config; kept here so add_board_button merge has
    *  a single source of truth. */
@@ -2403,8 +2415,17 @@ export class AgentCoordinator {
       studentGender: promptInputs.boardManager.studentGender,
       singleGlyphButtons: promptInputs.boardManager.singleGlyphButtons,
       glyphInputTranslation: promptInputs.boardManager.glyphInputTranslation,
+      permittedWebsites: promptInputs.boardManager.permittedWebsites,
+      enabledApps: [
+        ...(promptInputs.boardManager.enabledApps ?? []).map(a => ({ id: a.id, name: a.name })),
+        ...(promptInputs.boardManager.availableCustomApps ?? []).map(a => ({ id: a.id, name: a.name })),
+      ],
     };
     this.boardManagerToolConfig = bmToolConfig;
+    // Mirror the launch allowlists so resolveButtonOpen can re-gate
+    // BoardManager-authored open.* buttons server-side.
+    this.permittedWebsites = promptInputs.boardManager.permittedWebsites ?? [];
+    this.launchableAppIds = new Set((bmToolConfig.enabledApps ?? []).map(a => a.id));
 
     // 6. Construct agent handles.
     // Startup band floor (mirrors doWakeFromSleep): <25% → economy Observer +
@@ -2847,6 +2868,17 @@ export class AgentCoordinator {
           ? state.availableBoards?.find(b => b.id === state.loadedBoardId)?.key ?? null
           : null,
         loadedBoardName: state.loadedBoardData?.name ?? null,
+        // Apps + websites the BoardManager may author launch-buttons for
+        // (`open.app` / `open.website`). These drive both the prompt's
+        // apps_context/websites_context blocks and the `open` field on the
+        // button schema; the coordinator re-gates targets on press-through.
+        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
+        availableCustomApps: (state.availableCustomApps || []).map(a => ({
+          id: a.id,
+          name: a.name,
+          description: a.description,
+        })),
+        permittedWebsites: state.permittedWebsites,
         autoSymbolsEnabled: !!(student?.aacSettings?.generateSymbols),
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
         glyphInputTranslation: !!student?.aacSettings?.glyphInputTranslation,
@@ -7372,7 +7404,11 @@ export class AgentCoordinator {
   }
 
   private routeWebsiteOpen(event: WebsiteOpenRequestedEvent): void {
-    this.send({ type: "app_open", data: { appId: "browser", url: event.url, label: event.label } });
+    // Client renders apps from `{ appId, appData }` (setActiveApp reads
+    // appData.url) — nest url/label under appData to match every other app_open
+    // payload. A flat `{ appId, url }` here leaves appData undefined and the
+    // browser never renders.
+    this.send({ type: "app_open", data: { appId: "browser", appData: { url: event.url, label: event.label } } });
     this.speaker?.sendContextInjection(`[WEBSITE OPEN] ${event.url}${event.label ? ` (${event.label})` : ""}`);
     this.invokeBoardManager([event]);
   }
@@ -8032,6 +8068,26 @@ export class AgentCoordinator {
     }
   }
 
+  /** Re-gate a BoardManager-authored `open` launch action against the
+   *  permitted-website allowlist / enabled-app set. Returns the sanitized
+   *  action (website takes precedence if both are set), or undefined if the
+   *  target isn't permitted — in which case the button degrades to a normal
+   *  speak button rather than launching an arbitrary URL/app. */
+  private resolveButtonOpen(open: BoardButtonOpen | undefined): BoardButtonOpen | undefined {
+    if (!open) return undefined;
+    if (open.website) {
+      if (isUrlPermitted(open.website, this.permittedWebsites)) return { website: open.website };
+      flowNote("COORDINATOR", `Dropped open.website "${open.website}" — not covered by the permitted-sites list.`);
+      return undefined;
+    }
+    if (open.app) {
+      if (this.launchableAppIds.has(open.app)) return { app: open.app };
+      flowNote("COORDINATOR", `Dropped open.app "${open.app}" — not an enabled app.`);
+      return undefined;
+    }
+    return undefined;
+  }
+
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
     // Home-press directive was honored — clear it so subsequent
     // invocations fall back to the normal action-hint flow. (Clearing
@@ -8112,6 +8168,7 @@ export class AgentCoordinator {
         narrowValue: (b as any).narrowValue,
         rowSpan: b.rowSpan,
         colSpan: b.colSpan,
+        open: this.resolveButtonOpen((b as any).open),
       };
       if (b.buttonType === "wordfinder") {
         // Drop the wordfinder entry while already guessing — the entry
@@ -8324,6 +8381,7 @@ export class AgentCoordinator {
       // read them back (previously dropped here — role always read as "reply").
       role: (b as { role?: "reply" | "bid" }).role,
       addressee: (b as { addressee?: string }).addressee,
+      open: this.resolveButtonOpen((b as { open?: BoardButtonOpen }).open),
     };
 
     let newIdCounter = 0;

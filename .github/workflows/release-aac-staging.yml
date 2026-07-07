@@ -1,0 +1,79 @@
+name: Release AAC Desktop (Staging)
+
+# Builds the STAGING Aivota AAC Windows installer (backend =
+# aivota-staging-us.onrender.com) and publishes it to the staging auto-update
+# feed at https://updates.aivota.ai/aac-staging/win/. It is the SAME app as
+# production, only pointed at the staging server and installed under a distinct
+# identity ("Aivota AAC Staging", appId com.aivota.aac.staging) so it can sit
+# next to a production install without clobbering its settings/login.
+#
+# Separate from release-aac.yml (production, tag-triggered) so a staging build
+# can never accidentally touch the production feed. Manual trigger only.
+#
+# Assets go to the SAME update bucket as prod, under the `aac-staging/win/`
+# prefix (CloudFront serves the whole bucket). If staging ever gets its own AWS
+# account/bucket, change the "Resolve update bucket" step below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only — log the S3 upload without sending"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write   # GitHub OIDC -> AWS role assumption
+  contents: read
+
+concurrency:
+  group: release-aac-staging
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish staging installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-aac-release-staging
+          aws-region: il-central-1
+
+      - name: Resolve update bucket
+        shell: bash
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "AAC_UPDATE_BUCKET=aivota-prod-aac-updates-${ACCOUNT}" >> "$GITHUB_ENV"
+          echo "Resolved bucket: aivota-prod-aac-updates-${ACCOUNT} (prefix aac-staging/win/)"
+
+      # release:aac.mjs staging --publish:
+      #   build client+main with VITE_API_URL=staging server, package the
+      #   installer with the staging identity, then upload .exe + .blockmap +
+      #   latest.yml to s3://$AAC_UPDATE_BUCKET/aac-staging/win/.
+      - name: Build installer + publish to staging feed
+        shell: bash
+        env:
+          AAC_UPDATE_REGION: il-central-1
+          AAC_UPDATE_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/release-aac.mjs staging --publish
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Staging build $(node -p "require('./package.json').version") published to s3://${AAC_UPDATE_BUCKET}/aac-staging/win/"
+          echo "Staging clients poll https://updates.aivota.ai/aac-staging/win/latest.yml"

@@ -2732,7 +2732,7 @@ export const en = {
     NO_RESPONSE: "An error occurred while processing the response.",
     LLM_ERROR: "An error occurred while calling the AI model.",
     PARSE_ERROR: "An error occurred while processing the response.",
-    TOKEN_LIMIT: "Token usage limit error.",
+    TOKEN_LIMIT: "Error - please contact support.",
     RATE_LIMIT: "The AI service is currently busy. Please wait a moment and try again.",
     INPUT_TOO_LARGE: "The input is too large to process. Please reduce the size of attached files or shorten the conversation.",
     UNEXPECTED_ERROR: "An unexpected error occurred.",

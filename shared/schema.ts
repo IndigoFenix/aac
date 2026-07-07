@@ -1220,7 +1220,7 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link" | "back" | "home" | "exit" | "open_website";
+  type: "speak" | "link" | "back" | "home" | "exit" | "open_website" | "open_app";
   text?: string;
   toPageId?: string;
   /**
@@ -1232,6 +1232,8 @@ export interface BoardButtonAction {
   toBoardId?: string;
   /** For "open_website" actions: the URL to load in the browser app. Must match a permitted website prefix. */
   url?: string;
+  /** For "open_app" actions: the app id (built-in or custom game) to launch. Must be an enabled app. */
+  appId?: string;
 }
 
 /**

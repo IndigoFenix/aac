@@ -2732,7 +2732,7 @@ export const fr = {
     NO_RESPONSE: "Une erreur s'est produite lors du traitement de la réponse.",
     LLM_ERROR: "Une erreur s'est produite lors de l'appel au modèle IA.",
     PARSE_ERROR: "Une erreur s'est produite lors du traitement de la réponse.",
-    TOKEN_LIMIT: "Erreur de limite d'utilisation des tokens.",
+    TOKEN_LIMIT: "Erreur - veuillez contacter le support.",
     RATE_LIMIT: "Le service IA est actuellement occupé. Veuillez patienter un moment et réessayer.",
     INPUT_TOO_LARGE: "L'entrée est trop volumineuse à traiter. Veuillez réduire la taille des fichiers joints ou raccourcir la conversation.",
     UNEXPECTED_ERROR: "Une erreur inattendue s'est produite.",

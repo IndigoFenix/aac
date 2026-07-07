@@ -259,24 +259,79 @@ export function wakeAll(grid: CellGrid, step: number): void {
 
 // --- Flow accumulation (static river networks) --------------------------------
 
+/**
+ * Finish the integer ε-tail of a `toward` step. The commit rounds int
+ * fields, so a sub-unit convergent step can round straight back to where
+ * it started and the var RESTS SHORT of its target — most visibly, decay
+ * from 1 toward 0 at rate 0.5 computes 0.5, which rounds back up to 1:
+ * ghost fertility/vegetation that never cleared off re-routed riverbeds.
+ * Promote such a step to one whole unit toward the ROUNDED target; from an
+ * integer distance ≥ 1 a unit step cannot overshoot, so rest stays crisp —
+ * now exactly ON the target. Steps ≥ 1 and non-toward deltas pass through
+ * untouched.
+ */
+function intTowardStep(
+  grid: CellGrid, comp: GridCompiled,
+  d: { scalar: string; delta: number; target?: number }, c: number,
+): number {
+  if (d.target === undefined || !comp.intVars.has(d.scalar)) return d.delta;
+  if (d.delta === 0 || Math.abs(d.delta) >= 1) return d.delta;
+  const gap = Math.round(d.target) - grid.fields[d.scalar][c];
+  return gap === 0 ? 0 : Math.sign(gap);
+}
+
 /** Fill a flow-accumulation field: each tile = its `source` + everything draining
  *  into it from upslope. Process tiles high→low so every upstream tile pushes its
  *  accumulated catchment to its steepest-descent neighbour before that neighbour
- *  is processed. Sinks (no lower neighbour) keep their catchment → lakes. O(N log N),
- *  recomputed only when the terrain changes. Stone carries no flow. */
+ *  is processed. FLATS (plateaus of equal potential — common on integer terrain)
+ *  are resolved the classic way: a deterministic BFS from each flat's outlets
+ *  (cells with a strictly lower neighbour) adds an ε·distance tilt, so water
+ *  crosses the flat toward wherever it drains instead of dying on it. Flats with
+ *  no outlet stay sinks → lakes, as before. O(N log N), recomputed only when the
+ *  terrain changes. Stone carries no flow. */
 function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): Float64Array {
   const n = grid.cols * grid.rows;
   const pot = grid.fields[fv.potential];
   const blk = fv.block ? grid.fields[fv.block] : null;
   const flow = new Float64Array(n);
   for (let i = 0; i < n; i++) flow[i] = (blk && blk[i] > 0.5) ? 0 : fv.source;
-  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => pot[b] - pot[a]);
   const nb: number[] = [0, 0, 0, 0];
+
+  // Flat resolution: effective potential = pot + ε × (BFS hops from the
+  // flat's outlets, across equal-pot cells). ε is far below the smallest
+  // real potential step, so it only ever breaks exact ties.
+  const eff = new Float64Array(n);
+  const queue: number[] = [];
+  for (let c = 0; c < n; c++) {
+    eff[c] = pot[c];
+    if (blk && blk[c] > 0.5) continue;
+    const k = neighbours(grid, c, nb);
+    for (let j = 0; j < k; j++) {
+      const ni = nb[j];
+      if ((!blk || blk[ni] <= 0.5) && pot[ni] < pot[c]) { queue.push(c); break; } // an outlet
+    }
+  }
+  const seen = new Uint8Array(n);
+  for (const c of queue) seen[c] = 1;
+  const EPS = 1e-6;
+  for (let qi = 0; qi < queue.length; qi++) {
+    const c = queue[qi];
+    const k = neighbours(grid, c, nb);
+    for (let j = 0; j < k; j++) {
+      const ni = nb[j];
+      if (seen[ni] || (blk && blk[ni] > 0.5) || pot[ni] !== pot[c]) continue;
+      seen[ni] = 1;
+      eff[ni] = eff[c] + EPS;
+      queue.push(ni);
+    }
+  }
+
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => eff[b] - eff[a] || a - b);
   for (const c of order) {
     if (blk && blk[c] > 0.5) { flow[c] = 0; continue; }
     const k = neighbours(grid, c, nb);
-    let low = -1, lowP = pot[c];
-    for (let j = 0; j < k; j++) { const ni = nb[j]; if (blk && blk[ni] > 0.5) continue; if (pot[ni] < lowP) { lowP = pot[ni]; low = ni; } }
+    let low = -1, lowP = eff[c];
+    for (let j = 0; j < k; j++) { const ni = nb[j]; if (blk && blk[ni] > 0.5) continue; if (eff[ni] < lowP) { lowP = eff[ni]; low = ni; } }
     if (low >= 0) flow[low] += flow[c]; // route catchment downstream; else a sink (lake)
   }
   if (fv.int) for (let i = 0; i < n; i++) flow[i] = Math.round(flow[i]);
@@ -447,7 +502,7 @@ function processActive(grid: CellGrid, comp: GridCompiled, active: number[], T: 
       for (const e of r.effects) {
         const d = ownEffectDelta(view, e);
         if (d) {
-          if (d.kind === 'scalar') addDelta(fieldDelta, d.scalar, c, d.delta);
+          if (d.kind === 'scalar') addDelta(fieldDelta, d.scalar, c, intTowardStep(grid, comp, d, c));
           else { const st = comp.stages.get(d.state); if (st) stageSets.push({ cell: c, state: d.state, to: st.stages.indexOf(d.to) }); }
         }
       }
@@ -467,13 +522,16 @@ function processActive(grid: CellGrid, comp: GridCompiled, active: number[], T: 
       for (const e of r.effects) {
         const d = ownEffectDelta(view, e);
         if (!d) continue;
-        if (d.kind === 'scalar') addDelta(fieldDelta, d.scalar, c, d.delta);
+        if (d.kind === 'scalar') addDelta(fieldDelta, d.scalar, c, intTowardStep(grid, comp, d, c));
         else { const st = comp.stages.get(d.state); if (st) stageSets.push({ cell: c, state: d.state, to: st.stages.indexOf(d.to) }); }
       }
     });
   }
 
   // 3. Commit (clamp to [min,max]; stage moves are forward-only).
+  // (Sub-unit toward-steps on int vars were promoted by intTowardStep, so
+  // convergent int fields land EXACTLY on their targets instead of resting
+  // one short — see the function's comment.)
   for (const [field, m] of fieldDelta) {
     const v = comp.vars.get(field); if (!v) continue;
     const arr = grid.fields[field];

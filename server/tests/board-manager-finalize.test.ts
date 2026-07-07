@@ -75,6 +75,51 @@ describe("finalizeBoardManagerToolCalls", () => {
     expect(ev.buttons.map((b: any) => b.label)).toEqual(["Yes", "No", "Maybe"]);
   });
 
+  test("rebuild_board button with open.website → event button carries the launch action", () => {
+    const buttons = [
+      { label: "Read my book", speech: "I want to read my book", glyphFallback: "📖", open: { website: "https://book-reader-beta-weld.vercel.app" } },
+      { label: "Something else", speech: "something else", glyphFallback: "🔄" },
+    ];
+    const result = finalizeBoardManagerToolCalls(
+      [{ name: "rebuild_board", arguments: JSON.stringify({ buttons }) }],
+      fusionMap,
+      undefined,
+      "STOP",
+    );
+    const ev = result.events[0] as any;
+    expect(ev.type).toBe("board_rebuilt");
+    expect(ev.buttons[0].open).toEqual({ website: "https://book-reader-beta-weld.vercel.app" });
+    // A plain button gets no launch action.
+    expect(ev.buttons[1].open).toBeUndefined();
+  });
+
+  test("add_board_button with open.app → board_button_added carries the app launch", () => {
+    const result = finalizeBoardManagerToolCalls(
+      [{ name: "add_board_button", arguments: JSON.stringify({
+        button: { label: "Draw", speech: "I want to draw", glyphFallback: "🎨", open: { app: "drawing" } },
+      }) }],
+      fusionMap,
+      undefined,
+      "STOP",
+    );
+    const ev = result.events[0] as any;
+    expect(ev.type).toBe("board_button_added");
+    expect(ev.button.open).toEqual({ app: "drawing" });
+  });
+
+  test("website wins when a button sets both open.website and open.app", () => {
+    const result = finalizeBoardManagerToolCalls(
+      [{ name: "add_board_button", arguments: JSON.stringify({
+        button: { label: "Go", speech: "go", glyphFallback: "➡️", open: { website: "https://example.com", app: "drawing" } },
+      }) }],
+      fusionMap,
+      undefined,
+      "STOP",
+    );
+    const ev = result.events[0] as any;
+    expect(ev.button.open).toEqual({ website: "https://example.com" });
+  });
+
   test("Live (object args) and HTTP (string args) shapes produce identical events", () => {
     const objCalls = [
       { name: "rebuild_board", args: { buttons: [

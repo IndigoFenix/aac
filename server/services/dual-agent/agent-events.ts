@@ -453,6 +453,17 @@ export type SpeakerEvent =
  * version exists because the parsed input goes through this typed bus
  * before getting wrapped in the IR.
  */
+/** A launch target for a board button that opens an app/website on press
+ *  instead of voicing speech. Set by the Board Manager; the coordinator gates
+ *  `website` against the permitted-sites list and `app` against enabled apps
+ *  before it reaches the client. Exactly one field is populated. */
+export interface BoardButtonOpen {
+  /** A permitted website URL to open in the in-frame browser app. */
+  website?: string;
+  /** An enabled app id (built-in or custom game) to launch. */
+  app?: string;
+}
+
 export interface BoardButton {
   label: string;
   /** The natural-language SENTENCE the TTS voices on press. */
@@ -479,6 +490,11 @@ export interface BoardButton {
   /** Group-chat addressee — the peer this button is aimed at (a peer name),
    *  or "ROOM"/omitted for everyone. Set by the Board Manager. */
   addressee?: string;
+  /** When set, pressing this button LAUNCHES an app or website instead of
+   *  voicing `speech`. Authored by the Board Manager and gated server-side
+   *  against the permitted lists (invalid targets are stripped in the
+   *  coordinator). Exactly one of `website` / `app` is populated. */
+  open?: BoardButtonOpen;
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   suggestionKey?: string;
   /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */

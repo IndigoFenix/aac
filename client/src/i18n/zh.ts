@@ -2732,7 +2732,7 @@ export const zh = {
     NO_RESPONSE: "处理回复时发生错误。",
     LLM_ERROR: "调用 AI 模型时发生错误。",
     PARSE_ERROR: "处理回复时发生错误。",
-    TOKEN_LIMIT: "令牌使用限制错误。",
+    TOKEN_LIMIT: "错误 - 请联系支持团队。",
     RATE_LIMIT: "AI 服务当前繁忙，请稍后重试。",
     INPUT_TOO_LARGE: "输入过大，无法处理。请缩小附件大小或缩短对话。",
     UNEXPECTED_ERROR: "发生意外错误。",

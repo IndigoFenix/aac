@@ -244,35 +244,56 @@ EXAMPLE narrowing flow:
   YOU: "A whale! Got it." — Word Finder closes; back to normal chat about whales.
 </guessing_mode>`;
 
-  // Apps + websites — SPEAKER triggers these conversationally. Suppressed
-  // entirely when the tool surface is empty (live native audio non-muted):
-  // the model would otherwise try to "speak" the open_app call out loud.
-  const hasBuiltInApps = !toolsSuppressed && !!(enabledApps && enabledApps.length > 0);
-  const hasCustomApps = !toolsSuppressed && !!(availableCustomApps && availableCustomApps.length > 0);
-  if (hasBuiltInApps || hasCustomApps) {
-    prompt += `\n\n<apps>
+  // Apps + websites. Two cases:
+  //  1. Tool surface present (HTTP / text Speaker, or muted): the Speaker opens
+  //     these itself via open_app / open_website — the tool-oriented blocks below.
+  //  2. Tool surface stripped (live native audio, non-muted — the default): the
+  //     Speaker can't open anything and must not narrate a tool call. But it
+  //     should still be AWARE of what's available so it can SUGGEST an activity
+  //     in speech ("want to read your book?"); the Board Manager then places the
+  //     launch button. Without this the Speaker never mentions apps/sites it
+  //     can't see. Mention-only, mirrors <available_surfaces> for boards.
+  if (toolsSuppressed) {
+    const appNames = [
+      ...(enabledApps ?? []).map(a => a.name),
+      ...(availableCustomApps ?? []).map(a => a.name),
+    ];
+    const sites = (permittedWebsites ?? []).map(s => (s.description ? `${s.label} (${s.description})` : s.label));
+    if (appNames.length > 0 || sites.length > 0) {
+      prompt += `\n\n<activities>
+Suggest one of these when it fits the moment ("want to read your book?", "play Bubbles?"). You do NOT open them — the Board Manager adds a button when you mention one. Never speak an id or url; use the name.`;
+      if (appNames.length > 0) prompt += `\nApps & games: ${appNames.join(", ")}.`;
+      if (sites.length > 0) prompt += `\nWebsites: ${sites.join(", ")}.`;
+      prompt += `\n</activities>`;
+    }
+  } else {
+    const hasBuiltInApps = !!(enabledApps && enabledApps.length > 0);
+    const hasCustomApps = !!(availableCustomApps && availableCustomApps.length > 0);
+    if (hasBuiltInApps || hasCustomApps) {
+      prompt += `\n\n<apps>
 Launch apps via open_app(app_id, [data]) when the conversation calls for it.
 
   - The user has a dedicated "Apps" page they can open themselves.
   - DO NOT push them toward open_app — only call it when the user asks, or when it clearly fits the moment.`;
-    if (hasBuiltInApps) {
-      prompt += `\n\nAvailable apps:\n${enabledApps!.map(a => `  - ${a.name} (id: "${a.id}") — ${a.description}`).join("\n")}`;
+      if (hasBuiltInApps) {
+        prompt += `\n\nAvailable apps:\n${enabledApps!.map(a => `  - ${a.name} (id: "${a.id}") — ${a.description}`).join("\n")}`;
+      }
+      if (hasCustomApps) {
+        prompt += `\n\nCustom games (same open_app tool, pass the id):\n${availableCustomApps!.map(a => `  - ${a.name} (id: "${a.id}")${a.description ? ` — ${a.description}` : ""}`).join("\n")}`;
+      }
+      prompt += `\n</apps>`;
     }
-    if (hasCustomApps) {
-      prompt += `\n\nCustom games (same open_app tool, pass the id):\n${availableCustomApps!.map(a => `  - ${a.name} (id: "${a.id}")${a.description ? ` — ${a.description}` : ""}`).join("\n")}`;
-    }
-    prompt += `\n</apps>`;
-  }
 
-  if (!toolsSuppressed && permittedWebsites && permittedWebsites.length > 0) {
-    prompt += `\n\n<websites>
+    if (permittedWebsites && permittedWebsites.length > 0) {
+      prompt += `\n\n<websites>
 Call open_website(url, label) to open a permitted site in the in-frame browser. Only URLs in the list below (and their subpages) are permitted.
 
 Sites:`;
-    for (const site of permittedWebsites) {
-      prompt += `\n  - ${site.label}: ${site.url}${site.description ? ` — ${site.description}` : ""}`;
+      for (const site of permittedWebsites) {
+        prompt += `\n  - ${site.label}: ${site.url}${site.description ? ` — ${site.description}` : ""}`;
+      }
+      prompt += `\n</websites>`;
     }
-    prompt += `\n</websites>`;
   }
 
   // Mention pre-built boards conversationally — SPEAKER may say "let's

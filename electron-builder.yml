@@ -43,9 +43,14 @@ nsis:
 # S3 + CloudFront (or any static host). The release script (npm run
 # release:aac) syncs `release/` to this prefix after a packaged build.
 #
-# Override via env var `AAC_UPDATE_URL` at build time if you need separate
-# beta / stable channels or per-tenant release feeds.
+# The URL MUST be a literal. electron-builder's macro expander only matches
+# `${...}` bodies of `[_a-zA-Z./*+]` (no `:`), so the old
+# `${env.AAC_UPDATE_URL:https://...}` default-value form never expanded — it
+# was written verbatim into app-update.yml and every client polled a
+# non-URL, so auto-update silently failed. There is no inline env-with-
+# default syntax. To override for a beta / per-tenant feed, set AAC_UPDATE_URL
+# and the build script passes `-c.publish.url` to electron-builder.
 publish:
   provider: generic
-  url: ${env.AAC_UPDATE_URL:https://updates.aivota.ai/aac/win/}
+  url: https://updates.aivota.ai/aac/win/
   channel: latest

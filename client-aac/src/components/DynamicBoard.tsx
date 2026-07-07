@@ -60,6 +60,13 @@ interface DynamicBoardProps {
    *  optional context here is null. */
   socialPeerPreview?: import("@/hooks/dual-agent-types").SocialPeerPreview | null;
   socialSession?: import("@/hooks/dual-agent-types").SocialSessionInfo | null;
+  /** Launch an app/website from a button whose action opens one. Passed as
+   *  props (not read from context) because on the AAC the board renders OUTSIDE
+   *  the DualAgentProvider — the optional context here is null. `onLaunchApp`
+   *  drives the browser (open_website); `onRequestAppOpen` round-trips built-in
+   *  apps so their startup params resolve (open_app). */
+  onLaunchApp?: (appId: string, appData?: any) => void;
+  onRequestAppOpen?: (appId: string) => void;
 }
 
 /**
@@ -166,6 +173,8 @@ export default function DynamicBoard({
   extraHeaderOffset = 0,
   socialPeerPreview: socialPeerPreviewProp = null,
   socialSession: socialSessionProp = null,
+  onLaunchApp,
+  onRequestAppOpen,
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
@@ -410,7 +419,7 @@ export default function DynamicBoard({
 
   const handleButtonClick = useCallback(
     (button: BoardButton) => {
-      console.debug("[guessing] DynamicBoard click:", button.label, "| buttonType:", (button as any).buttonType);
+      console.log("[DynamicBoard] click:", button.label, "| buttonType:", (button as any).buttonType, "| action:", button.action?.type ?? "(none)");
       const action = button.action;
 
       // Board-to-board navigation (constructed boards only). If a handler is
@@ -442,9 +451,23 @@ export default function DynamicBoard({
         return;
       }
 
-      // Handle open_website action — open the in-frame browser app
+      // Handle open_website action — open the in-frame browser app. Prefer the
+      // prop (the AAC board renders outside the DualAgentProvider, so the
+      // optional context is null here); fall back to context for in-provider use.
       if (action?.type === "open_website" && action.url) {
-        dualAgent?.launchApp("browser", { url: action.url, label: button.label });
+        const launch = onLaunchApp ?? dualAgent?.launchApp;
+        console.log("[DynamicBoard] open_website press:", action.url, "| via", onLaunchApp ? "prop" : dualAgent?.launchApp ? "context" : "NONE (no handler!)");
+        launch?.("browser", { url: action.url, label: button.label });
+        return;
+      }
+
+      // Handle open_app action — launch a built-in app / custom game. Route
+      // through requestAppOpen so apps that declare startup params get them
+      // resolved server-side before the app_open payload comes back.
+      if (action?.type === "open_app" && action.appId) {
+        const open = onRequestAppOpen ?? dualAgent?.requestAppOpen;
+        console.log("[DynamicBoard] open_app press:", action.appId, "| via", onRequestAppOpen ? "prop" : dualAgent?.requestAppOpen ? "context" : "NONE (no handler!)");
+        open?.(action.appId);
         return;
       }
 
@@ -471,7 +494,7 @@ export default function DynamicBoard({
       }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen]
   );
 
   // Render nothing if completely empty
@@ -543,6 +566,9 @@ export default function DynamicBoard({
     const actionType = button.action?.type;
     const isLinkButton = actionType === "link";
     const isBackButton = actionType === "back" || actionType === "home";
+    // Launch buttons (open an app / website on press) get a distinct border so
+    // the child learns "this one opens something" rather than speaks.
+    const isLaunchButton = actionType === "open_website" || actionType === "open_app";
 
     const isGuessButton = (button as any).buttonType === "guess";
     const isSuggestionButton = (button as any).buttonType === "suggestion";
@@ -625,6 +651,8 @@ export default function DynamicBoard({
       ? "border-violet-400 border-2 ring-2 ring-violet-300/40"
       : isMoreButton
       ? "border-gray-300 dark:border-gray-600 border-2"
+      : isLaunchButton
+      ? "border-teal-400 border-2 ring-2 ring-teal-300/50"
       : isLinkButton
       ? "border-blue-400 border-2"
       : isBackButton
@@ -722,11 +750,14 @@ export default function DynamicBoard({
         textFlex={level.textFlex}
         entering={isEntering}
         cornerIndicator={
-          (busyPhase && busyButtonId && button.id === busyButtonId) || isLinkButton ? (
+          (busyPhase && busyButtonId && button.id === busyButtonId) || isLinkButton || isLaunchButton ? (
             <>
               {busyPhase && busyButtonId && button.id === busyButtonId ? <ButtonBusyIndicator phase={busyPhase} /> : null}
               {isLinkButton ? (
                 <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>
+              ) : null}
+              {isLaunchButton ? (
+                <span className="absolute top-0.5 right-0.5 text-teal-600 opacity-80" style={{ fontSize: "0.6em" }}>⤢</span>
               ) : null}
             </>
           ) : null

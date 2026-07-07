@@ -4,6 +4,8 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { GazeSidecarSupervisor, GazeSupervisorPaths } from "./hardware/gaze-sidecar-supervisor";
 import { setupAutoUpdater, stopAutoUpdater } from "./auto-update";
+import { isUrlPermitted } from "../shared/permitted-websites";
+import type { PermittedWebsite } from "../shared/schema";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +24,18 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let gazeSupervisor: GazeSidecarSupervisor | null = null;
+
+// Session partition for the in-app browser (BrowserApp's <webview>). Isolated
+// from the app's own session so third-party cookies/storage/permissions never
+// mix with the authenticated AAC session.
+const BROWSER_PARTITION = "persist:aac-browser";
+
+// Permitted-website allowlist for the in-app browser, pushed from the renderer
+// when BrowserApp mounts (browser:setAllowlist) and cleared on unmount. The
+// main process is the HARD navigation gate: unlike the old cross-origin iframe,
+// a <webview>'s webContents `will-navigate`/`will-redirect` is cancelable here,
+// so an in-page link to an off-allowlist site is blocked outright.
+let browserAllowlist: PermittedWebsite[] = [];
 
 /**
  * Resolve where the gaze sidecar + its runtime/node_modules live, for dev
@@ -62,7 +76,24 @@ function createWindow() {
       // Required for local eye tracker companion software (Tobii, EyeTech, etc.)
       // that serve WebSocket on localhost without TLS.
       allowRunningInsecureContent: true,
+      // Enable the <webview> tag — the in-app browser (BrowserApp) renders
+      // permitted third-party sites in a <webview> so the eyegaze overlay can
+      // drive scroll/click/type via executeJavaScript/sendInputEvent (a
+      // cross-origin iframe can't be reached in). Guests are hardened below in
+      // `will-attach-webview` + `web-contents-created`.
+      webviewTag: true,
     },
+  });
+
+  // Harden every <webview> guest before it attaches: force the safe defaults
+  // regardless of what attributes the renderer set. No node integration, no
+  // preload, context isolation on.
+  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences, params) => {
+    delete (webPreferences as { preload?: string }).preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    // Pin the isolated partition even if the attribute is missing/tampered.
+    params.partition = BROWSER_PARTITION;
   });
 
   mainWindow.maximize();
@@ -161,6 +192,33 @@ app.on("ready", async () => {
     },
   );
 
+  // In-app browser partition: deny ALL permission requests (camera, mic, geo,
+  // notifications, HID…). Third-party sites viewed in the <webview> get zero
+  // device access — the isolated session never even sees the app's grants.
+  const browserSession = session.fromPartition(BROWSER_PARTITION);
+  browserSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  browserSession.setPermissionCheckHandler(() => false);
+
+  // Hard navigation gate for the in-app browser. `will-attach-webview` already
+  // pins the partition + strips node access; here we cancel any navigation to a
+  // URL that isn't on the renderer-supplied allowlist and deny all popups /
+  // new windows. `will-redirect` catches server-side 30x hops to off-list hosts.
+  app.on("web-contents-created", (_e, contents) => {
+    if (contents.getType() !== "webview") return;
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    const guard = (event: Electron.Event, navUrl: string) => {
+      if (!/^https?:/i.test(navUrl)) {
+        // about:blank / the initial empty document is fine; anything non-http
+        // (file:, data:, custom schemes) is not.
+        if (navUrl !== "about:blank") event.preventDefault();
+        return;
+      }
+      if (!isUrlPermitted(navUrl, browserAllowlist)) event.preventDefault();
+    };
+    contents.on("will-navigate", guard);
+    contents.on("will-redirect", guard);
+  });
+
   // Fix cross-origin cookies: the renderer's origin is `app://aac`, but it talks
   // to the remote API over https. For the session cookie to be STORED and SENT
   // cross-site it must be `SameSite=None; Secure`. Chromium silently drops a
@@ -214,6 +272,19 @@ app.on("ready", async () => {
 // IPC handlers
 ipcMain.handle("app:getVersion", () => app.getVersion());
 ipcMain.handle("app:getPlatform", () => process.platform);
+
+// ── In-app browser allowlist ──
+// The renderer pushes the current permitted-website list when BrowserApp opens
+// and clears it on close. This is the source of truth for the main-process
+// navigation gate registered in `web-contents-created`.
+ipcMain.handle("browser:setAllowlist", (_e, list: unknown) => {
+  browserAllowlist = Array.isArray(list) ? (list as PermittedWebsite[]) : [];
+  return browserAllowlist.length;
+});
+ipcMain.handle("browser:clearAllowlist", () => {
+  browserAllowlist = [];
+  return 0;
+});
 
 // ── Gaze sidecar IPC ──
 // The renderer drives these when a student's eye-tracking settings are active.

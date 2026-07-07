@@ -2732,7 +2732,7 @@ export const yue = {
     NO_RESPONSE: "處理回覆嗰陣發生錯誤。",
     LLM_ERROR: "呼叫 AI 模型嗰陣發生錯誤。",
     PARSE_ERROR: "處理回覆嗰陣發生錯誤。",
-    TOKEN_LIMIT: "令牌使用限制錯誤。",
+    TOKEN_LIMIT: "錯誤 - 請聯絡支援。",
     RATE_LIMIT: "AI 服務而家好忙，請等一陣再試。",
     INPUT_TOO_LARGE: "輸入太大，處理唔到。請縮細附件大細或者縮短對話。",
     UNEXPECTED_ERROR: "發生意外錯誤。",

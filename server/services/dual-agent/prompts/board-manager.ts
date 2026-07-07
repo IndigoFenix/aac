@@ -14,6 +14,7 @@ import type { AgentEvent } from "../agent-events";
 import { getLanguageName } from "@shared/language-names";
 import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 import type { PermittedWebsite } from "@shared/schema";
+import { flattenPermittedWebsites } from "@shared/permitted-websites";
 import { T } from "../../memory-schema/canonical-terms";
 import {
   type BaseStudentContext,
@@ -275,17 +276,24 @@ ${availableBoards.map(b => `  - key: "${b.key}"  name: "${b.name}"${b.hint ? `  
     prompt += `\n</prebuilt_boards>`;
   }
 
-  if ((enabledApps && enabledApps.length > 0) || (availableCustomApps && availableCustomApps.length > 0)) {
+  const appList = [
+    ...(enabledApps ?? []).map(a => `"${a.id}" (${a.name})`),
+    ...(availableCustomApps ?? []).map(a => `"${a.id}" (${a.name})`),
+  ];
+  if (appList.length > 0) {
     prompt += `\n\n<apps_context>
-Apps are launched by SPEAKER via open_app(). You provide buttons relevant to the active app (passed in the invocation context).
-  - When an app is open, prefer add_context_button() over rebuilding the whole board.
+To open an app for the user, add a ${T.button} with \`open.app\` set to the app id — the user presses it to launch. Apps: ${appList.join(", ")}.
+  - When an app is already open, prefer add_context_button() and offer ${T.button}s relevant to it.
 </apps_context>`;
   }
 
   if (permittedWebsites && permittedWebsites.length > 0) {
+    const siteList = flattenPermittedWebsites(permittedWebsites)
+      .map(w => `"${w.url}"${w.label ? ` (${w.label})` : ""}`)
+      .join(", ");
     prompt += `\n\n<websites_context>
-SPEAKER may open permitted websites via open_website(). When a site is active, populate the ${T.board} with site-relevant ${T.button}s.
-  - E.g. for a recipe site: "scroll down", "read this", "go back", "look at the picture", "I want to make it".
+To open a website for the user, add a ${T.button} with \`open.website\` set to the URL — the user presses it to open the browser. Permitted: ${siteList}.
+  - When a site is active, offer site-relevant ${T.button}s (e.g. "scroll down", "read this", "go back", "I want to make it").
 </websites_context>`;
   }
 
@@ -795,6 +803,13 @@ export interface BoardManagerToolConfig {
    *  Adds `exit_guessing` to the tool surface so the AI can declare
    *  convergence and return to normal conversation. */
   guessingActive?: boolean;
+  /** Websites the student is permitted to visit. When non-empty, the button
+   *  schema gains an `open.website` field so the BoardManager can author a
+   *  button that launches the browser on that URL. Re-gated in the coordinator. */
+  permittedWebsites?: PermittedWebsite[];
+  /** Apps the BoardManager may author `open.app` launch-buttons for — the
+   *  enabled built-in apps plus available custom games, as `{ id, name }`. */
+  enabledApps?: Array<{ id: string; name: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -839,6 +854,25 @@ function glyphItemSchema(): Record<string, unknown> {
 interface ButtonSchemaOpts {
   includeGuessingFields?: boolean;
   includeMetaButtonField?: boolean;
+  /** When present + non-empty, exposes an `open` field so the button LAUNCHES
+   *  an app/website on press instead of voicing speech. Lists constrain the AI
+   *  to the permitted targets; the coordinator re-gates server-side. */
+  openTargets?: {
+    websites: Array<{ url: string; label: string }>;
+    apps: Array<{ id: string; name: string }>;
+  };
+}
+
+/** Build the `openTargets` for buttonObjectSchema from a tool config — flattens
+ *  permitted websites (incl. subpages) and the enabled-app list. Returns
+ *  undefined when there's nothing launchable, so the `open` field stays off the
+ *  schema entirely. */
+function openTargetsFromConfig(config: BoardManagerToolConfig): ButtonSchemaOpts["openTargets"] | undefined {
+  const websites = (config.permittedWebsites ? flattenPermittedWebsites(config.permittedWebsites) : [])
+    .map(w => ({ url: w.url, label: w.label }));
+  const apps = config.enabledApps ?? [];
+  if (websites.length === 0 && apps.length === 0) return undefined;
+  return { websites, apps };
 }
 
 function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown> {
@@ -879,6 +913,25 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
       description: "Optional. Number of grid columns this button spans (>=2). Omit for a 1×1 button.",
     },
   };
+
+  if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0)) {
+    const { websites, apps } = opts.openTargets;
+    const allowed: string[] = [];
+    if (websites.length > 0) {
+      allowed.push(`WEBSITES — ${websites.map(w => `"${w.url}"${w.label ? ` (${w.label})` : ""}`).join(", ")}`);
+    }
+    if (apps.length > 0) {
+      allowed.push(`APPS — ${apps.map(a => `"${a.id}"${a.name ? ` (${a.name})` : ""}`).join(", ")}`);
+    }
+    properties.open = {
+      type: "object",
+      description: `OPTIONAL. Makes this ${T.button} LAUNCH an app or website when pressed, instead of voicing \`speech\`. Set EXACTLY ONE of \`website\` / \`app\`. Still fill \`speech\`/\`label\`/\`glyph\` normally — write \`speech\` as the user's first-person intent for the action (e.g. "I want to read my book"). Only these targets are permitted: ${allowed.join("; ")}. Any other value is dropped.`,
+      properties: {
+        website: { type: "string", description: `A permitted website URL to open in the browser (one of the listed WEBSITES, or a subpage of one).` },
+        app: { type: "string", description: `An app id to launch (one of the listed APPS).` },
+      },
+    };
+  }
 
   if (opts.includeGuessingFields) {
     properties.kind = {
@@ -958,6 +1011,7 @@ The \`target\` field declares who the user's button replies are addressed to:
           items: buttonObjectSchema({
             includeMetaButtonField: true,
             includeGuessingFields: !!config.guessingActive,
+            openTargets: openTargetsFromConfig(config),
           }),
         },
         target: {
@@ -997,6 +1051,7 @@ Do NOT call multiple times to assemble a board — use rebuild_board for that.`,
         button: buttonObjectSchema({
           includeMetaButtonField: true,
           includeGuessingFields: !!config.guessingActive,
+          openTargets: openTargetsFromConfig(config),
         }),
         target: {
           type: "string",

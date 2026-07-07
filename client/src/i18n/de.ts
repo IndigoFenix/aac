@@ -2732,7 +2732,7 @@ export const de = {
     NO_RESPONSE: "Bei der Verarbeitung der Antwort ist ein Fehler aufgetreten.",
     LLM_ERROR: "Beim Aufruf des KI-Modells ist ein Fehler aufgetreten.",
     PARSE_ERROR: "Bei der Verarbeitung der Antwort ist ein Fehler aufgetreten.",
-    TOKEN_LIMIT: "Token-Nutzungslimit-Fehler.",
+    TOKEN_LIMIT: "Fehler – bitte kontaktieren Sie den Support.",
     RATE_LIMIT: "Der KI-Dienst ist derzeit ausgelastet. Bitte warten Sie einen Moment und versuchen Sie es erneut.",
     INPUT_TOO_LARGE: "Die Eingabe ist zu groß zur Verarbeitung. Bitte reduzieren Sie die Größe der angehängten Dateien oder kürzen Sie die Unterhaltung.",
     UNEXPECTED_ERROR: "Ein unerwarteter Fehler ist aufgetreten.",

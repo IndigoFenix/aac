@@ -18,9 +18,13 @@ import { bootDual, type DualWorld } from "./dual";
 import type { TriWorld } from "./tri";
 import { SCENARIOS, cloneScenarioJson, type LabScenario } from "./scenarios";
 import { runChecks } from "./checks";
-import { paintSubstrateImage } from "./substrate-render";
+import { paintSubstrateImage, createSubstratePresenter, type SubstratePresenter } from "./substrate-render";
+import { createRevealTracker, createEasedValues, smooth, type RevealTracker, type EasedValues } from "./transients";
+import { createGeoScrubber, type GeoScrubber } from "./geo-scrub";
+import type { TectonicFrame } from "./tectonics";
 import { createTravelerBands, type BandWorld } from "./traveler-bands";
-import { ERRAND_WALK, PANTRY_CAP } from "./food";
+import { ERRAND_WALK, FOOD_DAY_SEC, PANTRY_CAP, type TownFood } from "./food";
+import { pointAt } from "./streets";
 import {
   PEOPLE_R, WORLD_TILE, createParty, createTownManager, disbandParty, generateWorld,
   nearestCity, parkParty, recruitVillager, terrainConstraint, villagerNpcId, villagerOf,
@@ -43,6 +47,9 @@ const seedInput = $<HTMLInputElement>("seed");
 const dayEl = $("day");
 const totalPopEl = $("totalpop");
 const sculptTools = $("sculpt-tools");
+const geoField = $("geo-field");
+const geoScrub = $<HTMLInputElement>("geo-scrub");
+const geoEpoch = $("geo-epoch");
 const toolRaise = $<HTMLButtonElement>("tool-raise");
 const toolDig = $<HTMLButtonElement>("tool-dig");
 const statsBody = $("stats").querySelector("tbody")!;
@@ -62,6 +69,21 @@ interface Runtime {
    *  for painting the substrate behind the graph. */
   tri?: TriWorld;
   triCanvas?: HTMLCanvasElement;
+  /** Interpolated-transient water paint (timescales.md §5b): the shown
+   *  river EASES toward the live solve, so re-routes carve instead of
+   *  snapping. Shared by the map and the zoomed world view — one shown
+   *  state per world. */
+  presenter?: SubstratePresenter;
+  /** Discrete-event transients (same doctrine, transients.ts): cities
+   *  GROW IN when founded, roads REACH OUT from the network, and jumpy
+   *  continuous quantities (route widths, flows, radii) ease. Primed at
+   *  load — what already existed does not animate. */
+  fx: { born: RevealTracker; roads: RevealTracker; eased: EasedValues };
+  /** Geologic-history scrubber (geo-scrub.ts): present only when the
+   *  world was made by the tectonic provider and carries keyframes. At
+   *  pos < 1 the map shows DEEP TIME (eased between keyframes) and the
+   *  graph hides — the cities belong to the present. */
+  geo?: GeoScrubber;
   /** Day shown = lw.day() − day0 (elapsed since load, so every scenario
    *  starts at Day 0 regardless of the engine's boot day). */
   day0: number;
@@ -86,10 +108,12 @@ async function loadScenario(scenario: LabScenario, colorTrait?: string): Promise
 
   let lw: LabWorld;
   let tri: TriWorld | undefined;
+  let geoFrames: TectonicFrame[] | undefined;
   if (scenario.tri) {
     const world = await scenario.tri(seed);
     tri = world.tri;
     lw = tri.dual;
+    geoFrames = (world as { frames?: TectonicFrame[] }).frames;
     // City positions come live from tri.cities (they can grow) — see
     // sitePixel.
   } else if (scenario.dual) {
@@ -103,9 +127,17 @@ async function loadScenario(scenario: LabScenario, colorTrait?: string): Promise
   rt = {
     scenario, lw, initialTotal: lw.totalPop(), colorTrait: chosen,
     layout: { ...scenario.layout }, tri,
+    presenter: tri ? createSubstratePresenter(tri.grid) : undefined,
+    fx: { born: createRevealTracker(1.4, 0.8), roads: createRevealTracker(1.8, 0.8), eased: createEasedValues(0.6) },
+    geo: tri && geoFrames && geoFrames.length > 1
+      ? createGeoScrubber(geoFrames, tri.grid.cols, tri.grid.rows)
+      : undefined,
     day0: lw.day(), harvested0: tri ? tri.harvestedTotal() : 0,
   };
   sculptTools.style.display = tri ? "" : "none";
+  geoField.style.display = rt.geo ? "" : "none";
+  geoScrub.value = "1000";
+  geoEpoch.textContent = "";
 
   descEl.textContent = scenario.desc;
   populateTraitSelect(traits, chosen);
@@ -126,6 +158,29 @@ function populateTraitSelect(traits: string[], chosen: string): void {
 
 /* ----------------------------- rendering ----------------------------- */
 
+/** Paint a deep-time frame from the geologic scrubber over the whole map. */
+function paintGeoView(geo: GeoScrubber, ts: number): void {
+  const tri = rt?.tri;
+  if (!tri) return;
+  const { cols, rows } = tri.grid;
+  if (!rt!.triCanvas) {
+    rt!.triCanvas = document.createElement("canvas");
+    rt!.triCanvas.width = cols;
+    rt!.triCanvas.height = rows;
+  }
+  const buf = rt!.triCanvas.getContext("2d")!;
+  const img = buf.createImageData(cols, rows);
+  geo.paint(img, ts);
+  buf.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(rt!.triCanvas, 0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.fillStyle = "rgba(240,240,250,0.9)";
+  ctx.font = "600 14px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`deep time — epoch ${Math.round(geo.epoch())} (scrub right to return to the present)`, 14, 24);
+}
+
 /** Paint the live substrate under the graph — the ORIGINAL sandbox's
  *  renderer (see substrate-render.ts), stretched over the whole map. */
 function paintSubstrate(): void {
@@ -139,7 +194,9 @@ function paintSubstrate(): void {
   }
   const buf = rt!.triCanvas.getContext("2d")!;
   const img = buf.createImageData(cols, rows);
-  paintSubstrateImage(tri.grid, img, performance.now() / 1000);
+  const now = performance.now() / 1000;
+  if (rt!.presenter) rt!.presenter.paint(img, now);
+  else paintSubstrateImage(tri.grid, img, now);
   buf.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(rt!.triCanvas, 0, 0, canvas.width, canvas.height);
@@ -177,21 +234,55 @@ function render(panelToo: boolean = true): void {
   const flowOf = (lw as LabWorld & Partial<Pick<DualWorld, "settlementFlow">>).settlementFlow;
   const now = performance.now();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // DEEP TIME: while the scrubber sits below "now", the map shows the
+  // recorded tectonic history (eased between keyframes — §5b pointed
+  // backward) and the settlement graph hides; the live world is untouched.
+  if (rt.geo && rt.geo.pos() < 1) {
+    paintGeoView(rt.geo, now / 1000);
+    geoEpoch.textContent = `· epoch ${Math.round(rt.geo.epoch())}`;
+    if (panelToo) renderPanel();
+    return;
+  }
+  geoEpoch.textContent = "";
   paintSubstrate();
+
+  // Discrete-event transients (transients.ts): reconcile what exists NOW,
+  // so a city founded this day grows in and its road reaches out — the
+  // §5b doctrine applied to births instead of fields.
+  const routes = lw.routes();
+  const civOf = (lw as LabWorld & Partial<Pick<DualWorld, "civOf">>).civOf;
+  const sites = lw.sites();
+  const { born, roads, eased } = rt.fx;
+  const tSec = now / 1000;
+  eased.frame(tSec);
+  born.frame(tSec, sites.map(s => s.key));
+  const routeKey = (r: { site_a: { key: string } | null; site_b: { key: string } | null }): string =>
+    `${r.site_a?.key}~${r.site_b?.key}`;
+  roads.frame(tSec, routes.filter(r => r.site_a && r.site_b).map(routeKey));
 
   // Routes first (under the nodes). Route order matches the dual spec's
   // edge order, so index e addresses the flow field directly.
-  const routes = lw.routes();
   for (let e = 0; e < routes.length; e++) {
     const r = routes[e];
     if (!r.site_a || !r.site_b) continue;
-    const [ax, ay] = sitePixel(r.site_a.key);
-    const [bx, by] = sitePixel(r.site_b.key);
+    let [ax, ay] = sitePixel(r.site_a.key);
+    let [bx, by] = sitePixel(r.site_b.key);
+    // A NEW road reaches out from the established network toward the
+    // younger endpoint (parametric reveal along the line).
+    const grow = smooth(roads.phase(routeKey(r)));
+    if (grow < 1) {
+      if (born.phase(r.site_a.key) < born.phase(r.site_b.key)) {
+        [ax, ay, bx, by] = [bx, by, ax, ay]; // grow FROM the older city
+      }
+      bx = ax + (bx - ax) * grow;
+      by = ay + (by - ay) * grow;
+    }
     const migrates = r.migration > 0;
     ctx.beginPath();
     ctx.moveTo(ax, ay);
     ctx.lineTo(bx, by);
-    ctx.lineWidth = 1.5 + r.strength * 2.5;
+    ctx.lineWidth = 1.5 + eased.value(`s:${routeKey(r)}`, r.strength) * 2.5;
     ctx.strokeStyle = migrates ? "rgba(120,200,140,0.7)" : "rgba(150,150,170,0.55)";
     if (migrates && r.strength === 0) ctx.setLineDash([6, 6]);
     ctx.stroke();
@@ -199,44 +290,50 @@ function render(panelToo: boolean = true): void {
 
     // Caravans: a marching-dash render of the steady-state flow field
     // (§4c) — the world can be at rest while these keep moving, because
-    // they are drawn FROM state, not simulated INTO it.
-    const flow = flowOf ? flowOf(e) : 0;
-    if (Math.abs(flow) > 1e-9) {
+    // they are drawn FROM state, not simulated INTO it. The volume itself
+    // eases (a re-solved flow net jumps); no caravans on an unfinished road.
+    const flow = grow >= 1 ? (flowOf ? flowOf(e) : 0) : 0;
+    const flowShown = eased.value(`f:${routeKey(r)}`, Math.abs(flow));
+    if (flowShown > 1e-3) {
       ctx.beginPath();
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
-      ctx.lineWidth = 2 + Math.min(4, Math.abs(flow) * 0.12);
+      ctx.lineWidth = 2 + Math.min(4, flowShown * 0.12);
       ctx.strokeStyle = "rgba(235,195,90,0.85)";
       ctx.setLineDash([5, 11]);
-      const speed = Math.min(60, 8 + Math.abs(flow) * 1.5); // px/s, scales with volume
-      ctx.lineDashOffset = -Math.sign(flow) * (((now / 1000) * speed) % 16);
+      const speed = Math.min(60, 8 + flowShown * 1.5); // px/s, scales with volume
+      ctx.lineDashOffset = -Math.sign(flow || 1) * (((now / 1000) * speed) % 16);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // Route label at the midpoint.
-    const mx = (ax + bx) / 2;
-    const my = (ay + by) / 2;
-    ctx.fillStyle = "rgba(180,180,195,0.9)";
-    ctx.font = "11px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    const bits: string[] = [];
-    if (r.strength > 0) bits.push(`s${+r.strength.toFixed(2)}`); // dual strengths evolve — keep labels short
-    if (r.migration > 0) bits.push(`m${r.migration}`);
-    if (Math.abs(flow) > 1e-9) bits.push(`f${+Math.abs(flow).toFixed(1)}`);
-    if (bits.length) ctx.fillText(bits.join(" "), mx, my - 6);
+    // Route label at the midpoint (once the road is real).
+    if (grow >= 1) {
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      ctx.fillStyle = "rgba(180,180,195,0.9)";
+      ctx.font = "11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      const bits: string[] = [];
+      if (r.strength > 0) bits.push(`s${+r.strength.toFixed(2)}`); // dual strengths evolve — keep labels short
+      if (r.migration > 0) bits.push(`m${r.migration}`);
+      if (Math.abs(flow) > 1e-9) bits.push(`f${+Math.abs(flow).toFixed(1)}`);
+      if (bits.length) ctx.fillText(bits.join(" "), mx, my - 6);
+    }
   }
 
-  // Nodes.
-  const civOf = (lw as LabWorld & Partial<Pick<DualWorld, "civOf">>).civOf;
-  const sites = lw.sites();
+  // Nodes: a founded city GROWS IN (radius scales with its reveal phase,
+  // plus a fading founding pulse); population growth eases instead of
+  // stepping at day boundaries.
   const maxPop = Math.max(1, ...sites.map(s => s.pop));
   for (const s of sites) {
     const [x, y] = sitePixel(s.key);
-    const radius = 18 + 34 * Math.sqrt(s.pop / maxPop);
+    const ph = smooth(born.phase(s.key));
+    const radius = eased.value(`r:${s.key}`, 18 + 34 * Math.sqrt(s.pop / maxPop)) * (0.25 + 0.75 * ph);
     const withTrait = colorTrait ? lw.popOnSiteWithTrait(s.key, colorTrait) : 0;
     const frac = s.pop > 0 ? withTrait / s.pop : 0;
 
+    ctx.globalAlpha = 0.3 + 0.7 * ph;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fillStyle = prevalenceColor(frac);
@@ -246,6 +343,14 @@ function render(panelToo: boolean = true): void {
     ctx.lineWidth = civ ? 3.5 : 2;
     ctx.strokeStyle = civ ? civ.color : "rgba(255,255,255,0.85)";
     ctx.stroke();
+    if (ph < 1) {
+      // Founding pulse: an expanding, fading ring around the newborn.
+      ctx.beginPath();
+      ctx.arc(x, y, radius * (1 + 1.4 * (1 - ph)), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${(0.6 * (1 - ph)).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
     ctx.fillStyle = "#f5f5fa";
     ctx.font = "600 13px system-ui, sans-serif";
@@ -254,6 +359,7 @@ function render(panelToo: boolean = true): void {
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "rgba(230,230,240,0.8)";
     ctx.fillText(`${(frac * 100).toFixed(1)}%`, x, y + 4);
+    ctx.globalAlpha = 1;
   }
 
   if (panelToo) renderPanel();
@@ -385,6 +491,7 @@ const BRUSH = { radius: 3.5, strength: 2.5 };
 function sculptAt(clientX: number, clientY: number): void {
   const tri = rt?.tri;
   if (!tri || !sculptTool) return;
+  if (rt?.geo && rt.geo.pos() < 1) return; // deep time: the brush edits the PRESENT
   const rect = canvas.getBoundingClientRect();
   const tx = Math.floor(((clientX - rect.left) / rect.width) * tri.grid.cols);
   const ty = Math.floor(((clientY - rect.top) / rect.height) * tri.grid.rows);
@@ -511,7 +618,7 @@ function createWorldView(
   names: Map<string, string>,
   chunks: TownManager,
   bands: BandWorld,
-): Parameters<typeof runWorldHost>[0]["view"] {
+): Parameters<typeof runWorldHost>[0]["view"] & { visibleRadius(): number } {
   const vctx = zc.getContext("2d")!;
   const { grid, dual } = tri;
   const buf = document.createElement("canvas");
@@ -522,6 +629,33 @@ function createWorldView(
   let viewW = 1, viewH = 1, viewDpr = 1;
   let span = SPAN_DEFAULT;
   let lastCam: { scale: number; offsetX: number; offsetY: number } | null = null;
+
+  // Construction transients (timescales.md §5b): towns BUILD on screen.
+  // Houses and works reveal through a tracker (new lots scaffold in, a
+  // lot converting to a stall fades through); street shown-length eases
+  // toward the grown length (lanes pave outward). Primed at first sight —
+  // a town you walk into is already whole.
+  const bornB = createRevealTracker(2.4, 1.4);
+  const paved = createEasedValues(3.0, 1.5);
+  /** Last-seen world-space rects so fade-outs have something to draw. */
+  const lastRect = new Map<string, { x: number; y: number; w: number; h: number; color: string }>();
+  /** House tint by district character (tier B): the miners' quarter
+   *  reads slate, the farm belt reads green-warm. Cached per TownFood
+   *  (districts are derived once per plan). */
+  const tintCache = new WeakMap<TownFood, Map<number, string | null>>();
+  const tintFor = (food: TownFood): Map<number, string | null> => {
+    let m = tintCache.get(food);
+    if (!m) {
+      m = new Map();
+      for (const d of food.districts()) {
+        const tint = d.kind === "mining" ? "rgba(96,116,150,0.30)"
+          : d.kind === "farm" ? "rgba(140,170,60,0.22)" : null;
+        for (const hi of d.houseIdx) m.set(hi, tint);
+      }
+      tintCache.set(food, m);
+    }
+    return m;
+  };
 
   // Wheel zoom: the world is kilometers wide relative to a walking
   // human — zooming out is how you see where you're going.
@@ -537,6 +671,12 @@ function createWorldView(
   const cityName = (key: string): string => dual.sites().find(s => s.key === key)?.name ?? key;
 
   return {
+    /** How far from the player the camera can currently see (meters) —
+     *  TownManager's pop-in rule: mid-errand spawns inside this radius
+     *  relocate into their source building instead of open ground. */
+    visibleRadius() {
+      return span * 0.75 + 20;
+    },
     screenToWorld(px, py) {
       if (!lastCam) return null;
       return { x: (px - lastCam.offsetX) / lastCam.scale, y: (py - lastCam.offsetY) / lastCam.scale };
@@ -552,7 +692,8 @@ function createWorldView(
       // Terrain: only the camera's WINDOW of the substrate raster (a
       // real-scale map is far too large to draw whole). At street zoom a
       // tile is a km of ground — smoothing blends the biome borders.
-      paintSubstrateImage(grid, img, tNow);
+      if (rt?.presenter && rt.tri?.grid === grid) rt.presenter.paint(img, tNow);
+      else paintSubstrateImage(grid, img, tNow);
       bctx.putImageData(img, 0, 0);
       const tilePx = WORLD_TILE * cam.scale;
       const tx0 = Math.max(0, Math.floor(-cam.offsetX / tilePx) - 1);
@@ -575,6 +716,23 @@ function createWorldView(
       // every city at any range).
       const detailed = cam.scale > 0.5;
       if (detailed) {
+        // Reconcile the reveal tracker with EVERYTHING loaded (not just
+        // what's on camera — panning must not read as demolition).
+        paved.frame(tNow);
+        const liveKeys: string[] = [];
+        for (const town of chunks.loaded()) {
+          for (const h of town.plan.houses) liveKeys.push(`b:${town.key}:h${h.index}`);
+          for (const wk of town.plan.works) {
+            liveKeys.push(`b:${town.key}:w:${wk.type}:${Math.round(wk.dx)},${Math.round(wk.dy)}`);
+          }
+          for (const s of town.roads.streets) liveKeys.push(`p:${town.key}:${s.id}`);
+        }
+        bornB.frame(tNow, liveKeys);
+        if (lastRect.size > 4096) {
+          const keep = new Set(liveKeys);
+          for (const k of lastRect.keys()) if (!keep.has(k)) lastRect.delete(k);
+        }
+
         for (const town of chunks.loaded()) {
           const sx = cam.offsetX + town.center.x * cam.scale;
           const sy = cam.offsetY + town.center.y * cam.scale;
@@ -584,41 +742,76 @@ function createWorldView(
           for (const f of town.plan.fields) {
             vctx.fillRect(sx + f.dx * cam.scale, sy + f.dy * cam.scale, f.w * cam.scale, f.h * cam.scale);
           }
-          // Streets: plaza disc, ring roads, and the four cross-street
-          // spokes — packed earth under the buildings. Houses FACE
-          // these, and shoppers' errands ride them.
-          const roads = town.roads;
+          // Streets: the plaza and the organic street tree — packed
+          // earth under the buildings. Houses FACE these, shoppers'
+          // errands ride them, and WIDTH FOLLOWS TRAFFIC: the lanes the
+          // food economy actually routes through are visibly worn into
+          // arterials (city-development.md §3b). New streets pave
+          // outward through the reveal phase; extensions ease.
+          const net = town.roads;
+          const traffic = town.food.streetTraffic();
           vctx.fillStyle = "rgba(203,183,142,0.35)";
           vctx.beginPath();
-          vctx.arc(sx, sy, roads.rings[0] * cam.scale, 0, Math.PI * 2);
+          vctx.arc(sx, sy, net.plazaR * cam.scale, 0, Math.PI * 2);
           vctx.fill();
-          vctx.strokeStyle = "rgba(203,183,142,0.5)";
-          vctx.lineWidth = Math.max(1, 5 * cam.scale);
-          for (const R of roads.rings) {
+          vctx.lineCap = "round";
+          vctx.lineJoin = "round";
+          for (const s of net.streets) {
+            const key = `p:${town.key}:${s.id}`;
+            const total = s.cum[s.cum.length - 1];
+            const shown = paved.value(key, total) * smooth(bornB.phase(key));
+            if (shown <= 0.5) continue;
+            const trips = traffic.get(s.id) ?? 0;
+            const wear = Math.min(1, Math.sqrt(trips) / 12);
+            vctx.strokeStyle = `rgba(203,183,142,${(0.3 + 0.3 * wear).toFixed(3)})`;
+            vctx.lineWidth = Math.max(1, ((s.ring ? 2.8 : s.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * cam.scale);
             vctx.beginPath();
-            vctx.arc(sx, sy, R * cam.scale, 0, Math.PI * 2);
+            vctx.moveTo(sx + s.pts[0].x * cam.scale, sy + s.pts[0].y * cam.scale);
+            for (let i = 1; i < s.pts.length; i++) {
+              if (s.cum[i] <= shown) {
+                vctx.lineTo(sx + s.pts[i].x * cam.scale, sy + s.pts[i].y * cam.scale);
+                continue;
+              }
+              const f = (shown - s.cum[i - 1]) / (s.cum[i] - s.cum[i - 1]);
+              if (f > 0) {
+                const px = s.pts[i - 1].x + (s.pts[i].x - s.pts[i - 1].x) * f;
+                const py = s.pts[i - 1].y + (s.pts[i].y - s.pts[i - 1].y) * f;
+                vctx.lineTo(sx + px * cam.scale, sy + py * cam.scale);
+              }
+              break;
+            }
             vctx.stroke();
           }
-          vctx.lineWidth = Math.max(1, 8 * cam.scale);
-          vctx.beginPath();
-          for (const [ux, uy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as Array<[number, number]>) {
-            vctx.moveTo(sx + ux * roads.rings[0] * cam.scale, sy + uy * roads.rings[0] * cam.scale);
-            vctx.lineTo(sx + ux * roads.spokeMax * cam.scale, sy + uy * roads.spokeMax * cam.scale);
-          }
-          vctx.stroke();
           for (const h of town.plan.houses) {
             const hx = sx + h.dx * cam.scale;
             const hy = sy + h.dy * cam.scale;
             const hw = h.w * cam.scale;
             const hh = h.h * cam.scale;
+            const hKey = `b:${town.key}:h${h.index}`;
+            lastRect.set(hKey, {
+              x: town.center.x + h.dx, y: town.center.y + h.dy, w: h.w, h: h.h, color: h.color,
+            });
             if (hx + hw < 0 || hx > viewW || hy + hh < 0 || hy > viewH) continue;
+            const ph = smooth(bornB.phase(hKey));
+            // Under construction: the footprint rises from its center —
+            // smaller, translucent, scaffold-edged until it settles.
+            const g = 0.5 + 0.5 * ph;
+            const gx = hx + (hw * (1 - g)) / 2;
+            const gy = hy + (hh * (1 - g)) / 2;
+            vctx.globalAlpha = 0.35 + 0.65 * ph;
             vctx.fillStyle = h.color;
-            vctx.fillRect(hx, hy, Math.max(1.5, hw), Math.max(1.5, hh));
-            if (hw >= 3) {
-              vctx.strokeStyle = "rgba(30,24,16,0.4)";
-              vctx.lineWidth = 1;
-              vctx.strokeRect(hx, hy, hw, hh);
+            vctx.fillRect(gx, gy, Math.max(1.5, hw * g), Math.max(1.5, hh * g));
+            const tint = tintFor(town.food).get(h.index);
+            if (tint) {
+              vctx.fillStyle = tint;
+              vctx.fillRect(gx, gy, Math.max(1.5, hw * g), Math.max(1.5, hh * g));
             }
+            if (hw >= 3) {
+              vctx.strokeStyle = ph < 1 ? "rgba(224,196,110,0.9)" : "rgba(30,24,16,0.4)";
+              vctx.lineWidth = 1;
+              vctx.strokeRect(gx, gy, hw * g, hh * g);
+            }
+            vctx.globalAlpha = 1;
             // The household FOOD BOX (street zoom only): a crate by the
             // door whose green level is the pantry — full at plenty,
             // scraping empty under scarcity or just before a trip.
@@ -638,33 +831,110 @@ function createWorldView(
               vctx.strokeRect(bx, by, s, s);
             }
           }
-          for (const wk of town.plan.works) {
+          for (let wi = 0; wi < town.plan.works.length; wi++) {
+            const wk = town.plan.works[wi];
             const wx = sx + wk.dx * cam.scale;
             const wy = sy + wk.dy * cam.scale;
+            const wKey = `b:${town.key}:w:${wk.type}:${Math.round(wk.dx)},${Math.round(wk.dy)}`;
+            lastRect.set(wKey, {
+              x: town.center.x + wk.dx, y: town.center.y + wk.dy, w: wk.w, h: wk.h, color: wk.color,
+            });
             if (wx + wk.w * cam.scale < 0 || wx > viewW || wy + wk.h * cam.scale < 0 || wy > viewH) continue;
+            const wph = smooth(bornB.phase(wKey));
+            vctx.globalAlpha = 0.35 + 0.65 * wph;
             vctx.fillStyle = wk.color;
             vctx.fillRect(wx, wy, wk.w * cam.scale, wk.h * cam.scale);
-            vctx.strokeStyle = "rgba(30,24,16,0.4)";
+            vctx.strokeStyle = wph < 1 ? "rgba(224,196,110,0.9)" : "rgba(30,24,16,0.4)";
             vctx.lineWidth = 1;
             vctx.strokeRect(wx, wy, wk.w * cam.scale, wk.h * cam.scale);
-            // Market stalls: grain sacks out front, one per ~2 days of a
-            // household's draw — the row visibly thins as the day wears
-            // on (and starts thin at all when the flow net under-fed).
+            vctx.globalAlpha = 1;
+            // Market STANDS: stall tables spread along the door side,
+            // each with a little pile of grain sacks. The pile height is
+            // the shelf's FRACTION of a full day's stock (stock ÷ what
+            // the dawn cart brings), so it drains visibly across the
+            // whole day — full at dawn, picked clean by dusk — and a
+            // neighborhood stall's smaller shelf reads smaller than the
+            // plaza's. Shoppers dwell at these stands (food.ts), so the
+            // crowd fans out along the tables instead of piling in a
+            // corner.
             if (wk.type === "market" && cam.scale > 0.9) {
-              const sacks = Math.min(10, Math.round(town.food.marketStock(tNow) / (PANTRY_CAP / 2)));
-              const doorY = wy - 1.6 * cam.scale;
-              vctx.fillStyle = "#e0b25c";
-              for (let sk = 0; sk < sacks; sk++) {
+              const src = town.food.sources.find(s => s.work === wi);
+              const stands = src ? town.food.stands(src) : [];
+              const daily = src ? town.food.stallDaily(src) : 0;
+              const stock = src ? town.food.stockOf(src, tNow) : 0;
+              const frac = daily > 0 ? Math.min(1, stock / (daily * 1.15)) : 0;
+              const perStand = Math.round(frac * 4); // 0..4 sacks per table
+              for (const st of stands) {
+                const tx = sx + (st.x - town.center.x) * cam.scale;
+                const ty = sy + (st.y - town.center.y) * cam.scale;
+                // The table.
+                vctx.fillStyle = "#7a5a3a";
+                vctx.fillRect(tx - 1.4 * cam.scale, ty - 0.7 * cam.scale, 2.8 * cam.scale, 1.4 * cam.scale);
+                // Its sacks.
+                vctx.fillStyle = "#e0b25c";
+                for (let sk = 0; sk < perStand; sk++) {
+                  const ox = (sk % 2 - 0.5) * 1.1 * cam.scale;
+                  const oy = -(Math.floor(sk / 2)) * 0.9 * cam.scale - 1.1 * cam.scale;
+                  vctx.beginPath();
+                  vctx.arc(tx + ox, ty + oy, Math.max(1.3, 0.4 * cam.scale), 0, Math.PI * 2);
+                  vctx.fill();
+                }
+              }
+            }
+          }
+          // STREET LIFE at map scale: ambient walkers sampled straight
+          // from the traffic field (no identity, no schedule — the §3c
+          // dots), riding a time-of-day curve. The zone around the
+          // player is left to REAL bodies — dots never stand next to a
+          // person you could talk to.
+          {
+            const me2 = state.avatars["player"];
+            const dayFrac = (((tNow % FOOD_DAY_SEC) + FOOD_DAY_SEC) % FOOD_DAY_SEC) / FOOD_DAY_SEC;
+            const curve = 0.35 + 0.75 * Math.sin(Math.PI * dayFrac);
+            vctx.fillStyle = "rgba(216,168,110,0.85)";
+            for (const s of net.streets) {
+              const trips = traffic.get(s.id) ?? 0;
+              if (trips < 6) continue;
+              const total = s.cum[s.cum.length - 1];
+              if (total < 20) continue;
+              const n = Math.min(5, Math.floor((trips * curve) / 15));
+              for (let i = 0; i < n; i++) {
+                const h32 = ((s.id * 2654435761) ^ (i * 97897)) >>> 0;
+                const dir = h32 & 1 ? 1 : -1;
+                const prog = h32 / 4294967296 + (dir * tNow * ERRAND_WALK) / total;
+                const at = pointAt(s, (((prog % 1) + 1) % 1) * total);
+                const wx = town.center.x + at.x;
+                const wy = town.center.y + at.y;
+                if (me2 && Math.hypot(wx - me2.x, wy - me2.y) < 80) continue;
+                const px2 = cam.offsetX + wx * cam.scale;
+                const py2 = cam.offsetY + wy * cam.scale;
+                if (px2 < -4 || px2 > viewW + 4 || py2 < -4 || py2 > viewH + 4) continue;
                 vctx.beginPath();
-                vctx.arc(wx + (2 + sk * 1.3) * cam.scale, doorY, Math.max(1.5, 0.45 * cam.scale), 0, Math.PI * 2);
+                vctx.arc(px2, py2, Math.max(1.2, 0.3 * cam.scale), 0, Math.PI * 2);
                 vctx.fill();
               }
             }
           }
+
           vctx.fillStyle = "#f5f5fa";
           vctx.font = "600 13px system-ui, sans-serif";
           vctx.textAlign = "center";
           vctx.fillText(cityName(town.key), sx, sy - (town.plan.radius + 18) * cam.scale);
+        }
+
+        // Demolitions and conversions: whatever just left the plan fades
+        // where it stood (a lot turning into a stall crossfades — the
+        // house ghost out, the market in).
+        for (const e of bornB.exiting()) {
+          const r = lastRect.get(e.key);
+          if (!r) continue;
+          const ex = cam.offsetX + r.x * cam.scale;
+          const ey = cam.offsetY + r.y * cam.scale;
+          if (ex + r.w * cam.scale < 0 || ex > viewW || ey + r.h * cam.scale < 0 || ey > viewH) continue;
+          vctx.globalAlpha = 0.8 * e.phase;
+          vctx.fillStyle = r.color;
+          vctx.fillRect(ex, ey, Math.max(1.5, r.w * cam.scale), Math.max(1.5, r.h * cam.scale));
+          vctx.globalAlpha = 1;
         }
       } else {
         for (const c of tri.cities) {
@@ -746,11 +1016,36 @@ function createWorldView(
 
       // Avatars. Residents/travelers only exist near the player; when
       // zoomed far out they'd be sub-pixel clutter, so only the player
-      // and party stay marked.
+      // and party stay marked. Villagers INSIDE a building are hidden
+      // (they're indoors — the closed-door abstraction): a fresh spawn
+      // in a house or at the market becomes visible when it steps out
+      // the door, never by popping onto open ground. The player peeking
+      // inside the same building still sees its occupants.
+      const playerAt = state.avatars["player"];
+      const inRect = (x: number, y: number, r: { dx: number; dy: number; w: number; h: number }): boolean =>
+        x > r.dx && x < r.dx + r.w && y > r.dy && y < r.dy + r.h;
+      const indoors = (a: { x: number; y: number }): boolean => {
+        for (const town of chunks.loaded()) {
+          if (Math.abs(a.x - town.center.x) > town.plan.radius + 40) continue;
+          if (Math.abs(a.y - town.center.y) > town.plan.radius + 40) continue;
+          const lx = a.x - town.center.x;
+          const ly = a.y - town.center.y;
+          const px = playerAt ? playerAt.x - town.center.x : Infinity;
+          const py = playerAt ? playerAt.y - town.center.y : Infinity;
+          for (const h of town.plan.houses) {
+            if (inRect(lx, ly, h)) return !inRect(px, py, h);
+          }
+          for (const wk of town.plan.works) {
+            if (inRect(lx, ly, wk)) return !inRect(px, py, wk);
+          }
+        }
+        return false;
+      };
       for (const id of Object.keys(state.avatars)) {
         const a = state.avatars[id];
         const isParty = id === "player" || id.startsWith("party_");
         if (!detailed && !isParty) continue;
+        if (!isParty && id.startsWith("villager_") && indoors(a)) continue;
         const sx = cam.offsetX + a.x * cam.scale;
         const sy = cam.offsetY + a.y * cam.scale;
         const r = Math.max(3.5, 0.45 * cam.scale);
@@ -884,8 +1179,9 @@ function openWorld(atCity: string): void {
     }
   };
 
+  const view = createWorldView(zc, tri, names, chunks, bands);
   const host = runWorldHost({
-    view: createWorldView(zc, tri, names, chunks, bands),
+    view,
     spec: world.spec,
     localId: "player",
     spawnIndex: world.spawnIndexOf.get(atCity) ?? 0,
@@ -914,7 +1210,7 @@ function openWorld(atCity: string): void {
         const a = state.avatars[id];
         liveMap.set(id, { x: a.x, y: a.y });
       }
-      const delta = chunks.update(me, liveMap, performance.now() / 1000);
+      const delta = chunks.update(me, liveMap, performance.now() / 1000, view.visibleRadius());
       if (delta.structures) host.setStructures(delta.structures);
       for (const id of delta.despawn) {
         host.removeNpc(id);
@@ -1003,6 +1299,9 @@ function initControls(): void {
     lastTs = 0;
   });
   stepBtn.addEventListener("click", () => { playing = false; playBtn.textContent = "▶ Play"; void stepOnce(); });
+  geoScrub.addEventListener("input", () => {
+    rt?.geo?.setPos(parseInt(geoScrub.value, 10) / 1000);
+  });
   resetBtn.addEventListener("click", () => { if (rt) void loadScenario(rt.scenario, rt.colorTrait); });
   speedInput.addEventListener("input", () => { speedVal.textContent = `${speedInput.value}/s`; });
   seedInput.addEventListener("change", () => { if (rt) void loadScenario(rt.scenario, rt.colorTrait); });

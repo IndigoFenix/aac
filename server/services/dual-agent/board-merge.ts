@@ -32,6 +32,10 @@ export interface MergeButton {
    *  Board Manager set, resolved to a studentId on press), or "ROOM". Survives
    *  the merge so the press can route the utterance to the right peer. */
   addressee?: string;
+  /** Launch action: pressing this button opens an app/website instead of
+   *  voicing speech. Survives the merge so the client renders the right press
+   *  behavior; also compared in `sameBoard` so a speak→launch swap re-renders. */
+  open?: { website?: string; app?: string };
 }
 
 export interface MergeReport {
@@ -67,6 +71,8 @@ export function sameBoard(a: MergeButton[], b: MergeButton[]): boolean {
     if ((a[i].speech || "").trim() !== (b[i].speech || "").trim()) return false;
     if ((a[i].buttonType || "") !== (b[i].buttonType || "")) return false;
     if ((a[i].addressee || "") !== (b[i].addressee || "")) return false;
+    if ((a[i].open?.website || "") !== (b[i].open?.website || "")) return false;
+    if ((a[i].open?.app || "") !== (b[i].open?.app || "")) return false;
   }
   return true;
 }

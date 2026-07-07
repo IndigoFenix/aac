@@ -14,6 +14,7 @@ import { buildAcceptanceTri } from "../tri-worlds";
 import {
   FOOD_DAY_SEC, HOUSEHOLD, PANTRY_CAP, PANTRY_DAYS, createTownFood,
 } from "../food";
+import { PLAZA_R, growStreets } from "../streets";
 import {
   MARKET_MIN_HOUSES, PEOPLE_R, createTownManager, townPlan, worldPos,
   type TownHouse, type TownPlan,
@@ -32,9 +33,14 @@ const triWith = (need: number, got: number): TriWorld =>
 const house = (index: number, dx: number, dy: number): TownHouse =>
   ({ index, dx, dy, w: 7, h: 5, door: "south", color: "#a8875f" });
 
+/** A grown street net for the synthetic plans (source selection rides
+ *  street distance, so even a stub plan needs streets to walk). */
+const STUB_NET = growStreets(7, "stub", 40);
+
 /** A synthetic plan: a ring of houses around a plaza market, farm far out. */
 const marketPlan = (houses = 30): TownPlan => ({
   key: "stub", biome: "farmland", groundColor: "#8fae62", radius: 120,
+  want: houses, streets: STUB_NET,
   houses: Array.from({ length: houses }, (_, i) => {
     const a = (i / houses) * Math.PI * 2;
     return house(i, Math.cos(a) * 45 - 3.5, Math.sin(a) * 45 - 2.5);
@@ -54,14 +60,14 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
     expect(plan.houses.length).toBeGreaterThan(MARKET_MIN_HOUSES);
     const market = plan.works.find(w => w.type === "market");
     expect(market).toBeDefined();
-    // INSIDE the plaza (clear of the plaza ring road at 22), fronting
-    // the south street mouth; the hall backs onto it fronting north.
+    // INSIDE the plaza (clear of the plaza ring road), fronting the
+    // south side; the hall backs onto it fronting north.
     expect(market!.door).toBe("south");
     const corners = [
       [market!.dx, market!.dy], [market!.dx + market!.w, market!.dy],
       [market!.dx, market!.dy + market!.h], [market!.dx + market!.w, market!.dy + market!.h],
     ];
-    for (const [cx, cy] of corners) expect(Math.hypot(cx, cy)).toBeLessThan(22);
+    for (const [cx, cy] of corners) expect(Math.hypot(cx, cy)).toBeLessThan(PLAZA_R);
     expect(plan.works.find(w => w.type === "hall")!.door).toBe("north");
   });
 
@@ -112,12 +118,13 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
     expect(maxPantry(lean)).toBeLessThanOrEqual(PANTRY_CAP * 0.25 + 1e-9);
 
     // Inelastic demand: the household still eats HOUSEHOLD rations a day,
-    // so when each trip nets a quarter, trips come ~4× as often.
+    // so when each trip nets a quarter, trips come far more often (up to
+    // 4× — the walk-time floor caps how often a long trip CAN repeat).
     const trips = (f: typeof full): number => {
       const T = 6 * PANTRY_DAYS * FOOD_DAY_SEC;
       return f.errand(h, T).cycle - f.errand(h, 0).cycle;
     };
-    expect(trips(lean)).toBeGreaterThan(trips(full) * 2.5);
+    expect(trips(lean)).toBeGreaterThan(trips(full) * 2);
 
     // The market's day: stocked just over the served daily draw at dawn,
     // drawn down across the day; the whole curve scales with fill.
@@ -134,11 +141,17 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
     expect(hiLean).toBeLessThan(hi * 0.3);
   });
 
-  it("the shopping cycle is a deterministic loop: home → to market → at the stall → home, box empty while out", () => {
+  it("the shopping cycle is a deterministic loop: home → to a market STAND → home, box empty while out", () => {
     const plan = marketPlan();
     const food = createTownFood(triWith(10, 10), { key: "stub", center: { x: 0, y: 0 }, plan }, 7);
     const h = plan.houses[0];
     const src = food.sourceOf(h);
+    // The household shops at ONE of the market's stands (spread along the
+    // stall so the crowd doesn't pile in a corner), not the door point.
+    const stands = food.stands(src);
+    expect(stands.length).toBeGreaterThan(1);
+    const near = (p: { x: number; y: number }): boolean =>
+      stands.some(s => Math.hypot(p.x - s.x, p.y - s.y) < 0.01);
 
     const seen = new Set<string>();
     for (let t = 0; t < PANTRY_DAYS * FOOD_DAY_SEC * 1.2; t += 2) {
@@ -154,10 +167,11 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
         const wt = e.walkTo!;
         const last = wt[wt.length - 1];
         expect(Math.hypot(last.x - e.home.x, last.y - e.home.y)).toBeLessThan(0.01);
-        if (e.phase === "at_source") expect(e.pos).toEqual({ x: src.x, y: src.y });
-        // Outbound: the route still passes the stall before turning home.
+        // At the stall: standing at ONE stand (the same one all cycle).
+        if (e.phase === "at_source") expect(near(e.pos)).toBe(true);
+        // Outbound: the route still reaches that stand before turning home.
         if (e.phase === "to_source") {
-          expect(wt.some(p => Math.hypot(p.x - src.x, p.y - src.y) < 0.6)).toBe(true);
+          expect(wt.some(p => near(p))).toBe(true);
         }
       }
     }
@@ -194,6 +208,16 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
         expect(live.has(e.id)).toBe(true);
         // A road route out and back — at least there-and-home.
         expect(e.points.length).toBeGreaterThanOrEqual(2);
+        // Bracketed by DOOR TRANSITS: the trip leaves through the
+        // shopper's own door and returns through it, so the first and
+        // last waypoints are the SAME spot (just inside their door) —
+        // the wall is crossed at the doorway, not ground into — while
+        // the stall dwell in the middle is far away.
+        const p0 = e.points[0];
+        const pN = e.points[e.points.length - 1];
+        expect(Math.hypot(p0.x - pN.x, p0.y - pN.y)).toBeLessThan(0.01);
+        const dwell = e.points.find(pt => pt.dwell !== undefined)!;
+        expect(Math.hypot(dwell.x - p0.x, dwell.y - p0.y)).toBeGreaterThan(5);
         sentAt.set(e.id, [...(sentAt.get(e.id) ?? []), t]);
       }
     }

@@ -6,6 +6,7 @@ import { useRef, useEffect, useCallback } from "react";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import type { RawTrackedPose, PoseLandmark } from "@/lib/poseTrackingTypes";
+import { poseHeadNearFace } from "@shared/aac/pose-classify";
 
 interface FaceMirrorProps {
   faces: RawTrackedFace[];
@@ -57,7 +58,14 @@ export function FaceMirror({ faces, hands, poses = [], size = 80 }: FaceMirrorPr
       return areaB - areaA;
     });
 
-    if (sorted.length === 0 && currentHands.length === 0 && currentPoses.length === 0) {
+    // Pose comes from a SEPARATE model than the face, so it can latch onto a
+    // different person (or a spurious body). Only keep a pose when its head lands
+    // on the primary face — otherwise the skeleton would float, disconnected from
+    // the head, so we drop it here (and it no longer counts toward "has content").
+    const primaryFace = sorted[0];
+    const linkedPoses = currentPoses.filter((p) => isPoseLinkedToFace(p, primaryFace));
+
+    if (sorted.length === 0 && currentHands.length === 0 && linkedPoses.length === 0) {
       // Empty state — faint dashed circle
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = "rgba(255,255,255,0.25)";
@@ -71,7 +79,7 @@ export function FaceMirror({ faces, hands, poses = [], size = 80 }: FaceMirrorPr
 
     // Draw the body skeleton first (behind faces/hands) so the cartoon face and
     // hand skeletons stay prominent on top.
-    for (const pose of currentPoses) {
+    for (const pose of linkedPoses) {
       drawPose(ctx, pose, w, h);
     }
 
@@ -352,6 +360,23 @@ const POSE_BONES: Array<[number, number]> = [
   [24, 26], [26, 28],  // right leg
 ];
 const POSE_VIS_MIN = 0.5;
+
+/**
+ * True when `pose`'s head lands on `face` (same person). Pose and face come from
+ * independent models (pose runs single-body), so on multi-person / spurious
+ * frames the body can belong to someone other than the mirrored face. Delegates
+ * the geometry to the shared, unit-tested `poseHeadNearFace`; converts the face's
+ * bounding box to the shared `{x,y,w,h}` shape. No face → nothing to link to, so
+ * the body is hidden rather than left floating.
+ */
+function isPoseLinkedToFace(
+  pose: RawTrackedPose,
+  face: RawTrackedFace | undefined,
+): boolean {
+  const bb = face?.boundingBox;
+  if (!bb) return false;
+  return poseHeadNearFace(pose.landmarks, { x: bb.x, y: bb.y, w: bb.width, h: bb.height });
+}
 
 function drawPose(
   ctx: CanvasRenderingContext2D,

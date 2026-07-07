@@ -29,6 +29,7 @@ import {
   type PlatformMessageInput,
 } from "@shared/games-bridge";
 import { API_BASE_URL } from "@/lib/api-base";
+import { apiPost } from "@/lib/queryClient";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
@@ -147,6 +148,44 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
           dualAgent.sendContextOnly(formatSurface(msg.surface));
         }
 
+        // Active AI request — a directed nudge asking the AI to respond to the
+        // student now. Routed as a context injection framed as a request; the
+        // AI's reply comes back through the normal `ai_comment` stream.
+        if (msg.type === "ai_request" && dualAgent?.sendContextOnly) {
+          const prompt = typeof msg.prompt === "string" ? msg.prompt.trim() : "";
+          if (prompt) dualAgent.sendContextOnly(`[GAME REQUEST] (game: ${gameId})\n${prompt}`);
+        }
+
+        // Structured AI selection — the app asks the AI to pick one of its
+        // options; we call the gated endpoint (as the trusted, authenticated
+        // host) and reply with a correlated `ai_response`. Fire-and-forget:
+        // onGameMessage is sync, so run the round-trip in a detached async task.
+        if (msg.type === "ai_select") {
+          const target = iframeRef.current;
+          const requestId = typeof msg.requestId === "string" ? msg.requestId : "";
+          const options = Array.isArray(msg.options) ? msg.options : [];
+          if (target && requestId && options.length >= 2) {
+            void (async () => {
+              try {
+                const resp = await apiPost<{ ok: boolean; selectedId: string; reason?: string; error?: string }>(
+                  "/api/aac/app-ai/select",
+                  { options, instruction: msg.instruction, sessionId: dualAgent?.sessionId ?? undefined },
+                );
+                sendToGame(target, {
+                  type: "ai_response",
+                  requestId,
+                  ok: true,
+                  data: { selectedId: resp.selectedId, reason: resp.reason },
+                });
+              } catch (e: any) {
+                sendToGame(target, { type: "ai_response", requestId, ok: false, error: e?.message || "selection failed" });
+              }
+            })();
+          } else if (target && requestId) {
+            sendToGame(target, { type: "ai_response", requestId, ok: false, error: "invalid ai_select (need requestId + at least 2 options)" });
+          }
+        }
+
         // Board lock: the game pins (or releases) the AAC response board options.
         if (msg.type === "set_board_options") onBoardOptions?.(msg.options);
         else if (msg.type === "clear_board_options") onBoardOptions?.(null);
@@ -227,6 +266,35 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     lastAiTextRef.current = text;
     sendToGame(iframe, { type: "ai_comment", text });
   }, [dualAgent?.currentMessage?.content, forwardAiTextToGame, iframeReady]);
+
+  // Push the AI's live activity (speaking / thinking) down to the game whenever
+  // it changes — so a cooperative app can duck its audio or show a cue. Coarse
+  // by design; gated behind the same flag as ai_comment.
+  const speaking = !!dualAgent?.isPlaying;
+  const proc = dualAgent?.processing;
+  const thinking = !!(proc && (proc.speaker || proc.board || proc.interpret));
+  const lastAiStateRef = useRef<string>("");
+  useEffect(() => {
+    if (!forwardAiTextToGame || !iframeReady) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const key = `${speaking}|${thinking}`;
+    if (key === lastAiStateRef.current) return;
+    lastAiStateRef.current = key;
+    sendToGame(iframe, { type: "ai_state", speaking, thinking });
+  }, [speaking, thinking, forwardAiTextToGame, iframeReady]);
+
+  // Mirror the AAC avatar's emote so a game can reflect the AI's mood.
+  const emote = dualAgent?.emote ?? "neutral";
+  const lastEmoteRef = useRef<string>("");
+  useEffect(() => {
+    if (!forwardAiTextToGame || !iframeReady) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    if (emote === lastEmoteRef.current) return;
+    lastEmoteRef.current = emote;
+    sendToGame(iframe, { type: "ai_emote", emote });
+  }, [emote, forwardAiTextToGame, iframeReady]);
 
   // Resolve `src` against VITE_API_URL when it's a same-origin path. In dev
   // the AAC client runs on port 5174 while the games are served by express on

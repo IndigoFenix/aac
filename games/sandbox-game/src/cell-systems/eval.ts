@@ -71,7 +71,7 @@ export function evalCond(view: CellView, c: Condition | undefined): boolean {
  *  null for transport effects (spread/flowDown), which act across cells and are
  *  handled by the grid engine. */
 export type OwnDelta =
-  | { kind: 'scalar'; scalar: string; delta: number }
+  | { kind: 'scalar'; scalar: string; delta: number; target?: number }
   | { kind: 'stage'; state: string; to: string }
   | null;
 
@@ -80,7 +80,10 @@ export function ownEffectDelta(view: CellView, e: Effect): OwnDelta {
   if ('toward' in e) {
     const cur = view.scalar(e.toward.scalar);
     const tgt = refVal(view, e.toward.target);
-    return { kind: 'scalar', scalar: e.toward.scalar, delta: (tgt - cur) * clampRate(e.toward.rate) };
+    // `target` rides along so an INTEGER engine can finish the tail: a
+    // sub-unit convergent step rounds away at an integer commit and the
+    // var rests short of its target (grid.ts intTowardStep).
+    return { kind: 'scalar', scalar: e.toward.scalar, delta: (tgt - cur) * clampRate(e.toward.rate), target: tgt };
   }
   if ('change' in e) {
     const off = e.change.offset === undefined ? 0

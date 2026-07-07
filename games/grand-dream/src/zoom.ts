@@ -49,8 +49,9 @@ import {
 } from "@shared/world-engine/index";
 import type { Histfig, HistfigSample } from "@popusim/controller/World";
 import type { TriWorld } from "./tri";
-import { ERRAND_WALK, HOUSEHOLD, createTownFood, houseDoorstep, type TownFood } from "./food";
-import { buildTownRoads, type TownRoads } from "./town-roads";
+import { ERRAND_WALK, HOUSEHOLD, createTownFood, doorTransit, houseDoorstep, type TownFood } from "./food";
+import { foundNeighborhoodMarkets } from "./districts";
+import { growStreets, type TownStreets, type Vec2 } from "./streets";
 
 export { HOUSEHOLD };
 
@@ -97,9 +98,11 @@ export interface TownHouse {
   dy: number;
   w: number;
   h: number;
-  /** Door on the street-facing (center-facing) edge. */
+  /** Door on the street-facing edge (houses front their street). */
   door: "north" | "south" | "east" | "west";
   color: string;
+  /** Arterial subtree the house's street descends from (districts.ts). */
+  arm?: number;
 }
 
 export interface TownWork {
@@ -125,10 +128,15 @@ export interface TownPlan {
   groundColor: string;
   /** Edge of the built-up area, meters from center. */
   radius: number;
+  /** Lots the population asked for (houses may be fewer if the town is
+   *  full) — the cheap growth check TownManager compares against. */
+  want: number;
   houses: TownHouse[];
   works: TownWork[];
   /** Cultivated patches beyond the houses (farmland biome). */
   fields: TownField[];
+  /** The organic street tree the whole plan hangs off (streets.ts). */
+  streets: TownStreets;
 }
 
 const HOUSE_COLORS = ["#a8875f", "#9b7a52", "#b5936b", "#8f7350"];
@@ -145,43 +153,101 @@ const WORK_STYLE: Record<TownWork["type"], { color: string; w: number; h: number
  *  this size feeds itself. Below it, people buy at the farm door. */
 export const MARKET_MIN_HOUSES = 24;
 
-/** The fixed lot sequence: concentric rings around a central plaza, with
- *  two cross streets kept clear. Yields as many lots as asked for. */
-function lotAt(k: number, rng: () => number): { x: number; y: number } {
-  // Ring geometry is closed-form so lot k never depends on how many lots
-  // exist: ring i starts at radius 28 + 15*i and holds floor(2πr/14) —
-  // village-dense packing that keeps even a several-thousand-soul town
-  // comfortably inside its square-kilometer tile.
-  // Radial jitter is ±1.5 ON PURPOSE: with house depth ≤ 6.5 the worst
-  // corner reaches ~7.05 m off the ring line, and the ring ROADS sit at
-  // 7.5 — every street stays walkably clear of every house by
-  // construction (town-roads.ts routes on those center lines).
-  let i = 0;
-  let base = 0;
-  for (; ; i++) {
-    const r = 28 + 15 * i;
-    const cap = Math.floor((2 * Math.PI * r) / 14);
-    if (k < base + cap) {
-      const slot = k - base;
-      // Angular jitter is ±1 m of ARC (divide by r) — a fixed-angle
-      // jitter grows with radius and had outer-ring houses overlapping
-      // each other (±0.025 rad is ±6 m of arc at ring 14).
-      const a = (slot / cap) * Math.PI * 2 + (i % 2 ? Math.PI / cap : 0) + ((rng() - 0.5) * 2) / r;
-      return { x: Math.cos(a) * (r + (rng() - 0.5) * 3), y: Math.sin(a) * (r + (rng() - 0.5) * 3) };
-    }
-    base += cap;
-  }
+/** Door edge facing from a footprint center toward a target point. */
+function doorToward(cx: number, cy: number, tx: number, ty: number): TownHouse["door"] {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "east" : "west") : (dy > 0 ? "south" : "north");
 }
 
-/** The door edge for a lot: face the NEAREST road. Houses flanking a
- *  cross street front the street; everyone else fronts the ring road on
- *  their plaza side (the center-facing edge). Depends only on the lot's
- *  geometry, so it is as prefix-stable as the lot itself. */
-function doorFor(x: number, y: number): TownHouse["door"] {
-  const SPOKE_NEAR = 13; // within this of a cross street, front the street
-  if (Math.abs(x) < SPOKE_NEAR && Math.abs(x) <= Math.abs(y)) return x > 0 ? "west" : "east";
-  if (Math.abs(y) < SPOKE_NEAR && Math.abs(y) < Math.abs(x)) return y > 0 ? "north" : "south";
-  return Math.abs(x) > Math.abs(y) ? (x > 0 ? "west" : "east") : (y > 0 ? "north" : "south");
+/* ---------------- typed growth bias (city-development §2b) ------------ */
+// A town turns toward what feeds it: its arterials aim at its trade
+// partners and its resource sides, and its works cap the tips that point
+// the right way (farm gates toward the fertile tiles, the pithead toward
+// the ore). Bearings are QUANTIZED (16 compass buckets) and memoized per
+// session, so slow substrate drift (mining depletion, greening) doesn't
+// re-lay a town under the player's feet — a re-boot long after the
+// mountain emptied MAY re-lay it, which is development, not noise.
+
+const BEARING_QUANT = Math.PI / 8;
+const quantB = (a: number): number => Math.round(a / BEARING_QUANT) * BEARING_QUANT;
+
+export interface TownBias {
+  /** Arterial bearings, most important first (roads, then resources). */
+  bearings: number[];
+  /** Direction of the fertile side (radians), if the surroundings lean. */
+  fertile: number | null;
+  /** Direction of the ore side, likewise. */
+  ore: number | null;
+}
+
+/** Weighted mean direction of a substrate field around the town's tile —
+ *  null when the surroundings are symmetric (no side to lean toward). */
+function fieldBearing(
+  grid: { cols: number; rows: number; fields: Record<string, ArrayLike<number>> } | undefined,
+  cx: number, cy: number, field: string, radius = 4,
+): number | null {
+  const vals = grid?.fields?.[field];
+  if (!vals) return null;
+  let vx = 0, vy = 0, sum = 0;
+  for (let dy = -radius; dy <= radius; dy++) {
+    const y = cy + dy;
+    if (y < 0 || y >= grid!.rows) continue;
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const x = cx + dx;
+      if (x < 0 || x >= grid!.cols) continue;
+      const v = vals[y * grid!.cols + x];
+      if (!(v > 0)) continue;
+      const inv = 1 / Math.hypot(dx, dy);
+      vx += v * dx * inv;
+      vy += v * dy * inv;
+      sum += v;
+    }
+  }
+  if (sum <= 0) return null;
+  if (Math.hypot(vx, vy) / sum < 0.15) return null; // symmetric — no lean
+  return quantB(Math.atan2(vy, vx));
+}
+
+const biasMemo = new WeakMap<TriWorld, Map<string, TownBias>>();
+
+/** The typed growth bias for a town (session-memoized — see above). */
+export function townBias(tri: TriWorld, siteKey: string): TownBias {
+  let memo = biasMemo.get(tri);
+  if (!memo) {
+    memo = new Map();
+    biasMemo.set(tri, memo);
+  }
+  const hit = memo.get(siteKey);
+  if (hit) return hit;
+
+  const city = tri.cities.find(c => c.key === siteKey);
+  const grid = tri.grid as unknown as Parameters<typeof fieldBearing>[0];
+  const fertile = city ? fieldBearing(grid, city.x, city.y, "fertility") : null;
+  const ore = city ? fieldBearing(grid, city.x, city.y, "ore") : null;
+
+  // Roads out of town head where the road GOES: bearings toward up to
+  // two route-connected neighbor cities (the high street is the highway).
+  const bearings: number[] = [];
+  if (city) {
+    const routes = (tri.dual as { routes?: () => Array<{ site_a: { key: string } | null; site_b: { key: string } | null }> }).routes?.() ?? [];
+    for (const r of routes) {
+      if (bearings.length >= 2) break;
+      const otherKey = r.site_a?.key === siteKey ? r.site_b?.key
+        : r.site_b?.key === siteKey ? r.site_a?.key : null;
+      if (!otherKey) continue;
+      const other = tri.cities.find(c => c.key === otherKey);
+      if (!other || (other.x === city.x && other.y === city.y)) continue;
+      bearings.push(quantB(Math.atan2(other.y - city.y, other.x - city.x)));
+    }
+  }
+  if (fertile !== null) bearings.push(fertile);
+  if (ore !== null) bearings.push(ore);
+
+  const bias: TownBias = { bearings, fertile, ore };
+  memo.set(siteKey, bias);
+  return bias;
 }
 
 export function townPlan(tri: TriWorld, siteKey: string, seed: number): TownPlan {
@@ -197,86 +263,180 @@ export function townPlan(tri: TriWorld, siteKey: string, seed: number): TownPlan
   const pop = Math.max(0, dual.settlementScalar(siteKey, "population"));
   const houseCount = Math.max(6, Math.round(pop / HOUSEHOLD));
 
-  // Houses on the lot sequence. Each lot's jitter rng is seeded by LOT
-  // index, so house k is byte-identical whether the town has 50 houses
-  // or 800 (prefix stability).
+  // The street tree grows first (streets.ts); houses fill its frontage
+  // slots in CONSTRUCTION ORDER. Each lot's jitter rng is seeded by LOT
+  // index and the street event stream is fixed by (seed, site, bias), so
+  // house k is byte-identical whether the town has 50 houses or 800
+  // (prefix stability) — growth extends streets and appends lots at the
+  // fringe. The TYPED BIAS aims the arterials: out along the trade
+  // roads, toward the fertile side, toward the ore.
+  const bias = townBias(tri, siteKey);
+  const net = growStreets(seed, siteKey, houseCount, { bearings: bias.bearings });
   const houses: TownHouse[] = [];
   let radius = 40;
-  for (let k = 0; k < houseCount; k++) {
+  const count = Math.min(houseCount, net.slots.length);
+  for (let k = 0; k < count; k++) {
+    const slot = net.slots[k];
     const rng = mulberry32(hashSeed(seed, `${siteKey}:lot:${k}`));
-    const lot = lotAt(k, rng);
-    // Keep the two cross streets clear (roads run down them).
-    if (Math.abs(lot.x) < 7 || Math.abs(lot.y) < 7) continue;
-    const w = 6.5 + rng() * 2.5;
-    const h = 5 + rng() * 1.5; // depth bounded so ring roads stay clear
-    const door = doorFor(lot.x, lot.y);
+    // Face the frontage anchor (the slot's own street), from the
+    // UNJITTERED slot so the door edge never flips with the wobble.
+    const door = doorToward(slot.x, slot.y, slot.ax, slot.ay);
+    const depth = 5 + rng() * 1.5; // toward the street — keeps it clear
+    const width = 6.5 + rng() * 2.5;
+    const sideways = door === "east" || door === "west";
+    const w = sideways ? depth : width;
+    const h = sideways ? width : depth;
+    const cx = slot.x + (rng() - 0.5) * 2;
+    const cy = slot.y + (rng() - 0.5) * 2;
     houses.push({
       index: k,
-      dx: lot.x - w / 2,
-      dy: lot.y - h / 2,
+      dx: cx - w / 2,
+      dy: cy - h / 2,
       w, h, door,
       color: HOUSE_COLORS[hashSeed(seed, `${siteKey}:c:${k}`) % HOUSE_COLORS.length],
+      arm: slot.arm,
     });
-    const rr = Math.hypot(lot.x, lot.y) + 12;
+    const rr = Math.hypot(cx, cy) + 12;
     if (rr > radius) radius = rr;
   }
 
-  // Civic + production on the outskirt ring, one building per counted
-  // unit (capped — these are landmarks, not the industry ledger).
+  // STEP 1 of the city fractal (city-development.md §7): neighborhood
+  // market stalls founded by unserved demand, each a CONVERTED house lot
+  // (same footprint and door, so it stays on its street frontage).
+  // The founding anchor is the town's central source — the plaza market
+  // when the town rates one, else the hall (both at fixed plaza spots,
+  // so founding stays prefix-stable as the town grows).
+  const hasPlazaMarket = houses.length >= MARKET_MIN_HOUSES;
+  const mkStyle = WORK_STYLE.market;
+  const anchor = hasPlazaMarket
+    ? { x: 0, y: 6.5 + mkStyle.h + 1.5 } // plaza market doorstep (south)
+    : { x: 0, y: -5.5 - WORK_STYLE.hall.h - 1.5 }; // hall doorstep (north)
+  const stalls = foundNeighborhoodMarkets(houses, anchor, net);
+  const stallIdx = new Set(stalls.map(s => s.index));
+  const homes = stallIdx.size ? houses.filter(h => !stallIdx.has(h.index)) : houses;
+
+  // Civic buildings hold the plaza; production works cap the street TIPS
+  // (the town's edge, where the lanes peter out into fields and pits) —
+  // one building per counted unit (capped: landmarks, not the ledger).
   const works: TownWork[] = [];
+  works.push({
+    // The hall stands INSIDE the plaza, door fronting north.
+    type: "hall", dx: -WORK_STYLE.hall.w / 2, dy: -5.5 - WORK_STYLE.hall.h,
+    w: WORK_STYLE.hall.w, h: WORK_STYLE.hall.h, door: "north", color: WORK_STYLE.hall.color,
+  });
+  if (hasPlazaMarket) {
+    // The market backs onto the hall across the plaza center.
+    works.push({
+      type: "market", dx: -mkStyle.w / 2, dy: 6.5,
+      w: mkStyle.w, h: mkStyle.h, door: "south", color: mkStyle.color,
+    });
+  }
+
+  // Street tips — where the works go. Each type prefers the tips that
+  // POINT THE RIGHT WAY (typed placement, city-development §2b): farm
+  // gates toward the fertile side, mine/smelter toward the ore side,
+  // outskirts-ness as the tiebreak (and the whole rule when the
+  // surroundings are symmetric).
+  const tips: Array<{ p: Vec2; dir: { x: number; y: number } }> = [];
+  let maxTipR = 1;
+  for (const s of net.streets) {
+    if (s.ring || s.pts.length < 3) continue;
+    const p = s.pts[s.pts.length - 1];
+    const q = s.pts[s.pts.length - 2];
+    const len = Math.hypot(p.x - q.x, p.y - q.y) || 1;
+    tips.push({ p, dir: { x: (p.x - q.x) / len, y: (p.y - q.y) / len } });
+    maxTipR = Math.max(maxTipR, Math.hypot(p.x, p.y));
+  }
+  const usedTips = new Set<number>();
+  const bestTip = (toward: number | null): number => {
+    let best = -1;
+    let bestScore = -Infinity;
+    for (let i = 0; i < tips.length; i++) {
+      if (usedTips.has(i)) continue;
+      const t = tips[i];
+      const r = Math.hypot(t.p.x, t.p.y);
+      const align = toward === null ? 0 : Math.cos(Math.atan2(t.p.y, t.p.x) - toward);
+      const score = align * 0.75 + (r / maxTipR) * 0.45;
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    return best;
+  };
   const workCounts: Array<[TownWork["type"], number]> = [
-    ["hall", 1],
-    ["market", houses.length >= MARKET_MIN_HOUSES ? 1 : 0],
     ["farm", Math.min(6, Math.round(dual.settlementScalar(siteKey, "farms")))],
     ["mine", Math.min(6, Math.round(dual.settlementScalar(siteKey, "mines")))],
     ["smelter", Math.min(4, Math.round(dual.settlementScalar(siteKey, "smelters")))],
   ];
-  let w = 0;
-  const workRing = radius + 14;
-  const totalWorks = workCounts.reduce((a, [, n]) => a + n, 0);
+  const farmSpots: Array<{ x: number; y: number }> = [];
   for (const [type, n] of workCounts) {
     const style = WORK_STYLE[type];
-    for (let k = 0; k < n; k++, w++) {
-      if (type === "hall") {
-        // The hall stands INSIDE the plaza (its far corner stays within
-        // the plaza ring road at 22), door fronting the north street
-        // mouth — plaza traffic circles it on the ring.
-        works.push({ type, dx: -style.w / 2, dy: -5.5 - style.h, w: style.w, h: style.h, door: "north", color: style.color });
-        continue;
+    const toward = type === "farm" ? bias.fertile : bias.ore;
+    for (let k = 0; k < n; k++) {
+      let placed = false;
+      for (;;) {
+        const i = bestTip(toward);
+        if (i < 0) break;
+        usedTips.add(i);
+        const t = tips[i];
+        const x = t.p.x + t.dir.x * 13;
+        const y = t.p.y + t.dir.y * 13;
+        if (works.some(wk => Math.hypot(wk.dx + wk.w / 2 - x, wk.dy + wk.h / 2 - y) < 22)) continue;
+        const door = doorToward(x, y, t.p.x, t.p.y); // door faces back up the street
+        works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
+        if (type === "farm") farmSpots.push({ x, y });
+        const rr = Math.hypot(x, y) + 14;
+        if (rr > radius) radius = rr;
+        placed = true;
+        break;
       }
-      if (type === "market") {
-        // The market backs onto the hall across the plaza center, door
-        // fronting the south street mouth.
-        works.push({ type, dx: -style.w / 2, dy: 6.5, w: style.w, h: style.h, door: "south", color: style.color });
-        continue;
+      if (!placed) {
+        // Tips ran out (tiny towns): fall back to the town edge, still
+        // leaning the typed way when there is one.
+        const a = toward ?? (works.length / 6) * Math.PI * 2 + 0.7;
+        const spread = toward === null ? 0 : (k - (n - 1) / 2) * 0.5;
+        const x = Math.cos(a + spread) * (radius + 14);
+        const y = Math.sin(a + spread) * (radius + 14);
+        const door = doorToward(x, y, 0, 0);
+        works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
+        if (type === "farm") farmSpots.push({ x, y });
       }
-      // Keep workshops OFF the four road spokes (the spokes run out
-      // through the work ring — a smelter astride the street would
-      // block it): nudge any near-axis angle clear.
-      let a = (w / Math.max(1, totalWorks)) * Math.PI * 2 + 0.7;
-      const minAng = 14 / workRing;
-      const q = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
-      if (Math.abs(a - q) < minAng) a = q + (a >= q ? minAng : -minAng);
-      const x = Math.cos(a) * workRing;
-      const y = Math.sin(a) * workRing;
-      const door = Math.abs(x) > Math.abs(y) ? (x > 0 ? "west" : "east") : (y > 0 ? "north" : "south");
-      works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
     }
   }
+  // The founded stalls, in founding order (after the plaza market, so
+  // `works.find(type === "market")` stays the plaza one).
+  for (const s of stalls) {
+    works.push({ type: "market", dx: s.dx, dy: s.dy, w: s.w, h: s.h, door: s.door, color: mkStyle.color });
+  }
 
-  // Fields: cultivated patches past the buildings (farmland towns).
+  // Fields: cultivated patches past the farm gates (farmland towns) —
+  // the countryside starts where the lanes end.
   const fields: TownField[] = [];
   if (biome === "farmland") {
+    const anchors = farmSpots.length
+      ? farmSpots
+      : tips.slice(0, 2).map(t => ({ x: t.p.x, y: t.p.y }));
+    if (anchors.length === 0) anchors.push({ x: radius, y: 0 });
     const patches = Math.min(14, 2 + Math.round(dual.settlementScalar(siteKey, "farms")) * 2);
     for (let k = 0; k < patches; k++) {
       const rng = mulberry32(hashSeed(seed, `${siteKey}:field:${k}`));
-      const a = (k / patches) * Math.PI * 2 + rng() * 0.3;
-      const r = workRing + 40 + rng() * 60;
-      fields.push({ dx: Math.cos(a) * r - 23, dy: Math.sin(a) * r - 17, w: 46 + rng() * 20, h: 34 + rng() * 14 });
+      const at = anchors[k % anchors.length];
+      const rr = Math.hypot(at.x, at.y) || 1;
+      const ux = at.x / rr;
+      const uy = at.y / rr;
+      const out = 30 + rng() * 60;
+      const side = (rng() - 0.5) * 90;
+      fields.push({
+        dx: at.x + ux * out - uy * side - 23,
+        dy: at.y + uy * out + ux * side - 17,
+        w: 46 + rng() * 20,
+        h: 34 + rng() * 14,
+      });
     }
   }
 
-  return { key: siteKey, biome, groundColor, radius: workRing + 10, houses, works, fields };
+  return {
+    key: siteKey, biome, groundColor, radius: radius + 10,
+    want: houseCount, houses: homes, works, fields, streets: net,
+  };
 }
 
 /** The streaming NPC id for a resident — parse back with `villagerOf`. */
@@ -380,7 +540,7 @@ export function cityContent(tri: TriWorld, siteKey: string, seed: number): CityC
         buildings.push({
           id: `${type}_${k}`, type, color: style.color,
           dx: fx, dy: fy, w: style.w, h: style.h,
-          door: { edge, offset: along / 2 - 1, width: 2 },
+          door: { edge, offset: along / 2, width: 2 }, // centred on the wall (see buildingsNear)
         });
         placed = true;
         break;
@@ -648,9 +808,11 @@ export const PEOPLE_R = 240;
  *  (someone standing next to you cannot blink out): eviction happens
  *  beyond this, as the crowd turns over off to the sides. */
 export const PEOPLE_EVICT_MIN = 60;
-/** How far a resident strays from their doorstep — kept to their own
- *  yard and street; going further is what errands (roads) are for. */
-const RESIDENT_WANDER_R = 10;
+/** Wander tether radius for a resident, anchored at their house CENTER:
+ *  a shuffle inside their own four walls, not a stroll — they leave the
+ *  house only on an errand (which crosses the door explicitly), never by
+ *  steering into a wall, and while home they sit under the indoor cull. */
+const INDOOR_WANDER_R = 2.5;
 /** Buildings become REAL engine structures (blocking walls, swinging
  *  doors) within this range of the player (meters)... */
 export const STRUCT_LOAD_R = 100;
@@ -665,9 +827,9 @@ export interface LoadedTown {
   /** The town's food-economy projection (street-level add-on to the
    *  aggregate consume behavior — see food.ts). */
   food: TownFood;
-  /** The street network (rings + spokes) — errands ride it, the view
-   *  draws it, houses face it. */
-  roads: TownRoads;
+  /** The street tree (streets.ts) — errands ride it, the view draws it,
+   *  houses face it. Same object as `plan.streets`. */
+  roads: TownStreets;
 }
 
 export interface ChunkUpdate {
@@ -693,8 +855,14 @@ export interface TownManager {
    *  house is, so a wanderer beside the player never blinks out.
    *  `now` (seconds) drives the food-economy clock: unspawned residents
    *  rank/spawn at their shopping-cycle position, and embodied ones are
-   *  sent on market trips when their cycle says the box ran dry. */
-  update(p: { x: number; y: number }, live?: ReadonlyMap<string, { x: number; y: number }>, now?: number): ChunkUpdate;
+   *  sent on market trips when their cycle says the box ran dry.
+   *  `visibleR` (meters) is how far the CAMERA can currently see: a
+   *  mid-errand resident who would materialize inside it spawns at
+   *  their trip's source BUILDING instead and walks out of its door —
+   *  nobody pops into existence on open ground in front of the player.
+   *  (Home-phase residents always spawn INSIDE their house; the view
+   *  hides indoor villagers, so they exist only once they step out.) */
+  update(p: { x: number; y: number }, live?: ReadonlyMap<string, { x: number; y: number }>, now?: number, visibleR?: number): ChunkUpdate;
   loaded(): LoadedTown[];
   /** Embodied residents currently on the host (budget sharing). */
   active(): number;
@@ -713,6 +881,29 @@ export function createTownManager(
 ): TownManager {
   const towns = new Map<string, LoadedTown>();
   const excluded = new Set<string>();
+
+  /** Town-local house center in WORLD meters (the resident's indoor
+   *  tether: idle residents shuffle INSIDE their home, so they never
+   *  grind against a wall and — once the house is a real structure —
+   *  they're hidden by the indoor cull until they step out to shop). */
+  const houseCenter = (town: LoadedTown, h: TownHouse): { x: number; y: number } =>
+    ({ x: town.center.x + h.dx + h.w / 2, y: town.center.y + h.dy + h.h / 2 });
+  /** Wrap a shopping route (which starts/ends at the doorstep OUTSIDE
+   *  the door) with door transits, so crossing the wall happens AT the
+   *  doorway — the short-range "pathfinding" towns actually need.
+   *  `exitFirst` prepends the inside→outside step for a body leaving
+   *  home; the return step (…→inside) is always appended so the shopper
+   *  ends up back indoors. */
+  const throughDoor = (
+    town: LoadedTown, h: TownHouse,
+    walkTo: Array<{ x: number; y: number; dwell?: number }>, exitFirst: boolean,
+  ): Array<{ x: number; y: number; dwell?: number }> => {
+    const d = doorTransit(town.center, h);
+    const pts = exitFirst ? [d.inside, d.outside, ...walkTo] : [...walkTo];
+    pts.push(d.inside);
+    return pts;
+  };
+
   /** Spawned resident id → doorstep position. */
   const bodies = new Map<string, { x: number; y: number }>();
   /** Spawned resident id → their house (for the live food cycle). */
@@ -736,7 +927,12 @@ export function createTownManager(
         footprint: { x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h },
         floors: 1,
         wallThickness: 0.4,
-        doorways: [{ edge: b.door, offset: along / 2 - 1, width: 2 }],
+        // The door gap is CENTERED on its wall (edgeStructures centers the
+        // gap on `offset`) — the same wall midpoint houseDoorstep /
+        // doorTransit aim at, so residents walk straight at their door
+        // instead of at a point 1 m to its side (the old `along/2 - 1`
+        // put the gap off-centre while the aim stayed centred).
+        doorways: [{ edge: b.door, offset: along / 2, width: 2 }],
         color: b.color,
       });
     };
@@ -748,7 +944,7 @@ export function createTownManager(
   };
 
   return {
-    update(p, live, now = 0) {
+    update(p, live, now = 0, visibleR) {
       const spawn: ChunkUpdate["spawn"] = [];
       const despawn: string[] = [];
       const errands: ChunkUpdate["errands"] = [];
@@ -778,9 +974,34 @@ export function createTownManager(
         const center = worldPos(c.x, c.y);
         if (Math.hypot(center.x - p.x, center.y - p.y) < TOWN_LOAD_R) {
           const plan = townPlan(tri, c.key, seed);
-          const roads = buildTownRoads(plan);
-          const food = createTownFood(tri, { key: c.key, center, plan }, seed, roads);
-          towns.set(c.key, { key: c.key, center, plan, food, roads });
+          const food = createTownFood(tri, { key: c.key, center, plan }, seed, plan.streets);
+          towns.set(c.key, { key: c.key, center, plan, food, roads: plan.streets });
+        }
+      }
+
+      // GROWTH while loaded: population moved → the plan re-derives.
+      // Prefix stability means the rebuild only extends streets, appends
+      // fringe lots, and maybe converts a lot into a stall — the town the
+      // player is standing in doesn't reshuffle, it BUILDS (the view's
+      // reveal trackers animate the difference as construction).
+      for (const [key, town] of towns) {
+        const pop = Math.max(0, tri.dual.settlementScalar(key, "population"));
+        const want = Math.max(6, Math.round(pop / HOUSEHOLD));
+        if (want === town.plan.want) continue;
+        const plan = townPlan(tri, key, seed);
+        const food = createTownFood(tri, { key, center: town.center, plan }, seed, plan.streets);
+        const rebuilt: LoadedTown = { key, center: town.center, plan, food, roads: plan.streets };
+        towns.set(key, rebuilt);
+        // Re-point embodied residents at the new plan; a body whose lot
+        // vanished (converted or abandoned) despawns via ranking below.
+        for (const [id, bh] of bodyHouse) {
+          if (bh.town.key !== key) continue;
+          const house = plan.houses.find(h => h.index === bh.house.index);
+          if (house) bodyHouse.set(id, { town: rebuilt, house });
+          else {
+            bodyHouse.delete(id);
+            tripSent.delete(id);
+          }
         }
       }
 
@@ -803,7 +1024,7 @@ export function createTownManager(
       const candidates: Array<{
         id: string; town: LoadedTown; house: TownHouse; d: number;
         x: number; y: number; walkTo?: Array<{ x: number; y: number; dwell?: number }>;
-        home: { x: number; y: number };
+        home: { x: number; y: number }; indoor?: boolean;
       }> = [];
       for (const town of towns.values()) {
         for (const house of town.plan.houses) {
@@ -814,20 +1035,63 @@ export function createTownManager(
             const at = bodyPos(id, door);
             const d = Math.hypot(at.x - p.x, at.y - p.y);
             if (d > PEOPLE_R) continue;
-            candidates.push({ id, town, house, d, x: at.x, y: at.y, home: door });
+            candidates.push({ id, town, house, d, x: at.x, y: at.y, home: houseCenter(town, house) });
             continue;
           }
           // Cheap prefilter: their day happens near the door–source
-          // corridor. The ROAD route bows outward from the chord (ring
-          // arcs), so allow a generous sagitta margin before skipping.
+          // corridor. The ROAD route bows outward from the chord, so
+          // allow a generous sagitta margin before skipping.
           const src = town.food.sourceOf(house);
           if (segDist(door, src) > PEOPLE_R + 120) continue;
           const est = town.food.errand(house, now);
           const d = Math.hypot(est.pos.x - p.x, est.pos.y - p.y);
           if (d > PEOPLE_R) continue;
+
+          // WHERE the body materializes (the pop-in rule): people enter
+          // the world through buildings, never onto open ground.
+          //  - At home: spawn INSIDE the house (the view hides indoor
+          //    villagers — they exist once they step out the door).
+          //  - Mid-errand where the camera can see: spawn at the trip's
+          //    SOURCE building and play the rest of the trip from there
+          //    (they "were at the market" — a bounded, plausible slip
+          //    of the clock instead of a body from thin air).
+          //  - Mid-errand off-camera: spawn on-route as before (the
+          //    plaza still has people in it before you arrive).
+          let at = est.pos;
+          let walkTo = est.walkTo;
+          let indoor = false;
+          if (est.phase === "home") {
+            at = {
+              x: town.center.x + house.dx + house.w / 2,
+              y: town.center.y + house.dy + house.h / 2,
+            };
+            indoor = true;
+          } else if (visibleR !== undefined && d < visibleR) {
+            at = { x: est.source.x, y: est.source.y };
+            if (est.phase === "to_source" && walkTo) {
+              // Skip the outbound leg they no longer walk: resume from
+              // the stall (its dwell point) onward.
+              const dwellAt = walkTo.findIndex(pt => pt.dwell !== undefined);
+              if (dwellAt > 0) walkTo = walkTo.slice(dwellAt);
+            }
+            if (est.source.work !== undefined) {
+              const wk = town.plan.works[est.source.work];
+              if (wk) {
+                // Inside the source building, exiting through its door
+                // (the transit sandwich) before the rest of the trip.
+                at = { x: town.center.x + wk.dx + wk.w / 2, y: town.center.y + wk.dy + wk.h / 2 };
+                const door = doorTransit(town.center, wk);
+                walkTo = [door.inside, door.outside, ...(walkTo ?? [])];
+              }
+            }
+          }
+          // A mid-trip body ends its errand at the doorstep — send it on
+          // through its own door so it settles indoors (and stops
+          // grinding on the door frame trying to get back in).
+          if (walkTo && !indoor) walkTo = throughDoor(town, house, walkTo, false);
           candidates.push({
-            id, town, house, d, x: est.pos.x, y: est.pos.y,
-            ...(est.walkTo ? { walkTo: est.walkTo } : {}), home: est.home,
+            id, town, house, d, x: at.x, y: at.y,
+            ...(walkTo ? { walkTo } : {}), home: houseCenter(town, house), indoor,
           });
         }
       }
@@ -874,7 +1138,10 @@ export function createTownManager(
             name: sample.name,
             behavior: {
               movement: "wander", conversationRadius: 5,
-              wanderRadius: RESIDENT_WANDER_R, home: c.home,
+              // Tethered to the house CENTER: idle bodies shuffle indoors
+              // (small radius) rather than straying into their own walls,
+              // and errands cross the door explicitly (throughDoor).
+              wanderRadius: INDOOR_WANDER_R, home: c.home,
               // Bodies walk at the SAME pace the food cycle projects, so
               // an embodied trip and its clock stay in step.
               speed: ERRAND_WALK,
@@ -892,14 +1159,17 @@ export function createTownManager(
       // Live shopping trips: an embodied resident whose cycle entered
       // its trip window is sent out — once per cycle (the pantry model:
       // the box ran dry, they go fill it). The waypoints ride the ROADS,
-      // so shoppers walk streets instead of grinding into house walls.
+      // so shoppers walk streets instead of grinding into house walls,
+      // and the trip is bracketed by door transits (out of home, back
+      // in at the end) so the one obstacle in town — the doorway — is
+      // crossed cleanly at both ends.
       for (const [id, bh] of bodyHouse) {
         if (despawn.includes(id)) continue;
         const est = bh.town.food.errand(bh.house, now);
         if (est.phase === "home" || !est.walkTo) continue;
         if (tripSent.get(id) === est.cycle) continue;
         tripSent.set(id, est.cycle);
-        errands.push({ id, points: est.walkTo });
+        errands.push({ id, points: throughDoor(bh.town, bh.house, est.walkTo, true) });
       }
 
       // Structures: the buildings around the player become REAL walls

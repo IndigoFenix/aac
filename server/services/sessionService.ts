@@ -39,6 +39,7 @@ import {
 } from "@shared/schema";
 import { personaRepository } from "../repositories/personaRepository";
 import { chargeCreditsToLedger } from "./credit-ledger";
+import { notifyProviderCreditFailure } from "./providerAlertService";
 import { ChatMessageManager, AgentTemplate, CurrentImage, MdStreamEvent } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
 import {
@@ -2247,7 +2248,12 @@ function isInputTooLargeError(error: any): boolean {
 }
 
 function classifyError(error: any): string {
-  if (isCreditLimitError(error)) return "error:TOKEN_LIMIT";
+  if (isCreditLimitError(error)) {
+    // Provider account out of credit — alert support (throttled). The clinician
+    // chat runs on Claude, so attribute it there. Fire-and-forget.
+    notifyProviderCreditFailure({ error, source: "clinician-chat", providerHint: "Anthropic (Claude)" });
+    return "error:TOKEN_LIMIT";
+  }
   if (isInputTooLargeError(error)) return "error:INPUT_TOO_LARGE";
   if (isRateLimitError(error)) return "error:RATE_LIMIT";
   return "error:UNEXPECTED_ERROR";

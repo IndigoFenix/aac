@@ -142,7 +142,6 @@ export function DualAgentConversationBox({
     setVideoCaptureEnabled,
     initialize,
     sendMessage,
-    clearSession,
     setAudioEnabled,
     setVoiceEnabled,
     stopAudio,
@@ -272,11 +271,6 @@ export function DualAgentConversationBox({
       lastSentSymbolsRef.current = null;
     }
   }, [selectedSymbols, isInitialized]);
-
-  const handleClearSession = async () => {
-    hasInitializedRef.current = false;
-    clearSession();
-  };
 
   // Avatar dwell suppression — eyegaze users naturally look at the avatar while
   // it's talking, so we don't want that to start a new turn. Suppress dwell while
@@ -784,20 +778,11 @@ export function DualAgentConversationBox({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {isPlaying && (
+                      {isPlaying && (
+                        <div className="flex items-center gap-2">
                           <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleClearSession}
-                          disabled={isLoading}
-                          className="text-white hover:text-gray-200 hover:bg-white/10 text-xs px-2 py-1"
-                        >
-                          New
-                        </Button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -830,6 +815,21 @@ export function DualAgentConversationBox({
                 </div>
               )}
             </div>
+
+            {/* Microphone-error indicator — sits to the LEFT of the mirror (right
+                in RTL, since the header row follows the text direction). Shown
+                only when the AAC failed to acquire the mic stream, so it's red to
+                read as an error rather than a benign "off" state. */}
+            {micOff && (
+              <div
+                className="shrink-0 self-center flex items-center justify-center text-red-500"
+                style={{ width: 40, height: 80 }}
+                title={t('status.microphoneOff')}
+                aria-label={t('status.microphoneOff')}
+              >
+                <MicOff className="w-6 h-6" />
+              </div>
+            )}
 
             {/* Face Mirror — always reserves space; click/dwell to toggle pause.
                 When the camera is off or not working, a camera-off icon takes
@@ -864,20 +864,6 @@ export function DualAgentConversationBox({
                 <IdentificationBadge identification={identification ?? null} />
               </div>
             </div>
-
-            {/* Microphone-off indicator — sits next to the mirror (to the right,
-                or left in RTL via the header row's text direction). Shown only
-                when the mic is off or not working. */}
-            {micOff && (
-              <div
-                className="shrink-0 self-center flex items-center justify-center text-white/40"
-                style={{ width: 40, height: 80 }}
-                title={t('status.microphoneOff')}
-                aria-label={t('status.microphoneOff')}
-              >
-                <MicOff className="w-6 h-6" />
-              </div>
-            )}
           </div>
 
           {/* Experiment (glyphInputTranslation): glyph translation of the

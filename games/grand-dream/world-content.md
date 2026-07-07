@@ -28,7 +28,7 @@ world wants "stabilise in motion", not simulated droplets.
 | `solid` | int 0..1 | worldgen | static; blocks flow & fertility |
 | `river` | computed | `flow:{potential:height}` | derived; recomputes on sculpt only |
 | `fertility` | int 0..15 | **emergent** | converges toward a target set by water × elevation; the master "how good is this land" field |
-| `plant` | int 0..7 | emergent | tracks fertility with lag (vegetation is fertility made visible) |
+| `plant` | int 0..7 | emergent | tracks the NEIGHBOURHOOD's fertility (mean, radius 1) — a riparian halo, since fertile tiles are river tiles and render as water; the banks are where the green shows |
 | `ore` | int 0..15 | **worldgen, finite** | inert at runtime; only DEPLETES (mining is a Settlement-side withdrawal) |
 | `lure` | int 0..15 | emergent | Sugarscape attraction: `max(fertility, ore)` via disjoint-guard towards — each resource holds its own population, like sugar and spice mountains |
 | `people` | int 0..31 | emergent | wild humans: logistic growth in place toward `lure`-set capacity — an animal population that grows farm hamlets AND proto-mining camps |
@@ -45,6 +45,13 @@ Design rules that make the set coherent:
   (`ore ∝ max(0, height − TREELINE) × noise`). So ore and fertility
   anti-correlate *by construction*: the map itself proposes farm country and
   mine country, and trade between them is geography, not script.
+  - **Provider note (2026-07-06):** height + ore now also have a SIMULATE
+    provider — the plate-tectonics stepper (plate-tectonics.md), plugged in
+    via `PrepareOpts.height`/`ore`. There the anti-correlation *emerges*
+    (orogeny puts ore in mountains, drainage puts fertility in valleys)
+    instead of being painted, and the substrate gained a sea line:
+    height < 3 is submarine and barren (authored worlds floor land at 3,
+    so they are unchanged).
 - **Ore is a budget.** No runtime rule may raise it (worldgen writes it
   once); mining draws it down at the day boundary. Exhausted mountains are a
   real long-arc event: `ore_access` falls, the mine city's economy decays or

@@ -2154,6 +2154,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               <AppsBoard
                 enabledApps={enabledApps}
                 availableCustomApps={availableCustomApps}
+                permittedWebsites={(userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || []}
+                captionsActive={glyphStripActive}
                 onPick={(appId, displayName, appData) => {
                   // Ignore further taps while a startup-resolution round-trip
                   // is already in flight.
@@ -2399,6 +2401,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 extraHeaderOffset={glyphStripActive ? GLYPH_STRIP_REM : 0}
                 socialPeerPreview={socialFace.preview}
                 socialSession={socialFace.session}
+                onLaunchApp={(appId, appData) => launchAppFnRef.current?.(appId, appData)}
+                onRequestAppOpen={(appId) => requestAppOpenFnRef.current?.(appId)}
               />
             </div>
           ) : (

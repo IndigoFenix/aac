@@ -18,6 +18,7 @@ import { BoardsProvider } from "@/contexts/BoardsContext";
 import { ConversationProvider } from "@/contexts/ConversationContext";
 import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import { DeviceLimitOverlay } from "@/components/DeviceManager";
+import AppVersionBadge from "@/components/AppVersionBadge";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { deregisterCurrentDevice } from "@/lib/device-id";
 import { useState } from "react";
@@ -156,6 +157,7 @@ function MainApp() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-300">{t("app.loading")}</p>
         </div>
+        <AppVersionBadge />
       </div>
     );
   }
@@ -163,21 +165,27 @@ function MainApp() {
   // Step 1: Not authenticated or signed out locally - show login
   if (!authedUser) {
     return (
-      <LoginModal
-        isOpen={true}
-        onClose={handleLoginSuccess}
-      />
+      <>
+        <LoginModal
+          isOpen={true}
+          onClose={handleLoginSuccess}
+        />
+        <AppVersionBadge />
+      </>
     );
   }
 
   // Step 2: Authenticated but no student selected - show student selector
   if (!selectedStudentId) {
     return (
-      <StudentSelector
-        user={authedUser}
-        onStudentSelect={handleStudentSelect}
-        onLogout={handleLogout}
-      />
+      <>
+        <StudentSelector
+          user={authedUser}
+          onStudentSelect={handleStudentSelect}
+          onLogout={handleLogout}
+        />
+        <AppVersionBadge />
+      </>
     );
   }
 
@@ -191,6 +199,7 @@ function MainApp() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-300">{t("app.loading")}</p>
         </div>
+        <AppVersionBadge />
       </div>
     );
   }

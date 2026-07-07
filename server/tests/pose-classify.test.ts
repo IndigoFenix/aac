@@ -8,7 +8,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   classifyPosture, poseBoundingBox, armsRaised, handToHead, detectFall,
-  POSE_IDX, type PoseLandmark,
+  poseHeadNearFace, POSE_IDX, type PoseLandmark,
 } from "../../shared/aac/pose-classify.js";
 
 /** Build a 33-slot landmark array with the indices we set, rest off-screen. */
@@ -88,6 +88,38 @@ describe("detectFall — conservative", () => {
   });
   it("does NOT fire if the drop took too long (outside the window)", () => {
     expect(detectFall({ prevPosture: "upright", currPosture: "lying", centroidYDelta: 0.3, dtMs: 5000 })).toBe(false);
+  });
+});
+
+describe("poseHeadNearFace — link body to the mirrored face", () => {
+  // Face box centred on the upright pose's nose (0.5, 0.15), ~0.12 tall.
+  const faceOnPose = { x: 0.44, y: 0.09, w: 0.12, h: 0.12 };
+
+  it("links when the pose head sits on the face", () => {
+    expect(poseHeadNearFace(upright(), faceOnPose)).toBe(true);
+  });
+
+  it("does NOT link a body whose head is far from the face (other person)", () => {
+    // Same pose, but a face detected over on the far side of the frame.
+    const farFace = { x: 0.02, y: 0.09, w: 0.12, h: 0.12 };
+    expect(poseHeadNearFace(upright(), farFace)).toBe(false);
+  });
+
+  it("returns false with no face to link to", () => {
+    expect(poseHeadNearFace(upright(), null)).toBe(false);
+  });
+
+  it("falls back to the shoulder midpoint when the head isn't visible", () => {
+    // Head landmarks off (visibility 0); shoulders at y=0.30, so the estimated
+    // head sits just above them — a face there still links.
+    const noHead = pose({
+      [POSE_IDX.leftShoulder]: v(0.45, 0.30), [POSE_IDX.rightShoulder]: v(0.55, 0.30),
+    });
+    expect(poseHeadNearFace(noHead, { x: 0.44, y: 0.18, w: 0.12, h: 0.12 })).toBe(true);
+  });
+
+  it("returns false when neither head nor shoulders are visible", () => {
+    expect(poseHeadNearFace(pose({}), { x: 0.44, y: 0.09, w: 0.12, h: 0.12 })).toBe(false);
   });
 });
 

@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { runWorldHost } from "@shared/world-engine/world-host";
 import { buildAcceptanceTri } from "../tri-worlds";
 import { createTravelerBands } from "../traveler-bands";
-import { ERRAND_WALK } from "../food";
+import { ERRAND_WALK, createTownFood } from "../food";
 import {
   HOUSEHOLD, PEOPLE_R, TOWN_LOAD_R, TOWN_UNLOAD_R, WORLD_TILE,
   createParty, createTownManager, disbandParty, generateScene, generateWorld,
@@ -156,11 +156,13 @@ describe("the seamless world (one scale, no village boundary)", () => {
     const plan = townPlan(a.tri, "riverton", 7);
     const pop = a.tri.dual.settlementScalar("riverton", "population");
 
-    // A town that holds thousands of people HAS the houses for them
-    // (street corridors eat a few lots — the loss stays small).
+    // A town that holds thousands of people HAS the houses for them, up
+    // to what one tile-town physically holds: the street tree grows until
+    // the footprint is FULL (riverton's site population overflows it —
+    // houses = min(want, capacity), and capacity is ~a thousand lots).
     const lots = Math.max(6, Math.round(pop / HOUSEHOLD));
     expect(pop).toBeGreaterThan(1000);
-    expect(plan.houses.length).toBeGreaterThan(lots * 0.7);
+    expect(plan.houses.length).toBeGreaterThan(Math.min(lots, 900) * 0.7);
     expect(plan.houses.length).toBeLessThanOrEqual(lots);
     // ...at real footprint: hundreds of meters across, inside its km tile.
     expect(plan.radius).toBeGreaterThan(100);
@@ -175,7 +177,7 @@ describe("the seamless world (one scale, no village boundary)", () => {
     expect(JSON.stringify(twin)).toBe(JSON.stringify(plan));
     await a.tri.advanceDays(30);
     const later = townPlan(a.tri, "riverton", 7);
-    expect(later.houses.length).not.toBe(plan.houses.length); // vitals moved it
+    expect(later.want).not.toBe(plan.want); // vitals moved the population
     const byIndex = new Map(later.houses.map(h => [h.index, h]));
     for (const h of plan.houses.slice(0, Math.min(plan.houses.length, later.houses.length) - 1)) {
       const l = byIndex.get(h.index);
@@ -244,6 +246,47 @@ describe("the seamless world (one scale, no village boundary)", () => {
     expect(mgr.loaded().map(t => t.key)).not.toContain("riverton");
   });
 
+  it("pop-in policy: people enter through buildings — home spawns indoors, watched mid-errand spawns start at their source", async () => {
+    const a = await buildAcceptanceTri(42);
+    const rc = a.tri.cities.find(c => c.key === "riverton")!;
+    const home = worldPos(rc.x, rc.y);
+    const plan = townPlan(a.tri, "riverton", 7);
+    const food = createTownFood(a.tri, { key: "riverton", center: home, plan }, 7);
+
+    let sawHome = false;
+    let sawErrand = false;
+    // Everything is "on camera" (visibleR huge): a fresh manager at many
+    // moments of the domestic day must never spawn onto open ground.
+    for (let t = 0; (!sawHome || !sawErrand) && t < 2200; t += 15) {
+      const d = createTownManager(a.tri, 7, () => 6).update(home, undefined, t, 6000);
+      for (const s of d.spawn) {
+        const who = villagerOf(s.npc.id);
+        if (!who) continue;
+        const h = plan.houses.find(x => x.index === who.index);
+        if (!h) continue;
+        if (!s.walkTo) {
+          // At home: the body is INSIDE its own four walls (the view
+          // hides indoor villagers — they appear by stepping out).
+          const lx = s.npc.x - home.x;
+          const ly = s.npc.y - home.y;
+          expect(lx).toBeGreaterThan(h.dx);
+          expect(lx).toBeLessThan(h.dx + h.w);
+          expect(ly).toBeGreaterThan(h.dy);
+          expect(ly).toBeLessThan(h.dy + h.h);
+          sawHome = true;
+        } else {
+          // Mid-errand in view: the body starts at its SOURCE building
+          // and walks out, instead of materializing on the street.
+          const src = food.sourceOf(h);
+          expect(Math.hypot(s.npc.x - src.x, s.npc.y - src.y)).toBeLessThan(16);
+          sawErrand = true;
+        }
+      }
+    }
+    expect(sawHome).toBe(true);
+    expect(sawErrand).toBe(true);
+  });
+
   it("no blink-outs: bodies rank where they ARE, hold their slot beside the player, and host truth heals ghosts", async () => {
     const { PEOPLE_EVICT_MIN } = await import("../zoom");
     const a = await buildAcceptanceTri(42);
@@ -254,8 +297,10 @@ describe("the seamless world (one scale, no village boundary)", () => {
     const first = mgr.update(home);
     expect(first.spawn).toHaveLength(3);
     const liveAt = (pts: Array<[string, { x: number; y: number }]>): Map<string, { x: number; y: number }> => new Map(pts);
+    // The bodies have wandered over to the player's side (live positions
+    // are host truth — ranking follows the BODY, not the house).
     const spawnedLive: Array<[string, { x: number; y: number }]> =
-      first.spawn.map(({ npc: n }) => [n.id, { x: n.x, y: n.y }]);
+      first.spawn.map(({ npc: n }, i) => [n.id, { x: home.x + 3 + i * 2, y: home.y }]);
 
     // Stroll 25 m: nearer doorsteps now outrank the spawned three, but
     // everyone's BODY is still beside the player (< PEOPLE_EVICT_MIN) —

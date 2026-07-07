@@ -593,19 +593,31 @@ export const worldgenSubstrate: SystemSpec = {
     { name: 'lure', min: 0, max: 15, initial: 0, init: 'flat', int: true },
     { name: 'people', min: 0, max: 31, initial: 0, init: 'flat', int: true },
   ],
+  // Vegetation reads the NEIGHBOURHOOD's fertility: fertile tiles are river
+  // tiles (the guards above), and rivers render as water — grass growing
+  // only under the water would never be seen. The halo is also the honest
+  // ecology: riparian growth flanks the stream.
+  sensors: [{ name: 'fert', of: 'fertility', op: 'mean', radius: 1 }],
   rules: [
     // Fertility: a TIGHT band along real streams (grass is earned, not a
     // carpet — river accumulation > 15 means a genuine watercourse, > 45 a
     // major one). Disjoint guards, each a convergent `toward`.
-    { id: 'fertile-rich', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+    // Height < 3 is SUBMARINE: tectonic worlds bake ocean basins to 0..2,
+    // and the sea line keeps crowds off the seafloor. Authored worlds floor
+    // land at 3 (ridgeValley/stripes), so nothing changes for them.
+    { id: 'fertile-rich', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 3 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 15 }, rate: 0.5 } }] },
-    { id: 'fertile-ok', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '<=', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+    { id: 'fertile-ok', when: { all: [{ cmp: '>', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '<=', left: { scalar: 'river' }, right: { const: 45 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 3 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 8 }, rate: 0.5 } }] },
-    { id: 'barren', when: { any: [{ cmp: '<=', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+    { id: 'barren', when: { any: [{ cmp: '<=', left: { scalar: 'river' }, right: { const: 15 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 3 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 0 }, rate: 0.5 } }] },
-    // Vegetation tracks fertility (max 7 ≈ fertility/2).
-    { id: 'greenery', trigger: { every: true },
-      effects: [{ toward: { scalar: 'plant', target: { scalar: 'fertility', scale: 0.5 }, rate: 0.5 } }] },
+    // Vegetation: a green HALO around fertile ground (max 7 ≈ mean
+    // neighbourhood fertility × 0.8) — banks flank the streams. Submarine
+    // and treeline tiles stay bare however green the neighbours.
+    { id: 'greenery', when: { all: [{ cmp: '>=', left: { scalar: 'height' }, right: { const: 3 } }, { cmp: '<', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '<', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'plant', target: { sensor: 'fert', scale: 0.8 }, rate: 0.5 } }] },
+    { id: 'no-greenery', when: { any: [{ cmp: '<', left: { scalar: 'height' }, right: { const: 3 } }, { cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }] }, trigger: { every: true },
+      effects: [{ toward: { scalar: 'plant', target: { const: 0 }, rate: 0.5 } }] },
     // Lure = max(fertility, ore) via disjoint guards (each side a
     // convergent toward). This is the Sugarscape landscape: two resources,
     // each holding its own population.

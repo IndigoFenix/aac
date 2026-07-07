@@ -40,6 +40,11 @@ export interface PrepareOpts {
   rows: number;
   /** Deterministic terrain author. */
   height: (x: number, y: number) => number;
+  /** Deterministic ore author (a geology provider's baked deposits —
+   *  tectonics.ts). When present it REPLACES seedOreAboveTreeline: the
+   *  cheat and the simulate provider are alternatives behind one seam
+   *  (timescales.md §1). */
+  ore?: (x: number, y: number) => number;
   treeline?: number;
   oreSeed?: number;
   founding: FoundingOpts;
@@ -51,19 +56,43 @@ export interface PrepareOpts {
   /** Substrate spec (default worldgenSubstrate — computed rivers, true
    *  rest; oasisSubstrate = the original sandbox's living pipeline). */
   spec?: SystemSpec;
+  /** CLIMATE knob: multiplies every computed-flow var's rain `source`
+   *  (default 1). A wetter world grows wider river networks, and with
+   *  them wider fertile bands — a per-world profile choice at the same
+   *  seam as the height/ore authors, leaving the shared substrate's
+   *  "what counts as a watercourse" thresholds alone. */
+  rain?: number;
+}
+
+/** Clone a spec with flow sources scaled by `rain` (1 ⇒ untouched). */
+function withRain(spec: SystemSpec, rain: number): SystemSpec {
+  if (rain === 1) return spec;
+  return {
+    ...spec,
+    vars: (spec.vars ?? []).map(v =>
+      v.flow ? { ...v, flow: { ...v.flow, source: (v.flow.source ?? 1) * rain } } : v),
+  };
 }
 
 /** Build the substrate (settled by default), then detect founding candidates. */
 export function prepareSubstrate(opts: PrepareOpts): TriPrep {
   const treeline = opts.treeline ?? 40;
-  const grid = createGrid(opts.spec ?? worldgenSubstrate, opts.cols, opts.rows);
+  const grid = createGrid(withRain(opts.spec ?? worldgenSubstrate, opts.rain ?? 1), opts.cols, opts.rows);
   for (let y = 0; y < opts.rows; y++) {
     for (let x = 0; x < opts.cols; x++) {
       grid.fields.height[y * opts.cols + x] = Math.max(0, Math.min(63, Math.round(opts.height(x, y))));
     }
   }
   grid.flowDirty = true;
-  seedOreAboveTreeline(grid, { treeline, seed: opts.oreSeed ?? 1 });
+  if (opts.ore) {
+    for (let y = 0; y < opts.rows; y++) {
+      for (let x = 0; x < opts.cols; x++) {
+        grid.fields.ore[y * opts.cols + x] = Math.max(0, Math.min(15, Math.round(opts.ore(x, y))));
+      }
+    }
+  } else {
+    seedOreAboveTreeline(grid, { treeline, seed: opts.oreSeed ?? 1 });
+  }
 
   // Mature the substrate: run to quiet, or to the budget — living specs
   // (oasisSubstrate) cycle forever by design, so the cap is the contract,

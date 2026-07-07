@@ -31,7 +31,8 @@
 
 import type { TriWorld } from "./tri";
 import type { TownHouse, TownPlan, TownWork } from "./zoom";
-import { buildTownRoads, roadRoute, routeLength, type TownRoads } from "./town-roads";
+import { roadDistance, roadRoute, roadStreetPath, type TownStreets } from "./streets";
+import { allocateDistrictFill, deriveDistricts, type CityDistrict } from "./city-districts";
 
 /** Souls per house (a household) — houses = round(pop / this). Lives here
  *  (the consume-behavior module) and re-exports through zoom.ts. */
@@ -71,6 +72,8 @@ export interface FoodSource {
   /** Doorstep of the source, world meters — where a shopper stands. */
   x: number;
   y: number;
+  /** Index of this source's building in `plan.works` (renderer match). */
+  work?: number;
 }
 
 export interface HouseErrand {
@@ -95,17 +98,43 @@ export interface TownFood {
   fill(): number;
   /** All food sources of the town (world meters). */
   sources: FoodSource[];
-  /** The nearest source for a house — market, farm gate, or the hall. */
+  /** The nearest source for a house BY STREET (road-route meters) —
+   *  market stall, farm gate, or the hall. With neighborhood markets
+   *  these bindings are the step-1 district catchments. */
   sourceOf(house: TownHouse): FoodSource;
   /** Rations in the house's food box at time t (0..PANTRY_CAP). */
   pantry(house: TownHouse, t: number): number;
   /** Where the resident of `house` is in their shopping cycle at t. */
   errand(house: TownHouse, t: number): HouseErrand;
-  /** Rations on the market shelves at t — the day's delivered share,
-   *  stocked at dawn and drawn down by shoppers. 0 for market-less towns. */
+  /** Rations on ONE source's shelves at t — its catchment's delivered
+   *  share, stocked at dawn and drawn down by shoppers. 0 for non-market
+   *  sources (farm gates sell from the field, not a shelf). */
+  stockOf(src: FoodSource, t: number): number;
+  /** Rations across ALL market shelves at t. 0 for market-less towns. */
   marketStock(t: number): number;
-  /** Households whose nearest source is the market. */
+  /** Households whose nearest source is a market. */
   marketServed(): number;
+  /** Shopping trips riding each street (street id → households) — the
+   *  traffic field: street WEAR follows use (city-development.md §3b),
+   *  so arterials aren't drawn as arterials, they become them. Includes
+   *  the supply hauls (producer → market) on top of shopper trips. */
+  streetTraffic(): ReadonlyMap<number, number>;
+  /** The tier-B district decomposition (city-districts.ts), fills
+   *  tracking the LIVE aggregate: under scarcity the quarter farthest
+   *  from the producers runs visibly lean. */
+  districts(): CityDistrict[];
+  /** The district a house belongs to (by its step-1 catchment). */
+  districtOf(house: TownHouse): CityDistrict | undefined;
+  /** The house's own service level — its district's fill. */
+  fillOf(house: TownHouse): number;
+  /** The STANDS of a market source (world meters): stall tables spread
+   *  along the building's door side. Shoppers dwell at THEIR stand
+   *  (hashed per household), so a busy market is a row of small queues
+   *  instead of one corner pile-up. Non-markets get their doorstep. */
+  stands(src: FoodSource): Array<{ x: number; y: number }>;
+  /** Rations this stall stocks at dawn on a full day (its catchment's
+   *  daily draw × its district's fill) — the renderer's sack scale. */
+  stallDaily(src: FoodSource): number;
 }
 
 /** Doorstep of a work building (1.5 m out from its door edge midpoint). */
@@ -134,28 +163,59 @@ export function houseDoorstep(center: { x: number; y: number }, h: TownHouse): {
   }
 }
 
+/** The two waypoints of a DOOR TRANSIT: the space just inside the door
+ *  and the space just outside it. Bodies entering or leaving a building
+ *  walk this sandwich (inside → outside or the reverse) so steering
+ *  crosses the wall AT the doorway instead of grinding beside it —
+ *  short-range pathfinding for the one obstacle towns actually have. */
+export function doorTransit(
+  center: { x: number; y: number },
+  b: { dx: number; dy: number; w: number; h: number; door: "north" | "south" | "east" | "west" },
+): { inside: { x: number; y: number }; outside: { x: number; y: number } } {
+  const cx = center.x + b.dx + b.w / 2;
+  const cy = center.y + b.dy + b.h / 2;
+  switch (b.door) {
+    case "north": return {
+      inside: { x: cx, y: center.y + b.dy + 1.0 },
+      outside: { x: cx, y: center.y + b.dy - 1.2 },
+    };
+    case "south": return {
+      inside: { x: cx, y: center.y + b.dy + b.h - 1.0 },
+      outside: { x: cx, y: center.y + b.dy + b.h + 1.2 },
+    };
+    case "west": return {
+      inside: { x: center.x + b.dx + 1.0, y: cy },
+      outside: { x: center.x + b.dx - 1.2, y: cy },
+    };
+    default: return {
+      inside: { x: center.x + b.dx + b.w - 1.0, y: cy },
+      outside: { x: center.x + b.dx + b.w + 1.2, y: cy },
+    };
+  }
+}
+
 export function createTownFood(
   tri: TriWorld,
   town: { key: string; center: { x: number; y: number }; plan: TownPlan },
   seed: number,
-  roads?: TownRoads,
+  roads?: TownStreets,
 ): TownFood {
   const { key, center, plan } = town;
-  const net = roads ?? buildTownRoads(plan);
+  const net = roads ?? plan.streets;
 
   const sources: FoodSource[] = [];
-  for (const wk of plan.works) {
+  plan.works.forEach((wk, i) => {
     if (wk.type === "market" || wk.type === "farm") {
       const d = workDoorstep(center, wk);
-      sources.push({ kind: wk.type, x: d.x, y: d.y });
+      sources.push({ kind: wk.type, x: d.x, y: d.y, work: i });
     }
-  }
+  });
   if (sources.length === 0) {
     // No market, no farm: the town eats what the roads bring — rations
     // are handed out at the hall.
-    const hall = plan.works.find(wk => wk.type === "hall");
-    const d = hall ? workDoorstep(center, hall) : { x: center.x, y: center.y };
-    sources.push({ kind: "hall", x: d.x, y: d.y });
+    const hallIdx = plan.works.findIndex(wk => wk.type === "hall");
+    const d = hallIdx >= 0 ? workDoorstep(center, plan.works[hallIdx]) : { x: center.x, y: center.y };
+    sources.push({ kind: "hall", x: d.x, y: d.y, work: hallIdx >= 0 ? hallIdx : undefined });
   }
 
   const fill = (): number => {
@@ -164,43 +224,84 @@ export function createTownFood(
     const got = tri.dual.settlementScalar(key, "food_got");
     return Math.max(0, Math.min(1, got / need));
   };
-  /** Fill quantized to quarters for CYCLE GEOMETRY, so a slowly drifting
-   *  aggregate doesn't re-phase every resident's routine each sim day. */
-  const qfill = (): number => Math.max(FILL_FLOOR, Math.ceil(fill() * 4) / 4);
+  /** A house's fill quantized to quarters for CYCLE GEOMETRY, so a
+   *  slowly drifting aggregate doesn't re-phase every resident's routine
+   *  each sim day. Reads the DISTRICT allocation (tier B): the poor
+   *  quarter's households shop more often for less. Declared below,
+   *  after the district machinery it reads. */
+  const qfillOf = (house: TownHouse): number => Math.max(FILL_FLOOR, Math.ceil(fillOf(house) * 4) / 4);
 
-  const srcCache = new Map<number, FoodSource>();
-  const sourceOf = (house: TownHouse): FoodSource => {
-    const hit = srcCache.get(house.index);
+  // STANDS: stall tables along the market building's door side. Each
+  // shopping household is hashed onto one, so the crowd spreads into
+  // small queues and the sacks sit where people actually pick them up.
+  const standCache = new Map<FoodSource, Array<{ x: number; y: number }>>();
+  const standsOf = (src: FoodSource): Array<{ x: number; y: number }> => {
+    const hit = standCache.get(src);
     if (hit) return hit;
-    const home = houseDoorstep(center, house);
-    let best = sources[0];
-    let bestD = Infinity;
-    for (const s of sources) {
-      const d = Math.hypot(s.x - home.x, s.y - home.y);
-      if (d < bestD) { bestD = d; best = s; }
+    let out: Array<{ x: number; y: number }>;
+    const wk = src.work !== undefined ? plan.works[src.work] : undefined;
+    if (src.kind !== "market" || !wk) {
+      out = [{ x: src.x, y: src.y }];
+    } else {
+      const K = Math.max(2, Math.min(4, Math.ceil((servedBy.get(src) ?? 0) / 15)));
+      out = [];
+      for (let i = 0; i < K; i++) {
+        const f = (i + 1) / (K + 1);
+        switch (wk.door) {
+          case "north": out.push({ x: center.x + wk.dx + wk.w * f, y: center.y + wk.dy - 1.6 }); break;
+          case "south": out.push({ x: center.x + wk.dx + wk.w * f, y: center.y + wk.dy + wk.h + 1.6 }); break;
+          case "west": out.push({ x: center.x + wk.dx - 1.6, y: center.y + wk.dy + wk.h * f }); break;
+          default: out.push({ x: center.x + wk.dx + wk.w + 1.6, y: center.y + wk.dy + wk.h * f });
+        }
+      }
     }
-    srcCache.set(house.index, best);
-    return best;
+    standCache.set(src, out);
+    return out;
+  };
+  /** The stand THIS household shops at (stable per house). */
+  const standFor = (house: TownHouse): { x: number; y: number } => {
+    const stands = standsOf(sourceOf(house));
+    return stands[hashSeed(seed, `${key}:stand:${house.index}`) % stands.length];
   };
 
-  /** The ROAD ROUTE of a house's shopping trip (doorstep → source, on
-   *  streets — town-roads.ts), cached with cumulative distances so the
-   *  cycle can place the walker anywhere along it in O(points). */
+  /** The ROAD ROUTE of a house's shopping trip (doorstep → their stand,
+   *  on streets), cached with cumulative distances so the cycle can
+   *  place the walker anywhere along it in O(points). */
   interface TripRoute {
     pts: Array<{ x: number; y: number }>;
     cum: number[];
     len: number;
   }
+  /** A house binds to the nearest source BY STREET: with neighborhood
+   *  stalls, chord distance would shop across a quarter the streets
+   *  don't connect that way. Selection uses the closed-form
+   *  `roadDistance` (cheap, no waypoints); the winner's route
+   *  materializes lazily when the errand needs it. */
+  const srcCache = new Map<number, FoodSource>();
+  const sourceOf = (house: TownHouse): FoodSource => {
+    const hit = srcCache.get(house.index);
+    if (hit) return hit;
+    const home = houseDoorstep(center, house);
+    const local = { x: home.x - center.x, y: home.y - center.y };
+    let best = sources[0];
+    let bestD = Infinity;
+    for (const s of sources) {
+      const d = roadDistance(net, local, { x: s.x - center.x, y: s.y - center.y });
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    srcCache.set(house.index, best);
+    return best;
+  };
   const routeCache = new Map<number, TripRoute>();
   const routeOf = (house: TownHouse): TripRoute => {
     const hit = routeCache.get(house.index);
     if (hit) return hit;
     const home = houseDoorstep(center, house);
-    const src = sourceOf(house);
+    const stand = standFor(house);
     const local = roadRoute(
       net,
       { x: home.x - center.x, y: home.y - center.y },
-      { x: src.x - center.x, y: src.y - center.y },
+      { x: stand.x - center.x, y: stand.y - center.y },
     );
     const pts = local.map(p => ({ x: p.x + center.x, y: p.y + center.y }));
     const cum = [0];
@@ -232,7 +333,7 @@ export function createTownFood(
   const cycleOf = (house: TownHouse): { period: number; walk: number; trip: number; offset: number } => {
     const walk = routeOf(house).len / ERRAND_WALK;
     const trip = walk * 2 + SHOP_SEC;
-    const period = Math.max(trip * 1.5, PANTRY_DAYS * FOOD_DAY_SEC * qfill());
+    const period = Math.max(trip * 1.5, PANTRY_DAYS * FOOD_DAY_SEC * qfillOf(house));
     const offset = (hashSeed(seed, `${key}:food:${house.index}`) / 4294967296) * period;
     return { period, walk, trip, offset };
   };
@@ -265,11 +366,13 @@ export function createTownFood(
       };
     }
     if (u < walk + SHOP_SEC) {
-      // Mid-shop: stand out the REMAINING dwell, then head home.
+      // Mid-shop: stand out the REMAINING dwell AT THEIR STAND, then
+      // head home.
+      const stand = standFor(house);
       return {
         phase: "at_source",
-        pos: { x: src.x, y: src.y },
-        walkTo: [{ x: src.x, y: src.y, dwell: walk + SHOP_SEC - u }, ...back(route.pts.length - 2)],
+        pos: stand,
+        walkTo: [{ x: stand.x, y: stand.y, dwell: walk + SHOP_SEC - u }, ...back(route.pts.length - 2)],
         cycle, source: src, home,
       };
     }
@@ -281,22 +384,130 @@ export function createTownFood(
     const { period, trip, offset } = cycleOf(house);
     const u = (((t + offset) % period) + period) % period;
     if (u < trip) return 0; // the box ran dry — that's why they're out
-    // Restocked to fill × capacity on return; eaten down linearly.
+    // Restocked to the DISTRICT's fill × capacity on return; eaten down
+    // linearly. A poor quarter's boxes sit visibly emptier.
     const homeFrac = (u - trip) / Math.max(1e-9, period - trip);
-    return fill() * PANTRY_CAP * (1 - homeFrac);
+    return fillOf(house) * PANTRY_CAP * (1 - homeFrac);
   };
 
-  const served = plan.houses.filter(h => sourceOf(h).kind === "market").length;
-  const dawnOffset = hashSeed(seed, `${key}:dawn`) / 4294967296;
+  // Catchments: households per source (bound by street distance). This
+  // is the step-1 district decomposition — each market's stock is ITS
+  // catchment's share of the town's delivered food, so a big town's
+  // stalls carry neighborhood-sized stock, not the whole town's.
+  const servedBy = new Map<FoodSource, number>();
+  const catchHouses = new Map<FoodSource, TownHouse[]>();
+  for (const h of plan.houses) {
+    const s = sourceOf(h);
+    servedBy.set(s, (servedBy.get(s) ?? 0) + 1);
+    const list = catchHouses.get(s);
+    if (list) list.push(h);
+    else catchHouses.set(s, [h]);
+  }
+  let served = 0;
+  for (const s of sources) if (s.kind === "market") served += servedBy.get(s) ?? 0;
 
-  const marketStock = (t: number): number => {
-    if (!sources.some(s => s.kind === "market")) return 0;
-    // The day's delivered share: every served household draws HOUSEHOLD
-    // rations a day, and the flow net delivered `fill` of that. Stocked
-    // a little over daily draw at dawn, drawn down across the day.
-    const daily = served * HOUSEHOLD * fill();
-    const dayFrac = (((t / FOOD_DAY_SEC + dawnOffset) % 1) + 1) % 1;
+  // TIER B (city-districts.ts): the catchments promoted to districts,
+  // with FILL ALLOCATED BY SUPPLY ORDER — the aggregate's delivered food
+  // is the only truth; districts share it out nearest-producer-first, so
+  // scarcity shows WHERE it bites. Structure derives once; the fills
+  // re-allocate when the live aggregate moves (quantized, so a slowly
+  // drifting fill doesn't re-phase every routine each sim day).
+  let structure: CityDistrict[] | null = null;
+  const byHouse = new Map<number, CityDistrict>();
+  const bySource = new Map<FoodSource, CityDistrict>();
+  let lastFq = -1;
+  const districts = (): CityDistrict[] => {
+    if (!structure) {
+      structure = deriveDistricts(
+        plan, net,
+        sources.map(s => ({
+          source: s,
+          houses: catchHouses.get(s) ?? [],
+          local: { x: s.x - center.x, y: s.y - center.y },
+        })),
+        HOUSEHOLD, 1,
+      );
+      for (const d of structure) {
+        bySource.set(d.source, d);
+        for (const hi of d.houseIdx) byHouse.set(hi, d);
+      }
+      lastFq = -1;
+    }
+    const fq = Math.round(Math.max(0, Math.min(1, fill())) * 8) / 8;
+    if (fq !== lastFq) {
+      lastFq = fq;
+      const fills = allocateDistrictFill(
+        structure.map(d => d.need),
+        structure.map(d => d.supplyDist),
+        fq,
+      );
+      structure.forEach((d, i) => { d.fill = fills[i]; });
+    }
+    return structure;
+  };
+  const districtOf = (house: TownHouse): CityDistrict | undefined => {
+    districts();
+    return byHouse.get(house.index);
+  };
+  /** The house's service level: its district's share of the delivery. */
+  const fillOf = (house: TownHouse): number => districtOf(house)?.fill ?? fill();
+
+  /** The catchment's daily draw × the DISTRICT's fill: what the dawn
+   *  cart actually delivers to this stall's stands. */
+  const stallDaily = (src: FoodSource): number => {
+    if (src.kind !== "market") return 0;
+    districts();
+    const dFill = bySource.get(src)?.fill ?? fill();
+    return (servedBy.get(src) ?? 0) * HOUSEHOLD * dFill;
+  };
+
+  const stockOf = (src: FoodSource, t: number): number => {
+    if (src.kind !== "market") return 0;
+    // Stocked a little over daily draw at dawn (each stall's dawn cart
+    // on its own offset), drawn down across the day.
+    const daily = stallDaily(src);
+    const dawn = hashSeed(seed, `${key}:dawn:${sources.indexOf(src)}`) / 4294967296;
+    const dayFrac = (((t / FOOD_DAY_SEC + dawn) % 1) + 1) % 1;
     return Math.max(0, daily * (1.15 - 0.95 * dayFrac));
+  };
+  const marketStock = (t: number): number => {
+    let sum = 0;
+    for (const s of sources) sum += stockOf(s, t);
+    return sum;
+  };
+
+  // Traffic: how many households' shopping trips ride each street. Built
+  // lazily from the SAME bindings the errands use, so the streets that
+  // widen on screen are exactly the ones people walk. Supply hauls ride
+  // on top: every market's stock arrives from its nearest producer, and
+  // those cart routes wear the streets too (tier B — the first flows
+  // that are CITY logistics rather than household errands).
+  let traffic: Map<number, number> | null = null;
+  const streetTraffic = (): ReadonlyMap<number, number> => {
+    if (traffic) return traffic;
+    traffic = new Map();
+    for (const h of plan.houses) {
+      const home = houseDoorstep(center, h);
+      const src = sourceOf(h);
+      const ids = roadStreetPath(
+        net,
+        { x: home.x - center.x, y: home.y - center.y },
+        { x: src.x - center.x, y: src.y - center.y },
+      );
+      for (const id of ids) traffic.set(id, (traffic.get(id) ?? 0) + 1);
+    }
+    for (const d of districts()) {
+      if (d.source.kind !== "market") continue;
+      // A cart carries ~25 rations; weight hauls like the crowd they
+      // feed so the supply arteries read on the map.
+      const hauls = Math.max(2, Math.ceil(d.need / 25) * 3);
+      const ids = roadStreetPath(net, d.supplyFrom, {
+        x: d.source.x - center.x,
+        y: d.source.y - center.y,
+      });
+      for (const id of ids) traffic!.set(id, (traffic!.get(id) ?? 0) + hauls);
+    }
+    return traffic;
   };
 
   return {
@@ -306,7 +517,14 @@ export function createTownFood(
     sourceOf,
     pantry,
     errand,
+    stockOf,
     marketStock,
     marketServed: () => served,
+    streetTraffic,
+    districts,
+    districtOf,
+    fillOf,
+    stands: standsOf,
+    stallDaily,
   };
 }

@@ -70,6 +70,16 @@ export function setupAutoUpdater(mainWindow: BrowserWindow): void {
     return;
   }
 
+  // A packaged DEV build (release:aac.mjs dev → pkgName "aivota-aac-dev") talks
+  // to a localhost server and has no published update feed, so skip the updater
+  // entirely — otherwise it polls the non-existent aac-dev/win/ feed and logs a
+  // 403 on every launch. Staging/prod (no "-dev" suffix) update normally.
+  if (app.getName().endsWith("-dev")) {
+    log.info(`[auto-update] dev build (${app.getName()}) — auto-update disabled`);
+    mainWindowRef = mainWindow;
+    return;
+  }
+
   mainWindowRef = mainWindow;
 
   if (initialized) {

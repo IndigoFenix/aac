@@ -2732,7 +2732,7 @@ export const ko = {
     NO_RESPONSE: "응답 처리 중 오류가 발생했습니다.",
     LLM_ERROR: "AI 모델 호출 중 오류가 발생했습니다.",
     PARSE_ERROR: "응답 처리 중 오류가 발생했습니다.",
-    TOKEN_LIMIT: "토큰 사용 제한 오류.",
+    TOKEN_LIMIT: "오류 - 지원팀에 문의하세요.",
     RATE_LIMIT: "AI 서비스가 현재 사용 중입니다. 잠시 후 다시 시도해주세요.",
     INPUT_TOO_LARGE: "입력이 너무 커서 처리할 수 없습니다. 첨부 파일 크기를 줄이거나 대화를 줄여주세요.",
     UNEXPECTED_ERROR: "예상치 못한 오류가 발생했습니다.",

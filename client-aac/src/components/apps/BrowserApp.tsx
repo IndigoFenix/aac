@@ -14,6 +14,12 @@ import { X, RefreshCw, ChevronLeft, Globe } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { isUrlPermitted } from "@shared/permitted-websites";
 import type { PermittedWebsite } from "@shared/schema";
+import ElectronBrowserApp from "./ElectronBrowserApp";
+
+/** True inside the packaged Electron app (preload exposes electronAPI). */
+const isElectron =
+  typeof window !== "undefined" &&
+  !!(window as unknown as { electronAPI?: { isElectron?: boolean } }).electronAPI?.isElectron;
 
 /** Window after which a failure to fire `onload` is treated as "blocked by X-Frame-Options". */
 const LOAD_TIMEOUT_MS = 4000;
@@ -27,7 +33,18 @@ interface BrowserAppProps {
   sendContextOnly?: (text: string) => void;
 }
 
-export default function BrowserApp({
+/**
+ * In-app browser. In Electron this delegates to the <webview>-based
+ * ElectronBrowserApp with the eyegaze overlay (scroll / click / type). The
+ * iframe implementation below is the web-build fallback: it can't be driven by
+ * gaze (cross-origin) and can't embed framing-blocked sites.
+ */
+export default function BrowserApp(props: BrowserAppProps) {
+  if (isElectron) return <ElectronBrowserApp {...props} />;
+  return <IframeBrowserApp {...props} />;
+}
+
+function IframeBrowserApp({
   url,
   label,
   permittedWebsites,

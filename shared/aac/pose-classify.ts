@@ -76,6 +76,49 @@ export function poseBoundingBox(lm: PoseLandmark[]): BBox | null {
   return { x: minX, y: minY, w: Math.max(0, maxX - minX), h: Math.max(0, maxY - minY) };
 }
 
+// Head landmarks preferred for the face-link check, in order (nose, then eyes,
+// then ears) — the first visible one anchors the pose's head.
+const POSE_HEAD_IDX = [POSE_IDX.nose, 2, 5, POSE_IDX.leftEar, POSE_IDX.rightEar];
+/** How far the pose head may sit from the face centre, in units of face size,
+ *  before the body is treated as belonging to someone else. */
+export const POSE_FACE_LINK_TOLERANCE = 1.8;
+
+/**
+ * True when the pose's head lands on `faceBox` (same person). Pose and face come
+ * from independent MediaPipe models (pose runs single-body), so on multi-person
+ * or spurious frames the detected body can belong to someone other than the
+ * tracked face. Both are normalized to the same frame, so we compare the pose
+ * head to the face centre directly. When the head isn't visible we estimate it
+ * from the shoulder midpoint (person facing away). Returns false when there's no
+ * face or the body's head can't be located — callers hide an unlinked body
+ * rather than let the skeleton float away from the head.
+ */
+export function poseHeadNearFace(
+  lm: PoseLandmark[],
+  faceBox: BBox | null | undefined,
+  tolerance = POSE_FACE_LINK_TOLERANCE,
+): boolean {
+  if (!faceBox) return false;
+  const faceSize = Math.max(faceBox.w, faceBox.h);
+  if (faceSize <= 0) return false;
+  const fcx = faceBox.x + faceBox.w / 2;
+  const fcy = faceBox.y + faceBox.h / 2;
+
+  let hx: number | null = null, hy: number | null = null;
+  for (const i of POSE_HEAD_IDX) {
+    const p = lm[i];
+    if (p && vis(p) >= VIS_MIN) { hx = p.x; hy = p.y; break; }
+  }
+  if (hx === null || hy === null) {
+    const ls = lm[POSE_IDX.leftShoulder], rs = lm[POSE_IDX.rightShoulder];
+    if (!ls || !rs || vis(ls) < VIS_MIN || vis(rs) < VIS_MIN) return false;
+    hx = (ls.x + rs.x) / 2;
+    hy = (ls.y + rs.y) / 2 - Math.abs(ls.x - rs.x) * 0.6; // head sits above shoulders
+  }
+
+  return Math.hypot(hx - fcx, hy - fcy) <= faceSize * tolerance;
+}
+
 /** Vertical centroid (shoulder–hip midpoint y) for fall tracking, or null. */
 export function torsoCentroidY(lm: PoseLandmark[]): number | null {
   const ls = lm[POSE_IDX.leftShoulder], rs = lm[POSE_IDX.rightShoulder];

@@ -2,6 +2,7 @@
 // Machine-to-machine endpoint that runs the daily maintenance sweeps:
 //   - right-to-erasure hard-delete sweep (GDPR Art.17 / IL PPL)
 //   - activity-log retention prune (per-regime retention)
+//   - LLM provider spend-threshold check (emails support near a monthly cap)
 //
 // On the Lambda production deployment, setInterval-based scheduling never fires
 // (containers freeze between invocations), so an external scheduler (EventBridge)
@@ -12,6 +13,7 @@ import type { Request, Response } from "express";
 import crypto from "crypto";
 import { runStudentErasureSweep } from "../services/studentErasureCron";
 import { runActivityLogRetentionCheck } from "../services/activityLogRetentionCron";
+import { runSpendThresholdCheck } from "../services/providerAlertService";
 
 /** Constant-time compare of the provided secret against the configured one. */
 function secretMatches(provided: unknown): boolean {
@@ -43,7 +45,8 @@ export class CronController {
     try {
       const erasure = await runStudentErasureSweep();
       const retention = await runActivityLogRetentionCheck();
-      res.json({ success: true, erasure, retention });
+      const spendThreshold = await runSpendThresholdCheck();
+      res.json({ success: true, erasure, retention, spendThreshold });
     } catch (err: any) {
       console.error("Scheduled cron run failed:", err);
       res.status(500).json({ success: false, message: "Cron run failed" });

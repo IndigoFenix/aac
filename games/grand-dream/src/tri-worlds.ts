@@ -7,6 +7,7 @@
 
 import { findFoundingSites, type FoundingSite } from "@cells/index";
 import { prepareSubstrate, foundTri, type TriCharter, type TriPrep, type TriWorld } from "./tri";
+import { runTectonics, bakeAuthors, type TectonicFrame } from "./tectonics";
 import type { DualSpec } from "./dual";
 
 export const TREELINE = 40;
@@ -209,4 +210,57 @@ export async function buildGenesisTri(seed: number): Promise<AcceptanceWorld> {
   });
 
   return { prep, tri, gridPeople0, gridOre0 };
+}
+
+const TECTONIC_NAMES = [
+  "Sutherhold", "Rifton", "Archaven", "Plumeport", "Terranova", "Orogen's Rest", "Vulcayn", "Drift's End",
+];
+
+/**
+ * The TECTONIC world — same causal chain as genesis, but the LANDSCAPE
+ * itself has a history: a plate-tectonic stepper (tectonics.ts) drifts
+ * continents, raises mountain belts at convergent boundaries, and emplaces
+ * ore by geologic event (arcs, sutures, rifts, hotspots), exposed only
+ * where erosion has stripped the cover. The civ layers consume the baked
+ * fields through the ordinary prepareSubstrate path — provenance-
+ * independence made concrete (timescales.md §1): nothing above the
+ * Substrate can tell this world from an authored one.
+ */
+export async function buildTectonicTri(seed: number): Promise<AcceptanceWorld & { frames: TectonicFrame[] }> {
+  // 144×64 — four times the acceptance map. SIZE is what makes tectonic
+  // hydrology work: catchments need room to concentrate, so a bigger world
+  // grows real river networks (and with them farm country) at NORMAL rain
+  // where a small one needed a wet-climate crutch. The planet-sized goal
+  // runs through this dial; the stepper and the settle are both ~linear.
+  const { world, frames } = runTectonics({ cols: 144, rows: 64, seed, plates: 5, epochs: 350, keyframeEvery: 25 });
+  const authors = bakeAuthors(world);
+  const prep = prepareSubstrate({
+    cols: 144, rows: 64, height: authors.height, ore: authors.ore,
+    treeline: TREELINE, founding: FOUNDING,
+  });
+  const gridPeople0 = prep.grid.fields.people.reduce((a, b) => a + b, 0);
+  const gridOre0 = prep.grid.fields.ore.reduce((a, b) => a + b, 0);
+
+  const tri = await foundTri(prep, {
+    base: triBase(),
+    cities: [],
+    edges: [],
+    peopleScale: 25,
+    seed,
+    mining: { oreOutScalar: "ore_out", rate: 0.3 },
+    autoFound: {
+      every: 5,
+      maxCities: 12, // the 144×64 world offers 50+ qualifying sites
+      cityFactory: (site, index, ch) => ({
+        key: `city${index}`,
+        name: TECTONIC_NAMES[index] ?? `Town ${index + 1}`,
+        scalars: buildings,
+        site: ch.ore_access > ch.farmland
+          ? { ...CITIZEN, transmit: [{ vector: ["v1"], apply: ["sep_idea"], value: 10, sd: 0, phase: "spread" }] }
+          : CITIZEN,
+      }),
+    },
+  });
+
+  return { prep, tri, gridPeople0, gridOre0, frames };
 }

@@ -60,6 +60,12 @@ app.get('/health', (_req, res) => {
   const { scheduleStudentErasureSweep } = await import("./services/studentErasureCron");
   scheduleStudentErasureSweep();
 
+  // Start the daily LLM provider spend-threshold check. Emails support when a
+  // provider (Google / Anthropic / OpenAI) passes its configured monthly cap.
+  // No-op when no caps are configured, and in tests. Deferred 120s after boot.
+  const { scheduleSpendThresholdCheck } = await import("./services/providerAlertService");
+  scheduleSpendThresholdCheck();
+
   // DEVELOPMENT: Use Vite dev server
   if (process.env.NODE_ENV === "development") {
     // Mount the gated games handler BEFORE the Vite catch-all so /games/*

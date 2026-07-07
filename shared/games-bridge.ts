@@ -38,6 +38,28 @@ export type PlatformMessage = BridgeMessageBase & (
   | { type: "people_present"; names: string[] }
   | { type: "ai_comment"; text: string }
   /**
+   * The AAC AI's live activity, pushed whenever it changes so a cooperative app
+   * can react (e.g. pause its own audio while the AI speaks, show a "thinking"
+   * cue). `speaking` = the AI voice is currently playing; `thinking` = an agent
+   * (Speaker / Board Manager / interpret) is working. Coarse by design — apps
+   * shouldn't couple to the AAC's internal agent structure.
+   */
+  | { type: "ai_state"; speaking: boolean; thinking: boolean }
+  /**
+   * The AAC avatar's current emote, so an app can mirror the AI's mood on its
+   * own characters. One of the avatar's three coarse states.
+   */
+  | { type: "ai_emote"; emote: "happy" | "sad" | "neutral" }
+  /**
+   * Correlated reply to a game→platform `ai_select` (and, in future, other
+   * structured `ai_request`s that opt into a machine-readable answer). Matched
+   * by `requestId`. For `ai_select`, `ok:true` carries `data:{ selectedId,
+   * reason? }`; `ok:false` carries `error`. A free-text `ai_request` is still
+   * answered as spoken `ai_comment`, NOT this message — so apps should handle a
+   * missing `ai_response` gracefully.
+   */
+  | { type: "ai_response"; requestId: string; ok: boolean; text?: string; data?: unknown; error?: string }
+  /**
    * Gaze position in **iframe-local pixel coordinates** (already converted by
    * the platform). `mode === "off"` means no gaze data is being produced.
    */
@@ -73,6 +95,35 @@ export type GameMessage = BridgeMessageBase & (
    * JSON-serializable shape — game and AI co-evolve without a schema.
    */
   | { type: "ai_observation"; surface: unknown }
+  /**
+   * ACTIVELY ask the AAC AI to respond to the student about something now — a
+   * directed nudge, stronger than the passive `ai_observation`. `prompt` frames
+   * what to react to (e.g. "the student just matched all the animals — celebrate
+   * with them"). The AI's answer arrives as a spoken `ai_comment` (there is no
+   * synchronous return today). `requestId` is optional and reserved for a future
+   * correlated `ai_response`; it is safe to omit.
+   *
+   * Fire sparingly — every request drives the live session (latency + cost).
+   */
+  | { type: "ai_request"; prompt: string; requestId?: string }
+  /**
+   * Ask the AAC AI to CHOOSE ONE of a set of options the app provides, and reply
+   * with the chosen id — a bounded, structured selection (e.g. "here are 12
+   * books; pick the best one for this student"). The platform answers with a
+   * correlated `ai_response` carrying `data:{ selectedId, reason? }`. `selectedId`
+   * is guaranteed to be one of the provided `options[].id`.
+   *
+   * `instruction` steers the choice (e.g. "the student loves dinosaurs and
+   * adventure"). The app supplies its own relevance signal here — no student PHI
+   * leaves the platform. Requires NO license. Rate-limited + metered server-side,
+   * so fire only on real decisions.
+   */
+  | {
+      type: "ai_select";
+      requestId: string;
+      options: Array<{ id: string; label: string; description?: string }>;
+      instruction?: string;
+    }
   /**
    * Lock the AAC response board (the side SENTENCE BUTTONs) to these options so
    * the student answers a puzzle on the REAL communication board — teaching its

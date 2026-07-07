@@ -124,6 +124,47 @@ describe("BoardManager schema trim", () => {
   });
 });
 
+describe("open (launch-button) field gating", () => {
+  const withSites: BoardManagerToolConfig = {
+    ...baseConfig,
+    permittedWebsites: [{ url: "https://book-reader-beta-weld.vercel.app", label: "Book Reader" }],
+  };
+  const withApps: BoardManagerToolConfig = {
+    ...baseConfig,
+    enabledApps: [{ id: "drawing", name: "Drawing" }],
+  };
+
+  test("open is absent everywhere when no websites or apps are available", () => {
+    const decls = buildBoardManagerToolDeclarations(baseConfig);
+    for (const toolName of ["rebuild_board", "add_board_button", "add_context_button", "show_binary_choice"]) {
+      expect(getButtonProps(decls, toolName)).not.toHaveProperty("open");
+    }
+  });
+
+  test("open appears on rebuild_board + add_board_button when a website is permitted", () => {
+    const decls = buildBoardManagerToolDeclarations(withSites);
+    expect(getButtonProps(decls, "rebuild_board")).toHaveProperty("open");
+    expect(getButtonProps(decls, "add_board_button")).toHaveProperty("open");
+    // The description lists the permitted URL so the model can only pick it.
+    expect(getButtonProps(decls, "rebuild_board").open.description).toContain("book-reader-beta-weld.vercel.app");
+  });
+
+  test("open appears when an app is enabled (even with no websites)", () => {
+    const decls = buildBoardManagerToolDeclarations(withApps);
+    const open = getButtonProps(decls, "rebuild_board").open;
+    expect(open).toBeDefined();
+    expect(open.description).toContain("drawing");
+    expect(open.properties).toHaveProperty("website");
+    expect(open.properties).toHaveProperty("app");
+  });
+
+  test("open never appears on the sidebar or binary-choice buttons", () => {
+    const decls = buildBoardManagerToolDeclarations(withSites);
+    expect(getButtonProps(decls, "add_context_button")).not.toHaveProperty("open");
+    expect(getButtonProps(decls, "show_binary_choice")).not.toHaveProperty("open");
+  });
+});
+
 describe("glyphInputTranslation — input_glyphs gating on rebuild_board", () => {
   function getRebuildProps(config: BoardManagerToolConfig): Record<string, any> {
     const decls = buildBoardManagerToolDeclarations(config);

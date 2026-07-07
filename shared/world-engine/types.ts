@@ -405,11 +405,14 @@ export const WORLD_MAX_FLOORS = 8;
 export const WORLD_MAX_NPCS = 8;
 export const WORLD_MAX_PLAYERS = 12;
 /** Max world-units per manifold axis. World units read as METERS (avatar
- *  radius 0.4, walk speed 5/s), so this admits a ~100 km landmass —
- *  streamed worlds (grand-dream) put whole regions in one coordinate
- *  space. Purely a schema sanity bound: nothing in the engine's math
- *  depends on it, and f64 keeps sub-millimeter precision at this range. */
-export const WORLD_MANIFOLD_MAX = 100_000;
+ *  radius 0.4, walk speed 5/s), so this admits an Earth-circumference
+ *  landmass (~40,000 km) — streamed worlds (grand-dream) put whole
+ *  regions in one coordinate space, and their stated trajectory is
+ *  planet-sized maps (a 144×64-km tectonic continent already tripped
+ *  the old 100 km bound). Purely a schema sanity bound: nothing in the
+ *  engine's math depends on it, and f64 keeps sub-micrometer precision
+ *  at this range. */
+export const WORLD_MANIFOLD_MAX = 40_000_000;
 
 /**
  * `custom_apps.type` discriminator for world-engine apps — the third engine in

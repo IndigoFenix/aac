@@ -10,7 +10,7 @@
  */
 
 import type { DualSpec } from "./dual";
-import { buildAcceptanceTri, buildGenesisTri, type AcceptanceWorld } from "./tri-worlds";
+import { buildAcceptanceTri, buildGenesisTri, buildTectonicTri, type AcceptanceWorld } from "./tri-worlds";
 
 export interface LabScenario {
   key: string;
@@ -319,7 +319,31 @@ const triGenesis: LabScenario = {
   tri: (seed: number) => buildGenesisTri(seed),
 };
 
-export const SCENARIOS: LabScenario[] = [triGenesis, triWorld, dualTrade, twoCity, chain, migration, idea];
+/**
+ * TECTONIC (timescales.md §8's missing geology provider, built): the
+ * landscape has a HISTORY. Plates drifted, collided, and rifted for 350
+ * epochs before day 0 — the mountains are sutures and volcanic arcs, and
+ * every ore vein was emplaced by a geologic event and exhumed by erosion.
+ */
+const triTectonic: LabScenario = {
+  key: "tri-tectonic",
+  name: "TRI — tectonic (continents made this)",
+  desc:
+    "This map was not authored — it happened. Five plates drifted for 350 epochs on a 144×64 world: " +
+    "ocean floor subducted under the continents (volcanic arcs), continents collided " +
+    "(mountain sutures), rifts opened behind drifting plates, and hotspots burned " +
+    "chains through the crust. Every purple ore vein was emplaced by one of those " +
+    "events at depth, and is visible only where erosion stripped the rock above it — " +
+    "old worn ranges are mining country; young sharp ones still hide their lodes. " +
+    "The sea (dark basins) is real ocean crust. On top of that geology the ordinary " +
+    "chain runs: rivers, fertility, wild crowds, and cities founding themselves where " +
+    "the land is good — farm towns in river valleys, separatist mine towns where the " +
+    "mountains pay.",
+  layout: {},
+  tri: (seed: number) => buildTectonicTri(seed),
+};
+
+export const SCENARIOS: LabScenario[] = [triGenesis, triWorld, triTectonic, dualTrade, twoCity, chain, migration, idea];
 
 /** Fresh deep clone — the World mutates `data` in place during start. */
 export function cloneScenarioJson(s: LabScenario): Record<string, unknown> {

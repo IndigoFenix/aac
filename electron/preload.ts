@@ -4,6 +4,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   isElectron: true,
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
   getPlatform: () => process.platform,
+  // In-app browser (BrowserApp <webview>) navigation allowlist. Pushed when the
+  // browser opens so the main process can hard-block off-allowlist navigation.
+  browser: {
+    setAllowlist: (list: unknown) => ipcRenderer.invoke("browser:setAllowlist", list),
+    clearAllowlist: () => ipcRenderer.invoke("browser:clearAllowlist"),
+  },
   // Eye-tracker gaze sidecar control
   gaze: {
     /** Ensure the sidecar is running for a device (auto-locates the DLL). */

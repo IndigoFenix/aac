@@ -465,7 +465,20 @@ check('worldgen substrate settles into anti-correlated biomes', () => {
       assert.ok(height[i] > 40, `ore tile ${i} below the treeline`);
       if (people[i] > 0) miningCamps++;
     }
-    if (plant[i] > 0) assert.ok(fertility[i] > 0, `plants without fertility at ${i}`);
+    // Vegetation is a HALO around fertile ground (rivers render as water,
+    // so grass only under the water would never be seen): a planted tile
+    // must have fertility somewhere in its 3×3 neighbourhood.
+    if (plant[i] > 0) {
+      const x = i % g.cols, y = Math.floor(i / g.cols);
+      let nearFert = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < g.cols && ny >= 0 && ny < g.rows) nearFert += fertility[ny * g.cols + nx];
+        }
+      }
+      assert.ok(nearFert > 0, `plants with no fertility in reach at ${i}`);
+    }
     // Sugarscape: people live where SOME resource lures them, nowhere else.
     if (people[i] > 0) assert.ok(lure[i] > 0, `people on land with no lure at ${i}`);
   }
@@ -525,6 +538,45 @@ check('founding sites emerge in both biomes; resource weights rank them', () => 
     const dx = s.x - sites[0].x, dy = s.y - sites[0].y;
     return dx * dx + dy * dy >= opts.minSpacing ** 2;
   }), 'occupied spacing not respected');
+});
+
+// 25. Life must also DIE BACK: dam the river and the abandoned bed loses its
+//     fertility and vegetation COMPLETELY — no ghost values. (Regression for
+//     the integer toward ε-tail: a sub-unit decay step rounded back up at
+//     commit, so fertility rested at 1 forever and old greenery never
+//     cleared off re-routed riverbeds. intTowardStep finishes the tail.)
+check('dammed river: fertility and vegetation die back to zero', () => {
+  const g = makeSubstrate();
+  assert.ok(stepGridUntilRest(g, 4000) > 0, 'substrate never settled');
+
+  // The channel runs along y=12; remember its fertile tiles mid-valley.
+  const bed: number[] = [];
+  for (let x = 10; x < 20; x++) {
+    const c = 12 * 24 + x;
+    if (g.fields.fertility[c] > 0) bed.push(c);
+  }
+  assert.ok(bed.length >= 4, `expected a fertile channel to dam (got ${bed.length})`);
+
+  // Dam: wall the valley off just downstream of the plateau.
+  for (let y = 0; y < 24; y++) {
+    for (let x = 7; x <= 8; x++) {
+      const c = y * 24 + x;
+      injectTile(g, c, 'height', 60 - g.fields.height[c]);
+    }
+  }
+  assert.ok(stepGridUntilRest(g, 4000) > 0, 'dammed substrate never re-settled');
+
+  for (const c of bed) {
+    if (g.fields.river[c] > 15) continue; // still watered by a re-route
+    assert.equal(g.fields.fertility[c], 0, `ghost fertility at ${c}`);
+    assert.equal(g.fields.plant[c], 0, `ghost vegetation at ${c}`);
+  }
+  // And globally: nothing anywhere keeps fertility without the water for it.
+  for (let i = 0; i < g.fields.fertility.length; i++) {
+    if (g.fields.river[i] <= 15 && g.fields.fertility[i] > 0) {
+      assert.fail(`stale fertility at ${i} (river ${g.fields.river[i]})`);
+    }
+  }
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

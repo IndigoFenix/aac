@@ -37,6 +37,7 @@ import type {
   MonitorCallRequestedEvent,
   PrivateNoteEvent,
   BoardButton,
+  BoardButtonOpen,
   BoardRebuiltEvent,
   BoardButtonAddedEvent,
   ContextButtonAddedEvent,
@@ -150,6 +151,20 @@ function extractButtonRole(input: unknown): "reply" | "bid" | undefined {
 function extractButtonAddressee(input: unknown): string | undefined {
   const a = (input as { addressee?: unknown } | null)?.addressee;
   return typeof a === "string" && a.trim() ? a.trim() : undefined;
+}
+
+/** Read the AI's launch action for a button: `{ website }` or `{ app }` (a URL
+ *  or an app id). Undefined when neither is a usable string. The URL/app is
+ *  re-gated against the permitted lists in the coordinator before it reaches
+ *  the client — this only extracts the shape. `website` wins if both are set. */
+function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
+  const o = (input as { open?: unknown } | null)?.open;
+  if (!o || typeof o !== "object") return undefined;
+  const website = (o as { website?: unknown }).website;
+  if (typeof website === "string" && website.trim()) return { website: website.trim() };
+  const app = (o as { app?: unknown }).app;
+  if (typeof app === "string" && app.trim()) return { app: app.trim() };
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -567,7 +582,8 @@ function parseToolCall(
             // each parsed button.
             const role = extractButtonRole(item);
             const addressee = extractButtonAddressee(item);
-            return parseStructuredButtonsExpanding(item).map(b => Object.assign(b, { role, addressee }));
+            const open = extractButtonOpen(item);
+            return parseStructuredButtonsExpanding(item).map(b => Object.assign(b, { role, addressee, open }));
           }).filter((b): b is NonNullable<typeof b> => !!b)
         : [];
       const buttons: BoardButton[] = parsed.map(b => ({
@@ -583,6 +599,7 @@ function parseToolCall(
         colSpan: b.colSpan,
         role: (b as { role?: "reply" | "bid" }).role,
         addressee: (b as { addressee?: string }).addressee,
+        open: (b as { open?: BoardButtonOpen }).open,
         buttonType: b.buttonType,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,
@@ -664,6 +681,7 @@ function parseToolCall(
         glyph: b.glyph,
         glyphFallback: b.glyphFallback,
         role: extractButtonRole(args.button),
+        open: extractButtonOpen(args.button),
         buttonType: b.buttonType,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,

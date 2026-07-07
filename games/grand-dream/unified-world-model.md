@@ -104,7 +104,11 @@ thresholds just change which UI and which dynamics are active.
 
 cell-systems supports both scalar and integer-only systems, and the trade is
 general: **scalars are more accurate; integers make idle-safety easier**
-(crisp rest, no ε-tail). The rule for this model: integer variables are the
+(crisp rest, no ε-tail). One real integer tail existed and was fixed
+2026-07-06: a sub-unit `toward` step rounded away at commit, so decaying int
+vars rested ONE SHORT of target — ghost fertility/vegetation that never
+cleared off re-routed riverbeds. `intTowardStep` (grid.ts) promotes the
+tail step to a whole unit; grid check #25 (dammed river) is the regression. The rule for this model: integer variables are the
 *baseline for idle-safe profiles* (§5); scalar variables are freely available
 in idle-unsafe worlds where accuracy and depth win. A generated world's
 profile decides, not the engine.
@@ -671,6 +675,111 @@ catch-up==stepping checks).
    picks REJECT blocked ground, so NPCs stop aiming into buildings at
    all). Errand leg timeouts became distance-aware (4 s + 1 s/m — the
    8 s flat cap would have corner-cut slow walkers).*
+
+   **Neighborhood markets (2026-07-06, `src/districts.ts` — city fractal
+   step 1, city-development.md §7):** monocentrism is dead. Markets are
+   FOUNDED BY UNSERVED DEMAND: walking the lot sequence in order, each
+   household measures its lane distance to the nearest source, too-far
+   households accumulate founding mass per quarter, and at threshold the
+   pending lot nearest the mass centroid CONVERTS into a market stall
+   (same footprint/door — clearance proofs hold; the conversion is
+   §5-development on screen). Prefix-stable like `lotAt`. Food binding
+   moved from chord-nearest to STREET-nearest (`roadDistance`,
+   closed-form — no waypoint materialization, so plans stay ~10 ms at
+   10k souls), and each stall stocks its own catchment's share (the
+   step-1 district decomposition). Ladder: 1k souls = plaza market only,
+   3k = 5 markets, 10k = ~29, linear in population. Tests:
+   `src/__tests__/districts.test.ts` (5: founding, prefix stability,
+   walk-shortening, townPlan/food integration, growth stability).*
+
+   **Organic streets (2026-07-06 later, `src/streets.ts` — the polar
+   template is RETIRED; town-roads.ts deleted):** towns are now grown as
+   a STREET TREE from a plaza kernel by a deterministic event stream
+   (rounds: every live street extends a jittered step and bends around
+   obstacles; branch ports sprout side lanes; dead arms get re-seeded
+   arterials at the widest gate gap). Every extension step emits the
+   house lots fronting it, so the global slot sequence is CONSTRUCTION
+   ORDER — the lot list is the town's development history, prefix
+   stability falls out (a bigger town replays the same events further),
+   and the layout finally looks like accretion because it is
+   (city-development.md §2b made real, one level early). Routing is tree
+   routing: (street, arc) positions, parent chains meeting at the plaza
+   ring (a closed pseudo-street), O(depth) `roadDistance`, waypoint
+   `roadRoute` with the same never-through-a-parlor contract. STREET
+   WEAR IS TRAFFIC (§3b of city-development.md): food.ts counts each
+   household's trip along its street path (`streetTraffic`) and the view
+   draws width/opacity from it — arterials aren't drawn, they BECOME.
+   Works cap outer street tips; fields fan past the farm gates; the
+   district founding metric moved from polar lane-distance to real
+   street distance with mass gathered per arterial ARM. Construction is
+   a transient (§5b): TownManager re-derives the plan when population
+   moves while loaded, and the world view reveals the diff — new lots
+   scaffold in, new lanes pave outward, a lot converting to a stall
+   crossfades. Capacity is honest now: a tile-town fills at roughly a
+   thousand lots (riverton's site pop overflows it) — the metropolis
+   answer is districts-of-districts (city-development.md §8), not a
+   denser dartboard. Tests: roads.test.ts (7: determinism + prefix,
+   route clearance, traffic concentration, frontage) + districts/food/
+   zoom suites updated.*
+
+   **Typed growth bias (same day, follow-up):** towns turn toward what
+   feeds them. `townBias` (zoom.ts) reads quantized BEARINGS — toward up
+   to two route-connected neighbor cities (the high street IS the
+   highway), toward the fertile side, toward the ore side (weighted mean
+   direction over the charter box; null when symmetric) — and
+   `growStreets` aims its first arterials along them; works pick street
+   tips by alignment (farm gates cap lanes toward the fertile tiles, the
+   pithead the lanes toward the ore; fields follow the farm gates).
+   Bearings are session-memoized so substrate drift (mining depletion)
+   can't re-lay a loaded town; a much-later reboot may re-lay it — that
+   is development, not noise. This is the SEEDS half of
+   city-development.md §7 step 5; the districts themselves (typed seed →
+   Voronoi cell → building mix) are the remaining half. Engine unblock
+   the same day: `WORLD_MANIFOLD_MAX` 100 km → 40,000 km (planet scale —
+   the 144-km tectonic continent tripped seamless-world certification;
+   the bound is pure schema sanity, f64 keeps sub-micrometer precision).
+   Tests: `src/__tests__/town-bias.test.ts` (4) + a tectonic
+   generateWorld regression in tectonics.test.ts.*
+
+   **Districts tier B + the pop-in policy (same day,
+   `src/city-districts.ts`):** the step-1 catchments became DISTRICTS
+   (houses + street-nearest works + a kind read off the works) and FILL
+   NOW VARIES BY DISTRICT: a pure conserving allocator deals the site's
+   delivered food by supply order (street distance from the nearest farm
+   gate / the hall) — floor share, then nearest-first pour, exact at
+   fill 1, Σ need·fill = got always. The poor quarter is a spatial fact:
+   leaner pantries, thinner shelves, more frequent trips, all through
+   the existing projection (pantry/stock/cycle read district fill).
+   Supply hauls wear the streets on top of shopper trips; mid-zoom
+   TRAFFIC DOTS sample the field (identity-free, day-curved, culled
+   within 80 m of the player); the view tints the miners' quarter slate
+   and the farm belt green. POP-IN: bodies enter through buildings —
+   home spawns are placed INSIDE the house and the view hides indoor
+   villagers (player peeking into the same building still sees them);
+   mid-errand spawns within the camera's visible radius (view →
+   TownManager, a new `visibleR` param) relocate to their trip's source
+   building and walk out. Off-camera behavior unchanged. Tests:
+   `src/__tests__/city-districts.test.ts` (4: allocator conservation +
+   ordering, apportionment exactness, poor quarter end-to-end, hauls) +
+   a pop-in policy test in zoom.test.ts. Open: despawn pop-out, and the
+   miners'-quarter building MIX (different lot shapes, not just tint).*
+
+   **Door transits + market stands (same day, playtest polish):** the
+   town's only obstacle is its doorways, so bodies cross them with an
+   explicit inside→outside (or reverse) waypoint pair (`doorTransit`).
+   Residents tether to the HOUSE CENTER at a tiny wander radius — idle
+   bodies shuffle indoors under the cull instead of grinding on their
+   own wall toward a doorstep-outside tether (the stuck-on-doors bug) —
+   and every shopping errand is bracketed by transits (out of home,
+   back in). Markets grew STANDS: 2–5 stall tables along the door side,
+   each household hashed to one, so shoppers fan out along the tables
+   instead of piling at one point; the mid-shop dwell is at their stand.
+   Sack piles now scale to the stall's own daily throughput (stock ÷
+   dawn delivery) so every shelf visibly drains full→empty across the
+   day — the old fixed ÷7.5 scale pinned big stalls at "10 sacks" most
+   of the day and read as static (the stock was always a live clock
+   function; only its rendering was flat). Tests: door-transit bracket
+   assertion + market-stand cycle in food/zoom suites.*
 8. **Caravan mode** (§8).
 
 Steps 1–5 produce a playable idle civilization sim on their own (the Spore
@@ -689,6 +798,20 @@ resource-processing chains (`ProcessSpec` + flow-net `satisfied`),
 buildings, and city-founding conditions — lives in **world-content.md**,
 with its own ship gates (1–4 landed 2026-07-05; gate 5 = the founding
 transaction is the next engine work).
+
+How a CITY is structured, develops, and loads — districts, emergent
+markets, street-level flows that actually move goods, and the fractal
+recursion of this whole model inside a settlement — is brainstormed in
+**city-development.md** (2026-07-06; supersedes step 7's single-market
+polar template as the direction of travel, keeping it as the core-district
+layout and the cheat provider).
+
+Where the LANDSCAPE itself comes from — drifting plates, collisional
+mountain belts, and ore emplaced by geologic events and exhumed by
+erosion — is **plate-tectonics.md** (2026-07-06, SHIPPED: the first real
+provider behind timescales.md's Geology→Substrate seam; the lab's
+"TRI — tectonic" scenario runs the whole civ arc on a map that happened
+rather than being authored).
 
 ## 10. Open questions
 

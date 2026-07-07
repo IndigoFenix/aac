@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import { stringify } from "csv-stringify";
+import { renderBrowserTestPage } from "./dev/browser-test-page";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
 import { getLiveSession } from "./services/dual-agent/live-session-registry";
 import { getPeerFacePhotoDataUrl } from "./services/dual-agent/peer-photo";
@@ -242,6 +243,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // ============ AAC IN-APP BROWSER TEST PAGE (public, no PHI) =============
+  // A self-hosted, embed-friendly page for exercising the AAC in-app browser
+  // (BrowserApp / webview): render, tap, type, scroll, subpage navigation.
+  // Add the served URL to a student's permittedWebsites, then open it from the
+  // AAC. `/browser-test/page2` is a subpage of the permitted prefix. See
+  // server/dev/browser-test-page.ts.
+  const serveBrowserTest = (page: 1 | 2) => (req: Request, res: Response) => {
+    // Ensure the page can be embedded in the iframe/webview: never emit a
+    // frame-blocking header (no helmet is mounted, but strip defensively in
+    // case a proxy added one) and mark it uncacheable so edits show up live.
+    res.removeHeader("X-Frame-Options");
+    res.setHeader("Cache-Control", "no-store");
+    res.type("html").send(
+      renderBrowserTestPage(
+        page === 1
+          ? { page: 1, selfPath: "/browser-test", otherPath: "/browser-test/page2" }
+          : { page: 2, selfPath: "/browser-test/page2", otherPath: "/browser-test" },
+      ),
+    );
+  };
+  app.get("/browser-test", serveBrowserTest(1));
+  app.get("/browser-test/page2", serveBrowserTest(2));
 
   // ============ SCHEDULED MAINTENANCE (EventBridge → secret header) =============
   // Runs the erasure + retention sweeps on the Lambda deployment, where
@@ -1411,6 +1435,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============= YOUTUBE CHANNEL RESOLVER =============
   // Resolve a YouTube channel URL / @handle / raw channel ID to a UC... channel ID
   // AND fetch its display title + description. No API key required (public HTML).
+  // Bounded AI selection for a cooperative embedded app: the app hands a finite
+  // list of options and the AI returns the best `id`. Called by the trusted host
+  // (GameEmbed), not the app directly. No license required — the surface is
+  // narrow (constrained to app-provided ids), metered, and rate-limited.
+  app.post("/api/aac/app-ai/select", optionalAuth, async (req, res) => {
+    try {
+      const { normalizeSelectRequest, selectFromOptions, allowAppAiSelect } = await import(
+        "./services/appAiService"
+      );
+      const norm = normalizeSelectRequest(req.body);
+      if (!norm.ok) return res.status(400).json({ ok: false, error: norm.error });
+
+      const userId = (req as any).user?.id as string | undefined;
+      const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : undefined;
+      const limiterKey = userId || sessionId || req.ip || "anon";
+      if (!allowAppAiSelect(limiterKey)) {
+        return res.status(429).json({ ok: false, error: "rate limited — too many selections" });
+      }
+
+      const result = await selectFromOptions(norm.value, userId, sessionId);
+      return res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[routes] app-ai/select failed:", err?.message || err);
+      return res.status(500).json({ ok: false, error: "selection failed" });
+    }
+  });
+
   app.post("/api/aac/youtube/resolve-channel", requireAuth, async (req, res) => {
     try {
       const { input } = req.body || {};
