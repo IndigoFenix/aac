@@ -1,9 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { createRequire } from "module";
+
+const pkg = createRequire(import.meta.url)("./package.json") as { version: string };
 
 export default defineConfig({
   plugins: [react()],
+  // Expose the app version to the client at build time so the web build can
+  // show it too (the Electron build reads it live via electronAPI.getVersion()).
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   // The vision worker (src/workers/vision.worker.ts) dynamically imports MediaPipe,
   // so its bundle is code-split — which needs the ES module worker format (the
   // default "iife" can't code-split). Module workers are supported by the Electron

@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CostBreakdownCell } from "./CostBreakdownCell";
-import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2, Download } from "lucide-react";
+import { Loader2, Eye, ChevronLeft, ChevronRight, FileText, Trash2, Download, Coins } from "lucide-react";
 import {
   useAACSessionsAdmin,
   useChatSessionsAdmin,
@@ -33,11 +33,13 @@ import {
   useAACSessionLog,
   useChatSessionLog,
   useSessionDebugLog,
+  useSessionCostEvents,
   useDeleteSessionDebugLogsBefore,
   type AACSessionSummary,
   type CaptionProjectSummary,
   type ChatSessionSummary,
   type DebugLogEntry,
+  type CostEvent,
   type SessionFilters,
 } from "@/hooks/useSessionHistory";
 
@@ -69,6 +71,57 @@ function formatDate(dateStr: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** Compact time-of-day (with seconds) — used on cost rows so a charge can be
+ *  lined up against the message it followed. */
+function formatClock(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/** One-line token/model summary for a cost charge (empty for char-billed
+ *  charges like TTS/STT that carry no token detail). */
+function costTokenSummary(ev: CostEvent): string {
+  const parts: string[] = [];
+  if (ev.model) parts.push(ev.model);
+  if (ev.promptTokens != null) parts.push(`in ${ev.promptTokens}`);
+  if (ev.completionTokens != null) parts.push(`out ${ev.completionTokens}`);
+  if (ev.cachedTokens) parts.push(`cached ${ev.cachedTokens}`);
+  if (ev.cacheCreationTokens) parts.push(`cacheWrite ${ev.cacheCreationTokens}`);
+  return parts.join(" · ");
+}
+
+type TimelineItem =
+  | { kind: "msg"; ts: number; sort: number; msg: any }
+  | { kind: "cost"; ts: number; sort: number; ev: CostEvent; cumulative: number };
+
+/** Merge conversation messages and per-charge cost events into one
+ *  time-ordered stream so costs sit next to the events that incurred them.
+ *  `cumulative` is running spend in cost-event order (the endpoint already
+ *  returns them oldest→newest, matching timestamp order). Messages without a
+ *  timestamp inherit the previous message's time so they keep their order. */
+function buildSessionTimeline(messages: any[], costEvents: CostEvent[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  let lastTs = 0;
+  messages.forEach((msg, i) => {
+    const raw = msg.timestamp || msg.createdAt;
+    const t = raw ? new Date(raw).getTime() : NaN;
+    if (!Number.isNaN(t)) lastTs = t;
+    items.push({ kind: "msg", ts: Number.isNaN(t) ? lastTs : t, sort: i, msg });
+  });
+  let cum = 0;
+  costEvents.forEach((ev, i) => {
+    cum += ev.credits;
+    const t = new Date(ev.timestamp).getTime();
+    items.push({ kind: "cost", ts: Number.isNaN(t) ? lastTs : t, sort: i, ev, cumulative: cum });
+  });
+  // Time order; at an identical timestamp keep a message before the charge it triggered.
+  items.sort((a, b) => a.ts - b.ts || (a.kind === b.kind ? a.sort - b.sort : a.kind === "msg" ? -1 : 1));
+  return items;
 }
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -107,6 +160,7 @@ function formatSessionLogText(
   title: string | null,
   summary: string | null,
   importance: number | null,
+  costEvents: CostEvent[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`Session Log (${type})`);
@@ -114,7 +168,18 @@ function formatSessionLogText(
   lines.push(`Exported: ${new Date().toISOString()}`);
   lines.push("=".repeat(60));
   lines.push("");
-  for (const msg of messages) {
+  for (const item of buildSessionTimeline(messages, costEvents)) {
+    if (item.kind === "cost") {
+      const ev = item.ev;
+      const toks = costTokenSummary(ev);
+      lines.push(
+        `[cost] ${new Date(ev.timestamp).toISOString()} ${ev.category} +$${ev.credits.toFixed(4)}` +
+          ` (Σ $${item.cumulative.toFixed(4)})${toks ? ` — ${toks}` : ""}`,
+      );
+      lines.push("");
+      continue;
+    }
+    const msg = item.msg;
     const role = msg.role || msg.type || "unknown";
     const content =
       typeof msg.content === "string"
@@ -366,6 +431,27 @@ function DebugLogDialog({
   );
 }
 
+/** One inline cost charge in the session timeline — visually distinct from a
+ *  message, right-aligned amount + running total, seconds-precise time so it
+ *  correlates with the surrounding events. */
+function CostEventRow({ ev, cumulative }: { ev: CostEvent; cumulative: number }) {
+  const toks = costTokenSummary(ev);
+  return (
+    <div className="flex items-center gap-2 py-1.5 ps-6 border-b last:border-b-0 bg-amber-50/50 dark:bg-amber-950/20">
+      <Coins className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 shrink-0" />
+      <span className="font-mono text-xs truncate" title={ev.label ?? undefined}>{ev.category}</span>
+      {toks && <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">{toks}</span>}
+      <span className="ms-auto text-xs tabular-nums shrink-0 whitespace-nowrap">
+        +${ev.credits.toFixed(4)}
+        <span className="text-muted-foreground ms-2">Σ&nbsp;${cumulative.toFixed(4)}</span>
+      </span>
+      <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums w-[64px] text-end">
+        {formatClock(ev.timestamp)}
+      </span>
+    </div>
+  );
+}
+
 function SessionLogDialog({
   open,
   onOpenChange,
@@ -377,14 +463,25 @@ function SessionLogDialog({
   sessionId: string | null;
   type: "aac" | "chat";
 }) {
+  const [showCosts, setShowCosts] = useState(true);
   const aacLog = useAACSessionLog(type === "aac" ? sessionId : null);
   const chatLog = useChatSessionLog(type === "chat" ? sessionId : null);
   const query = type === "aac" ? aacLog : chatLog;
+  // Up to 5000 charges so long Live sessions aren't silently truncated.
+  const costQuery = useSessionCostEvents(sessionId, { limit: 5000 });
   const messages = query.data?.data ?? [];
+  const costEvents: CostEvent[] = costQuery.data?.data ?? [];
+  const costTotalCount = costQuery.data?.pagination?.total ?? costEvents.length;
+  const totalCost = useMemo(() => costEvents.reduce((a, e) => a + e.credits, 0), [costEvents]);
   const title = query.data?.title ?? null;
   const summary = query.data?.summary ?? null;
   const importance = query.data?.importance ?? null;
   const hasSummary = !!(title || summary);
+  const timeline = useMemo(
+    () => buildSessionTimeline(messages, showCosts ? costEvents : []),
+    [messages, costEvents, showCosts],
+  );
+  const isEmpty = messages.length === 0 && costEvents.length === 0 && !hasSummary;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -392,33 +489,55 @@ function SessionLogDialog({
         <DialogHeader>
           <div className="flex items-center justify-between gap-3 pe-6">
             <DialogTitle>Session Log</DialogTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={messages.length === 0 && !hasSummary}
-              onClick={() =>
-                sessionId &&
-                downloadTextFile(
-                  `session-log-${type}-${sessionId}.txt`,
-                  formatSessionLogText(sessionId, type, messages, title, summary, importance),
-                )
-              }
-            >
-              <Download className="w-4 h-4 me-2" /> Export
-            </Button>
+            <div className="flex items-center gap-2">
+              {costEvents.length > 0 && (
+                <Button
+                  variant={showCosts ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setShowCosts((v) => !v)}
+                  title="Show per-charge costs inline with the conversation"
+                >
+                  <Coins className="w-4 h-4 me-2" />
+                  {showCosts ? "Hide" : "Show"} costs · ${totalCost.toFixed(4)}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isEmpty}
+                onClick={() =>
+                  sessionId &&
+                  downloadTextFile(
+                    `session-log-${type}-${sessionId}.txt`,
+                    formatSessionLogText(sessionId, type, messages, title, summary, importance, costEvents),
+                  )
+                }
+              >
+                <Download className="w-4 h-4 me-2" /> Export
+              </Button>
+            </div>
           </div>
         </DialogHeader>
         {query.isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
-        ) : messages.length === 0 && !hasSummary ? (
+        ) : isEmpty ? (
           <p className="text-sm text-muted-foreground py-8 text-center">No messages in this session.</p>
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto pr-4">
-            {messages.map((msg: any, i: number) => (
-              <LogMessage key={i} msg={msg} />
-            ))}
+            {showCosts && costEvents.length < costTotalCount && (
+              <p className="text-[11px] text-muted-foreground py-2 text-center">
+                Showing first {costEvents.length} of {costTotalCount} charges.
+              </p>
+            )}
+            {timeline.map((item) =>
+              item.kind === "cost" ? (
+                <CostEventRow key={`c-${item.ev.id}`} ev={item.ev} cumulative={item.cumulative} />
+              ) : (
+                <LogMessage key={`m-${item.sort}`} msg={item.msg} />
+              ),
+            )}
             {hasSummary && (
               <div className="mt-4 pt-3 border-t-2 border-dashed bg-muted/30 -mx-4 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">

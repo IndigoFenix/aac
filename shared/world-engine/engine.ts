@@ -1313,6 +1313,99 @@ export function accessibleBuildings(
   return visible;
 }
 
+/**
+ * Door-aware waypoints from `from` to `to`: whenever the straight line would
+ * cross a room/building boundary, insert a pair of transit points that LINE UP
+ * with the real doorway (its live segment center, so an OFF-CENTRE door is
+ * honoured) — one a step short on the near side, one a step past on the far
+ * side. An NPC steered through these approaches the door head-on (auto-opening
+ * it), passes, and continues, instead of grinding on the wall beside it.
+ *
+ * Returns the waypoints AFTER `from`, ending at `to`. Same room (or no door
+ * chain / an all-locked barrier between them) ⇒ just `[to]` (the straight line;
+ * the caller's per-leg timeout copes). Routes only through UNLOCKED doors.
+ */
+export function routeThroughDoors(
+  state: WorldState,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  transit = 1.1,
+): Vec2[] {
+  const fromNode = buildingAt(state, from.x, from.y)?.id ?? OUTDOORS;
+  const toNode = buildingAt(state, to.x, to.y)?.id ?? OUTDOORS;
+  if (fromNode === toNode) return [to];
+
+  // Every unlocked door as an edge between the two rooms it joins, keeping its
+  // real center + wall normal (sideA is the +normal side).
+  interface DoorEdge {
+    a: string;
+    b: string;
+    mid: Vec2;
+    nx: number;
+    ny: number;
+  }
+  const edges: DoorEdge[] = [];
+  const adj = new Map<string, { node: string; edge: DoorEdge }[]>();
+  const link = (n: string, m: string, e: DoorEdge) =>
+    (adj.get(n) ?? adj.set(n, []).get(n)!).push({ node: m, edge: e });
+  for (const s of state.spec.structures ?? []) {
+    if (s.kind !== "door") continue;
+    const door = state.doors[s.id];
+    if (!door || door.locked) continue;
+    const mid = { x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 };
+    let nx = -(s.b.y - s.a.y);
+    let ny = s.b.x - s.a.x;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len;
+    ny /= len;
+    const eps = s.thickness / 2 + 0.3;
+    const sideA = buildingAt(state, mid.x + nx * eps, mid.y + ny * eps)?.id ?? OUTDOORS;
+    const sideB = buildingAt(state, mid.x - nx * eps, mid.y - ny * eps)?.id ?? OUTDOORS;
+    if (sideA === sideB) continue;
+    const edge: DoorEdge = { a: sideA, b: sideB, mid, nx, ny };
+    edges.push(edge);
+    link(sideA, sideB, edge);
+    link(sideB, sideA, edge);
+  }
+
+  // Shortest door chain fromNode → toNode.
+  const prev = new Map<string, { node: string; edge: DoorEdge } | null>([[fromNode, null]]);
+  const queue = [fromNode];
+  let found = false;
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur === toNode) {
+      found = true;
+      break;
+    }
+    for (const nb of adj.get(cur) ?? []) {
+      if (prev.has(nb.node)) continue;
+      prev.set(nb.node, { node: cur, edge: nb.edge });
+      queue.push(nb.node);
+    }
+  }
+  if (!found) return [to];
+
+  const chain: { from: string; edge: DoorEdge }[] = [];
+  for (let node = toNode; ; ) {
+    const p = prev.get(node);
+    if (!p) break;
+    chain.push({ from: p.node, edge: p.edge });
+    node = p.node;
+  }
+  chain.reverse();
+
+  const pts: Vec2[] = [];
+  for (const { from: fromSide, edge } of chain) {
+    const nearPlus = edge.a === fromSide; // is the near side on +normal?
+    const s = nearPlus ? 1 : -1;
+    pts.push({ x: edge.mid.x + edge.nx * transit * s, y: edge.mid.y + edge.ny * transit * s });
+    pts.push({ x: edge.mid.x - edge.nx * transit * s, y: edge.mid.y - edge.ny * transit * s });
+  }
+  pts.push(to);
+  return pts;
+}
+
 /** Ease every door toward open (an avatar is within range and it isn't locked)
  *  or shut (nobody near). A locked door opens for an avatar carrying its key
  *  object (which permanently unlocks it). Runs once per tick, before locomotion. */

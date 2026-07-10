@@ -511,6 +511,21 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       !!pointTarget || snapFromBubble || (!!conversationTarget && snap?.kind === "avatar");
 
     const { events } = tickWorld(state, { aim }, dt, undefined, deps.constraint);
+    // SPIRIT: a carried object rides the GAZE. A formless stationary avatar can't
+    // walk it into place, and the engine parks a carried item a fixed step in
+    // FRONT of the carrier — so in spirit mode it would just sit by the invisible
+    // avatar, and pick-up/put-down would read as nothing. Snap the held object to
+    // the fixation each frame so it lifts to the spark on pick-up and glides with
+    // it until the place-dwell drops it (placeCarriedObject already uses the same
+    // point). Skip mid-saccade (effFix null) so it doesn't jump to the origin.
+    if (deps.stationary && effFix) {
+      const heldId = carriedId();
+      const held = heldId ? state.objects[heldId] : undefined;
+      if (held) {
+        held.x = effFix.x;
+        held.y = effFix.y;
+      }
+    }
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
     // local tick so controllers see this frame's player position.
     advanceNpcs(dt);

@@ -3,6 +3,7 @@ import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import AppVersionBadge from "@/components/AppVersionBadge";
 const axolotlLogo = `${import.meta.env.BASE_URL}aac-avatars/axolotl/axolotl-logo.png`;
 
 export default function InitializationLoadingScreen() {
@@ -163,6 +164,7 @@ export default function InitializationLoadingScreen() {
           </motion.div>
         )}
       </div>
+      <AppVersionBadge />
     </div>
   );
 }

@@ -183,6 +183,44 @@ export function useSessionDebugLog(sessionId: string | null, opts: { section?: s
   });
 }
 
+export interface CostEvent {
+  id: string;
+  timestamp: string;
+  category: string;
+  credits: number;
+  model: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedTokens: number | null;
+  cacheCreationTokens: number | null;
+  label: string | null;
+}
+
+interface CostEventsResponse {
+  success: boolean;
+  data: CostEvent[];
+  pagination: PaginationInfo;
+}
+
+/**
+ * Per-charge cost time-series for one session (spend over time). Recorded for
+ * every session — used inside the Session Log dialog to correlate each charge
+ * with the conversation events around it.
+ */
+export function useSessionCostEvents(sessionId: string | null, opts: { limit?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return useQuery<CostEventsResponse>({
+    queryKey: ["/api/admin/sessions", sessionId, "cost-events", qs],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/admin/sessions/${sessionId}/cost-events${qs ? `?${qs}` : ""}`);
+      return res.json();
+    },
+    enabled: !!sessionId,
+  });
+}
+
 export interface DeleteDebugLogsResponse {
   success: boolean;
   deleted?: number;

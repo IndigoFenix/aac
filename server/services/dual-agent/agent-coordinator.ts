@@ -4574,7 +4574,7 @@ export class AgentCoordinator {
   // per utterance, fed VAD-gated PCM as the person speaks. Transcript is ready
   // at speech-end and flows into the same pendingSpeech fast/slow fusion.
   // -------------------------------------------------------------------------
-  private sttStreams = new Map<string, { session: SttStreamSession; bytes: number; chunks: number; firedAny: boolean; language?: string; interimSentAt: number; interimLoggedAt: number }>();
+  private sttStreams = new Map<string, { session: SttStreamSession; bytes: number; chunks: number; firedAny: boolean; ending: boolean; language?: string; interimSentAt: number; interimLoggedAt: number }>();
   /** Min gap between transcript_interim pushes to the client (rolling text —
    *  dropping intermediate revisions loses nothing; a final always follows). */
   private static readonly STT_INTERIM_SEND_MS = 250;
@@ -4599,7 +4599,7 @@ export class AgentCoordinator {
         onError: (m) => flowNote("COORDINATOR", `STT stream error [${streamId.slice(0, 8)}]: ${m}`),
         onRotate: (why) => flowNote("COORDINATOR", `STT stream rotated [${streamId.slice(0, 8)}]: ${why}`),
       });
-      this.sttStreams.set(streamId, { session, bytes: 0, chunks: 0, firedAny: false, language, interimSentAt: 0, interimLoggedAt: 0 });
+      this.sttStreams.set(streamId, { session, bytes: 0, chunks: 0, firedAny: false, ending: false, language, interimSentAt: 0, interimLoggedAt: 0 });
       flowInput("CLIENT", "stt_stream_start", `streamId=${streamId.slice(0, 8)} lang=${language ?? "?"}`);
     } catch (err) {
       runInSessionContext(this.sessionId || "?", this.debugMode, () => logLiveSession("STT_STREAM_ERROR", `start: ${(err as Error).message}`));
@@ -4653,10 +4653,16 @@ export class AgentCoordinator {
 
   private async endSttStream(streamId: string, acoustic?: Acoustic, lipActivity?: LipFace[]): Promise<void> {
     const s = this.sttStreams.get(streamId);
-    if (!s) return;
-    this.sttStreams.delete(streamId);
+    if (!s || s.ending) return;
+    // Keep the entry in the map while the recognizer flushes: with
+    // per-utterance streams the client's end arrives at speech-end while the
+    // last final is still in flight, and onSttStreamFinal must still find the
+    // entry to mark firedAny — otherwise the close fallback below injects the
+    // same words a second time. Deleted after the close resolves.
+    s.ending = true;
     let text = "";
     try { text = await s.session.end(); } catch { /* resolves empty */ }
+    this.sttStreams.delete(streamId);
     const seconds = s.bytes / 2 / 16000; // Int16 mono 16kHz
     if (this.sessionId && this.studentId && seconds > 0.2) {
       void dualAgentService.trackSttUsage(this.sessionId, this.studentId, this.userId, seconds);

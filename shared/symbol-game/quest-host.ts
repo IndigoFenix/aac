@@ -72,15 +72,17 @@ import { createGlyphImageSource } from "../world-engine/glyph-images.js";
 import type { ImageResolver } from "../glyph-compositor.js";
 import { createDwellTracker } from "../world-engine/dwell.js";
 import { runWorldHost, type WorldHost } from "../world-engine/world-host.js";
-import type { NpcErrand } from "../world-engine/npc-controller.js";
+import type { NpcErrand, NpcErrandPoint } from "../world-engine/npc-controller.js";
 import {
   carryObject,
   clearWorldBubble,
   dropObject,
   expandWorldBuildings,
+  routeThroughDoors,
   showWorldBubble,
   unlockDoor,
   visibleBuildings,
+  type WorldState,
 } from "../world-engine/engine.js";
 import { createNpcVoice, speechEstimateMs, type NpcVoice } from "../world-engine/npc-voice.js";
 import { resolveLine, SAMPLE_NPC_DIALOGUE } from "../world-engine/npc-dialogue.js";
@@ -1150,18 +1152,62 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const host = world;
     const queue = session.npcTasks.get(npcId) ?? [];
     session.npcTasks.set(npcId, queue);
+    // Set an errand on the body, DOOR-ROUTED from where it actually stands right
+    // now — inside a walled house a leg between rooms must line up with the real
+    // doorway, not cut straight through a wall (npc-controller only slides on
+    // walls, it never re-paths). Routing happens at start time so the live
+    // position seeds it (a queued errand starts wherever the last one ended).
+    const start = (e: NpcErrand) => {
+      const at = host.state.avatars[npcId];
+      host.setNpcErrand(npcId, at ? doorRouteErrand(host.state, { x: at.x, y: at.y }, e) : e);
+    };
     const wrapped: NpcErrand = {
       ...errand,
       onDone: () => {
-        console.log(`[symbol-game] errand done: ${npcId} (${queue.length - 1} queued)`);
         errand.onDone?.();
         queue.shift();
         const next = queue[0];
-        if (next) host.setNpcErrand(npcId, next);
+        if (next) start(next);
       },
     };
     queue.push(wrapped);
-    if (queue.length === 1) host.setNpcErrand(npcId, wrapped);
+    if (queue.length === 1) start(wrapped);
+  }
+
+  /** Expand an errand's waypoints so every leg that crosses a room boundary
+   *  passes THROUGH the connecting doorway (routeThroughDoors). Inserted transit
+   *  points fire no callback; the original `onArrive(index)` is remapped to the
+   *  new index of each ORIGINAL waypoint so the world effects still land. */
+  function doorRouteErrand(
+    state: WorldState,
+    startPos: { x: number; y: number },
+    errand: NpcErrand,
+  ): NpcErrand {
+    const points: NpcErrandPoint[] = [];
+    const origIndexAt: number[] = [];
+    let prev: { x: number; y: number } = startPos;
+    errand.points.forEach((pt, origIdx) => {
+      const legs = routeThroughDoors(state, prev, pt); // transit points…, then pt
+      legs.forEach((p, i) => {
+        const isEndpoint = i === legs.length - 1;
+        points.push(isEndpoint && pt.dwell ? { x: p.x, y: p.y, dwell: pt.dwell } : { x: p.x, y: p.y });
+        origIndexAt.push(isEndpoint ? origIdx : -1);
+      });
+      prev = pt;
+    });
+    const onArrive = errand.onArrive;
+    return {
+      points,
+      ...(onArrive
+        ? {
+            onArrive: (i: number) => {
+              const o = origIndexAt[i];
+              if (o !== undefined && o >= 0) onArrive(o);
+            },
+          }
+        : {}),
+      ...(errand.onDone ? { onDone: errand.onDone } : {}),
+    };
   }
 
   /** Does this NPC's body currently hold an object? (One at a time.) */
